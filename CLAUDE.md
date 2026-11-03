@@ -64,7 +64,8 @@
 - 提交前 `git status --short`，**只 stage 本轮相关文件（禁止 `git add -A`）**，再 `git diff --cached --check`；提交信息简洁写真实改动；提交后回复里给出哈希和仍存在的无关未提交改动。
 - 过了推送门就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
 - 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
-- 版本号、发布通道（push 只进 debug / prerelease，正式版只能手动触发）、跨 workflow release 序列、大合并后 TestFlight：见 [build.md](docs/agent/build.md) 与 [细则](docs/agent/rules-detail.md#大合并后-testflight)。
+- 版本号、发布通道（push 只进 debug / prerelease，正式版只能手动触发）、跨 workflow release 序列：见 [build.md](docs/agent/build.md)。
+- **TestFlight 不用人管**：`develop` 每次 push 的 `release-desktop.yml` 都自动传 debug 包（用户 2026-11-02 拍板），合并后不查序列、不补发；`main` 的 push 不传。（[细则](docs/agent/rules-detail.md#testflight-每次-push-自动传)）
 
 ## docs/agent 索引
 

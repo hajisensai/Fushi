@@ -175,7 +175,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 `${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}`：
 
 - `release-publish`（id `24572755799`）：必需审批人 hajisensai，`prevent_self_review=false`（自己 dispatch 的自己能批），不限分支。formal / beta 的 dispatch 跑完构建后发布 job 显示 **Waiting**。
-- `release-auto`（id `24572756532`）：无任何保护规则。push 滚动 debug、手动发 GitHub Release（`release` 事件，本身就是发布动作）、`testflight_only` 补传、push 每第三次的 TestFlight 都走它，**不等人**，行为与改动前一致。
+- `release-auto`（id `24572756532`）：无任何保护规则。push 滚动 debug、手动发 GitHub Release（`release` 事件，本身就是发布动作）、`testflight_only` 补传、develop push 每次的 debug TestFlight 都走它，**不等人**，行为与改动前一致。
 - 没用「表达式算出空串 = 不挂环境」：官方文档没有写这条语义，而 push 发布每天跑十几次，赌错就是全停；两个具名环境的行为都有文档保证。代价是 push 发布会在 `release-auto` 下留部署记录（纯展示）。
 - `build_only=true`：两条 workflow 的发布 job 都整个跳过，不弹审批（`testflight` job 也因签名门关闭而跳过）。
 - 期限：待审批 job 最长挂 **30 天**后自动失败（GitHub 上限；整条 run 上限 35 天）。审批 run 的 run artifact 保留期因此从 14 天提到 30 天（非审批 run 不变；签名 IPA artifact 非审批 run 只留 1 天）。超过 30 天没批，就重新 dispatch 构建。
@@ -225,17 +225,15 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **TestFlight 上传两条路**：手动 `workflow_dispatch` 的 beta / formal 放行（输入
   `upload_testflight`，默认开；签名 IPA 在 `ios` job 里构建好，上传在独立的 `testflight` job，
   要等审批门批准，见下「正式版预构建与审批发布」），debug 只在 `testflight_only=true` 时放行；**push 的 debug 通道
-  约每三次传一次**（发布序列 = 构建号能被 3 整除的那次，2026-09-16 用户拍板「发三次调试版
-  触发一次 TestFlight」；用共享序列而不是 run 号，run 号在发布 workflow 里是禁用词）。不每次
-  都传：push 一天 5~13 次，全传会让 App Store Connect 的处理排队压后真正想发的 beta、TestFlight
-  列表被 debug 构建淹掉（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。
-  09-14 ~ 09-16 的定时通道 `testflight-debug.yml` 已撤（两条节律并存会重复上传），守卫钉着
-  不得回潮。
-- **大合并后保证一次 TestFlight**（2026-10-14 用户拍板，CLAUDE.md「提交与发布」节指向的硬规则，原文见 [rules-detail.md](rules-detail.md#大合并后-testflight)）：
-  批量合入多条 PR 或合入一条大型功能 PR 后，若该 push 的发布序列不能被 3 整除（或那条 push
-  run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/fushi
-  --ref develop -f channel=debug -f testflight_only=true`。testflight_only 的 run 只签 iOS、
-  不发 Release、走独立 concurrency 组，不会与 push 构建互相取消。
+  每次都传**（2026-11-02 用户拍板「改成每次 ci 自动推 tf，不用每次看」，取代 09-16 的「发布
+  序列 % 3 == 0 才传」与 10-14 的「大合并后核序列、不整除手动补发」）。构建号 = 共享发布序列
+  （commit 计数），沿 develop 每次 push 单调递增。只认 develop：`main` 的 push 不传（main 的 commit 数远低于 develop，序列落在已传号段下面，快进到已传过的 sha 时必撞号，见下条）。代价：每条 push 多一趟约 15 分钟签名构建，TestFlight 列表
+  debug 构建变多（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。被后续 push
+  顶掉的 pending run 不传，由更新的那轮传。09-14 ~ 09-16 的定时通道 `testflight-debug.yml`
+  已撤（两条节律并存会重复上传），守卫钉着不得回潮。
+- **`testflight_only` 手动补传**仍保留（`gh workflow run release-desktop.yml --repo
+  hajisensai/fushi --ref develop -f channel=debug -f testflight_only=true`）：只签 iOS、不发
+  Release、走独立 concurrency 组。日常不需要；同一 sha 上 push 已传过时它必撞号（见下条）。
 - **同一个 commit 不能重复传 TestFlight**（2026-10-22 实测）：build number 由
   `tool/release_sequence.sh`（commit 数 + 地板）算出、经 `--build-number` 直接喂给 iOS 构建，
   `pubspec.yaml` 的 `+build` 与 `workflow_dispatch` 输入都改不了它。所以在同一个 sha 上重跑
@@ -248,8 +246,8 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
-  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每第三次 debug
-  push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
+  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每次 develop
+  debug push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 

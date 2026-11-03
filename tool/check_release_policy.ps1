@@ -199,13 +199,10 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-m
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
-# 守（每个 PR 都跑）。这里只锁发布策略层面的两条：手动 dispatch 那条门必须显式判事件；
-# push 的 debug 通道只在发布序列能被 3 整除时上传（约每三次一次，用共享序列而不是
-# run 号——run 号在上面已整个禁用），绝不能退化成每次 push 都传——每次上传都消耗一个
-# 不可回收的构建号（同一语义版本下 CFBundleVersion 必须单调递增），一天 5~13 次会把
-# TestFlight 淹掉。
+# 守（每个 PR 都跑）。这里只锁发布策略层面的一条：手动 dispatch 那条门必须显式判事件。
+# develop 的 push debug 通道每次都传（2026-11-02 用户拍板，取代「发布序列 % 3 == 0 才传」），
+# 构建号 = 共享发布序列，沿 develop 单调递增；main 的 push 不传（序列低于 develop 已传号段）。
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]' 'manual TestFlight upload must be gated on workflow_dispatch'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ $((RELEASE_SEQUENCE % 3)) -eq 0 ]' 'push-triggered TestFlight upload must be rate-limited to every third build (shared release sequence % 3); uploading on every push burns an unrecoverable build number per commit'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
 # BUG-1449: the helper is no longer shipped as zip + sidecar for the runtime to
 # unpack -- that layout left a second copy on disk that had to stay in sync with
