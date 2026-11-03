@@ -24,6 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -263,48 +264,87 @@ Future<void> _runDirection(
       'manga-curl-$direction-${DateTime.now().microsecondsSinceEpoch}';
   final String bookDir = await MangaStorage.bookPath(bookKey);
   await Directory(bookDir).create(recursive: true);
-  await File(
-    p.join(bookDir, MangaStorage.kMangaJsonFileName),
-  ).writeAsString('{"pages":[]}');
-  await _writeChapter(
-    bookDir,
-    _chapter1.key,
-    width: 800,
-    height: 1200,
-    seed: 1,
-  );
-  await _writeChapter(
-    bookDir,
-    _chapter2.key,
-    width: 600,
-    height: 1000,
-    seed: 101,
-  );
-  const OnlineMangaLibraryEntry entry = OnlineMangaLibraryEntry(
-    runtime: OnlineMangaRuntimeKind.mihon,
-    extensionPackage: 'org.example.mangacurl',
-    sourceId: '1',
-    series: OnlineMangaSeries(
-      key: '/series/manga-curl',
-      title: 'Manga curl fixture',
-      raw: <String, Object?>{'url': '/series/manga-curl'},
-    ),
-    chapters: <OnlineMangaChapter>[_chapter2, _chapter1],
-    currentChapterIndex: 1,
-  );
-  await appModel.database.insertEpubBook(
-    EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: 'Manga curl fixture $direction',
-      epubPath: MangaStorage.kMangaJsonFileName,
-      extractDir: bookDir,
-      chapterCount: entry.chapters.length,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-      format: const Value<String>('manga'),
-      sourceMetadata: Value<String?>(entry.encode()),
-    ),
-  );
+  // iOS 按商店合规不提供在线漫画源宿主（[StoreRestrictedCapability.onlineMangaSource]），
+  // 在线源夹具在那里打不开阅读器：改用本地导入卷（同一批页图），只跳过跨章段。
+  final bool online = StoreRestrictedCapability.onlineMangaSource.isAvailable;
+  if (online) {
+    await File(
+      p.join(bookDir, MangaStorage.kMangaJsonFileName),
+    ).writeAsString('{"pages":[]}');
+    await _writeChapter(
+      bookDir,
+      _chapter1.key,
+      width: 800,
+      height: 1200,
+      seed: 1,
+    );
+    await _writeChapter(
+      bookDir,
+      _chapter2.key,
+      width: 600,
+      height: 1000,
+      seed: 101,
+    );
+    const OnlineMangaLibraryEntry entry = OnlineMangaLibraryEntry(
+      runtime: OnlineMangaRuntimeKind.mihon,
+      extensionPackage: 'org.example.mangacurl',
+      sourceId: '1',
+      series: OnlineMangaSeries(
+        key: '/series/manga-curl',
+        title: 'Manga curl fixture',
+        raw: <String, Object?>{'url': '/series/manga-curl'},
+      ),
+      chapters: <OnlineMangaChapter>[_chapter2, _chapter1],
+      currentChapterIndex: 1,
+    );
+    await appModel.database.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Manga curl fixture $direction',
+        epubPath: MangaStorage.kMangaJsonFileName,
+        extractDir: bookDir,
+        chapterCount: entry.chapters.length,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+        sourceMetadata: Value<String?>(entry.encode()),
+      ),
+    );
+  } else {
+    final Directory images = Directory(
+      p.join(bookDir, MangaStorage.kImagesDirName),
+    );
+    await images.create(recursive: true);
+    const TestImageGenerator generator = TestImageGenerator();
+    final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
+    for (int index = 0; index < _kPages; index++) {
+      final String name = 'p${index.toString().padLeft(3, '0')}.png';
+      await File(p.join(images.path, name)).writeAsBytes(
+        generator.pngBytes(width: 800, height: 1200, seed: 1 + index),
+      );
+      pages.add(<String, Object?>{
+        'url': name,
+        'width': 800,
+        'height': 1200,
+        'blocks': <Object?>[],
+      });
+    }
+    await File(
+      p.join(bookDir, MangaStorage.kMangaJsonFileName),
+    ).writeAsString(jsonEncode(<String, Object?>{'pages': pages}));
+    await appModel.database.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Manga curl fixture $direction',
+        epubPath: MangaStorage.kMangaJsonFileName,
+        extractDir: bookDir,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ),
+    );
+  }
   final EpubBookRow book = (await appModel.database.getEpubBook(bookKey))!;
   await appModel.database.setMangaReaderOverride(book.uid, <String, Object?>{
     'ocrTrigger': 'manual',
@@ -504,7 +544,22 @@ Future<void> _runDirection(
     );
     r.check(_clean(v7), '$direction: no residue after back drag ($v7)');
 
-    // 4. 跨章。
+    // 4. 跨章（只有在线源夹具有第二章）。
+    if (!online) {
+      r.evidence[direction] = <String, Object?>{
+        'v0': v0,
+        'k1': k1,
+        'v1': v1,
+        'v3': v3,
+        'long': long,
+        'v5': v5,
+        'short': short,
+        'v6': v6,
+        'back': back,
+        'v7': v7,
+      };
+      return;
+    }
     int presses = 0;
     while (presses < 12 && await chapterIndex() != 0) {
       await tester.sendKeyEvent(next);
