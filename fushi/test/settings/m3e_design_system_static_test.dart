@@ -984,6 +984,11 @@ class AnotherPopupPart {
           'animated up for the current line (kVideoRemoteCurrentScale) -- the '
           'same subtitle-content class as the allowlisted subtitle jump panel '
           'and transcript text, not ordinary chrome.',
+      'lib/src/pages/implementations/game_stream_companion_page.dart':
+          'Game-stream lookup panel on the second display: fontSize: is the '
+          'streamed Hook line itself, fitted to fill the bottom screen '
+          '(gameStreamFitLineFontSize) -- the same subtitle-content class as '
+          'game_stream_page and subtitle_transcript_text, not ordinary chrome.',
       'lib/src/pages/implementations/game_stream_page.dart':
           'Game-stream receiver: fontSize: sizes the streamed Hook line text '
           'in the collapsible transcript rail -- the same subtitle-content '
@@ -1434,6 +1439,9 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/video_remote/video_remote_transcript_view.dart':
           <String>{'fontSize:'},
       'lib/src/pages/implementations/game_stream_page.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/game_stream_companion_page.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/video/video_thumbnail_preview_overlay.dart': <String>{

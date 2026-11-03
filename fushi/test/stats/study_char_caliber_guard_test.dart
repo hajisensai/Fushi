@@ -167,6 +167,9 @@ void main() {
         // 从上面那个面板抽出来的共享整句渲染器：字素数是**键盘光标在句内左右移动
         // 的边界**（_handleKey 里 count == 0 就不接键），是导航不是记账。
         'lib/src/media/video/subtitle_transcript_text.dart': 1,
+        // 游戏串流手柄查词模式：当前行与命中词的字素数是查词光标的移动边界、跳过
+        // 命中词的步长与命中高亮范围（_moveLookupCaret / lookupHighlight），是导航不是记账。
+        'lib/src/pages/implementations/game_stream_page.dart': 2,
         // 玻璃输入框的字数计数器（maxLength 显示），是表单 UI 不是记账。
         'lib/src/utils/components/glass/fushi_glass_inputs.dart': 1,
         // 源文本条是否被查词高亮完整覆盖：字素坐标范围比较，不写学习统计。
