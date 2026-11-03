@@ -1,6 +1,0 @@
-## BUG-3959 · Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退
-- **报告**：2026-11-02（用户：真机实测 SRS 修复时发现——小米平板 5 上官方版导出备份、同步各闪退一次，`Scudo ERROR: internal map failure (Out of memory)`，栈在 `ffsrs_store_snapshot` / `ffsrs_store_sync2`）
-- **真实性**：✅ 真 bug。libsqlite3-sys 0.35 的 `build.rs:229` 编 Android 时固定加 `-DSQLITE_TEMP_STORE=3`（临时数据永远放内存，`PRAGMA temp_store` / `temp_store_directory` 都改不回来）。`native/fushi_fsrs/src/store/mod.rs` 的 `snapshot_into`（`VACUUM INTO` 建索引的排序 + 对快照再 `VACUUM` 的整份整理副本）、`store/compact.rs` 的打开时整理全落内存；3.17 GB 的真实库在平板上 RSS 涨到 ~2 GB 后 abort。
-- **[x] ① 已修复** — `native/fushi_fsrs/.cargo/config.toml` 用 `LIBSQLITE3_FLAGS="-USQLITE_TEMP_STORE -DSQLITE_TEMP_STORE=1"` 让临时数据落文件（所有构建脚本都在该目录跑 cargo）；`store/compact.rs` 的 `clear_temp_dir` 在 Android 上不还原，打开时设的「库所在目录」常驻为临时目录（Android 无默认临时目录，进程只有一份 srs.db）。
-- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/compact.rs` 的 `tests::temp_store_compiled_to_files`、`tests::cargo_config_overrides_android_temp_store`。真机对照（小米平板 5，arm64，同一份 3.17 GB 真实库，探针直接调 `SrsCore::open` + `snapshot_into`）：修复前（`TEMP_STORE=3`）快照阶段 abort（exit 134）；修复后（`TEMP_STORE=1`）58 s 完成、产出 2.59 GB，快照阶段峰值 RSS 不涨（VmHWM 维持打开时的 660 MB）。
-- **备注**：同步那次闪退（`ffsrs_store_sync2`）推测同源（大排序落内存），本次未单独复测。

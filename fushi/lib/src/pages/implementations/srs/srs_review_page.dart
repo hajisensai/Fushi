@@ -76,6 +76,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
@@ -91,10 +92,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
-
-/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、
-/// 切出去之类的长停顿不该把复习用时统计撑爆。
-const int kSrsMaxAnswerDurationMs = 60000;
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -369,6 +367,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 当前卡上引用了、但媒体库里没有的文件（换卡后异步探一次）：不给它们出重播键，自动
   /// 播放也跳过（#15）。
   Set<String> _missingMedia = const <String>{};
+
+  /// 整面 WebView 卡面上报的「这一面看得见的发音键」（[SrsCardFace.onVisibleSounds]）：
+  /// 问题面 / 答案面各一份，只属于 [_pageSoundsCard] 这张卡；null = 那一面还没上报。
+  String? _pageSoundsCard;
+  List<String>? _pageQuestionSounds;
+  List<String>? _pageAnswerSounds;
+
+  /// 这一面该自动播、但页面还没上报可见发音：等上报到了再播。
+  bool _autoplayPending = false;
 
   @override
   void initState() {
@@ -671,6 +678,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _showingAnswer = false;
       _missingMedia = const <String>{};
       _editSelection = null;
+      // 换了一张卡：上一张卡页面上报的可见发音作废（同一张卡重新上屏时卡面不一定重报，留着）。
+      if (_pageSoundsCard != detail?.card.id) {
+        _pageSoundsCard = null;
+        _pageQuestionSounds = null;
+        _pageAnswerSounds = null;
+      }
     });
     unawaited(_probeMedia(_shownGeneration));
     _answerClock
@@ -758,24 +771,81 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 一张卡两面的媒体清单（问题面、答案面，按卡面从上到下的顺序，保留重复以便按次数
   /// 扣掉 `{{FrontSide}}` 带过来的）。
   ///
-  /// 原生 Fushi 卡面按字段取它**实际画出来**的发音键与片段（[srsFushiCardMedia]）——不再扫
-  /// 整面答案 HTML：释义区里词典自带的音频、模板复制的多份容器都不是卡面上的按钮（#15）。
-  /// 整面 WebView 卡面按 Anki 的 `[sound:]` 标记。
+  /// 只收卡面上**看得见**的（HrB0STYm3E），与卡面同一来源：
+  /// - 原生 Fushi 卡面：[srsFushiCardPlan]（字段 + 外观区块显隐），与 `SrsFushiCardView` 画发音键
+  ///   / 片段用的是同一份计划——关了「显示图片」的片段、没画出来的例句块里的例句音频都不在里面；
+  ///   释义区里词典自带的音频、模板复制的多份容器也不是卡面上的按钮（#15）。
+  /// - 整面 WebView 卡面：页面渲染后上报的可见发音键（[SrsCardFace.onVisibleSounds]），不再用
+  ///   正则扫整张 HTML（CSS 隐藏的容器、收起的 `<details>` 里的也会被扫进来）。还没上报的那一面
+  ///   按空算，两处例外（都不依赖「上报赶在翻面之前」这种时序）：
+  ///   - 答案面已上报、问题面清单却没有（慢卡：问题面卡片脚本还没跑完用户就翻面了，问题面那次
+  ///     上报被换卡作废、之后也不会再来）：问题面退回问题 HTML 的 `[sound:]` 作扣减基准，
+  ///     `{{FrontSide}}` 带过来的正面音频不被当成答案新出现的再自动播 / 重播一遍。
+  ///   - [layout]（底栏逐段键排键位）且答案面还没上屏：答案面看得见什么只有它渲染后才知道，
+  ///     键位先按答案 HTML 的 `[sound:]` 预排「答案新出现」的那几段（两份 HTML 同口径相减），
+  ///     接在问题面可见清单之后——翻面前后同一位置、同样多，正面还没有的那段先不可点。
   ({List<String> question, List<String> answer}) _mediaOf(
-    SrsRenderedCard rendered,
-  ) {
+    SrsRenderedCard rendered, {
+    bool layout = false,
+  }) {
     if (rendered.fushiCardDefinitions != null) {
-      final SrsFushiCardMedia media = srsFushiCardMedia(
+      final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
-        audioCardFront:
-            srsFushiFrontKind(rendered.fields) == SrsFushiFrontKind.audio,
-      );
+        ref.read(srsCardAppearanceProvider),
+      ).media;
       return (question: media.front, answer: media.back);
     }
+    final bool current =
+        _pageSoundsCard != null && _pageSoundsCard == _detail?.card.id;
+    final List<String>? pageQuestion = current ? _pageQuestionSounds : null;
+    final List<String>? pageAnswer = current ? _pageAnswerSounds : null;
+    if (pageAnswer == null) {
+      final List<String> question = pageQuestion ?? const <String>[];
+      if (!layout || _showingAnswer) {
+        return (question: question, answer: const <String>[]);
+      }
+      final List<String> predictedAnswerOnly = srsAnswerOnlyOf(
+        srsCardSoundNames(rendered.question),
+        srsCardSoundNames(rendered.answer),
+      );
+      return (
+        question: question,
+        answer: <String>[...question, ...predictedAnswerOnly],
+      );
+    }
     return (
-      question: srsCardSoundNames(rendered.question),
-      answer: srsCardSoundNames(rendered.answer),
+      question: pageQuestion ?? srsCardSoundNames(rendered.question),
+      answer: pageAnswer,
     );
+  }
+
+  /// 这一面的可见发音页面报上来没有（原生卡面不靠上报，总是现成的）。
+  bool _faceSoundsKnown(SrsRenderedCard rendered, {required bool answerSide}) {
+    if (rendered.fushiCardDefinitions != null) return true;
+    if (_pageSoundsCard == null || _pageSoundsCard != _detail?.card.id) {
+      return false;
+    }
+    return (answerSide ? _pageAnswerSounds : _pageQuestionSounds) != null;
+  }
+
+  /// 整面 WebView 卡面上报这一面看得见的发音键（[SrsCardFace.onVisibleSounds]）。
+  void _onVisibleSounds(String cardId, bool answerSide, List<String> names) {
+    if (!mounted || cardId != _detail?.card.id) return;
+    setState(() {
+      if (_pageSoundsCard != cardId) {
+        _pageSoundsCard = cardId;
+        _pageQuestionSounds = null;
+        _pageAnswerSounds = null;
+      }
+      if (answerSide) {
+        _pageAnswerSounds = List<String>.unmodifiable(names);
+      } else {
+        _pageQuestionSounds = List<String>.unmodifiable(names);
+      }
+    });
+    unawaited(_probeMedia(_shownGeneration));
+    // 这一面正等着上报才能自动播：现在播（换主题后的重报不会再触发自动播放）。
+    if (_autoplayPending && answerSide == _showingAnswer) _autoplayAudio();
   }
 
   /// 去掉媒体库里没有的文件。
@@ -788,7 +858,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   Future<void> _probeMedia(int generation) async {
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null) return;
-    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    // 连底栏预排的答案面键位一起探（[_mediaOf] 的 layout）：库里没有的那段翻面前就不出键。
+    final ({List<String> question, List<String> answer}) m = _mediaOf(
+      rendered,
+      layout: true,
+    );
     final SrsCardAudioOutput output = ref.read(srsCardAudioOutputProvider);
     final Set<String> missing = <String>{};
     try {
@@ -814,8 +888,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   /// 当前这一面的音频要不要自动播：开关关着时只打断上一张卡还在播的序列。
   void _autoplayAudio() {
+    _autoplayPending = false;
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null || !_autoplayEnabled) {
+      srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
+      return;
+    }
+    if (!_faceSoundsKnown(rendered, answerSide: _showingAnswer)) {
+      // 整面 WebView 卡面还没报上这一面看得见哪些发音：先停掉上一面的序列，上报到了再播
+      // （[_onVisibleSounds]）。
+      _autoplayPending = true;
       srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
       return;
     }
@@ -831,13 +913,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   }
 
   /// 手动「重播音频」该播的那几段（这一面没有音频时为空）。
+  ///
+  /// [layout]：给底栏逐段键排键位用（答案面还没上屏时按答案 HTML 预排，见 [_mediaOf]）。
   List<String> _replayNames({
     required bool includeQuestion,
     bool answerSide = false,
+    bool layout = false,
   }) {
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null) return const <String>[];
-    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    final ({List<String> question, List<String> answer}) m = _mediaOf(
+      rendered,
+      layout: layout,
+    );
     return _present(
       srsReplayOf(
         question: m.question,
@@ -867,16 +955,27 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         // 不把显示问题面时算的预览传进去：预览的时刻是出题那一刻，日志的发生时刻
         // 必须是现在（学习步长按分钟算，差几十秒就差一档）。
         // 评分与排出下一张是一次调用（落库 + 计数 + 下一张 + 再下一张，SrsDbStore.answerAndStudy）。
-        final SrsAnswerOutcome out = await store.answerAndStudy(
-          detail.card.id,
-          rating,
-          durationMs: math.min(
-            _answerClock.elapsedMilliseconds,
-            kSrsMaxAnswerDurationMs,
-          ),
-          studyDeckId: widget.deckId,
-          custom: widget.custom,
-        );
+        final SrsAnswerOutcome out;
+        try {
+          out = await store.answerAndStudy(
+            detail.card.id,
+            rating,
+            durationMs: math.min(
+              _answerClock.elapsedMilliseconds,
+              kSrsMaxAnswerDurationMs,
+            ),
+            studyDeckId: widget.deckId,
+            custom: widget.custom,
+          );
+        } on SrsCardChangedError {
+          // 远程复习：这张卡出题后已在别处复习过，这次没记。跳过它、按最新状态重排。
+          FushiToast.show(
+            msg: t.srs_remote_review_card_changed,
+            severity: ToastSeverity.warning,
+          );
+          await _loadNext();
+          return;
+        }
         SrsReviewPage.debugPhase?.call('answer:done');
         _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
         _reviewedThisSession++;
@@ -1251,11 +1350,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     };
     final List<String> tagsBefore = List<String>.of(detail.note.tags);
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => SrsNoteEditorPage(noteId: detail.note.id),
-        ),
+      () => srsPushPage<void>(
+        context,
+        (_) => SrsNoteEditorPage(noteId: detail.note.id),
       ),
     );
     if (!mounted) return;
@@ -1582,14 +1679,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   Future<void> _openBrowse() async {
     final SrsCardDetail? detail = _detail;
     if (detail == null) return;
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsBrowsePage(
-          initialCardId: detail.card.id,
-          onChangeNoteType: showSrsChangeNoteTypeFlow,
-          onMigrateToFushiCard: srsMigrateNotesToFushiCard,
-        ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsBrowsePage(
+        initialCardId: detail.card.id,
+        onChangeNoteType: showSrsChangeNoteTypeFlow,
+        onMigrateToFushiCard: srsMigrateNotesToFushiCard,
       ),
     );
     if (mounted) await _reloadCurrent();
@@ -1619,13 +1714,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       icon: FushiIcons.code,
       label: t.srs_card_edit_template(name: detail.noteType.name),
       onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
-        await Navigator.of(context).push<void>(
-          adaptivePageRoute<void>(
-            context: context,
-            builder: (_) => SrsTemplateEditorPage(
-              noteTypeId: detail.noteType.id,
-              templateId: tpl.id,
-            ),
+        await srsPushPage<void>(
+          context,
+          (_) => SrsTemplateEditorPage(
+            noteTypeId: detail.noteType.id,
+            templateId: tpl.id,
           ),
         );
         if (mounted) bumpSrsRevision(ref);
@@ -1721,11 +1814,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   Future<void> _openDeckSettings(String deckId) async {
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => SrsDeckSettingsPage(deckId: deckId),
-        ),
+      () => srsPushPage<void>(
+        context,
+        (_) => SrsDeckSettingsPage(deckId: deckId),
       ),
     );
     if (!mounted) return;
@@ -2222,6 +2313,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,
       onPlayAudio: _playNames,
+      onVisibleSounds: _onVisibleSounds,
       onCardGesture: _onCardGesture,
       gestureArming: gestureArming,
       onEditSelection: inlineEdit ? _onEditSelection : null,
@@ -2492,6 +2584,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final List<String> slots = _replayNames(
       includeQuestion: true,
       answerSide: true,
+      layout: true,
     );
     final Set<String> playable = _replayNames(includeQuestion: true).toSet();
     final bool canReplayFace = _replayNames(

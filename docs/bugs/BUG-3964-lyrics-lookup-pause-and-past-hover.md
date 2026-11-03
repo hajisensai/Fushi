@@ -1,0 +1,6 @@
+## BUG-3964 · lyrics-lookup-pause-and-past-hover
+- **报告**：2026-11-02（用户：应用内反馈 awLXfD49Ep + M8YDOqJ5Bm）——歌词模式查词时底栏弹出、歌词文字偏移；鼠标悬停已播放的句子不高亮。
+- **真实性**：✅ 真 bug。(a) `pause_on_lookup` 默认开，`_handleTextSelected` 暂停播放（`reader_fushi/lookup.part.dart` 原 163-168），`LyricsPlayerData.isPlaying` 直取播放器状态（`reader_fushi/lyrics.part.dart` 原 536），覆盖层 `didUpdateWidget` 见 isPlaying 变化就 `_syncAutoHide` 复位底栏、缩回歌词矩形（`lyrics_player/lyrics_player_overlay.dart` 原 301-305、173-176）；关弹窗后恢复播放再挪一次——自动隐藏把查词的临时暂停当成了用户暂停。(b) CSS 优先级：已读淡化规则 `body.ly-past-dim:not(.ly-browsing) .cue…:not(.current ~ .cue)`（`lyrics_mode_html.dart` 原 491-502）为 (0,6,1)，高过悬停规则 `body.ly-themed .cue:not(.current):hover`（原 514）的 (0,4,1)。
+- **[x] ① 已修复** — (a) `LyricsPlayerData` 新增 `playbackHeldForLookup` 与「有效播放态」`playbackActive`，覆盖层自动隐藏 / 光标空闲隐藏 / didUpdateWidget 都按有效播放态；阅读器以 `_pausedForLookup || _lookupResumeInFlight` 推它（恢复播放异步在途期间也算按住，`lookup.part.dart` `_clearLookupState`）。(b) 四条已读淡化 `.cue` 规则加 `:not(:hover)`（「已读且没被悬停才淡化」），不堆优先级 / 不加 !important。`.ly-gap` 没有悬停态规则、不可查词，未改。（未提交）
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/lyrics_modern_layout_test.dart`（查词按住期间底栏 / 歌词矩形冻结、恢复后保持隐藏、用户暂停照旧复位）；`fushi/test/media/audiobook/lyrics_past_dim_hover_css_test.dart`（已读淡化规则必须排除 :hover 的生成器契约）。
+- **备注**：WebView 内 getComputedStyle 悬停透明度需 Windows itest，未做。

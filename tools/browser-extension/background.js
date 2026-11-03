@@ -909,6 +909,19 @@ async function fushiRemoveQueuedId(id) {
 }
 
 /**
+ * 把一次失败记到队列项上（mine-outcome.js fushiQueueAfterMineFailure）：永久失败 / 反复失败的项
+ * 进失败分组，不再参与下次生成（EMI05fe8RJ）。同样是 storage 读-改-写、只动这一项。
+ * @param {string} id
+ * @param {{cls: string, itemFault?: boolean, reason?: string|null}} outcome
+ * @returns {Promise<boolean>} 这一次是否把该项移进了失败分组
+ */
+async function fushiRecordQueuedFailure(id, outcome) {
+  const r = self.fushiQueueAfterMineFailure(await fushiReadQueue(), id, outcome);
+  await chrome.storage.local.set({ fushiQueue: r.queue });
+  return r.movedToFailed;
+}
+
+/**
  * 与 action-popup.js fushiTabSite 同判据（hostname 后缀），不能用 URL 子串——
  * `google.com/search?q=netflix.com` 不是 Netflix 页。
  * @param {string} url
@@ -955,7 +968,9 @@ async function fushiYtBatchPublish() {
 }
 
 /**
- * 逐条生成队列里全部 YouTube 项。只出队成功（含已存在）的项，失败留队下次重试。
+ * 逐条生成队列里全部待生成的 YouTube 项。只出队成功（含已存在）的项；可重试的失败留队，
+ * 永久失败（服务端 errorKind:permanent / 请求不合法）与反复失败的项移进失败分组（EMI05fe8RJ：
+ * 付费电影的卡旧实现永远留队，每次生成都先把它们重新解析一遍，拖慢并淹没新卡）。
  * @param {number|null|undefined} toastTabId 点击时的当前 tab（用来弹进度/结果 toast）
  * @returns {Promise<void>}
  */
@@ -968,10 +983,11 @@ async function fushiRunYoutubeQueue(toastTabId) {
     try { chrome.runtime.getPlatformInfo(() => { try { void chrome.runtime.lastError; } catch (_) {} }); } catch (_) {}
   }, FUSHI_YT_KEEPALIVE_MS);
   let items = [];
-  let ok = 0, unconfigured = 0, skipped = 0;
+  let ok = 0, unconfigured = 0, skipped = 0, movedToFailed = 0;
   let firstNotice = null;
   try {
-    items = (await fushiReadQueue()).filter((it) => it && it.site === 'youtube' && it.youtubeId);
+    items = (await fushiReadQueue()).filter((it) =>
+      it && it.site === 'youtube' && it.youtubeId && self.fushiQueueItemPending(it));
     if (!items.length) { fushiToastTab(toastTabId, bgT('gen_youtube_queue_empty')); return; }
     fushiYtBatch = { done: 0, total: items.length };
     await fushiYtBatchPublish();
@@ -981,7 +997,8 @@ async function fushiRunYoutubeQueue(toastTabId) {
       if ((await fushiReadQueue()).some((it) => it && it.id === q.id)) {
         const o = self.fushiMineOutcome(await fushiMineYoutubeItem(q), bgT);
         if (o.cls === 'done') { ok++; await fushiRemoveQueuedId(q.id); }
-        if (o.cls === 'unconfigured') unconfigured++;
+        else if (o.cls === 'unconfigured') unconfigured++;
+        else if (await fushiRecordQueuedFailure(q.id, o)) movedToFailed++;
         // 一条条弹会被下一条进度盖掉；留第一条原因随最终结果一起给（同类失败通常同因）。
         if (o.notice && !firstNotice) firstNotice = o;
       } else {
@@ -1000,6 +1017,7 @@ async function fushiRunYoutubeQueue(toastTabId) {
   let summary = unconfigured > 0
     ? bgT('gen_partial_anki_unconfigured', { done: ok, kept: fail })
     : bgT('gen_done_processed', { done: ok }) + (fail ? bgT('gen_done_failed_suffix', { fail }) : '');
+  if (movedToFailed) summary += bgT('gen_done_moved_failed_suffix', { n: movedToFailed });
   if (firstNotice) summary += '\n' + firstNotice.notice;
   fushiToastTab(toastTabId, summary, { openSettings: !!(firstNotice && firstNotice.settingsFixable) });
 }
@@ -1016,7 +1034,7 @@ async function fushiIconClick(tab) {
   const q = Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
   // 与 action-popup.js fushiGenButtonState 同判据：只有「在 Netflix 页且有 Netflix 待生成项」才
   // 录 Netflix；其余一律在这里跑 YouTube 队列（不需要视频页，任何 tab 都行）。
-  if (!(fushiIsNetflixUrl(url) && q.some((it) => it && it.site === 'netflix' && it.netflixId))) {
+  if (!(fushiIsNetflixUrl(url) && q.some((it) => it && it.site === 'netflix' && it.netflixId && self.fushiQueueItemPending(it)))) {
     await fushiRunYoutubeQueue(tab.id);
     return;
   }
@@ -1024,7 +1042,10 @@ async function fushiIconClick(tab) {
   // 现成，最稳）；其余集靠导航（导航时**不录**，到位再录，避开「加载中录屏」的 M7375）。
   const episodes = [];
   for (const it of q) {
-    if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
+    // 与上面进 Netflix 分支同一判据：失败分组里的项不参与生成——只剩失败项的剧集不进批，否则会白导航、
+    // 等播放器 / 片头门、开一次录屏，再因没有待生成项空跑一趟（EMI05fe8RJ）。
+    if (it && it.site === 'netflix' && it.netflixId && self.fushiQueueItemPending(it)
+      && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
   }
   if (!episodes.length) {
     try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_no_netflix_pending') }, { frameId: 0 }); } catch (_) {}

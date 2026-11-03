@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -20,6 +21,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
@@ -29,8 +31,10 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 自定义强调色的候选（色相环上均匀取，外加 Fushi 默认绿）。
 const List<int> kSrsCardAccentSwatches = <int>[
@@ -118,12 +122,7 @@ SrsCardPreviewFrame srsCardPreviewFrame(
 
 /// 打开卡面外观页（复习页 ⋯、笔记类型管理页 Fushi 卡片那一行共用）。
 Future<void> openSrsCardAppearancePage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const SrsCardAppearancePage(),
-      ),
-    );
+    srsPushPage<void>(context, (_) => const SrsCardAppearancePage());
 
 class SrsCardAppearancePage extends ConsumerStatefulWidget {
   const SrsCardAppearancePage({super.key});
@@ -145,6 +144,10 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
 
   /// 用户的 Fushi 卡片模板未改过：预览与复习页一样走原生 + 释义 WebView。
   bool _sampleNative = true;
+
+  /// 读到的库与 Fushi 卡片笔记类型（「恢复内置模板」入口用）。
+  SrsDbStore? _store;
+  SrsNoteTypeView? _fushiType;
   final String _sampleDefinitions =
       _renderSample(
         FushiCardNoteType.template.front,
@@ -196,6 +199,8 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
         );
         if (mounted && sample != null) {
           setState(() {
+            _store = store;
+            _fushiType = type;
             _sample = sample;
             _css = type.css;
             _sampleNative =
@@ -246,11 +251,9 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
   }
 
   /// 卡面字体走统一字体库：已有字体、推荐下载、URL / 文件导入、系统字体、用途徽章都在那里。
-  Future<void> _openFontLibrary() => Navigator.of(context).push<void>(
-    adaptivePageRoute<void>(
-      context: context,
-      builder: (_) => const CustomFontsPage(target: FontTarget.srsCard),
-    ),
+  Future<void> _openFontLibrary() => srsPushPage<void>(
+    context,
+    (_) => const CustomFontsPage(target: FontTarget.srsCard),
   );
 
   // ---------------------------------------------------------------- 页面
@@ -597,11 +600,72 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
 
   // ---------------------------------------------------------------- 控件
 
+  /// Fushi 卡片的模板 / 样式与内置版本不一致：复习卡退回整面网页渲染，下面的原生外观选项不生效。明说出来，
+  /// 能恢复时给出「恢复内置模板」（以前只悄悄切了预览，用户调开关看不到任何变化）。
+  Widget _nativeOffNotice(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsDbStore? store = _store;
+    final SrsNoteTypeView? type = _fushiType;
+    final bool restorable =
+        store != null && type != null && store.builtinTemplatesModified(type);
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('srs-card-native-off'),
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  FushiIcon(
+                    FushiIcons.warning,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      t.srs_card_appearance_native_off_hint,
+                      style: context.fushiType.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              if (restorable) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('srs-card-restore-builtin'),
+                  onPressed: () => srsRunLogged(
+                    'SrsCardAppearance.restoreBuiltin',
+                    () => confirmAndRestoreBuiltinTemplates(
+                      context,
+                      store: store,
+                      noteTypeId: type.id,
+                      onChanged: () {
+                        if (mounted) unawaited(_loadCards());
+                      },
+                    ),
+                  ),
+                  icon: const FushiIcon(FushiIcons.refresh),
+                  label: Text(t.srs_note_types_builtin_restore),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _controls(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsCardAppearance a = _appearance;
     String pct(double v) => '${(v * 100).round()}%';
     final List<Widget> sections = <Widget>[
+      if (!_sampleNative) _nativeOffNotice(context),
       // 其它卡片类型（Anki 导入牌组、Lapis、自建）的设计系统样式覆盖：下面各节只管 Fushi 卡片，
       // 这一项管其余全部卡片，放最前面。
       AdaptiveSettingsSection(

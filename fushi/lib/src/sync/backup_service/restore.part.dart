@@ -496,9 +496,7 @@ class BackupRestoreService {
       case 'video_download_subscriptions':
         await _insertVideoDownloadSubscriptionsFromBak(db);
       default:
-        await db.customStatement(
-          'INSERT INTO $table SELECT * FROM devbak.$table',
-        );
+        await _copyTableByColumnNames(db, schema: 'devbak', table: table);
     }
   }
 
@@ -656,6 +654,49 @@ class BackupRestoreService {
         .toList(growable: false);
   }
 
+  /// 把附加库 [schema] 里的 [table] 按**列名**复制进主库同名表（BUG：推荐包导入后
+  /// 启动 `FormatException: Invalid radix-10 number`）。
+  ///
+  /// 过去一律 `INSERT INTO t SELECT * FROM schema.t`——按**位置**复制。两边 schema 版本
+  /// 相同不代表物理列序相同：新装库由 onCreate 按 Dart 定义建表（profiles 是 id, name,
+  /// uid, created_at, updated_at），旧库经 v117 `addColumn` 把 uid 补在表尾（id, name,
+  /// created_at, updated_at, uid）。按位置复制就把 UUID 写进了 created_at，drift 读
+  /// ProfileRow 时 `int.parse` 当场抛，库已写坏、每次启动都炸。
+  ///
+  /// 现在取两边列名交集（以主库列序为准），生成显式列清单。[where] 是不带 `WHERE` 的
+  /// 谓词，列名按源表解析。只存在于一边的列：主库多出的取默认值，源库多出的丢弃。
+  static Future<void> _copyTableByColumnNames(
+    FushiDatabase db, {
+    required String schema,
+    required String table,
+    String? where,
+  }) async {
+    final List<QueryRow> targetRows = await db
+        .customSelect('PRAGMA main.table_info($table)')
+        .get();
+    final List<QueryRow> sourceRows = await db
+        .customSelect('PRAGMA $schema.table_info($table)')
+        .get();
+    final Set<String> sourceColumns = <String>{
+      for (final QueryRow row in sourceRows) row.read<String>('name'),
+    };
+    final List<String> columns = <String>[
+      for (final QueryRow row in targetRows)
+        if (sourceColumns.contains(row.read<String>('name')))
+          _quoteIdentifier(row.read<String>('name')),
+    ];
+    if (columns.isEmpty) {
+      throw StateError(
+        'restore: no common columns between main.$table and $schema.$table',
+      );
+    }
+    final String list = columns.join(', ');
+    await db.customStatement(
+      'INSERT INTO $table ($list) SELECT $list FROM $schema.$table'
+      '${where == null ? '' : ' WHERE $where'}',
+    );
+  }
+
   static String _quoteIdentifier(String value) =>
       '"${value.replaceAll('"', '""')}"';
 
@@ -806,9 +847,11 @@ class BackupRestoreService {
         await db!.customStatement(
           'DELETE FROM preferences WHERE key IN ($inList)',
         );
-        await db!.customStatement(
-          'INSERT INTO preferences '
-          'SELECT * FROM crbak.preferences WHERE key IN ($inList)',
+        await _copyTableByColumnNames(
+          db!,
+          schema: 'crbak',
+          table: 'preferences',
+          where: 'key IN ($inList)',
         );
       });
       await db.customStatement('DETACH DATABASE crbak');
@@ -2045,19 +2088,23 @@ class BackupRestoreService {
         await db.customStatement(
           'DELETE FROM preferences WHERE $_keepDeviceSettingsPrefPredicate',
         );
-        await db.customStatement(
-          'INSERT INTO preferences SELECT * FROM bak.preferences '
-          'WHERE $_keepDeviceSettingsPrefPredicate',
+        await _copyTableByColumnNames(
+          db,
+          schema: 'bak',
+          table: 'preferences',
+          where: _keepDeviceSettingsPrefPredicate,
         );
         // 制卡映射归 settings（[backupTableRules]）：保留本机设置时一并保留。
         await db.customStatement('DELETE FROM anki_mappings');
-        await db.customStatement(
-          'INSERT INTO anki_mappings SELECT * FROM bak.anki_mappings',
+        await _copyTableByColumnNames(
+          db,
+          schema: 'bak',
+          table: 'anki_mappings',
         );
         // profiles before its FK dependents.
         for (final String t in _settingsLayerTables) {
           await db.customStatement('DELETE FROM $t');
-          await db.customStatement('INSERT INTO $t SELECT * FROM bak.$t');
+          await _copyTableByColumnNames(db, schema: 'bak', table: t);
         }
       });
       await db.customStatement('DETACH DATABASE bak');
@@ -2078,7 +2125,8 @@ class BackupRestoreService {
   ///  - [reapplyProfiles]: the four profile-layer tables (child-first DELETE
   ///    then parent-first INSERT for FK-safety).
   /// Runs while both DBs are at the current schema (bak is a copy of the live
-  /// DB), so `SELECT *` columns align. No-op (logged) if bak is gone.
+  /// DB); columns are copied by name ([_copyTableByColumnNames]) because the two
+  /// files' physical column order can differ. No-op (logged) if bak is gone.
   static Future<void> _reapplyExcludedSettingsLayers(
     String dbDirectory,
     String bakPath, {
@@ -2108,14 +2156,18 @@ class BackupRestoreService {
           await db.customStatement(
             'DELETE FROM preferences WHERE $settingsPrefPredicate',
           );
-          await db.customStatement(
-            'INSERT INTO preferences SELECT * FROM setbak.preferences '
-            'WHERE $settingsPrefPredicate',
+          await _copyTableByColumnNames(
+            db,
+            schema: 'setbak',
+            table: 'preferences',
+            where: settingsPrefPredicate,
           );
           // 制卡映射归 settings（[backupTableRules]）：导出侧整表剥离，这里对称回灌。
           await db.customStatement('DELETE FROM anki_mappings');
-          await db.customStatement(
-            'INSERT INTO anki_mappings SELECT * FROM setbak.anki_mappings',
+          await _copyTableByColumnNames(
+            db,
+            schema: 'setbak',
+            table: 'anki_mappings',
           );
         }
         if (reapplyProfiles) {
@@ -2126,7 +2178,7 @@ class BackupRestoreService {
             await db.customStatement('DELETE FROM $t');
           }
           for (final String t in _settingsLayerTables) {
-            await db.customStatement('INSERT INTO $t SELECT * FROM setbak.$t');
+            await _copyTableByColumnNames(db, schema: 'setbak', table: t);
           }
         }
       });
@@ -2176,7 +2228,7 @@ class BackupRestoreService {
       await db.transaction(() async {
         for (final String t in _dictionaryLayerTables) {
           await db.customStatement('DELETE FROM $t');
-          await db.customStatement('INSERT INTO $t SELECT * FROM dictbak.$t');
+          await _copyTableByColumnNames(db, schema: 'dictbak', table: t);
         }
       });
       await db.customStatement('DETACH DATABASE dictbak');

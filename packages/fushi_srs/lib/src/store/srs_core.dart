@@ -95,6 +95,18 @@ typedef _OpenDart =
       ffi.Pointer<ffi.Pointer<ffi.Void>>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
+typedef _SetTempDirC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _SetTempDirDart =
+    int Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
 typedef _CloseC = ffi.Void Function(ffi.Pointer<ffi.Void>);
 typedef _CloseDart = void Function(ffi.Pointer<ffi.Void>);
 typedef _SimpleC =
@@ -261,6 +273,9 @@ final class SrsCoreBindings {
   SrsCoreBindings._(FushiFsrs fsrs, ffi.DynamicLibrary lib)
     : _fsrs = fsrs,
       open = lib.lookupFunction<_OpenC, _OpenDart>('ffsrs_store_open'),
+      setTempDir = lib.lookupFunction<_SetTempDirC, _SetTempDirDart>(
+        'ffsrs_set_temp_dir',
+      ),
       close = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_close'),
       legacyState = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_legacy_state',
@@ -300,6 +315,9 @@ final class SrsCoreBindings {
       inTransaction = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_in_transaction',
       ),
+      readConcurrency = lib.lookupFunction<_StateC, _StateDart>(
+        'ffsrs_store_read_concurrency',
+      ),
       historyStates = lib.lookupFunction<_HistC, _HistDart>(
         'ffsrs_store_history_states',
       ),
@@ -317,6 +335,7 @@ final class SrsCoreBindings {
 
   final FushiFsrs _fsrs;
   final _OpenDart open;
+  final _SetTempDirDart setTempDir;
   final _CloseDart close;
   final _StateDart legacyState;
   final _SimpleDart legacyBegin;
@@ -332,6 +351,7 @@ final class SrsCoreBindings {
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
+  final _StateDart readConcurrency;
   final _HistDart historyStates;
   final _CmdDart optimizerItems;
   final _CmdDart rwkvRows;
@@ -382,6 +402,9 @@ final class SrsCoreBindings {
 }
 
 /// 一个打开的 srs.db。
+/// [SrsCore.snapshotQuery] 拒绝非只读查询时的错误消息（与 Rust `store::NOT_SNAPSHOT` 相同）。
+const String kSrsNotSnapshotQuery = 'srs: not a snapshot query';
+
 final class SrsCore {
   SrsCore._(this._b, this._handle, {required this.owned});
 
@@ -394,6 +417,21 @@ final class SrsCore {
   /// 自本次开机以来的毫秒，含睡眠、不受改系统时间影响（`ffsrs_boot_time_ms`）。可信时间
   /// （[SrsTrustedClock]）按它推算；取不到时抛 [StateError]（原生库是硬依赖，不退回别的时钟）。
   int bootTimeMs() => _b._bootTimeMs();
+
+  /// 设本进程 srs.db 的 SQLite 临时目录（大排序、整理、备份快照的溢出文件）：整个进程只设一次，必须在打开任何
+  /// srs.db 之前（`ffsrs_set_temp_dir`）。再传同一个目录是空操作，传别的目录抛 [SrsCoreException]。
+  ///
+  /// Android 上必须设（没有平台默认临时目录，不设打不开库），传 app 的 cache 目录这种跟进程走、不会被删的目录；
+  /// 不要传某份库所在的目录（备份恢复会在同一进程开解压到临时目录的源库，那个目录随后被删）。
+  static void useTempDirectory(String dir, {String? libraryPath}) {
+    final SrsCoreBindings b = SrsCoreBindings.load(libraryPath: libraryPath);
+    using((Arena arena) {
+      final (ffi.Pointer<ffi.Uint8> p, int n) = _utf8(arena, dir);
+      final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+      err.value = ffi.nullptr;
+      _check(b, b.setTempDir(p, n, err), err);
+    });
+  }
 
   /// 在当前 isolate 同步打开 / 新建 [path]（`<数据库目录>/srs.db`）。可能整段做格式升级：只给测试与已在
   /// 后台 isolate 里的代码用，app 走 [openInBackground]（守卫 fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart）。
@@ -557,7 +595,15 @@ final class SrsCore {
   Uint8List execQuery(String sql, List<Object?> params) =>
       _exec(sql, params, 2);
 
-  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询（ffi.rs `ffsrs_store_exec`）。
+  /// Drift 事务**外**的查询（fushi_engine `srs_database_executor.dart` 的读查询那一路）：一律在内核的只读连接池
+  /// 里执行，并发的查询各占一条连接、互不排队，只看已提交的数据（native/fushi_fsrs/src/store/mod.rs
+  /// `SrsCore::snapshot_select`）。不是只读查询（PRAGMA、`… RETURNING` 等）不执行、抛 [SrsCoreException]，
+  /// 消息为 [kSrsNotSnapshotQuery]，调用方改走 [execQuery]。返回页同 [execQuery]。
+  Uint8List snapshotQuery(String sql, List<Object?> params) =>
+      _exec(sql, params, 3);
+
+  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询，3 = 事务外快照查询
+  /// （ffi.rs `ffsrs_store_exec`）。
   Uint8List _exec(String sql, List<Object?> params, int mode) =>
       using((Arena arena) {
         final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
@@ -814,6 +860,16 @@ final class SrsCore {
     );
     _b._freeBytes(out.value, len);
     return bytes;
+  });
+
+  /// Drift 事务外查询（[snapshotQuery]）的并发上限：内核只读连接池的连接数上限，按本机核数算
+  /// （native/fushi_fsrs/src/store/read_pool.rs `read_concurrency`）。查询道的 worker 数取它，不另写常量。
+  int get readConcurrency => using((Arena arena) {
+    final ffi.Pointer<ffi.Int32> out = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(_b, _b.readConcurrency(_h, out, err), err);
+    return out.value;
   });
 
   /// 写连接当前是否在事务里。

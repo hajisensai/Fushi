@@ -25,6 +25,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 名字校验结果 → 提示文案（笔记类型名 / 字段名 / 模板名共用）。
 String? srsNameProblemText(SrsNameProblem? p) => switch (p) {
@@ -126,11 +127,9 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
       );
 
   Future<void> _open(SrsNoteTypeView type) async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsNoteTypeEditorPage(noteTypeId: type.id),
-      ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsNoteTypeEditorPage(noteTypeId: type.id),
     );
     if (mounted) await _afterWrite();
   }

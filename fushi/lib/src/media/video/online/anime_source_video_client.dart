@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -10,6 +12,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.d
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
+import 'package:fushi/src/media/video/online/anime_source_mpv_args.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -125,8 +128,51 @@ class AnimeSourceVideoClient
   String get coverCacheNamespace => remoteLibrarySourceId;
 
   @override
-  Map<String, String> get httpHeaderFields =>
-      _currentVideo?.headers ?? const <String, String>{};
+  Map<String, String> get httpHeaderFields {
+    final MihonVideo? video = _currentVideo;
+    return video == null ? const <String, String>{} : streamHeadersFor(video);
+  }
+
+  /// 取流请求头：扩展 `mpvArgs` 白名单里的头（[AnimeSourceMpvArgs]）打底，
+  /// `Video.headers` 显式给的覆盖它。播放、外挂音轨、下载、同站字幕共用。
+  static Map<String, String> streamHeadersFor(MihonVideo video) {
+    final AnimeSourceMpvArgs mpv = AnimeSourceMpvArgs.parse(video.mpvArgs);
+    if (mpv.headers.isEmpty) return video.headers;
+    return <String, String>{...mpv.headers, ...video.headers};
+  }
+
+  /// 候选的可选外挂音轨（EXlaIL2eKQ）：`Video.audioTracks` + `mpvArgs` 白名单里的
+  /// `audio-file(s)`，按 URL 去重。语义与上游 Aniyomi 一致——播放器 `audio-add
+  /// ... auto` 外挂、交给 mpv 默认选轨：流自带音轨时仍放原声（这些是替代配音），
+  /// DASH 纯视频流没有自带音轨时自动选中外挂音频。
+  static List<RemoteVideoExternalAudioTrack> externalAudioTracksFor(
+    MihonVideo video,
+  ) {
+    final Set<String> seen = <String>{};
+    return <RemoteVideoExternalAudioTrack>[
+      for (final MihonVideoTrack track in video.audioTracks)
+        if (seen.add(track.url))
+          RemoteVideoExternalAudioTrack(
+            url: track.url,
+            label: track.lang.isEmpty ? null : track.lang,
+          ),
+      for (final String url in AnimeSourceMpvArgs.parse(
+        video.mpvArgs,
+      ).audioFiles)
+        if (seen.add(url)) RemoteVideoExternalAudioTrack(url: url),
+    ];
+  }
+
+  static void _logIgnoredMpvArgs(MihonVideo video) {
+    final List<String> ignored = AnimeSourceMpvArgs.parse(
+      video.mpvArgs,
+    ).ignoredKeys;
+    if (ignored.isEmpty) return;
+    debugPrint(
+      '[AnimeSourceVideoClient] ignoring non-whitelisted mpvArgs: '
+      '${ignored.join(', ')}',
+    );
+  }
 
   /// 与 [episodes] 同序的集 id（见 [_buildEpisodeIds]）。
   late final List<String> _episodeIds;
@@ -363,17 +409,20 @@ class AnimeSourceVideoClient
       _defaultSubtitleLanguage = preferredSubtitleLanguage,
     );
     final String streamUrl = chosen.resolvedUrl;
+    _logIgnoredMpvArgs(chosen);
     return RemoteVideoStreamUrls(
       streamUrl: streamUrl,
       subtitleUrl: subtitle?.url,
       subtitleFileName: subtitle == null
           ? null
           : subtitleFileNameFor(subtitle, episode),
-      // Aniyomi lib-14 的 `Video.audioTracks` 是**可选替代配音轨**（流本身带原声），
-      // 不是 YouTube 那种 audio-only 分离流；[RemoteVideoStreamUrls.audioStreamUrl]
-      // 的契约是后者（播放页会 audio-add 并选中它），塞进去会默认切到第一条配音、
-      // 制卡也从它裁。替代音轨选择器留二期，这里恒 null。
+      // `Video.audioTracks` 不走 [RemoteVideoStreamUrls.audioStreamUrl]（那条是
+      // 「必须选中」的 audio-only 分离流，播放页 `audio-add ... select`）：它既可能
+      // 是替代配音（流自带原声），也可能是 DASH 分离流的唯一音频。两种语义都交给
+      // [RemoteVideoStreamUrls.externalAudioTracks]（`audio-add ... auto`）由 mpv
+      // 默认选轨决定（EXlaIL2eKQ）。
       audioStreamUrl: null,
+      externalAudioTracks: externalAudioTracksFor(chosen),
       // 全部字幕轨交给播放页的字幕轨菜单（与媒体服务器同一条通路：选中即经
       // [getRemoteVideoSubtitle] 的 `embeddedStreamIndex` 下载那一条）。
       embeddedSubtitleTracks: subtitleTrackList(chosen.subtitleTracks, episode),
@@ -477,7 +526,7 @@ class AnimeSourceVideoClient
         subtitleUri.port == streamUri.port;
     final http.Response response = await _httpClient.get(
       subtitleUri,
-      headers: sameSite && video.headers.isNotEmpty ? video.headers : null,
+      headers: sameSite ? _nonEmptyOrNull(streamHeadersFor(video)) : null,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw http.ClientException(
@@ -494,8 +543,8 @@ class AnimeSourceVideoClient
   /// URL 必然失败，BUG-2617），挑法与起播同一套（钉住的线路 > 扩展排好的默认）。
   /// 选中的候选记为当前流，随后 [getRemoteVideoSubtitle] 下的就是这条流的默认字幕。
   ///
-  /// 扩展要求 mpv 专属参数（[MihonVideo.mpvArgs]）的流没有下载器等价物：照常尝试，
-  /// 失败如实报错。
+  /// 扩展的 [MihonVideo.mpvArgs] 按白名单（[AnimeSourceMpvArgs]）翻译成请求头 /
+  /// 外挂音轨，白名单外的选项没有下载器等价物：照常尝试，失败如实报错。
   @override
   Future<void> downloadRemoteVideo(
     String id,
@@ -523,15 +572,39 @@ class AnimeSourceVideoClient
     _currentVideo = chosen;
     _currentEpisodeId = id;
     _defaultSubtitleLanguage = preferredSubtitleLanguage;
-    await _downloader.download(
+    _logIgnoredMpvArgs(chosen);
+    final List<RemoteVideoExternalAudioTrack> audio = externalAudioTracksFor(
+      chosen,
+    );
+    final Map<String, String> headers = streamHeadersFor(chosen);
+    if (audio.isEmpty) {
+      await _downloader.download(
+        url: chosen.resolvedUrl,
+        headers: headers,
+        dest: dest,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        cancelSignal: cancelSignal,
+      );
+      return;
+    }
+    // DASH 分离流：只下画面会得到无声视频。外挂音轨一并下载、与画面合成一个文件
+    // （画面自带音轨在前，外挂音轨按序跟在后面）。
+    await _downloader.downloadWithExternalAudio(
       url: chosen.resolvedUrl,
-      headers: chosen.headers,
+      audioUrls: <String>[
+        for (final RemoteVideoExternalAudioTrack track in audio) track.url,
+      ],
+      headers: headers,
       dest: dest,
       onProgress: onProgress,
       onBytes: onBytes,
       cancelSignal: cancelSignal,
     );
   }
+
+  static Map<String, String>? _nonEmptyOrNull(Map<String, String> headers) =>
+      headers.isEmpty ? null : headers;
 
   /// 当前流（[id] 最近一次取流 / 下载选中的那条）默认字幕轨的落盘文件名；没有
   /// 字幕轨或当前流不是这一集时返回 null。

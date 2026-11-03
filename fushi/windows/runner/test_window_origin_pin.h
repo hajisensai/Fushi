@@ -60,4 +60,34 @@ inline bool PinWindowPosOrigin(WINDOWPOS* pos,
   return true;
 }
 
+// BUG-3888: FUSHI_TEST_WINDOW_RECT also pins the outer size, so frame-time
+// probes compare runs at the same pixel count (Dart startup placement sizes the
+// window from the current work area, which follows the user's displays).
+// Nothing is pinned outside test-hidden mode or without the rect.
+inline std::optional<SIZE> ResolveTestWindowSizePin(bool hidden,
+                                                    std::optional<SIZE> rect) {
+  if (!hidden || !rect.has_value() || rect->cx <= 0 || rect->cy <= 0) {
+    return std::nullopt;
+  }
+  return rect;
+}
+
+// Rewrites a WM_WINDOWPOSCHANGING request so the window keeps |pin| as its
+// outer size. SWP_NOSIZE requests and iconic windows are left untouched.
+// Returns true when |pos| was changed.
+inline bool PinWindowPosSize(WINDOWPOS* pos,
+                             std::optional<SIZE> pin,
+                             bool iconic) {
+  if (pos == nullptr || !pin.has_value() || iconic ||
+      (pos->flags & SWP_NOSIZE) != 0) {
+    return false;
+  }
+  if (pos->cx == pin->cx && pos->cy == pin->cy) {
+    return false;
+  }
+  pos->cx = pin->cx;
+  pos->cy = pin->cy;
+  return true;
+}
+
 #endif  // RUNNER_TEST_WINDOW_ORIGIN_PIN_H_

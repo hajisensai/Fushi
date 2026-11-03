@@ -1,9 +1,9 @@
 //! SRS 事件库：Rust 独占的 `srs.db`（docs/specs/2026-10-23-srs-rust-store.md）。
 //!
 //! 一条写连接 + 两条读连接，各在一把 Mutex 里：写命令 = 写连接上的一个事务（这把锁就是 SRS 的
-//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住；Drift 执行器在事务外的查询走它自己的那条读连接
-//! （[SrsCore::select]），不与 Rust 的读命令（备份 `VACUUM INTO`、投影扫描）互相排队。对象可以从任意
-//! 线程 / isolate 调用。
+//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住；Drift 执行器在事务外的查询走它自己的只读连接池
+//! （[SrsCore::snapshot_select]，store/read_pool.rs：并发的查询各占一条、互不排队），也不与 Rust 的读命令
+//! （备份 `VACUUM INTO`、投影扫描）互相排队。对象可以从任意线程 / isolate 调用。
 //!
 //! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
 //! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。还没结束的只读
@@ -25,6 +25,7 @@ pub mod rows;
 mod profile_data;
 mod projections;
 pub(crate) mod queue;
+mod read_pool;
 pub mod schema;
 pub mod study;
 pub mod sync2;
@@ -48,8 +49,12 @@ pub struct SrsCore {
     // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
     // `None` = 已关闭（[SrsCore::close]）。
     reader: Mutex<Option<Connection>>,
-    /// Drift 执行器事务外查询专用的读连接（[SrsCore::select]）。
-    drift_reader: Mutex<Option<Connection>>,
+    /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
+    drift_readers: read_pool::ReadPool,
+    /// Drift 写那一路（顺序执行器，`ffsrs_store_exec` mode 2）在事务外的查询专用的一条只读连接（[SrsCore::select]）。
+    /// 不从 [SrsCore::drift_readers] 借：Dart 查询道的 worker 数等于池上限，几条长读就能把池借满，写 isolate 上的
+    /// 查询若去池里等连接，排在它后面的所有写都跟着等（PR 2771 审查）。写那一路一次只跑一条语句，一条连接就不会等。
+    drift_write_reader: Mutex<Option<Connection>>,
     writer: Mutex<Option<Connection>>,
     /// Drift 在写连接上开着事务（它用 BEGIN / SAVEPOINT 语句经 [SrsCore::exec] 开关）。每条经 [SrsCore::exec] /
     /// [SrsCore::exec_batch] 跑完的语句之后按写连接的 autocommit 状态更新；只有这两个入口能让事务跨命令留着
@@ -115,6 +120,21 @@ impl<'a> Conn<'a> {
 /// 大命令跑完不常驻几十 MB。
 const IDLE_CACHE_BYTES: i32 = 8 * 1024 * 1024;
 
+/// 一条命令跑完、连接放回时：页缓存超过 [IDLE_CACHE_BYTES] 就把能丢的页还掉。
+pub(crate) fn trim_idle_cache(c: &Connection) {
+    let (mut used, mut high) = (0, 0);
+    // SAFETY: 句柄属于调用方独占着的这条连接，只读一项统计。
+    let rc = unsafe {
+        rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+    };
+    if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
+        let _ = c.release_memory();
+    }
+}
+
+/// [SrsCore::snapshot_select] 拒绝的语句（不是能放到只读连接上的查询）的错误文本：Dart 侧据此把它改发写连接那一路。
+pub const NOT_SNAPSHOT: &str = "srs: not a snapshot query";
+
 impl Drop for Conn<'_> {
     fn drop(&mut self) {
         let Some(c) = self.0.as_ref() else { return };
@@ -123,14 +143,7 @@ impl Drop for Conn<'_> {
                 hub.settle();
             }
         }
-        let (mut used, mut high) = (0, 0);
-        // SAFETY: 句柄属于这条仍持着锁的连接，只读一项统计。
-        let rc = unsafe {
-            rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
-        };
-        if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
-            let _ = c.release_memory();
-        }
+        trim_idle_cache(c);
     }
 }
 
@@ -226,6 +239,16 @@ impl Drop for SrsCore {
     }
 }
 
+/// [read_pool::ReadPool] 的开连接函数：只读打开、配置同读连接。
+fn open_drift_reader(path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
+    configure(&conn)?;
+    #[cfg(any(test, feature = "id_audit"))]
+    let conn = ids::audit::installed(conn);
+    Ok(conn)
+}
+
 fn configure(conn: &Connection) -> Result<(), String> {
     conn.busy_timeout(Duration::from_millis(5000))
         .map_err(|e| e.to_string())?;
@@ -253,32 +276,37 @@ impl SrsCore {
     /// [open]，库所在卷的空闲空间由 [free] 给（测试注入）：升级前空间不够就不升级、报
     /// [schema::UPGRADE_NO_SPACE]（库不动）。
     pub(crate) fn open_with_free_space(path: &Path, free: impl Fn(&Path) -> Option<u64>) -> Result<Self, String> {
-        let mut writer = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|e| format!("open {}: {e}", path.display()))?;
-        configure(&writer)?;
-        #[cfg(any(test, feature = "id_audit"))]
-        ids::audit::install(&mut writer);
-        let mode: String = writer
-            .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
-            .map_err(|e| e.to_string())?;
-        if !mode.eq_ignore_ascii_case("wal") {
-            return Err(format!("srs.db journal_mode is {mode}, expected wal"));
-        }
+        // 升级阶梯整表重建 / 建索引、整理、快照的排序溢出都落临时文件：Android 上宿主必须先给进程级临时目录。
+        compact::require_temp_dir()?;
+        let open_writer = || -> Result<Connection, String> {
+            #[allow(unused_mut)]
+            let mut writer = Connection::open_with_flags(
+                path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | OpenFlags::SQLITE_OPEN_CREATE
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|e| format!("open {}: {e}", path.display()))?;
+            configure(&writer)?;
+            #[cfg(any(test, feature = "id_audit"))]
+            ids::audit::install(&mut writer);
+            // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
+            // 是记下「下次整库重写时改成 INCREMENTAL」，由 compact 的重写换文件那一步落实。
+            writer.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;").map_err(|e| e.to_string())?;
+            let mode: String = writer
+                .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            if !mode.eq_ignore_ascii_case("wal") {
+                return Err(format!("srs.db journal_mode is {mode}, expected wal"));
+            }
+            Ok(writer)
+        };
+        let mut writer = open_writer()?;
         schema::check_upgrade_space(&writer, free(path))?;
-        let dir = path.parent().unwrap_or(Path::new("."));
-        // 升级阶梯整表重建、建索引，大库的排序会溢出到临时文件：与整理一样放在库所在目录（Android 没有默认临时目录）。
-        compact::set_temp_dir(&writer, dir);
-        let migrated = schema::migrate(&mut writer);
-        compact::clear_temp_dir(&writer);
-        migrated?;
-        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
+        schema::migrate(&mut writer)?;
+        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。重写换文件时会换掉写连接。
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-        compact::run(&writer, dir, free(path), now);
+        let writer = compact::run(writer, path, free(path), now, &open_writer)?;
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
@@ -289,18 +317,14 @@ impl SrsCore {
         configure(&reader)?;
         #[cfg(any(test, feature = "id_audit"))]
         let reader = ids::audit::installed(reader);
-        let drift_reader = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
-        configure(&drift_reader)?;
-        #[cfg(any(test, feature = "id_audit"))]
-        let drift_reader = ids::audit::installed(drift_reader);
+        let drift_readers =
+            read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
+        let drift_write_reader = open_drift_reader(path)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
-            drift_reader: Mutex::new(Some(drift_reader)),
+            drift_readers,
+            drift_write_reader: Mutex::new(Some(drift_write_reader)),
             drift_tx: AtomicBool::new(false),
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
@@ -324,9 +348,6 @@ impl SrsCore {
         Conn::of(self.reader.lock().map_err(|_| "srs reader poisoned".to_string())?)
     }
 
-    fn drift_reader(&self) -> Result<Conn<'_>, String> {
-        Conn::of(self.drift_reader.lock().map_err(|_| "srs drift reader poisoned".to_string())?)
-    }
 
     /// 写连接上是否挂着跨命令的事务（Drift 的事务或旧库搬迁）：挂着时只读命令也必须在写连接上读，
     /// 才看得见那笔事务里未提交的行。
@@ -362,9 +383,17 @@ impl SrsCore {
         // 先关读连接：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         let reader = self.reader.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(reader);
-        let drift_reader = self.drift_reader.lock().unwrap_or_else(|e| e.into_inner()).take();
-        drop(drift_reader);
-        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
+        // 等在途的 Drift 事务外查询把连接放回（放回即关）。
+        self.drift_readers.close();
+        // 写那一路的事务外查询连接：拿锁即等在途的那条查询跑完。
+        let drift_write_reader = self
+            .drift_write_reader
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        drop(drift_write_reader);
+        let sessions =
+            std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
         for s in sessions.iter().filter_map(Weak::upgrade) {
             s.close();
         }
@@ -514,9 +543,21 @@ impl SrsCore {
                  DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
-                 COMMIT; VACUUM;",
+                 COMMIT;",
             )
             .map_err(|e| e.to_string())?;
+            // 收回清掉的页。快照随源库的 auto_vacuum：INCREMENTAL（整理过 / 新建的库）就原地收缩，一直 step 到
+            // 空闲链表清空（compact::incremental_vacuum；只 step 一次只收 1–2 页）；老库才整库 VACUUM，整理副本落
+            // 临时文件（构建参数 SQLITE_TEMP_STORE=1、进程级临时目录 compact::use_temp_dir），不在内存里堆一份。
+            let incremental = snap
+                .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
+                .map_err(|e| e.to_string())?
+                == 2;
+            if incremental {
+                compact::incremental_vacuum(&snap, None).map_err(|e| e.to_string())?;
+            } else {
+                snap.execute_batch("VACUUM;").map_err(|e| e.to_string())?;
+            }
         }
         Ok(())
     }
@@ -540,9 +581,10 @@ impl SrsCore {
         out
     }
 
-    /// Drift 的查询（`QueryDelegate.runSelect`）：Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，
-    /// 看得见那笔事务里未提交的行；否则只读查询走 Drift 专用读连接的 WAL 快照，不排写锁（Rust 的长写命令、
-    /// 收段投递进行中照样能读），读到的是此刻已提交的数据。
+    /// Drift 写连接那一路的查询（`ffsrs_store_exec` mode 2：事务里的查询、`RETURNING`、PRAGMA、内联执行器）：
+    /// Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，看得见那笔事务里未提交的行；否则只读查询走
+    /// 写那一路专用的只读连接（[SrsCore::drift_write_reader]，不进查询道的连接池、不在池上限上等），不排写锁（Rust
+    /// 的长写命令、收段投递进行中照样能读），读到的是此刻已提交的数据。
     ///
     /// 写后立即读成立：Drift 的写语句（autocommit）与 COMMIT 都在 [SrsCore::exec] 返回前提交完；读连接每条语句
     /// 自成一个读事务（语句跑完即复位，不留跨调用的读事务），开读事务时取最新的 WAL 尾，所以 Dart 等到写返回后
@@ -555,17 +597,64 @@ impl SrsCore {
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        if !self.writer_tx_open() && snapshot_query(sql) {
-            let r = self.drift_reader()?;
-            let readonly = r.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?.readonly();
-            if readonly {
-                let out = Self::exec_on(&r, sql, params, true);
-                #[cfg(feature = "id_audit")]
-                ids::audit::take(&r, sql)?;
-                return out;
+        if !self.writer_tx_open() {
+            let done = {
+                let guard = self
+                    .drift_write_reader
+                    .lock()
+                    .map_err(|_| "srs drift write reader poisoned".to_string())?;
+                let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
+                let out = Self::snapshot_on(r, sql, params);
+                // 常驻的这条只读连接和 Conn / 读连接池放回时同一约定：查询之间页缓存收到 IDLE_CACHE_BYTES 以内，
+                // 写那一路做过一次大读后不常驻最多 64 MB（cache_size）。
+                trim_idle_cache(r);
+                out
+            };
+            match done {
+                Err(e) if e == NOT_SNAPSHOT => {}
+                done => return done,
             }
         }
         self.exec(sql, params, true)
+    }
+
+    /// Drift 事务外查询的并发上限（只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
+    /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
+    pub fn read_concurrency(&self) -> usize {
+        self.drift_readers.cap()
+    }
+
+    /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池
+    /// （store/read_pool.rs）里借一条连接执行，不看 Drift 事务开没开、不碰写连接——事务外的读本来就只该看已提交
+    /// 的数据；并发的查询各占一条连接并行执行。语句不是以 SELECT / WITH / VALUES 开头、或 SQLite 判为非只读，
+    /// 报 [NOT_SNAPSHOT]（不执行），由调用方改走写连接那一路（[SrsCore::select]）。
+    pub fn snapshot_select(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        if !snapshot_query(sql) {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let r = self.drift_readers.get()?;
+        Self::snapshot_on(&r, sql, params)
+    }
+
+    /// 在只读连接 [r] 上执行一条事务外查询；不是 SQLite 判为只读的查询报 [NOT_SNAPSHOT]（不执行）。
+    fn snapshot_on(r: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if !snapshot_query(sql) {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let readonly = r
+            .prepare_cached(sql)
+            .map_err(|e| format!("{e} in {sql}"))?
+            .readonly();
+        if !readonly {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let out = Self::exec_on(r, sql, params, true);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(r, sql)?;
+        out
     }
 
     fn exec_on(conn: &Connection, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
@@ -1015,11 +1104,11 @@ mod tests {
         let p = temp("snap");
         let core = SrsCore::open(&p).unwrap();
         core.legacy_begin().unwrap();
-        core.legacy_page(
-            "srs_local_state",
-            &rows::encode(2, &[vec![Value::Text("p".into()), Value::Text("{}".into())]]),
-        )
-        .unwrap();
+        // 本机状态占几百页：剥掉后腾出的页要真的从快照文件里收掉。
+        let big = format!("{{\"pad\":\"{}\"}}", "x".repeat(4000));
+        let local: Vec<Vec<Value>> =
+            (0..300).map(|i| vec![Value::Text(format!("p{i}")), Value::Text(big.clone())]).collect();
+        core.legacy_page("srs_local_state", &rows::encode(2, &local)).unwrap();
         core.legacy_page(
             "srs_unknown_events",
             &rows::encode(
@@ -1031,6 +1120,17 @@ mod tests {
         core.legacy_commit().unwrap();
         let snap = p.with_file_name("snap.db");
         core.snapshot_into(&snap, true).unwrap();
+        let whole = p.with_file_name("whole.db");
+        core.snapshot_into(&whole, false).unwrap();
+        {
+            let raw = Connection::open(&snap).unwrap();
+            let pragma = |n: &str| raw.query_row(&format!("PRAGMA {n}"), [], |r| r.get::<_, i64>(0)).unwrap();
+            assert_eq!(pragma("auto_vacuum"), 2, "new databases are INCREMENTAL");
+            assert_eq!(pragma("freelist_count"), 0, "stripped pages reclaimed");
+        }
+        let (snap_len, whole_len) =
+            (std::fs::metadata(&snap).unwrap().len(), std::fs::metadata(&whole).unwrap().len());
+        assert!(snap_len + 200 * 4096 < whole_len, "stripped {snap_len} vs whole {whole_len}");
         let s = SrsCore::open(&snap).unwrap();
         assert_eq!(count(&s, "srs_local_state"), 0);
         assert_eq!(count(&s, "srs_unknown_events"), 1);
@@ -1161,6 +1261,49 @@ mod read_routing_tests {
     /// `last_insert_rowid()` 是每条连接自己的：写连接上刚插过行就非 0，读连接上恒为 0。用它看查询落在哪条连接上。
     fn on_writer(core: &SrsCore) -> bool {
         scalar(&core.select("SELECT last_insert_rowid()", &[]).unwrap()) != Value::Integer(0)
+    }
+
+    fn cache_used(c: &Connection) -> i32 {
+        let (mut used, mut high) = (0, 0);
+        // SAFETY: 测试独占这条连接，只读一项统计。
+        let rc = unsafe {
+            rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+        };
+        assert_eq!(rc, rusqlite::ffi::SQLITE_OK);
+        used
+    }
+
+    /// 写那一路的常驻只读连接（drift_write_reader）和 Conn / 读连接池同一约定：一条大查询跑完，页缓存收到
+    /// IDLE_CACHE_BYTES（8 MB）以内，不常驻到 cache_size（64 MB）。对照：同样的查询在一条不收缓存的只读连接上
+    /// 跑完会留 8 MB 以上，证明这条查询确实把缓存撑过了上限。
+    #[test]
+    fn select_trims_the_write_path_reader_cache_after_a_large_read() {
+        let core = open("write_reader_trim");
+        core.writer()
+            .unwrap()
+            .execute_batch(
+                // 不自动 checkpoint：行留在 WAL 里。主文件里的页走 mmap、不占页缓存；WAL 里的帧（以及超出 mmap
+                // 256 MB 的部分）才读进页缓存——那正是一条连接会常驻几十 MB 的情形。
+                "PRAGMA wal_autocheckpoint = 0;
+                 CREATE TABLE cache_probe (b BLOB);
+                 INSERT INTO cache_probe SELECT randomblob(3500) FROM
+                   (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 6000) SELECT x FROM c);",
+            )
+            .unwrap();
+        let scan = "SELECT COUNT(*) FROM cache_probe WHERE b IS NOT NULL";
+        let control = open_drift_reader(&core.path).unwrap();
+        let n: i64 = control.query_row(scan, [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 6000);
+        assert!(
+            cache_used(&control) > IDLE_CACHE_BYTES,
+            "scan did not grow an untrimmed page cache past the idle cap ({} bytes)",
+            cache_used(&control)
+        );
+        assert_eq!(scalar(&core.select(scan, &[]).unwrap()), Value::Integer(6000));
+        core.writer().unwrap().execute_batch("PRAGMA wal_autocheckpoint = 1000").unwrap();
+        let guard = core.drift_write_reader.lock().unwrap();
+        let used = cache_used(guard.as_ref().unwrap());
+        assert!(used <= IDLE_CACHE_BYTES, "write-path reader kept {used} bytes of page cache after select");
     }
 
     #[test]

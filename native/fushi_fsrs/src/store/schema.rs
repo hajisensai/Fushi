@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 18;
+pub const SCHEMA_VERSION: i64 = 19;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -377,7 +377,8 @@ pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Resul
         c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).map(|v| v.max(0) as u64).map_err(|e| e.to_string())
     };
     let live = pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
-    let need = live.saturating_mul(2).saturating_add(UPGRADE_MARGIN);
+    // v18 之后的步骤（v19 去掉合成写入者）不重建整表：只改几百行、改完更小，WAL 里只多这些页，余量就够。
+    let need = if current >= 18 { UPGRADE_MARGIN } else { live.saturating_mul(2).saturating_add(UPGRADE_MARGIN) };
     if free < need {
         return Err(format!(
             "{UPGRADE_NO_SPACE}{}",
@@ -563,6 +564,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             [super::compact::PENDING],
         )
         .map_err(|e| e.to_string())?; }
+    }
+    if current < 19 {
+        // V19：因果上下文里去掉合成写入者 `sync2:`（BUG-3959，store/sync2/mod.rs [super::sync2::strip_synthetic_writers]）。
+        // 只改投影与 `sync2_legacy`，操作日志不动；可重放。腾出的页留在空闲链表、由之后的写入复用，不排整理
+        // （VACUUM 要整库重写、峰值多占两倍有效数据，为一成左右的空间不值得在打开时做）。
+        super::sync2::strip_synthetic_writers(&tx)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

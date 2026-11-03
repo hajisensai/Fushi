@@ -353,6 +353,8 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
     if (r.detail != null) 'detail': r.detail,
     // BUG-1549：成功时回传实际落卡的牌组名（旧客户端/扩展忽略即可，向后兼容）。
     if (r.deckName != null) 'deckName': r.deckName,
+    // EMI05fe8RJ：失败分型（扩展据此把永久失败移出待生成队列；旧扩展忽略）。
+    if (r.errorKind != null) 'errorKind': r.errorKind!.name,
   };
 }
 
@@ -411,6 +413,7 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
     if (r.detail != null) 'detail': r.detail,
     // BUG-1549：成功时回传主机实际落卡的牌组名，供客户端成功 toast 显示。
     if (r.deckName != null) 'deckName': r.deckName,
+    if (r.errorKind != null) 'errorKind': r.errorKind!.name,
   };
 }
 

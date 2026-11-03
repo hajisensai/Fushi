@@ -151,6 +151,10 @@ class Win32Window {
   // see test_window_origin_pin.h); nullopt outside FUSHI_TEST_HIDDEN.
   std::optional<POINT> test_origin_pin_;
 
+  // BUG-3888: test-mode outer size every resize is pinned to
+  // (FUSHI_TEST_WINDOW_RECT only); nullopt otherwise.
+  std::optional<SIZE> test_size_pin_;
+
   // window handle for top level window.
   HWND window_handle_ = nullptr;
 

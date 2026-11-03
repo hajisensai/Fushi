@@ -25,7 +25,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 出现「一条线 + 零文字」那种无法解读的状态（用户据此分不清在同步还是在空转）。
 ///
 /// 复习（SRS）同步一轮可能下载几千段、跑十几分钟，它不经 [syncInProgress]，所以这条 banner
-/// 另听 [srsSyncProgress]，单独占一行（「同步复习数据 (123/2048)」+ 确定进度条）。
+/// 另听 [srsSyncProgress]，单独占一行（「同步复习数据 (123/2048)」+ 确定进度条）；没有一轮在跑而旧版本同步文件
+/// 正在后台迁移时，这一行显示迁移进度（[srsMigrationProgress]）。
 ///
 /// 没有同步在跑时收成零高度（[SizedBox.shrink]），不占布局、不改现有几何。
 class SyncProgressBanner extends StatelessWidget {
@@ -50,10 +51,12 @@ class SyncProgressBanner extends StatelessWidget {
         syncProgress,
         syncActivity,
         srsSyncProgress,
+        srsMigrationProgress,
       ]),
       builder: (BuildContext context, _) {
         final bool syncing = syncInProgress.value;
-        final SrsSyncProgress? srs = srsSyncProgress.value;
+        final SrsSyncProgress? srs =
+            srsSyncProgress.value ?? srsMigrationProgress.value;
         if (!syncing && srs == null) return const SizedBox.shrink();
         final FushiMotionScheme motion = context.fushiMotion;
         final SyncProgress? p = syncProgress.value;

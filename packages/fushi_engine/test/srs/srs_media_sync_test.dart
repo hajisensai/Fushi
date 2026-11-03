@@ -225,7 +225,7 @@ void main() {
   });
 
   test('旧格式（按写入者分目录）的媒体由一次性迁移搬进内容目录、补上绑定，绑定发布后逐个删旧文件', () async {
-    // 2026-10-30 断代：媒体对账不再读写入者目录（没有兜底读者），只有 srsPrepareLocation 搬一次。
+    // 2026-10-30 断代：媒体对账不再读写入者目录（没有兜底读者），只有旧根媒体迁移（srsMigrateV1Media）搬一次。
     final Directory remote = Directory(p.join(root.path, 'remote'))
       ..createSync();
     final LocalDirectoryAssetStore backend = LocalDirectoryAssetStore(remote);
@@ -257,49 +257,51 @@ void main() {
     final Directory writerDir = Directory(
       p.join(remote.path, kSrsSync2Namespace, kProfile, 'a#1'),
     );
+    SrsLocationStore v1Root() => SrsAssetLocationStore(
+      store: backend,
+      profileUid: kProfile,
+      folder: kSrsSync2V1Folder,
+    );
     final SrsLocationPrepared prepared = await srsPrepareLocation(
       host: b,
-      v1: SrsAssetLocationStore(
-        store: backend,
-        profileUid: kProfile,
-        folder: kSrsSync2V1Folder,
-      ),
+      v1: v1Root(),
       current: loc,
       locationId: 'remote',
       key: null,
       nowMs: () => b.now().$1,
-      recordPresence: true,
       writers: writers,
     );
     expect(prepared.error, isNull);
-    expect(prepared.bound, 1);
-    expect(
-      await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
-      <int>[7, 7],
-    );
-    expect(prepared.deferredWriters.keys, <(String, String)>[
-      ('a#1', 'old.png'),
-    ]);
-    expect(legacyFile.existsSync(), isTrue, reason: '绑定还没发布到位置：旧文件留着');
-    // 收尾之前写入者目录里又来了一个（列表之后才出现的）文件：收尾只删逐个确认搬好的那个。
+    expect(prepared.mediaLeftover, isTrue);
     final File lateFile = File(
       p.join(writerDir.path, kSrsMediaFolder, 'late.png'),
-    )..writeAsBytesSync(<int>[8]);
-    expect(await srsSyncOnce(b, loc), isA<SrsSync2Report>());
-    expect(
-      await srsFinishLocationMigration(
-        host: b,
-        v1: SrsAssetLocationStore(
-          store: backend,
-          profileUid: kProfile,
-          folder: kSrsSync2V1Folder,
-        ),
-        prepared: prepared,
-        progressId: 'test',
-        writers: writers,
-      ),
-      1,
     );
+    bool keptUntilPublished = false;
+    final SrsV1MediaReport m = await srsMigrateV1Media(
+      host: b,
+      v1: v1Root(),
+      current: loc,
+      locationId: 'remote',
+      key: null,
+      nowMs: () => b.now().$1,
+      canBind: true,
+      progressId: 'test',
+      recordPresence: true,
+      writers: writers,
+      onBound: () async {
+        expect(
+          await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
+          <int>[7, 7],
+        );
+        keptUntilPublished = legacyFile.existsSync();
+        // 删之前写入者目录里又来了一个（列表之后才出现的）文件：只删逐个确认搬好的那个。
+        lateFile.writeAsBytesSync(<int>[8]);
+        expect(await srsSyncOnce(b, loc), isA<SrsSync2Report>());
+      },
+    );
+    expect(m.bound, 1);
+    expect(keptUntilPublished, isTrue, reason: '绑定还没发布到位置：旧文件留着');
+    expect(m.deleted, 1);
     expect(legacyFile.existsSync(), isFalse, reason: '绑定发布后删');
     expect(lateFile.readAsBytesSync(), <int>[8], reason: '不整目录删');
     final SrsMediaSyncReport r = await media(b, loc, mediaB);

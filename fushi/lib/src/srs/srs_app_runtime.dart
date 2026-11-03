@@ -45,6 +45,7 @@ import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -183,6 +184,8 @@ class SrsAppRuntime {
     onEncryptionEnabled: app.setSrsLocationKey,
     // 设置 › 同步「自动同步复习数据」（反馈 VNz9dsLeIy）：关掉后只剩手动同步与进复习页的节流同步。
     autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
+    // 同步与历史页「存储位置」上逐个关掉的通道位置（只停复习同步，通道本身照常）。
+    locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
@@ -313,6 +316,12 @@ class SrsAppRuntime {
       readStore: _readStore,
       openNote: (String noteId) => srsPushNoteEditor(navigator(), noteId),
       openBrowse: () => srsPushBrowse(navigator()),
+      remoteStore: SrsRemoteStoreService(
+        readStore: _readStore,
+        readMedia: (String name) async => (await _readMedia())?.load(name),
+        // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
+        onWrite: _bumpRevision,
+      ),
     );
     fushiAnkiConnectCompatInstanceId = instanceId;
     final SrsAnkiConnectEndpoint endpoint = buildAnkiConnectEndpoint();

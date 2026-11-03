@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_platform/fushi_platform.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 
 class DesktopLifecycleService implements PlatformLifecycleService {
@@ -21,7 +21,7 @@ class DesktopLifecycleService implements PlatformLifecycleService {
   bool get supportsRestart => true;
 
   /// 重启：先分离启动一份新进程，确认起来了再走与 [exitApp] 完全一致的干净退出序列。
-  /// **只有新进程确认启动后才 `exit(0)`**——若 `Process.start` 抛错则**不退出**
+  /// **只有新进程确认启动后才结束本进程**——若 `Process.start` 抛错则**不退出**
   /// （避免「老进程没了、新进程也没起来」=用户感知为崩溃），把异常抛给调用方降级
   /// 提示用户手动重开。
   @override
@@ -49,10 +49,15 @@ class DesktopLifecycleService implements PlatformLifecycleService {
       // 分离模式：新进程不随当前进程退出而被回收。Process.start 抛错则不退出。
       await Process.start(executable, args, mode: ProcessStartMode.detached);
     }
-    // 新进程已成功 spawn（未抛错）→ 走与 exitApp 相同的退出闸门。
-    PreviousExitLog.markCleanExit();
-    await WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose);
-    exit(0);
+    // 新进程已成功 spawn（未抛错）→ 走与 exitApp 相同的退出闸门。意图只能在 spawn
+    // 成功之后写：Process.start 抛错时本进程继续活着，不能留下「已发起退出」。
+    final AppExitCoordinator coordinator = AppExitCoordinator.instance;
+    coordinator.begin('restart');
+    await coordinator.runStep(
+      'native pre-exit',
+      () => WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose),
+    );
+    coordinator.terminate('restart');
   }
 
   @visibleForTesting
@@ -82,9 +87,16 @@ class DesktopLifecycleService implements PlatformLifecycleService {
 
   @override
   Future<void> exitApp() async {
-    PreviousExitLog.markCleanExit();
-    await WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose);
-    exit(0);
+    // 退出意图先于原生 teardown 落盘（关窗链已在链首 begin 过时是 no-op）：原生
+    // teardown 卡死被看门狗 / 外部强杀时不误报闪退；真在这里原生崩溃，crash_summary
+    // 仍按 nativeCrash 上报。
+    final AppExitCoordinator coordinator = AppExitCoordinator.instance;
+    coordinator.begin('exitApp');
+    await coordinator.runStep(
+      'native pre-exit',
+      () => WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose),
+    );
+    coordinator.terminate('exitApp');
   }
 
   @override

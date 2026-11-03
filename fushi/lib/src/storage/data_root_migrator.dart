@@ -1894,6 +1894,30 @@ String rebaseSubtitleSourceMapJson(String json, DocumentsPathRebaser docs) {
   }
 }
 
+/// 改写一个 `{key: [绝对路径...]}` JSON map（`video_remote_subtitle_files`）里每个
+/// 路径。非 map / 非列表的 value 原样保留；整体不是 JSON map 时原样返回（一个坏值不该
+/// 中断整次迁移）。
+String rebaseStringListMapJson(String json, DocumentsPathRebaser docs) {
+  try {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is! Map) return json;
+    return jsonEncode(
+      decoded.map<String, dynamic>(
+        (dynamic k, dynamic v) => MapEntry<String, dynamic>(
+          k.toString(),
+          v is List
+              ? <dynamic>[
+                  for (final dynamic e in v) e is String ? docs.rebase(e) : e,
+                ]
+              : v,
+        ),
+      ),
+    );
+  } catch (_) {
+    return json;
+  }
+}
+
 /// 改写 v55 legacy `galgame_library` JSON 里每条的 `coverPath`。
 /// 同条目的 `exePath` / `workdir` 是用户外部安装位置，**绝不**改写。
 String rebaseLegacyGalgameLibraryJson(String json, DocumentsPathRebaser docs) {
@@ -1972,6 +1996,11 @@ String rebaseMigratedPrefValue(
       return _withPrefTag(
         value,
         (String body) => rebaseJsonStringListWith(body, documents),
+      );
+    case PathValueShape.stringListMapJson:
+      return _withPrefTag(
+        value,
+        (String body) => rebaseStringListMapJson(body, documents),
       );
     case PathValueShape.bare:
       // support 根下的旧单库路径按**文件名**重挂（与 local_audio_dbs 同款、天然幂等）；

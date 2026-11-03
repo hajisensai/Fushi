@@ -136,8 +136,8 @@ void main() {
       expect(closeAt, greaterThan(timerAt));
       expect(
         main.substring(timerAt, closeAt),
-        contains('exit(0)'),
-        reason: '看门狗到点必须真的终止进程，只打一行日志等于没有兜底',
+        contains('AppExitCoordinator.instance.terminate('),
+        reason: '看门狗到点必须经唯一出口真的终止进程（先标 clean），只打一行日志等于没有兜底',
       );
     });
 

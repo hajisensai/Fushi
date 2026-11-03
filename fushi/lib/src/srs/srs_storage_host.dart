@@ -8,8 +8,22 @@
 /// - 生命周期跟 app 走：关主库前先关它（[close]），覆盖恢复在此之后换 / 删 srs.db 文件。
 library;
 
+import 'dart:io';
+
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
+import 'package:path_provider/path_provider.dart';
+
+/// 给本进程的 srs.db 定 SQLite 临时目录（[SrsCore.useTempDirectory]）：开任何 srs.db（含备份恢复里的源库）之前调。
+///
+/// 只有 Android 需要：那里没有平台默认临时目录，大库升级 / 整理 / 剥表快照的排序溢出无处可落（不设 Rust 侧拒绝打开）。
+/// 用 app 的 cache 目录：跟进程走、不随某份库或某次恢复被删。其它平台用系统默认临时目录，不设。
+Future<void> useSrsTempDirectory() async {
+  if (!Platform.isAndroid) return;
+  final Directory cache = await getTemporaryDirectory();
+  SrsCore.useTempDirectory(cache.path);
+}
 
 /// 打开 srs.db 的方式（测试可换成同 isolate 执行器）。
 typedef SrsStorageOpener =

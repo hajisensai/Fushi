@@ -177,8 +177,30 @@ void main() {
     test('三条挂分离音轨的载入都经令牌在途记账，回退经 guard 按集序号作废', () {
       expect(
         RegExp(r'_separatedAudio\.runLoad<void>\(').allMatches(src).length,
-        2,
-        reason: '远端起播 + YouTube 切档（回退那程在 guard.recover 内部 runLoad）',
+        3,
+        reason:
+            '远端起播 + YouTube 切档 + HLS 切档（EXlaIL2eKQ 起 HLS 切档也带同一条流的'
+            '外挂音轨，同样要经令牌记账；回退那程在 guard.recover 内部 runLoad）',
+      );
+      // HLS 切档那一处：挂的确实是本条流的外挂音轨，且收尾按集序号作废。
+      final int hlsStart = src.indexOf(
+        'externalAudioTracks: _streamExternalAudioTracks,',
+      );
+      expect(hlsStart, greaterThanOrEqualTo(0), reason: 'HLS 切档沿用本条流的外挂音轨');
+      final int hlsRunLoad = src.lastIndexOf(
+        '_separatedAudio.runLoad<void>(',
+        hlsStart,
+      );
+      expect(hlsRunLoad, greaterThanOrEqualTo(0));
+      expect(
+        src.substring(hlsRunLoad, hlsStart),
+        isNot(contains('Future<')),
+        reason: '外挂音轨参数必须落在 runLoad 包着的那次 _applyLoad 里',
+      );
+      expect(
+        src.substring(hlsStart, hlsStart + 600),
+        contains('_separatedAudio.isCurrent(seq)'),
+        reason: '切档收尾按集序号作废',
       );
       final int start = src.indexOf(
         'Future<void> _recoverFromExternalAudioFailure() async {',
