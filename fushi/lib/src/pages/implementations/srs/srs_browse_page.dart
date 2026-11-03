@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -583,6 +584,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     SrsBrowseBatchAction.move,
     SrsBrowseBatchAction.addTags,
     SrsBrowseBatchAction.removeTags,
+    SrsBrowseBatchAction.setCardType,
+    SrsBrowseBatchAction.setField,
+    SrsBrowseBatchAction.findReplace,
     if (_canSchedule) SrsBrowseBatchAction.reset,
     if (_canSchedule) SrsBrowseBatchAction.setDue,
     if (widget.onChangeNoteType != null) SrsBrowseBatchAction.changeNoteType,
@@ -617,6 +621,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
     Future<SrsBatchOutcome> Function()? run;
     String? doneMessage;
+    // 批量改笔记字段：落库是条件写，计划之后又被改过的笔记不覆盖；条数随结果 toast 提示。
+    int conflicts = 0;
+    Future<SrsBatchOutcome> Function() fieldRun(
+      Future<SrsNoteFieldApplied> Function() apply,
+    ) => () async {
+      final SrsNoteFieldApplied applied = await apply();
+      conflicts = applied.conflicts;
+      return applied.outcome;
+    };
     switch (action) {
       case SrsBrowseBatchAction.toggleSuspend:
         final bool suspend = !targets.allSuspended;
@@ -670,6 +683,75 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           add: add ? tags : const <String>[],
           remove: add ? const <String>[] : tags,
         );
+      case SrsBrowseBatchAction.setCardType:
+        final SrsCardType? type = await _focusOwnership.guardOverlay(
+          () => pickSrsCardType(context),
+        );
+        if (type == null || !mounted) return;
+        final SrsNoteFieldPlan? plan = await _planFieldEdit(
+          action,
+          () => srsPlanCardType(store, noteIds, type),
+        );
+        if (plan == null) return;
+        final Future<SrsNoteFieldApplied> Function()? apply =
+            await _confirmFieldPlan(store, t.srs_browse_card_type_set, plan);
+        if (apply == null) return;
+        run = fieldRun(apply);
+      case SrsBrowseBatchAction.setField:
+        final List<String> fieldNames = _fieldNames;
+        if (fieldNames.isEmpty) return;
+        final String? field = await _focusOwnership.guardOverlay(
+          () => pickSrsBrowseField(
+            context,
+            fieldNames: fieldNames,
+            selected: null,
+            title: t.srs_browse_field_set,
+            allowAll: false,
+          ),
+        );
+        if (field == null || !mounted) return;
+        final String? value = await _focusOwnership.guardOverlay(
+          () => showFushiTextInputDialog(
+            context: context,
+            title: t.srs_browse_field_value_title(field: field),
+            hintText: t.srs_browse_field_value_hint,
+            icon: FushiIcons.edit,
+            allowEmpty: true,
+            trim: false,
+            maxLines: 4,
+          ),
+        );
+        if (value == null || !mounted) return;
+        final SrsNoteFieldPlan? plan = await _planFieldEdit(
+          action,
+          () => srsPlanSetField(store, noteIds, field, value),
+        );
+        if (plan == null) return;
+        final Future<SrsNoteFieldApplied> Function()? apply =
+            await _confirmFieldPlan(store, t.srs_browse_field_set, plan);
+        if (apply == null) return;
+        run = fieldRun(apply);
+      case SrsBrowseBatchAction.findReplace:
+        final SrsNoteFieldPlan? plan = await _focusOwnership.guardOverlay(
+          () => showSrsFindReplaceDialog<SrsNoteFieldPlan>(
+            context,
+            fieldNames: _fieldNames,
+            onSubmit: (SrsFindReplaceRequest r) => srsPlanFindReplace(
+              store,
+              noteIds,
+              fieldName: r.fieldName,
+              find: r.find,
+              replace: r.replace,
+              regex: r.regex,
+              caseSensitive: r.caseSensitive,
+            ),
+          ),
+        );
+        if (plan == null || !mounted) return;
+        final Future<SrsNoteFieldApplied> Function()? apply =
+            await _confirmFieldPlan(store, t.srs_browse_find_replace, plan);
+        if (apply == null) return;
+        run = fieldRun(apply);
       case SrsBrowseBatchAction.reset:
         final bool ok = await _focusOwnership.guardOverlay(
           () => showFushiConfirmDialog(
@@ -735,10 +817,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     try {
       final SrsBatchOutcome out = await run();
       if (!mounted) return;
-      if (out.changed == 0) {
+      if (out.revert != null) _undo.add(_UndoEntry(out.revert!));
+      if (conflicts > 0) {
+        FushiToast.show(
+          msg: t.srs_browse_field_edit_conflicts(n: conflicts),
+          severity: ToastSeverity.warning,
+        );
+      } else if (out.changed == 0) {
         FushiToast.show(msg: t.srs_browse_nothing_changed);
       } else {
-        if (out.revert != null) _undo.add(_UndoEntry(out.revert!));
         FushiToast.show(msg: doneMessage ?? t.srs_browse_done(n: out.changed));
       }
       bumpSrsRevision(ref);
@@ -751,6 +838,51 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 算批量改笔记字段的计划（要物化整份结果集的笔记）：计划期间置 [_busy]（批量菜单、Delete、
+  /// 撤销都不能插进来），出错与落库同样记日志 + 失败 toast，返回 null。
+  Future<SrsNoteFieldPlan?> _planFieldEdit(
+    SrsBrowseBatchAction action,
+    Future<SrsNoteFieldPlan> Function() plan,
+  ) async {
+    if (!mounted) return null;
+    setState(() => _busy = true);
+    try {
+      return await plan();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.plan.${action.name}', e, stack);
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      return null;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 批量改笔记字段的计划 → 确认。空计划：有笔记因类型没有所需字段被跳过就报跳过条数，否则
+  /// 「没有改动」；取消返回 null；确认后返回落库动作（结果交给 [_runBatch] 的撤销栈与 toast）。
+  Future<Future<SrsNoteFieldApplied> Function()?> _confirmFieldPlan(
+    SrsDbStore store,
+    String title,
+    SrsNoteFieldPlan plan,
+  ) async {
+    if (!mounted) return null;
+    if (plan.isEmpty) {
+      final ({String message, bool warning}) notice =
+          srsNoteFieldPlanEmptyNotice(plan);
+      FushiToast.show(
+        msg: notice.message,
+        severity: notice.warning
+            ? ToastSeverity.warning
+            : ToastSeverity.neutral,
+      );
+      return null;
+    }
+    final bool ok = await _focusOwnership.guardOverlay(
+      () => confirmSrsNoteFieldPlan(context, title: title, plan: plan),
+    );
+    if (!ok || !mounted) return null;
+    return () => srsApplyNoteFieldPlan(store, plan);
   }
 
   void _undoLast() {

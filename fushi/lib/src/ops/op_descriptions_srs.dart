@@ -4,6 +4,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/module_id.dart';
@@ -238,8 +239,155 @@ List<OpDescription> describeSrsOps(OpDescribeKit kit) {
       ],
       undo: _dismissUndo(deps),
     ),
+    OpDescription(
+      id: 'srs.notes.card-type',
+      method: 'POST',
+      pattern: '$kSrsCtlRoot/notes/batch/card-type',
+      summary:
+          'Batch-set the card type of Lapis / Fushi-card notes (the four '
+          'Is*Card front switches): word (front shows the word only), sentence, '
+          'word-and-sentence (word + example sentence, the default for new '
+          'cards), click (tap to reveal the sentence) or audio. Notes whose type '
+          'has no such switches are skipped. Targets: notes (ids) or a search '
+          '(q / field / deck, same as srs.notes.search), max $kSrsCtlBatchNoteLimit '
+          'notes. Use dryRun first to preview. Undo writes the old values back.',
+      availability: srsOn,
+      risk: OpRisk.write,
+      params: <OpParam>[
+        OpParam.string(
+          'type',
+          description: 'Card type.',
+          required: true,
+          enumValues: <String>[
+            for (final SrsCardType t in SrsCardType.values) t.wire,
+          ],
+        ),
+        ..._noteBatchTargetParams,
+      ],
+      undo: _noteBatchUndo(deps, SrsCtlNoteBatch.cardType),
+    ),
+    OpDescription(
+      id: 'srs.notes.set-field',
+      method: 'POST',
+      pattern: '$kSrsCtlRoot/notes/batch/set-field',
+      summary:
+          'Batch-set one field (by name, resolved per note type) to a value; an '
+          'empty value clears it. Notes whose type has no such field are skipped. '
+          'Targets: notes (ids) or a search (q / field / deck), max '
+          '$kSrsCtlBatchNoteLimit notes. Use dryRun first. Undo writes the old '
+          'values back.',
+      availability: srsOn,
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'targetField',
+          description: 'Field name to set (e.g. "Hint", "IsClickCard").',
+          required: true,
+        ),
+        OpParam.string(
+          'value',
+          description: 'New value (HTML allowed); empty / omitted clears it.',
+        ),
+        ..._noteBatchTargetParams,
+      ],
+      undo: _noteBatchUndo(deps, SrsCtlNoteBatch.setField),
+    ),
+    OpDescription(
+      id: 'srs.notes.find-replace',
+      method: 'POST',
+      pattern: '$kSrsCtlRoot/notes/batch/find-replace',
+      summary:
+          'Batch find & replace in note fields (like Anki\'s Find and Replace), '
+          'on the raw field HTML. targetField limits it to one field (default: '
+          'all fields). With regex, find is a regular expression and replace may '
+          'use \$1 / \${name}. Targets: notes (ids) or a search (q / field / '
+          'deck), max $kSrsCtlBatchNoteLimit notes. Use dryRun first. Undo '
+          'writes the old values back.',
+      availability: srsOn,
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'find',
+          description: 'Text / regex to find.',
+          required: true,
+        ),
+        OpParam.string('replace', description: 'Replacement (may be empty).'),
+        OpParam.string(
+          'targetField',
+          description: 'Only this field (name); omit for all fields.',
+        ),
+        OpParam.boolean('regex', description: 'find is a regular expression.'),
+        OpParam.boolean(
+          'caseSensitive',
+          description: 'Case-sensitive match (default true).',
+        ),
+        ..._noteBatchTargetParams,
+      ],
+      undo: _noteBatchUndo(deps, SrsCtlNoteBatch.findReplace),
+    ),
   ];
 }
+
+/// 批量改笔记的目标与预演参数（三条路由共用）。
+const List<OpParam> _noteBatchTargetParams = <OpParam>[
+  OpParam.stringList(
+    'notes',
+    description: 'Note ids to edit (from srs.notes.search). Or give q instead.',
+  ),
+  OpParam.string(
+    'q',
+    description:
+        'Anki search selecting the notes to edit (e.g. "deck:Japanese '
+        'IsWordAndSentenceCard: IsClickCard:").',
+  ),
+  OpParam.string(
+    'field',
+    description: 'With q: match notes whose this field contains q (no syntax).',
+  ),
+  OpParam.string('deck', description: 'With q: only this deck (full name).'),
+  OpParam.boolean(
+    'dryRun',
+    description: 'Only preview: count, skipped notes and sample changes.',
+  ),
+];
+
+/// 批量改笔记 → 撤销 = 实际写下的字段写回原值（之后又被改过的不动，计 superseded）。
+///
+/// 载荷取路由实际写下的改动清单（[srsCtlAppliedNoteChanges]，按这次调用挂），不在执行前另算
+/// 一遍计划：只算一次，撤销载荷与落库的改动一一对应。完整清单只进撤销记录、不回给调用方
+/// （回给调用方的只有样例）。预演 / 空计划不写入，载荷为空。
+OpUndo _noteBatchUndo(SrsCtlDeps deps, SrsCtlNoteBatch op) => opCustomUndo(
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
+    final List<SrsNoteFieldChange> applied =
+        srsCtlAppliedNoteChanges[call] ?? const <SrsNoteFieldChange>[];
+    return <String, Object?>{
+      'notes': <String>{
+        for (final SrsNoteFieldChange c in applied) c.noteId,
+      }.length,
+      'changes': <Map<String, Object?>>[
+        for (final SrsNoteFieldChange c in applied) c.toJson(),
+      ],
+    };
+  },
+  describe: (Map<String, Object?> p) => '${op.wire}：${p['notes'] ?? 0} 条笔记',
+  revert: (Map<String, Object?> payload) async {
+    final List<SrsNoteFieldChange> changes = <SrsNoteFieldChange>[
+      if (payload['changes'] case final List<Object?> raw)
+        for (final Object? c in raw) ?SrsNoteFieldChange.fromJson(c),
+    ];
+    if (changes.isEmpty) return const OpUndoOutcome.done();
+    final SrsDbStore store = await requireSrsCtlStore(deps);
+    final int blocked = await srsRevertNoteFieldChanges(store, changes);
+    deps.changed();
+    final int total = <String>{
+      for (final SrsNoteFieldChange c in changes) c.noteId,
+    }.length;
+    if (blocked >= total) {
+      return const OpUndoOutcome.superseded('这些笔记之后都又被改过');
+    }
+    return const OpUndoOutcome.done();
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // 撤销

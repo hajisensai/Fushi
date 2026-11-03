@@ -254,4 +254,152 @@ void main() {
       allOf(contains('共 1 条'), contains('魚')),
     );
   });
+
+  test(
+    'card-type / set-field / find-replace：目标必给；预演直打路由，真改经 /ops/call（留撤销记录）',
+    () {
+      final CtlRequestSpec type = _build('card-type', <String>[
+        'word-and-sentence',
+        '--q',
+        '-IsWordAndSentenceCard:_*',
+        '--dry-run',
+      ]);
+      expect(
+        (type.method, type.path),
+        ('POST', '/api/admin/srs/notes/batch/card-type'),
+      );
+      expect(type.body, <String, Object?>{
+        'type': 'word-and-sentence',
+        'q': '-IsWordAndSentenceCard:_*',
+        'dryRun': true,
+      });
+      expect(() => _build('card-type', <String>['word']), _usageError());
+      expect(
+        () => _build('card-type', <String>['nope', '--note', 'n1']),
+        _usageError(),
+      );
+
+      final CtlRequestSpec set = _build('set-field', <String>[
+        'Hint',
+        '--value',
+        ' a b ',
+        '--note',
+        'n1',
+        '--note',
+        'n2',
+      ]);
+      expect((set.method, set.path), ('POST', kCtlOpsCallPath));
+      expect(set.body, <String, Object?>{
+        'id': 'srs.notes.set-field',
+        'args': <String, Object?>{
+          'targetField': 'Hint',
+          'value': ' a b ',
+          'notes': <String>['n1', 'n2'],
+        },
+      });
+      expect(
+        (_build('set-field', <String>['Hint', '--deck', 'JP']).body!['args']!
+            as Map<String, Object?>)['value'],
+        '',
+      );
+      final CtlRequestSpec realType = _build('card-type', <String>[
+        'sentence',
+        '--note',
+        'n1',
+      ]);
+      expect(realType.path, kCtlOpsCallPath);
+      expect(realType.body, <String, Object?>{
+        'id': 'srs.notes.card-type',
+        'args': <String, Object?>{
+          'type': 'sentence',
+          'notes': <String>['n1'],
+        },
+      });
+      expect(
+        () => _build('set-field', <String>['Hint', '--field', 'Term']),
+        _usageError(),
+      );
+
+      final CtlRequestSpec fr = _build('find-replace', <String>[
+        r'(\w+)',
+        r'<b>$1</b>',
+        '--note',
+        'n1',
+        '--in-field',
+        'Sentence',
+        '--regex',
+        '--ignore-case',
+      ]);
+      expect(fr.path, kCtlOpsCallPath);
+      expect(fr.body, <String, Object?>{
+        'id': 'srs.notes.find-replace',
+        'args': <String, Object?>{
+          'find': r'(\w+)',
+          'replace': r'<b>$1</b>',
+          'targetField': 'Sentence',
+          'regex': true,
+          'caseSensitive': false,
+          'notes': <String>['n1'],
+        },
+      });
+      expect(
+        () => _build('find-replace', <String>['a', '--note', 'n1']),
+        _usageError(),
+      );
+      expect(
+        (_build('find-replace', <String>[
+              'a',
+              '',
+              '--note',
+              'n1',
+            ]).body!['args']!
+            as Map<String, Object?>)['replace'],
+        '',
+      );
+    },
+  );
+
+  test('批量改笔记 render：预演 / 已改 + 跳过 + 样例', () {
+    final String text = _render('card-type', <String, Object?>{
+      'dryRun': true,
+      'notes': 2,
+      'fieldChanges': 3,
+      'skipped': 1,
+      'unchanged': 0,
+      'sample': <Object?>[
+        <String, Object?>{
+          'note': 'n1',
+          'field': 'IsWordAndSentenceCard',
+          'before': '',
+          'after': 'x',
+        },
+      ],
+    });
+    expect(text, contains('预演：将修改 2 条笔记'));
+    expect(text, contains('1 条笔记的类型没有所需字段'));
+    expect(text, contains('n1  IsWordAndSentenceCard: "" → "x"'));
+    expect(text, isNot(contains('撤销')));
+
+    final String applied = _render('card-type', <String, Object?>{
+      'dryRun': false,
+      'notes': 2,
+      'fieldChanges': 2,
+      'conflicts': 1,
+      'skipped': 0,
+      'unchanged': 0,
+      kCtlOpsUndoActionIdKey: 42,
+    });
+    expect(applied, contains('已修改 2 条笔记'));
+    expect(applied, contains('撤销：fushi_cli ai undo 42'));
+    expect(applied, contains('1 条笔记在此期间被别处改过'));
+    // 没有撤销记录（直接打路由）就不声称能撤销。
+    expect(
+      _render('card-type', <String, Object?>{
+        'dryRun': false,
+        'notes': 1,
+        'fieldChanges': 1,
+      }),
+      isNot(contains('撤销')),
+    );
+  });
 }
