@@ -47,6 +47,11 @@
 | [BUG-3995](bugs/BUG-3995-subtitle-ai-reply-truncated-retry.md) | ✅ | ✅ | 整季生成字幕 AI 校对暂停：AI 回复多次不完整 |
 | [BUG-3994](bugs/BUG-3994-study-clock-covering-overlays.md) | ✅ | ✅ | 盖住学习页的弹层 / 整页不停学习计时（只认 PageRoute，漫画 / PDF / 浏览器无判据） |
 | [BUG-3993](bugs/BUG-3993-media-server-header-under-status-bar.md) | ✅ | ✅ | media-server-header-under-status-bar |
+> 共 3597 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3993](bugs/BUG-3993-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-3992](bugs/BUG-3992-browser-shortcuts-dead-after-unfocus.md) | ✅ | ✅ | 浏览器 Ctrl+F 等快捷键在焦点离开地址栏后失效 |
 | [BUG-3991](bugs/BUG-3991-browser-svg-favicon-letter.md) | ✅ | ✅ | 浏览器标签页图标退回首字母（站点声明 SVG favicon） |
 | [BUG-3990](bugs/BUG-3990-browser-tab-strip-gap.md) | ✅ | ✅ | 浏览器顶部活动标签不贴地址栏、中间露 6dp 缝 |

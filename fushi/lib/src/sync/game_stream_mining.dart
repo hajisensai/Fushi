@@ -24,7 +24,7 @@ typedef GameStreamSnapshotMiner =
 class FushiGameStreamMiningAdapter {
   FushiGameStreamMiningAdapter({
     GalHookMiningCoordinator? coordinator,
-    required BaseAnkiRepository Function() repository,
+    required this.repository,
     required MiningMediaCompression Function() compression,
     this.imageMode = VideoMiningImageMode.currentFrame,
     this.animatedFormat = MiningAnimatedFormat.gif,
@@ -41,7 +41,6 @@ class FushiGameStreamMiningAdapter {
   }) : assert(maxSnapshots > 0),
        assert(maxSnapshotBytes > 0),
        _coordinator = coordinator ?? GalHookMiningCoordinator.instance,
-       _repository = repository,
        _compression = compression,
        _addTitleTag = addTitleTag ?? (() => false),
        _lineLookup = lineLookup ?? TexthookerService.instance.entryById,
@@ -54,7 +53,10 @@ class FushiGameStreamMiningAdapter {
        _isWindows = isWindows ?? (() => Platform.isWindows);
 
   final GalHookMiningCoordinator _coordinator;
-  final BaseAnkiRepository Function() _repository;
+
+  /// 每次制卡时读一次的后端仓库来源（不在构造时定死，挖词目标改了下一张卡就跟着走）。
+  /// 串流卡是替接收端制的，主机装配时给的是遵守本机挖词目标的主机制卡仓库。
+  final BaseAnkiRepository Function() repository;
   final MiningMediaCompression Function() _compression;
   final bool Function() _addTitleTag;
   final GalHookLineLookup _lineLookup;
@@ -231,7 +233,7 @@ class FushiGameStreamMiningAdapter {
             fields: fields,
             sentenceOverride: line.text,
             compression: _compression(),
-            repo: _repository(),
+            repo: repository(),
             addTitleTag: _addTitleTag(),
             imageMode: VideoMiningImageMode.currentFrame,
             stillFormat: stillFormat,
@@ -242,12 +244,20 @@ class FushiGameStreamMiningAdapter {
     // 本机绝对路径（FileSystemException）、AnkiConnect 的主机名/端口（SocketException）
     // 之类。这条结果随后原样回给手机，等于把主机内情推到局域网对端。原文只进本机
     // 日志，远端拿到的是通用文案 + 枚举化 detail。
-    if (!result.success && !result.duplicate && result.failureReason != null) {
-      ErrorLogService.instance.log(
-        'GameStream.mine',
-        'host mining failed: ${result.failureReason}',
-        StackTrace.current,
-      );
+    // 后端（Anki / 复习）拒卡时 failureReason 为空、原因在 outcome 里（原始异常在
+    // outcome.error，errorDetail 只是简短文案）；走 BUG-089 的同一诊断入口记全。
+    final MineOutcome? outcome = result.outcome;
+    if (!result.success && !result.duplicate && !result.queued) {
+      final String? failureReason = result.failureReason;
+      if (failureReason != null) {
+        ErrorLogService.instance.log(
+          'GameStream.mine',
+          'host mining failed: $failureReason',
+          outcome?.stackTrace ?? StackTrace.current,
+        );
+      } else if (outcome != null) {
+        logMineOutcomeDiagnostics(outcome, source: 'GameStream.mine');
+      }
     }
     return GameStreamMineResult(
       ok: result.success,
