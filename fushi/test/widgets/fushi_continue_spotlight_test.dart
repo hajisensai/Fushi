@@ -217,6 +217,65 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('混排封面行（剧照 + 竖封面）：文字块按整卡留高，剧照卡与竖卡标题行数一致', (
+    WidgetTester tester,
+  ) async {
+    // 行高与卡内文字块形态必须同源：行按整卡留高时，剧照卡不能自己截成一行
+    // 片名、下面空着（审查 PR #2788）。
+    await pumpAt(tester, 400, <FushiContinueEntry>[
+      entry(0),
+      entry(1),
+      entry(2, still: false),
+      entry(3),
+    ]);
+    expect(tester.takeException(), isNull);
+    final Finder meta = find.byKey(
+      const ValueKey<String>('fushi-continue-tile-meta'),
+    );
+    expect(meta, findsNWidgets(3));
+    final double full = ShelfCardMeta.heightFor(tester.element(meta.first));
+    for (int i = 0; i < 3; i++) {
+      expect(tester.getSize(meta.at(i)).height, closeTo(full, 0.01));
+    }
+    final Iterable<ShelfTitleLine> titles = tester.widgetList<ShelfTitleLine>(
+      find.descendant(of: meta, matching: find.byType(ShelfTitleLine)),
+    );
+    expect(titles, hasLength(3));
+    for (final ShelfTitleLine t in titles) {
+      expect(t.maxLines, kShelfCardMetaTitleLines);
+    }
+  });
+
+  testWidgets('宽屏并排全剧照封面行：文字块只留一行片名，行内无溢出', (WidgetTester tester) async {
+    await pumpAt(tester, 1200, stills(6));
+    expect(tester.takeException(), isNull);
+    final Finder meta = find.byKey(
+      const ValueKey<String>('fushi-continue-tile-meta'),
+    );
+    expect(meta, findsWidgets);
+    final double compact = ShelfCardMeta.heightFor(
+      tester.element(meta.first),
+      titleLines: kContinueStillTileTitleLines,
+      titleOnly: true,
+    );
+    final int count = meta.evaluate().length;
+    for (int i = 0; i < count; i++) {
+      expect(tester.getSize(meta.at(i)).height, closeTo(compact, 0.01));
+    }
+    for (final ShelfTitleLine t in tester.widgetList<ShelfTitleLine>(
+      find.descendant(of: meta, matching: find.byType(ShelfTitleLine)),
+    )) {
+      expect(t.maxLines, kContinueStillTileTitleLines);
+    }
+    // 封面 + 文字块不越出封面行。
+    final Rect row = tester.getRect(
+      find.byKey(const ValueKey<String>('fushi-continue-side-row')),
+    );
+    for (int i = 0; i < count; i++) {
+      expect(tester.getRect(meta.at(i)).bottom, lessThanOrEqualTo(row.bottom));
+    }
+  });
+
   testWidgets('库页窄屏不挂封面行（下面有自己的「最近」行）', (WidgetTester tester) async {
     await pumpAt(tester, 400, <FushiContinueEntry>[
       entry(0, still: false),
