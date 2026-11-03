@@ -333,6 +333,61 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Home-screen widgets (Jetpack Glance, Material You colors). -->
+        <receiver android:name=".widgets.ContinueReceiver"
+            android:exported="true"
+            android:label="@string/widget_continue_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_continue_info" />
+        </receiver>
+        <receiver android:name=".widgets.TodayReceiver"
+            android:exported="true"
+            android:label="@string/widget_today_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
+        <receiver android:name=".widgets.SrsReceiver"
+            android:exported="true"
+            android:label="@string/widget_srs_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_srs_info" />
+        </receiver>
+        <receiver android:name=".widgets.ShelfReceiver"
+            android:exported="true"
+            android:label="@string/widget_shelf_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shelf_info" />
+        </receiver>
+        <receiver android:name=".widgets.WeekReceiver"
+            android:exported="true"
+            android:label="@string/widget_week_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_week_info" />
+        </receiver>
+        <receiver android:name=".widgets.ShortcutsReceiver"
+            android:exported="true"
+            android:label="@string/widget_shortcuts_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shortcuts_info" />
+        </receiver>
     </application>
     <!-- Used for AnkiDroid API.
          BUG-2195：AnkiDroid 的并行版（parallel builds）由上游 gradle 的 customSuffix

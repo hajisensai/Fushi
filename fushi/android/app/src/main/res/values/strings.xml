@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="dict_accessibility_desc">Fushi uses this service to detect text you select in other apps and automatically look it up in the floating dictionary.</string>
+    <string name="widget_continue_label">Fushi Continue</string>
+    <string name="widget_continue_desc">Pick up your last book, manga or video where you left off.</string>
+    <string name="widget_today_label">Fushi Today</string>
+    <string name="widget_today_desc">Study time, characters read and your streak.</string>
+    <string name="widget_srs_label">Fushi Cards due</string>
+    <string name="widget_srs_desc">Flashcards due today with a Review shortcut.</string>
+    <string name="widget_shelf_label">Fushi Library shelf</string>
+    <string name="widget_shelf_desc">Covers of what you opened most recently.</string>
+    <string name="widget_week_label">Fushi Weekly activity</string>
+    <string name="widget_week_desc">Study time for the last seven days.</string>
+    <string name="widget_shortcuts_label">Fushi Shortcuts</string>
+    <string name="widget_shortcuts_desc">Jump to Books, Manga, Video or Lookup.</string>
 </resources>

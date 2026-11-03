@@ -125,6 +125,9 @@ import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
+import 'package:fushi/src/platform/widget_link_actions.dart';
+import 'package:fushi/src/platform/widget_links.dart';
+import 'package:fushi/src/platform/widget_snapshot_source.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
@@ -934,6 +937,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     isActive: () => mounted,
     run: _runAppShortcut,
   );
+
+  /// Android 桌面小组件点按的深链（`fushi://widget/...`），冷启动排队同上。
+  late final WidgetLinkQueue _widgetLinks = WidgetLinkQueue(
+    isActive: () => mounted,
+    run: _runWidgetLink,
+  );
+
+  /// Android 桌面小组件的快照采集 / 推送；非 Android 平台整个不工作。
+  late final WidgetSnapshotSource _widgetSnapshots = WidgetSnapshotSource(
+    ref: ref,
+    isActive: () => mounted,
+  );
+  bool _widgetSnapshotsStartScheduled = false;
   StreamSubscription<String>? _sourceUrlSubscription;
 
   /// 跨设备中转收到新卡（本机是落地设备）→ 补发，见 [PendingMineRelay.arrivals]。
@@ -1285,6 +1301,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 小组件快照：进后台前补发一次最新数字（读完一本书 / 刷完卡回桌面就是最常见的
+    // 时刻），回前台再对一次（跨日 / 外部同步）。必须排在 Android 早返回之前。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.resumed) {
+      unawaited(_widgetSnapshots.refreshNow());
+    }
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
       _flushPendingMines();
@@ -1543,6 +1565,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _intentsSubscription?.cancel();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
+    _widgetSnapshots.dispose();
     _loadingWatchdog?.cancel();
     _feedbackReplyTimer?.cancel();
     for (final StreamSubscription<String> s in _remotePushSubs) {
@@ -1598,6 +1621,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _queueAppShortcut(shortcut);
       return true;
     }
+    final WidgetLink? widgetLink = WidgetLink.tryParse(data);
+    if (widgetLink != null) {
+      _queueWidgetLink(widgetLink);
+      return true;
+    }
     // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
     // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
     // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
@@ -1639,6 +1667,30 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       selectHomeTab: (HomeTab tab) => homeShellTabNotifier.value = tab,
       // 用户点「查词」就是要打字：送进搜索框。
       openLookup: () => appModel.requestHomeDictionaryTab(focusSearch: true),
+    );
+  }
+
+  void _queueWidgetLink(WidgetLink link) {
+    final bool ready = mounted && ref.read(appProvider).isInitialised;
+    _widgetLinks.enqueue(link, ready: ready);
+    // 未初始化：初始化完成后的根 build 会调 [WidgetLinkQueue.schedule]。
+    if (mounted && !ready) setState(() {});
+  }
+
+  Future<void> _runWidgetLink(WidgetLink link) {
+    final AppModel appModel = ref.read(appProvider);
+    return runWidgetLink(
+      link,
+      visibility: appModel.moduleVisibility,
+      onboardingCompleted: appModel.onboardingCompleted,
+      navigator: appModel.navigatorKey.currentState,
+      selectHomeTab: (HomeTab tab) => homeShellTabNotifier.value = tab,
+      openContinueItem: (WidgetContinueLink target) =>
+          openWidgetContinueItem(ref, appModel, target),
+      openSrsReview: () => openWidgetSrsReview(ref, appModel),
+      openStats: () => openWidgetStats(appModel),
+      isContinueItemOpen: (WidgetContinueLink target) =>
+          isWidgetContinueItemCurrentlyOpen(appModel, target),
     );
   }
 
@@ -2820,6 +2872,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _scheduleCardSourceNavigation();
     _schedulePairLinks();
     _appShortcuts.schedule();
+    _widgetLinks.schedule();
+    // 小组件快照：初始化完成后的首帧起订阅一次（只启动一次，不在 build 里订阅）；
+    // 之后界面语言 / 模块开关变化由 [onContextChanged] 去重后触发。
+    if (!_widgetSnapshotsStartScheduled && _widgetSnapshots.enabled) {
+      _widgetSnapshotsStartScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _widgetSnapshots.start();
+      });
+    }
+    _widgetSnapshots.onContextChanged(appModel);
     // 长按图标菜单跟着模块开关与界面语言走：两者一变根 build 就重跑（模块开关
     // notifyListeners / 语言切换重建整树），发布器按签名去重，平时不过通道。
     AppShortcutsPublisher.instance.sync(

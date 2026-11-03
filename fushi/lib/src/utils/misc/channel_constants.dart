@@ -43,6 +43,11 @@ abstract final class FushiChannels {
   static const MethodChannel appShortcuts = MethodChannel(
     '$_prefix/app_shortcuts',
   );
+
+  /// Android home-screen widgets: Dart pushes the widget snapshot JSON to the
+  /// native side (`widgets/WidgetChannel.kt`). Dart facade
+  /// `lib/src/platform/widget_snapshot.dart`.
+  static const MethodChannel widgets = MethodChannel('$_prefix/widgets');
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );

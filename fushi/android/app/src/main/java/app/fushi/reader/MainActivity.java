@@ -616,6 +616,7 @@ public class MainActivity extends AudioServiceActivity {
         // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
         // 都要从 Activity 起，不必再补 NEW_TASK。
         FloatingBallChannel.registerWith(flutterEngine, this);
+        app.fushi.reader.widgets.WidgetChannel.registerWith(flutterEngine, getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
