@@ -44,6 +44,9 @@ const LEGACY_KEY: &str = "legacy_import";
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
 pub(crate) const CLOSED: &str = "srs store is closed";
 
+/// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
+pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
+
 pub struct SrsCore {
     // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
     // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
@@ -518,7 +521,21 @@ impl SrsCore {
     /// 6 张设备本地表（本机状态、发件箱元信息、留存批次、三张缓存），与通用备份的规则一致；
     /// 同步 v2 的本机身份（`sync2_self`、切段点、各位置进度、因果缓冲）也剥掉：从备份恢复出来的库是
     /// 一台新设备，打开时生成新身份，旧身份按普通远端设备续收（设计 §7.3 的预防）。
+    ///
+    /// 快照一律写成 `auto_vacuum = INCREMENTAL`（源库是老的 NONE 也一样）：剥表后原地收空空闲链表，不再对快照整库
+    /// `VACUUM`（那是第二次整份重写：磁盘峰值翻倍、耗时翻倍）。写之前按「有效数据 + [compact::MARGIN]」查目标所在卷
+    /// 的空闲空间，不够就报 [SNAPSHOT_NO_SPACE]（一个字节都不写），不让它写到一半变成 SQLITE_FULL。
     pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
+        self.snapshot_into_with_free_space(target, strip_device_local, compact::free_bytes)
+    }
+
+    /// [snapshot_into]，目标所在卷的空闲空间由 [free] 给（测试注入）。
+    pub(crate) fn snapshot_into_with_free_space(
+        &self,
+        target: &Path,
+        strip_device_local: bool,
+        free: impl Fn(&Path) -> Option<u64>,
+    ) -> Result<(), String> {
         if target.exists() {
             return Err(format!("{} already exists", target.display()));
         }
@@ -527,6 +544,22 @@ impl SrsCore {
             .ok_or_else(|| "snapshot path is not UTF-8".to_string())?;
         {
             let r = self.reader()?;
+            let pragma = |name: &str| -> Result<u64, String> {
+                r.query_row(&format!("PRAGMA {name}"), [], |row| row.get::<_, i64>(0))
+                    .map(|v| v.max(0) as u64)
+                    .map_err(|e| e.to_string())
+            };
+            let live = pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
+            let need = live.saturating_add(compact::MARGIN);
+            if let Some(free) = free(target).filter(|&f| f < need) {
+                return Err(format!("{SNAPSHOT_NO_SPACE}{}", serde_json::json!({"need": need, "free": free})));
+            }
+            // 源库是老的 NONE：只记下「下一次 VACUUM 用 INCREMENTAL」（连接上的 nextAutovac；NONE 改 INCREMENTAL 在
+            // 已建好的库上不写文件头，所以只读连接上也能设），VACUUM INTO 按它建目标文件。源库已是 INCREMENTAL / FULL
+            // 时目标随源库，不用设——那时这条 PRAGMA 会去写文件头，只读的读连接上直接报错。
+            if pragma("auto_vacuum")? == 0 {
+                r.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;").map_err(|e| e.to_string())?;
+            }
             r.execute("VACUUM INTO ?1", [target_str])
                 .map_err(|e| e.to_string())?;
         }
@@ -546,17 +579,14 @@ impl SrsCore {
                  COMMIT;",
             )
             .map_err(|e| e.to_string())?;
-            // 收回清掉的页。快照随源库的 auto_vacuum：INCREMENTAL（整理过 / 新建的库）就原地收缩，一直 step 到
-            // 空闲链表清空（compact::incremental_vacuum；只 step 一次只收 1–2 页）；老库才整库 VACUUM，整理副本落
-            // 临时文件（构建参数 SQLITE_TEMP_STORE=1、进程级临时目录 compact::use_temp_dir），不在内存里堆一份。
-            let incremental = snap
-                .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
-                .map_err(|e| e.to_string())?
-                == 2;
-            if incremental {
-                compact::incremental_vacuum(&snap, None).map_err(|e| e.to_string())?;
-            } else {
-                snap.execute_batch("VACUUM;").map_err(|e| e.to_string())?;
+            // 收回清掉的页，不整库重写：快照建成时是 INCREMENTAL（见上）就原地收缩、一直 step 到空闲链表清空
+            // （compact::incremental_vacuum；只 step 一次只收 1–2 页）；FULL 在上面的 COMMIT 时已自动收掉。
+            let auto: i64 =
+                snap.query_row("PRAGMA auto_vacuum", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+            match auto {
+                2 => compact::incremental_vacuum(&snap, None).map_err(|e| e.to_string())?,
+                1 => {}
+                _ => return Err(format!("snapshot auto_vacuum is {auto}, expected INCREMENTAL")),
             }
         }
         Ok(())
@@ -1135,6 +1165,60 @@ mod tests {
         assert_eq!(count(&s, "srs_local_state"), 0);
         assert_eq!(count(&s, "srs_unknown_events"), 1);
         assert!(!s.legacy_imported().unwrap());
+    }
+
+    /// 老库（`auto_vacuum = NONE`，整理改版之前建的）做快照：快照文件照样建成 INCREMENTAL、剥表后原地收空，不对快照
+    /// 整库 VACUUM（第二次整份重写）；源库本身不被改动。空间不够「有效数据 + 余量」就报 [SNAPSHOT_NO_SPACE]，目标
+    /// 一个字节都不写。
+    #[test]
+    fn snapshot_of_legacy_db_is_incremental_and_checks_free_space() {
+        let p = temp("snap-legacy");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.legacy_begin().unwrap();
+            let big = format!("{{\"pad\":\"{}\"}}", "x".repeat(4000));
+            let local: Vec<Vec<Value>> =
+                (0..300).map(|i| vec![Value::Text(format!("p{i}")), Value::Text(big.clone())]).collect();
+            core.legacy_page("srs_local_state", &rows::encode(2, &local)).unwrap();
+            core.legacy_commit().unwrap();
+        }
+        {
+            let raw = Connection::open(&p).unwrap();
+            ids::register(&raw).unwrap();
+            slim::register(&raw).unwrap();
+            sync2::digest::register(&raw).unwrap();
+            raw.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;").unwrap();
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let src_auto = |core: &SrsCore| core.reader().unwrap().query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(src_auto(&core), 0, "source is a legacy NONE database");
+
+        let (live, page) = {
+            let r = core.reader().unwrap();
+            let pragma = |n: &str| r.query_row(&format!("PRAGMA {n}"), [], |row| row.get::<_, i64>(0)).unwrap() as u64;
+            (pragma("page_size") * (pragma("page_count") - pragma("freelist_count")), pragma("page_size"))
+        };
+        let short = p.with_file_name("short.db");
+        let err = core
+            .snapshot_into_with_free_space(&short, true, |_| Some(live + compact::MARGIN - 1))
+            .unwrap_err();
+        assert!(err.starts_with(SNAPSHOT_NO_SPACE), "{err}");
+        let detail: serde_json::Value = serde_json::from_str(&err[SNAPSHOT_NO_SPACE.len()..]).unwrap();
+        assert_eq!(detail["need"], live + compact::MARGIN);
+        assert!(!short.exists(), "nothing written when there is not enough room");
+
+        let snap = p.with_file_name("snap-legacy.db");
+        core.snapshot_into_with_free_space(&snap, true, |_| Some(live + compact::MARGIN)).unwrap();
+        {
+            let raw = Connection::open(&snap).unwrap();
+            let pragma = |n: &str| raw.query_row(&format!("PRAGMA {n}"), [], |r| r.get::<_, i64>(0)).unwrap();
+            assert_eq!(pragma("auto_vacuum"), 2, "snapshot of a legacy db is INCREMENTAL");
+            assert_eq!(pragma("freelist_count"), 0, "stripped pages reclaimed in place");
+        }
+        assert!(std::fs::metadata(&snap).unwrap().len() + 200 * page < live, "stripped snapshot is smaller");
+        assert_eq!(src_auto(&core), 0, "source database untouched");
+        let s = SrsCore::open(&snap).unwrap();
+        assert_eq!(count(&s, "srs_local_state"), 0);
     }
 
     #[test]
