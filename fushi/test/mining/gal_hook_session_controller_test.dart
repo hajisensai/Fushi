@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
-import 'package:fushi/src/mining/gal_game_exit_watch.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -2960,6 +2959,9 @@ void _playTrackerLaunchWiring() {
       windowPollAttempts: 1,
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      // 游戏进程存活只有会话的退出监视一路（计时器不判活）：与计时器同一个假 probe。
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 1),
       playTrackerFactory:
           ({
             required String gameId,
@@ -3368,6 +3370,9 @@ void _playTrackerAttachWiring() {
       windowPollAttempts: 1,
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      // 游戏进程存活只有会话的退出监视一路（计时器不判活）：与计时器同一个假 probe。
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 1),
       playTrackerFactory:
           ({
             required String gameId,
@@ -4925,12 +4930,8 @@ void _gameExitWatchTests() {
     required _FakeGameProcessProbe probe,
     required ChangeNotifier endpoints,
     String? imagePath,
+    List<int>? engineTargetPids,
   }) {
-    final _FakeEngineSource engine = _FakeEngineSource(
-      pairedBytes: Uint8List(0),
-      audioFormat: null,
-      textReady: true,
-    );
     return GalHookSessionController(
       textService: TexthookerService.test(),
       isWindows: true,
@@ -4950,7 +4951,14 @@ void _gameExitWatchTests() {
             GalJapaneseLocaleMode japaneseLocaleMode =
                 kGalDefaultJapaneseLocaleMode,
             String? contentLanguage,
-          }) => engine,
+          }) {
+            engineTargetPids?.add(targetPid);
+            return _FakeEngineSource(
+              pairedBytes: Uint8List(0),
+              audioFormat: null,
+              textReady: true,
+            );
+          },
       loopbackSourceFactory: _FakeLoopbackSource.new,
       windowListLoader: () async => const <ExternalWindowInfo>[],
       windowPollAttempts: 1,
@@ -5045,14 +5053,16 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
-  test('BUG-3993：游戏目录下有接手进程（自重启）时继续监听', () async {
+  test('BUG-3993：游戏目录下有接手进程（自重启）时整条会话跟到新进程', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
       ..alive.add(2468);
+    final List<int> engineTargetPids = <int>[];
     final GalHookSessionController controller = buildController(
       probe: probe,
       endpoints: endpoints,
       imagePath: r'D:\Games\Title\Game.exe',
+      engineTargetPids: engineTargetPids,
     );
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
@@ -5072,6 +5082,12 @@ void _gameExitWatchTests() {
       () => codes(controller).contains('session.game_process_handoff'),
     );
     expect(codes(controller), contains('session.game_process_handoff'));
+    // 不是只换监视器盯的 PID：hook 重新注入接手进程，会话的 gamePid 跟过去，
+    // 指着死进程的窗口绑定被清掉（交给窗口监视按新 PID 重绑）。
+    await pumpUntil(() => engineTargetPids.length >= 2);
+    expect(engineTargetPids, <int>[2468, 3001]);
+    expect(controller.state.gamePid, 3001);
+    expect(controller.state.boundWindow, isNull);
     expect(controller.state.isActive, isTrue);
     expect(controller.gameExitedCount.value, 0);
 
@@ -5082,15 +5098,6 @@ void _gameExitWatchTests() {
 
     await controller.close();
     endpoints.dispose();
-  });
-
-  test('BUG-3993：盘符根下的 exe 不把整盘进程当接手', () {
-    expect(galGameExitWatchDirectory(r'D:\Game.exe'), isNull);
-    expect(galGameExitWatchDirectory(null), isNull);
-    expect(
-      galGameExitWatchDirectory(r'D:\Games\Title\Game.exe'),
-      'd:/games/title',
-    );
   });
 
   test('BUG-3993：手动停止后旧监视不再动作', () async {

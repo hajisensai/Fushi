@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_play_tracker.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -88,19 +92,26 @@ void main() {
   testWidgets('BUG-3993: game exit returns the workbench to the dashboard', (
     WidgetTester tester,
   ) async {
+    // 走真实链路：附着 → 进程存活监视判定退出 → stopCapture → idle →
+    // gameExitedCount → 页面切回首页。不经任何测试专用的计数入口。
     final ChangeNotifier endpoints = ChangeNotifier();
+    final _ExitProbe probe = _ExitProbe()..alive.add(2468);
     final GalHookSessionController controller = GalHookSessionController(
       textService: TexthookerService.test(),
-      isWindows: false,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      targetImagePathProbe: (_) => null,
+      // helper 缺失 → 直接走 Loopback 降级，页面测试不需要假引擎。
+      injectorResolver: ({required bool is32Bit}) async => null,
+      loopbackSourceFactory: _SilentLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 5),
+      gameExitConfirmSamples: 2,
     );
-    // 不走 close()：它的异步收尾在 widget 测试的假时钟里不会推进。会话从没启动，
-    // 这里只需释放监听。
-    addTearDown(() {
-      controller.dispose();
-      endpoints.dispose();
-    });
+    addTearDown(endpoints.dispose);
     await tester.pumpWidget(
       MaterialApp(
         home: HomeGamePage(
@@ -117,16 +128,41 @@ void main() {
     await tester.pump();
     expect(find.text('monitor-session'), findsOneWidget);
 
-    controller.debugNotifyGameExited();
+    Future<void> playAndQuit(int pid) => tester.runAsync(() async {
+      probe.alive.add(pid);
+      await controller.startAttachedCapture(
+        ExternalWindowInfo(hwnd: pid, pid: pid, title: 'Game'),
+      );
+      expect(controller.state.isActive, isTrue);
+      // 先让监视见它活一次，再关游戏。
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final int before = controller.gameExitedCount.value;
+      probe.alive.remove(pid);
+      for (
+        int i = 0;
+        i < 200 && controller.gameExitedCount.value == before;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(controller.gameExitedCount.value, before + 1);
+      expect(controller.state.phase, GalHookSessionPhase.idle);
+    });
+
+    await playAndQuit(2468);
     await tester.pumpAndSettle();
     expect(gameSectionNotifier.value, GameSection.dashboard);
 
     // 用户在别的子区时不被拉走。
     gameSectionNotifier.value = GameSection.library;
     await tester.pumpAndSettle();
-    controller.debugNotifyGameExited();
+    await playAndQuit(1357);
     await tester.pumpAndSettle();
     expect(gameSectionNotifier.value, GameSection.library);
+
+    // 先卸页面（它监听 gameExitedCount），再收会话。
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(controller.close);
   });
 
   testWidgets('monitor state survives library/workbench switches', (
@@ -431,4 +467,41 @@ class _TestMonitorState extends State<_TestMonitor> {
       ],
     );
   }
+}
+
+/// BUG-3993 页面链路用的假进程表：`alive` 里的 PID 活着，不枚举任何进程。
+class _ExitProbe implements GalgameProcessProbe {
+  final Set<int> alive = <int>{};
+
+  @override
+  bool isProcessAlive(int pid) => alive.contains(pid);
+
+  @override
+  List<GalgameProcessInfo> listProcesses() => const <GalgameProcessInfo>[];
+
+  @override
+  String? processImagePath(int pid) => null;
+
+  @override
+  int? foregroundProcessId() => null;
+
+  @override
+  String? canonicalize(String path) => null;
+}
+
+/// 不碰 WASAPI 的 Loopback 源。
+class _SilentLoopbackSource extends LoopbackGalAudioSource {
+  @override
+  Future<PcmFormat?> start() async => const PcmFormat(
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 32,
+    isFloat: true,
+  );
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<GalAudioSlice?> grabRecent(int backMs) async => null;
 }

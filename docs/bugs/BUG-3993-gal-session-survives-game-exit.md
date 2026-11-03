@@ -1,6 +1,11 @@
-## BUG-3993 · gal-session-survives-game-exit
+## BUG-3993 · 附加 / 启动的游戏关掉后捕获会话仍显示正在监听
 - **报告**：2026-11-01（用户：群反馈「用附加的方式玩的游戏，手动关掉游戏之后 Fushi 的游戏画面还显示正在监听，希望自动取消附加、回到游戏主页」）
 - **真实性**：✅ 真 bug，附着（attach）与启动（launch）两条路径都有。捕获会话只有 `stopCapture()`（`fushi/lib/src/mining/gal_hook_session_controller.dart` 的 `stopCapture`）一个结束入口，只在手动停止 / 换游戏 / 退出 App 时调用；「游戏进程退出」只有游玩计时器 `GalgamePlaySessionMachine._tickLiveness`（`fushi/lib/src/mining/galgame_play_tracker.dart`）看得到，它结算完就自停、不通知会话，并且只给库内游戏建（`_startPlayTracker` 的 `canTrackPlaytime` 门），附着库外窗口时连判活都没有。于是 `phase` 停在 running / degraded，工作台 `texthooker_page.dart` 一直显示「正在监听」。
 - **[x] ① 已修复** — 新增纯状态机 `fushi/lib/src/mining/gal_game_exit_watch.dart`（`GalGameExitWatch`：从没见活不判死、连续 N 次失活才算、先在游戏目录找接手进程再判死、盘符根下的 exe 不找接手），由 `GalHookSessionController._startGameExitWatch` 在 attach / launch（含注入失败降级分支）拿到游戏 PID 后启动，确认退出即走 `stopCapture(keepBinding: false)` 并记 `session.game_exited`；会话结束后 `gameExitedCount` +1，`HomeGamePage` 在用户仍停在捕获工作台时切回游戏首页（在别的子区不打扰，手动停止不触发）。
 - **[x] ② 已加自动化测试** — `fushi/test/mining/gal_hook_session_controller_test.dart`（`_gameExitWatchTests`：附着退出、启动退出、判活不可用不误停、自重启接手后继续、盘符根、手动停止后旧监视失效）；`fushi/test/pages/home_game_page_test.dart`（BUG-3993：工作台收到退出信号回首页、别的子区不被拉走）。
-- **备注**：判活复用游玩计时器同一个 `GalgameWindowsProcessProbe`（`OpenProcess` + `GetExitCodeProcess`），默认 2 秒一次、连续 3 次失活确认，游戏关掉后约 6 秒内回首页。未在真游戏上验证（见 PR 说明）。
+- **审查补修（re-land #2732 时）**：
+  - 接手进程（自重启 / 启动器换代）原来只换了监视器盯的 PID，hook、`gamePid`、窗口绑定仍挂在死进程上（换个路径重现本 bug）。改为 `_followGameProcessHandoff`：换代、按新 PID 走与附着同一条注入链路（`_attachHooksToProcess`）、清掉死窗口并按新 PID 重启窗口监视、计时只换主 PID 不切段。
+  - 「进程在不在」原来计时器（1s）与会话（2s）各轮询一份、各有门槛和归属判据，游戏装在 junction 后面时结论相反。现在判活只有 `GalGameExitWatch` 一路（计时器不再判活，接手时由会话调 `GalgamePlayTracker.followMainProcess`），归属判据抽成共用的 `fushi/lib/src/mining/galgame_process_group.dart`（`GalgameProcessGroup`，含 canonicalize 回退与盘符根门）。
+  - 删掉测试专用的 `debugNotifyGameExited`，页面测试走真实「退出判定 → stopCapture → 回首页」链路。
+  - 测试：`fushi/test/mining/gal_game_exit_watch_test.dart`（含 junction 接手）、`fushi/test/mining/galgame_play_tracker_test.dart`（计时器不判活、换主 PID 重建候选组）、控制器接手用例断言 `gamePid == 3001` 且引擎注入 `targetPid: 3001`。
+- **备注**：判活用 `GalgameWindowsProcessProbe`（`OpenProcess` + `GetExitCodeProcess`），默认 1 秒一次、连续 3 次失活确认，游戏关掉后约 3 秒内回首页。未在真游戏上验证附着 / 启动 / 自重启三条路径（真机验证按规则不做，缺口记于此）。
