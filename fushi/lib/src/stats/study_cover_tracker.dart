@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// 学习面「被盖住」的唯一判据：根 Navigator 上，学习页自己的路由**之上**还压着任何
@@ -12,7 +13,7 @@ import 'package:flutter/widgets.dart';
 /// 新功能（悬浮球的 AI 侧板 / 同步 / 切换配置、图片操作单、Kavita 冲突框……）都默认
 /// **不**停表，漏一个算一个；漫画 / PDF 阅读器干脆没有这层判据，开着整页 SRS 页也照计。
 /// 现在新入口什么都不用做就会停表；真正「属于阅读」的弹层（查词后的制卡操作单、阅读器
-/// 的统计侧板）用 [StudyClockTransparentRoute] 声明豁免。
+/// 的统计侧板）在路由构造时带上 [StudyClockTransparentSettings] 声明豁免。
 ///
 /// ## 不在判据里的
 ///
@@ -22,7 +23,10 @@ import 'package:flutter/widgets.dart';
 /// - 学习页**之下**的路由：只看学习页路由在栈里之后的那些。
 class StudyCoverTracker extends NavigatorObserver with ChangeNotifier {
   final List<Route<dynamic>> _stack = <Route<dynamic>>[];
-  final Set<Route<dynamic>> _transparent = <Route<dynamic>>{};
+
+  /// 豁免随状态切换的路由（[StudyClockTransparentSettings.when]）订阅的开关。
+  final Map<Route<dynamic>, ValueListenable<bool>> _switches =
+      <Route<dynamic>, ValueListenable<bool>>{};
 
   /// [base] 之上有没有压着一条未豁免的模态路由。[base] 不在根栈里（嵌套导航里的页、
   /// 已出栈）时无从判断，返回 false——不因为看不见就把表停死。
@@ -32,17 +36,9 @@ class StudyCoverTracker extends NavigatorObserver with ChangeNotifier {
     if (index < 0) return false;
     for (int i = index + 1; i < _stack.length; i++) {
       final Route<dynamic> route = _stack[i];
-      if (route is ModalRoute && !_transparent.contains(route)) return true;
+      if (route is ModalRoute && !isStudyClockTransparent(route)) return true;
     }
     return false;
-  }
-
-  /// 声明 / 撤销 [route] 「属于学习面本身」（盖在上面也照常计时）。
-  void setTransparent(Route<dynamic> route, {required bool transparent}) {
-    final bool changed = transparent
-        ? _transparent.add(route)
-        : _transparent.remove(route);
-    if (changed) notifyListeners();
   }
 
   @visibleForTesting
@@ -52,6 +48,7 @@ class StudyCoverTracker extends NavigatorObserver with ChangeNotifier {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _stack.add(route);
+    _subscribe(route);
     notifyListeners();
   }
 
@@ -66,13 +63,14 @@ class StudyCoverTracker extends NavigatorObserver with ChangeNotifier {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     final int index = oldRoute == null ? -1 : _stack.indexOf(oldRoute);
-    if (oldRoute != null) _transparent.remove(oldRoute);
+    if (oldRoute != null) _unsubscribe(oldRoute);
     if (newRoute != null) {
       if (index >= 0) {
         _stack[index] = newRoute;
       } else {
         _stack.add(newRoute);
       }
+      _subscribe(newRoute);
     } else if (index >= 0) {
       _stack.removeAt(index);
     }
@@ -80,9 +78,62 @@ class StudyCoverTracker extends NavigatorObserver with ChangeNotifier {
   }
 
   void _forget(Route<dynamic> route) {
-    _transparent.remove(route);
+    _unsubscribe(route);
     if (_stack.remove(route)) notifyListeners();
   }
+
+  void _subscribe(Route<dynamic> route) {
+    final RouteSettings settings = route.settings;
+    if (settings is! StudyClockTransparentSettings) return;
+    final ValueListenable<bool>? when = settings.when;
+    if (when == null || _switches.containsKey(route)) return;
+    _switches[route] = when;
+    when.addListener(notifyListeners);
+  }
+
+  void _unsubscribe(Route<dynamic> route) {
+    _switches.remove(route)?.removeListener(notifyListeners);
+  }
+}
+
+/// 路由**构造时**就声明「属于学习面」（盖在学习页上也不停表）的 [RouteSettings]。
+///
+/// 只给确实是阅读一部分的弹层用（查词后的制卡操作单 / 高级制卡、阅读器的统计侧板）。
+/// 豁免必须随路由一起诞生：[StudyCoverTracker.didPush] 当帧就看得到它，不会先判成
+/// 「被盖住」停一次表（封段 + 写库）、等内容建好再补登记起表。弹层入口经
+/// `showAppDialog(studyClockTransparent:)` / `adaptiveModalSheet(studyClockTransparent:)`
+/// / `showReaderSideSheet(studyClockTransparentWhen:)` 带上它，不自己拼。
+class StudyClockTransparentSettings extends RouteSettings {
+  /// 整条路由始终豁免。
+  const StudyClockTransparentSettings({super.name}) : when = null;
+
+  /// 豁免随 [when] 切换（侧板原地切到统计页才豁免）。[when] 的变化由调用方在事件
+  /// 处理里改，不在 build 期间改——观察器据此同步通知学习页停 / 起表。
+  const StudyClockTransparentSettings.when(
+    ValueListenable<bool> this.when, {
+    super.name,
+  });
+
+  final ValueListenable<bool>? when;
+
+  bool get transparent => when?.value ?? true;
+}
+
+/// [route] 是否声明了「属于学习面」（见 [StudyClockTransparentSettings]）。
+bool isStudyClockTransparent(Route<dynamic> route) {
+  final RouteSettings settings = route.settings;
+  return settings is StudyClockTransparentSettings && settings.transparent;
+}
+
+/// 给弹层入口用：要豁免就带上标记，不豁免返回 null（入口照旧用默认 settings）。
+RouteSettings? studyClockRouteSettings({
+  bool transparent = false,
+  ValueListenable<bool>? transparentWhen,
+}) {
+  if (transparentWhen != null) {
+    return StudyClockTransparentSettings.when(transparentWhen);
+  }
+  return transparent ? const StudyClockTransparentSettings() : null;
 }
 
 /// 挂进 `MaterialApp.navigatorObservers` 的唯一实例（`main.dart`）。
@@ -121,74 +172,4 @@ class StudyCoverWatch {
     _covered = next;
     onChanged();
   }
-}
-
-/// 声明「本子树所在的路由属于学习面」：盖在学习页上也不停表。
-///
-/// 只给确实是阅读一部分的弹层用（查词后的制卡操作单、阅读器的统计侧板）。[enabled]
-/// 可随状态切换（侧板原地切到统计页才豁免）。
-class StudyClockTransparentRoute extends StatefulWidget {
-  const StudyClockTransparentRoute({
-    super.key,
-    this.enabled = true,
-    this.tracker,
-    required this.child,
-  });
-
-  final bool enabled;
-  final StudyCoverTracker? tracker;
-  final Widget child;
-
-  @override
-  State<StudyClockTransparentRoute> createState() =>
-      _StudyClockTransparentRouteState();
-}
-
-class _StudyClockTransparentRouteState
-    extends State<StudyClockTransparentRoute> {
-  ModalRoute<Object?>? _route;
-  bool _applied = false;
-
-  StudyCoverTracker get _tracker => widget.tracker ?? studyCoverTracker;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (!identical(route, _route)) {
-      _release();
-      _route = route;
-    }
-    _apply();
-  }
-
-  @override
-  void didUpdateWidget(StudyClockTransparentRoute oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.tracker, widget.tracker)) _release();
-    _apply();
-  }
-
-  @override
-  void dispose() {
-    _release();
-    super.dispose();
-  }
-
-  void _apply() {
-    final ModalRoute<Object?>? route = _route;
-    if (route == null || _applied == widget.enabled) return;
-    _applied = widget.enabled;
-    _tracker.setTransparent(route, transparent: widget.enabled);
-  }
-
-  void _release() {
-    final ModalRoute<Object?>? route = _route;
-    if (route == null || !_applied) return;
-    _applied = false;
-    _tracker.setTransparent(route, transparent: false);
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
 }

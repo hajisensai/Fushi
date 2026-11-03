@@ -349,18 +349,24 @@ void main() {
       expect(resumed, greaterThan(inactive), reason: path);
       final String bg = body.substring(inactive, resumed);
       final String fg = body.substring(resumed);
-      // 三个阅读面的 start / stop 决策都收敛到统一判据（EPUB BUG-2209 的
-      // studyClockMayRun；漫画 / PDF 自 BUG-3959 起同样是「生命周期 + 被路由盖住」）：
-      // 生命周期分支只置旗再 _syncStudyClockRunState()，回前台时仍被盖住就不续表。
+      // 三个阅读面的 start / stop 决策都收敛到统一判据：EPUB 是 BUG-2209 的
+      // studyClockMayRun（生命周期分支只置旗再 _syncStudyClockRunState()）；漫画 / PDF
+      // 自 BUG-3993 起共用 StudyClockRunGate（「生命周期 + 被路由盖住」，回前台时仍被
+      // 盖住就不续表，行为由 study_clock_run_gate_test 钉）。
+      final bool novel = path.endsWith('reader_fushi_page.dart');
       expect(
-        bg.contains('_studyClockLifecycleStopped = true;') &&
-            bg.contains('_syncStudyClockRunState();'),
+        novel
+            ? bg.contains('_studyClockLifecycleStopped = true;') &&
+                  bg.contains('_syncStudyClockRunState();')
+            : bg.contains('_studyClockGate.setLifecycleStopped(true);'),
         isTrue,
         reason: '$path：失焦 / 进后台必须停表（切屏自动暂停，用户拍板只对阅读面）',
       );
       expect(
-        fg.contains('_studyClockLifecycleStopped = false;') &&
-            fg.contains('_syncStudyClockRunState();'),
+        novel
+            ? fg.contains('_studyClockLifecycleStopped = false;') &&
+                  fg.contains('_syncStudyClockRunState();')
+            : fg.contains('_studyClockGate.setLifecycleStopped(false);'),
         isTrue,
         reason: '$path：回前台重启（后台段靠停表丢弃，不靠重锚）',
       );

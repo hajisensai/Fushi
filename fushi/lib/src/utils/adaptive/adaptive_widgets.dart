@@ -3,6 +3,8 @@ import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosSwitch, MacosSlider, PushButton, ControlSize;
+import 'package:fushi/src/stats/study_cover_tracker.dart'
+    show studyClockRouteSettings;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -328,6 +330,9 @@ Widget adaptiveIndicator({
 /// 关闭**，与桌面 `showAppDialog(barrierDismissible: false)` 同一语义：用于关掉
 /// 就会中断长任务的弹层（设备端转录，反馈 NrRPRDTprI）。Esc / 手柄 B / 系统
 /// 返回与弹层内的按钮仍照常关闭——那些是明确的关闭意图，不是误触。
+///
+/// [studyClockTransparent]：弹层属于学习面本身（高级制卡），盖在学习页上也不停
+/// 学习计时；豁免随路由构造带上，推路由当帧生效（BUG-3993）。
 Future<T?> adaptiveModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -336,11 +341,16 @@ Future<T?> adaptiveModalSheet<T>({
   bool useSafeArea = false,
   bool expandable = false,
   bool isDismissible = true,
+  bool studyClockTransparent = false,
 }) {
+  final RouteSettings? routeSettings = studyClockRouteSettings(
+    transparent: studyClockTransparent,
+  );
   if (isCupertinoPlatform(context)) {
     return showCupertinoModalPopup<T>(
       context: context,
       barrierDismissible: isDismissible,
+      routeSettings: routeSettings,
       builder: builder,
     );
   }
@@ -365,6 +375,7 @@ Future<T?> adaptiveModalSheet<T>({
           context,
         ).modalBarrierDismissLabel,
         barrierColor: Colors.black.withValues(alpha: 0.18),
+        routeSettings: routeSettings,
         transitionDuration: noMotion
             ? Duration.zero
             : const Duration(milliseconds: 260),
@@ -406,6 +417,7 @@ Future<T?> adaptiveModalSheet<T>({
     // 45%），且自带路由，Esc / 焦点作用域 / isScrollControlled 语义都要重接。
     return showModalBottomSheet<T>(
       context: context,
+      routeSettings: routeSettings,
       isScrollControlled: isScrollControlled,
       useSafeArea: useSafeArea,
       showDragHandle: false,
@@ -434,6 +446,7 @@ Future<T?> adaptiveModalSheet<T>({
         barrierDismissible: isDismissible,
         traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
         reduceMotion: noMotion || !fushiMotionEnabled(context),
+        settings: routeSettings,
         builder: (BuildContext sheetContext) => FushiM3eFloatingSheet(
           frosted: frosted,
           child: builder(sheetContext),
@@ -447,6 +460,7 @@ Future<T?> adaptiveModalSheet<T>({
     // 关掉它、在玻璃里按 M3 同一几何（48 高交互区 + 32x4 横条）自己画。
     return showModalBottomSheet<T>(
       context: context,
+      routeSettings: routeSettings,
       isScrollControlled: isScrollControlled,
       useSafeArea: useSafeArea,
       showDragHandle: false,
@@ -468,6 +482,7 @@ Future<T?> adaptiveModalSheet<T>({
   }
   return showModalBottomSheet<T>(
     context: context,
+    routeSettings: routeSettings,
     isScrollControlled: isScrollControlled,
     useSafeArea: useSafeArea,
     // 拖动条由 [FushiM3eSheetBody] 自绘（同 M3 几何），两档高度要接它的手势。

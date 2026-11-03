@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/stats/study_cover_tracker.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
+    show adaptiveModalSheet;
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
-/// BUG-3959：学习页之上压着任何未豁免的模态路由（整页 / 对话框 / 弹出菜单 / 侧板）
-/// 都算「被盖住」；[StudyClockTransparentRoute] 声明的弹层不算。
+/// BUG-3993：学习页之上压着任何未豁免的模态路由（整页 / 对话框 / 弹出菜单 / 侧板）
+/// 都算「被盖住」；路由构造时带 [StudyClockTransparentSettings] 的弹层不算。
 void main() {
   late StudyCoverTracker tracker;
   late GlobalKey<NavigatorState> navKey;
@@ -82,34 +87,40 @@ void main() {
     expect(watch.covered, isFalse);
   });
 
-  testWidgets('声明豁免的弹层不算盖住；豁免可随状态切换', (WidgetTester tester) async {
+  testWidgets('构造时声明豁免的弹层不算盖住，且推上去当帧就不停表（无停 / 起抖动）', (
+    WidgetTester tester,
+  ) async {
     await pumpApp(tester);
-    final ValueNotifier<bool> exempt = ValueNotifier<bool>(true);
-    addTearDown(exempt.dispose);
-    showDialog<void>(
-      context: studyContext,
-      builder: (_) => ValueListenableBuilder<bool>(
-        valueListenable: exempt,
-        builder: (_, bool value, _) => StudyClockTransparentRoute(
-          enabled: value,
-          tracker: tracker,
-          child: const Text('mining'),
-        ),
+    unawaited(
+      showAppDialog<void>(
+        context: studyContext,
+        studyClockTransparent: true,
+        builder: (_) => const Text('mining'),
       ),
     );
     await tester.pump();
-    expect(watch.covered, isFalse, reason: '首帧建好后豁免生效');
-    exempt.value = false;
-    await tester.pump();
-    expect(watch.covered, isTrue);
-    exempt.value = true;
+    expect(watch.covered, isFalse);
+    unawaited(
+      adaptiveModalSheet<void>(
+        context: studyContext,
+        studyClockTransparent: true,
+        builder: (_) => const Text('advanced mining'),
+      ),
+    );
     await tester.pump();
     expect(watch.covered, isFalse);
+    expect(
+      changes,
+      isEmpty,
+      reason: '豁免要在 didPush 当帧可见：先判盖住停表、建好后再起表 = 多封一段多写一次库',
+    );
 
     // 豁免弹层之上再压一个普通对话框：照样算盖住。
-    showDialog<void>(
-      context: studyContext,
-      builder: (_) => const Text('confirm'),
+    unawaited(
+      showAppDialog<void>(
+        context: studyContext,
+        builder: (_) => const Text('confirm'),
+      ),
     );
     await tester.pump();
     expect(watch.covered, isTrue);
@@ -118,8 +129,43 @@ void main() {
     expect(watch.covered, isFalse);
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
+    navKey.currentState!.pop();
+    await tester.pumpAndSettle();
     expect(watch.covered, isFalse);
+    expect(changes, <bool>[true, false]);
     expect(tracker.debugStack.length, 2);
+  });
+
+  testWidgets('豁免随开关切换（统计侧板）：开关在事件里改，出栈后退订', (WidgetTester tester) async {
+    await pumpApp(tester);
+    final ValueNotifier<bool> statisticsShown = ValueNotifier<bool>(true);
+    addTearDown(statisticsShown.dispose);
+    unawaited(
+      showGeneralDialog<void>(
+        context: studyContext,
+        routeSettings: studyClockRouteSettings(
+          transparentWhen: statisticsShown,
+        ),
+        pageBuilder: (_, _, _) => const Text('panel'),
+      ),
+    );
+    await tester.pump();
+    expect(watch.covered, isFalse, reason: '打开时初值由路由构造参数给出');
+    expect(changes, isEmpty);
+    statisticsShown.value = false;
+    expect(watch.covered, isTrue, reason: '切走统计页同步停表，不必等下一帧 build');
+    statisticsShown.value = true;
+    expect(watch.covered, isFalse);
+    navKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(changes, <bool>[true, false]);
+    // 出栈后观察器已退订：再拨开关不再通知。
+    int notified = 0;
+    void count() => notified++;
+    tracker.addListener(count);
+    addTearDown(() => tracker.removeListener(count));
+    statisticsShown.value = false;
+    expect(notified, 0);
   });
 
   testWidgets('盖在上面的路由被 replace / remove 也跟得上', (WidgetTester tester) async {

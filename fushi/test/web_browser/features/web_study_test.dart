@@ -128,7 +128,7 @@ void main() {
       expect(clocks, isEmpty);
     });
 
-    test('浏览页被路由盖住（对话框 / 侧板 / 整页）停表，露出续表（BUG-3959）', () async {
+    test('浏览页被路由盖住（对话框 / 侧板 / 整页）停表，露出续表（BUG-3993）', () async {
       final WebStudySession s = session()..setTabActive(true);
       await s.navigate(Uri.parse('https://a.jp/1'));
       s.report(report(), title: 'T');

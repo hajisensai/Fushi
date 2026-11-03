@@ -2527,9 +2527,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 根导航上有没有路由压住阅读器（[studyCoverTracker] 的统一判据）。与
   /// [_studyClockModalDepth] 一起进判据：整页路由、对话框、侧板、菜单——不管是阅读器
   /// 自己弹的、悬浮球 / 通知 / 全局快捷键从页面外推上来的，还是以后新加的入口——都
-  /// 默认停表；只有声明了 [StudyClockTransparentRoute] 的弹层（统计侧板、制卡操作单）
-  /// 不停。旧实现只认 [PageRoute]、其余靠各入口自己包 [_withStudyClockPaused]，新入口
-  /// 一漏就照计（BUG-3959）。
+  /// 默认停表；只有路由构造时带了 [StudyClockTransparentSettings] 的弹层（统计侧板、
+  /// 制卡操作单 / 高级制卡）不停。旧实现只认 [PageRoute]、其余靠各入口自己包 [_withStudyClockPaused]，新入口
+  /// 一漏就照计（BUG-3993）。
   late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
     onChanged: () {
       if (mounted) _syncStudyClockRunState();

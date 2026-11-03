@@ -28,7 +28,7 @@ import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
-import 'package:fushi/src/stats/study_cover_tracker.dart';
+import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 
@@ -114,33 +114,17 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 任何会话时长字段——旧的 `_sessionReadingMs` / `_sessionStartTime` 形态整个消失。
   StudyClock? _studyClock;
 
-  /// 切后台 / 失焦期间为 true（BUG-892 的切屏自动暂停）。
-  bool _studyClockLifecycleStopped = false;
-
-  /// 根导航上有路由压住本页（整页 / 对话框 / 侧板 / 菜单，[studyCoverTracker]）：
-  /// 期间不是在读，停表（BUG-3959：此前本页只看生命周期，开着整页 SRS / 设置 /
-  /// 反馈中心也照计）。
-  late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
-    onChanged: () {
-      if (mounted) _syncStudyClockRunState();
-    },
+  /// 学习计时门（与 PDF 阅读器共用一份判据，[StudyClockRunGate]）：在前台（BUG-892
+  /// 切屏暂停）且没被根导航上的路由压住（整页 / 对话框 / 侧板 / 菜单，BUG-3993：此前
+  /// 本页只看生命周期，开着整页 SRS / 设置 / 反馈中心也照计）才走。
+  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(
+    () => _studyClock,
   );
-
-  /// 时钟运行态对齐判据：前台且没被盖住才走。
-  void _syncStudyClockRunState() {
-    final StudyClock? clock = _studyClock;
-    if (clock == null) return;
-    if (!_studyClockLifecycleStopped && !_studyCoverWatch.covered) {
-      clock.start();
-    } else {
-      unawaited(clock.stop());
-    }
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _studyCoverWatch.attach(ModalRoute.of(context));
+    _studyClockGate.attach(ModalRoute.of(context));
   }
 
   /// 无文本层（扫描图 PDF）只提示一次。
@@ -186,7 +170,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // `db.close()` 互等。关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），
     // detach 只停表，攒下的写和最后的位置一起交给退出汇合点统一 await。
     // 时钟为空 = 本页从没开始计时，整段跳过。
-    _studyCoverWatch.dispose();
+    _studyClockGate.dispose();
     _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
     super.dispose();
@@ -205,14 +189,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算失焦瞬间的部分窗口再
       // 封段落库；顺序同 EPUB 侧。
-      _studyClockLifecycleStopped = true;
-      _syncStudyClockRunState();
+      _studyClockGate.setLifecycleStopped(true);
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
       // BUG-892 / BUG-1052: 后台那段靠「时钟停着」丢弃，不再重锚墙钟基准。
-      // 仍被路由盖着时不续表（BUG-3959）。
-      _studyClockLifecycleStopped = false;
-      _syncStudyClockRunState();
+      // 仍被路由盖着时不续表（BUG-3993）。
+      _studyClockGate.setLifecycleStopped(false);
     }
   }
 
@@ -268,7 +250,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           ErrorLogService.instance.log('StudyClock.write(pdf)', e, st),
       deferWrite: ExitFlushRegistry.instance.defer,
     );
-    _syncStudyClockRunState();
+    // 建表时已在后台 / 已被盖住就不起表（BUG-3993）。
+    _studyClockGate.sync();
     return _PdfBookLoad(path: path, row: row);
   }
 
