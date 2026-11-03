@@ -1723,8 +1723,8 @@ class _HomePageState extends BasePageState<HomePage>
   /// Apple（iOS 26 / macOS 26）下「后台任务」入口：主操作进导航栏——外壳大标题
   /// 行右侧一颗 bar button，外圈套分段进度环。外壳大标题行对可见 tab 高度为 0 时
   /// （首页 / 复习 / 设置）这颗按钮画不出来，入口退回右下 FAB（见
-  /// [_backgroundTasksHostedByChrome]）。MD3 返回 null（并进悬浮底栏 / 桌面右下
-  /// FAB）。视频库页头自带的补刮按钮是常驻入口（含空闲时看历史），与这颗不冲突。
+  /// [_backgroundTasksHostedByChrome]）。MD3 返回 null（手机叠在悬浮底栏 FAB
+  /// 上方 / 桌面右下 FAB）。视频库页头自带的补刮按钮是常驻入口（含空闲时看历史），与这颗不冲突。
   Widget? _appleBackgroundTasksAction() {
     // 标题行高度为 0 时不往里塞按钮（塞了也只会被压扁裁掉），入口是右下 FAB。
     if (!isGlassDesign(context) ||
@@ -1771,12 +1771,10 @@ class _HomePageState extends BasePageState<HomePage>
   /// FAB）。判据与可见 tab 实际渲染的页头同源：外壳大标题行是否有高度
   /// （[_shellTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
   /// 的那一份）。
-  bool _backgroundTasksHostedByChrome({required bool mobileLayout}) =>
-      homeBackgroundTasksHostedByChrome(
-        apple: isGlassDesign(context),
-        mobileLayout: mobileLayout,
-        shellTitleVisible: _shellTitleFor(_visibleTab) != null,
-      );
+  bool _backgroundTasksHostedByChrome() => homeBackgroundTasksHostedByChrome(
+    apple: isGlassDesign(context),
+    shellTitleVisible: _shellTitleFor(_visibleTab) != null,
+  );
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
   /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
@@ -1973,7 +1971,7 @@ class _HomePageState extends BasePageState<HomePage>
     _inMobileLayout = false;
     // Apple：「后台任务」入口进外壳大标题行（[_appleBackgroundTasksAction]）——
     // 只在可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
-    _shellFabHostedByBar = _backgroundTasksHostedByChrome(mobileLayout: false);
+    _shellFabHostedByBar = _backgroundTasksHostedByChrome();
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
     // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
@@ -2242,9 +2240,10 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     _inMobileLayout = true;
-    // MD3 并进悬浮底栏的 FAB；Apple 进外壳大标题行（[_appleBackgroundTasksAction]），
-    // 可见 tab 没有那一行时仍画 FAB（同桌面，见 [_backgroundTasksHostedByChrome]）。
-    _shellFabHostedByBar = _backgroundTasksHostedByChrome(mobileLayout: true);
+    // MD3 画成悬浮底栏 FAB 正上方的小环钮（[_buildBackgroundTasksFab]）；Apple
+    // 进外壳大标题行（[_appleBackgroundTasksAction]），可见 tab 没有那一行时仍画
+    // FAB（同桌面，见 [_backgroundTasksHostedByChrome]）。
+    _shellFabHostedByBar = _backgroundTasksHostedByChrome();
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2313,7 +2312,6 @@ class _HomePageState extends BasePageState<HomePage>
             glassSearchIndex: glassSearchIndex,
             showLabels: appModel.navBarLabelsVisible,
             barStyle: appModel.navBarStyle,
-            materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
             // 按下横拖（或长按后拖）选中指示器到目标模块（MD3 悬浮底栏）：落地
@@ -2339,31 +2337,8 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// MD3 移动布局里，外壳内容自己的页面 FAB 并进悬浮底栏右侧那颗 FAB，屏幕上
-  /// 不出现两颗（2026-10-06 用户）。目前外壳里唯一的页面 FAB 是「后台任务」
-  /// 入口（同步 / 复习同步 / 补刮，图标外圈分段进度环）；没有任务时返回 null，
-  /// 底栏 FAB 用默认的「查词」。
-  AdaptiveNavFab? _shellPageFab() {
-    if (isGlassDesign(context)) return null;
-    if (!_hasBackgroundTasks) return null;
-    return AdaptiveNavFab(
-      icon: FushiIcons.sync,
-      label: t.video_source_scrape_tasks_open,
-      onPressed: () => unawaited(_openBackgroundTasks()),
-      glyph: ListenableBuilder(
-        listenable: _backgroundTasksListenable,
-        builder: (BuildContext context, _) => BackgroundTasksGlyph(
-          tasks: _backgroundTasks(),
-          size: 44,
-          iconSize: 24,
-        ),
-      ),
-    );
-  }
-
-  /// 页面 FAB 是否已由外壳的栏承载、body 不再自己画：MD3 手机布局并进悬浮
-  /// 底栏；Apple 只在可见 tab 确有承载入口的大标题行时收走（见
-  /// [homeBackgroundTasksHostedByChrome]）。
+  /// 「后台任务」入口是否已由外壳的栏承载、body 不再自己画：只有 Apple 在可见
+  /// tab 确有承载入口的大标题行时收走（见 [homeBackgroundTasksHostedByChrome]）。
   bool _shellFabHostedByBar = false;
 
   /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
@@ -3897,33 +3872,87 @@ class _HomePageState extends BasePageState<HomePage>
         // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
         // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。
         if (_hasBackgroundTasks && !_shellFabHostedByBar)
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: SafeArea(
-              child: ListenableBuilder(
-                listenable: _backgroundTasksListenable,
-                builder: (BuildContext context, _) {
-                  final List<BackgroundTask> tasks = _backgroundTasks();
-                  return FushiGlassFab(
-                    child: FloatingActionButton(
-                      key: const ValueKey<String>(
-                        'video-source-background-task-panel',
-                      ),
-                      tooltip: _backgroundTasksTooltipText(tasks),
-                      onPressed: () => unawaited(_openBackgroundTasks()),
-                      child: BackgroundTasksGlyph(
-                        tasks: tasks,
-                        size: 46,
-                        iconSize: 22,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
+          _buildBackgroundTasksFab(),
       ],
+    );
+  }
+
+  /// 「后台任务」入口的 FAB 形态（外壳的栏没承载时）。
+  ///
+  /// - MD3 手机：悬浮底栏右侧那颗「查词」FAB 正上方叠一颗 40dp 小环钮，中线与
+  ///   底栏 FAB 对齐；底栏反转时跟着 FAB 翻到起始侧。body 是 `extendBody`，
+  ///   MediaQuery 底部 padding 已含底栏高度，所以从它往上留一段间距即可。
+  /// - 其余（桌面、Apple 无标题行的 tab）：右下标准 FAB。
+  Widget _buildBackgroundTasksFab() {
+    final bool stacked = _inMobileLayout && !isGlassDesign(context);
+    final Widget fab = ListenableBuilder(
+      listenable: _backgroundTasksListenable,
+      builder: (BuildContext context, _) {
+        final List<BackgroundTask> tasks = _backgroundTasks();
+        final Widget glyph = stacked
+            ? BackgroundTasksGlyph(tasks: tasks, size: 34, iconSize: 18)
+            : BackgroundTasksGlyph(tasks: tasks, size: 46, iconSize: 22);
+        const Key key = ValueKey<String>('video-source-background-task-panel');
+        final String tooltip = _backgroundTasksTooltipText(tasks);
+        void open() => unawaited(_openBackgroundTasks());
+        return FushiGlassFab(
+          child: stacked
+              ? FloatingActionButton.small(
+                  key: key,
+                  tooltip: tooltip,
+                  onPressed: open,
+                  child: glyph,
+                )
+              : FloatingActionButton(
+                  key: key,
+                  tooltip: tooltip,
+                  onPressed: open,
+                  child: glyph,
+                ),
+        );
+      },
+    );
+    // 音乐悬浮条（[MusicFloatingBarHost]）整宽贴在底部 padding 之上、画在正文
+    // 上面：有音乐在播时经 [MusicBarReserve] 把条高并进底部 padding 再定位，
+    // 入口不会被条盖住。Align 只命中按钮本身，其余区域照常点到下面的内容。
+    return Positioned.fill(
+      child: MusicBarReserve(
+        child: Builder(
+          builder: (BuildContext context) {
+            final double bottomInset = MediaQuery.paddingOf(context).bottom;
+            if (!stacked) {
+              return Align(
+                alignment: Alignment.bottomRight,
+                child: Padding(
+                  padding: EdgeInsets.only(right: 20, bottom: 20 + bottomInset),
+                  child: fab,
+                ),
+              );
+            }
+            const double smallFabExtent = 40;
+            final double fabExtent = materialNavBarFabExtent(
+              context,
+              showLabels: appModel.navBarLabelsVisible,
+            );
+            final double sideInset =
+                kAdaptiveNavFloatingMargin + (fabExtent - smallFabExtent) / 2;
+            final bool leading = appModel.reverseNavigationBar;
+            return Align(
+              alignment: leading
+                  ? AlignmentDirectional.bottomStart
+                  : AlignmentDirectional.bottomEnd,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: leading ? sideInset : 0,
+                  end: leading ? 0 : sideInset,
+                  bottom: bottomInset + kAdaptiveNavFloatingMargin,
+                ),
+                child: fab,
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -4399,7 +4428,9 @@ String? homeShellTitleFor(
 /// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页
 /// body 不再画右下 FAB）。
 ///
-/// - MD3：手机布局并进悬浮底栏右侧那颗 FAB（[mobileLayout]）；桌面画右下 FAB。
+/// - MD3：从不收走。桌面画右下 FAB；手机画成悬浮底栏 FAB 正上方的一颗小环钮
+///   ——**不顶替**底栏那颗「查词」FAB（2026-11-04 用户「不可接受，多一个栏还差
+///   不多」，选了「小环按钮」方案）。
 /// - Apple（Cupertino）：没有悬浮底栏 FAB 位，入口进导航栏——但**只有**外壳
 ///   大标题行有高度（[shellTitleVisible]，右侧动作位画入口）时才收走 FAB。
 ///   首页 / 设置 / 复习的外壳标题行高度为 0，此前一律收走 FAB 会让后台任务跑着
@@ -4408,10 +4439,9 @@ String? homeShellTitleFor(
 @visibleForTesting
 bool homeBackgroundTasksHostedByChrome({
   required bool apple,
-  required bool mobileLayout,
   required bool shellTitleVisible,
 }) {
-  if (!apple) return mobileLayout;
+  if (!apple) return false;
   return shellTitleVisible;
 }
 

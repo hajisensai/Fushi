@@ -6,6 +6,9 @@
 // 浏览器扩展这几个 tab 的外壳大标题行高度为 0（`_shellTitleFor` 返回 null），
 // 按钮根本画不出来。后台任务跑着时用户既看不到进度也打不开面板。
 //
+// MD3 手机（2026-11-04 用户）：入口不许顶替悬浮底栏的「查词」FAB，而是在它正上方
+// 另叠一颗小环钮——所以 MD3 从不由栏承载，底栏也不再接外壳的页面 FAB。
+//
 // 判据抽成纯函数 [homeBackgroundTasksHostedByChrome]，这里逐格钉住；末尾的源码
 // 守卫钉住两套布局都经它赋值、且「标题行可见」与标题条判「有标题」同源。
 import 'dart:io';
@@ -16,46 +19,28 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 void main() {
   group('homeBackgroundTasksHostedByChrome', () {
     test('Apple：外壳大标题行不可见（首页 / 设置 / 浏览器扩展）→ 保留 FAB', () {
-      for (final bool mobileLayout in <bool>[false, true]) {
-        expect(
-          homeBackgroundTasksHostedByChrome(
-            apple: true,
-            mobileLayout: mobileLayout,
-            shellTitleVisible: false,
-          ),
-          isFalse,
-          reason: 'mobileLayout=$mobileLayout：没有标题行可承载入口，FAB 不能收走',
-        );
-      }
+      expect(
+        homeBackgroundTasksHostedByChrome(
+          apple: true,
+          shellTitleVisible: false,
+        ),
+        isFalse,
+        reason: '没有标题行可承载入口，FAB 不能收走',
+      );
     });
 
     test('Apple：外壳大标题行可见（库页 / 浏览 / 查词）→ 入口在标题行动作位', () {
-      for (final bool mobileLayout in <bool>[false, true]) {
-        expect(
-          homeBackgroundTasksHostedByChrome(
-            apple: true,
-            mobileLayout: mobileLayout,
-            shellTitleVisible: true,
-          ),
-          isTrue,
-        );
-      }
+      expect(
+        homeBackgroundTasksHostedByChrome(apple: true, shellTitleVisible: true),
+        isTrue,
+      );
     });
 
-    test('MD3：手机并进悬浮底栏，桌面画右下 FAB（与标题行无关）', () {
+    test('MD3：从不由栏承载（手机叠在底栏 FAB 上方，桌面右下），与标题行无关', () {
       for (final bool shellTitleVisible in <bool>[false, true]) {
         expect(
           homeBackgroundTasksHostedByChrome(
             apple: false,
-            mobileLayout: true,
-            shellTitleVisible: shellTitleVisible,
-          ),
-          isTrue,
-        );
-        expect(
-          homeBackgroundTasksHostedByChrome(
-            apple: false,
-            mobileLayout: false,
             shellTitleVisible: shellTitleVisible,
           ),
           isFalse,
@@ -69,18 +54,11 @@ void main() {
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
     expect(
-      src,
-      contains(
-        '_shellFabHostedByBar = _backgroundTasksHostedByChrome(mobileLayout: false);',
-      ),
-      reason: '桌面布局',
-    );
-    expect(
-      src,
-      contains(
-        '_shellFabHostedByBar = _backgroundTasksHostedByChrome(mobileLayout: true);',
-      ),
-      reason: '移动布局',
+      RegExp(
+        r'_shellFabHostedByBar = _backgroundTasksHostedByChrome\(\);',
+      ).allMatches(src).length,
+      2,
+      reason: '桌面与移动布局各赋值一次',
     );
     expect(
       src,
@@ -95,5 +73,22 @@ void main() {
     // 右下 FAB 仍由这一位门控，且同步任务也能点亮它（不只补刮）。
     expect(src, contains('_hasBackgroundTasks && !_shellFabHostedByBar'));
     expect(src, contains('_syncTasksActive ||'));
+  });
+
+  test('MD3 手机：入口叠在底栏 FAB 上方，不顶替「查词」FAB', () {
+    final String src = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    expect(
+      src,
+      isNot(contains('materialFab:')),
+      reason: '外壳不再把页面 FAB 塞进悬浮底栏，底栏那颗始终是「查词」',
+    );
+    expect(src, contains('FloatingActionButton.small('));
+    expect(
+      src,
+      contains('materialNavBarFabExtent('),
+      reason: '小环钮的中线按底栏 FAB 的实际边长对齐',
+    );
   });
 }

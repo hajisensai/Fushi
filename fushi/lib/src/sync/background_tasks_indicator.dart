@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 首页外壳的「后台任务」入口（2026-11-03 顶栏让位）：常规同步、复习同步 / 旧文件
-/// 迁移、视频源补刮共用右下（MD3 手机并进悬浮底栏 FAB、Apple 进大标题行）的
+/// 迁移、视频源补刮共用右下（MD3 手机叠在悬浮底栏 FAB 上方、Apple 进大标题行）的
 /// 一颗按钮，按钮外圈是 [FushiSegmentedProgressRing]——一项任务一段弧，看一眼
 /// 就知道跑了几项、各到哪；悬停 / 长按出每项一行的文字，点开是明细弹层。
 ///
