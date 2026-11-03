@@ -98,13 +98,14 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 
 typedef _Env = ({AppModel app, PreferencesRepository prefs});
 
-Future<_Env> _env() async {
+/// 真 IO / 数据库在 testWidgets 的假时钟里不会完成：环境搭建与偏好写入一律走 runAsync。
+Future<_Env> _env(WidgetTester tester) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final PreferencesRepository prefs = PreferencesRepository(db);
-  await prefs.loadFromDb();
-  final Directory dir = await Directory.systemTemp.createTemp('fushi_src_');
-  addTearDown(() => dir.delete(recursive: true));
+  await tester.runAsync(prefs.loadFromDb);
+  // 不建临时目录：这些页面不碰数据库目录下的文件。
+  final Directory dir = Directory.systemTemp;
   final AppModel app = AppModel(testPlatformServices())
     ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dir)
     ..wireDatabaseForTesting(db)
@@ -144,6 +145,16 @@ List<LyricsProviderEntry> _stored(PreferencesRepository prefs) =>
 bool _chipSelected(WidgetTester tester, String key) =>
     tester.widget<FushiChoiceChip>(find.byKey(ValueKey<String>(key))).selected;
 
+/// 让真 IO（插件目录、内存库查询）在真时钟里落地，再把帧推平。
+Future<void> _settle(WidgetTester tester) async {
+  for (int i = 0; i < 3; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pumpAndSettle();
+  }
+}
+
 Future<void> _teardown(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pumpAndSettle();
@@ -154,22 +165,24 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 1600);
     addTearDown(tester.view.reset);
-    final _Env env = await _env();
+    final _Env env = await _env(tester);
     // b 被停用（这次加载不到），它在偏好里排最前且被隐藏。
-    await env.prefs.setMusicSubsonicServers(<SubsonicServerConfig>[
-      _subsonic('a'),
-      _subsonic('b', enabled: false),
-      _subsonic('c'),
-    ]);
-    await env.prefs.setMusicOnlineSourcesRaw(
-      serializeLyricsProviders(const <LyricsProviderEntry>[
-        LyricsProviderEntry(id: 'server:subsonic-b', enabled: false),
-        LyricsProviderEntry(id: 'server:subsonic-a', enabled: true),
-        LyricsProviderEntry(id: 'server:subsonic-c', enabled: true),
-      ]),
-    );
+    await tester.runAsync(() async {
+      await env.prefs.setMusicSubsonicServers(<SubsonicServerConfig>[
+        _subsonic('a'),
+        _subsonic('b', enabled: false),
+        _subsonic('c'),
+      ]);
+      await env.prefs.setMusicOnlineSourcesRaw(
+        serializeLyricsProviders(const <LyricsProviderEntry>[
+          LyricsProviderEntry(id: 'server:subsonic-b', enabled: false),
+          LyricsProviderEntry(id: 'server:subsonic-a', enabled: true),
+          LyricsProviderEntry(id: 'server:subsonic-c', enabled: true),
+        ]),
+      );
+    });
     await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(
       find.byKey(const ValueKey<String>('music-source-server:subsonic-b')),
@@ -179,7 +192,7 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('music-source-down-server:subsonic-a')),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(
       _stored(env.prefs).map((LyricsProviderEntry e) => e.id).toList(),
       <String>[
@@ -200,7 +213,7 @@ void main() {
         matching: find.byType(Switch),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     final Map<String, bool> enabled = <String, bool>{
       for (final LyricsProviderEntry e in _stored(env.prefs)) e.id: e.enabled,
     };
@@ -209,14 +222,14 @@ void main() {
     expect(enabled['server:subsonic-a'], isTrue);
 
     // 重新启用 b：回到最前、仍隐藏。
-    await env.prefs.setMusicSubsonicServers(<SubsonicServerConfig>[
-      _subsonic('a'),
-      _subsonic('b'),
-      _subsonic('c'),
-    ]);
-    final List<MusicOrderedSource> back = await loadOrderedMusicOnlineSources(
-      env.app,
-    );
+    final List<MusicOrderedSource> back = (await tester.runAsync(() async {
+      await env.prefs.setMusicSubsonicServers(<SubsonicServerConfig>[
+        _subsonic('a'),
+        _subsonic('b'),
+        _subsonic('c'),
+      ]);
+      return loadOrderedMusicOnlineSources(env.app);
+    }))!;
     expect(back.first.source.key, 'server:subsonic-b');
     expect(back.first.enabled, isFalse);
     await _teardown(tester);
@@ -225,7 +238,7 @@ void main() {
   testWidgets('推荐「全部」：换数据源（如 Apple Music 换地区）后服务器那排专辑按新来源重新拉取', (
     WidgetTester tester,
   ) async {
-    final _Env env = await _env();
+    final _Env env = await _env(tester);
     final _FakeBrowser jp = _FakeBrowser('apple-music:jp');
     await tester.pumpWidget(
       _host(
@@ -236,7 +249,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Album apple-music:jp'), findsOneWidget);
     expect(jp.listAlbumsCalls, 1);
 
@@ -250,7 +263,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(us.listAlbumsCalls, 1);
     expect(find.text('Album apple-music:us'), findsOneWidget);
     expect(find.text('Album apple-music:jp'), findsNothing);
@@ -266,13 +279,13 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(us2.listAlbumsCalls, 1);
     await _teardown(tester);
   });
 
   testWidgets('推荐：选中的来源消失后，chip 与内容一起回到「全部」', (WidgetTester tester) async {
-    final _Env env = await _env();
+    final _Env env = await _env(tester);
     final _FakeBrowser navi = _FakeBrowser('subsonic-1');
     final String chipKey =
         'music-recommend-source-${musicServerSourceKey(navi)}';
@@ -285,9 +298,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.byKey(ValueKey<String>(chipKey)));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(_chipSelected(tester, chipKey), isTrue);
     expect(_chipSelected(tester, 'music-recommend-source-all'), isFalse);
 
@@ -300,7 +313,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(_chipSelected(tester, 'music-recommend-source-all'), isTrue);
     await _teardown(tester);
   });
@@ -309,7 +322,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 1600);
     addTearDown(tester.view.reset);
-    final _Env env = await _env();
+    final _Env env = await _env(tester);
     final _FakeBrowser navi = _FakeBrowser('subsonic-1');
     await tester.pumpWidget(
       _host(
@@ -320,13 +333,13 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     // 「全部」里这台服务器一排专辑，「查看全部」切到它。
     expect(find.text('Album subsonic-1'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey<String>('music-recommend-view-all-subsonic-1')),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(
       _chipSelected(
         tester,
@@ -336,7 +349,7 @@ void main() {
     );
     expect(find.text('Album subsonic-1'), findsOneWidget);
     await tester.tap(find.text('Album subsonic-1'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     expect(find.text('1:01'), findsOneWidget);
