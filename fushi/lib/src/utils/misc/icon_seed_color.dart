@@ -6,9 +6,11 @@
 /// 图标常是透明底，透明区的 RGB 是任意值，算进去会把种子拉偏）。
 library;
 
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 /// 取色解码边长：与 `ColorScheme.fromImageProvider` 的 112 同量级，够量化用。
@@ -148,5 +150,82 @@ Future<List<int>> extractImageSeedCandidates(
     );
   } finally {
     image.dispose();
+  }
+}
+
+/// 把任意 [ImageProvider]（封面 / 剧照）解析成图后，缩到长边不超过
+/// [kIconSeedDecodeWidth] 取非预乘 RGBA，在后台 isolate 跑 [iconSeedFromRgba]。
+///
+/// 取代 `ColorScheme.fromImageProvider` 做封面取色：那条路在 UI isolate 上同步跑
+/// Celebi 量化，且透明 / 全灰阶图会落到 [Score] 的谷歌蓝兜底（无封面占位是透明
+/// 1×1 图，整张卡会被染成蓝色）。这里透明像素不参与、灰阶图得到灰种子，没有可用
+/// 像素返回 null（调用方退回中性色）。图片加载失败抛出错误。
+Future<int?> extractImageProviderSeedArgb(
+  ImageProvider provider, {
+  Duration loadTimeout = const Duration(seconds: 10),
+}) async {
+  final ImageStream stream = provider.resolve(ImageConfiguration.empty);
+  final Completer<ImageInfo> loaded = Completer<ImageInfo>();
+  late final ImageStreamListener listener;
+  listener = ImageStreamListener(
+    (ImageInfo info, bool _) {
+      stream.removeListener(listener);
+      if (!loaded.isCompleted) loaded.complete(info);
+    },
+    onError: (Object error, StackTrace? stack) {
+      stream.removeListener(listener);
+      if (!loaded.isCompleted) loaded.completeError(error, stack);
+    },
+  );
+  stream.addListener(listener);
+  final ImageInfo info;
+  try {
+    info = await loaded.future.timeout(loadTimeout);
+  } on TimeoutException {
+    stream.removeListener(listener);
+    rethrow;
+  }
+  final ui.Image scaled;
+  try {
+    final ui.Image source = info.image;
+    final int longest = source.width > source.height
+        ? source.width
+        : source.height;
+    if (longest <= 0) return null;
+    final double scale = longest > kIconSeedDecodeWidth
+        ? kIconSeedDecodeWidth / longest
+        : 1;
+    final int w = (source.width * scale).round().clamp(1, kIconSeedDecodeWidth);
+    final int h = (source.height * scale).round().clamp(
+      1,
+      kIconSeedDecodeWidth,
+    );
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    paintImage(
+      canvas: ui.Canvas(recorder),
+      rect: ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+      image: source,
+      filterQuality: ui.FilterQuality.low,
+    );
+    final ui.Picture picture = recorder.endRecording();
+    try {
+      scaled = await picture.toImage(w, h);
+    } finally {
+      picture.dispose();
+    }
+  } finally {
+    info.dispose();
+  }
+  try {
+    final ByteData? raw = await scaled.toByteData(
+      format: ui.ImageByteFormat.rawStraightRgba,
+    );
+    if (raw == null) return null;
+    return await compute(
+      iconSeedFromRgba,
+      raw.buffer.asUint8List(raw.offsetInBytes, raw.lengthInBytes),
+    );
+  } finally {
+    scaled.dispose();
   }
 }

@@ -13,6 +13,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/media/music/music_history.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -1722,6 +1723,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
             ),
             title: src.source.title ?? '',
             cover: src.source.cover,
+            tinted: true,
             onTap: () => unawaited(_openSource(src.source)),
           ),
       ];
@@ -1738,6 +1740,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
             title: tr.item.title,
             subtitle: tr.item.artist,
             cover: tr.item.coverPath,
+            tinted: true,
             onTap: () => _playTrack(r.tracks, i),
             playOnTap: true,
           ),
@@ -1914,6 +1917,7 @@ class _QuickTile extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.playOnTap = false,
+    this.tinted = false,
   });
 
   final String title;
@@ -1922,16 +1926,34 @@ class _QuickTile extends StatelessWidget {
   final VoidCallback onTap;
   final bool playOnTap;
 
+  /// 底色取自封面（「最近播放」格子，2026-11-01 用户：「音乐的继续播放也做个
+  /// 取色」，与书架 / 视频 / 游戏的「继续」取色卡同一套配色）。
+  final bool tinted;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => tinted
+      ? FushiCoverTint(image: musicCoverImageProvider(cover), builder: _build)
+      : _build(context, null);
+
+  Widget _build(BuildContext context, ColorScheme? tint) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color background =
+        tint?.secondaryContainer ?? FushiDesignTokens.of(context).surfaces.card;
+    final TextStyle titleStyle = context.fushiType.titleSmallEmphasized;
     return SizedBox(
       height: 64,
-      child: _MorphCard(
-        color: FushiDesignTokens.of(context).surfaces.card,
-        radius: const BorderRadius.all(Radius.circular(16)),
-        hoverRadius: const BorderRadius.all(Radius.circular(32)),
-        onTap: onTap,
+      child: TweenAnimationBuilder<Color?>(
+        tween: ColorTween(end: background),
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        builder: (BuildContext context, Color? color, Widget? child) =>
+            _MorphCard(
+              color: color ?? background,
+              radius: const BorderRadius.all(Radius.circular(16)),
+              hoverRadius: const BorderRadius.all(Radius.circular(32)),
+              onTap: onTap,
+              child: child!,
+            ),
         child: Row(
           children: <Widget>[
             SizedBox.square(
@@ -1952,7 +1974,9 @@ class _QuickTile extends StatelessWidget {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.fushiType.titleSmallEmphasized,
+                    style: tint == null
+                        ? titleStyle
+                        : titleStyle.copyWith(color: tint.onSecondaryContainer),
                   ),
                   if (subtitle != null && subtitle!.isNotEmpty)
                     Text(
@@ -1960,7 +1984,11 @@ class _QuickTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.fushiType.bodySmall.copyWith(
-                        color: cs.onSurfaceVariant,
+                        color:
+                            tint?.onSecondaryContainer.withValues(
+                              alpha: 0.72,
+                            ) ??
+                            cs.onSurfaceVariant,
                       ),
                     ),
                 ],
@@ -1970,7 +1998,7 @@ class _QuickTile extends StatelessWidget {
               padding: const EdgeInsets.only(right: 12),
               child: FushiIcon(
                 playOnTap ? FushiIcons.play : FushiIcons.chevronRight,
-                color: cs.primary,
+                color: tint?.primary ?? cs.primary,
               ),
             ),
           ],

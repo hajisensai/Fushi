@@ -19,7 +19,11 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
+import 'package:fushi/src/pages/implementations/web_hub_page.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -111,6 +115,58 @@ void main() {
       tester.state<FushiWebBrowserPageState>(find.byType(FushiWebBrowserPage));
 
   Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+
+  testWidgets('「浏览器」模块外壳：页签行由宿主画在子页上方，子页正文让出实测工具栏高度', (
+    WidgetTester tester,
+  ) async {
+    await pumpApp(tester, const Size(1280, 720), const WebHubPage());
+    final bool twoSections = webHubSectionAvailable(
+      WebHubSection.browserExtension,
+    );
+    if (twoSections) {
+      expect(byKey('web-hub-sections'), findsOneWidget);
+    }
+    // 浏览子页：自己不画页头，地址栏在宿主工具栏下方、不被盖住。
+    final double inset = FushiFloatingChromeInset.of(
+      tester.element(byKey('web-browser-address')),
+    );
+    if (twoSections) {
+      expect(inset, greaterThan(0));
+      expect(
+        tester.getRect(byKey('web-browser-address')).top,
+        greaterThanOrEqualTo(tester.getRect(byKey('web-hub-sections')).bottom),
+      );
+    }
+    if (!twoSections) return;
+
+    // 切到浏览器扩展子页：列表顶部内边距 = 宿主工具栏实测高度 + 8。
+    await tester.tap(find.text(t.nav_browser_extension).last);
+    await tester.pumpAndSettle();
+    final Finder ext = find.byKey(
+      const ValueKey<String>('web-hub-browser-extension'),
+    );
+    expect(ext, findsOneWidget);
+    final double extInset = FushiFloatingChromeInset.of(tester.element(ext));
+    expect(extInset, inset);
+    final Finder scroll = find.descendant(
+      of: ext,
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is ScrollView || w is SingleChildScrollView,
+      ),
+    );
+    final Widget first = tester.widget(scroll.first);
+    final EdgeInsetsGeometry? padding = switch (first) {
+      final ListView v => v.padding,
+      final SingleChildScrollView v => v.padding,
+      _ => null,
+    };
+    expect(
+      (padding! as EdgeInsets).top,
+      extInset + 8,
+      reason: '子页正文必须从宿主工具栏下方开始',
+    );
+    expect(find.byType(BrowserExtensionPage), findsOneWidget);
+  });
 
   testWidgets('入口页（手机、单子页）不画「浏览器」标题，地址栏在顶、站点成网格', (WidgetTester tester) async {
     await pumpApp(
