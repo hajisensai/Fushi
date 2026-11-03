@@ -61,8 +61,9 @@ Future<AudiobookshelfSubtitleChoice?> resolveStreamSubtitleChoice({
   required AudiobookshelfSubtitleMatch? match,
   required Future<AudiobookshelfSubtitleChoice?> Function() ask,
 }) async {
-  if (match != null && match.autoAttach)
+  if (match != null && match.autoAttach) {
     return ServerSubtitleChoice(match.file);
+  }
   return ask();
 }
 

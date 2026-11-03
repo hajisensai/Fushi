@@ -1,12 +1,38 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+/// 假 file_picker：选择器一直开着，直到测试把 [result] 完成（模拟用户还没选完 /
+/// 取文件还没回来）。
+class _PendingFilePicker extends FilePicker {
+  final Completer<FilePickerResult?> result = Completer<FilePickerResult?>();
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) => result.future;
+}
 
 void main() {
   setUp(() {
@@ -142,5 +168,61 @@ void main() {
       find.byTooltip(t.srt_book_reimport_subtitle_from_server),
       findsNothing,
     );
+  });
+
+  testWidgets('SRT book reimport: import and cancel stay disabled while a '
+      'subtitle pick is still in flight', (WidgetTester tester) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final FilePicker original = FilePicker.platform;
+    final _PendingFilePicker picker = _PendingFilePicker();
+    FilePicker.platform = picker;
+    addTearDown(() => FilePicker.platform = original);
+
+    await tester.pumpWidget(
+      buildApp(
+        ProviderScope(
+          child: SrtBookReimportDialog(
+            book: SrtBook()
+              ..uid = 'srtbook_pick'
+              ..title = 'Book'
+              ..srtPath = ''
+              ..bookKey = '',
+            db: db,
+            repo: SrtBookRepository(db),
+          ),
+        ),
+      ),
+    );
+    final SrtBookReimportDialogState state = tester
+        .state<SrtBookReimportDialogState>(find.byType(SrtBookReimportDialog));
+    await tester.runAsync(() => state.serverBindingLoaded);
+    await tester.pump();
+
+    VoidCallback? onPressedOf(String label) => tester
+        .widget<FushiFilledButton>(
+          find.ancestor(
+            of: find.text(label),
+            matching: find.byType(FushiFilledButton),
+          ),
+        )
+        .onPressed;
+
+    expect(onPressedOf(t.dialog_import), isNotNull);
+    await tester.tap(find.byTooltip(t.srt_import_pick_subtitle_files));
+    await tester.pump();
+    // 选择 / 取文件还没完：导入此时开跑，会拿着旧输入、又在选完时被改写。
+    expect(onPressedOf(t.dialog_import), isNull);
+    expect(onPressedOf(t.dialog_cancel), isNull);
+
+    picker.result.complete(
+      FilePickerResult(<PlatformFile>[
+        PlatformFile(name: 'next.srt', size: 0, path: '/books/next.srt'),
+      ]),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(onPressedOf(t.dialog_import), isNotNull);
+    expect(find.text('next.srt'), findsOneWidget);
   });
 }
