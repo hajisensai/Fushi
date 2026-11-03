@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
@@ -28,6 +29,10 @@ class GameStreamJoinPage extends StatefulWidget {
     required this.writeSettings,
     this.readLookupLayout,
     this.writeLookupLayout,
+    this.readButtonProfile,
+    this.writeButtonProfile,
+    this.readSecondScreen,
+    this.writeSecondScreen,
     super.key,
   });
 
@@ -40,6 +45,11 @@ class GameStreamJoinPage extends StatefulWidget {
   /// Lookup rail geometry stored on this device; null = defaults, unsaved.
   final GameStreamLookupLayout Function()? readLookupLayout;
   final Future<void> Function(GameStreamLookupLayout layout)? writeLookupLayout;
+  final GameStreamButtonProfile Function()? readButtonProfile;
+  final Future<void> Function(GameStreamButtonProfile profile)?
+  writeButtonProfile;
+  final GameStreamSecondScreen Function()? readSecondScreen;
+  final Future<void> Function(GameStreamSecondScreen value)? writeSecondScreen;
 
   @override
   State<GameStreamJoinPage> createState() => _GameStreamJoinPageState();
@@ -130,6 +140,18 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
             ? null
             : (GameStreamLookupLayout next) =>
                   unawaited(widget.writeLookupLayout!(next)),
+        buttonProfile:
+            widget.readButtonProfile?.call() ?? const GameStreamButtonProfile(),
+        onButtonProfileChanged: widget.writeButtonProfile == null
+            ? null
+            : (GameStreamButtonProfile next) =>
+                  unawaited(widget.writeButtonProfile!(next)),
+        secondScreen:
+            widget.readSecondScreen?.call() ?? GameStreamSecondScreen.auto,
+        onSecondScreenChanged: widget.writeSecondScreen == null
+            ? null
+            : (GameStreamSecondScreen next) =>
+                  unawaited(widget.writeSecondScreen!(next)),
       );
     } on GameStreamLeaveError catch (error) {
       if (mounted) {

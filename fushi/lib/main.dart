@@ -41,6 +41,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
+import 'package:fushi/game_stream_companion_main.dart'
+    as game_stream_companion_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
@@ -252,6 +254,14 @@ SystemUiOverlayStyle fushiSystemOverlayStyle(Brightness brightness) {
 @pragma('vm:entry-point')
 void popupMain() {
   popup_entrypoint.popupMain();
+}
+
+/// The game stream's lookup panel on a second display (Android
+/// `GameStreamCompanionActivity`). Engines resolve entry points in the root
+/// library, so it is forwarded from here like [popupMain].
+@pragma('vm:entry-point')
+void gameStreamCompanionMain() {
+  game_stream_companion_entrypoint.gameStreamCompanionMain();
 }
 
 /// Application execution starts here.
