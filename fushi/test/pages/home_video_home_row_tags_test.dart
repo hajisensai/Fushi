@@ -206,6 +206,19 @@ void main() {
       ('home_video_continue_remote_video_remote-watching', 'HostTag'),
     ]) {
       final Finder card = find.byKey(ValueKey<String>(key));
+      // 2026-11 封面取色并列卡（PR #2811）：主卡之外的条目排在主卡旁的横滑
+      // 并列卡区（宽屏两行网格，一屏只露一列），视口外的卡懒构建——滚到它
+      // 再断言，不靠把视口放大到「刚好全在屏」。
+      await tester.scrollUntilVisible(
+        card,
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey<String>('video_home_continue_row')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(card, findsOneWidget, reason: '前提：$key 在首屏继续观看区');
       expect(
         find.ancestor(of: card, matching: find.byType(FushiContinueSpotlight)),
