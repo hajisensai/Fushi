@@ -465,9 +465,11 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
         .execute(params![profile, id.device.0.to_vec(), id.seq as i64, &skel.payload[..]])
         .map_err(sql)?;
     if own == Some(&id.device) {
+        // 同名改写（`restamp = 1`）：位置上的旧段仍是合法的同名段，不挡 head（schema.rs `migrate_v23`）；已登记成缺段的
+        // 不降级（OR IGNORE）。
         conn.prepare_cached(
-            "INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) \
-             SELECT l.profile_uid, l.location, s.first FROM sync2_locations l \
+            "INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first, restamp) \
+             SELECT l.profile_uid, l.location, s.first, 1 FROM sync2_locations l \
              JOIN sync2_segments s ON s.profile_uid = l.profile_uid AND s.device = ?2 AND s.first <= ?3 AND s.last >= ?3 \
              WHERE l.profile_uid = srs_id(?1)",
         )

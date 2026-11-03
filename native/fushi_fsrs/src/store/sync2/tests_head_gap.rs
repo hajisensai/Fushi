@@ -201,3 +201,70 @@ fn author_reuploads_own_segments_missing_from_a_location() {
     assert_eq!(c.core.sync2_status(P).unwrap()["pending"], 0);
     assert_eq!(projection(&a), projection(&c));
 }
+
+/// 已经传上去的段里有 [n] 个满段的修改记录压在牌组 DX 上（不参与合并），随后彻底清除 DX：DX 的内容段登记成同名改写。
+fn purged_with_restamps(tag: &str, bucket: &mut Bucket) -> Device {
+    let a = Device::new(tag);
+    let mut seed = 5u64;
+    for i in 0..3i64 {
+        a.apply(T0 + i, bulky("DX", &format!("p{i}"), 2_800_000, &mut seed));
+        a.sync(bucket, "loc", T0 + i);
+    }
+    a.core.sync2_purge(P, "deck", "DX", T0 + 10).unwrap();
+    let restamps: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 1")[1][0].parse().unwrap();
+    assert!(restamps >= 3, "every content segment of DX is a same-name rewrite: {restamps}");
+    a
+}
+
+/// 修 c8e02cbb0a 的回归：有重传未完就不写 head 只该挡「位置上缺的段」。彻底清除（以及骨架化）登记的是同名改写——
+/// 位置上的旧文件仍是同一个名字、同一条链的合法段——一轮只传得完一部分时 head 照常写（以前交回改切，几百 MB 的
+/// 改写要传几轮，这台设备的新操作就几轮没人看得见）。
+#[test]
+fn same_name_rewrites_do_not_hold_back_the_head() {
+    let mut bucket = Bucket::default();
+    let a = purged_with_restamps("restamp-a", &mut bucket);
+    // 这一轮只来得及传一段（一批一段、字节预算 1）。
+    let batch = a.core.sync2_outbox(P, "loc", None, 1, 1).unwrap();
+    assert!(batch.more, "the rewrites take more than one batch");
+    for (path, bytes) in batch.files {
+        bucket.0.insert(path, bytes);
+    }
+    let (accepted, mark) = a.core.sync2_outbox_ack(P, "loc", &batch.segments).unwrap();
+    assert!(accepted);
+    let left: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 1")[1][0].parse().unwrap();
+    assert!(left >= 2, "same-name rewrites are still pending: {left}");
+    assert!(write_head(&a, &mut bucket, "loc", mark, T0 + 11), "pending same-name rewrites must not hold back the head");
+    assert!(missing_referenced(&bucket).is_empty());
+    // 剩下的改写随后几轮传完；新设备收到的与作者一致。
+    a.sync(&mut bucket, "loc", T0 + 12);
+    assert_eq!(a.rows("SELECT COUNT(*) FROM sync2_rewrites")[1][0], "0");
+    let c = Device::new("restamp-c");
+    c.sync(&mut bucket, "loc", T0 + 13);
+    assert_eq!(c.core.sync2_status(P).unwrap()["pending"], 0);
+    assert_eq!(projection(&a), projection(&c));
+}
+
+/// 位置上缺了 head 引用的段时照样挡 head——即便这个段同时也登记了同名改写（缺段的登记把它升成缺段）。
+#[test]
+fn a_missing_segment_still_holds_back_the_head_when_it_is_also_a_same_name_rewrite() {
+    let mut bucket = Bucket::default();
+    let a = purged_with_restamps("restamp-gap-a", &mut bucket);
+    let dev = device_id(&a);
+    let (_, latest) = bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.starts_with(&format!("devices/{dev}/head-")))
+        .max_by_key(|(k, _)| (*k).clone())
+        .unwrap();
+    let segs = crate::sync2::segment::Head::decode(latest).unwrap().segment_files();
+    let lost = format!("devices/{dev}/{}", segs[0]);
+    bucket.0.remove(&lost);
+    assert_eq!(audit(&a, &bucket, "loc"), 1);
+    let gaps: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 0")[1][0].parse().unwrap();
+    assert_eq!(gaps, 1, "the missing segment is registered as a gap even though the purge registered it first");
+    let uploaded: u64 = a.rows("SELECT uploaded FROM sync2_locations")[1][0].parse().unwrap();
+    assert!(!write_head(&a, &mut bucket, "loc", uploaded, T0 + 11), "a head must never reference a segment missing from the location");
+    a.sync(&mut bucket, "loc", T0 + 12);
+    assert!(bucket.0.contains_key(&lost));
+    assert!(missing_referenced(&bucket).is_empty());
+}

@@ -360,6 +360,22 @@ CREATE TABLE IF NOT EXISTS sync2_relay_gone (
 ) WITHOUT ROWID;
 "#;
 
+/// V23：`sync2_rewrites.restamp`——这条重传是不是「同名改写」（1）：彻底清除 / 骨架化把已经传过的段按同一切法、同一
+/// 链值重新打包，名字不变，位置上的旧文件本身仍是 head 可以引用的合法段，重传只是让位置上的内容跟上本机。0 = 位置上
+/// **缺**这个名字的段（小段合并改切出的新段、作者自检发现缺的段）：它传上去之前 head 不能引用它
+/// （transport.rs `sync2_head_if_changed`）。同一个段两类都登记时按 0 算（[REWRITE_GAP_SQL]）。升级前的行缺省 0：
+/// 宁可多等一轮，不能让 head 引用缺的段。
+pub fn migrate_v23(c: &rusqlite::Connection) -> Result<(), String> {
+    if !has_column(c, "sync2_rewrites", "restamp")? {
+        c.execute_batch("ALTER TABLE sync2_rewrites ADD COLUMN restamp INTEGER NOT NULL DEFAULT 0;").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 登记「位置上缺这个段」的重传（挡 head，[migrate_v23]）：已有的同名改写登记一并升成缺段。
+pub const REWRITE_GAP_SQL: &str = "INSERT INTO sync2_rewrites (profile_uid, location, first, restamp) VALUES (srs_id(?1), ?2, ?3, 0) \
+     ON CONFLICT(profile_uid, location, first) DO UPDATE SET restamp = 0";
+
 /// 表 [table] 有没有列 [column]（ALTER 不带 IF NOT EXISTS，靠它让迁移可重放）。
 fn has_column(c: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
     c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0))

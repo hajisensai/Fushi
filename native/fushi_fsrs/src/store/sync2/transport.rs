@@ -192,7 +192,7 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
             .map_err(sql)?;
             for (loc, uploaded) in &locations {
                 if *uploaded >= *a {
-                    conn.prepare_cached("INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) VALUES (srs_id(?1), ?2, ?3)")
+                    conn.prepare_cached(super::schema::REWRITE_GAP_SQL)
                         .map_err(sql)?
                         .execute(params![local.profile, loc, *a as i64])
                         .map_err(sql)?;
@@ -1916,7 +1916,7 @@ impl SrsCore {
                     continue;
                 }
                 n += c
-                    .prepare_cached("INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) VALUES (srs_id(?1), ?2, ?3)")
+                    .prepare_cached(super::schema::REWRITE_GAP_SQL)
                     .map_err(sql)?
                     .execute(params![profile, location, a as i64])
                     .map_err(sql)?;
@@ -2003,10 +2003,12 @@ impl SrsCore {
             // 不写 head，交回「改切」，下一轮发件按当前切法补传后再写。
             // 按 [upto] 而不是按 head 的 seq 判：合并出的段跨过水位时它被上面的过滤排除，head 的 seq 会倒退到合并区间之前，
             // 那段已经在位置上的操作从 head 里消失——同样要等补传之后再写。
+            // 只看缺段（`restamp = 0`）：彻底清除 / 骨架化的同名改写不挡——位置上的旧文件就是同名、同链值的合法段
+            // （store/sync2/schema.rs `migrate_v23`）。
             prune_stale_rewrites(c, &local, location)?;
             let rewrites_pending: bool = c
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3)",
+                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3 AND restamp = 0)",
                     params![profile, location, upto as i64],
                     |r| r.get(0),
                 )
