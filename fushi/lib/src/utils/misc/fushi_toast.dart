@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -148,15 +149,29 @@ abstract final class FushiToast {
   static final List<FushiToastCornerAnchor> _cornerAnchors =
       <FushiToastCornerAnchor>[];
 
-  /// 当前生效的角落区域：最后登记、且此刻能解析出非空矩形的那块。页面被盖住 /
-  /// 还没布局（region 返回 null）时整张卡退回默认大卡与默认位置——不能只换
-  /// 位置不换尺寸，也不能贴到看不见的区域角上。
-  static ValueGetter<Rect?>? _activeCornerRegion() {
+  /// 此刻生效的角落区域（全局坐标）：最后登记的那块；没有登记、页面被盖住 /
+  /// 还没布局（region 返回 null）或矩形为空时为 null。
+  ///
+  /// 每次 [_FushiToastView] 重建都重新解析一次，并且「小卡还是大卡」与「贴角还是
+  /// 默认位置」只取这一次的结果——不能只换位置不换尺寸，也不能贴到已经看不见
+  /// 的区域角上（显示期间退出歌词模式时，下一次重建就整张退回默认大卡）。
+  static Rect? _activeCornerRect() {
     if (_cornerAnchors.isEmpty) return null;
-    final ValueGetter<Rect?> region = _cornerAnchors.last._region;
-    final Rect? rect = region();
+    final Rect? rect = _cornerAnchors.last._region();
     if (rect == null || rect.isEmpty) return null;
-    return region;
+    return rect;
+  }
+
+  /// 锚点集合变了（页面销毁撤销登记）：让正在显示的 toast 下一帧按新的锚点重新
+  /// 解析尺寸与位置，而不是停在已经消失的区域角上。撤销通常发生在页面 dispose
+  /// （树卸载阶段，此时不能 setState），所以挪到帧后再标脏。
+  static void _onCornerAnchorsChanged() {
+    final OverlayEntry? entry = _currentEntry;
+    if (entry == null) return;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      if (_currentEntry == entry && entry.mounted) entry.markNeedsBuild();
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
   }
 
   static void _showMineOverlay({
@@ -181,9 +196,8 @@ abstract final class FushiToast {
               action.onPressed();
             },
           );
-    final ValueGetter<Rect?>? corner = _activeCornerRegion();
     // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
-    // _FushiToastView 的同一套。
+    // _FushiToastView 的同一套。小卡 / 大卡由视图每次重建时与位置一起决定。
     _insertToastEntry(
       overlay: overlay,
       durationMs: durationMs,
@@ -192,14 +206,14 @@ abstract final class FushiToast {
         icon: mineToastPalette(status).icon,
         severity: mineToastSeverity(status),
         interactive: tapAction != null,
-        cornerRegion: corner,
-        body: FushiMineNoticeCard(
+        cornerRegion: _activeCornerRect,
+        bodyBuilder: (bool compact) => FushiMineNoticeCard(
           status: status,
           message: msg,
           visibleFor: Duration(milliseconds: durationMs),
           action: tapAction,
-          compact: corner != null,
-          maxWidth: corner != null ? 300 : 440,
+          compact: compact,
+          maxWidth: compact ? 300 : 440,
         ),
       ),
     );
@@ -259,8 +273,12 @@ final class FushiToastCornerAnchor {
 
   final ValueGetter<Rect?> _region;
 
-  /// 撤销登记（可重复调用）。
-  void release() => FushiToast._cornerAnchors.remove(this);
+  /// 撤销登记（可重复调用）。正在显示的 toast 随后按剩下的锚点重新定尺寸与位置。
+  void release() {
+    if (FushiToast._cornerAnchors.remove(this)) {
+      FushiToast._onCornerAnchorsChanged();
+    }
+  }
 }
 
 /// overlay 条目与条目里 [_FushiToastView] 之间的退场握手：视图挂载后把自己的
@@ -362,6 +380,10 @@ const Curve _kToastSpatialCurve = Cubic(0.42, 1.67, 0.21, 0.90);
 ///   单色 SF 图标，与 Apple 版 SnackBar 同一视觉。
 ///
 /// 位置恒为底部居中（全部调用点都是 BOTTOM），淡入 + 轻微上浮。
+/// 角落定位的 overlay 本地几何：起始边距（LTR 为 left、RTL 为 right）、底边距、
+/// 可用宽度。
+typedef _CornerGeometry = ({double start, double bottom, double width});
+
 class _FushiToastView extends StatefulWidget {
   const _FushiToastView({
     required this.msg,
@@ -369,21 +391,23 @@ class _FushiToastView extends StatefulWidget {
     required this.severity,
     this.backgroundColor,
     this.textColor,
-    this.body,
+    this.bodyBuilder,
     this.interactive = false,
     this.cornerRegion,
   });
 
-  /// 非空时代替默认浮条（制卡结果卡）；进退场与定位不变。
-  final Widget? body;
+  /// 非空时代替默认浮条（制卡结果卡）；进退场不变。参数 `compact`：这次重建贴角
+  /// （true，画小卡）还是默认位置（false，画大卡），与定位取同一次区域解析。
+  final Widget Function(bool compact)? bodyBuilder;
 
   /// 卡片上有可点的按钮（「撤销」）时为 true：不再整体忽略指针。只有卡片本身
   /// 接收指针（外层 Positioned 只有卡片那么高），不挡下面页面的点击。默认位置与
   /// 角落位置同一口径。
   final bool interactive;
 
-  /// 非空且能解析出矩形时，贴在这块区域（全局坐标）的底部起始角内侧，而不是
-  /// 屏幕底部正中（见 [FushiToast.anchorMineToCorner]）。
+  /// 每次重建解析一次：非空且能换算到 overlay 坐标时，贴在这块区域（全局坐标）的
+  /// 底部起始角内侧并画小卡，否则默认位置画大卡（见
+  /// [FushiToast.anchorMineToCorner]）。
   final ValueGetter<Rect?>? cornerRegion;
 
   final String msg;
@@ -458,11 +482,14 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   Widget build(BuildContext context) {
-    final Widget body =
-        widget.body ??
-        (isGlassDesign(context)
-            ? _buildApple(context)
-            : _buildMaterial(context));
+    // 区域只解析一次，尺寸（小卡 / 大卡）与位置（贴角 / 默认）都取这次的结果。
+    final _CornerGeometry? corner = _cornerGeometry(context);
+    final Widget Function(bool compact)? bodyBuilder = widget.bodyBuilder;
+    final Widget body = bodyBuilder != null
+        ? bodyBuilder(corner != null)
+        : isGlassDesign(context)
+        ? _buildApple(context)
+        : _buildMaterial(context);
     final Widget animated = FadeTransition(
       opacity: _opacity,
       child: SlideTransition(
@@ -473,8 +500,22 @@ class _FushiToastViewState extends State<_FushiToastView>
         ),
       ),
     );
-    final Positioned? corner = _cornerPositioned(context, animated);
-    if (corner != null) return corner;
+    if (corner != null) {
+      final bool rtl = Directionality.of(context) == TextDirection.rtl;
+      return Positioned(
+        left: rtl ? null : corner.start,
+        right: rtl ? corner.start : null,
+        bottom: corner.bottom,
+        width: corner.width,
+        child: IgnorePointer(
+          ignoring: !widget.interactive,
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: animated,
+          ),
+        ),
+      );
+    }
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,
@@ -486,12 +527,13 @@ class _FushiToastViewState extends State<_FushiToastView>
     );
   }
 
-  /// 角落定位：把全局坐标的区域换到 overlay 本地坐标，贴底部起始角（LTR 左下、
-  /// RTL 右下）内缩 12。区域或 overlay 还没布局时返回 null，走默认位置。
+  /// 角落几何：把全局坐标的区域换到 overlay 本地坐标，贴底部起始角（LTR 左下、
+  /// RTL 右下）内缩 12。没有区域、区域为空或 overlay 还没布局时返回 null——此时
+  /// 调用方整张卡走默认位置与默认大卡。
   ///
   /// 指针口径与默认位置一致（[_FushiToastView.interactive]）：带「撤销」时卡片
   /// 可点；[Align] 本身不命中空白处，区域里卡片以外的地方照样点穿到下面的歌词。
-  Positioned? _cornerPositioned(BuildContext context, Widget child) {
+  _CornerGeometry? _cornerGeometry(BuildContext context) {
     final Rect? global = widget.cornerRegion?.call();
     if (global == null || global.isEmpty) return null;
     final RenderObject? overlayBox = Overlay.maybeOf(
@@ -503,15 +545,10 @@ class _FushiToastViewState extends State<_FushiToastView>
     final Size size = overlayBox.size;
     const double inset = 12;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    return Positioned(
-      left: rtl ? null : local.left + inset,
-      right: rtl ? size.width - local.right + inset : null,
+    return (
+      start: rtl ? size.width - local.right + inset : local.left + inset,
       bottom: size.height - local.bottom + inset,
       width: math.max(0, local.width - 2 * inset),
-      child: IgnorePointer(
-        ignoring: !widget.interactive,
-        child: Align(alignment: AlignmentDirectional.bottomStart, child: child),
-      ),
     );
   }
 
