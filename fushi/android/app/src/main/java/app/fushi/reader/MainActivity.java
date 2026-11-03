@@ -363,6 +363,15 @@ public class MainActivity extends AudioServiceActivity {
             return true;
         }
         ensureKeyFocusTarget();
+        // A controller's combined source (0x501 / 0x701) would reach Dart as a
+        // keyboard event; see ControllerKeySource. Already-narrowed events
+        // (Flutter's own redispatch) pass through as the same object.
+        final int flutterSource = ControllerKeySource.forFlutter(event.getSource());
+        if (flutterSource != event.getSource()) {
+            final KeyEvent narrowed = new KeyEvent(event);
+            narrowed.setSource(flutterSource);
+            return super.dispatchKeyEvent(narrowed);
+        }
         return super.dispatchKeyEvent(event);
     }
 
