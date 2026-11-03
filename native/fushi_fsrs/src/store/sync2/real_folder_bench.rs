@@ -89,7 +89,8 @@ fn bench_real_folder() {
                 if r["more"] != json!(true) {
                     break;
                 }
-                // 生产（Dart `sync2IngestBatch`）：每片之后在另开的连接上并回 WAL；`SRS_BENCH_CKPT_EVERY=n` 每 n 片一次。
+                // 生产（Dart `sync2IngestBatch`）按 `SrsWalCheckpointPacer` 定的节奏在另开的连接上并回 WAL；
+                // `SRS_BENCH_CKPT_EVERY=n` 改成固定每 n 片一次，用来对照。
                 if ckpt_every > 0 && slices % ckpt_every == 0 {
                     let t = Instant::now();
                     let v = core.wal_checkpoint().unwrap();

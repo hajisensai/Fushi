@@ -960,8 +960,8 @@ pub(crate) struct IngestSession {
 }
 
 impl IngestSession {
-    /// 这个会话收的是不是 [profile] 的段（删 profile 时作废它，store/profile_data.rs）。
-    pub(crate) fn belongs_to(&self, profile: &str) -> bool {
+    /// 这个会话收的是不是 [profile] 的段。
+    fn belongs_to(&self, profile: &str) -> bool {
         self.profile == profile
     }
 
@@ -969,6 +969,44 @@ impl IngestSession {
     #[cfg(test)]
     pub(crate) fn delivery_resident(&self) -> Option<usize> {
         self.delivery.as_ref().map(Delivery::resident)
+    }
+}
+
+/// 分批收段的阶段（[SrsCore] `ingest`）。写连接放回时留不留页缓存由它推出（不是 [IngestPhase::Idle] 就留），
+/// 所以页缓存的寿命与会话（含会话里预处理好的段）一致；一律经 [SrsCore::set_ingest_phase] 转换。
+pub(crate) enum IngestPhase {
+    /// 没有收段会话。
+    Idle,
+    /// 会话开着：[SrsCore::sync2_ingest_begin] 到收尾取走它。
+    Open(IngestSession),
+    /// 收尾已取走会话，重放 / 各片记下的缓存还在按片收（返回 `more`，Dart 用 `replay_pending` 接着做）；收完由
+    /// 分发器转回 [IngestPhase::Idle]（ffi.rs `sync2_dispatch`）。带的是 profile。
+    Draining(String),
+}
+
+impl IngestPhase {
+    /// 开着的会话。
+    pub(crate) fn session(&self) -> Option<&IngestSession> {
+        match self {
+            IngestPhase::Open(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn session_mut(&mut self) -> Option<&mut IngestSession> {
+        match self {
+            IngestPhase::Open(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// 这个阶段是不是 [profile] 的（会话开着或收尾中）。
+    pub(crate) fn belongs_to(&self, profile: &str) -> bool {
+        match self {
+            IngestPhase::Idle => false,
+            IngestPhase::Open(s) => s.belongs_to(profile),
+            IngestPhase::Draining(p) => p == profile,
+        }
     }
 }
 
@@ -1434,22 +1472,54 @@ const CACHE_NOTE_TYPE: i64 = 0;
 const CACHE_NOTE: i64 = 1;
 const CACHE_CARD: i64 = 2;
 
-/// 把这一片投影变化要刷新的缓存记进待刷新集合（与投递同一事务），收尾时 [take_cache_pending] 一次刷完。
+/// 把这一片的投影变化按「本机有没有这个实体的缓存行」分开（与投递同一事务）：已有行的笔记 / 卡与笔记类型返回给
+/// 调用方当场刷新；还没有行的记进待刷新集合，收尾时 [take_cache_pending] 按块刷一次。[split] 为假（直接调内核、
+/// 没有缓存配置）时全部记下。
 ///
-/// 以前分发器在每一片（[COMMIT_SLICE]）之后当场刷新：卡的缓存行与有效复习投影要读这张卡的全部日志
+/// 以前分发器在每一片（[COMMIT_SLICE]）之后把全部变化当场刷新：卡的缓存行与有效复习投影要读这张卡的全部日志
 /// （caches.rs `card_materials` / `refresh_stats`），新设备追赶时同一张卡在几百片里各被刷一遍、每遍的日志还越来越多，
-/// 近平方级（真机：3 GB 库首次收段约 50 分钟，九成时间在缓存刷新）。现在一次收段会话里每个实体只在收尾刷一次。
-/// 片与片之间新收的笔记 / 卡还没有缓存行（浏览、复习队列看不到它们），已有的行停在收段前的状态，收尾后一致。
-pub(crate) fn defer_cache_refresh(c: &Connection, profile: &str, dirty: &crate::store::caches::Dirty) -> Result<(), String> {
+/// 近平方级（真机：3 GB 库首次收段约 50 分钟，九成时间在缓存刷新）。平方级来自大量还没有缓存行的新实体，它们照样
+/// 只在收尾刷一次。已有行的是用户看得见、复习队列与学习页直接读的（queue.rs / study.rs 读 `srs_cards_cache`）：一律
+/// 推迟会让老设备追积压的几分钟到几十分钟里，别的设备已经复习过的卡仍按旧的 due 排队、被重复复习，所以当场刷。
+/// 笔记类型没有自己的行，刷新只重算本机已有行的同类型笔记，同样当场刷。
+pub(crate) fn defer_cache_refresh(
+    c: &Connection,
+    profile: &str,
+    dirty: crate::store::caches::Dirty,
+    split: bool,
+) -> Result<crate::store::caches::Dirty, String> {
+    let mut now = crate::store::caches::Dirty::default();
+    let mut later: Vec<(i64, String)> = Vec::new();
+    if split {
+        now.note_types = dirty.note_types;
+        let mut note_row = c.prepare_cached("SELECT EXISTS(SELECT 1 FROM srs_notes_cache WHERE id = srs_id(?1))").map_err(sql)?;
+        for id in dirty.notes {
+            if note_row.query_row([&id], |r| r.get::<_, bool>(0)).map_err(sql)? {
+                now.notes.insert(id);
+            } else {
+                later.push((CACHE_NOTE, id));
+            }
+        }
+        let mut card_row = c.prepare_cached("SELECT EXISTS(SELECT 1 FROM srs_cards_cache WHERE id = srs_id(?1))").map_err(sql)?;
+        for id in dirty.cards {
+            if card_row.query_row([&id], |r| r.get::<_, bool>(0)).map_err(sql)? {
+                now.cards.insert(id);
+            } else {
+                later.push((CACHE_CARD, id));
+            }
+        }
+    } else {
+        later.extend(dirty.note_types.into_iter().map(|id| (CACHE_NOTE_TYPE, id)));
+        later.extend(dirty.notes.into_iter().map(|id| (CACHE_NOTE, id)));
+        later.extend(dirty.cards.into_iter().map(|id| (CACHE_CARD, id)));
+    }
     let mut stmt = c
         .prepare_cached("INSERT OR IGNORE INTO sync2_cache_pending (profile_uid, kind, entity_id) VALUES (srs_id(?1), ?2, srs_id(?3))")
         .map_err(sql)?;
-    for (kind, ids) in [(CACHE_NOTE_TYPE, &dirty.note_types), (CACHE_NOTE, &dirty.notes), (CACHE_CARD, &dirty.cards)] {
-        for id in ids {
-            stmt.execute(params![profile, kind, id]).map_err(sql)?;
-        }
+    for (kind, id) in later {
+        stmt.execute(params![profile, kind, id]).map_err(sql)?;
     }
-    Ok(())
+    Ok(now)
 }
 
 /// 从待刷新集合取出至多 [limit] 个实体（笔记类型、笔记、卡的顺序）并删掉，返回要刷新的部分与是否还有剩下的。
@@ -1507,7 +1577,7 @@ pub(crate) fn settle_refreshed_cards(c: &Connection, profile: &str, written: &[S
         .into_iter()
         .filter(|s| !refreshed.contains(s.as_str()))
         .collect();
-    defer_cache_refresh(c, profile, &crate::store::caches::Dirty { cards: rest, ..Default::default() })?;
+    defer_cache_refresh(c, profile, crate::store::caches::Dirty { cards: rest, ..Default::default() }, false)?;
     let mut del = c
         .prepare_cached("DELETE FROM sync2_cache_pending WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity_id = srs_id(?3)")
         .map_err(sql)?;
@@ -2013,10 +2083,30 @@ impl SrsCore {
         let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
         // 之前被打断的会话已经找到的分叉点接着用（审查 S-12：plan 不再让 Dart 重下本机身份的段）。
         let fork_at = recorded_fork(&w, profile, &local.device)?;
-        *self.ingest_session.lock().map_err(|_| "ingest session poisoned")? =
-            Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None });
-        self.set_ingest_hold_cache(true);
+        let session = IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None };
+        let mut phase = self.ingest_phase()?;
+        self.set_ingest_phase(&mut phase, IngestPhase::Open(session));
         Ok(json!({}))
+    }
+
+    /// 放掉 [profile] 的收段会话 / 收尾阶段（不是它的不动）：Dart 一轮中途收手、抓段或某一步出错时发
+    /// （`ingest_end`，srs_sync2_round.dart 的 finally），删 profile 时也调。会话里预处理好的段与留着的页缓存随之
+    /// 放掉；各片已提交时记下的待重放 / 待刷新还在库里，下一轮 `plan` 报 `finishPending` 再收。收尾已收完时是空操作。
+    pub fn sync2_ingest_end(&self, profile: &str) -> Result<Value, String> {
+        let mut phase = self.ingest_phase()?;
+        if phase.belongs_to(profile) {
+            self.set_ingest_phase(&mut phase, IngestPhase::Idle);
+        }
+        Ok(json!({}))
+    }
+
+    /// 收尾的重放 / 缓存都收完了（分发器的最后一块）：[profile] 的收尾阶段转回 [IngestPhase::Idle]。其间开了新会话的不动。
+    pub(crate) fn sync2_ingest_drained(&self, profile: &str) -> Result<(), String> {
+        let mut phase = self.ingest_phase()?;
+        if matches!(&*phase, IngestPhase::Draining(p) if p == profile) {
+            self.set_ingest_phase(&mut phase, IngestPhase::Idle);
+        }
+        Ok(())
     }
 
     /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + 不切片的 [SrsCore::sync2_ingest_commit] 连着做）。
@@ -2033,20 +2123,20 @@ impl SrsCore {
     pub fn sync2_ingest_prepare(&self, profile: &str, segments: Vec<Vec<u8>>, key: Option<[u8; 32]>) -> Result<Value, String> {
         let device = self.session_device(profile)?;
         let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Owned(segments), key);
-        let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
+        let mut guard = self.ingest_phase()?;
         // 预处理期间会话被换过（重开 / 删 profile）：这一批不属于现在的会话。
-        if !guard.as_ref().is_some_and(|s| s.profile == profile && s.device == device) {
+        if !guard.session().is_some_and(|s| s.profile == profile && s.device == device) {
             return Err("sync2 ingest: no ingest session for this profile".to_owned());
         }
         match prepared {
             Ok(p) => {
-                if let Some(s) = guard.as_mut() {
+                if let Some(s) = guard.session_mut() {
                     s.prepared = Some(p);
                 }
                 Ok(json!({}))
             }
             Err(e) => {
-                *guard = None;
+                self.set_ingest_phase(&mut guard, IngestPhase::Idle);
                 Err(e)
             }
         }
@@ -2054,7 +2144,7 @@ impl SrsCore {
 
     /// 当前收段会话的本机身份（没有 [profile] 的会话报错）。
     fn session_device(&self, profile: &str) -> Result<Id, String> {
-        match self.ingest_session.lock().map_err(|_| "ingest session poisoned")?.as_ref() {
+        match self.ingest_phase()?.session() {
             Some(s) if s.profile == profile => Ok(s.device),
             _ => Err("sync2 ingest: no ingest session for this profile".to_owned()),
         }
@@ -2080,7 +2170,20 @@ impl SrsCore {
         budget: CommitBudget<'_>,
         local_state: Option<&str>,
     ) -> Result<String, String> {
-        let out = self.ingest_commit_slice(profile, now, budget, local_state);
+        self.sync2_ingest_commit_cached(profile, now, budget, local_state, None).map(|(r, _)| r)
+    }
+
+    /// 同 [Self::sync2_ingest_commit_persisting]；给了缓存配置 [cache]（分发器）就在这一片的同一笔事务里把本机已有
+    /// 缓存行的笔记 / 卡当场刷新，返回写过的缓存行（新实体推迟到收尾，见 [defer_cache_refresh]）。
+    pub(crate) fn sync2_ingest_commit_cached(
+        &self,
+        profile: &str,
+        now: i64,
+        budget: CommitBudget<'_>,
+        local_state: Option<&str>,
+        cache: Option<&crate::store::caches::CacheConfig>,
+    ) -> Result<(String, crate::store::caches::Written), String> {
+        let out = self.ingest_commit_slice(profile, now, budget, local_state, cache);
         // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
         self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
         out
@@ -2097,10 +2200,17 @@ impl SrsCore {
         &self.ingest_yield
     }
 
-    fn ingest_commit_slice(&self, profile: &str, now: i64, mut budget: CommitBudget<'_>, local_state: Option<&str>) -> Result<String, String> {
+    fn ingest_commit_slice(
+        &self,
+        profile: &str,
+        now: i64,
+        mut budget: CommitBudget<'_>,
+        local_state: Option<&str>,
+        cache: Option<&crate::store::caches::CacheConfig>,
+    ) -> Result<(String, crate::store::caches::Written), String> {
         let w = self.writer()?;
-        let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
-        let (device, prior, mut prepared, mut cached) = match guard.as_mut() {
+        let mut guard = self.ingest_phase()?;
+        let (device, prior, mut prepared, mut cached) = match guard.session_mut() {
             Some(s) if s.profile == profile => match s.prepared.take() {
                 Some(p) => (s.device, s.fork_at, p, s.delivery.take()),
                 None => return Err("sync2 ingest: no prepared batch to commit".to_owned()),
@@ -2136,25 +2246,30 @@ impl SrsCore {
                 hook(self);
             }
             let r = ingest_result(c, profile, t, BTreeSet::new(), applied_n, errors, false, !done, Some(pending))?;
-            // 这一片的缓存刷新推迟到收尾（[defer_cache_refresh]）：分发器不再逐片刷新 `ingest_commit`。
+            // 本机已有缓存行的当场刷新，新实体推迟到收尾（[defer_cache_refresh]），都在这一片的事务里。
             let projection: serde_json::Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
-            defer_cache_refresh(c, profile, &crate::store::caches::Dirty::of_projection(&projection))?;
+            let dirty = crate::store::caches::Dirty::of_projection(&projection);
+            let now_dirty = defer_cache_refresh(c, profile, dirty, cache.is_some())?;
+            let written = match cache {
+                Some(cfg) => crate::store::caches::refresh(c, profile, cfg, now_dirty)?,
+                None => crate::store::caches::Written::default(),
+            };
             let r = persist_local_state(c, profile, local_state, r)?;
-            Ok((r, fork_at, done))
+            Ok((r, written, fork_at, done))
         });
         match out {
-            Ok((r, fork_at, done)) => {
-                if let Some(s) = guard.as_mut() {
+            Ok((r, written, fork_at, done)) => {
+                if let Some(s) = guard.session_mut() {
                     s.fork_at = fork_at;
                     s.delivery = cached;
                     if !done {
                         s.prepared = Some(prepared);
                     }
                 }
-                Ok(r)
+                Ok((r, written))
             }
             Err(e) => {
-                *guard = None;
+                self.set_ingest_phase(&mut guard, IngestPhase::Idle);
                 Err(e)
             }
         }
@@ -2182,12 +2297,13 @@ impl SrsCore {
         local_state: Option<&str>,
     ) -> Result<String, String> {
         let w = self.writer()?;
-        let session = {
-            let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
-            match guard.take() {
-                Some(s) if s.profile == profile => s,
-                _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
-            }
+        let mut guard = self.ingest_phase()?;
+        if !guard.session().is_some_and(|s| s.belongs_to(profile)) {
+            return Err("sync2 ingest: no ingest session for this profile".to_owned());
+        }
+        // 会话在这一次收掉；之后到重放 / 缓存收完都是收尾阶段（出错就回到没有会话）。
+        let IngestPhase::Open(session) = self.set_ingest_phase(&mut guard, IngestPhase::Draining(profile.to_owned())) else {
+            unreachable!("checked above")
         };
         let out = in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
@@ -2200,10 +2316,22 @@ impl SrsCore {
             defer_replay(c, profile, &t.cards)?;
             let (replayed, more) = replay_pending(c, profile, &mut budget)?;
             let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), fork_at.is_some(), more, None)?;
-            persist_local_state(c, profile, local_state, r)
+            let drained = !more && !cache_is_pending(c, profile)?;
+            Ok((persist_local_state(c, profile, local_state, r)?, drained))
         });
         self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
-        out
+        match out {
+            Ok((r, drained)) => {
+                if drained {
+                    self.set_ingest_phase(&mut guard, IngestPhase::Idle);
+                }
+                Ok(r)
+            }
+            Err(e) => {
+                self.set_ingest_phase(&mut guard, IngestPhase::Idle);
+                Err(e)
+            }
+        }
     }
 
     /// 接着重放待重放集合（[Self::sync2_ingest_finish_within] 返回 `more`，或上一次会话没收尾就被打断）：做到

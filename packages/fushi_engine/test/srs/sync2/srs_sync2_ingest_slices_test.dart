@@ -154,4 +154,7 @@ class _SlicingHost implements SrsSync2Host {
 
   @override
   Future<Map<String, Object?>> sync2IngestFinish() => inner.sync2IngestFinish();
+
+  @override
+  Future<void> sync2IngestEnd() => inner.sync2IngestEnd();
 }

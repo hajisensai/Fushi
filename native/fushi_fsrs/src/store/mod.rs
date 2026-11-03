@@ -68,14 +68,16 @@ pub struct SrsCore {
     /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在持读锁时登记，close 先拿
     /// 读锁，所以不会漏掉一个正在开的会话。
     sessions: Mutex<Vec<Weak<ReadSession>>>,
-    /// 正在进行的分批收段会话（[SrsCore::sync2_ingest_begin]）；None = 没有。
-    ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
+    /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
+    /// [SrsCore::set_ingest_phase] 转换。
+    ingest: Mutex<sync2::transport::IngestPhase>,
     /// 有写入在等写锁，正在投的收段那一片尽快收（[SrsCore::sync2_ingest_yield]）。
     ingest_yield: AtomicBool,
-    /// 分批收段会话从开到收尾刷完缓存之间为真：写连接放回时不还页缓存（[trim_idle_cache]），每 150 ms 一片的投递
-    /// 与收尾的各块就不反复从盘上读回同一批索引页。[SrsCore::sync2_ingest_begin] 置位，分发器在收尾不再 `more`
-    /// 时清掉（ffi.rs `sync2_dispatch`），丢弃 profile 时也清；没清掉（会话被打断）最多常驻一份 `cache_size`。
-    ingest_hold_cache: AtomicBool,
+    /// [SrsCore] `ingest` 不是 `Idle` 时为真：写连接放回时不还页缓存（[trim_idle_cache]），每 150 ms 一片的投递与
+    /// 收尾的各块就不反复从盘上读回同一批索引页。它只是阶段的无锁镜像（写连接守卫析构时不能去拿会话锁），只由
+    /// [SrsCore::set_ingest_phase] 与阶段一起写，不单独置位；会话怎么结束（收尾刷完、出错作废、Dart 收手发
+    /// `ingest_end`、删 profile）页缓存就随之放掉，不靠下一轮碰巧收尾。
+    ingest_holds_cache: AtomicBool,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -147,7 +149,7 @@ impl Drop for Conn<'_> {
                 hub.settle();
             }
         }
-        // 收段会话开着时留着页缓存（[SrsCore] `ingest_hold_cache`）。
+        // 收段会话开着 / 收尾刷缓存中留着页缓存（[SrsCore] `ingest_holds_cache`）。
         if !self.2.is_some_and(|h| h.load(std::sync::atomic::Ordering::Relaxed)) {
             trim_idle_cache(c);
         }
@@ -331,9 +333,9 @@ impl SrsCore {
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
-            ingest_session: Mutex::new(None),
+            ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
             ingest_yield: AtomicBool::new(false),
-            ingest_hold_cache: AtomicBool::new(false),
+            ingest_holds_cache: AtomicBool::new(false),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
@@ -345,13 +347,24 @@ impl SrsCore {
 
     pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
         let mut w = Conn::with_hub(self.writer.lock().map_err(|_| "srs writer poisoned".to_string())?, Some(&self.study_hub))?;
-        w.2 = Some(&self.ingest_hold_cache);
+        w.2 = Some(&self.ingest_holds_cache);
         Ok(w)
     }
 
-    /// 收段会话期间写连接放回时是否留着页缓存（见 `ingest_hold_cache`）。
-    pub(crate) fn set_ingest_hold_cache(&self, hold: bool) {
-        self.ingest_hold_cache.store(hold, std::sync::atomic::Ordering::Relaxed);
+    /// 收段阶段唯一的转换入口：把 [slot]（持着 `ingest` 锁拿到的）换成 [next]，同时写下写连接放回时看的镜像
+    /// （`ingest_holds_cache`），返回旧阶段。
+    pub(crate) fn set_ingest_phase(
+        &self,
+        slot: &mut sync2::transport::IngestPhase,
+        next: sync2::transport::IngestPhase,
+    ) -> sync2::transport::IngestPhase {
+        self.ingest_holds_cache.store(!matches!(next, sync2::transport::IngestPhase::Idle), Ordering::Relaxed);
+        std::mem::replace(slot, next)
+    }
+
+    /// 收段阶段的锁。
+    pub(crate) fn ingest_phase(&self) -> Result<MutexGuard<'_, sync2::transport::IngestPhase>, String> {
+        self.ingest.lock().map_err(|_| "ingest session poisoned".to_owned())
     }
 
     pub(crate) fn reader(&self) -> Result<Conn<'_>, String> {

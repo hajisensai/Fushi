@@ -807,11 +807,23 @@ pub(crate) fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut V
                 let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::rebuild(conn, profile, &cfg))?;
                 return Ok(json!({"cache": written.to_json()}));
             }
+            // 分批收段的一片：本机已有缓存行的在这一片的事务里当场刷新，新实体记进待刷新集合等收尾
+            // （transport.rs `defer_cache_refresh`），这里不再刷。一次投一片（默认按时间切、有写入排队就让出；测试用
+            // `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果 `more` 为真 Dart 放开写锁再调。`localState`：Dart 的
+            // 本机状态行，与这一片同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
+            "ingest_commit" => {
+                let now = req.get("now").and_then(Value::as_i64).ok_or("sync2: missing now")?;
+                let local_state = req.get("localState").and_then(Value::as_str);
+                let (r, written) = c.sync2_ingest_commit_cached(profile, now, slice_budget(c, req), local_state, Some(&cfg))?;
+                let mut v: Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
+                if let Some(m) = v.as_object_mut() {
+                    m.insert("cache".to_owned(), written.to_json());
+                }
+                return Ok(v);
+            }
             _ => sync2_command(c, op, profile, req, blobs, files)?,
         };
-        // 分批收段的一片只把要刷新的记进待刷新集合（transport.rs `defer_cache_refresh`，与投递同一事务），这里不刷。
-        let mut dirty =
-            if op == "ingest_commit" { crate::store::caches::Dirty::default() } else { crate::store::caches::Dirty::of_projection(&v) };
+        let mut dirty = crate::store::caches::Dirty::of_projection(&v);
         // 收尾（重放放完之后）：按块刷新各片记下的缓存，还有剩的就回报 `more`，Dart 放开写锁后用 `replay_pending` 接着刷。
         let drain = matches!(op, "ingest_finish" | "replay_pending") && v["more"] != Value::Bool(true);
         if op == "refresh_caches" {
@@ -846,8 +858,8 @@ pub(crate) fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut V
         if cache_more {
             v["more"] = Value::Bool(true);
         } else if drain {
-            // 会话收完：这次放回写连接起照常还页缓存。
-            c.set_ingest_hold_cache(false);
+            // 收尾收完：收尾阶段结束，这次放回写连接起照常还页缓存。
+            c.sync2_ingest_drained(profile)?;
         }
         // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
         // 评分一次命令。看得见这笔还没提交的写入。
@@ -885,7 +897,8 @@ const CACHE_PENDING_CHUNK: usize = 512;
 #[cfg(test)]
 const CACHE_PENDING_CHUNK: usize = 5;
 
-/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 例外（只记待刷新）。
+/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 在投递的事务里自己刷
+/// （只刷本机已有缓存行的，新实体记待刷新）。
 const PROJECTING_OPS: [&str; 11] =
     ["apply", "ingest", "ingest_batch", "ingest_commit", "ingest_finish", "replay_pending", "import", "resolve", "purge", "checkpoint", "restore"];
 
@@ -998,10 +1011,9 @@ fn sync2_command(
         "ingest_batch" => parse(c.sync2_ingest_batch(profile, std::mem::take(blobs), key32(&req["key"])?, i("now")?)?)?,
         // 拆开的一批：prepare 在写锁外解码验签（Dart 侧也不进写锁），commit 在写锁里投递。
         "ingest_prepare" => c.sync2_ingest_prepare(profile, std::mem::take(blobs), key32(&req["key"])?)?,
-        // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
-        // `more` 为真 Dart 放开写锁再调。
-        // `localState`：Dart 的本机状态行，与这一片同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
-        "ingest_commit" => parse(c.sync2_ingest_commit_persisting(profile, i("now")?, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
+        // `ingest_commit` 带缓存配置，在 [sync2_dispatch] 里处理。
+        // 一轮中途收手 / 出错：放掉收段会话与留着的页缓存（srs_sync2_round.dart 的 finally）。
+        "ingest_end" => c.sync2_ingest_end(profile)?,
         // 收尾：换身份 + 重放各片记下的待重放卡（按片，`more` 为真 Dart 放开写锁后用 replay_pending 接着放，审查 S-4）。
         "ingest_finish" => parse(c.sync2_ingest_finish_persisting(profile, i("now")?, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
         "replay_pending" => parse(c.sync2_replay_pending_persisting(profile, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,

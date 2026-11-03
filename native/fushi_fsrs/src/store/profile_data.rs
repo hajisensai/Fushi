@@ -105,11 +105,8 @@ impl SrsCore {
             out["tables"] = Value::Object(tables);
             Ok(out)
         })?;
-        let mut session = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
-        if session.as_ref().is_some_and(|s| s.belongs_to(profile)) {
-            *session = None;
-            self.set_ingest_hold_cache(false);
-        }
+        // 正在收这个 profile 的会话（或它的收尾）一起放掉，连同留着的页缓存。
+        self.sync2_ingest_end(profile)?;
         Ok(out)
     }
 

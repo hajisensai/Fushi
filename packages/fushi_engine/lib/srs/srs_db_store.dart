@@ -1223,6 +1223,10 @@ class SrsDbStore implements SrsSync2Host {
   Future<void> sync2IngestBegin() =>
       runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
 
+  @override
+  Future<void> sync2IngestEnd() =>
+      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_end'}));
+
   /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
   /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，
   /// 之后公钥 / 身份变了内核在投递时按当时的重验，结果与在写锁里一步收完相同。
@@ -1233,8 +1237,8 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 收这一批期间调高写连接的自动 checkpoint 阈值（[bulkWrites]），按 [SrsWalCheckpointPacer] 定的节奏在写锁外、
   /// 内核另开的连接上把 WAL 并回（[_walCheckpoint]）：在写连接上并，提交那一刻就把同一批热页拷回主库，作答排在
-  /// 后面；每片都并，同一批热页每片拷一遍（真实数据里占投递三分之一）；整批都不并，WAL 随片数涨到几百 MB。测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices`
-  /// 是这一批投了几片。
+  /// 后面；每片都并，同一批热页每片拷一遍（真实数据里占投递三分之一）；整批都不并，WAL 随片数涨到几百 MB。
+  /// 测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices` 是这一批投了几片。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {

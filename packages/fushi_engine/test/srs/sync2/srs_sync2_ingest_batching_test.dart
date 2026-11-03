@@ -368,7 +368,10 @@ void main() {
         expect(r.error, isNull);
         expect(r.fork, isTrue, reason: 'fork comes from finish');
         expect(host.steps.first, 'begin');
-        expect(host.steps.last, 'finish');
+        expect(host.steps.sublist(host.steps.length - 2), <String>[
+          'finish',
+          'end',
+        ]);
         expect(host.steps.where((String x) => x == 'begin').length, 1);
         expect(host.steps.where((String x) => x == 'finish').length, 1);
         // 本机身份的 8 个段（80 字节）不再整批塞进第一批。
@@ -412,7 +415,36 @@ void main() {
       );
       expect(r.error, kSrsSync2Stopped);
       expect(r.fork, isFalse);
-      expect(host.steps, <String>['begin', 'batch']);
+      // 收手也放掉会话（连同内核为它留着的页缓存），不等下一轮收尾。
+      expect(host.steps, <String>['begin', 'batch', 'end']);
+    });
+
+    test('收一批出错时照样放掉会话，错误原样抛出', () async {
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final List<String> own = <String>[
+        for (int i = 0; i < 2; i++) 'devices/SELF/seg-own-$i.bin',
+      ];
+      await writeMeta(loc);
+      for (final String p in own) {
+        loc.files[p] = Uint8List(10);
+      }
+      final _ScriptedHost host = _ScriptedHost(
+        own: own,
+        others: const <String>[],
+        failBatch: true,
+      );
+      await expectLater(
+        srsSync2Round(
+          host: host,
+          location: loc,
+          locationId: 'loc',
+          nowMs: () => 0,
+          ingestBudgetBytes: 1,
+          fetchConcurrency: 1,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(host.steps, <String>['begin', 'batch', 'end']);
     });
   });
 
@@ -550,16 +582,26 @@ class _CountingHost implements SrsSync2Host {
 
   @override
   Future<Map<String, Object?>> sync2IngestFinish() => inner.sync2IngestFinish();
+
+  @override
+  Future<void> sync2IngestEnd() => inner.sync2IngestEnd();
 }
 
 /// 只回答一轮同步要的命令的假内核：plan 让拉 [own]（本机身份）与 [others] 两组段，记下收段会话的每一步。
 class _ScriptedHost implements SrsSync2Host {
-  _ScriptedHost({required this.own, required this.others});
+  _ScriptedHost({
+    required this.own,
+    required this.others,
+    this.failBatch = false,
+  });
 
   final List<String> own;
   final List<String> others;
 
-  /// 'begin' / 'batch:<字节数>' / 'finish'，按调用顺序。
+  /// 收一批时抛错（模拟内核报错）。
+  final bool failBatch;
+
+  /// 'begin' / 'batch' / 'finish' / 'end'，按调用顺序。
   final List<String> steps = <String>[];
   final List<List<int>> batchSizes = <List<int>>[];
 
@@ -601,6 +643,7 @@ class _ScriptedHost implements SrsSync2Host {
     String? keyHex,
   }) async {
     steps.add('batch');
+    if (failBatch) throw StateError('ingest failed');
     batchSizes.add(<int>[for (final Uint8List s in segments) s.length]);
     return <String, Object?>{'applied': segments.length, 'fork': false};
   }
@@ -610,4 +653,7 @@ class _ScriptedHost implements SrsSync2Host {
     steps.add('finish');
     return <String, Object?>{'applied': 0, 'fork': true};
   }
+
+  @override
+  Future<void> sync2IngestEnd() async => steps.add('end');
 }

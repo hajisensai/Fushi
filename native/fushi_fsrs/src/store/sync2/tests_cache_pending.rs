@@ -145,7 +145,7 @@ fn finish_session(d: &Device, deck: &str, now: i64) -> usize {
 }
 
 fn hold(d: &Device) -> bool {
-    d.core.ingest_hold_cache.load(std::sync::atomic::Ordering::Relaxed)
+    d.core.ingest_holds_cache.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// 参照：一次收完（不切片），再从事件全量重建缓存。
@@ -167,7 +167,10 @@ fn deferred_cache_refresh_matches_a_full_rebuild() {
     assert!(count(&reference, "SELECT COUNT(*) FROM srs_stat_reviews") > 0);
     for (batch, slice) in [(1, 3), (2, 7), (3, 1)] {
         let d = Device::new("cp-join");
-        join_sliced(&d, &deck, &bucket, batch, slice, true);
+        join_sliced(&d, &deck, &bucket, batch, slice, false);
+        // 测试里一块 [CACHE_PENDING_CHUNK] = 5 个实体：收尾要分好几块（「还有剩 → `more` → `replay_pending` 接着刷」）。
+        let calls = finish_session(&d, &deck, T0 + 50 * DAY);
+        assert!(calls > 1, "the drain must span several chunks (calls={calls})");
         assert_eq!(caches(&d), caches(&reference), "batch={batch} slice={slice}");
     }
 }
@@ -266,4 +269,101 @@ fn purging_the_profile_releases_the_held_cache() {
     join_sliced(&d, &deck, &bucket, 1, 4, false);
     d.core.profile_purge(P).unwrap();
     assert!(!hold(&d));
+}
+
+/// 会话怎么结束，留着的页缓存就怎么放掉（不靠下一轮碰巧收尾）：Dart 中途收手 / 出错发的 `ingest_end` 放掉会话
+/// 与页缓存，之后的片明确失败；待刷新集合还在，下一轮照样收尾。
+#[test]
+fn ending_an_unfinished_session_releases_the_held_cache() {
+    let (bucket, deck) = world(4, 2);
+    let reference = join_rebuilt(&deck, &bucket);
+    let d = Device::new("cp-end");
+    join_sliced(&d, &deck, &bucket, 1, 4, false);
+    cmd(&d, &deck, json!({"op": "ingest_end"}), vec![]);
+    assert!(!hold(&d), "ingest_end releases the held page cache");
+    let err = d.core.sync2_ingest_batch(P, Vec::new(), None, T0).unwrap_err();
+    assert!(err.contains("no ingest session"), "{err}");
+    // 再发一次（已经没有会话）是空操作。
+    cmd(&d, &deck, json!({"op": "ingest_end"}), vec![]);
+    assert!(!hold(&d));
+    let plan = cmd(&d, &deck, json!({"op": "plan"}), heads(&bucket));
+    assert_eq!(plan["finishPending"], json!(true), "{plan}");
+    cmd(&d, &deck, json!({"op": "ingest_begin"}), vec![]);
+    finish_session(&d, &deck, T0 + 51 * DAY);
+    assert_eq!(caches(&d), caches(&reference));
+}
+
+/// 会话因出错作废（这里是投递时发现本机身份在会话期间被换过）时同样回到没有会话，不留页缓存。
+#[test]
+fn a_session_voided_by_an_error_releases_the_held_cache() {
+    let (bucket, deck) = world(2, 1);
+    let d = Device::new("cp-fail");
+    let now = T0 + 50 * DAY;
+    cmd(&d, &deck, json!({"op": "identity", "now": now}), vec![]);
+    cmd(&d, &deck, json!({"op": "plan"}), heads(&bucket));
+    cmd(&d, &deck, json!({"op": "ingest_begin"}), vec![]);
+    cmd(&d, &deck, json!({"op": "ingest_prepare"}), segs(&bucket));
+    assert!(hold(&d));
+    d.core.sync2_rotate(P, now).unwrap();
+    let req = json!({"op": "ingest_commit", "profile": P, "caches": {"defaultDeck": deck}, "now": now});
+    let err = crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new()).unwrap_err();
+    assert!(err.contains("local identity changed"), "{err}");
+    assert!(!hold(&d), "a session voided by an error releases the held page cache");
+}
+
+/// 老设备追积压：本机已有缓存行的卡在投递的那一片里当场刷新（复习队列直接读缓存行，不能按旧的 due 排队到收尾），
+/// 新笔记 / 新卡才推迟到收尾；收尾后与全量重建逐行相同。
+#[test]
+fn catch_up_refreshes_existing_cache_rows_in_the_slice() {
+    let (mut bucket, deck) = world(4, 2);
+    let d = Device::new("cp-old");
+    join_sliced(&d, &deck, &bucket, 2, 5, true);
+    // 另一台设备加入，在已有的卡上接着复习，再加一条新笔记。
+    let w = Device::new("cp-other");
+    let now = T0 + 60 * DAY;
+    w.sync(&mut bucket, "loc", now);
+    let old_card = crate::registers::card_id(&note_id(1), "t1", 0).unwrap();
+    let fresh = note_id(99);
+    let fresh_card = crate::registers::card_id(&fresh, "t1", 0).unwrap();
+    let input = vec![
+        json!({"e": review("late-r1", &old_card, now - DAY, 3, "review"), "note": note_id(1)}),
+        json!({"e": json!({"t": "entity", "x": {"id": fresh, "p": P, "k": "note", "d": {"createdAt": 1, "guid": fresh, "noteTypeId": "NT"}}}), "note": fresh}),
+        json!({"e": edit("note", &fresh, "f/fa", json!("新")), "note": fresh}),
+        json!({"e": review("late-r2", &fresh_card, now - DAY, 3, "learn"), "note": fresh}),
+    ];
+    w.core.sync2_apply_local(P, now, &Value::Array(input).to_string()).unwrap();
+    w.sync(&mut bucket, "loc", now + 1);
+    let reference = join_rebuilt(&deck, &bucket);
+    // 这张卡的缓存行（去掉刷新时刻 `updated_at`）；没有行 = None。
+    let row = |x: &Device, id: &str| -> Option<Vec<String>> {
+        let cols: Vec<String> = x.rows("SELECT name FROM pragma_table_info('srs_cards_cache') WHERE name != 'updated_at' ORDER BY cid")[1..]
+            .iter()
+            .map(|r| format!("quote({})", r[0]))
+            .collect();
+        x.rows(&format!("SELECT {} FROM srs_cards_cache WHERE id = srs_id('{id}')", cols.join(", "))).get(1).cloned()
+    };
+    let before = row(&d, &old_card).expect("the old device has a cache row for the card");
+    assert!(!before.contains(&"'late-r1'".to_owned()));
+
+    let later = now + DAY;
+    cmd(&d, &deck, json!({"op": "plan"}), top_heads(&bucket));
+    cmd(&d, &deck, json!({"op": "ingest_begin"}), vec![]);
+    cmd(&d, &deck, json!({"op": "ingest_prepare"}), segs(&bucket));
+    let mut refreshed = Vec::new();
+    loop {
+        let r = cmd(&d, &deck, json!({"op": "ingest_commit", "now": later, "sliceOps": 2}), vec![]);
+        refreshed.extend(r["cache"]["cards"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned));
+        if r["more"] != json!(true) {
+            break;
+        }
+    }
+    // 收尾之前：已有的卡在投递它的那一片里就刷过，缓存行已经带上新收的那条复习（重放改写的派生状态照旧在收尾时
+    // 定下：这里的测试日志没带真实的调度结果）；新卡还没有缓存行、在待刷新集合里。
+    assert!(refreshed.contains(&old_card), "{refreshed:?}");
+    let mid = row(&d, &old_card).unwrap();
+    assert!(mid.contains(&"'late-r1'".to_owned()), "an existing cache row is refreshed in the slice: {mid:?}");
+    assert_eq!(row(&d, &fresh_card), None, "a new card waits for the finish");
+    assert!(count(&d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0);
+    finish_session(&d, &deck, later);
+    assert_eq!(caches(&d), caches(&reference));
 }
