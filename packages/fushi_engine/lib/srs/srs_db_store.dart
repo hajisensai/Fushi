@@ -28,6 +28,7 @@ import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
+import 'package:fushi_engine/srs/sync2/srs_wal_checkpoint_pacer.dart';
 
 /// 旧库迁移成同步 v2 操作时每批包多少条旧行（[SrsDbStore] 打开时）。每批是内核里一个独立提交的 savepoint：
 /// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
@@ -1243,6 +1244,10 @@ class SrsDbStore implements SrsSync2Host {
   Future<void> sync2IngestBegin() =>
       runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
 
+  @override
+  Future<void> sync2IngestEnd() =>
+      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_end'}));
+
   /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
   /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，
   /// 之后公钥 / 身份变了内核在投递时按当时的重验，结果与在写锁里一步收完相同。
@@ -1251,10 +1256,10 @@ class SrsDbStore implements SrsSync2Host {
   /// `more` 就再进一次写锁接着投。每片是独立的独占区 + 事务；没人等锁时一片投到时间上限，有写入来排队
   /// （[runExclusive]）就请内核当场收片（`ingest_yield`），排队的作答只等这一片已投部分的收尾，而不是整批。
   ///
-  /// 收这一批期间暂停写连接的自动 checkpoint（[bulkWrites]），每片之后在写锁外、内核另开的连接上把 WAL 并回
-  /// （[_walCheckpoint]）：在写连接上并，提交那一刻就把同一批热页拷回主库，作答排在后面；整批都不并，WAL 随
-  /// 片数涨到几百 MB。测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices`
-  /// 是这一批投了几片。
+  /// 收这一批期间调高写连接的自动 checkpoint 阈值（[bulkWrites]），按 [SrsWalCheckpointPacer] 定的节奏在写锁外、
+  /// 内核另开的连接上把 WAL 并回（[_walCheckpoint]）：在写连接上并，提交那一刻就把同一批热页拷回主库，作答排在
+  /// 后面；每片都并，同一批热页每片拷一遍（真实数据里占投递三分之一）；整批都不并，WAL 随片数涨到几百 MB。
+  /// 测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices` 是这一批投了几片。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
@@ -1267,10 +1272,13 @@ class SrsDbStore implements SrsSync2Host {
       'key': keyHex,
     }, blobs: segments);
     final List<Map<String, Object?>> slices = <Map<String, Object?>>[];
+    final SrsWalCheckpointPacer pacer = SrsWalCheckpointPacer();
     await bulkWrites(() async {
       do {
         slices.add(await _sync2IngestSlice(sliceOps, sliceMs));
-        if (slices.last['more'] == true) await _walCheckpoint();
+        if (slices.last['more'] == true && pacer.afterSlice()) {
+          pacer.checkpointed(await _walCheckpoint());
+        }
       } while (slices.last['more'] == true);
     });
     return _mergeIngestSlices(slices);
@@ -1303,13 +1311,16 @@ class SrsDbStore implements SrsSync2Host {
   /// 这一片已经请过收片。
   bool _ingestYieldSent = false;
 
-  /// 在内核另开的连接上把 WAL 并回主库（PASSIVE，不占写连接，期间作答照常写入）。
-  Future<void> _walCheckpoint() => _coreSync2(
-    core.address,
-    core.libraryPath,
-    const <String, Object?>{'op': 'wal_checkpoint'},
-    const <Uint8List>[],
-  );
+  /// 在内核另开的连接上把 WAL 并回主库（PASSIVE，不占写连接，期间作答照常写入）。返回并回时 WAL 里的帧数。
+  Future<int> _walCheckpoint() async {
+    final SrsSync2Result r = await _coreSync2(
+      core.address,
+      core.libraryPath,
+      const <String, Object?>{'op': 'wal_checkpoint'},
+      const <Uint8List>[],
+    );
+    return (r.map['log'] as num?)?.toInt() ?? 0;
+  }
 
   /// 一批各片的结果拼成一次的形状（[srsSync2Round] 读的那些）：条数、`marks` 的计数相加、清单接起来，报错、
   /// 重放 / 变更 / 清除的清单按片顺序接起来，缓冲条数与其它字段取最后一片，`slices` 记片数。各片的投影变化已在
@@ -1361,24 +1372,30 @@ class SrsDbStore implements SrsSync2Host {
       ..addAll(lists);
   }
 
-  /// 收尾：换身份，再把各片记下的待重放卡重放完（审查 S-4：每张卡一次会话只重放一遍）。重放也按片：内核返回
-  /// `more` 就放开写锁、再用 `replay_pending` 接着放，排队的作答只等一片。各片结果拼成一次的形状。
+  /// 收尾：换身份，再把各片记下的待重放卡重放完（审查 S-4：每张卡一次会话只重放一遍），再按块刷新各片记下的
+  /// 缓存。重放与刷新都按片：内核返回 `more` 就放开写锁、再用 `replay_pending` 接着做，排队的作答只等一片。
+  /// WAL 与投递时同样处理（[bulkWrites] + [SrsWalCheckpointPacer]）。各片结果拼成一次的形状。
   @override
   Future<Map<String, Object?>> sync2IngestFinish({int? sliceOps}) async {
-    final List<Map<String, Object?>> parts = <Map<String, Object?>>[
-      await _sync2IngestStep(<String, Object?>{
-        'op': 'ingest_finish',
-        'sliceOps': ?sliceOps,
-      }),
-    ];
-    while (parts.last['more'] == true) {
+    final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
+    final SrsWalCheckpointPacer pacer = SrsWalCheckpointPacer();
+    await bulkWrites(() async {
       parts.add(
         await _sync2IngestStep(<String, Object?>{
-          'op': 'replay_pending',
+          'op': 'ingest_finish',
           'sliceOps': ?sliceOps,
         }),
       );
-    }
+      while (parts.last['more'] == true) {
+        if (pacer.afterSlice()) pacer.checkpointed(await _walCheckpoint());
+        parts.add(
+          await _sync2IngestStep(<String, Object?>{
+            'op': 'replay_pending',
+            'sliceOps': ?sliceOps,
+          }),
+        );
+      }
+    });
     return <String, Object?>{..._mergeIngestSlices(parts), 'more': false};
   }
 

@@ -44,6 +44,11 @@ abstract interface class SrsSync2Host {
 
   /// 收尾：累积出分叉点就换身份；返回同形结果（`fork`、重签发带来的投影变化）。
   Future<Map<String, Object?>> sync2IngestFinish();
+
+  /// 放掉收段会话（内核 `sync2_ingest_end`）：一轮中途收手、抓段或某一步出错时，会话里预处理好的段与内核为会话
+  /// 留着的页缓存一起放掉，不等下一轮碰巧收尾。各片已提交时记下的待重放 / 待刷新仍在库里，下一轮 `finishPending`
+  /// 收。收尾已收完时是空操作。
+  Future<void> sync2IngestEnd();
 }
 
 /// 状态摘要最多多久重算一次（版本向量没变就不算）。
@@ -443,32 +448,41 @@ Future<bool> srsSync2Pull({
     int done = 0;
     onFetchProgress?.call(0, wanted.length);
     await host.sync2IngestBegin();
-    await for (final SrsFetchedBatch batch in srsFetchInBatches(
-      wanted,
-      fetch: (String path) => srsFetchSegment(location, path),
-      budgetBytes: ingestBudgetBytes,
-      concurrency: fetchConcurrency,
-    )) {
-      // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
-      report.missing += batch.covered - batch.segments.length;
-      if (batch.segments.isNotEmpty) {
-        absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+    // 会话的寿命限在这一段里：收手 / 出错退出时也放掉（[SrsSync2Host.sync2IngestEnd]）。
+    try {
+      await for (final SrsFetchedBatch batch in srsFetchInBatches(
+        wanted,
+        fetch: (String path) => srsFetchSegment(location, path),
+        budgetBytes: ingestBudgetBytes,
+        concurrency: fetchConcurrency,
+      )) {
+        // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
+        report.missing += batch.covered - batch.segments.length;
+        if (batch.segments.isNotEmpty) {
+          absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+        }
+        done += batch.covered;
+        onFetchProgress?.call(done, wanted.length);
+        onStep?.call('ingest $done/${wanted.length}');
+        if (shouldStop?.call() ?? false) {
+          report.error = kSrsSync2Stopped;
+          return false;
+        }
       }
-      done += batch.covered;
-      onFetchProgress?.call(done, wanted.length);
-      onStep?.call('ingest $done/${wanted.length}');
-      if (shouldStop?.call() ?? false) {
-        report.error = kSrsSync2Stopped;
-        return false;
-      }
+      onStep?.call('ingestFinish');
+      absorb(await host.sync2IngestFinish());
+    } finally {
+      await host.sync2IngestEnd();
     }
-    onStep?.call('ingestFinish');
-    absorb(await host.sync2IngestFinish());
   } else if (plan['finishPending'] == true) {
     // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
     onStep?.call('finishPending');
     await host.sync2IngestBegin();
-    absorb(await host.sync2IngestFinish());
+    try {
+      absorb(await host.sync2IngestFinish());
+    } finally {
+      await host.sync2IngestEnd();
+    }
   }
   return true;
 }

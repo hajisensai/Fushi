@@ -107,6 +107,9 @@ class _Host implements SrsSync2Host {
   @override
   Future<Map<String, Object?>> sync2IngestFinish() =>
       throw UnimplementedError();
+
+  @override
+  Future<void> sync2IngestEnd() => throw UnimplementedError();
 }
 
 /// [failOn] 里的路径删除时抛错（模拟云盘删除失败）。

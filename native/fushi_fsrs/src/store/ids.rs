@@ -269,6 +269,7 @@ pub(crate) const COLUMNS: &[(&str, &[&str])] = &[
     ("srs_sent_batches", &["profile_uid", "writer_id"]),
     ("srs_stat_reviews", &["log_id", "profile_uid", "card_id"]),
     ("srs_unknown_events", &["id", "profile_uid"]),
+    ("sync2_cache_pending", &["profile_uid", "entity_id"]),
     ("sync2_card_deck", &["card_id", "profile_uid", "deck_id"]),
     ("sync2_checkpoints", &["profile_uid"]),
     ("sync2_conflicts", &["id", "profile_uid", "entity"]),

@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 19;
+pub const SCHEMA_VERSION: i64 = 20;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -570,6 +570,10 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 只改投影与 `sync2_legacy`，操作日志不动；可重放。腾出的页留在空闲链表、由之后的写入复用，不排整理
         // （VACUUM 要整库重写、峰值多占两倍有效数据，为一成左右的空间不值得在打开时做）。
         super::sync2::strip_synthetic_writers(&tx)?;
+    }
+    if current < 20 {
+        // V20：收段会话的待刷新缓存（store/sync2/schema.rs [super::sync2::schema::V20_CACHE_PENDING]）。只建表，可重放。
+        tx.execute_batch(super::sync2::schema::V20_CACHE_PENDING).map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
