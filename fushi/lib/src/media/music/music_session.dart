@@ -32,6 +32,10 @@ String musicPlaybackFailureText(MusicBackendFailed failure) =>
       MusicPlaybackFailure.cdOtherDisc => t.music_cd_play_other_disc(
         device: failure.device ?? '',
       ),
+      MusicPlaybackFailure.appleMusicSessionLost =>
+        t.music_apple_music_session_lost,
+      MusicPlaybackFailure.appleMusicSignedOut =>
+        t.music_apple_music_signed_out,
       MusicPlaybackFailure.trackUnavailable ||
       null => t.music_play_failed(error: failure.message),
     };

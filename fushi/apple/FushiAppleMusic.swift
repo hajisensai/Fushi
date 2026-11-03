@@ -201,23 +201,33 @@ final class AppleMusicPlayerCore {
   private var durationMs: Int?
   private var wasPlaying = false
   private var lastPositionMs = 0
-  /// Dart 叫停 / 暂停之后的「停下」不算播完。
+  /// Dart 刚叫停 / 暂停、播放器还没再出声：这期间的「停下」不算播完。一观察到出声就复位
+  /// （不管是 Dart resume，还是系统 Now Playing / 耳机线控恢复），之后的自然播完照常判。
   private var stopRequested = false
+  /// 换曲 / 停止的请求序号。`play` 在 catalog 请求与 `prepareToPlay` 处挂起，MainActor 上后到的
+  /// `play` / `stop` 可以先跑完；每个挂起点之后核对序号，已被取代就不再碰 `player.queue`。
+  private var requestId = 0
 
   init(emit: @escaping ([String: Any]) -> Void) {
     self.emit = emit
   }
 
   func play(songId: String, startMs: Int, autoplay: Bool) async throws {
+    requestId += 1
+    let request = requestId
     stopRequested = true
-    var request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songId))
-    request.limit = 1
-    let response = try await request.response()
+    // 换曲期间不再推上一首的进度 / 结束（Dart 侧也按 songId 过滤，这里先止住）。
+    self.songId = nil
+    var catalogRequest = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songId))
+    catalogRequest.limit = 1
+    let response = try await catalogRequest.response()
+    guard request == requestId else { return }
     guard let song = response.items.first else {
       throw BridgeError.notFound("song \(songId) not in catalog")
     }
     player.queue = ApplicationMusicPlayer.Queue(for: [song])
     try await player.prepareToPlay()
+    guard request == requestId else { return }
     if startMs > 0 {
       player.playbackTime = TimeInterval(startMs) / 1000
     }
@@ -228,6 +238,7 @@ final class AppleMusicPlayerCore {
     stopRequested = false
     if autoplay {
       try await player.play()
+      guard request == requestId else { return }
     }
     startTimer()
     tick()
@@ -247,6 +258,7 @@ final class AppleMusicPlayerCore {
   }
 
   func stop() {
+    requestId += 1
     stopRequested = true
     player.stop()
     songId = nil
@@ -277,6 +289,11 @@ final class AppleMusicPlayerCore {
     guard let songId else { return }
     let status = player.state.playbackStatus
     let playing = status == .playing
+    if playing && !wasPlaying {
+      // 重新出声（停 → 播的边沿；只认边沿，刚 pause() 还没生效的那一拍不算）：之前那次叫停
+      // 已经过去了（可能由系统 Now Playing / 线控恢复，Dart 不知道）。
+      stopRequested = false
+    }
     let positionMs = Int((player.playbackTime * 1000).rounded())
     var progress: [String: Any] = ["type": "progress", "positionMs": positionMs, "songId": songId]
     if let durationMs { progress["durationMs"] = durationMs }

@@ -89,6 +89,7 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int? popup = _popupWindowId;
+    final bool overlay = popup == null && (_busy || _error != null);
     return FushiPageScaffold(
       title: t.music_apple_music_login_title,
       body: Stack(
@@ -143,35 +144,51 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
                 ),
               ),
             ),
-          if (popup == null && (_busy || _error != null))
-            Positioned.fill(
-              child: ColoredBox(
-                color: Theme.of(context).colorScheme.surface,
-                child: Center(
-                  child: _error == null
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          spacing: tokens.spacing.gap,
-                          children: <Widget>[
-                            const FushiCircularProgressIndicator(),
-                            Text(t.music_apple_music_login_opening),
-                          ],
-                        )
-                      : FushiPlaceholderMessage(
-                          icon: FushiIcons.cloudOff,
-                          message: t.music_apple_music_login_failed,
-                          detail: _error,
-                          action: FushiPressScale(
-                            child: FushiFilledButton.icon(
-                              onPressed: () => unawaited(_authorize()),
-                              icon: const FushiIcon(FushiIcons.refresh),
-                              label: Text(t.music_server_retry),
-                            ),
-                          ),
+          // 加载 / 出错遮罩：三种状态（加载 → 出错 → 弹窗 / 登录页）之间交叉淡化，不硬切；
+          // 遮罩淡出时由 IgnorePointer 放行底下的登录页 / 弹窗。
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !overlay,
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                child: !overlay
+                    ? const SizedBox.expand(
+                        key: ValueKey<String>('apple_music_login_none'),
+                      )
+                    : ColoredBox(
+                        key: ValueKey<String>(
+                          _error == null
+                              ? 'apple_music_login_busy'
+                              : 'apple_music_login_error',
                         ),
-                ),
+                        color: Theme.of(context).colorScheme.surface,
+                        child: Center(
+                          child: _error == null
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  spacing: tokens.spacing.gap,
+                                  children: <Widget>[
+                                    const FushiCircularProgressIndicator(),
+                                    Text(t.music_apple_music_login_opening),
+                                  ],
+                                )
+                              : FushiPlaceholderMessage(
+                                  icon: FushiIcons.cloudOff,
+                                  message: t.music_apple_music_login_failed,
+                                  detail: _error,
+                                  action: FushiPressScale(
+                                    child: FushiFilledButton.icon(
+                                      onPressed: () => unawaited(_authorize()),
+                                      icon: const FushiIcon(FushiIcons.refresh),
+                                      label: Text(t.music_server_retry),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
               ),
             ),
+          ),
         ],
       ),
     );

@@ -5,6 +5,8 @@
 ///   [MusicBackendAdvanced]——**不无缝**（MusicKit 单曲队列，Fushi 队列是唯一真相）。
 /// - 拿不到 PCM：信号路径、A-B 循环、均衡器、交叉淡入一概不支持（能力标志在路由上声明）。
 /// - 音量：网页桥跟随软件音量；原生没有应用级音量，跟随系统。
+/// - 换曲 / 停止命令串行下发、最后一个说了算（[_issue]）：桥不保证并发 setQueue 的完成顺序。
+/// - 桥那一代没了（[AppleMusicSessionLost]）或账号断开：当前曲判失败，引擎下次按播放重新打开。
 library;
 
 import 'dart:async';
@@ -55,6 +57,11 @@ class AppleMusicOutputBackend implements MusicOutputBackend {
   /// 正在打开（桥还在 setQueue）：这期间桥上的事件属于上一首，不转发。
   bool _opening = false;
 
+  /// 已下发到桥、还没落地的最后一条换曲 / 停止命令。桥（原生 MusicKit 的 setQueue 在 await
+  /// 处挂起、网页的 callAsyncJavaScript）不保证并发命令的完成顺序：连切 A→B 时 A 可能晚于 B
+  /// 落地、把队列换回 A。所以命令一条接一条下发，轮到时已被更新的打开 / 停止作废就不再下发。
+  Future<void> _bridgeChain = Future<void>.value();
+
   double _volume = 1;
   bool _disposed = false;
 
@@ -94,8 +101,45 @@ class AppleMusicOutputBackend implements MusicOutputBackend {
             trackUid: _current?.trackUid,
           ),
         );
-      case AppleMusicAccountChanged():
-        break;
+      case AppleMusicSessionLost(:final String reason):
+        _failCurrent(
+          'Apple Music player was reset ($reason)',
+          MusicPlaybackFailure.appleMusicSessionLost,
+        );
+      case AppleMusicAccountChanged(:final AppleMusicAccountState state):
+        if (!state.isAuthorized) {
+          _failCurrent(
+            'Apple Music signed out',
+            MusicPlaybackFailure.appleMusicSignedOut,
+          );
+        }
+    }
+  }
+
+  /// 当前曲在桥上已经不存在（桥那一代没了 / 账号断开）：判失败并放下它。引擎据此停住、提示，
+  /// 并把这首标成需重开——下次按播放走 openPair 重新 setQueue，而不是对桥发 resume / seek。
+  void _failCurrent(String message, MusicPlaybackFailure reason) {
+    final MusicPlayItem? item = _current;
+    if (item == null) return;
+    _gen++;
+    _current = null;
+    _currentSongId = null;
+    _emit(MusicBackendFailed(message, reason: reason, trackUid: item.trackUid));
+  }
+
+  /// 按顺序下发一条桥命令：先等上一条落地（它自己的失败由它的调用方处理），轮到时 [gen]
+  /// 已被作废就不下发、回 false。
+  Future<bool> _issue(int gen, Future<void> Function() command) async {
+    final Future<void> previous = _bridgeChain;
+    final Completer<void> done = Completer<void>();
+    _bridgeChain = done.future;
+    try {
+      await previous;
+      if (gen != _gen) return false;
+      await command();
+      return true;
+    } finally {
+      done.complete();
     }
   }
 
@@ -143,7 +187,11 @@ class AppleMusicOutputBackend implements MusicOutputBackend {
     }
     _opening = true;
     try {
-      await _bridge.play(songId, autoplay: play);
+      final bool issued = await _issue(
+        gen,
+        () => _bridge.play(songId, autoplay: play),
+      );
+      if (!issued) return;
     } on Object catch (e) {
       if (gen != _gen) return;
       throw MusicTrackOpenException(
@@ -234,22 +282,23 @@ class AppleMusicOutputBackend implements MusicOutputBackend {
 
   @override
   Future<void> stop() async {
-    _gen++;
+    final int gen = ++_gen;
     _opening = false;
     _current = null;
     _currentSongId = null;
     _next = null;
-    await _bridge.stop();
+    // 排在还没落地的打开之后：否则那次打开晚到时又把曲目放起来。
+    await _issue(gen, _bridge.stop);
   }
 
   @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _gen++;
+    final int gen = ++_gen;
     await _sub.cancel();
     try {
-      await _bridge.stop();
+      await _issue(gen, _bridge.stop);
     } on Object {
       // 退出时桥可能已经没了。
     }

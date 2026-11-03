@@ -139,6 +139,16 @@ final class AppleMusicPlaybackError extends AppleMusicPlayerEvent {
   final String? songId;
 }
 
+/// 桥这一代播放器没了（网页桥的隐藏 WebView renderer 崩溃、登录后重建）：之前排进 MusicKit 的
+/// 那首已经不在了，`resume` / `seek` 不会再让它出声。播放后端据此把当前曲判失败、让引擎下次
+/// 按播放时重新打开（重新 setQueue），而不是对着一个没 configure 过的新页面发 resume。
+final class AppleMusicSessionLost extends AppleMusicPlayerEvent {
+  const AppleMusicSessionLost(this.reason);
+
+  /// `renderer_gone` / `reauthorized` 等，只用于日志与提示。
+  final String reason;
+}
+
 /// 授权 / 订阅状态变了。
 final class AppleMusicAccountChanged extends AppleMusicPlayerEvent {
   const AppleMusicAccountChanged(this.state);

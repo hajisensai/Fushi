@@ -67,15 +67,32 @@ class AppleMusicNativeBridge implements AppleMusicBridge {
   final MethodChannel _channel;
   final EventChannel _eventChannel;
 
-  Stream<AppleMusicPlayerEvent>? _events;
+  /// 对外的一条事件流：原生事件 + Dart 侧自己产生的事件（断开时的 [AppleMusicAccountChanged]：
+  /// 原生撤不了系统授权、不会推 account 事件，播放后端仍要知道账号已断开）。
+  late final StreamController<AppleMusicPlayerEvent> _out =
+      StreamController<AppleMusicPlayerEvent>.broadcast(
+        onListen: _listenNative,
+        onCancel: _cancelNative,
+      );
+  StreamSubscription<AppleMusicPlayerEvent>? _nativeSub;
 
   @override
-  Stream<AppleMusicPlayerEvent> get events => _events ??= _eventChannel
-      .receiveBroadcastStream()
-      .map(parseAppleMusicNativeEvent)
-      .where((AppleMusicPlayerEvent? e) => e != null)
-      .cast<AppleMusicPlayerEvent>()
-      .asBroadcastStream();
+  Stream<AppleMusicPlayerEvent> get events => _out.stream;
+
+  void _listenNative() {
+    _nativeSub ??= _eventChannel
+        .receiveBroadcastStream()
+        .map(parseAppleMusicNativeEvent)
+        .where((AppleMusicPlayerEvent? e) => e != null)
+        .cast<AppleMusicPlayerEvent>()
+        .listen(_out.add, onError: _out.addError);
+  }
+
+  Future<void> _cancelNative() async {
+    final Future<void>? cancelled = _nativeSub?.cancel();
+    _nativeSub = null;
+    await cancelled;
+  }
 
   Future<T?> _invoke<T>(String method, [Object? args]) async {
     try {
@@ -108,9 +125,20 @@ class AppleMusicNativeBridge implements AppleMusicBridge {
         : AppleMusicAccountState.fromMap(m);
   }
 
-  /// 原生撤销不了系统授权：停掉播放即可（「已断开」由账号层的偏好记）。
+  /// 原生撤销不了系统授权：停掉播放（「已断开」由账号层的偏好记），并发出已断开，让播放后端
+  /// 把当前曲判失败（停不掉也照样发）。
   @override
-  Future<void> unauthorize() => stop();
+  Future<void> unauthorize() async {
+    try {
+      await stop();
+    } finally {
+      if (!_out.isClosed) {
+        _out.add(
+          const AppleMusicAccountChanged(AppleMusicAccountState.signedOut),
+        );
+      }
+    }
+  }
 
   @override
   Future<AppleMusicUserCredentials?> userCredentials() async {
@@ -150,5 +178,8 @@ class AppleMusicNativeBridge implements AppleMusicBridge {
   Future<void> setVolume(double volume) async {}
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    await _cancelNative();
+    await _out.close();
+  }
 }

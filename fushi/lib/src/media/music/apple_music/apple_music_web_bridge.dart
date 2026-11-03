@@ -226,6 +226,10 @@ class AppleMusicWebBridge implements AppleMusicBridge {
   Future<InAppWebViewController>? _ready;
   int? _lastState;
 
+  /// 这一代隐藏页里排着一首（play 成功过、之后没 stop）。这一代被拆掉时据此发
+  /// [AppleMusicSessionLost]：播放后端才知道那首已经不在了，不会对着新页面发 resume / seek。
+  bool _hasQueue = false;
+
   /// 正在等的桥调用数：调用自己的失败经返回值上报，这期间页面顺带发的 `error` 事件不再重复转发。
   int _calls = 0;
   bool _disposed = false;
@@ -318,10 +322,10 @@ class AppleMusicWebBridge implements AppleMusicBridge {
             }
           },
       onWebContentProcessDidTerminate: (InAppWebViewController _) =>
-          unawaited(_teardown()),
+          unawaited(_teardown(lostReason: 'renderer_gone')),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail _) =>
-              unawaited(_teardown()),
+              unawaited(_teardown(lostReason: 'renderer_gone')),
     );
     _webView = webView;
     await webView.run();
@@ -332,11 +336,18 @@ class AppleMusicWebBridge implements AppleMusicBridge {
     );
   }
 
-  Future<void> _teardown() async {
+  /// 拆掉这一代隐藏页。[lostReason] 非空 = 不是有意停播（renderer 崩溃 / 登录后重建）：这一代
+  /// 排着曲目时发 [AppleMusicSessionLost]，让播放后端把当前曲判失败、下次播放重新打开。
+  Future<void> _teardown({String? lostReason}) async {
     final HeadlessInAppWebView? w = _webView;
+    final bool hadQueue = _hasQueue;
     _webView = null;
     _ready = null;
     _lastState = null;
+    _hasQueue = false;
+    if (lostReason != null && hadQueue) {
+      _emit(AppleMusicSessionLost(lostReason));
+    }
     if (w != null) {
       try {
         await w.dispose();
@@ -402,10 +413,12 @@ class AppleMusicWebBridge implements AppleMusicBridge {
         builder: (BuildContext _) => const AppleMusicWebLoginPage(),
       ),
     );
-    // 登录页的 WebView 把 Music-User-Token 写进了同源 localStorage；隐藏 WebView 是在那之前
-    // configure 的，重建一代让它读到。
-    await _teardown();
+    // 没登录成功：token 没变，不动正在用的这一代（正在放的曲目照常放）。
     if (ok != true) return accountState();
+    // 登录页的 WebView 把 Music-User-Token 写进了同源 localStorage；隐藏 WebView 是在那之前
+    // configure 的，重建一代让它读到。这一代若正排着曲目，经 [AppleMusicSessionLost] 通知
+    // 播放后端（它把当前曲判失败、下次按播放重新 setQueue），不静默丢掉。
+    await _teardown(lostReason: 'reauthorized');
     final AppleMusicAccountState s = await accountState();
     _emit(AppleMusicAccountChanged(s));
     return s;
@@ -413,8 +426,13 @@ class AppleMusicWebBridge implements AppleMusicBridge {
 
   @override
   Future<void> unauthorize() async {
-    await _api('unauthorize');
-    _emit(const AppleMusicAccountChanged(AppleMusicAccountState.signedOut));
+    try {
+      await _api('unauthorize');
+    } finally {
+      // 清 token 失败也算断开（账号层已记「未连接」）：播放后端据此停掉当前曲。
+      _hasQueue = false;
+      _emit(const AppleMusicAccountChanged(AppleMusicAccountState.signedOut));
+    }
   }
 
   @override
@@ -444,6 +462,7 @@ class AppleMusicWebBridge implements AppleMusicBridge {
     if (r is! Map || r['ok'] != true) {
       throw AppleMusicBridgeException('play', _errorText(r));
     }
+    _hasQueue = true;
   }
 
   @override
@@ -457,6 +476,7 @@ class AppleMusicWebBridge implements AppleMusicBridge {
 
   @override
   Future<void> stop() async {
+    _hasQueue = false;
     if (_ready == null) return;
     await _api('stop');
   }

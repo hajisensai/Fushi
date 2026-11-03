@@ -205,25 +205,8 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
                       onChanged: _reload,
                     ),
                   if (appleMusicOn)
-                    AdaptiveSettingsPickerRow<String>(
-                      key: const ValueKey<String>(
-                        'music_apple_music_storefront',
-                      ),
-                      title: t.music_apple_music_storefront,
-                      subtitle: t.music_apple_music_storefront_hint,
-                      options: <AdaptiveSettingsPickerOption<String>>[
-                        for (final String sf in kAppleMusicStorefrontChoices)
-                          AdaptiveSettingsPickerOption<String>(
-                            value: sf,
-                            label: sf.toUpperCase(),
-                          ),
-                      ],
-                      selected:
-                          kAppleMusicStorefrontChoices.contains(
-                            widget.appModel.prefsRepo.musicAppleMusicStorefront,
-                          )
-                          ? widget.appModel.prefsRepo.musicAppleMusicStorefront
-                          : kAppleMusicStorefrontChoices.first,
+                    _AppleMusicStorefrontRow(
+                      appModel: widget.appModel,
                       onChanged: (String v) =>
                           unawaited(_setAppleMusicStorefront(v)),
                     ),
@@ -233,6 +216,60 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
           },
     );
   }
+}
+
+/// Apple Music storefront：没整曲时可选浏览哪个区；整曲时 catalog 强制按账号所在地区浏览
+/// （`buildMusicServers`），这里只说明跟随账号、不给一个改了也不生效的选择器。账号状态以
+/// [AppleMusicAccount] 为唯一来源。
+class _AppleMusicStorefrontRow extends StatelessWidget {
+  const _AppleMusicStorefrontRow({
+    required this.appModel,
+    required this.onChanged,
+  });
+
+  final AppModel appModel;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: appModel.appleMusicAccount,
+    builder: (BuildContext context, Widget? _) {
+      final AppleMusicAccount account = appModel.appleMusicAccount;
+      final String? accountStorefront = account.state.storefront;
+      final bool followsAccount =
+          account.canPlayFullTracks && accountStorefront != null;
+      final String chosen = appModel.prefsRepo.musicAppleMusicStorefront;
+      return AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        child: followsAccount
+            ? AdaptiveSettingsRow(
+                key: const ValueKey<String>(
+                  'music_apple_music_storefront_account',
+                ),
+                title: t.music_apple_music_storefront,
+                subtitle: t.music_apple_music_storefront_follows_account(
+                  storefront: accountStorefront.toUpperCase(),
+                ),
+              )
+            : AdaptiveSettingsPickerRow<String>(
+                key: const ValueKey<String>('music_apple_music_storefront'),
+                title: t.music_apple_music_storefront,
+                subtitle: t.music_apple_music_storefront_hint,
+                options: <AdaptiveSettingsPickerOption<String>>[
+                  for (final String sf in kAppleMusicStorefrontChoices)
+                    AdaptiveSettingsPickerOption<String>(
+                      value: sf,
+                      label: sf.toUpperCase(),
+                    ),
+                ],
+                selected: kAppleMusicStorefrontChoices.contains(chosen)
+                    ? chosen
+                    : kAppleMusicStorefrontChoices.first,
+                onChanged: onChanged,
+              ),
+      );
+    },
+  );
 }
 
 /// Apple Music 账号：连接 / 断开 + 授权 / 订阅状态（MusicKit 方案 §4）。连接后整曲播放、
@@ -284,13 +321,10 @@ class _AppleMusicAccountRowState extends State<_AppleMusicAccountRow> {
     }
   }
 
+  /// 断开只管 Apple Music：桥停掉自己的播放并发出「已断开」，Apple Music 播放后端据此把正在放的
+  /// Apple Music 曲目判失败；本地 / 其它来源正在放的音乐不受影响（不停整个引擎）。
   Future<void> _disconnect() async {
     setState(() => _busy = true);
-    try {
-      await widget.appModel.musicSession.engine.stop();
-    } on Object {
-      // 没在播也照样断开。
-    }
     await _account.disconnect();
     widget.onChanged();
     if (mounted) setState(() => _busy = false);
@@ -333,26 +367,31 @@ class _AppleMusicAccountRowState extends State<_AppleMusicAccountRow> {
         subtitle: _status(a),
         trailing: !a.platformSupported
             ? null
-            : _busy
-            ? const SizedBox.square(
-                dimension: 24,
-                child: FushiCircularProgressIndicator(strokeWidth: 2.5),
-              )
-            : FushiPressScale(
-                child: connected
-                    ? FushiTextButton(
-                        key: const ValueKey<String>(
-                          'music_apple_music_disconnect',
-                        ),
-                        onPressed: () => unawaited(_disconnect()),
-                        child: Text(t.music_apple_music_disconnect),
+            : AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: _busy
+                    ? const SizedBox.square(
+                        key: ValueKey<String>('music_apple_music_busy'),
+                        dimension: 24,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
                       )
-                    : FushiFilledButton(
-                        key: const ValueKey<String>(
-                          'music_apple_music_connect',
-                        ),
-                        onPressed: () => unawaited(_connect()),
-                        child: Text(t.music_apple_music_connect),
+                    : FushiPressScale(
+                        key: ValueKey<bool>(connected),
+                        child: connected
+                            ? FushiTextButton(
+                                key: const ValueKey<String>(
+                                  'music_apple_music_disconnect',
+                                ),
+                                onPressed: () => unawaited(_disconnect()),
+                                child: Text(t.music_apple_music_disconnect),
+                              )
+                            : FushiFilledButton(
+                                key: const ValueKey<String>(
+                                  'music_apple_music_connect',
+                                ),
+                                onPressed: () => unawaited(_connect()),
+                                child: Text(t.music_apple_music_connect),
+                              ),
                       ),
               ),
       );

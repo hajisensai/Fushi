@@ -11,6 +11,7 @@ import 'package:fushi/src/media/music/apple_music/apple_music_native_bridge.dart
 import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_web_bridge.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_routing_backend.dart';
 
 /// 记录调用、由测试手动推事件的桥。
@@ -20,6 +21,12 @@ class _FakeBridge implements AppleMusicBridge {
   final List<String> calls = <String>[];
   Exception? playError;
   Completer<void>? playGate;
+
+  /// 按曲目卡住 play（模拟原生 / 网页 setQueue 的完成顺序与下发顺序不同）。
+  final Map<String, Completer<void>> gateFor = <String, Completer<void>>{};
+
+  /// 最后一个落地的 play（桥里实际排着的那首）。
+  String? applied;
 
   @override
   Stream<AppleMusicPlayerEvent> get events => ctrl.stream;
@@ -32,8 +39,10 @@ class _FakeBridge implements AppleMusicBridge {
   }) async {
     calls.add('play:$songId:$autoplay');
     await playGate?.future;
+    await gateFor[songId]?.future;
     final Exception? e = playError;
     if (e != null) throw e;
+    applied = songId;
   }
 
   @override
@@ -167,14 +176,102 @@ void main() {
       bridge.playGate = gate;
       final Future<void> first = backend.openPair(_item('1'), null, play: true);
       bridge.playGate = null;
-      await backend.openPair(_item('2'), null, play: true);
-      bridge.ctrl.add(const AppleMusicProgress(positionMs: 5, songId: '2'));
+      final Future<void> second = backend.openPair(
+        _item('2'),
+        null,
+        play: true,
+      );
       gate.complete();
       await first;
+      await second;
+      bridge.ctrl.add(const AppleMusicProgress(positionMs: 5, songId: '2'));
       await Future<void>.delayed(Duration.zero);
       expect(
         events.whereType<MusicBackendPosition>().last.position,
         const Duration(milliseconds: 5),
+      );
+    });
+
+    test(
+      'rapid switches are issued one at a time and the last one wins',
+      () async {
+        // A 的 setQueue 卡住：B、C 不能在它落地前并发下发（否则 A 晚落地会把队列换回 A）；
+        // A 落地后只下发最后一首 C，B 已被作废不再下发。
+        final Completer<void> gateA = Completer<void>();
+        bridge.gateFor['1'] = gateA;
+        final Future<void> a = backend.openPair(_item('1'), null, play: true);
+        final Future<void> b = backend.openPair(_item('2'), null, play: true);
+        final Future<void> c = backend.openPair(_item('3'), null, play: true);
+        await Future<void>.delayed(Duration.zero);
+        expect(bridge.calls, <String>['play:1:true']);
+        gateA.complete();
+        await Future.wait(<Future<void>>[a, b, c]);
+        expect(bridge.calls, <String>['play:1:true', 'play:3:true']);
+        expect(bridge.applied, '3');
+        // 后端认定的当前曲与桥里实际那首一致：C 的进度照常转发。
+        bridge.ctrl.add(const AppleMusicProgress(positionMs: 42, songId: '3'));
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          events.whereType<MusicBackendPosition>().last.position,
+          const Duration(milliseconds: 42),
+        );
+      },
+    );
+
+    test(
+      'stop waits for an in-flight open so the late open cannot resume',
+      () async {
+        final Completer<void> gate = Completer<void>();
+        bridge.gateFor['1'] = gate;
+        final Future<void> open = backend.openPair(
+          _item('1'),
+          null,
+          play: true,
+        );
+        final Future<void> stop = backend.stop();
+        await Future<void>.delayed(Duration.zero);
+        expect(bridge.calls, <String>['play:1:true']);
+        gate.complete();
+        await open;
+        await stop;
+        expect(bridge.calls, <String>['play:1:true', 'stop']);
+      },
+    );
+
+    test('a lost bridge session fails the current track', () async {
+      await backend.openPair(_item('1'), null, play: true);
+      bridge.ctrl.add(const AppleMusicSessionLost('renderer_gone'));
+      await Future<void>.delayed(Duration.zero);
+      final MusicBackendFailed f = events
+          .whereType<MusicBackendFailed>()
+          .single;
+      expect(f.trackUid, 'uid-1');
+      expect(f.reason, MusicPlaybackFailure.appleMusicSessionLost);
+      // 当前曲已放下：传输命令不再对着桥发。
+      await backend.play();
+      await backend.seek(const Duration(seconds: 1));
+      expect(bridge.calls, <String>['play:1:true']);
+    });
+
+    test('signing out fails the current track; signing in does not', () async {
+      await backend.openPair(_item('1'), null, play: true);
+      bridge.ctrl.add(
+        const AppleMusicAccountChanged(
+          AppleMusicAccountState(
+            status: AppleMusicAuthStatus.authorized,
+            canPlayCatalogContent: true,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(events.whereType<MusicBackendFailed>(), isEmpty);
+      bridge.ctrl.add(
+        const AppleMusicAccountChanged(AppleMusicAccountState.signedOut),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        events.whereType<MusicBackendFailed>().single.reason,
+        MusicPlaybackFailure.appleMusicSignedOut,
       );
     });
 
@@ -216,6 +313,65 @@ void main() {
         expect(await backend.listAudioDevices(), isEmpty);
       },
     );
+  });
+
+  group('engine over the Apple Music backend', () {
+    late _FakeBridge bridge;
+    late MusicPlayerEngine engine;
+    late List<MusicBackendFailed> failures;
+
+    setUp(() {
+      bridge = _FakeBridge();
+      failures = <MusicBackendFailed>[];
+      engine = MusicPlayerEngine(
+        backendFactory: () => AppleMusicOutputBackend(bridge),
+      )..onPlaybackFailed = failures.add;
+    });
+    tearDown(() => engine.dispose());
+
+    Future<void> settle() async {
+      for (int i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    for (final (
+          String name,
+          AppleMusicPlayerEvent lost,
+          MusicPlaybackFailure reason,
+        )
+        in <(String, AppleMusicPlayerEvent, MusicPlaybackFailure)>[
+          (
+            'bridge session lost',
+            const AppleMusicSessionLost('reauthorized'),
+            MusicPlaybackFailure.appleMusicSessionLost,
+          ),
+          (
+            'signed out',
+            const AppleMusicAccountChanged(AppleMusicAccountState.signedOut),
+            MusicPlaybackFailure.appleMusicSignedOut,
+          ),
+        ]) {
+      test('$name: engine stops, tells the user, and play reopens', () async {
+        await engine.playQueue(<MusicPlayItem>[_item('1'), _item('2')]);
+        await settle();
+        expect(engine.isPlaying, isTrue);
+        expect(bridge.calls, <String>['play:1:true']);
+
+        bridge.ctrl.add(lost);
+        await settle();
+        expect(engine.isPlaying, isFalse);
+        expect(engine.current?.trackUid, 'uid-1', reason: '不自动跳到下一首');
+        expect(failures.single.reason, reason);
+
+        await engine.play();
+        await settle();
+        // 走 openPair 重新 setQueue，而不是对着已经没了的那一代发 resume。
+        expect(bridge.calls, <String>['play:1:true', 'play:1:true']);
+        expect(bridge.calls, isNot(contains('resume')));
+        expect(engine.isPlaying, isTrue);
+      });
+    }
   });
 
   test(
