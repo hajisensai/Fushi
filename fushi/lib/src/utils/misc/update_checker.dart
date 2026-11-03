@@ -27,6 +27,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';

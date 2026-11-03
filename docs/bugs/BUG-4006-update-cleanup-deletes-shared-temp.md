@@ -1,0 +1,6 @@
+## BUG-4006 · 非 Windows 的更新清理在共享临时目录里删别的程序的文件
+- **报告**：2026-11-03（Steam Deck 实机：Linux 包启动后 `app.log` 记 `[UpdateChecker] cleanup stale artifact failed: PathAccessException: Cannot delete file, path = '/tmp/sddm-auth-…'`）
+- **真实性**：✅ 真 bug。`fushi/lib/src/utils/misc/update_checker_download.dart` `_updatesDirectoryForCurrentPlatform()` 在非 Windows 上直接返回 `getTemporaryDirectory()` 本身；`update_checker_release.dart` `_cleanupOldApks()` 每次检查更新都对这个目录跑「旧完整安装包回收」——`selectStaleUpdateArtifacts` 把**所有不是 `.part` / `.meta.json` / `.owner.json` 的普通文件**都当安装包，超出最新 2 个或早于 7 天的一律 `deleteSync()`，`.staging` 结尾的目录递归删。Linux 上这是全系统共享的 `/tmp`，未沙盒 macOS 上是全用户共享的 `$TMPDIR`：当前用户拥有的、别的程序的临时文件会被删掉（Deck 上 sddm 的文件属 root 才没删成）。Android 上是 app 自己的 cacheDir，删的是 Fushi 自己的其它缓存文件。
+- **[x] ① 已修复** — 下载 / 清理目录改成专属子目录：Windows 不变（application support `/updates`），其余平台 `AppPaths.appCacheRootDirectory()/updates`（只属于 Fushi 的缓存目录；Android 上即 cacheDir，仍在 FileProvider `cache-path path="."` 覆盖内，APK 安装照常）。旧位置残留的安装包不做迁移清理：Linux 从不下载（无应用内安装），Android 缓存与 macOS 临时目录由系统定期回收。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/update_checker_updates_dir_guard_test.dart`：源码守卫钉住 updates 目录函数不碰 `getTemporaryDirectory` / `tempRootDirectory` / `systemTemp`，非 Windows 走 `AppPaths.appCacheRootDirectory()` 下的 `updates` 子目录。更新相关 62 个测试文件 842 条通过。
+- **备注**：macOS 实机的「下载 → 安装」流程待复测（下载落点换了目录）。
