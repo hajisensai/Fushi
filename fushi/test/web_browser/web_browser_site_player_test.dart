@@ -73,6 +73,55 @@ void main() {
     );
   });
 
+  test('站点标记的含义按观看页形状：Netflix 总是 / YouTube 自动交接 / 其它站工具栏快捷', () {
+    WebBrowserSitePlayerMode mode(
+      String url, {
+      TargetPlatform p = TargetPlatform.windows,
+    }) => webBrowserSitePlayerModeOf(Uri.parse(url), platform: p);
+    expect(
+      mode('https://www.netflix.com/browse'),
+      WebBrowserSitePlayerMode.always,
+    );
+    expect(
+      mode('https://www.youtube.com/'),
+      WebBrowserSitePlayerMode.autoPlayWatchPages,
+    );
+    expect(
+      mode('https://youtu.be/x'),
+      WebBrowserSitePlayerMode.autoPlayWatchPages,
+    );
+    expect(
+      mode('https://example.com/'),
+      WebBrowserSitePlayerMode.toolbarShortcut,
+    );
+    for (final String url in <String>[
+      'https://www.netflix.com/browse',
+      'https://www.youtube.com/',
+      'https://example.com/',
+    ]) {
+      expect(
+        mode(url, p: TargetPlatform.android),
+        WebBrowserSitePlayerMode.unavailable,
+        reason: url,
+      );
+    }
+  });
+
+  test('站点表解析按 JSON 记忆：同一份只解析一次，偏好变了才重解析', () {
+    final String a = encodeWebBrowserSites(<WebBrowserSite>[
+      WebBrowserSite(name: 'Example', url: example),
+    ]);
+    final List<WebBrowserSite> first = webBrowserSitesOf(a);
+    expect(identical(webBrowserSitesOf(a), first), isTrue);
+    expect(first.single.url, example);
+    final String b = encodeWebBrowserSites(<WebBrowserSite>[
+      WebBrowserSite(name: 'Netflix', url: netflix, openInPlayer: true),
+    ]);
+    final List<WebBrowserSite> second = webBrowserSitesOf(b);
+    expect(identical(second, first), isFalse);
+    expect(second.single.openInPlayer, isTrue);
+  });
+
   test('新加站点：Netflix 默认进播放页，其它站 / 没播放页的平台默认浏览器', () {
     expect(
       webBrowserSiteDefaultsToPlayer(netflix, playerAvailable: true),

@@ -8,14 +8,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show isKnownWebPageVideoUrl;
-import 'package:fushi/src/media/video/web_video_bridge.dart'
-    show kWebVideoNetflixHosts;
 import 'package:fushi/src/media/video/web_video_browser_return.dart';
 import 'package:fushi/src/media/video/web_video_session.dart'
     show
         webBrowserSiteCookieNames,
         webVideoBrowserLoginSyncSettled,
-        webVideoIsWatchPage;
+        webVideoIsWatchPage,
+        webVideoSiteForcesPlayer,
+        webVideoSiteHasWatchShape;
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/web_browser/features/open_in_fushi/web_open_in_fushi_action.dart';
@@ -145,16 +145,15 @@ const String kWebBrowserWatchHandoffScript = r'''
 /// 播放页的窗口宿主档才有硬件 PlayReady。浏览 / 详情页（预告片）不算，用户在那里选集。
 bool webBrowserWatchPageNeedsPlayer(Uri? url) {
   if (url == null) return false;
-  final String host = url.host.toLowerCase();
-  final bool drmSite = kWebVideoNetflixHosts.any(
-    (String d) => host == d || host.endsWith('.$d'),
-  );
-  return drmSite && webVideoIsWatchPage(url.toString());
+  return webVideoSiteForcesPlayer(url.host) &&
+      webVideoIsWatchPage(url.toString());
 }
 
 /// 这一次导航是否该自动交给播放页（导航前拦截与地址提交后交接共用同一判据）：浏览器播不了
 /// 的观看页（[webBrowserWatchPageNeedsPlayer]），或 [autoPlaySite] 标了「用 Fushi 播放本站
-/// 视频」的 YouTube 观看页。无痕标签页 / 没有播放页的平台一律不交。
+/// 视频」的站点的观看页。只有**有观看页形状**的站点（[webVideoSiteHasWatchShape]）才自动交：
+/// 其它站点分不出观看页，自动交就会连首页一起交走（那类站点的标记只把工具栏按钮提成主按钮，
+/// 见 `webBrowserSitePlayerModeOf`）。无痕标签页 / 没有播放页的平台一律不交。
 bool webBrowserShouldHandOffWatchPage(
   Uri? url, {
   required bool incognito,
@@ -164,7 +163,8 @@ bool webBrowserShouldHandOffWatchPage(
   if (url == null || incognito || !playerAvailable) return false;
   if (webBrowserWatchPageNeedsPlayer(url)) return true;
   return autoPlaySite != null &&
-      youtubeWatchVideoIdOf(url) != null &&
+      webVideoSiteHasWatchShape(url.host) &&
+      webVideoIsWatchPage(url.toString()) &&
       autoPlaySite(url);
 }
 

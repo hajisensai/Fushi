@@ -113,6 +113,21 @@ List<WebBrowserSite> parseWebBrowserSites(String raw) {
   ]);
 }
 
+String? _cachedSitesRaw;
+List<WebBrowserSite> _cachedSites = const <WebBrowserSite>[];
+
+/// [parseWebBrowserSites] 的单条记忆版：同一份 JSON（偏好 `web_browser_sites`）只解析一次，
+/// 偏好改了（字符串变了）才重新解析。浏览器的导航前拦截 / 地址变化 / 工具栏动作每次都要读
+/// 站点表（`buildWebBrowserFeatures` 的 autoPlaySite），起始页也读同一份——都走这里，不各自
+/// 反复解析整份 JSON。结果不可变，可放心共享。
+List<WebBrowserSite> webBrowserSitesOf(String raw) {
+  if (raw != _cachedSitesRaw) {
+    _cachedSites = parseWebBrowserSites(raw);
+    _cachedSitesRaw = raw;
+  }
+  return _cachedSites;
+}
+
 /// 从站点表里移除 [site]（按 URL）。
 List<WebBrowserSite> removeWebBrowserSite(
   List<WebBrowserSite> sites,

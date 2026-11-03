@@ -46,6 +46,7 @@ import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -8085,7 +8086,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 关掉本页：先持久化进度 / 报远端停播，再 pop（同步判定，退出路径不 await，BUG-2119）。
-  /// 网页站点后端离开观看页回浏览器时也走这里（`_exitWebToBrowser`）。
+  /// 网页站点后端离开观看页回浏览器时也走这里（`_exitWebToBrowser`，它先把压在本页上面的
+  /// 路由弹掉，pop 到的才是本页）。
   void _exitVideoPage() {
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;

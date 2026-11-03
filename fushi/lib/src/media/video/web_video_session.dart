@@ -293,53 +293,46 @@ Future<int> _syncWebVideoLoginToBrowser(Uri uri) async {
   );
 }
 
+bool _webVideoHostOn(String host, String domain) {
+  final String h = host.toLowerCase();
+  return h == domain || h.endsWith('.$domain');
+}
+
+bool _webVideoIsNetflixHost(String host) =>
+    kWebVideoNetflixHosts.any((String d) => _webVideoHostOn(host, d));
+
+bool _webVideoIsYoutubeHost(String host) =>
+    _webVideoHostOn(host, 'youtube.com') || _webVideoHostOn(host, 'youtu.be');
+
+/// 站点有没有可靠的「观看页」地址形状（**唯一真相源**）：Netflix 与 YouTube 能从地址分出
+/// 「正在看某一集」与浏览 / 选集页（[webVideoIsWatchPage]）；其它站点分不出，任何一页都可能
+/// 是观看页。由它驱动：观看页自动交给播放器层（`webBrowserShouldHandOffWatchPage`）、站点格
+/// 的「用 Fushi 播放」开关提供哪一种（`webBrowserSitePlayerModeOf`）。
+bool webVideoSiteHasWatchShape(String host) =>
+    _webVideoIsNetflixHost(host) || _webVideoIsYoutubeHost(host);
+
+/// 站点的观看页是否**必须**交给播放器层、不看用户标记：Netflix——浏览器标签页的画面是捕获
+/// 合成的，DRM 视频捕获是纯黑；只有播放器层的窗口宿主档有硬件 PlayReady。
+bool webVideoSiteForcesPlayer(String host) => _webVideoIsNetflixHost(host);
+
 /// 页面地址是不是「正在看某一集」的播放页（自动进播放器档的判据）：Netflix 的
 /// `/watch/<id>`、YouTube 的 `/watch` `/shorts` `/live` `/embed` 与 youtu.be 短链。浏览 /
-/// 详情页上的预告片、悬停预览也是 `<video>`，但不算——那里用户是在选集。其它站点没有可靠的
-/// 地址形状，有视频就算（与改动前一致）。
+/// 详情页上的预告片、悬停预览也是 `<video>`，但不算——那里用户是在选集。没有观看页形状的
+/// 站点（[webVideoSiteHasWatchShape] 为 false）有视频就算（与改动前一致）。
 bool webVideoIsWatchPage(String href) {
   final Uri? uri = Uri.tryParse(href);
   if (uri == null) return false;
-  final String host = uri.host.toLowerCase();
-  bool on(String domain) => host == domain || host.endsWith('.$domain');
+  final String host = uri.host;
   final String path = uri.path;
-  if (on('netflix.com')) return path.startsWith('/watch/');
-  if (on('youtu.be')) return path.length > 1;
-  if (on('youtube.com')) {
+  if (_webVideoIsNetflixHost(host)) return path.startsWith('/watch/');
+  if (_webVideoHostOn(host, 'youtu.be')) return path.length > 1;
+  if (_webVideoHostOn(host, 'youtube.com')) {
     return path == '/watch' ||
         path.startsWith('/shorts/') ||
         path.startsWith('/live/') ||
         path.startsWith('/embed/');
   }
   return true;
-}
-
-/// 网页档工具条（后退 / 前进 / 刷新 / 地址栏）要的导航态。
-@immutable
-class WebVideoNavState {
-  const WebVideoNavState({
-    this.url = '',
-    this.canGoBack = false,
-    this.canGoForward = false,
-    this.loading = false,
-  });
-
-  final String url;
-  final bool canGoBack;
-  final bool canGoForward;
-  final bool loading;
-
-  WebVideoNavState copyWith({
-    String? url,
-    bool? canGoBack,
-    bool? canGoForward,
-    bool? loading,
-  }) => WebVideoNavState(
-    url: url ?? this.url,
-    canGoBack: canGoBack ?? this.canGoBack,
-    canGoForward: canGoForward ?? this.canGoForward,
-    loading: loading ?? this.loading,
-  );
 }
 
 // ── 会话（原生播放器页的网页档）──────────────────────────────────────────────
@@ -427,10 +420,9 @@ class WebVideoSession {
   bool get playerMode => _playerMode;
   bool _playerMode = false;
 
-  /// 工具条的导航态（地址 / 能否后退前进 / 是否在加载）。
-  final ValueNotifier<WebVideoNavState> nav = ValueNotifier<WebVideoNavState>(
-    const WebVideoNavState(),
-  );
+  /// 主框架当前地址（空 = 还没导航）。播放器层只当播放器：唯一的消费者是「离开观看页就回
+  /// 浏览器」（`web_source.part.dart` `_onWebNav`），以及进程重建 / 抄登录要回到的地址。
+  final ValueNotifier<String> mainFrameUrl = ValueNotifier<String>('');
 
   /// WebView2 子窗口当前是否收输入；null = 新建的 WebView 还没同步过。
   bool? _inputEnabled;
@@ -458,7 +450,7 @@ class WebVideoSession {
   /// 照样进行，最坏是新 WebView 在旧环境里建不出来，与修复前一样停在死页面。
   Future<void> recoverFromProcessGone() async {
     if (_disposed) return;
-    final String current = nav.value.url;
+    final String current = mainFrameUrl.value;
     if (current.isNotEmpty) _surfaceUrl = current;
     _web = null;
     _viewId = null;
@@ -615,59 +607,16 @@ class WebVideoSession {
     return r?.toString();
   }
 
-  /// 站内后退一步；没有可退的历史返回 false（调用方再往外退一级）。
-  Future<bool> goBack() async {
-    final InAppWebViewController? web = _web;
-    if (web == null || _disposed) return false;
-    if (!await web.canGoBack()) return false;
-    await web.goBack();
-    return true;
-  }
-
-  Future<void> goForward() async {
-    final InAppWebViewController? web = _web;
-    if (web == null || _disposed) return;
-    if (await web.canGoForward()) await web.goForward();
-  }
-
-  Future<void> reloadOrStop() async {
-    final InAppWebViewController? web = _web;
-    if (web == null || _disposed) return;
-    if (nav.value.loading) {
-      await web.stopLoading();
-    } else {
-      await web.reload();
-    }
-  }
-
-  Future<void> reload() async {
-    final InAppWebViewController? web = _web;
-    if (web == null || _disposed) return;
-    await web.reload();
-  }
-
   Future<void> loadUrl(String url) async {
     final InAppWebViewController? web = _web;
     if (web == null || _disposed) return;
     await web.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
 
-  Future<void> _refreshHistory(String? url) async {
-    final InAppWebViewController? web = _web;
-    if (web == null || _disposed) return;
-    final bool back = await web.canGoBack();
-    final bool forward = await web.canGoForward();
-    if (_disposed) return;
-    nav.value = nav.value.copyWith(
-      url: url,
-      canGoBack: back,
-      canGoForward: forward,
-    );
-  }
-
-  void _onLoading(bool loading, String? url) {
-    if (_disposed) return;
-    nav.value = nav.value.copyWith(loading: loading, url: url);
+  /// 主框架换了地址（开始加载 / 加载完 / 单页应用改了历史）：null 不覆盖已知地址。
+  void _onMainFrameUrl(String? url) {
+    if (_disposed || url == null) return;
+    mainFrameUrl.value = url;
   }
 
   /// 已采到的字幕轨整轨重投（换了书身份后 cue 的 bookKey 要跟着换）。
@@ -696,9 +645,10 @@ class WebVideoSession {
       evaluate('window.__fushiWebVideo.setNativeSubtitlesHidden($hidden)');
 
   /// 底层合成下的输入归属：播放器档时 WebView2 子窗口不收输入（命中测试跳过它，点击 / 滚轮 /
-  /// 触摸落到上面的 Flutter 播放器），站点控制条藏起来、页面只留画面；网页档（登录、选人、
-  /// 详情 / 选集页，或用户点了「回到网页」）时还给 WebView、整页原样。站内换集（SPA）可能换了
-  /// video 元素：[videoChanged] 时重新标记。
+  /// 触摸落到上面的 Flutter 播放器），站点控制条藏起来、页面只留画面；观看页还没有视频或被站点
+  /// 弹层打断（年龄确认、「还在看吗」）时还给 WebView、整页原样让用户点掉。选集 / 登录不在这里
+  /// ——离开观看页播放器层就关掉、回浏览器。站内换集（SPA）可能换了 video 元素：[videoChanged]
+  /// 时重新标记。
   void syncInput({required bool playerMode, bool videoChanged = false}) {
     final bool changed = playerMode != _playerMode;
     _playerMode = playerMode;
@@ -707,10 +657,6 @@ class WebVideoSession {
     // 播放器档不套网页深色（受保护视频套滤镜可能变黑），回网页档再按浏览器偏好套回来。
     if (changed) _applyPageStyle();
   }
-
-  /// 退出站点自己的元素全屏（网页档里点了站点的全屏钮 → 换成本页的播放器档 + 窗口全屏）。
-  Future<void> exitPageFullscreen() =>
-      evaluate('document.fullscreenElement&&document.exitFullscreen()');
 
   /// 本页路由是不是被别的路由盖住了（[_covered]）。
   void setCovered(bool covered) {
@@ -839,7 +785,7 @@ class WebVideoSession {
       case 'state':
         final WebVideoPlaybackState? state = parseWebVideoStatePayload(
           msg,
-          webViewUrl: nav.value.url,
+          webViewUrl: mainFrameUrl.value,
         );
         if (state != null) {
           _lastState = state;
@@ -884,7 +830,7 @@ class WebVideoSession {
   void dispose() {
     // 播放页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
     if (!_disposed && isReady) {
-      final String current = nav.value.url;
+      final String current = mainFrameUrl.value;
       unawaited(
         syncWebVideoLoginToBrowser(
           Uri.parse(current.isNotEmpty ? current : pageUrl),
@@ -893,7 +839,7 @@ class WebVideoSession {
     }
     _disposed = true;
     browserPrefs?.removeListener(_onBrowserPrefsChanged);
-    nav.dispose();
+    mainFrameUrl.dispose();
     _web = null;
     _viewId = null;
     onTrack = null;
@@ -989,20 +935,19 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
         onWebViewCreated: session._onWebViewCreated,
         onLoadStart: (InAppWebViewController _, WebUri? url) {
           session._adblock?.onLoadStart(url);
-          session._onLoading(true, url?.toString());
+          session._onMainFrameUrl(url?.toString());
         },
         onPermissionRequest:
             (InAppWebViewController _, PermissionRequest request) =>
                 session._onPermissionRequest(context, request),
         onLoadStop: (InAppWebViewController _, WebUri? url) {
-          session._onLoading(false, url?.toString());
-          unawaited(session._refreshHistory(url?.toString()));
+          session._onMainFrameUrl(url?.toString());
           session._onLoadStop();
         },
         onUpdateVisitedHistory:
             (InAppWebViewController _, WebUri? url, bool? __) {
               session._adblock?.onUpdateVisitedHistory(url);
-              unawaited(session._refreshHistory(url?.toString()));
+              session._onMainFrameUrl(url?.toString());
             },
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),

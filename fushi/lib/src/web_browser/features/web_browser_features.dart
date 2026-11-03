@@ -46,7 +46,7 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
       youtubeTargetHeight: () => app.youtubeQualityTargetHeightOrNull,
       pageContent: pageContent,
       autoPlaySite: (Uri url) => webBrowserSiteAutoPlays(
-        parseWebBrowserSites(app.prefsRepo.webBrowserSitesJson),
+        webBrowserSitesOf(app.prefsRepo.webBrowserSitesJson),
         url,
       ),
     ),

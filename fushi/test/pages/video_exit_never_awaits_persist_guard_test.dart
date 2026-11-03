@@ -14,8 +14,14 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
-    final String body = maskComments(
+    final String back = maskComments(
       methodBody(source, 'Future<void> _handleBackOrExit() async'),
+    );
+    // 退出动作抽成了 _exitVideoPage（网页档离开观看页回浏览器也走它）。
+    expect(back, contains('_exitVideoPage();'));
+    expect(back, isNot(contains('await ')));
+    final String body = maskComments(
+      methodBody(source, 'void _exitVideoPage()'),
     );
 
     expect(body, contains('exitAfterPersist('));

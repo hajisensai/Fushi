@@ -70,7 +70,7 @@ export 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.d
 
 /// 站点书签（偏好 `web_browser_sites`），入口页与新标签页起始页共用同一份解析。
 List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
-    parseWebBrowserSites(appModel.prefsRepo.webBrowserSitesJson);
+    webBrowserSitesOf(appModel.prefsRepo.webBrowserSitesJson);
 
 /// 全屏浏览页（[FushiWebBrowserPage]）的路由：所有推浏览页的入口（入口页、视频站点
 /// 入口）都经这一处建路由。
@@ -284,22 +284,36 @@ class _FushiWebBrowserHomePageState
     await _saveSites(replaceWebBrowserSite(_sites, site, next));
   }
 
-  /// 长按 / 右键站点：切换「用 Fushi 播放本站视频」（只在有播放器层的平台）、编辑或移除。
+  /// 长按 / 右键站点：切换「用 Fushi 播放」标记、编辑或移除。标记的含义与要不要给开关按
+  /// [webBrowserSitePlayerModeOf]：有观看页形状的站点是「观看页自动交给播放器」，其它站点是
+  /// 「工具栏一键用 Fushi 播放」，Netflix 总是交给播放器（不给开关），没有播放器层的平台不给。
   Future<void> _siteActions(WebBrowserSite site) async {
+    final WebBrowserSitePlayerMode mode = webBrowserSitePlayerModeOf(site.url);
+    final bool on = site.openInPlayer;
+    final (String, String)? toggle = switch (mode) {
+      WebBrowserSitePlayerMode.autoPlayWatchPages => (
+        on ? t.web_browser_site_auto_play_off : t.web_browser_site_auto_play_on,
+        t.web_browser_site_auto_play_hint,
+      ),
+      WebBrowserSitePlayerMode.toolbarShortcut => (
+        on
+            ? t.web_browser_site_toolbar_play_off
+            : t.web_browser_site_toolbar_play_on,
+        t.web_browser_site_toolbar_play_hint,
+      ),
+      WebBrowserSitePlayerMode.unavailable ||
+      WebBrowserSitePlayerMode.always => null,
+    };
     final _SiteAction? action = await showFushiChoiceDialog<_SiteAction>(
       context: context,
       title: site.name,
       options: <FushiChoiceOption<_SiteAction>>[
-        if (webVideoSitesAvailable())
+        if (toggle != null)
           FushiChoiceOption<_SiteAction>(
             value: _SiteAction.togglePlayer,
-            label: site.openInPlayer
-                ? t.web_browser_site_auto_play_off
-                : t.web_browser_site_auto_play_on,
-            subtitle: site.openInPlayer
-                ? null
-                : t.web_browser_site_auto_play_hint,
-            icon: site.openInPlayer ? FushiIcons.globe : FushiIcons.playCircle,
+            label: toggle.$1,
+            subtitle: on ? null : toggle.$2,
+            icon: on ? FushiIcons.globe : FushiIcons.playCircle,
           ),
         FushiChoiceOption<_SiteAction>(
           value: _SiteAction.edit,
@@ -504,6 +518,14 @@ class _WebBrowserSiteTile extends StatelessWidget {
     final String trimmed = site.name.trim();
     final String name = trimmed.isEmpty ? site.url.host : trimmed;
     final String initial = name.characters.first.toUpperCase();
+    final String? playerBadge = switch (webBrowserSitePlayerModeOf(site.url)) {
+      WebBrowserSitePlayerMode.always => t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.autoPlayWatchPages when site.openInPlayer =>
+        t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.toolbarShortcut when site.openInPlayer =>
+        t.web_browser_play_in_fushi,
+      _ => null,
+    };
     return FushiCard(
       key: ValueKey<String>('web-browser-site-${site.url}'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -541,10 +563,11 @@ class _WebBrowserSiteTile extends StatelessWidget {
                   style: tokens.type.listTitle,
                 ),
               ),
-              // 标了「用 Fushi 播放本站视频」的站点：标题后挂一个播放图标（只在有播放器层的平台）。
-              if (site.openInPlayer && webVideoSitesAvailable())
+              // 视频交给 Fushi 播放的站点：标题后挂一个播放图标（含义按
+              // [webBrowserSitePlayerModeOf]：Netflix 总是、其它站点看标记；没有播放器层的平台不挂）。
+              if (playerBadge != null)
                 FushiTooltip(
-                  message: t.web_browser_site_auto_play_on,
+                  message: playerBadge,
                   child: FushiIcon(
                     FushiIcons.playCircle,
                     key: ValueKey<String>(

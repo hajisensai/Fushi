@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_login_migration.dart';
@@ -176,25 +177,62 @@ void main() {
       );
     });
 
-    test('写 cookie 的地址：去前导点、Secure 走 https、带路径', () {
+    test('旧罐 cookie 转写入模型：前导点 = 域 cookie，否则 host-only（含 __Host-）', () {
+      final BrowserSiteCookie domainCookie =
+          BrowserSiteCookie.fromWebViewCookie(
+            Cookie(
+              name: 'SID',
+              value: 's',
+              domain: '.YouTube.com',
+              path: '/watch',
+              isSecure: true,
+              isHttpOnly: true,
+              expiresDate: 1900000000000,
+              sameSite: HTTPCookieSameSitePolicy.NONE,
+            ),
+          )!;
+      expect(domainCookie.hostOnly, isFalse);
+      expect(domainCookie.canonicalDomain, 'youtube.com');
+      expect(domainCookie.path, '/watch');
+      expect(domainCookie.httpOnly, isTrue);
+      expect(domainCookie.expiresAt, 1900000000000);
+      expect(domainCookie.sameSite, HTTPCookieSameSitePolicy.NONE);
+
+      final BrowserSiteCookie hostCookie = BrowserSiteCookie.fromWebViewCookie(
+        Cookie(
+          name: '__Host-3PLSID',
+          value: 'x',
+          domain: 'accounts.google.com',
+          path: '/',
+          isSecure: true,
+          isSessionOnly: true,
+          expiresDate: 1900000000000,
+        ),
+      )!;
+      // host-only：写回时不带 domain（writeBrowserSiteCookies），否则变成域 cookie /
+      // `__Host-` 被拒写。
+      expect(hostCookie.hostOnly, isTrue);
+      expect(hostCookie.originUrl.toString(), 'https://accounts.google.com/');
+      expect(hostCookie.expiresAt, isNull, reason: '会话 cookie');
+
       expect(
-        webVideoCookieUrl(
-          Cookie(
-            name: 'a',
-            value: '1',
-            domain: '.netflix.com',
-            path: '/watch',
-            isSecure: true,
-          ),
-        ).toString(),
-        'https://netflix.com/watch',
+        BrowserSiteCookie.fromWebViewCookie(Cookie(name: 'a', value: '1')),
+        isNull,
       );
-      expect(
-        webVideoCookieUrl(
-          Cookie(name: 'a', value: '1', domain: 'x.test', isSecure: false),
-        ).toString(),
-        'http://x.test/',
-      );
+    });
+
+    test('有 cookie 没写进去就不写标记、下次重试；试满次数才认', () {
+      bool settled(int toWrite, int written, int attempt) =>
+          webVideoLegacyLoginMigrationSettled(
+            toWrite: toWrite,
+            written: written,
+            attempt: attempt,
+          );
+      expect(settled(5, 5, 1), isTrue);
+      expect(settled(0, 0, 1), isTrue);
+      expect(settled(5, 4, 1), isFalse);
+      expect(settled(5, 4, kWebVideoLegacyLoginMaxAttempts - 1), isFalse);
+      expect(settled(5, 4, kWebVideoLegacyLoginMaxAttempts), isTrue);
     });
   });
 

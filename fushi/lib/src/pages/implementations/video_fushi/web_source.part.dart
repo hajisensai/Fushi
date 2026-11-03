@@ -239,7 +239,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     controller.setSecondaryDelayMs(_secondaryDelayMs);
     controller.onPositionWrite = _persistWebPosition;
     _titleNotifier.value = row.title;
-    session.nav.addListener(_onWebNav);
+    session.mainFrameUrl.addListener(_onWebNav);
     _rebuild(() {
       _webSession = session;
       _webPlatform = platform;
@@ -1157,8 +1157,8 @@ extension _VideoWebSource on _VideoFushiPageState {
               onPressed: session == null
                   ? null
                   : () => _exitWebToBrowser(
-                      session.nav.value.url.isNotEmpty
-                          ? session.nav.value.url
+                      session.mainFrameUrl.value.isNotEmpty
+                          ? session.mainFrameUrl.value
                           : session.pageUrl,
                     ),
             ),
@@ -1168,42 +1168,57 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 主框架地址变了（[WebVideoSession.nav] 的监听者）：离开观看页就回浏览器
+  /// 主框架地址变了（[WebVideoSession.mainFrameUrl] 的监听者）：离开观看页就回浏览器
   /// （[webVideoLeavesPlayer]）。
   void _onWebNav() {
     final WebVideoSession? session = _webSession;
     if (session == null) return;
-    final String url = session.nav.value.url;
+    final String url = session.mainFrameUrl.value;
     if (webVideoLeavesPlayer(url)) _exitWebToBrowser(url);
   }
 
   /// 关掉播放器层、在浏览器里打开 [url]：浏览器交接过来的（[VideoFushiPage.webBackToBrowser]）
   /// 把地址交回那个标签页（[WebVideoBrowserReturn]）再关页；从视频库打开的没有浏览器可回，
   /// 先落进度再把本页换成一个浏览器页。只跑一次。
+  ///
+  /// 这条路径是**被动**的（站点自己跳页：Netflix 片尾回 /browse、会话过期跳登录页），触发时本页
+  /// 上面可能压着对话框 / 弹出菜单：先按身份把压在本页路由上面的路由弹掉（[popRoutesAbove]），
+  /// 之后的 pop / pushReplacement 作用的才是本页——否则关掉的是对话框、视频页留在下面继续占着
+  /// 底层合成。本页路由已不在栈里时什么都不做、也不登记回程地址（不给下一次交接留过期地址）。
   void _exitWebToBrowser(String url) {
     final Uri? target = Uri.tryParse(url);
-    if (!mounted ||
+    final ModalRoute<dynamic>? ownRoute = mounted
+        ? ModalRoute.of(context)
+        : null;
+    if (ownRoute == null ||
+        !ownRoute.isActive ||
         _webExitingToBrowser ||
         target == null ||
         (target.scheme != 'http' && target.scheme != 'https')) {
       return;
     }
+    while (_dismissTopForegroundLayer()) {}
+    if (!popRoutesAbove(Navigator.of(context), ownRoute)) return;
     _webExitingToBrowser = true;
     if (widget.webBackToBrowser) {
       WebVideoBrowserReturn.offer(target);
       _exitVideoPage();
       return;
     }
-    unawaited(_replaceWebWithBrowser(target));
+    unawaited(_replaceWebWithBrowser(ownRoute, target));
   }
 
-  Future<void> _replaceWebWithBrowser(Uri target) async {
+  Future<void> _replaceWebWithBrowser(
+    ModalRoute<dynamic> ownRoute,
+    Uri target,
+  ) async {
     await _controller?.flushPosition();
     if (!context.mounted) return;
+    final NavigatorState nav = Navigator.of(context);
+    // 落进度期间又弹出来的层同样先收掉；本页已被别的路径关掉就不再换。
+    if (!popRoutesAbove(nav, ownRoute)) return;
     unawaited(
-      Navigator.of(
-        context,
-      ).pushReplacement(fushiWebBrowserRoute(context, target.toString())),
+      nav.pushReplacement(fushiWebBrowserRoute(context, target.toString())),
     );
   }
 
@@ -1391,7 +1406,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webWindowFullscreen = false;
       unawaited(WindowCaptionChannel.setFullscreen(false));
     }
-    _webSession?.nav.removeListener(_onWebNav);
+    _webSession?.mainFrameUrl.removeListener(_onWebNav);
     _webSession?.dispose();
     final Route<Object?>? transparentRoute = _webTransparentRoute;
     if (transparentRoute != null) {

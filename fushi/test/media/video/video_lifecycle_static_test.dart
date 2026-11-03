@@ -197,12 +197,24 @@ void main() {
       () {
         // BUG-2119：旧契约「pop 前 await flushPosition()」把退出押在一次落库成功上，
         // 连接被毒化时四条退出通道一起失灵。新契约：经 exitAfterPersist 同步发起
-        // 落库、无条件 pop，方法体里不得再有任何 await。
-        final RegExpMatch? body = RegExp(
+        // 落库、无条件 pop，方法体里不得再有任何 await。退出动作抽成了 _exitVideoPage
+        // （网页档离开观看页回浏览器也走它），_handleBackOrExit 关完前台层后委托给它。
+        final RegExpMatch? back = RegExp(
           r'Future<void> _handleBackOrExit\(\) async \{(.*?)\n  \}',
           dotAll: true,
         ).firstMatch(page);
-        expect(body, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
+        expect(back, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
+        expect(
+          back!.group(1),
+          contains('_exitVideoPage();'),
+          reason: '_handleBackOrExit 必须委托给退出动作 _exitVideoPage',
+        );
+        expect(back.group(1), isNot(contains('await ')));
+        final RegExpMatch? body = RegExp(
+          r'void _exitVideoPage\(\) \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(body, isNotNull, reason: '找不到 _exitVideoPage 方法体');
         final String b = body!.group(1)!;
         expect(
           b,
