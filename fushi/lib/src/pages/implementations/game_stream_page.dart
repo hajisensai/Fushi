@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
+import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
@@ -2734,52 +2735,6 @@ const double _lineAreaBottomPadding = _resizeHitExtent / 2 - _lineGapHeight / 2;
 /// The line row's copy action: icon plus its 2px padding on both sides.
 const double _lineCopyIconSize = 16;
 const double _lineCopyActionExtent = _lineCopyIconSize + 4;
-
-/// Largest font size in [floor]..[GameStreamLookupLayout.maxFitFontSize] at
-/// which [text] laid out [width] wide stays within [height]. A line that does
-/// not fit even at [floor] keeps [floor] (the area scrolls). Half-point steps.
-double gameStreamFitLineFontSize({
-  required String text,
-  required TextStyle Function(double size) styleFor,
-  required double width,
-  required double height,
-  required double floor,
-  TextScaler textScaler = TextScaler.noScaling,
-  TextDirection textDirection = TextDirection.ltr,
-}) {
-  final double ceiling = math.max(floor, GameStreamLookupLayout.maxFitFontSize);
-  if (text.isEmpty || width <= 0 || height <= 0) return floor;
-  final TextPainter painter = TextPainter(
-    textScaler: textScaler,
-    textDirection: textDirection,
-  );
-  bool fits(double size) {
-    painter
-      ..text = TextSpan(text: text, style: styleFor(size))
-      ..layout(maxWidth: width);
-    return painter.height <= height && painter.width <= width;
-  }
-
-  try {
-    if (!fits(floor)) return floor;
-    int lo = (floor * 2).ceil();
-    int hi = (ceiling * 2).floor();
-    if (lo >= hi || !fits(lo / 2)) return floor;
-    if (fits(hi / 2)) return hi / 2;
-    // Invariant: lo/2 fits, hi/2 does not.
-    while (hi - lo > 1) {
-      final int mid = (lo + hi) ~/ 2;
-      if (fits(mid / 2)) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    return math.max(floor, lo / 2);
-  } finally {
-    painter.dispose();
-  }
-}
 
 /// Length of the rail grip's 48dp-wide touch band along the edge.
 const double _railGripBand = 160;

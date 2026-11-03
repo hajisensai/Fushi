@@ -8,8 +8,7 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/game_stream_page.dart'
-    show gameStreamFitLineFontSize;
+import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
