@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -142,9 +143,45 @@ Future<void> _tapText(WidgetTester tester, String text) async {
   await _settle(tester, rounds: 4);
 }
 
+/// 页面「撤销」可点（撤销栈非空且不在忙）：落库后的刷新也占着 `_busy`，机器忙时固定轮数的
+/// [_settle] 不一定等得到它，在按钮还是禁用时点下去就是空点（并发跑时的偶发红）。
+bool _undoEnabled() => find
+    .descendant(
+      of: find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            (w is FushiIconButtonControl && w.onPressed != null) ||
+            (w is IconButton && w.onPressed != null) ||
+            (w is InkResponse && w.onTap != null),
+      ),
+      matchRoot: true,
+    )
+    .evaluate()
+    .isNotEmpty;
+
 Future<void> _undo(WidgetTester tester) async {
+  for (int i = 0; i < 200 && !_undoEnabled(); i++) {
+    await _settle(tester, rounds: 1);
+  }
+  expect(_undoEnabled(), isTrue, reason: '撤销按钮一直不可用');
   await tester.tap(find.byKey(const ValueKey<String>('srs_browse_undo')).first);
   await _settle(tester);
+}
+
+/// 等字段写到 [expected]（撤销在后台写库，机器忙时固定轮数不一定等得到）；超时按最后读到的值断言。
+Future<void> _expectFieldEventually(
+  WidgetTester tester,
+  SrsDbStore store,
+  String noteId,
+  String fieldName,
+  String expected,
+) async {
+  String actual = await _field(tester, store, noteId, fieldName);
+  for (int i = 0; i < 200 && actual != expected; i++) {
+    await _settle(tester, rounds: 1);
+    actual = await _field(tester, store, noteId, fieldName);
+  }
+  expect(actual, expected);
 }
 
 void main() {
@@ -195,7 +232,13 @@ void main() {
     expect(await _field(tester, store, id, 'IsSentenceCard'), 'x');
 
     await _undo(tester);
-    expect(await _field(tester, store, id, 'IsSentenceCard'), sentenceBefore);
+    await _expectFieldEventually(
+      tester,
+      store,
+      id,
+      'IsSentenceCard',
+      sentenceBefore,
+    );
     await _unmount(tester);
   });
 
@@ -251,7 +294,13 @@ void main() {
     expect(await _field(tester, store, id, 'MainDefinition'), 'to drink food');
 
     await _undo(tester);
-    expect(await _field(tester, store, id, 'MainDefinition'), 'to eat food');
+    await _expectFieldEventually(
+      tester,
+      store,
+      id,
+      'MainDefinition',
+      'to eat food',
+    );
     await _unmount(tester);
   });
 
