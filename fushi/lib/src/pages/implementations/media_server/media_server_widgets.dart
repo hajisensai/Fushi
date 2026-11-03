@@ -995,6 +995,12 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 页头自己让开状态栏 / 刘海：进服务器后的首页、网格、搜索是根 Navigator 上的
+    // 二级页（`media_server_server_list_view.dart` 的 `_openServer`），上面没有
+    // 库页外壳替它吃掉顶部安全区，页头曾直接叠在状态栏上（BUG-3993）。在外壳里
+    // 时首页 [SafeArea] 已把 padding 清零，这层是 no-op。页头实测高度含这段，
+    // 正文让位（[FushiFloatingChromeInset]）随之加上，收起时整段一起滑出。
+    final Widget header = SafeArea(bottom: false, child: widget.header);
     if (isGlassDesign(context)) {
       return Scaffold(
         backgroundColor: tokens.surfaces.page,
@@ -1003,7 +1009,7 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                widget.header,
+                header,
                 Expanded(child: widget.body),
               ],
             ),
@@ -1024,7 +1030,7 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
                 outer == null &&
                 _ownChrome.handleScrollNotification(notification),
             child: FushiFloatingChromeOverlay(
-              chrome: widget.header,
+              chrome: header,
               child: widget.body,
             ),
           ),

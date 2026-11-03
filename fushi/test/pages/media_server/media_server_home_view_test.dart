@@ -32,9 +32,14 @@ void main() {
     browser = FakeMediaServerBrowser();
   });
 
-  Widget harness() {
+  Widget harness({bool apple = false}) {
     return TranslationProvider(
       child: MaterialApp(
+        theme: ThemeData(
+          extensions: <ThemeExtension<dynamic>>[
+            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+          ],
+        ),
         home: Scaffold(
           body: MediaServerHomeView(
             session: MediaServerSession(
@@ -410,4 +415,38 @@ void main() {
     expect(detail.item.type, MediaServerItemType.series);
     expect(detail.initialSeasonId, 'sea1');
   });
+
+  for (final bool apple in <bool>[false, true]) {
+    final String design = apple ? 'Apple' : 'MD3';
+    testWidgets('BUG-3993（$design）：独立路由（不在库页外壳里）时页头让开状态栏，正文在页头下方', (
+      WidgetTester tester,
+    ) async {
+      const double statusBar = 47;
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.padding = const FakeViewPadding(top: statusBar);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      browser.libraries.add(movies);
+
+      await tester.pumpWidget(harness(apple: apple));
+      await tester.pumpAndSettle();
+
+      // 两条分支真的走到了各自的设计系统，避免 apple 变体悄悄退回 MD3 分支。
+      expect(
+        isGlassDesign(tester.element(find.byType(MediaServerHomeView))),
+        apple,
+      );
+      final Rect search = tester.getRect(
+        find.byKey(const ValueKey<String>('media-server-home-search')),
+      );
+      expect(search.top, greaterThanOrEqualTo(statusBar));
+      // 正文让位跟着页头实测高度走：「媒体库」标题不被页头盖住。
+      final Rect libraries = tester.getRect(
+        find.text(t.media_server_libraries_title),
+      );
+      expect(libraries.top, greaterThanOrEqualTo(search.bottom));
+    });
+  }
 }
