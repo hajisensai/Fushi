@@ -5657,12 +5657,23 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
 
-  /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏）。
-  int get videoJumpPillAutoHideSeconds =>
-      prefsRepo.videoJumpPillAutoHideSeconds;
+  /// 「跳转记录」顶栏图标自动隐藏秒数（0 = 不自动隐藏，默认）。
+  int get jumpHistoryAutoHideSeconds => prefsRepo.jumpHistoryAutoHideSeconds;
 
-  Future<void> setVideoJumpPillAutoHideSeconds(int value) =>
-      prefsRepo.setVideoJumpPillAutoHideSeconds(value);
+  Future<void> setJumpHistoryAutoHideSeconds(int value) =>
+      prefsRepo.setJumpHistoryAutoHideSeconds(value);
+
+  /// 「跳转记录」顶栏返回 / 前进图标开关（默认开；关掉照样记录）。
+  bool get jumpHistoryToolbar => prefsRepo.jumpHistoryToolbar;
+
+  Future<void> setJumpHistoryToolbar(bool value) =>
+      prefsRepo.setJumpHistoryToolbar(value);
+
+  /// 「跳转记录」进度条刻度开关（默认开）。
+  bool get jumpHistoryProgressMarks => prefsRepo.jumpHistoryProgressMarks;
+
+  Future<void> setJumpHistoryProgressMarks(bool value) =>
+      prefsRepo.setJumpHistoryProgressMarks(value);
 
   /// 播放器底栏时间显示剩余时长（默认关，点按底栏时间切换）。
   bool get videoTimeDisplayRemaining => prefsRepo.videoTimeDisplayRemaining;

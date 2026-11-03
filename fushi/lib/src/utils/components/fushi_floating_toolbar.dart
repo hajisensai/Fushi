@@ -94,6 +94,8 @@ class FushiToolbarItem {
     this.key,
     this.semanticsId,
     this.tooltip,
+    this.onLongPress,
+    this.emphasized = false,
   });
 
   final IconData icon;
@@ -107,6 +109,14 @@ class FushiToolbarItem {
   final bool selected;
   final Key? key;
   final String? semanticsId;
+
+  /// 长按 / 右键（桌面 secondary tap）的次要动作；null = 没有。收进「⋯」溢出菜单
+  /// 时只保留 [onPressed]。
+  final VoidCallback? onLongPress;
+
+  /// 强调态：不是「选中」，只给图标按钮垫一层 secondaryContainer 底，让临时出现的
+  /// 动作（跳转记录的返回 / 前进）和常驻按钮区分开。语义上不报 selected。
+  final bool emphasized;
 }
 
 /// 悬浮工具栏配色。null 字段回落到主题：MD3 standard = surfaceContainer /
@@ -334,6 +344,64 @@ Color fushiToolbarItemForeground(
 /// 工具栏里的一颗按钮：无标签 = M3E 图标按钮（按压变形由
 /// [FushiIconButtonControl] 自带）；有标签 = 等宽格（图标 + labelSmall），按压
 /// 走 [FushiPressScale] 同款缩放。选中态画 secondaryContainer 胶囊底。
+/// 纯图标按钮外观的自定义构造（[FushiToolbarButton.iconBuilder]）：返回一颗**不带**
+/// tooltip / 长按的裸按钮（点按接 `item.onPressed`），提示、长按 / 右键与语义由
+/// [FushiToolbarLongPressTarget] 统一包。[foreground] 是本栏按钮的前景色，外观自带
+/// 配色的宿主（视频控制条）可以不用。
+typedef FushiToolbarIconBuilder =
+    Widget Function(
+      BuildContext context,
+      FushiToolbarItem item,
+      Color foreground,
+    );
+
+/// 带长按 / 右键的图标按钮的**唯一**手势与提示装配（工具栏按钮的自定义外观、桌面
+/// 经典顶栏、视频控制条共用）：
+///
+/// - 提示（[FushiTooltip]）在外层，长按识别器在里层：命中测试由深到浅登记，里层的
+///   长按先进手势竞技场、同一时限下先胜出，所以触屏长按打开动作而不是只弹提示；
+///   鼠标悬停照样出提示。反过来（长按包在提示外面）长按就会被提示抢走。
+/// - 右键（`onSecondaryTap`）与长按同一动作。
+/// - 语义：名称恒为 [label]（tooltip 只是提示），点按 / 长按动作都进语义树。
+///
+/// [child] 必须是不带 tooltip / 长按的裸按钮（自己处理点按）。
+class FushiToolbarLongPressTarget extends StatelessWidget {
+  const FushiToolbarLongPressTarget({
+    super.key,
+    required this.label,
+    required this.tooltip,
+    required this.onPressed,
+    required this.onLongPress,
+    required this.child,
+  });
+
+  final String label;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final VoidCallback onLongPress;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => FushiTooltip(
+    message: tooltip,
+    excludeFromSemantics: true,
+    child: GestureDetector(
+      onLongPress: onLongPress,
+      onSecondaryTap: onLongPress,
+      child: Semantics(
+        label: label,
+        hint: tooltip == label ? null : tooltip,
+        button: true,
+        enabled: onPressed != null,
+        excludeSemantics: true,
+        onTap: onPressed,
+        onLongPress: onLongPress,
+        child: child,
+      ),
+    ),
+  );
+}
+
 class FushiToolbarButton extends StatelessWidget {
   const FushiToolbarButton({
     super.key,
@@ -344,7 +412,13 @@ class FushiToolbarButton extends StatelessWidget {
     this.showLabel = false,
     this.inlineLabel = false,
     this.iconSize = 24,
+    this.iconBuilder,
   });
+
+  /// 纯图标形态的外观换成宿主自己的按钮（视频控制条的 M3E / media_kit 按钮）。
+  /// 只用于纯图标（[showLabel] / [inlineLabel] 为 false）；强调态插入动效、长按 /
+  /// 右键、提示、语义仍由本组件统一处理。
+  final FushiToolbarIconBuilder? iconBuilder;
 
   final FushiToolbarItem item;
   final Color foreground;
@@ -369,30 +443,61 @@ class FushiToolbarButton extends StatelessWidget {
       button = _buildInline(context, fg);
     } else if (!showLabel) {
       final String tooltip = item.tooltip ?? item.label;
+      final VoidCallback? longPress = item.onLongPress;
+      final FushiToolbarIconBuilder? custom = iconBuilder;
       // Apple：玻璃胶囊里的 bar button 是无底的 `.plain` 字形（iOS 26
       // UIBarButtonItemGroup），选中只把字形染成强调色，不再叠一枚选中圆钮
       // （玻璃套玻璃）；字号随 bar button（桌面 18 / 移动 20）。
       final bool apple = isGlassDesign(context);
-      final Widget iconButton = FushiIconButtonControl(
-        key: item.key,
-        icon: FushiIcon(item.icon, color: fg),
-        iconSize: apple ? (fushiAppleCompact(context) ? 18 : 20) : iconSize,
-        tooltip: tooltip,
-        isSelected: apple ? null : item.selected,
-        style: item.selected && !apple
-            ? IconButton.styleFrom(backgroundColor: selectedContainer)
-            : null,
-        onPressed: item.onPressed,
-      );
-      // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
-      // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
-      button = MergeSemantics(
-        child: Semantics(
+      // 有长按 / 右键时提示、长按、语义一律交给 [FushiToolbarLongPressTarget]
+      // （与桌面经典顶栏同一份手势装配），按钮本身不带 tooltip / 长按。
+      final Widget bare = custom != null
+          ? KeyedSubtree(key: item.key, child: custom(context, item, fg))
+          : FushiIconButtonControl(
+              key: item.key,
+              icon: FushiIcon(item.icon, color: fg),
+              iconSize: apple
+                  ? (fushiAppleCompact(context) ? 18 : 20)
+                  : iconSize,
+              tooltip: longPress == null ? tooltip : null,
+              isSelected: apple ? null : item.selected,
+              style: (item.selected || item.emphasized) && !apple
+                  ? IconButton.styleFrom(backgroundColor: selectedContainer)
+                  : null,
+              onPressed: item.onPressed,
+            );
+      if (longPress != null) {
+        button = FushiToolbarLongPressTarget(
           label: item.label,
-          selected: apple && item.selected ? true : null,
-          child: iconButton,
-        ),
-      );
+          tooltip: tooltip,
+          onPressed: item.onPressed,
+          onLongPress: longPress,
+          child: bare,
+        );
+      } else if (custom != null) {
+        button = FushiTooltip(
+          message: tooltip,
+          excludeFromSemantics: true,
+          child: Semantics(
+            label: item.label,
+            button: true,
+            enabled: item.onPressed != null,
+            excludeSemantics: true,
+            onTap: item.onPressed,
+            child: bare,
+          ),
+        );
+      } else {
+        // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
+        // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
+        button = MergeSemantics(
+          child: Semantics(
+            label: item.label,
+            selected: apple && item.selected ? true : null,
+            child: bare,
+          ),
+        );
+      }
     } else {
       final TextStyle? labelStyle = Theme.of(
         context,
@@ -448,8 +553,32 @@ class FushiToolbarButton extends StatelessWidget {
         ),
       );
     }
-    if (item.semanticsId == null) return button;
-    return Semantics(identifier: item.semanticsId, child: button);
+    final VoidCallback? longPress = item.onLongPress;
+    // 强调态按钮是临时插进栏里的（跳转记录）：插入时 M3E 弹簧缩放 + 淡入，墨水屏 /
+    // 减弱动态效果下时长归零即瞬时。
+    final Widget shown = item.emphasized
+        ? TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.release,
+            builder: (BuildContext context, double v, Widget? child) => Opacity(
+              opacity: v.clamp(0.0, 1.0),
+              child: Transform.scale(scale: 0.6 + 0.4 * v, child: child),
+            ),
+            child: button,
+          )
+        : button;
+    // 纯图标的长按 / 右键已由 [FushiToolbarLongPressTarget] 处理。
+    final bool longPressHandled = !showLabel && !inlineLabel;
+    final Widget withLongPress = longPress == null || longPressHandled
+        ? shown
+        : GestureDetector(
+            onLongPress: showLabel || inlineLabel ? longPress : null,
+            onSecondaryTap: longPress,
+            child: shown,
+          );
+    if (item.semanticsId == null) return withLongPress;
+    return Semantics(identifier: item.semanticsId, child: withLongPress);
   }
 }
 

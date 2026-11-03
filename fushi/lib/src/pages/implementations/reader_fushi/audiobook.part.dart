@@ -1056,7 +1056,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
     // 章首 / 章尾的上一句 / 下一句：同样是显式句子导航，暂停中也让正文跟到目标章
     // 的那一句（反馈 yk2XDOGh-H）。
-    await controller.skipToCue(targetCues.first, revealReader: true);
+    await controller.skipToCue(
+      targetCues.first,
+      revealReader: true,
+      jumpSource: JumpSource.chapter,
+    );
   }
 
   /// BUG-1107（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]

@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/reader/manga_jump_point.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
+    show mangaJumpMarkFraction;
 import 'package:fushi/src/utils/misc/jump_history.dart';
 
 void main() {
@@ -124,6 +126,53 @@ void main() {
           chapterName: 'あ' * 30,
         ),
         '${'あ' * kMangaJumpLabelChapterMaxChars}… · 2 / 9',
+      );
+    });
+
+    test('panel format shows the chapter even for the current chapter', () {
+      expect(
+        mangaJumpPointLabel(
+          point: const MangaJumpPoint(chapterKey: 'c1', page: 4, pageCount: 40),
+          currentChapterKey: 'c1',
+          chapterName: '第38話',
+          alwaysShowChapter: true,
+        ),
+        '第38話 · 5 / 40',
+      );
+      // Local volumes have no chapter: still just the page.
+      expect(
+        mangaJumpPointLabel(
+          point: const MangaJumpPoint(chapterKey: null, page: 4, pageCount: 40),
+          currentChapterKey: null,
+          chapterName: null,
+          alwaysShowChapter: true,
+        ),
+        '5 / 40',
+      );
+    });
+  });
+
+  group('mangaJumpMarkFraction', () {
+    test('maps a page onto the slider axis, mirrored for RTL', () {
+      expect(mangaJumpMarkFraction(pageIndex: 0, pageCount: 41, rtl: false), 0);
+      expect(
+        mangaJumpMarkFraction(pageIndex: 10, pageCount: 41, rtl: false),
+        0.25,
+      );
+      expect(
+        mangaJumpMarkFraction(pageIndex: 10, pageCount: 41, rtl: true),
+        0.75,
+      );
+    });
+
+    test('no axis for single-page / empty chapters', () {
+      expect(
+        mangaJumpMarkFraction(pageIndex: 0, pageCount: 1, rtl: false),
+        isNull,
+      );
+      expect(
+        mangaJumpMarkFraction(pageIndex: 0, pageCount: 0, rtl: true),
+        isNull,
       );
     });
   });

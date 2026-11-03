@@ -209,7 +209,7 @@ void main() {
     test('同章进度条跳转（restoreProgress）在 JS 之前 leave', () {
       final String body = methodBody(
         corpus,
-        'Future<void> _jumpToGlobalCharOffset(int globalOffset) async',
+        'Future<void> _jumpToGlobalCharOffset(',
       );
       final int navigate = body.indexOf('_navigateToChapterAndWait(');
       final int leave = body.indexOf('_readLedger.leave();');

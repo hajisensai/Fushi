@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/fake_just_audio.dart';
@@ -53,6 +54,8 @@ void main() {
     Future<List<int>> dragFrom10Min({
       required int toMs,
       int Function()? thresholdSec,
+      List<JumpSource>? sources,
+      JumpSource? jumpSource,
     }) async {
       final AudiobookPlayerController c = await loadFakeAudiobookController(
         initialPositionMs: 600000,
@@ -61,10 +64,28 @@ void main() {
       addTearDown(c.dispose);
       if (thresholdSec != null) c.audioJumpThresholdSec = thresholdSec;
       final List<int> departures = <int>[];
-      c.onBeforeAudioJump = departures.add;
-      await c.seekGlobalMs(toMs);
+      c.onBeforeAudioJump = (int fromMs, JumpSource source) {
+        departures.add(fromMs);
+        sources?.add(source);
+      };
+      if (jumpSource == null) {
+        await c.seekGlobalMs(toMs);
+      } else {
+        await c.seekGlobalMs(toMs, jumpSource: jumpSource);
+      }
       return departures;
     }
+
+    test('跳转带来源动作：默认是拖进度条，调用方显式传的（遥控）原样报出', () async {
+      final List<JumpSource> sources = <JumpSource>[];
+      await dragFrom10Min(toMs: 0, sources: sources);
+      await dragFrom10Min(
+        toMs: 0,
+        sources: sources,
+        jumpSource: JumpSource.remote,
+      );
+      expect(sources, <JumpSource>[JumpSource.progressBar, JumpSource.remote]);
+    });
 
     test('未注入设置按 2 分钟：从 10:00 拖回 9:00 不进历史，拖回 8:00 进', () async {
       // 反馈原场景：没听清往回拖 1 分钟——旧 15 秒阈值会弹返回胶囊。
@@ -87,7 +108,8 @@ void main() {
       addTearDown(c.dispose);
       c.audioJumpThresholdSec = () => thresholdSec;
       final List<int> departures = <int>[];
-      c.onBeforeAudioJump = departures.add;
+      c.onBeforeAudioJump = (int fromMs, JumpSource _) =>
+          departures.add(fromMs);
       // 只看阈值判据：出发点取的是控制器当时的全书位置。
       final int from = c.globalPosition.inMilliseconds;
       await c.seekGlobalMs(from + 20000);

@@ -153,7 +153,7 @@ import 'package:fushi/src/reader/reader_source_locator.dart';
 import 'package:fushi/src/reader/reader_search_navigation.dart';
 import 'package:fushi/src/reader/reader_jump_history.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
-import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_toolbar_layout.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
@@ -2338,15 +2338,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 「跳转回退」历史（见 jump_history.part.dart）：本次阅读会话内存态，不落库。
   final JumpHistory<ReaderJumpPoint> _jumpHistory = newReaderJumpHistory();
 
-  /// 正在执行返回 / 前进：期间触发的跳转（含音频 seek 回调）不再入栈。
-  bool _jumpHistoryRestoring = false;
+  /// 返回 / 前进 / 面板跳转的单飞执行器：[JumpHistoryWalker.busy] 期间（采样、
+  /// 改栈、恢复全程）触发的跳转（含音频 seek 回调）不再入栈，重入的走法直接落空。
+  final JumpHistoryWalker<ReaderJumpPoint> _jumpWalker =
+      JumpHistoryWalker<ReaderJumpPoint>();
 
   /// 最近一次正文跳转入栈的时刻：紧随其后的音频跳转视作同一次动作。
   DateTime? _lastTextJumpRecordedAt;
 
-  /// chrome 收起时胶囊在刚跳转后仍亮一会儿。
-  bool _jumpPillFlashing = false;
-  Timer? _jumpPillFlashTimer;
+  /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
+  /// 页面据此重建，设置一改图标与刻度立刻跟上。
+  late final JumpHistoryPrefsListenable _jumpPrefs =
+      JumpHistoryPrefsListenable.fromRepository(appModelNoUpdate.prefsRepo)
+        ..addListener(_onJumpChromeInputsChanged);
+
+  /// 顶栏返回 / 前进图标的自动隐藏计时（设置「自动隐藏」，默认不隐藏）：只管
+  /// 图标，记录 / 面板 / 刻度不受它影响。
+  late final JumpHistoryAutoHide _jumpAutoHide = JumpHistoryAutoHide(
+    prefs: _jumpPrefs,
+  )..addListener(_onJumpChromeInputsChanged);
 
   // TODO-1289：图片防剧透遮罩「点击揭开」的本次阅读会话真相源。揭开只删 WebView 内
   // DOM class，章节 (重)载 / 布局设置切换会重跑分页脚本重新遮罩；把已揭开图片的稳定
@@ -2982,7 +2992,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           mounted && _lyricsMode && _lyricsPageReady;
       ReaderFushiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
       ReaderFushiPage.debugJumpSection = (int index) =>
-          _jumpToChapterAnchor(index, null);
+          _jumpToChapterAnchor(index, null, source: JumpSource.tableOfContents);
       ReaderFushiPage.debugFlushReadingStats = _flushReadingStats;
       return true;
     }());
@@ -3740,7 +3750,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _observedThemeNotifier = null;
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
-    _jumpPillFlashTimer?.cancel();
+    _jumpAutoHide.dispose();
+    _jumpPrefs.dispose();
     _revealProgressRefreshTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
@@ -4413,8 +4424,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         // it never detaches the Positioned's StackParentData (which would
                         // drop the bar to the Stack's top-start alignment).
                         _buildBottomChrome(),
-                        // 跳转回退胶囊（顶部居中，坐在顶栏下方）。
-                        _buildJumpHistoryPill(),
                         // BUG-2230 同口径（网页流媒体页 / 漫画页早已如此）：**出口不是
                         // 内容的一部分，不随内容存亡**。本页的返回箭头挂在顶栏上，而
                         // 顶栏的可见条件含 `_hasEverLoaded`——它只在 WebView 首屏渲染
@@ -4867,8 +4876,8 @@ $liveConfigJs
 
   /// 大跨度音频跳转的出发点 → 「跳转回退」历史（jump_history.part.dart）。
   @override
-  void onBeforeAudioJump(int fromGlobalMs) =>
-      _recordAudioJumpDeparture(fromGlobalMs);
+  void onBeforeAudioJump(int fromGlobalMs, JumpSource source) =>
+      _recordAudioJumpDeparture(fromGlobalMs, source);
 
   AudioCue? _lookupCue;
   final LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>

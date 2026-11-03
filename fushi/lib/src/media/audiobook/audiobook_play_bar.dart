@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpProgressMarks;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -458,11 +460,16 @@ class AudiobookMiniPlayer extends StatefulWidget {
     this.tick = const Duration(milliseconds: 500),
     this.coverPath,
     this.chapterLabel,
+    this.jumpMarks,
     super.key,
   });
 
   final AudiobookPlayerController controller;
   final VoidCallback? onOpenPanel;
+
+  /// 「跳转记录」在全书时间轴上的落点（0~1，返回点 / 前进点），画在底边进度线上、
+  /// 只看不点（拖动命中区照旧是整条带子）。null = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
   final int skipActionSeconds;
   final bool invertSkip;
   final bool showPlayButton;
@@ -528,6 +535,31 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
       _ticker?.cancel();
       _ticker = null;
     }
+  }
+
+  /// 进度线叠上跳转落点刻度（刻度比 3px 线高，上下溢出画，不改线占的高度）。
+  Widget _withJumpMarks(Widget progress) {
+    final ({List<double> back, List<double> forward})? marks = widget.jumpMarks;
+    if (marks == null || (marks.back.isEmpty && marks.forward.isEmpty)) {
+      return progress;
+    }
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        progress,
+        Positioned(
+          left: 0,
+          right: 0,
+          top: -4,
+          bottom: -4,
+          child: FushiJumpProgressMarks(
+            back: marks.back,
+            forward: marks.forward,
+            tickHeight: 11,
+          ),
+        ),
+      ],
+    );
   }
 
   ({IconData icon, String tooltip, VoidCallback onPressed}) _key({
@@ -723,14 +755,18 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
               child: _ScrubbableProgress(
                 controller: c,
                 fraction: fraction,
-                child: (double shown) => FushiWavyLinearProgress(
-                  key: const ValueKey<String>('audiobook_mini_player_progress'),
-                  value: shown,
-                  waving: c.isPlaying,
-                  strokeWidth: 3,
-                  color: fg,
-                  trackColor: fg.withValues(alpha: 0.18),
-                  stopIndicatorColor: Colors.transparent,
+                child: (double shown) => _withJumpMarks(
+                  FushiWavyLinearProgress(
+                    key: const ValueKey<String>(
+                      'audiobook_mini_player_progress',
+                    ),
+                    value: shown,
+                    waving: c.isPlaying,
+                    strokeWidth: 3,
+                    color: fg,
+                    trackColor: fg.withValues(alpha: 0.18),
+                    stopIndicatorColor: Colors.transparent,
+                  ),
                 ),
               ),
             ),
@@ -770,31 +806,33 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
     final String label = cue.isEmpty ? t.reader_audiobook_now_playing : cue;
     // Apple：系统细进度条（[FushiLinearProgressIndicator] 的 Apple 分支，全圆角
     // 强调色细轨、值变化平滑过渡）；墨水屏：无动画的 Material 细条。
-    final Widget progress = glass
-        ? FushiLinearProgressIndicator(
-            value: fraction,
-            minHeight: 3,
-            color: appleColorsOf(context).accent,
-            backgroundColor: fg.withValues(alpha: 0.16),
-          )
-        : isEinkTheme(context)
-        ? ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(2)),
-            child: LinearProgressIndicator(
+    final Widget progress = _withJumpMarks(
+      glass
+          ? FushiLinearProgressIndicator(
               value: fraction,
               minHeight: 3,
-              color: fg,
+              color: appleColorsOf(context).accent,
               backgroundColor: fg.withValues(alpha: 0.16),
+            )
+          : isEinkTheme(context)
+          ? ClipRRect(
+              borderRadius: const BorderRadius.all(Radius.circular(2)),
+              child: LinearProgressIndicator(
+                value: fraction,
+                minHeight: 3,
+                color: fg,
+                backgroundColor: fg.withValues(alpha: 0.16),
+              ),
+            )
+          : FushiWavyLinearProgress(
+              key: const ValueKey<String>('audiobook_mini_player_progress'),
+              value: fraction,
+              waving: c.isPlaying,
+              strokeWidth: 3,
+              color: theme.colorScheme.primary,
+              trackColor: fg.withValues(alpha: 0.16),
             ),
-          )
-        : FushiWavyLinearProgress(
-            key: const ValueKey<String>('audiobook_mini_player_progress'),
-            value: fraction,
-            waving: c.isPlaying,
-            strokeWidth: 3,
-            color: theme.colorScheme.primary,
-            trackColor: fg.withValues(alpha: 0.16),
-          );
+    );
     final Widget info = Expanded(
       child: Semantics(
         button: widget.onOpenPanel != null,

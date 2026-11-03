@@ -7,6 +7,8 @@ import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart'
     show lyricsPlayerIsWide;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
@@ -147,10 +149,16 @@ class LyricsPlayerData {
     this.sidesMirrored = false,
     this.controlsStyle = LyricsControlsStyle.modern,
     this.compactControlsExpanded = false,
+    this.jumpActions = const <FushiToolbarItem>[],
     LyricsControlLayout? wideControls,
     LyricsControlLayout? compactControls,
   }) : _wideControls = wideControls,
        _compactControls = compactControls;
+
+  /// 阅读器「跳转记录」的返回 / 前进图标（纯图标，长按 / 右键开面板）：各外观
+  /// 画在顶栏右侧动作区的**最前面**。空 = 不画（没跳转过 / 顶栏图标关了 / 自动
+  /// 隐藏到时）。不占歌词矩形，出现 / 消失不改歌词 WebView 的位置。
+  final List<FushiToolbarItem> jumpActions;
 
   final LyricsControlLayout? _wideControls;
   final LyricsControlLayout? _compactControls;

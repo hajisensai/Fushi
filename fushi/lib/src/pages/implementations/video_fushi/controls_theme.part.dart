@@ -695,17 +695,61 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoSeekBarVisual visual,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return VideoM3eSeekTrack(
+    final double scale = _videoUiScale * _controlsDensityScale;
+    final double? trackBottomInset = _isDesktopVideoControls
+        ? _videoM3eDesktopTrackBottomInset
+        : null;
+    final Widget track = VideoM3eSeekTrack(
       visual: visual,
       color: _videoChromeAccent(cs),
-      scale: _videoUiScale * _controlsDensityScale,
+      scale: scale,
       hoverBubble: _thumbnailPreview == null,
       cueDensity: _m3eCueDensity(controller, visual.duration),
       // 不画轨道槽：细轨直接压在画面上（底部只有一条很矮的暗角垫着）。桌面把轨道
       // 抬到底栏小胶囊上方（热区容器骑按钮行上沿，轨道离容器底缘 overlap + 10）。
-      trackBottomInset: _isDesktopVideoControls
-          ? _videoM3eDesktopTrackBottomInset
-          : null,
+      trackBottomInset: trackBottomInset,
+    );
+    // 「跳转记录」落点刻度：叠在轨道中线上（同一真相
+    // [videoM3eSeekTrackCenterFromBottom]），与轨道同宽；刻度层 IgnorePointer，拖动 /
+    // 点击照旧落到 fork 的进度条热区。
+    final double tickHeight = 14 * scale;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        track,
+        LayoutBuilder(
+          builder: (BuildContext _, BoxConstraints constraints) {
+            final double h = constraints.maxHeight;
+            final double centerY =
+                h -
+                videoM3eSeekTrackCenterFromBottom(
+                  containerHeight: h,
+                  scale: scale,
+                  alignment: visual.alignment,
+                  trackBottomInset: trackBottomInset,
+                );
+            return Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: centerY - tickHeight / 2,
+                  height: tickHeight,
+                  child: _videoJumpProgressMarks(
+                    controller: controller,
+                    tickWidth: 3 * scale,
+                    tickHeight: tickHeight,
+                    rtl: rtl,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 

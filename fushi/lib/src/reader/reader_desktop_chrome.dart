@@ -183,6 +183,7 @@ class ReaderHeaderAction {
     this.key,
     this.semanticsId,
     this.tooltip,
+    this.onLongPress,
   });
 
   final IconData icon;
@@ -190,6 +191,10 @@ class ReaderHeaderAction {
   /// 可见文案（工具栏标签 / 菜单项）：只放功能名，不拼快捷键。
   final String label;
   final VoidCallback? onPressed;
+
+  /// 长按 / 右键（跳转记录的返回 / 前进键用它打开「跳转记录」面板）。收进 ⋮
+  /// 菜单后不可用（菜单项只有点按）。
+  final VoidCallback? onLongPress;
 
   /// 悬停提示；带快捷键的动作在这里括注键名（[tooltipWithShortcutHint]）。
   /// null 时与 [label] 相同。
@@ -252,10 +257,12 @@ class ReaderDesktopHeader extends StatelessWidget {
   Widget _button(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
     key: a.key,
     icon: a.icon,
+    label: a.label,
     tooltip: a.tooltipText,
     color: textColor,
     semanticsId: a.semanticsId,
     onPressed: a.onPressed,
+    onLongPress: a.onLongPress,
   );
 
   /// 标题槽：`书名 · 章名`。章名与书名重复（单章书的 TOC 常把章名写成书名）时只画书名。
@@ -413,22 +420,43 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
     required this.color,
     required this.onPressed,
     this.semanticsId,
+    this.onLongPress,
+    this.label,
   });
 
   final IconData icon;
   final String tooltip;
+
+  /// 无障碍名称（只在有 [onLongPress] 时用：此时提示由
+  /// [FushiToolbarLongPressTarget] 出，名称不该是整段提示）。null 时取 [tooltip]。
+  final String? label;
   final Color color;
   final VoidCallback? onPressed;
   final String? semanticsId;
 
+  /// 长按 / 右键。
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
-    final Widget button = FushiIconButtonControl(
+    final VoidCallback? longPress = onLongPress;
+    Widget button = FushiIconButtonControl(
       icon: FushiIcon(icon, color: color),
       iconSize: 22,
-      tooltip: tooltip,
+      // 有长按动作时提示 / 长按 / 右键 / 语义统一交给 [FushiToolbarLongPressTarget]
+      // （与悬浮顶栏、视频控制条同一份手势装配）。
+      tooltip: longPress == null ? tooltip : null,
       onPressed: onPressed,
     );
+    if (longPress != null) {
+      button = FushiToolbarLongPressTarget(
+        label: label ?? tooltip,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        onLongPress: longPress,
+        child: button,
+      );
+    }
     if (semanticsId == null) return button;
     return Semantics(identifier: semanticsId, child: button);
   }

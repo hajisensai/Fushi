@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/range_playback.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -397,9 +398,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 大跨度音频跳转回调：一次显式 seek（拖进度 / 系统媒体控件拖动 / 点句播放 /
   /// 章节定位，即 [seekGlobalMs] / [seekMs] / [skipToCue] 三个漏斗）要把全书位置
   /// 挪动至少 [audioJumpThresholdSec] 时，在物理 seek **之前**带上出发点的全书
-  /// 毫秒触发。reader 借此把出发点压进「跳转回退」历史。快进快退
+  /// 毫秒与这次跳转的来源动作（各漏斗的 `jumpSource` 参数，「跳转记录」面板的
+  /// 副标题）触发。reader 借此把出发点压进「跳转回退」历史。快进快退
   /// （[seekRelative]）是步进不是跳转，不报；逐句切换跨度小于阈值，自然不报。
-  void Function(int fromGlobalMs)? onBeforeAudioJump;
+  void Function(int fromGlobalMs, JumpSource source)? onBeforeAudioJump;
 
   /// 音频移动多远才算「跳转」（秒）：逐句、几秒的修正、没听清往回拖一小段都不进回退
   /// 历史。读的是设置「阅读 › 有声书 › 返回原位置的跳转距离」的实时值（会话注入闭包，
@@ -420,8 +422,8 @@ class AudiobookPlayerController extends ChangeNotifier {
       (targetGlobalMs - fromGlobalMs).abs() >=
       normalizeAudiobookJumpThresholdSec(thresholdSec) * 1000;
 
-  void _reportAudioJump(int targetGlobalMs) {
-    final void Function(int)? listener = onBeforeAudioJump;
+  void _reportAudioJump(int targetGlobalMs, JumpSource source) {
+    final void Function(int, JumpSource)? listener = onBeforeAudioJump;
     if (listener == null) return;
     final int fromMs = globalPosition.inMilliseconds;
     if (!isAudioJump(
@@ -431,7 +433,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     )) {
       return;
     }
-    listener(fromMs);
+    listener(fromMs, source);
   }
 
   /// 当前文件之前所有文件的累计时长：文件内偏移 → 全书毫秒。
@@ -995,9 +997,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [seekMs]；跨文件走与 [skipToCue] 同一条显式 seek 路径（`_player.seek(index:)`
   /// + 抑制窗，位置落定后由 `_updateCurrentCue` 清旗）。文件时长未知（单文件 /
   /// 未就绪）时退回 [seekMs]。有声书面板的整书进度条用它。
-  Future<void> seekGlobalMs(int globalMs) async {
+  ///
+  /// [jumpSource]：构成大跨度跳转时报给 [onBeforeAudioJump] 的来源（默认拖进度条）。
+  Future<void> seekGlobalMs(
+    int globalMs, {
+    JumpSource jumpSource = JumpSource.progressBar,
+  }) async {
     await _loadReady.future;
-    _reportAudioJump(globalMs);
+    _reportAudioJump(globalMs, jumpSource);
     if (_fileDurationsMs.isEmpty) {
       await _seekWithinFile(globalMs);
       return;
@@ -1562,9 +1569,15 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// 如果音频 duration 尚未就绪（null / 0）或目标超出范围，直接忽略，
   /// 避免 just_audio 将位置重置到 0。
-  Future<void> seekMs(int positionMs) async {
+  Future<void> seekMs(
+    int positionMs, {
+    JumpSource jumpSource = JumpSource.progressBar,
+  }) async {
     await _loadReady.future;
-    _reportAudioJump(_globalBaseOfFile(_player.currentIndex ?? 0) + positionMs);
+    _reportAudioJump(
+      _globalBaseOfFile(_player.currentIndex ?? 0) + positionMs,
+      jumpSource,
+    );
     await _seekWithinFile(positionMs);
   }
 
@@ -1820,10 +1833,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 也要让 reader 视口跟到目标句（必要时翻页 / 跨章），见
   /// [_explicitNavigationRevealCue]。按位置 / 收藏 / 书签 / 跳章定位音频的调用方
   /// 不传：它们要么自己定位 reader，要么本就不该在暂停时拽视口。
+  ///
+  /// [jumpSource]：构成大跨度跳转时报给 [onBeforeAudioJump] 的来源（默认点句；
+  /// 章节定位 / 收藏 / 遥控等调用方显式传）。
   Future<void> skipToCue(
     AudioCue cue, {
     bool callerPositionsReader = false,
     bool revealReader = false,
+    JumpSource jumpSource = JumpSource.cue,
   }) async {
     _crossChapterHeldForCallerSeek = false;
     _explicitNavigationRevealCue = null;
@@ -1841,6 +1858,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int positionMs = _clampToKnownDuration(mappedPosition.positionMs);
     _reportAudioJump(
       _globalBaseOfFile(mappedPosition.audioFileIndex) + positionMs,
+      jumpSource,
     );
     // BUG-1080：目标已成功定位、跳转必然发生 → 通知 reader 抬统计字数水位到目标
     // cue（跳过的段落不算已读）。放在物理 seek 之前，保证水位在任何后续进度回调

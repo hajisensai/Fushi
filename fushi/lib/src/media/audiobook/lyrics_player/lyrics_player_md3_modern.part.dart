@@ -1548,8 +1548,12 @@ class _ModernActionIslandState extends State<_ModernActionIsland> {
         if (!_kModernWidePriority.contains(i)) i,
     ];
     final bool hasSpeed = items.contains(LyricsControlItem.speed);
+    // 跳转记录的返回 / 前进恒在岛的最前，与关闭键一样先从预算里扣掉。
     final double budget =
-        widget.budget - slot - (hasSpeed ? _kModernSpeedButtonWidth - slot : 0);
+        widget.budget -
+        slot -
+        data.jumpActions.length * slot -
+        (hasSpeed ? _kModernSpeedButtonWidth - slot : 0);
     final List<FushiToolbarItem> probe = <FushiToolbarItem>[
       for (final LyricsControlItem item in byPriority)
         FushiToolbarItem(
@@ -1572,6 +1576,8 @@ class _ModernActionIslandState extends State<_ModernActionIsland> {
     ];
     final VoidCallback? onExitBook = callbacks.onExitBook;
     final List<Widget> buttons = <Widget>[
+      if (data.jumpActions.isNotEmpty)
+        FushiJumpHistoryActions(items: data.jumpActions),
       for (final LyricsControlItem item in items)
         if (shown.contains(item))
           ?_md3ControlButton(item, data, callbacks, wide: true, tonal: false),

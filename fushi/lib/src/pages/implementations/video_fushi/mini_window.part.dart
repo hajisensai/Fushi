@@ -403,13 +403,14 @@ extension _VideoMiniWindow on _VideoFushiPageState {
                 controlsVisible: controlsVisible,
               );
               if (!visible) return const SizedBox.shrink();
-              return VideoSlimProgressBar(
+              final double lineHeight = 3 * _videoUiScale;
+              final Widget bar = VideoSlimProgressBar(
                 positionMs: () => controller.positionMs,
                 durationMs: () => controller.durationMs,
                 // 播放器 chrome 的「主题色」口径：裸压固定深色 scrim 的前景必须取亮 tone
                 // primary，直接用 cs.primary 在浅色 / eink 主题下是深色、黑压黑不可见。
                 color: _videoChromeAccent(cs),
-                height: 3 * _videoUiScale,
+                height: lineHeight,
                 // 点 / 横拖这条线直接跳转（小窗里它是唯一的进度控件，常规档它是控制条
                 // 淡出后唯一还在的那条）。命中带随「界面大小」一起缩放，与线本身同源。
                 hitTestHeight: 12 * _videoUiScale,
@@ -417,6 +418,27 @@ extension _VideoMiniWindow on _VideoFushiPageState {
                     ? (double fraction) =>
                           unawaited(_seekToProgressFraction(fraction))
                     : null,
+              );
+              // 「跳转记录」落点刻度：竖直居中压在细线上（刻度比线高，上半截露在
+              // 画面上）；刻度层 IgnorePointer，点 / 横拖照旧落到细线的命中带。
+              final double tickHeight = 3 * lineHeight;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  bar,
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: lineHeight / 2 - tickHeight / 2,
+                    height: tickHeight,
+                    child: _videoJumpProgressMarks(
+                      controller: controller,
+                      tickWidth: 2 * _videoUiScale,
+                      tickHeight: tickHeight,
+                      // 细线硬 ltr（见 [VideoSlimProgressBar]），刻度同向。
+                    ),
+                  ),
+                ],
               );
             },
           );

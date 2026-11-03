@@ -67,13 +67,20 @@ void main() {
 
       expect(nav, contains('Future<void> _jumpToChapterAnchor('));
       // 内链处理器复用同一个落地口——两条路径不得再各写一份同章/跨章判断。
+      // 第三个实参是「跳转记录」的来源（内链 / 目录），折不折行只是格式。
       expect(
         nav,
-        contains(
-          'await _jumpToChapterAnchor(link.chapterIndex, link.fragment);',
+        matches(
+          RegExp(
+            r'await _jumpToChapterAnchor\(\s*link\.chapterIndex,\s*'
+            r'link\.fragment,',
+          ),
         ),
       );
-      expect(chrome, contains('await _jumpToChapterAnchor(index, fragment);'));
+      expect(
+        chrome,
+        matches(RegExp(r'await _jumpToChapterAnchor\(\s*index,\s*fragment,')),
+      );
       // 钉去空白后的整个调用：实参折不折行只是格式，锚点必须作为第二实参交给跳转。
       expect(
         compactCode(sheet),

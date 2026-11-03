@@ -568,9 +568,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Skip intros and credits automatically':
       'test/media/video/video_theme_song_tracker_test.dart'
       '（VideoThemeSongTracker：开关每次现读，只在刚进段 3 s 内自动跳一次）',
-  'video/Auto-hide jump-back pill':
-      'test/media/video/video_jump_pill_hover_test.dart'
-      '（过期后控制条再出现也不显示 / 视频页接线：时长现读偏好、历史变化重新计时）',
+  // 「跳转记录」三项（小说 / 漫画 / 视频共用，生效点在三个媒体页的顶栏与进度条，
+  // harness 里没有打开的媒体页）：判据纯函数与按钮行为由专项测试咬住。
+  'appearance/Show back / forward in the top bar':
+      'test/utils/jump_history_controls_test.dart'
+      '（jumpHistoryToolbarVisible：关掉不画图标，历史照记）',
+  'appearance/Mark jump points on progress bars':
+      'test/utils/jump_history_controls_test.dart'
+      '（jumpHistoryMarkFractions / 刻度几何）',
+  'appearance/Auto-hide top bar jump buttons':
+      'test/utils/jump_history_controls_test.dart'
+      '（JumpHistoryAutoHide：单调计时到点收起、改时长即时重排；默认 0 不隐藏、旧视频设置折算）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',

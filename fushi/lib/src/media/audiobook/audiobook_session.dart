@@ -12,6 +12,7 @@ import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart'
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:just_audio/just_audio.dart' show AudioSource;
@@ -1048,8 +1049,9 @@ abstract class ReaderAudiobookView {
   void onExplicitCueJump(AudioCue cue);
 
   /// 大跨度音频跳转即将发生（[AudiobookPlayerController.onBeforeAudioJump]），
-  /// [fromGlobalMs] 是出发点的全书毫秒：reader 压进「跳转回退」历史。
-  void onBeforeAudioJump(int fromGlobalMs);
+  /// [fromGlobalMs] 是出发点的全书毫秒、[source] 是来源动作：reader 压进「跳转
+  /// 回退」历史。
+  void onBeforeAudioJump(int fromGlobalMs, JumpSource source);
 
   /// 控制器 cue / 播放态变化：reader 更新 WebView 正文高亮 / lyrics / 进度。
   void onReaderCueChanged();
