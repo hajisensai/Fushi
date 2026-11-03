@@ -32,7 +32,7 @@ final class _LowRecallRwkv implements SrsRwkvScheduling {
 }
 
 void main() {
-  test('混合子树：父行给 FSRS 到期与 RWKV 日均两项，FSRS 的复习不算进 RWKV 日均', () async {
+  test('混合子树：父行的 FSRS 到期只数 FSRS 子牌组，不含 RWKV 此刻合格的卡', () async {
     int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
     final SrsDbStore s = await openTestStore(
       profileUid: _profile,
