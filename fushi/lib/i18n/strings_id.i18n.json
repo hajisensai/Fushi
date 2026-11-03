@@ -3733,6 +3733,7 @@
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
   "game_stream_input_failed": "Input tidak terkirim",
+  "game_stream_input_key_unsupported": "This game takes controller and pointer input only; keyboard keys are not delivered",
   "game_stream_input_pointer_unsupported": "Game ini tidak menerima klik sentuh; gunakan tombol pad",
   "game_stream_input_rejected": "Input ditolak. Bawa jendela game ke latar depan di host.",
   "game_stream_input_window_hidden": "Jendela game diminimalkan atau disembunyikan di host",

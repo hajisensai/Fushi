@@ -3733,6 +3733,7 @@
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
   "game_stream_input_failed": "Ввод не доставлен",
+  "game_stream_input_key_unsupported": "This game takes controller and pointer input only; keyboard keys are not delivered",
   "game_stream_input_pointer_unsupported": "Эта игра не принимает касания; используйте кнопки на панели",
   "game_stream_input_rejected": "Ввод отклонён. Выведите окно игры на передний план на хосте.",
   "game_stream_input_window_hidden": "Окно игры свёрнуто или скрыто на хосте",

@@ -256,7 +256,17 @@ class _GameStreamPageState extends State<GameStreamPage>
   String? _mineMessage;
   final Map<GameStreamVirtualButton, String> _keyBindings =
       <GameStreamVirtualButton, String>{};
-  final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
+
+  /// Every local input holding something down on the host (an on-screen pad
+  /// [GameStreamVirtualButton] or a [GameStreamPhysicalButton]), with the host
+  /// output its press resolved to; the release undoes exactly that output.
+  final Map<Object, _HostOutput> _heldSources = <Object, _HostOutput>{};
+
+  /// How many local inputs hold each host output. Two buttons mapped to the
+  /// same output (Start and Select both on menu, or the on-screen confirm
+  /// while A is down) send one down and one up: the host output is lifted
+  /// only when the last of them is released.
+  final Map<_HostOutput, int> _outputHolds = <_HostOutput, int>{};
   late GameStreamButtonProfile _buttonProfile = widget.buttonProfile;
   late GameStreamSecondScreen _secondScreen = widget.secondScreen;
 
@@ -281,6 +291,7 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   /// Physical buttons currently down, with the action their press started:
   /// the release must undo that action even if the profile changed meanwhile.
+  /// (What that action holds on the host is in [_heldSources].)
   final Map<GameStreamPhysicalButton, GameStreamButtonAction> _heldPhysical =
       <GameStreamPhysicalButton, GameStreamButtonAction>{};
   GameStreamTouchInterpreter? _touch;
@@ -321,18 +332,6 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   bool _supports(String feature) => widget.session?.supports(feature) ?? false;
 
-  static final List<String> _allowedKeys = <String>[
-    'Enter',
-    'Escape',
-    'Space',
-    'Up',
-    'Down',
-    'Left',
-    'Right',
-    for (int code = 65; code <= 90; code++) String.fromCharCode(code),
-    for (int number = 1; number <= 12; number++) 'F$number',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -349,6 +348,12 @@ class _GameStreamPageState extends State<GameStreamPage>
   @override
   void didUpdateWidget(GameStreamPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.inputComposer != widget.inputComposer ||
+        oldWidget.receiver != widget.receiver) {
+      // Held buttons belong to the session that saw their downs: lift them
+      // there, never on the new one.
+      unawaited(_releaseHeldInputs(oldWidget.inputComposer));
+    }
     if (oldWidget.inputComposer != widget.inputComposer) {
       unawaited(_releasePointer());
       oldWidget.inputComposer.removeListener(_onReceiverChanged);
@@ -375,7 +380,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_releasePointer());
-    unawaited(_releasePhysicalButtons());
+    unawaited(_releaseHeldInputs());
     _lookupController?.removeListener(_onLookupChanged);
     widget.receiver?.removeListener(_onReceiverChanged);
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
@@ -701,7 +706,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         (receiver.backgrounded ||
             receiver.state != GameStreamReceiverState.connected)) {
       unawaited(_releasePointer());
-      unawaited(_releasePhysicalButtons());
+      unawaited(_releaseHeldInputs());
     }
     if (mounted) setState(() {});
   }
@@ -1020,15 +1025,89 @@ class _GameStreamPageState extends State<GameStreamPage>
     }
   }
 
+  /// The on-screen pad.
   Future<void> _sendButton(
     GameStreamVirtualButton button,
     GameStreamInputAction action,
-  ) {
-    if (action == GameStreamInputAction.down) _heldButtons.add(button);
-    if (action == GameStreamInputAction.up) _heldButtons.remove(button);
+  ) => action == GameStreamInputAction.down
+      ? _hold(button, _padOutput(button))
+      : _release(button);
+
+  /// What pressing pad [button] holds on the host: its keyboard binding when
+  /// it has one, the gamepad button otherwise.
+  _HostOutput _padOutput(GameStreamVirtualButton button) {
     final String? key = _keyBindings[button];
-    if (key != null) return widget.inputComposer.key(key: key, action: action);
-    return widget.inputComposer.gamepad(button: button, action: action);
+    return key == null ? _HostOutput.pad(button) : _HostOutput.key(key);
+  }
+
+  /// Where host pointer actions from a button land: wherever the host cursor
+  /// last went (any pointer path), the middle of the picture before that.
+  Offset _hostCursor(GameStreamInputComposer composer) =>
+      composer.lastPointerPosition ?? _trackpadCursor;
+
+  /// [source] presses [output]; the host sees a down only when nothing else
+  /// already holds it.
+  Future<void> _hold(Object source, _HostOutput output) async {
+    if (_heldSources.containsKey(source)) return;
+    _heldSources[source] = output;
+    final int holds = (_outputHolds[output] ?? 0) + 1;
+    _outputHolds[output] = holds;
+    if (holds > 1) return;
+    await _sendOutput(output, GameStreamInputAction.down, widget.inputComposer);
+  }
+
+  /// [source] lets go; the host sees the up only when it held the last hold.
+  Future<void> _release(Object source) async {
+    final _HostOutput? output = _heldSources.remove(source);
+    if (output == null) return;
+    final int holds = (_outputHolds[output] ?? 1) - 1;
+    if (holds > 0) {
+      _outputHolds[output] = holds;
+      return;
+    }
+    _outputHolds.remove(output);
+    await _sendOutput(output, GameStreamInputAction.up, widget.inputComposer);
+  }
+
+  /// Lifts everything held (backgrounding, a dropped connection, lookup mode,
+  /// disposal) on [composer], the session that saw the downs. Cleared before
+  /// the first await, so a second call sends nothing twice.
+  Future<void> _releaseHeldInputs([GameStreamInputComposer? composer]) async {
+    final GameStreamInputComposer target = composer ?? widget.inputComposer;
+    final List<_HostOutput> held = _outputHolds.keys.toList();
+    _heldSources.clear();
+    _outputHolds.clear();
+    _heldPhysical.clear();
+    for (final _HostOutput output in held) {
+      await _sendOutput(output, GameStreamInputAction.up, target);
+    }
+  }
+
+  Future<void> _sendOutput(
+    _HostOutput output,
+    GameStreamInputAction phase,
+    GameStreamInputComposer composer,
+  ) async {
+    switch (output) {
+      case _HostOutput(:final GameStreamVirtualButton pad?):
+        await composer.gamepad(button: pad, action: phase);
+      case _HostOutput(:final String key?):
+        await composer.key(key: key, action: phase);
+      case _HostOutput(:final String pointer?):
+        final Offset at = _hostCursor(composer);
+        // Nothing has placed the host cursor yet: put it where the press
+        // lands first, as a mouse would have.
+        if (phase == GameStreamInputAction.down &&
+            composer.lastPointerPosition == null) {
+          await composer.pointer(
+            action: GameStreamInputAction.move,
+            normalized: at,
+          );
+        }
+        await composer.pointer(action: phase, normalized: at, button: pointer);
+      case _HostOutput():
+        return;
+    }
   }
 
   String _buttonLabel(GameStreamVirtualButton button) => switch (button) {
@@ -1191,7 +1270,7 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   Future<void> _configureKeys() async {
     // A held control must retain its down/up mapping until it is released.
-    if (_heldButtons.isNotEmpty || _heldPhysical.isNotEmpty) return;
+    if (_heldSources.isNotEmpty || _heldPhysical.isNotEmpty) return;
     final bool restoreLookup = _lookupVisible;
     setState(() => _lookupVisible = false);
     try {
@@ -1257,7 +1336,8 @@ class _GameStreamPageState extends State<GameStreamPage>
                                     value: '',
                                     child: Text(t.game_stream_key_default),
                                   ),
-                                  for (final String key in _allowedKeys)
+                                  for (final String key
+                                      in GameStreamHostKeyAction.keys)
                                     DropdownMenuItem<String>(
                                       value: key,
                                       child: Text(key),
@@ -1340,7 +1420,9 @@ class _GameStreamPageState extends State<GameStreamPage>
             ? GameStreamPhysicalButton.dpadFor(event.logicalKey)
             : null);
     if (physical != null) {
-      _controllerUsed = true;
+      // The mode chip appears with the first controller press, not with
+      // whatever rebuild happens next.
+      if (!_controllerUsed) setState(() => _controllerUsed = true);
       if (lookupMode) {
         if (down || (event is KeyRepeatEvent && physical.isDpad)) {
           unawaited(_onLookupButton(physical));
@@ -1378,23 +1460,13 @@ class _GameStreamPageState extends State<GameStreamPage>
     if (_heldPhysical.containsKey(button)) return;
     final GameStreamButtonAction action = _buttonProfile.actionFor(button);
     _heldPhysical[button] = action;
-    await _runButtonAction(action, GameStreamInputAction.down);
+    await _runButtonAction(action, GameStreamInputAction.down, button);
   }
 
   Future<void> _releasePhysical(GameStreamPhysicalButton button) async {
     final GameStreamButtonAction? action = _heldPhysical.remove(button);
     if (action == null) return;
-    await _runButtonAction(action, GameStreamInputAction.up);
-  }
-
-  /// Lifts every held physical button, e.g. when the app goes to the
-  /// background or the connection drops.
-  Future<void> _releasePhysicalButtons() async {
-    final List<GameStreamButtonAction> held = _heldPhysical.values.toList();
-    _heldPhysical.clear();
-    for (final GameStreamButtonAction action in held) {
-      await _runButtonAction(action, GameStreamInputAction.up);
-    }
+    await _runButtonAction(action, GameStreamInputAction.up, button);
   }
 
   /// Whether this host can perform [action] (newer pointer kinds are gated
@@ -1408,41 +1480,37 @@ class _GameStreamPageState extends State<GameStreamPage>
     _ => true,
   };
 
+  /// Runs (down) or undoes (up) [action] for the physical button [source].
   Future<void> _runButtonAction(
     GameStreamButtonAction action,
     GameStreamInputAction phase,
+    GameStreamPhysicalButton source,
   ) async {
-    if (!_canRun(action)) return;
     final bool down = phase == GameStreamInputAction.down;
+    if (!down) {
+      // Whatever the press held (nothing for wheel / app / none actions).
+      await _release(source);
+      return;
+    }
+    if (!_canRun(action)) return;
     switch (action) {
       case GameStreamPadAction(:final GameStreamVirtualButton button):
-        await _sendButton(button, phase);
+        await _hold(source, _padOutput(button));
       case GameStreamHostKeyAction(:final String key):
-        await widget.inputComposer.key(key: key, action: phase);
+        await _hold(source, _HostOutput.key(key));
       case GameStreamMouseButtonAction(:final GameStreamMouseAction mouse):
-        final Offset at = _trackpadCursor;
-        if (mouse.isWheel) {
-          if (down) {
-            await widget.inputComposer.wheel(
-              normalized: at,
-              dy: mouse.wheelNotches,
-            );
-          }
+        final String? pointer = mouse.pointerButton;
+        if (pointer != null) {
+          await _hold(source, _HostOutput.pointer(pointer));
           return;
         }
-        if (down) {
-          await widget.inputComposer.pointer(
-            action: GameStreamInputAction.move,
-            normalized: at,
-          );
-        }
-        await widget.inputComposer.pointer(
-          action: phase,
-          normalized: at,
-          button: mouse.pointerButton ?? 'left',
+        final GameStreamInputComposer composer = widget.inputComposer;
+        await composer.wheel(
+          normalized: _hostCursor(composer),
+          dy: mouse.wheelNotches,
         );
       case GameStreamAppAction(:final GameStreamReceiverAction action):
-        if (!down || !mounted) return;
+        if (!mounted) return;
         setState(() {
           switch (action) {
             case GameStreamReceiverAction.toggleLookupPanel:
@@ -1467,7 +1535,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   void _setInputMode(GameStreamInputMode mode) {
     if (!mounted || mode == _inputMode) return;
     if (mode == GameStreamInputMode.lookup) {
-      unawaited(_releasePhysicalButtons());
+      unawaited(_releaseHeldInputs());
     }
     setState(() {
       _inputMode = mode;
@@ -1729,6 +1797,9 @@ class _GameStreamPageState extends State<GameStreamPage>
     'window_not_foreground' ||
     'window_activation_timeout' => t.game_stream_input_rejected,
     'unsupported_native_pointer' => t.game_stream_input_pointer_unsupported,
+    // A host whose game takes native controller input (SGRE) refuses keyboard
+    // keys; say so instead of a raw reason code.
+    'unsupported_native_key' => t.game_stream_input_key_unsupported,
     'window_minimized' || 'window_hidden' => t.game_stream_input_window_hidden,
     _ => '${t.game_stream_input_failed} ($reason)',
   };
@@ -2580,6 +2651,31 @@ class _GameStreamPageState extends State<GameStreamPage>
       ],
     );
   }
+}
+
+/// One thing a local input holds down on the host: a gamepad button, a
+/// keyboard key or a pointer button. Exactly one field is set.
+@immutable
+class _HostOutput {
+  const _HostOutput.pad(GameStreamVirtualButton this.pad)
+    : key = null,
+      pointer = null;
+  const _HostOutput.key(String this.key) : pad = null, pointer = null;
+  const _HostOutput.pointer(String this.pointer) : pad = null, key = null;
+
+  final GameStreamVirtualButton? pad;
+  final String? key;
+  final String? pointer;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _HostOutput &&
+      other.pad == pad &&
+      other.key == key &&
+      other.pointer == pointer;
+
+  @override
+  int get hashCode => Object.hash(pad, key, pointer);
 }
 
 /// Width of the always-visible boundary strip between video and rail.

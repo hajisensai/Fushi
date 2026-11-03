@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
@@ -48,6 +49,36 @@ void main() {
       profile.actionFor(GameStreamPhysicalButton.select),
       const GameStreamAppAction(GameStreamReceiverAction.toggleLookupMode),
     );
+  });
+
+  test('every host key a button may send resolves in the Windows runner', () {
+    // GameStreamHostKeyAction.keys is the one list the on-screen pad and the
+    // controller profile offer; the runner's ResolveVirtualKey is what the
+    // host accepts. A key missing there would be rejected as invalid_key.
+    final String source = File(
+      'windows/runner/game_stream_input.cpp',
+    ).readAsStringSync();
+    final int start = source.indexOf('GameStreamInput::ResolveVirtualKey');
+    expect(start, isNonNegative);
+    final String body = source.substring(
+      start,
+      source.indexOf('return 0;', start),
+    );
+    final Set<String> named = <String>{
+      for (final RegExpMatch match in RegExp(
+        r'\{"([a-z0-9]+)",\s*VK_',
+      ).allMatches(body))
+        match.group(1)!,
+    };
+    expect(named, contains('control'), reason: 'table parsed');
+    for (final String key in GameStreamHostKeyAction.keys) {
+      final bool singleAlnum = RegExp(r'^[A-Za-z0-9]$').hasMatch(key);
+      expect(
+        singleAlnum || named.contains(key.toLowerCase()),
+        isTrue,
+        reason: '$key is not resolved by ResolveVirtualKey',
+      );
+    }
   });
 
   test('every action survives a wire round trip', () {

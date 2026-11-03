@@ -3733,6 +3733,7 @@
   "game_stream_host_stream_off": "该主机未提供游戏串流。",
   "game_stream_host_unauthorized": "主机拒绝了本设备，请重新配对。",
   "game_stream_input_failed": "输入未送达",
+  "game_stream_input_key_unsupported": "该游戏只接受手柄与指针输入，键盘按键不会送达",
   "game_stream_input_pointer_unsupported": "该游戏不接受触控点击，请使用手柄按键",
   "game_stream_input_rejected": "输入未送达。请在主机将游戏窗口切换到前台。",
   "game_stream_input_window_hidden": "主机上的游戏窗口已最小化或隐藏",

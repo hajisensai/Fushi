@@ -3733,6 +3733,7 @@
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
   "game_stream_input_failed": "輸入未送達",
+  "game_stream_input_key_unsupported": "This game takes controller and pointer input only; keyboard keys are not delivered",
   "game_stream_input_pointer_unsupported": "該遊戲不接受觸控點擊，請使用手柄按鍵",
   "game_stream_input_rejected": "輸入未送達。請在主機將遊戲窗口切換到前台。",
   "game_stream_input_window_hidden": "主機上的遊戲窗口已最小化或隱藏",

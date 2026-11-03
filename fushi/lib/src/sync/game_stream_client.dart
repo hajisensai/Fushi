@@ -540,6 +540,14 @@ class GameStreamInputComposer extends ChangeNotifier {
   String? _lastRejectionReason;
   bool _disposed = false;
 
+  Offset? _lastPointerPosition;
+
+  /// Where the last pointer or wheel event put the host's cursor
+  /// (normalized); null before any. Every path that moves the host cursor
+  /// (touch, trackpad, desktop mouse, controller mouse actions) goes through
+  /// [pointer] / [wheel], so this is the one record of where it is.
+  Offset? get lastPointerPosition => _lastPointerPosition;
+
   int get nextSequence => _nextSequence;
   int get lastAcceptedSequence => _lastAcceptedSequence;
   int get lastRejectedSequence => _lastRejectedSequence;
@@ -553,11 +561,12 @@ class GameStreamInputComposer extends ChangeNotifier {
     required Offset normalized,
     String button = 'left',
   }) {
+    final Offset at = _recordPointer(normalized);
     return _send(
       kind: GameStreamInputKind.pointer,
       action: action,
-      x: normalized.dx.clamp(0.0, 1.0),
-      y: normalized.dy.clamp(0.0, 1.0),
+      x: at.dx,
+      y: at.dy,
       button: button == 'left' ? null : button,
     );
   }
@@ -569,15 +578,21 @@ class GameStreamInputComposer extends ChangeNotifier {
     double? dx,
     double? dy,
   }) {
+    final Offset at = _recordPointer(normalized);
     return _send(
       kind: GameStreamInputKind.pointer,
       action: GameStreamInputAction.wheel,
-      x: normalized.dx.clamp(0.0, 1.0),
-      y: normalized.dy.clamp(0.0, 1.0),
+      x: at.dx,
+      y: at.dy,
       dx: dx,
       dy: dy,
     );
   }
+
+  Offset _recordPointer(Offset normalized) => _lastPointerPosition = Offset(
+    normalized.dx.clamp(0.0, 1.0),
+    normalized.dy.clamp(0.0, 1.0),
+  );
 
   Future<GameStreamInputAck?> gamepad({
     required GameStreamVirtualButton button,

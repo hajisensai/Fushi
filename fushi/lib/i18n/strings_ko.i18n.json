@@ -3733,6 +3733,7 @@
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
   "game_stream_input_failed": "입력이 전달되지 않았습니다",
+  "game_stream_input_key_unsupported": "This game takes controller and pointer input only; keyboard keys are not delivered",
   "game_stream_input_pointer_unsupported": "이 게임은 터치 클릭을 받지 않습니다. 패드 버튼을 사용하세요",
   "game_stream_input_rejected": "입력이 거부되었습니다. 호스트에서 게임 창을 앞으로 가져오세요.",
   "game_stream_input_window_hidden": "호스트에서 게임 창이 최소화되었거나 숨겨져 있습니다",

@@ -3733,6 +3733,7 @@
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
   "game_stream_input_failed": "No se entregó la entrada",
+  "game_stream_input_key_unsupported": "This game takes controller and pointer input only; keyboard keys are not delivered",
   "game_stream_input_pointer_unsupported": "Este juego no acepta toques; usa los botones del mando",
   "game_stream_input_rejected": "Se rechazó la entrada. Trae la ventana del juego al primer plano en el anfitrión.",
   "game_stream_input_window_hidden": "La ventana del juego está minimizada u oculta en el anfitrión",
