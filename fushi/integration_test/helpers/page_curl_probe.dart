@@ -13,8 +13,8 @@ import 'observe_capture.dart';
 /// 并按控制器几何做定量检查（用户 2026-11-03 视频 / 截图里的两个问题）：
 ///
 /// 1. **纸背透出镜像正文**（苹果图书的做法，用户 2026-11-04）：平铺背面（离卷起处
-///    > 1.3r、离纸边 > 3px）每个像素都不透明，且亮度随快照里被翻起那一点（镜像位置）
-///    的亮度线性变化：相关系数 `backCorrelation`、斜率 `backSlope`（≈ 1 − 纸色蒙版
+///    > 1.3r、离纸边 > 3px）每个像素都不透明，且各通道随快照里被翻起那一点（镜像
+///    位置）的同一通道线性变化：相关系数 `backCorrelation`、斜率 `backSlope`（≈ 1 − 纸色蒙版
 ///    比例 [kPageCurlBackVeil]）。源区域没有明暗变化（`sourceSpread` 小）时只看不透明。
 /// 2. **黑边不是纸**：纸面矩形比视口小（漫画留黑边）时，纸面外不出现纸色像素——
 ///    旧实现把整个视口当纸，卷起的纸一直伸进黑边。和卷页开始前的 [baseline]
@@ -57,8 +57,8 @@ Future<Map<String, Object?>> probePageCurlShading(
     out['error'] = 'no pixels';
     return out;
   }
-  // 快照里纸面局部、未镜像坐标 q 处的亮度（与 shader 的 sheetUv 同一映射）。
-  int sheetLuma(Offset q) {
+  // 快照里纸面局部、未镜像坐标 q 处的 RGB（与 shader 的 sheetUv 同一映射）。
+  List<int> sheetRgb(Offset q) {
     double cx = q.dx.clamp(0.0, paper.width);
     final double cy = q.dy.clamp(0.0, paper.height);
     if (g.mirror) cx = paper.width - cx;
@@ -67,10 +67,11 @@ Future<Map<String, Object?>> probePageCurlShading(
     final int x = (u * (sheet.width - 1)).round();
     final int y = (w * (sheet.height - 1)).round();
     final int i = (y * sheet.width + x) * 4;
-    return math.max(
+    return <int>[
       sheetBytes.getUint8(i),
-      math.max(sheetBytes.getUint8(i + 1), sheetBytes.getUint8(i + 2)),
-    );
+      sheetBytes.getUint8(i + 1),
+      sheetBytes.getUint8(i + 2),
+    ];
   }
 
   // 覆盖层局部（逻辑像素）→ 图像像素。
@@ -136,7 +137,9 @@ Future<Map<String, Object?>> probePageCurlShading(
 
   // 1. 平铺背面。
   final List<List<int>> back = <List<int>>[];
+  // 逐通道配对（纸色蒙版是逐通道混合的，单通道上才严格线性）。
   final List<int> source = <int>[];
+  final List<int> luma = <int>[];
   if (len > 1) {
     out['radius'] = r;
     for (double t = 1.3 * r; t < a; t += math.max(2, a / 24)) {
@@ -151,7 +154,11 @@ Future<Map<String, Object?>> probePageCurlShading(
         final List<int>? c = at(local);
         if (c == null) continue;
         back.add(c);
-        source.add(sheetLuma(qBack));
+        final List<int> src = sheetRgb(qBack);
+        for (int ch = 0; ch < 3; ch++) {
+          source.add(src[ch]);
+          luma.add(c[ch]);
+        }
       }
     }
   }
@@ -165,9 +172,6 @@ Future<Map<String, Object?>> probePageCurlShading(
     out['backSpread'] = spread;
     out['backColor'] = back.first;
     out['backOpaque'] = back.every((List<int> c) => c[3] == 255);
-    final List<int> luma = back
-        .map((List<int> c) => math.max(c[0], math.max(c[1], c[2])))
-        .toList();
     out['sourceSpread'] = source.reduce(math.max) - source.reduce(math.min);
     final double mx = source.reduce((int a, int b) => a + b) / source.length;
     final double my = luma.reduce((int a, int b) => a + b) / luma.length;
