@@ -143,6 +143,7 @@ import 'package:fushi/src/utils/misc/image_file_saver.dart'
     show defaultTargetPlatformForImageSave;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
+import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
@@ -1461,6 +1462,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// manga_stats_dwell_guard_test 钉死旧的会话累计器 / 停留门形态不得回潮。）
   StudyClock? _studyClock;
 
+  /// 学习计时门（与 PDF 阅读器共用一份判据，[StudyClockRunGate]）：在前台（BUG-892
+  /// 切屏暂停）且没被根导航上的路由压住（整页 / 对话框 / 侧板 / 菜单，BUG-3993：此前
+  /// 本页只看生命周期，开着整页 SRS / 设置 / 反馈中心也照计）才走。
+  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(
+    () => _studyClock,
+  );
+
   /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
   /// `docs/plans/2026-09-06-read-unit-ledger.md`）：**翻走即计 + 会话覆盖并集**。
   /// 单元 = 页号半开区间——webtoon `[page, page+1)`、spread 模式按当前 entry 覆盖的
@@ -1617,6 +1625,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _studyClockGate.attach(ModalRoute.of(context));
     // 系统「减弱动态效果」/ 墨水屏主题切换要立即传到 WebView（翻页动画降成无）。
     final bool motionEnabled = pageTurnMotionEnabledOf(context, eink: false);
     if (motionEnabled != _motionEnabled) {
@@ -1717,6 +1726,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // `db.close()` 互等。关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），
     // detach 只停表，攒下的写和最后的位置一起交给退出汇合点统一 await。
     // 时钟为空 = 本页从没开始计时，整段跳过。
+    _studyClockGate.dispose();
     _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
     // 异常拆栈兜底（正常退出已在 onSourcePagePop 收掉）：只推已排队的进度，
@@ -1861,11 +1871,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算部分窗口再封段落库。
-      unawaited(_studyClock?.stop());
+      _studyClockGate.setLifecycleStopped(true);
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
       // BUG-892 同款纪律：start() 只重锚 tick 起点并开新段，后台时长不会被计入。
-      _studyClock?.start();
+      // 仍被路由盖着时不续表（BUG-3993）。
+      _studyClockGate.setLifecycleStopped(false);
       // OS 层焦点丢失后 Flutter 不保证归还到原节点：切窗回来若不收回，翻页键全死。
       _focusOwnership.reclaim(FocusReclaimCause.appResumed);
     }
@@ -5414,7 +5425,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ErrorLogService.instance.log('StudyClock.write(manga)', e, st),
       deferWrite: ExitFlushRegistry.instance.defer,
     );
-    _studyClock!.start();
+    // 建表时已在后台 / 已被盖住就不起表（BUG-3993）。
+    _studyClockGate.sync();
   }
 
   Future<void> _persistPosition(int page, double fraction) async {

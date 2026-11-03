@@ -22,6 +22,8 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/physics.dart' show SpringSimulation;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart'
+    show studyClockRouteSettings;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -750,6 +752,7 @@ Future<T?> showReaderSideSheet<T>({
   ValueListenable<ReaderSideSheetSide>? sideController,
   bool bottomSheetWhenCompact = false,
   ReaderPanelSwitcher? switcher,
+  ValueListenable<bool>? studyClockTransparentWhen,
 }) {
   // showGeneralDialog 不像 showDialog 那样捕获主题：抽屉只会拿到 Navigator 层
   // 的根主题。歌词模式把整页换成封面取色主题（LyricsThemeHost），从页面 context
@@ -782,6 +785,11 @@ Future<T?> showReaderSideSheet<T>({
         ? Colors.transparent
         : Theme.of(context).colorScheme.scrim.withValues(alpha: scrim),
     transitionDuration: motion ? FushiMotion.long : Duration.zero,
+    // 侧板随 [studyClockTransparentWhen] 豁免学习计时（统计侧板），见
+    // StudyClockTransparentSettings（BUG-3993）。
+    routeSettings: studyClockRouteSettings(
+      transparentWhen: studyClockTransparentWhen,
+    ),
     pageBuilder:
         (BuildContext route, Animation<double> a, Animation<double> b) {
           Widget buildSheet(BuildContext ctx) {

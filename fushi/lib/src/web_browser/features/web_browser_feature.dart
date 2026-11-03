@@ -46,6 +46,11 @@ abstract class WebBrowserFeature {
   /// / 重新露出（false）。对话框、菜单、底部抽屉不算。
   void onPageCoveredChanged({required bool covered}) {}
 
+  /// 学习计时口径的「被盖住」：浏览页之上压着任何未豁免的模态路由（整页、对话框、
+  /// 侧板、菜单都算，见 `studyCoverTracker`，BUG-3993）。比 [onPageCoveredChanged]
+  /// 宽：那条只认整页路由，给手机遥控登记之类「页面还在不在」的语义用。
+  void onStudyCoverChanged({required bool covered}) {}
+
   /// 标签页关闭（WebView 即将销毁）。
   void onTabClosed(WebBrowserTab tab) {}
 

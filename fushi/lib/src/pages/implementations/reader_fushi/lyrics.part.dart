@@ -1190,7 +1190,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
   /// 插图大图浏览（可缩放，看清印在插图上的文字）。音频照常播放；阅读计时与正文
   /// 态看大图一致（2026-10-25 用户：歌词模式计时要与阅读器行为一致）——大图是整页
-  /// 路由，盖住阅读器期间经 [RouteAware.didPushNext] 停表，关掉续表。
+  /// 路由，盖住阅读器期间经 [studyCoverTracker] 停表，关掉续表。
   Future<void> _openLyricsIllustrationViewer(
     int index, {
     required bool returnToCover,

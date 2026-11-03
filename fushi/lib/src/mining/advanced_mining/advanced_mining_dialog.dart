@@ -44,6 +44,10 @@ enum AdvancedMiningPresentation {
 ///
 /// 手机宽度（< [kFushiSheetWideBreakpoint]）走底部面板，其余走对话框——与全应用
 /// `adaptiveModalSheet` 的断点一致，同一台设备上弹层形态不会因功能而异。
+///
+/// 高级制卡是查词后制卡流程的一部分（与 `anki_mined_card_action_sheet.dart` 的
+/// 操作单同族）：两种形态都在路由构造时声明豁免学习计时，盖在阅读器 / 漫画 / PDF
+/// / 浏览器上照常计时；调用方不必各自包（BUG-3993）。
 Future<void> showAdvancedMiningDialog({
   required BuildContext context,
   required AdvancedMiningCapabilities capabilities,
@@ -53,6 +57,7 @@ Future<void> showAdvancedMiningDialog({
       await adaptiveModalSheet<void>(
         context: context,
         useSafeArea: true,
+        studyClockTransparent: true,
         builder: (_) => AdvancedMiningDialog(
           capabilities: capabilities,
           presentation: AdvancedMiningPresentation.sheet,
@@ -61,6 +66,7 @@ Future<void> showAdvancedMiningDialog({
     } else {
       await showAppDialog<void>(
         context: context,
+        studyClockTransparent: true,
         builder: (_) => AdvancedMiningDialog(capabilities: capabilities),
       );
     }

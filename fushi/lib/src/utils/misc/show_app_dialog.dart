@@ -1,5 +1,7 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart'
+    show studyClockRouteSettings;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -13,13 +15,21 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 /// 进场、快速缩回淡出，遮罩统一 scrim@32%（[fushiModalScrimColor]）；焦点在
 /// 对话框内闭环，Esc / 点遮罩关闭，关闭后焦点回到打开前的节点（路由出栈时
 /// 下层作用域恢复）。墨水屏与「减弱动态效果」下无动画。
+///
+/// [studyClockTransparent]：这个对话框属于学习面本身（查词后的制卡流程），盖在
+/// 阅读器 / 漫画 / PDF / 浏览器上也不停学习计时。豁免随路由构造一起带上
+/// （`StudyClockTransparentSettings`），推路由当帧就生效（BUG-3993）。
 Future<T?> showAppDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool barrierDismissible = true,
   Color? barrierColor,
   bool useRootNavigator = true,
+  bool studyClockTransparent = false,
 }) {
+  final RouteSettings? routeSettings = studyClockRouteSettings(
+    transparent: studyClockTransparent,
+  );
   Widget glassBuilder(BuildContext dialogContext) =>
       FushiGlassDialogBackdrop(child: builder(dialogContext));
   if (isCupertinoPlatform(context)) {
@@ -28,6 +38,7 @@ Future<T?> showAppDialog<T>({
       builder: glassBuilder,
       barrierDismissible: barrierDismissible,
       useRootNavigator: useRootNavigator,
+      routeSettings: routeSettings,
     );
   }
   assert(debugCheckHasMaterialLocalizations(context));
@@ -52,6 +63,7 @@ Future<T?> showAppDialog<T>({
       traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
       animationStyle: fushiM3eDialogAnimationStyle,
       reduceMotion: !fushiMotionEnabled(context),
+      settings: routeSettings,
     ),
   );
 }

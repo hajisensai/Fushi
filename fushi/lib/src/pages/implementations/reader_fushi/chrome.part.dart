@@ -2459,7 +2459,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // （见 _buildTopProgressBar / topProgressPillShowsBlur），关闭后再挂回。
     _rebuild(() => _appearanceSheetOpen = true);
     final ValueNotifier<String> notifier = ValueNotifier<String>(kind);
-    void onKindChanged() => _syncPanelClockHold(notifier.value);
+    // 侧板路由本身也是盖住阅读器的模态路由：原地切到统计页（它自己画实时秒表）时
+    // 豁免学习计时。豁免随路由构造带上（StudyClockTransparentSettings.when），推路由
+    // 当帧生效，切种类在事件里改这个开关，不在 build 里补登记（BUG-3993）。
+    final ValueNotifier<bool> statisticsShown = ValueNotifier<bool>(
+      kind == _kReaderPanelStatistics,
+    );
+    void onKindChanged() {
+      statisticsShown.value = notifier.value == _kReaderPanelStatistics;
+      _syncPanelClockHold(notifier.value);
+    }
+
     try {
       // _settings 就是 ReaderFushiSource.readerSettings 本体（见 initState 绑定），
       // 面板控件经 ReaderFushiSource.instance.ttu* 实时读写同一对象，开面板前后都
@@ -2485,6 +2495,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         side: ReaderSideSheetSide.right,
         movableSettings: true,
         switcher: _readerPanelSwitcher(notifier),
+        studyClockTransparentWhen: statisticsShown,
         builder: (_) => ValueListenableBuilder<String>(
           valueListenable: notifier,
           builder: (BuildContext ctx, String current, Widget? _) {
@@ -2531,8 +2542,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       notifier.removeListener(onKindChanged);
       if (identical(_panelKind, notifier)) _panelKind = null;
       _syncPanelClockHold(null);
-      // notifier 不 dispose：路由 Future 在反向转场之前完成，内容（及其
-      // ValueListenableBuilder 监听）在转场期间仍挂着，提前 dispose 会断言。
+      // notifier / statisticsShown 不 dispose：路由 Future 在反向转场之前完成，内容
+      // （及其 ValueListenableBuilder 监听）在转场期间仍挂着，提前 dispose 会断言；
+      // studyCoverTracker 在路由出栈（didPop）时已退订 statisticsShown。
       _appearanceSheetOpen = false;
       // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
       if (mounted) _rebuild(() {});
@@ -2636,6 +2648,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     required WidgetBuilder builder,
     bool movableSettings = false,
     ReaderPanelSwitcher? switcher,
+    ValueListenable<bool>? studyClockTransparentWhen,
   }) async {
     _cancelChromeAutoHide();
     // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
@@ -2655,6 +2668,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             preferences: appModel.prefsRepo,
             bottomSheetWhenCompact: true,
             switcher: switcher,
+            studyClockTransparentWhen: studyClockTransparentWhen,
             builder: builder,
           );
           return;
@@ -2664,6 +2678,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           side: side,
           bottomSheetWhenCompact: true,
           switcher: switcher,
+          studyClockTransparentWhen: studyClockTransparentWhen,
           builder: builder,
         );
       });

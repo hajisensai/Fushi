@@ -274,9 +274,10 @@ void main() {
       });
     }
 
-    test('从页面外推上来的整页路由（悬浮球的反馈中心等）盖住阅读器也停表', () {
-      // 这类路由不经任何 _withStudyClockPaused 入口：阅读器只能靠 RouteAware 看见。
-      // routeObserver 必须真挂进 MaterialApp，否则 subscribe 永远收不到通知。
+    test('任何路由盖住阅读器都停表（悬浮球 / 通知 / 快捷键推上来的、以后新加的入口）', () {
+      // BUG-3993：判据是根导航观察器 studyCoverTracker——阅读器路由之上压着任何未豁免
+      // 的模态路由（整页 / 对话框 / 侧板 / 菜单）即停表，新入口不必各自接线。旧实现
+      // 只认 PageRoute（RouteAware），对话框 / 侧板从页面外弹上来就照计。
       final String main = maskComments(
         File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n'),
       );
@@ -285,24 +286,13 @@ void main() {
         'navigatorObservers: <NavigatorObserver>[',
         '],',
       );
-      expect(observers, contains('appModel.routeObserver'));
-      expect(corpus, contains('with WidgetsBindingObserver, RouteAware'));
-      expect(corpus, contains('routeObserver.unsubscribe(this)'));
-      expect(compactCode(corpus), contains('..subscribe(this,route)'));
-      final String pushed = _functionSource(
+      expect(observers, contains('studyCoverTracker'));
+      expect(corpus, isNot(contains('RouteAware')));
+      expect(
         corpus,
-        '  void didPushNext() {',
-        '\n  }\n',
+        contains('_studyCoverWatch.attach(ModalRoute.of(context))'),
       );
-      expect(pushed, contains('_studyClockCoveredByRoute = true;'));
-      expect(pushed, contains('_syncStudyClockRunState();'));
-      final String popped = _functionSource(
-        corpus,
-        '  void didPopNext() {',
-        '\n  }\n',
-      );
-      expect(popped, contains('_studyClockCoveredByRoute = false;'));
-      expect(popped, contains('_syncStudyClockRunState();'));
+      expect(corpus, contains('_studyCoverWatch.dispose()'));
       final String mayRun = _functionSource(
         corpus,
         '  bool get _studyClockMayRun =>',
@@ -311,7 +301,7 @@ void main() {
       expect(
         compactCode(mayRun),
         contains(
-          'modalDepth:_studyClockModalDepth+(_studyClockCoveredByRoute?1:0)',
+          'modalDepth:_studyClockModalDepth+(_studyCoverWatch.covered?1:0)',
         ),
       );
     });
@@ -359,6 +349,24 @@ void main() {
       expect(
         panel.substring(panel.indexOf('finally')),
         contains('_syncPanelClockHold(null)'),
+      );
+      // 侧板路由本身也是盖住阅读器的模态路由：切到统计页时必须豁免，否则统一判据
+      // 照样把表停住（BUG-3993）。豁免随路由构造带上（开关在事件里切），推路由当帧
+      // 生效，不在 build 里补登记。
+      final String compactPanel = compactCode(panel);
+      expect(
+        compactPanel,
+        contains('ValueNotifier<bool>(kind==_kReaderPanelStatistics,)'),
+      );
+      expect(
+        compactPanel,
+        contains(
+          'statisticsShown.value=notifier.value==_kReaderPanelStatistics;',
+        ),
+      );
+      expect(
+        compactPanel,
+        contains('studyClockTransparentWhen:statisticsShown,'),
       );
       expect(body, isNot(contains('_withStudyClockPaused(')));
     });

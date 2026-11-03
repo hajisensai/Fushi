@@ -78,6 +78,7 @@ class WebBrowserStudyFeature extends WebBrowserFeature {
   final Map<String, WebStudySession> _sessions = <String, WebStudySession>{};
   late final AppLifecycleListener _lifecycle;
   bool _appForeground = true;
+  bool _pageCovered = false;
 
   @override
   String get id => 'study';
@@ -93,6 +94,15 @@ class WebBrowserStudyFeature extends WebBrowserFeature {
     }
   }
 
+  @override
+  void onStudyCoverChanged({required bool covered}) {
+    if (covered == _pageCovered) return;
+    _pageCovered = covered;
+    for (final WebStudySession s in _sessions.values) {
+      s.setPageCovered(covered);
+    }
+  }
+
   void _onVideoActivity() {
     final WebBrowserVideoActivity? activity = videoActivity;
     if (activity == null) return;
@@ -104,6 +114,7 @@ class WebBrowserStudyFeature extends WebBrowserFeature {
   WebStudySession _sessionOf(WebBrowserTab tab) => _sessions[tab.id] ??=
       WebStudySession(incognito: tab.incognito, clockFactory: _clockFactory)
         ..setAppForeground(_appForeground)
+        ..setPageCovered(_pageCovered)
         ..setVideoPlaying(videoActivity?.isPlaying(tab.id) ?? false);
 
   @override
