@@ -337,6 +337,10 @@ internal fun Cover(media: WidgetMedia, bitmap: Bitmap?, modifier: GlanceModifier
     }
 }
 
+/**
+ * Generic "open Fushi" hint. With a [snapshot] the localized `openToSetUp` label wins over
+ * [fallback]; pass `null` to show a specific (already localized) empty-state message verbatim.
+ */
 @Composable
 internal fun SetupHint(snapshot: WidgetSnapshot?, fallback: String, url: String = "fushi://widget/open") {
     WidgetRoot(url = url) {

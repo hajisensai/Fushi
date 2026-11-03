@@ -6,7 +6,7 @@ import 'package:fushi/src/platform/widget_snapshot.dart';
 /// 小组件快照的全部文案，按 app 内语言（当前 slang locale）取。键集合与含义见
 /// [kWidgetLabelKeys]；这里是唯一把 i18n key 映射到快照 label 键的地方。
 ///
-/// 模板键（`streakDays` / `updatedAgo` / `agoMinutes` / `agoHours` / `agoDays`）
+/// 模板键（`updatedAgo` / `agoMinutes` / `agoHours` / `agoDays`）
 /// 里的 `{n}` / `{age}` 原样保留给原生侧在显示时刻替换。
 WidgetSnapshotLabels buildWidgetLabels() {
   const String n = '{n}';
@@ -37,7 +37,6 @@ WidgetSnapshotLabels buildWidgetLabels() {
     'games': t.widget_label_games,
     'goal': t.widget_label_goal,
     'ofGoal': t.widget_label_of_goal,
-    'streakDays': t.widget_label_streak_days(n: n),
     'longest': t.widget_label_longest_streak,
     'vsLastWeek': t.widget_label_vs_last_week,
     'thisMonth': t.stat_this_month,

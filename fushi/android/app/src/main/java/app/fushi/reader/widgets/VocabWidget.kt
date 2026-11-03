@@ -40,7 +40,7 @@ class VocabWidget : FushiGlanceWidget() {
         val pool = snapshot?.vocab?.filter { cfg.vocabSource == "all" || it.origin == cfg.vocabSource }.orEmpty()
         if (snapshot == null || pool.isEmpty()) {
             SetupHint(
-                snapshot,
+                null,
                 snapshot?.label("noVocab", "Save words in Fushi to see them here") ?: "Save words in Fushi to see them here",
                 "fushi://widget/vocab",
             )

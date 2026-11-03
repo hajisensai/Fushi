@@ -138,18 +138,21 @@ private fun TodayContent(context: Context, s: WidgetSnapshot) {
                         fontWeight = FontWeight.Bold,
                     ),
                 )
+                // Nested columns keep the outer Column under Glance's 10-children cap.
                 if (showGoal) {
-                    Gap(2)
-                    LinearProgressIndicator(
-                        progress = goalFrac,
-                        modifier = GlanceModifier.fillMaxWidth(),
-                        color = GlanceTheme.colors.primary,
-                        backgroundColor = GlanceTheme.colors.secondaryContainer,
-                    )
-                    if (hasTimeGoal) Label("${(goalFrac * 100).roundToInt()}% · ${s.goalTime}", size = 11)
+                    Column(modifier = GlanceModifier.fillMaxWidth().padding(top = 2.dp)) {
+                        LinearProgressIndicator(
+                            progress = goalFrac,
+                            modifier = GlanceModifier.fillMaxWidth(),
+                            color = GlanceTheme.colors.primary,
+                            backgroundColor = GlanceTheme.colors.secondaryContainer,
+                        )
+                        if (hasTimeGoal) Label("${(goalFrac * 100).roundToInt()}% · ${s.goalTime}", size = 11)
+                    }
                 }
-                Gap(6)
-                cats.forEach { CategoryRow(context, it, if (fresh) it.ms else 0L, if (fresh) it.time else zero, total, size.large) }
+                Column(modifier = GlanceModifier.fillMaxWidth().padding(top = 6.dp)) {
+                    cats.forEach { CategoryRow(context, it, if (fresh) it.ms else 0L, if (fresh) it.time else zero, total, size.large) }
+                }
                 Spacer(GlanceModifier.defaultWeight())
                 if (!fresh) StaleHint(s) else if (!size.wide) Label(streakText, size = 11)
             }
@@ -171,7 +174,7 @@ class GoalsWidget : FushiGlanceWidget() {
         if (snapshot == null) {
             SetupHint(null, "Open Fushi to set up this widget")
         } else if (snapshot.goals.isEmpty()) {
-            SetupHint(snapshot, snapshot.label("noGoals", "Set goals in Fushi"), "fushi://widget/settings/widgets")
+            SetupHint(null, snapshot.label("noGoals", "Set goals in Fushi"), "fushi://widget/settings/widgets")
         } else {
             GoalsContent(snapshot)
         }
@@ -283,10 +286,13 @@ internal fun Heatmap(minutes: List<Int>, cell: Dp, gap: Dp = 3.dp) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         for (r in 0 until 5) {
             if (r > 0) Spacer(GlanceModifier.height(gap))
+            // Glance caps a Row / Column at 10 children: the gaps are padding on a wrapper
+            // box, not Spacer siblings (7 cells + 6 spacers would be silently truncated).
             Row(modifier = GlanceModifier.fillMaxWidth()) {
                 for (c in 0 until 7) {
-                    if (c > 0) Spacer(GlanceModifier.width(gap))
-                    HeatCell(heatLevel(data[r * 7 + c], peak), GlanceModifier.defaultWeight().height(cell))
+                    Box(modifier = GlanceModifier.defaultWeight().padding(start = if (c > 0) gap else 0.dp)) {
+                        HeatCell(heatLevel(data[r * 7 + c], peak), GlanceModifier.fillMaxWidth().height(cell))
+                    }
                 }
             }
         }
@@ -296,7 +302,6 @@ internal fun Heatmap(minutes: List<Int>, cell: Dp, gap: Dp = 3.dp) {
 @Composable
 private fun StreakContent(s: WidgetSnapshot) {
     val size = sizeClass()
-    val days = s.template("streakDays", "{n} days", "n" to "").trim()
     val longest = s.label("longest", "Longest") + " " + s.streakLongest
     val srs = s.streakSrsCurrent?.let { s.label("streakSrs", "Reviews") + " " + it }
     WidgetRoot(url = "fushi://widget/stats") {
@@ -310,7 +315,6 @@ private fun StreakContent(s: WidgetSnapshot) {
                             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 36.sp, fontWeight = FontWeight.Bold),
                         )
                         Spacer(GlanceModifier.width(4.dp))
-                        Label(days, modifier = GlanceModifier.padding(bottom = 6.dp))
                     }
                     Label(longest, size = 11)
                     if (srs != null) Label(srs, size = 11)
@@ -333,7 +337,6 @@ private fun StreakContent(s: WidgetSnapshot) {
                                 ),
                             )
                             Spacer(GlanceModifier.width(4.dp))
-                            Label(days, modifier = GlanceModifier.padding(bottom = 5.dp))
                         }
                     }
                     if (size.wide) {

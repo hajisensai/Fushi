@@ -909,7 +909,6 @@ void main() {
 
     test('templates keep their placeholders for the native side', () {
       final Map<String, String> v = buildWidgetLabels().values;
-      expect(v['streakDays'], contains('{n}'));
       expect(v['updatedAgo'], contains('{age}'));
       expect(v['agoMinutes'], contains('{n}'));
       expect(v['agoHours'], contains('{n}'));

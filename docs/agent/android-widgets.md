@@ -131,13 +131,14 @@ Defined in `kWidgetLabelKeys` (`widget_snapshot.dart`), filled by `buildWidgetLa
 missing keys (own English fallback).
 
 - v1: `kind_book kind_manga kind_video resume today streak srsDue srsOff review srsDone recent weekly books manga video lookup openToSetUp`
-- dashboard: `dashboardTitle reading listening watching games goal ofGoal streakDays longest vsLastWeek thisMonth activeDays`
+- dashboard: `dashboardTitle reading listening watching games goal ofGoal longest vsLastWeek thisMonth activeDays`
 - review: `providerFushi providerAnki srsNew srsLearn reviewedToday dueTomorrow reviewNow openAnki allCaughtUp srsSetup ankiPermission`
 - vocabulary / goals / shortcuts: `vocabTitle nextWord lookUp noVocab goalsTitle noGoals vocab stats settings`
 - time templates: `updatedAgo agoNow agoMinutes agoHours agoDays`
+- extras: `openToRefresh zeroTime streakSrs weekReviews weekGoalDays recentDays`
 
 Templates carry placeholders for the native side to fill at display time:
-`streakDays` = "{n} days", `updatedAgo` = "Updated {age}", `agoMinutes|agoHours|agoDays`
+`updatedAgo` = "Updated {age}", `agoMinutes|agoHours|agoDays`
 = "{n} min ago" etc., `agoNow` = "Just now". Note there is no separate "Review" count
 label: Fushi shows New / Learning (`srsNew`, `srsLearn`) and Due (`srsDue`).
 `today.categories[].label` and `goals[].label` are pre-localized in the JSON itself.
@@ -225,12 +226,19 @@ always follows the card destination setting.
   (follow|show|hide), `vocab_source` (all|mined|favorite), `vocab_offset` (Int),
   `vocab_offset_day` (yyyy-MM-dd; the offset only counts on the day it was set).
 - `month.minutes` is drawn row-major as 5 x 7 (oldest first); `month.firstWeekday` is ignored.
-- Optional `labels` keys the native side reads (English fallback when absent): `openToRefresh`,
-  `zeroTime`, `goalsTitle`, `goalsEmpty`, `streakDays`, `streakLongest`, `streakSrs`,
-  `weekGoalDays`, `weekReviews`, `weekVsLast`, `monthly`, `reviewNow`, `updatedAgo`,
-  `srsNew`, `srsLearning`, `srsReview`, `srsReviewedToday`, `srsDueTomorrow`, `srsChoose`,
-  `vocabTitle`, `vocabEmpty`, `dictionary`, `vocabulary`, `stats`, `settings`, `continue`.
-  AnkiDroid states, "x min ago" ages, the picker names and the config screen are Android string
-  resources (English only).
+- Native reads only keys from `kWidgetLabelKeys` (checked when the label sets were reconciled);
+  each read has an English fallback. The AnkiDroid "not installed / unavailable" states, the
+  config screen and the picker names are Android string resources (English only); everything
+  else on the widgets follows the app language.
+- Empty states (`noVocab`, `noGoals`) call `SetupHint(null, message)` so the specific message is
+  shown; `SetupHint(snapshot, ...)` shows the generic `openToSetUp`.
+- Glance caps a Row / Column at 10 children (extra children are silently dropped with a log
+  line): grids use padded wrapper boxes instead of Spacer siblings, long columns nest groups.
+- Per-widget config is optional on add (`configuration_optional`, Android 12+): widgets work
+  with defaults; long-press → widget settings opens `WidgetConfigActivity`. Below Android 12
+  the config screen opens when the widget is added.
+- After `am force-stop` Android cancels the widgets' PendingIntents until they re-render (next
+  update / app launch); the first tap after a force-stop can do nothing. Normal process death
+  is unaffected (verified on the emulator).
 - Deep links are sent as explicit intents to `MainActivity` (no manifest intent-filter needed for
   `fushi://widget/...`).

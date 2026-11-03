@@ -30,7 +30,7 @@ const int kWidgetDefinitionMaxChars = 200;
 
 /// 快照 `labels` 的**全部**键（稳定契约，改名要和原生侧 `WidgetSnapshot.kt` 同步）。
 ///
-/// 值已按 app 内语言本地化；`streakDays` / `updatedAgo` / `agoMinutes` /
+/// 值已按 app 内语言本地化；`updatedAgo` / `agoMinutes` /
 /// `agoHours` / `agoDays` 是**模板**（`{n}` / `{age}` 由原生侧在显示时刻替换，
 /// 因为「几分钟前」只有显示时才算得准）。
 const List<String> kWidgetLabelKeys = <String>[
@@ -60,7 +60,6 @@ const List<String> kWidgetLabelKeys = <String>[
   'games',
   'goal',
   'ofGoal',
-  'streakDays',
   'longest',
   'vsLastWeek',
   'thisMonth',
