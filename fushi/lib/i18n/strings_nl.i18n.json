@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "Wijzigingen aan de pad op het scherm gelden alleen voor deze sessie. Controllerknoppen worden op dit apparaat bewaard.",
   "game_stream_last_played": "Gespeeld $time",
   "game_stream_launch_busy": "De host draait al een andere game. Sluit die op de pc of neem deel aan de stream.",
   "game_stream_launch_connecting": "Verbinden met de stream…",

@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "Los cambios del mando en pantalla solo duran esta sesión. Los botones del mando se guardan en este dispositivo.",
   "game_stream_last_played": "Jugado $time",
   "game_stream_launch_busy": "El anfitrión ya está ejecutando otro juego. Ciérralo en el PC o únete a su transmisión.",
   "game_stream_launch_connecting": "Conectando con la transmisión…",

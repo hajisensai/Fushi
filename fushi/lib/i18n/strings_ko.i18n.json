@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "화면 패드 변경은 이번 세션에만 적용됩니다. 컨트롤러 버튼 설정은 이 기기에 저장됩니다.",
   "game_stream_last_played": "$time에 플레이함",
   "game_stream_launch_busy": "호스트가 이미 다른 게임을 실행 중입니다. PC에서 종료하거나 해당 스트림에 참여하세요.",
   "game_stream_launch_connecting": "스트림에 연결하는 중…",

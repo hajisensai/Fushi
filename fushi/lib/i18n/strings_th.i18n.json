@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "การเปลี่ยนแปลงแพดบนหน้าจอใช้เฉพาะเซสชันนี้ ส่วนปุ่มคอนโทรลเลอร์จะบันทึกไว้ในอุปกรณ์นี้",
   "game_stream_last_played": "เล่นเมื่อ $time",
   "game_stream_launch_busy": "โฮสต์กำลังรันเกมอื่นอยู่ ปิดเกมนั้นบนพีซีหรือเข้าร่วมสตรีมของเกมนั้น",
   "game_stream_launch_connecting": "กำลังเชื่อมต่อกับสตรีม…",

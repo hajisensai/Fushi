@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "تغييرات لوحة التحكم على الشاشة تسري على هذه الجلسة فقط. تُحفظ أزرار وحدة التحكم على هذا الجهاز.",
   "game_stream_last_played": "لُعبت $time",
   "game_stream_launch_busy": "المضيف يشغّل لعبة أخرى بالفعل. أغلقها على الحاسوب أو انضم إلى بثها.",
   "game_stream_launch_connecting": "جارٍ الاتصال بالبث…",

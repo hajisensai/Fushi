@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "Thay đổi tay cầm trên màn hình chỉ áp dụng cho phiên này. Nút tay cầm được lưu trên thiết bị này.",
   "game_stream_last_played": "Đã chơi $time",
   "game_stream_launch_busy": "Máy chủ đang chạy một game khác. Hãy đóng nó trên PC hoặc tham gia luồng của nó.",
   "game_stream_launch_connecting": "Đang kết nối tới luồng…",

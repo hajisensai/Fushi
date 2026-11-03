@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "Perubahan pad di layar hanya berlaku untuk sesi ini. Tombol pengontrol disimpan di perangkat ini.",
   "game_stream_last_played": "Dimainkan $time",
   "game_stream_launch_busy": "Host sudah menjalankan game lain. Tutup di PC atau gabung ke stream-nya.",
   "game_stream_launch_connecting": "Menyambung ke stream…",

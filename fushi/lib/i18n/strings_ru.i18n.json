@@ -3746,7 +3746,7 @@
   "game_stream_keys_controller_reset": "Reset to defaults",
   "game_stream_keys_controller_section": "Controller buttons",
   "game_stream_keys_pad_section": "On-screen pad",
-  "game_stream_keys_scope_hint": "On-screen pad changes last for this session. Controller buttons are saved on this device.",
+  "game_stream_keys_scope_hint": "Изменения экранного геймпада действуют только в этом сеансе. Кнопки контроллера сохраняются на этом устройстве.",
   "game_stream_last_played": "Играли: $time",
   "game_stream_launch_busy": "На хосте уже запущена другая игра. Закройте её на ПК или присоединитесь к её трансляции.",
   "game_stream_launch_connecting": "Подключение к трансляции…",
