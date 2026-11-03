@@ -45,6 +45,7 @@
 | [BUG-3993](bugs/BUG-3993-subtitle-batch-mixed-versions.md) | ✅ | ✅ | 合集批量下载字幕逐集混排不同版本 |
 | [BUG-3993](bugs/BUG-3993-srs-new-device-ingest-slow.md) | ✅ | ✅ | 新设备从同步文件夹收复习数据极慢 |
 | [BUG-3993](bugs/BUG-3993-srs-legacy-lapis-card-type-flags-empty.md) | ✅ | ✅ | 旧 Lapis 迁来的 Fushi 卡片四个卡型开关全空，正面不显示例句 |
+| [BUG-3993](bugs/BUG-3993-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
 | [BUG-3992](bugs/BUG-3992-browser-shortcuts-dead-after-unfocus.md) | ✅ | ✅ | 浏览器 Ctrl+F 等快捷键在焦点离开地址栏后失效 |
 | [BUG-3991](bugs/BUG-3991-browser-svg-favicon-letter.md) | ✅ | ✅ | 浏览器标签页图标退回首字母（站点声明 SVG favicon） |
 | [BUG-3990](bugs/BUG-3990-browser-tab-strip-gap.md) | ✅ | ✅ | 浏览器顶部活动标签不贴地址栏、中间露 6dp 缝 |

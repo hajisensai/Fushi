@@ -1384,6 +1384,7 @@ class AppModel with ChangeNotifier {
   /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
   Future<void> _resetSrsStorageHost({required bool isMainProcess}) async {
     await _closeSrsStorage();
+    await useSrsTempDirectory();
     _srsStorageHost = SrsStorageHost(
       dbDirectory: _databaseDirectory.path,
       isMainProcess: isMainProcess,
