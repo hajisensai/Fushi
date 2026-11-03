@@ -805,20 +805,18 @@ pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
     if !w.is_autocommit() {
         return super::in_savepoint(w, |c| advance(c, profile, &mut CommitBudget::unlimited()).map(|_| ()));
     }
-    let mut slices = 0usize;
     loop {
         #[cfg(test)]
-        if FAIL_SETTLE_AT.with(|f| f.get()) == Some(slices) {
+        if FAIL_SETTLE_AT.with(|f| f.get()) == Some(SETTLE_SLICES.with(|s| s.get())) {
             return Err("sync2 channel: injected settle failure".to_owned());
         }
-        if super::in_savepoint(w, |c| Ok(advance(c, profile, &mut settle_budget())?.0))? {
-            break;
+        let done = super::in_savepoint(w, |c| Ok(advance(c, profile, &mut settle_budget())?.0))?;
+        #[cfg(test)]
+        SETTLE_SLICES.with(|s| s.set(s.get() + 1));
+        if done {
+            return Ok(());
         }
-        slices += 1;
     }
-    #[cfg(test)]
-    SETTLE_SLICES.with(|s| s.set(s.get() + slices + 1));
-    Ok(())
 }
 
 /// [advance] 交回的投影变化并进调用方这一次的结果（计数相加、集合取并）。
@@ -888,7 +886,7 @@ impl crate::store::SrsCore {
 thread_local! {
     static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static COVER: std::cell::Cell<[usize; 4]> = const { std::cell::Cell::new([0; 4]) };
-    /// [settle] 做到第几片（从 0 数）时报错（测试：中途失败只丢那一片）。
+    /// [settle] 提交过的片数（[SETTLE_SLICES]，[take_settle_slices] 清零后从 0 数）到这个值时报错（测试：中途失败只丢那一片）。
     static FAIL_SETTLE_AT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     /// [settle] 按片提交的累计片数。
     static SETTLE_SLICES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
