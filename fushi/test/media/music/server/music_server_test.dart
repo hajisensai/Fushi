@@ -22,9 +22,7 @@ import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
-    show kAppleMusicStorefrontChoices;
-import 'package:fushi/src/media/music/music_online_sources.dart'
-    show appleMusicStorefrontForCountry;
+    show appleMusicStorefrontForCountry, kAppleMusicStorefrontChoices;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';

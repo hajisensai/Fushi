@@ -52,9 +52,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
-    show kAppleMusicStorefrontChoices, normalizeAppleMusicStorefront;
-import 'package:fushi/src/media/music/music_online_sources.dart'
-    show appleMusicStorefrontForCountry;
+    show appleMusicStorefrontForCountry, normalizeAppleMusicStorefront;
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -5018,7 +5016,6 @@ class PreferencesRepository extends ChangeNotifier
     if (raw is! String || raw.trim().isEmpty) {
       return appleMusicStorefrontForCountry(
         PlatformDispatcher.instance.locale.countryCode,
-        kAppleMusicStorefrontChoices,
       );
     }
     return normalizeAppleMusicStorefront(raw);

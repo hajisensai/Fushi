@@ -79,12 +79,3 @@ List<MusicOnlineSource> enabledMusicOnlineSources(
   for (final MusicOrderedSource o in ordered)
     if (o.enabled) o.source,
 ];
-
-/// 系统地区 → Apple Music storefront 的默认值（[choices] 里没有就落 `jp`）。
-String appleMusicStorefrontForCountry(
-  String? countryCode,
-  List<String> choices,
-) {
-  final String c = (countryCode ?? '').trim().toLowerCase();
-  return choices.contains(c) ? c : 'jp';
-}
