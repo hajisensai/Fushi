@@ -4276,8 +4276,18 @@ class GalHookSessionController extends ChangeNotifier {
     await shutdownMagpieUpscaling();
     await shutdownWindowRecording();
     await _stopSources();
-    _gameExitedCount.dispose();
     dispose();
+  }
+
+  /// 释放会话自持的监听源。放在 [dispose] 而不是 [shutdown] 里：任何直接
+  /// dispose 控制器的路径（测试、未来的重建）都不会漏掉退出监视定时器和
+  /// [gameExitedCount] 通知器（BUG-3928 移植时补）。
+  @override
+  void dispose() {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
+    _gameExitedCount.dispose();
+    super.dispose();
   }
 
   /// 注入统计落库用的 DB 惰性解析器（桌面启动流程
