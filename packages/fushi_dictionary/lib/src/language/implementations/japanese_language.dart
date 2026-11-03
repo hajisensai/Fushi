@@ -9,6 +9,7 @@ import '../../engine/fushidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
 import '../language_base.dart';
+import '../learning_language.dart';
 import '../language_utils.dart';
 import '../../models/fushi_text_selection.dart';
 
@@ -17,7 +18,7 @@ class JapaneseLanguage extends Language {
   JapaneseLanguage._privateConstructor()
     : super(
         languageName: '日本語',
-        languageCode: 'ja',
+        languageCode: kJapaneseLanguageCode,
         countryCode: 'JP',
         threeLetterCode: 'jpn',
         preferVerticalReading: true,

@@ -135,6 +135,38 @@ void main() {
     expect(cue.endMs, 2000);
   });
 
+  test('绑定上的字幕来源：本机文件记 local，取自服务器的记 server:<ino>', () async {
+    final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:01,500', '旧句'),
+    ]);
+    await seedBook(uid: 'srtbook_o', bookKey: '', srtPath: oldSrt.path);
+    await bindToServer('srtbook_o');
+    Future<String> origin() async => (await RemoteAudioBindingRepository(
+      db,
+    ).get('srtbook_o'))!.subtitleOrigin;
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_o',
+      subtitlePath: writeSubtitle('server.srt', <(String, String, String)>[
+        ('00:00:03,000', '00:00:04,000', '服务器上的字幕'),
+      ]).path,
+      subtitleOrigin: RemoteAudioBinding.subtitleOriginServer('42'),
+    );
+    expect(await origin(), 'server:42');
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_o',
+      subtitlePath: writeSubtitle('local.srt', <(String, String, String)>[
+        ('00:00:03,000', '00:00:04,000', '本机的字幕'),
+      ]).path,
+    );
+    expect(await origin(), RemoteAudioBinding.subtitleOriginLocal);
+  });
+
   test('有绑定但本机有音频（播放走本机文件）：cue 原样，不按服务器音轨切', () async {
     final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
       ('00:00:01,000', '00:00:01,500', '旧句'),

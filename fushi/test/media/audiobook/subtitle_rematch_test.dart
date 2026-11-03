@@ -4,10 +4,10 @@ import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 
 void main() {
   group('SubtitleRematch.supportedFormats', () {
-    test('contains srt, lrc, vtt, ass', () {
+    test('contains srt, lrc, vtt, ass, ssa', () {
       expect(
         SubtitleRematch.supportedFormats,
-        containsAll(['srt', 'lrc', 'vtt', 'ass']),
+        containsAll(['srt', 'lrc', 'vtt', 'ass', 'ssa']),
       );
     });
 
@@ -55,6 +55,13 @@ void main() {
     test('ASS format is eligible', () {
       expect(
         SubtitleRematch.isEligible(makeAb(format: 'ass', path: 'a.ass')),
+        isTrue,
+      );
+    });
+
+    test('SSA format is eligible (same parser as ASS)', () {
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'ssa', path: 'a.ssa')),
         isTrue,
       );
     });

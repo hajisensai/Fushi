@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
         AudiobookAlignmentMessages,
         AudiobookAlignmentResult,
         alignAndPersistAudiobook;
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show audiobookTitleForAudioPaths;
@@ -84,14 +85,10 @@ String describeAudiobookCtlTaskError(Object error) => switch (error) {
   _ => '$error',
 };
 
-/// 对齐用字幕的扩展名（有声书导入对话框 `_alignmentExtensions` 中 matcher 管线的那组
-/// 加 smil / json 锚点格式）。
+/// 对齐用字幕的扩展名：有声书字幕唯一真相源 [kAudiobookSubtitleExtensions]（matcher
+/// 管线）加 smil / json 锚点格式（只对 EPUB 有声书的对齐有意义）。
 const Set<String> kAudiobookCtlSubtitleExtensions = <String>{
-  'srt',
-  'lrc',
-  'vtt',
-  'ass',
-  'ssa',
+  ...kAudiobookSubtitleExtensions,
   'smil',
   'json',
 };

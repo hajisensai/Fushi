@@ -137,6 +137,71 @@ abstract final class AudiobookStorage {
     return dir;
   }
 
+  /// [persistDir] 里给 [baseName] 找一个不冲突的落点。
+  ///
+  /// Avoid silently overwriting a same-basename file already persisted in
+  /// this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
+  /// Append a counter on collision so the positional audioFileIndex maps to
+  /// distinct files instead of both entries pointing at the last writer.
+  static String _freeDestIn(Directory persistDir, String baseName) {
+    if (baseName.contains('..')) {
+      throw ArgumentError('Invalid filename: $baseName');
+    }
+    String dest = p.join(persistDir.path, baseName);
+    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
+      throw ArgumentError('Path traversal detected: $dest');
+    }
+    if (File(dest).existsSync()) {
+      final String ext = p.extension(baseName);
+      final String stem = p.basenameWithoutExtension(baseName);
+      int counter = 1;
+      do {
+        dest = p.join(persistDir.path, '$stem _$counter$ext');
+        counter++;
+      } while (File(dest).existsSync());
+    }
+    return dest;
+  }
+
+  /// 持久根下的暂存目录 `<documents>/audiobooks/.staging/`：调用方要交给
+  /// [adoptFile] 接管的临时文件（如从服务器下载的字幕）一律先落这里。
+  ///
+  /// 与各书的持久目录 `<documents>/audiobooks/<hash>/` 同在持久根下，结构上保证
+  /// 同卷，[adoptFile] 因此只需一次 rename——不会落到系统 Temp（Windows 在 C 盘，
+  /// 用户把数据根设到别的盘时就跨卷了）再靠「复制 + 删源」兜底。放在 `audiobooks/`
+  /// 里而不是 documents 根下另起一个目录：老安装的 documents 根是整个用户
+  /// `Documents`，不该往里加新顶层项；点开头的名字也不会与 [ensurePersistDir] 的
+  /// 十六进制哈希目录撞名。暂存文件只在一次导入进行中存在：接管后搬走，导入失败由
+  /// 调用方删掉，平时这里是空的。
+  static Future<Directory> stagingDir() async {
+    final Directory docs = await _documentsRoot();
+    final Directory dir = Directory(
+      p.join(docs.path, 'audiobooks', stagingDirName),
+    );
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// [stagingDir] 的目录名（持久根 `audiobooks/` 下）。
+  static const String stagingDirName = '.staging';
+
+  /// 把调用方放在 [stagingDir] 里的**临时文件** [src] 收进 [persistDir]（不转码），
+  /// 返回落点。
+  ///
+  /// 与 [persistFileWithProgress]（复制、源文件归调用方）不同，这里持久化步骤接管
+  /// 源文件的生命周期：同卷 rename，源文件就此不在原处，调用方不用在 finally 里
+  /// 清理，也就不会出现「清理失败盖掉已成功的导入结果」。没有跨卷「复制再删源」
+  /// 的分支：暂存目录与持久目录同在 documents 根下，rename 失败（文件被占用等）
+  /// 照常抛，由调用方的导入回滚收尾（`importStandaloneSubtitleBook` 会撤掉已落的
+  /// 正文 EPUB 与持久目录）。
+  static Future<String> adoptFile(File src, Directory persistDir) async {
+    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
+      return src.path;
+    }
+    final String dest = _freeDestIn(persistDir, p.basename(src.path));
+    return (await src.rename(dest)).path;
+  }
+
   static Future<String> persistFileWithProgress(
     File src,
     Directory persistDir, {
@@ -151,26 +216,7 @@ abstract final class AudiobookStorage {
     final String baseName = transcode
         ? '${p.basenameWithoutExtension(src.path)}.flac'
         : p.basename(src.path);
-    if (baseName.contains('..')) {
-      throw ArgumentError('Invalid filename: $baseName');
-    }
-    String dest = p.join(persistDir.path, baseName);
-    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
-      throw ArgumentError('Path traversal detected: $dest');
-    }
-    // Avoid silently overwriting a same-basename file already persisted in
-    // this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
-    // Append a counter on collision so the positional audioFileIndex maps to
-    // distinct files instead of both entries pointing at the last writer.
-    if (File(dest).existsSync()) {
-      final String ext = p.extension(baseName);
-      final String stem = p.basenameWithoutExtension(baseName);
-      int counter = 1;
-      do {
-        dest = p.join(persistDir.path, '$stem _$counter$ext');
-        counter++;
-      } while (File(dest).existsSync());
-    }
+    final String dest = _freeDestIn(persistDir, baseName);
     final int totalBytes = await src.length();
     if (transcode) return _transcodeToFlac(src, dest, totalBytes, onProgress);
 

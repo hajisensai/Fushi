@@ -19,6 +19,7 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
@@ -808,13 +809,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
-  static const Set<String> _subtitleExtensions = {
-    'srt',
-    'lrc',
-    'vtt',
-    'ass',
-    'ssa',
-  };
+  static const Set<String> _subtitleExtensions = kAudiobookSubtitleExtensions;
 
   Future<void> _pickSubtitle() async {
     if (_pickerActive) return;

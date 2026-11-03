@@ -746,6 +746,7 @@ ScanPlan planScanFromFileList(
         siblingNames: siblings,
         wantAudio: false,
         subtitleExts: kScanVideoSubtitleExts,
+        subtitleRule: SidecarSubtitleRule.exactName,
       );
       final Map<String, String> dirPaths =
           pathByDir[dir] ?? const <String, String>{};

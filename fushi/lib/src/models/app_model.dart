@@ -7679,6 +7679,8 @@ class AppModel with ChangeNotifier {
   /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
   DiscoveryImportExecutor get discoveryImportExecutor =>
       _discoveryImportExecutor ??= DiscoveryImportExecutor(
+        // 包里有几份字幕时挑学习语言的那份（全 app 只有日语，与视频 sidecar 同源）。
+        subtitleLangCode: kLearningLanguageCode,
         importers: buildProductionDiscoveryImporters(
           db: database,
           srtBookRepo: SrtBookRepository(database),
@@ -7955,36 +7957,39 @@ class AppModel with ChangeNotifier {
   /// 字幕书的远端音频绑定 → 可播放的流式接缝；服务器配置已删 / 已登出 / 不是
   /// Audiobookshelf 时返回 null（调用方当作「没有可播放的音频」）。
   AudiobookRemotePlayback? remotePlaybackFor(RemoteAudioBinding binding) {
+    final AudiobookshelfApi? api = audiobookshelfApiForBinding(binding);
+    return api == null
+        ? null
+        : AudiobookshelfRemotePlayback(
+            api: api,
+            binding: binding,
+            deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
+            // 两路回调会并发落库：只写各自的列，不读出整行再覆盖。
+            onPushed: (int nowMs) => RemoteAudioBindingRepository(
+              database,
+            ).updateProgressMarks(binding.srtBookUid, localProgressAt: nowMs),
+            onSynced: (int serverProgressAt, int syncedAt) =>
+                RemoteAudioBindingRepository(database).updateProgressMarks(
+                  binding.srtBookUid,
+                  serverProgressAt: serverProgressAt,
+                  progressSyncedAt: syncedAt,
+                ),
+            onSyncError: (String what, Object error) => ErrorLogService.instance
+                .log('AudiobookshelfProgress.$what', error, StackTrace.current),
+          );
+  }
+
+  /// 远端绑定 → 那台 Audiobookshelf 服务器的共享协议层实例（借用，不得 close）；
+  /// 服务器配置已删 / 已登出 / 不是 Audiobookshelf 时返回 null。
+  AudiobookshelfApi? audiobookshelfApiForBinding(RemoteAudioBinding binding) {
     if (binding.provider != RemoteAudioBinding.providerAudiobookshelf) {
       return null;
     }
     for (final AudiobookshelfServerConfig server
         in prefsRepo.discoveryAudiobookshelfServers) {
-      if (server.id != binding.serverConfigId) continue;
-      final AudiobookshelfApi? api = audiobookshelfApis.apiFor(server);
-      return api == null
-          ? null
-          : AudiobookshelfRemotePlayback(
-              api: api,
-              binding: binding,
-              deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
-              // 两路回调会并发落库：只写各自的列，不读出整行再覆盖。
-              onPushed: (int nowMs) => RemoteAudioBindingRepository(
-                database,
-              ).updateProgressMarks(binding.srtBookUid, localProgressAt: nowMs),
-              onSynced: (int serverProgressAt, int syncedAt) =>
-                  RemoteAudioBindingRepository(database).updateProgressMarks(
-                    binding.srtBookUid,
-                    serverProgressAt: serverProgressAt,
-                    progressSyncedAt: syncedAt,
-                  ),
-              onSyncError: (String what, Object error) =>
-                  ErrorLogService.instance.log(
-                    'AudiobookshelfProgress.$what',
-                    error,
-                    StackTrace.current,
-                  ),
-            );
+      if (server.id == binding.serverConfigId) {
+        return audiobookshelfApis.apiFor(server);
+      }
     }
     return null;
   }

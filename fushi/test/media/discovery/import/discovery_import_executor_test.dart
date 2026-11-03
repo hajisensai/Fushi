@@ -82,6 +82,7 @@ void main() {
     final List<String> log = <String>[];
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(log),
+      subtitleLangCode: 'ja',
     );
     final File mp3 = File('${tempDir.path}${Platform.pathSeparator}e1.mp3')
       ..writeAsStringSync('a');
@@ -105,6 +106,7 @@ void main() {
     final List<String> log = <String>[];
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(log),
+      subtitleLangCode: 'ja',
     );
     final File epub = File('${tempDir.path}${Platform.pathSeparator}a.epub');
     await epub.writeAsString('x');
@@ -124,6 +126,7 @@ void main() {
       importers: _recordingImporters(log),
       // 强制走内置 zip 解码路径(不依赖本机 7-Zip)。
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final File zip = await _writeZip(tempDir, 'books.zip', <String, String>{
       'vol1/a.epub': 'a',
@@ -168,6 +171,7 @@ void main() {
       final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
         importers: _recordingImporters(log),
         extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+        subtitleLangCode: 'ja',
       );
       await executor.importPaths(DiscoveryMediaKind.novel, input);
       expect(log, hasLength(1), reason: input.join(','));
@@ -180,6 +184,7 @@ void main() {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(log),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final File zip = await _writeZip(tempDir, 'ab.zip', <String, String>{
       'book.epub': 'e',
@@ -202,6 +207,7 @@ void main() {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(log),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final File zip = await _writeZip(tempDir, 'game.zip', <String, String>{
       'game/atri.exe': 'gamegamegame',
@@ -223,6 +229,7 @@ void main() {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(<String>[]),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final File archive = File('${tempDir.path}${Platform.pathSeparator}x.7z');
     await archive.writeAsBytes(<int>[0x37, 0x7a]);
@@ -270,6 +277,7 @@ void main() {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(<String>[]),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final File zip = await _writeZip(tempDir, 'evil.zip', <String, String>{
       '../evil.txt': 'x',
@@ -286,6 +294,7 @@ void main() {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(log),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final DiscoveryImportOutcome outcome = await executor.importPaths(
       DiscoveryMediaKind.game,
@@ -300,6 +309,7 @@ void main() {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(log),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      subtitleLangCode: 'ja',
     );
     final File zip = await _writeZip(tempDir, 'inner.zip', <String, String>{
       'game/atri.exe': 'gamegame',
@@ -318,6 +328,7 @@ void main() {
   test('域认不出的下载物按 unknownFileType 挡下', () async {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(<String>[]),
+      subtitleLangCode: 'ja',
     );
     final File file = File('${tempDir.path}${Platform.pathSeparator}x.bin');
     await file.writeAsString('x');
@@ -345,6 +356,7 @@ void main() {
       final List<String> log = <String>[];
       final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
         importers: _recordingImporters(log),
+        subtitleLangCode: 'ja',
       );
       final File srt = await touch('book.srt');
       final File mp3 = await touch('01.mp3');
@@ -361,6 +373,7 @@ void main() {
       final List<String> log = <String>[];
       final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
         importers: _recordingImporters(log),
+        subtitleLangCode: 'ja',
       );
       final File a = await touch('Part 10.mp3');
       final File b = await touch('Part 2.mp3');
@@ -378,6 +391,7 @@ void main() {
       final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
         importers: _recordingImporters(log),
         extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+        subtitleLangCode: 'ja',
       );
       final File mp3 = await touch('01.mp3');
       final File zip = await _writeZip(tempDir, 'extras.zip', <String, String>{

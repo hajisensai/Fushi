@@ -8,16 +8,15 @@ library;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_pick.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
-/// 字幕扩展名（`book_import_dialog.dart` 的选择器同集合；有声书对齐的输入）。
-const Set<String> kDiscoverySubtitleExtensions = <String>{
-  '.srt',
-  '.lrc',
-  '.vtt',
-  '.ass',
-  '.ssa',
+/// 字幕扩展名（带点，`p.extension` 的形状）：有声书字幕唯一真相源
+/// [kAudiobookSubtitleExtensions] 的派生，不另写一份。
+final Set<String> kDiscoverySubtitleExtensions = <String>{
+  for (final String ext in kAudiobookSubtitleExtensions) '.$ext',
 };
 
 /// 需要先解压的压缩包扩展名。zip 走内置解码，7z/rar 依赖 7-Zip 命令行。
@@ -229,11 +228,12 @@ bool isDiscoveryArchivePath(String path) =>
 bool isDiscoveryMangaArchivePath(String path) =>
     kDiscoveryMangaArchiveExtensions.contains(_ext(path));
 
-/// 单个下载文件的分类入口。
+/// 单个下载文件的分类入口。[subtitleLangCode] 见 [classifyDiscoveryDirectory]。
 DiscoveryImportPlan classifyDiscoveryFile(
   DiscoveryMediaKind kind,
-  String filePath,
-) {
+  String filePath, {
+  required String subtitleLangCode,
+}) {
   // 漫画载体必须**先于**通用解压判定：`.rar`/`.zip` 两边都命中，被通用
   // 解压器截胡就会丢掉包内的 `.mokuro` OCR 层（见
   // [kDiscoveryMangaArchiveExtensions] 的注释）。
@@ -253,7 +253,9 @@ DiscoveryImportPlan classifyDiscoveryFile(
       // 单文件同样凑不齐「正文 + 字幕 + 音频」，但缺的是哪一样取决于它本身是
       // 什么：孤立的 m4b 缺的是字幕而不是音频。交给同一套判据分流，避免这里
       // 用一个固定 blocker 谎报原因（用户看到的补救提示据此分支）。
-      return classifyDiscoveryDirectory(kind, <String>[filePath]);
+      return classifyDiscoveryDirectory(kind, <String>[
+        filePath,
+      ], subtitleLangCode: subtitleLangCode);
     case DiscoveryMediaKind.game:
       if (_ext(filePath) == '.exe') {
         return RegisterGameExesPlan(<String>[filePath]);
@@ -269,10 +271,16 @@ DiscoveryImportPlan classifyDiscoveryFile(
 /// 解压后的文件树分类（[filePaths] 为递归文件清单，绝对路径）。
 ///
 /// [fileSizes] 供游戏 exe 启发式挑主程序（字节数，缺省时全按 0）。
+///
+/// [subtitleLangCode]：有声书有几份字幕时优先带这个学习语言标记的（如 `ja` 认
+/// `book.ja.srt` / `book.jpn.srt`），别的语言的不挑；规则见 [pickAudiobookSubtitle]。
+/// 必填、没有默认值：每个宿主都要显式传学习语言（`kLearningLanguageCode`），漏传
+/// 不能静默退化成「没有语言偏好」（`Book.en.srt` 按字典序赢过 `Book.ja.srt`）。
 DiscoveryImportPlan classifyDiscoveryDirectory(
   DiscoveryMediaKind kind,
   List<String> filePaths, {
   Map<String, int> fileSizes = const <String, int>{},
+  required String subtitleLangCode,
 }) {
   // 文件系统的枚举顺序不是稳定输入：`Directory.list` 明说不保证顺序，
   // NTFS 实际按名字返回、ext4 是目录哈希序。而本函数的输出顺序是**用户可见**的：
@@ -298,17 +306,30 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
       return MultiPlan(children);
     case DiscoveryMediaKind.audiobook:
       String? content;
-      String? subtitle;
+      final List<String> subtitles = <String>[];
       final List<String> audio = <String>[];
       for (final String path in paths) {
         if (content == null && _ext(path) == '.epub') {
           content = path;
         } else if (_isSubtitle(path)) {
-          subtitle ??= path;
+          subtitles.add(path);
         } else if (_isAudio(path)) {
           audio.add(path);
         }
       }
+      // 几份字幕时按有声书字幕的唯一规则挑（与 Audiobookshelf / 本机导入同一条）：
+      // 跟音频同名的、学习语言标记的优先；每个音轨各一份 / 只有别的语言的 → 挑不准，
+      // 当作没有字幕（转录），不再拿字典序第一份去当整本书的时间轴。
+      // 这里没有用户可问：不够确定的推荐（多音轨 + 一份对不上名字的字幕）也照用，
+      // 不用它就只能白跑几个小时转录；分轨字幕在规则里已经排除。
+      final AudiobookSubtitlePick? subtitlePick = pickAudiobookSubtitle(
+        audioNames: audio,
+        subtitleNames: subtitles,
+        langCode: subtitleLangCode,
+      );
+      final String? subtitle = subtitlePick == null
+          ? null
+          : subtitles[subtitlePick.index];
       // EPUB 优先当正文；没有 EPUB 再退纯文本。
       if (content == null) {
         for (final String path in paths) {

@@ -196,6 +196,23 @@ void main() {
       expect(plan.videos.single.subtitlePath, '/lib/movie.srt');
     });
 
+    test('video sidecar keeps the exact-name rule (no audiobook language '
+        'splitting): Movie.Eng.mkv picks Movie.Eng.srt, x.ja.srt is not '
+        'attached', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/Movie.Eng.mkv'),
+        _file('/lib/Movie.Eng.srt'),
+        _file('/lib/Movie.srt'),
+        _file('/lib/clip.mkv'),
+        _file('/lib/clip.ja.srt'),
+      ]);
+      final Map<String, String?> byVideo = <String, String?>{
+        for (final ScanVideoItem v in plan.videos) v.videoPath: v.subtitlePath,
+      };
+      expect(byVideo['/lib/Movie.Eng.mkv'], '/lib/Movie.Eng.srt');
+      expect(byVideo['/lib/clip.mkv'], isNull);
+    });
+
     test(
       'video source: audio tracks plan as videos (no picture, no subtitle)',
       () {
