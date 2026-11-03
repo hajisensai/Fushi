@@ -77,25 +77,45 @@ Future<Map<String, Object?>> probePageCurlShading(
     paper.top + q.dy,
   );
 
-  // 1. 平铺背面。
+  // 与 shaders/page_curl.frag 同一套几何。
   final Offset v = g.corner - g.point;
   final double len = v.distance;
+  final Offset n = len > 1 ? v / len : const Offset(1, 0);
+  final Offset m = Offset(-n.dy, n.dx);
+  final double r = math.max(
+    0.5,
+    math.min(pageCurlRadiusFor(paper.size), len / math.pi),
+  );
+  final double a = (len - math.pi * r) * 0.5;
+  final Offset axis = g.point + n * a;
+  bool inPaper(Offset q, double margin) =>
+      q.dx >= margin &&
+      q.dy >= margin &&
+      q.dx <= paper.width - margin &&
+      q.dy <= paper.height - margin;
+  // 覆盖层局部 → 纸面局部、未镜像。
+  Offset toPaper(Offset local) {
+    final double x = local.dx - paper.left;
+    return Offset(g.mirror ? paper.width - x : x, local.dy - paper.top);
+  }
+
+  // 这一点上方有没有翻起的纸（背面平铺 / 圆柱）：翻起的那片绕卷轴镜像过来，
+  // 斜卷时可以合理地越出原页边，这些点不算「纸面外」。
+  bool liftedOver(Offset local) {
+    if (len <= 1) return false;
+    final Offset p = toPaper(local);
+    final double d = (p - axis).dx * n.dx + (p - axis).dy * n.dy;
+    if (d <= 0) return inPaper(p + n * (math.pi * r - 2 * d), -1.5);
+    if (d > r) return false;
+    final double theta = math.asin((d / r).clamp(0.0, 1.0));
+    return inPaper(p + n * (r * (math.pi - theta) - d), -1.5) ||
+        inPaper(p + n * (r * theta - d), -1.5);
+  }
+
+  // 1. 平铺背面。
   final List<List<int>> back = <List<int>>[];
   if (len > 1) {
-    final Offset n = v / len;
-    final Offset m = Offset(-n.dy, n.dx);
-    final double r = math.max(
-      0.5,
-      math.min(pageCurlRadiusFor(paper.size), len / math.pi),
-    );
-    final double a = (len - math.pi * r) * 0.5;
-    final Offset axis = g.point + n * a;
     out['radius'] = r;
-    bool inPaper(Offset q, double margin) =>
-        q.dx >= margin &&
-        q.dy >= margin &&
-        q.dx <= paper.width - margin &&
-        q.dy <= paper.height - margin;
     for (double t = 1.3 * r; t < a; t += math.max(2, a / 24)) {
       for (double s = -paper.height; s <= paper.height; s += 6) {
         final Offset p = axis - n * t + m * s;
@@ -129,7 +149,7 @@ Future<Map<String, Object?>> probePageCurlShading(
     for (double y = 2; y < overlayRect.height - 2; y += 8) {
       for (double x = 2; x < overlayRect.width - 2; x += 8) {
         final Offset local = Offset(x, y);
-        if (paper.inflate(3).contains(local)) continue;
+        if (paper.inflate(3).contains(local) || liftedOver(local)) continue;
         final List<int>? c = at(local);
         final int? before = lumaBefore(local);
         if (c == null || before == null) continue;
