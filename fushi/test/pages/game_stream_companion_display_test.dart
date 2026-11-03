@@ -76,6 +76,10 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
   void setDisplays(List<GameStreamCompanionDisplayInfo> displays) =>
       _displays.value = displays;
 
+  /// The panel went away on its own (crash, closed itself, Activity torn
+  /// down), with the display still there.
+  void losePanel() => _attached.value = false;
+
   GameStreamCompanionState get lastState =>
       sent.whereType<GameStreamCompanionState>().last;
 
@@ -350,6 +354,20 @@ void main() {
     expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
   });
 
+  testWidgets('a panel that went away on its own is shown again', (
+    WidgetTester tester,
+  ) async {
+    final _Harness h = await _Harness.pump(tester);
+    expect(h.display.shown, <int>[_bottomScreen.id]);
+    h.display.losePanel();
+    await tester.pumpAndSettle();
+    expect(h.display.shown, <int>[
+      _bottomScreen.id,
+      _bottomScreen.id,
+    ], reason: 'The same display is still there and the setting is Auto');
+    expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+  });
+
   testWidgets('without a second display nothing changes', (
     WidgetTester tester,
   ) async {
@@ -391,6 +409,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(h.savedSecondScreen, GameStreamSecondScreen.off);
     expect(h.display.dismissed, 1);
+    expect(h.display.shown, <int>[
+      _bottomScreen.id,
+    ], reason: 'The dismissal is not mistaken for a lost panel');
   });
 
   group('companion panel', () {

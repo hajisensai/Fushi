@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// A display other than the one the app runs on.
 @immutable
@@ -82,6 +83,8 @@ abstract class GameStreamCompanionDisplay {
   /// Closes the companion panel ([attached] turns false).
   Future<void> dismiss();
 
+  /// Delivers [message] to the panel, or throws when it could not (no panel
+  /// attached, the panel process gone).
   Future<void> send(GameStreamCompanionHostMessage message);
 
   /// Stops watching and closes the companion.
@@ -95,9 +98,22 @@ class MethodChannelGameStreamCompanionDisplay
     implements GameStreamCompanionDisplay {
   MethodChannelGameStreamCompanionDisplay({
     MethodChannel channel = FushiChannels.gameStreamCompanion,
-  }) : _channel = channel;
+    Directory? spillRoot,
+  }) : _channel = channel,
+       _spillRoot = spillRoot ?? gameStreamCompanionSpillRoot() {
+    _pipe = GameStreamCompanionPipe(
+      post: (String raw) => _channel.invokeMethod<bool>('send', raw),
+      spillDirectory: Directory(
+        '${_spillRoot.path}${Platform.pathSeparator}host',
+      ),
+    );
+  }
 
   final MethodChannel _channel;
+
+  /// Both ends' spilled messages; this session owns (and removes) it.
+  final Directory _spillRoot;
+  late final GameStreamCompanionPipe _pipe;
   final ValueNotifier<List<GameStreamCompanionDisplayInfo>> _displays =
       ValueNotifier<List<GameStreamCompanionDisplayInfo>>(
         const <GameStreamCompanionDisplayInfo>[],
@@ -118,6 +134,8 @@ class MethodChannelGameStreamCompanionDisplay
 
   @override
   Future<void> start() async {
+    // Leftovers of a session that was killed before it could clean up.
+    await GameStreamCompanionPipe.clearSpills(_spillRoot);
     _channel.setMethodCallHandler(_onCall);
     _displays.value = _parseDisplays(
       await _channel.invokeMethod<List<Object?>>('listDisplays'),
@@ -131,8 +149,17 @@ class MethodChannelGameStreamCompanionDisplay
       case 'companionAttached':
         _attached.value = call.arguments == true;
       case 'companionMessage':
-        _messages.add(
-          GameStreamCompanionMessage.decode(call.arguments as String),
+        _pipe.receive(
+          call.arguments as String,
+          (String raw) {
+            if (_messages.isClosed) return;
+            _messages.add(GameStreamCompanionMessage.decode(raw));
+          },
+          (Object error, StackTrace stack) => ErrorLogService.instance.log(
+            'GameStreamCompanionDisplay.message',
+            error,
+            stack,
+          ),
         );
     }
     return null;
@@ -158,7 +185,7 @@ class MethodChannelGameStreamCompanionDisplay
 
   @override
   Future<void> send(GameStreamCompanionHostMessage message) =>
-      _channel.invokeMethod<void>('send', message.encode());
+      _pipe.send(message.encode());
 
   @override
   void dispose() {
@@ -167,5 +194,6 @@ class MethodChannelGameStreamCompanionDisplay
     _displays.dispose();
     _attached.dispose();
     unawaited(_messages.close());
+    unawaited(GameStreamCompanionPipe.clearSpills(_spillRoot));
   }
 }

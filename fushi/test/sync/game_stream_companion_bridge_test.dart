@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -286,14 +287,12 @@ void main() {
           final GameStreamCompanionMessage message =
               GameStreamCompanionMessage.decode(raw);
           final Object? value = switch (message) {
-            GameStreamCompanionMediaRequest() =>
-              await encodeGameStreamCompanionMedia(
-                DictionaryPopupMedia(
-                  bytes: Uint8List.fromList(<int>[1, 2, 3]),
-                  contentType: 'image/png',
-                ),
-                spillDirectory: Directory.systemTemp,
+            GameStreamCompanionMediaRequest() => encodeGameStreamCompanionMedia(
+              DictionaryPopupMedia(
+                bytes: Uint8List.fromList(<int>[1, 2, 3]),
+                contentType: 'image/png',
               ),
+            ),
             GameStreamCompanionAudioRequest() => 'https://host/a.mp3',
             _ => null,
           };
@@ -314,34 +313,99 @@ void main() {
       expect(await resources.wordAudioRef('猫', 'ねこ'), 'https://host/a.mp3');
     });
 
-    test(
-      'big media is handed over as a file and the file is removed',
-      () async {
-        final Directory spill = await Directory.systemTemp.createTemp('gsc');
-        addTearDown(() => spill.delete(recursive: true));
-        final Uint8List big = Uint8List(
-          kGameStreamCompanionInlineMediaBytes + 1,
-        );
-        big[0] = 9;
-        final Object? value = await encodeGameStreamCompanionMedia(
-          DictionaryPopupMedia(bytes: big, contentType: 'image/jpeg'),
-          spillDirectory: spill,
-        );
-        expect((value! as Map<String, Object?>).containsKey('bytes'), isFalse);
-        final String path = (value as Map<String, Object?>)['file']! as String;
-        expect(File(path).existsSync(), isTrue);
-        final DictionaryPopupMedia? decoded =
-            await decodeGameStreamCompanionMedia(value);
-        expect(decoded?.bytes.length, big.length);
-        expect(decoded?.bytes.first, 9);
-        expect(File(path).existsSync(), isFalse);
-        expect(
-          await encodeGameStreamCompanionMedia(null, spillDirectory: spill),
-          isNull,
-        );
-        expect(await decodeGameStreamCompanionMedia(null), isNull);
-      },
-    );
+    test('missing media encodes to null and back', () {
+      expect(encodeGameStreamCompanionMedia(null), isNull);
+      expect(decodeGameStreamCompanionMedia(null), isNull);
+    });
+  });
+
+  group('pipe', () {
+    late Directory spill;
+    setUp(() async {
+      spill = await Directory.systemTemp.createTemp('gsc');
+    });
+    tearDown(() => GameStreamCompanionPipe.clearSpills(spill));
+
+    test('a message too big for one Binder transaction crosses as a file, '
+        'in order, and the file is removed once read', () async {
+      final List<String> wire = <String>[];
+      final GameStreamCompanionPipe sender = GameStreamCompanionPipe(
+        post: (String raw) async {
+          wire.add(raw);
+          return true;
+        },
+        spillDirectory: Directory('${spill.path}/host'),
+        inlineLimit: 16,
+      );
+      final String big = '{"type":"result","x":"${'猫' * 64}"}';
+      await sender.send('{"a":1}');
+      await sender.send(big);
+      await sender.send('{"b":2}');
+      expect(wire[0], '{"a":1}');
+      expect(wire[1].length, lessThan(big.length));
+      expect(Directory('${spill.path}/host').listSync(), hasLength(1));
+
+      final GameStreamCompanionPipe receiver = GameStreamCompanionPipe(
+        post: (String raw) async => true,
+        spillDirectory: Directory('${spill.path}/panel'),
+      );
+      final List<String> received = <String>[];
+      final Completer<void> done = Completer<void>();
+      for (final String raw in wire) {
+        receiver.receive(raw, (String message) {
+          received.add(message);
+          if (received.length == 3) done.complete();
+        }, (Object error, StackTrace stack) => done.completeError(error));
+      }
+      await done.future;
+      expect(received, <String>['{"a":1}', big, '{"b":2}']);
+      expect(Directory('${spill.path}/host').listSync(), isEmpty);
+    });
+
+    test('the default limit keeps a 256 KB image off the Binder buffer', () {
+      // base64 of 256 KB is ~350K UTF-16 units, ~700 KB in a Bundle: more
+      // than a oneway transaction's async buffer.
+      final String reply = GameStreamCompanionReply(
+        id: 1,
+        value: encodeGameStreamCompanionMedia(
+          DictionaryPopupMedia(
+            bytes: Uint8List(256 * 1024),
+            contentType: 'image/png',
+          ),
+        ),
+      ).encode();
+      expect(reply.length, greaterThan(kGameStreamCompanionInlineMessageUnits));
+      expect(kGameStreamCompanionInlineMessageUnits * 2, lessThan(256 * 1024));
+    });
+
+    test('a message the relay did not take fails the send and its '
+        'request', () async {
+      final GameStreamCompanionPipe pipe = GameStreamCompanionPipe(
+        post: (String raw) async => false,
+        spillDirectory: spill,
+        inlineLimit: 4,
+      );
+      await expectLater(pipe.send('{"type":"x"}'), throwsStateError);
+      expect(spill.listSync(), isEmpty, reason: 'The spilled copy is gone');
+
+      final GameStreamCompanionLink link = GameStreamCompanionLink(
+        send: pipe.send,
+        onHostMessage: (_) {},
+      );
+      await expectLater(link.isDuplicate('a', 'b'), throwsStateError);
+    });
+
+    test('clearing the spill root removes unread messages', () async {
+      final GameStreamCompanionPipe pipe = GameStreamCompanionPipe(
+        post: (String raw) async => true,
+        spillDirectory: Directory('${spill.path}/panel'),
+        inlineLimit: 4,
+      );
+      await pipe.send('{"type":"unread"}');
+      expect(Directory('${spill.path}/panel').listSync(), hasLength(1));
+      await GameStreamCompanionPipe.clearSpills(spill);
+      expect(spill.existsSync(), isFalse);
+    });
   });
 
   group('second screen preference', () {

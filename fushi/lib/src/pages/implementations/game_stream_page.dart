@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show KeyEventDeviceType;
 
@@ -460,10 +459,15 @@ class _GameStreamPageState extends State<GameStreamPage>
     );
   }
 
-  Future<void> _runCompanionCall(String what, Future<void> call) async {
+  Future<void> _runCompanionCall(
+    String what,
+    Future<void> call, {
+    VoidCallback? onFailed,
+  }) async {
     try {
       await call;
     } catch (error, stack) {
+      onFailed?.call();
       ErrorLogService.instance.log(
         'GameStreamPage.companion.$what',
         error,
@@ -477,6 +481,11 @@ class _GameStreamPageState extends State<GameStreamPage>
     if (!mounted || active == _companionActive) return;
     _sentCompanionState = null;
     _companionResultSent = false;
+    // The panel is gone (closed, crashed, replaced, or the Activity holding
+    // it was recreated): nothing is up on that display any more. Forget it,
+    // so placing it again from the current displays and setting launches a
+    // new one (a no-op when that panel is already on its way).
+    if (!active) _companionDisplayId = null;
     setState(() {
       _companionActive = active;
       if (active) {
@@ -488,6 +497,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         _controlsBeforeCompanion = null;
       }
     });
+    if (!active) _placeCompanion();
   }
 
   void _setSecondScreen(GameStreamSecondScreen value) {
@@ -535,7 +545,18 @@ class _GameStreamPageState extends State<GameStreamPage>
     final GameStreamCompanionState state = _companionState();
     if (state != _sentCompanionState) {
       _sentCompanionState = state;
-      unawaited(_runCompanionCall('state', display.send(state)));
+      unawaited(
+        _runCompanionCall(
+          'state',
+          display.send(state),
+          // Not delivered: the panel does not have it, the next sync resends.
+          onFailed: () {
+            if (identical(_sentCompanionState, state)) {
+              _sentCompanionState = null;
+            }
+          },
+        ),
+      );
     }
     final GameStreamLookupController? controller = _lookupController;
     final DictionarySearchResult? result = controller?.result;
@@ -551,17 +572,21 @@ class _GameStreamPageState extends State<GameStreamPage>
     _companionResultSent = true;
     _sentCompanionResult = result;
     _sentCompanionStyles = styles;
+    final int revision = ++_companionRevision;
     unawaited(
       _runCompanionCall(
         'result',
         display.send(
           GameStreamCompanionResult(
-            revision: ++_companionRevision,
+            revision: revision,
             resultJson: result?.toJson(),
             popupJson: result?.popupJson,
             dictionaryStyles: styles,
           ),
         ),
+        onFailed: () {
+          if (revision == _companionRevision) _companionResultSent = false;
+        },
       ),
     );
   }
@@ -609,12 +634,8 @@ class _GameStreamPageState extends State<GameStreamPage>
           :final String dictionary,
           :final String path,
         ) =>
-          await encodeGameStreamCompanionMedia(
+          encodeGameStreamCompanionMedia(
             await resources?.mediaFile(dictionary, path),
-            spillDirectory: Directory(
-              '${Directory.systemTemp.path}${Platform.pathSeparator}'
-              'game_stream_companion',
-            ),
           ),
         GameStreamCompanionAudioRequest(
           :final String expression,

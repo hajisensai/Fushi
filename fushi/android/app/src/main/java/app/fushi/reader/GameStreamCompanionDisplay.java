@@ -64,15 +64,22 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
     private final DisplayManager displayManager;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    /** The panel's relay end; null while no panel is registered. */
-    @Nullable private Messenger companion;
-    @Nullable private IBinder.DeathRecipient companionDeath;
+    /** Which panel is wanted and whether it is up (see the class). */
+    private final GameStreamCompanionLifecycle<Messenger> lifecycle =
+            new GameStreamCompanionLifecycle<>(new GameStreamCompanionLifecycle.Effects<Messenger>() {
+                @Override
+                public void finish(@NonNull Messenger panel) {
+                    finishPanel(panel);
+                }
 
-    /** Display the panel was launched on; INVALID_DISPLAY when none. */
-    private int shownDisplayId = Display.INVALID_DISPLAY;
+                @Override
+                public void attachedChanged(boolean attached) {
+                    channel.invokeMethod("companionAttached", attached);
+                }
+            });
 
-    /** Dismiss was asked for before the launched panel registered. */
-    private boolean dismissPending = false;
+    /** Death links of registered panels, removed when each one goes. */
+    private final Map<IBinder, IBinder.DeathRecipient> deathLinks = new HashMap<>();
     private boolean listening = false;
 
     private GameStreamCompanionDisplay(Activity activity, FlutterEngine engine) {
@@ -90,15 +97,19 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
         instance = new GameStreamCompanionDisplay(activity, engine);
     }
 
-    /** Activity teardown: close the panel and stop listening. */
+    /**
+     * Activity teardown: close the panel and stop listening. The engine may
+     * outlive this Activity (MainActivity's engine is cached), so Dart is told
+     * the panel is gone, and asks the next instance for one again.
+     */
     static void detach() {
         final GameStreamCompanionDisplay current = instance;
         instance = null;
         if (current == null) return;
         current.channel.setMethodCallHandler(null);
         current.stopListening();
-        current.finishCompanion();
-        current.clearCompanion();
+        current.lifecycle.dismiss();
+        current.unlinkAll();
     }
 
     @Nullable
@@ -196,11 +207,14 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
 
     private boolean show(int displayId) {
         if (!supported()) return false;
-        dismissPending = false;
-        if (companion != null && shownDisplayId == displayId) return true;
-        if (companion != null) finishCompanion();
+        // A page asking for a panel wants to hear about displays too, also on
+        // an instance created after it last listed them (Activity recreated).
+        startListening();
+        final int token = lifecycle.show(displayId);
+        if (token == GameStreamCompanionLifecycle.NO_TOKEN) return true;
         final Intent intent = new Intent(activity, GameStreamCompanionActivity.class);
         intent.putExtra(GameStreamCompanionActivity.EXTRA_DISPLAY_ID, displayId);
+        intent.putExtra(GameStreamCompanionActivity.EXTRA_LAUNCH_TOKEN, token);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
                 | Intent.FLAG_ACTIVITY_NO_ANIMATION);
@@ -212,35 +226,27 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
             // SecurityException (display closed to this app) or the display went
             // away between listDisplays and now: report, Dart keeps the rail.
             Log.w(TAG, "launch on display " + displayId + " failed", e);
+            lifecycle.launchFailed(token);
             return false;
         }
-        shownDisplayId = displayId;
         return true;
     }
 
     private void dismiss() {
-        shownDisplayId = Display.INVALID_DISPLAY;
-        if (companion == null) {
-            // A panel still starting registers later; it is closed then.
-            dismissPending = true;
-            return;
-        }
-        finishCompanion();
+        lifecycle.dismiss();
     }
 
-    private void finishCompanion() {
-        final Messenger target = companion;
-        if (target == null) return;
+    private static void finishPanel(@NonNull Messenger panel) {
         try {
-            target.send(Message.obtain(null, GameStreamCompanionRelayService.MSG_FINISH));
+            panel.send(Message.obtain(null, GameStreamCompanionRelayService.MSG_FINISH));
         } catch (RemoteException e) {
-            // The panel process is already gone; its death recipient clears it.
+            // The panel process is already gone; its death link reports it.
             Log.w(TAG, "finish: companion already gone", e);
         }
     }
 
     private boolean sendToCompanion(String json) {
-        final Messenger target = companion;
+        final Messenger target = lifecycle.panel();
         if (target == null) return false;
         final Message message =
                 Message.obtain(null, GameStreamCompanionRelayService.MSG_TO_COMPANION);
@@ -258,49 +264,35 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
 
     // ---- From GameStreamCompanionRelayService (main thread) ----------------
 
-    void onCompanionRegistered(@NonNull Messenger messenger) {
-        clearCompanion();
-        companion = messenger;
+    /** A panel started; {@code token} is the launch token it was started with. */
+    void onCompanionRegistered(@NonNull Messenger messenger, int token) {
         final IBinder binder = messenger.getBinder();
-        final IBinder.DeathRecipient death = () -> mainHandler.post(() -> {
-            if (companion == messenger) onCompanionGone();
-        });
+        final IBinder.DeathRecipient death = () -> mainHandler.post(() -> onCompanionClosed(messenger));
         try {
             binder.linkToDeath(death, 0);
-            companionDeath = death;
         } catch (RemoteException e) {
-            // Died between bind and register.
-            companion = null;
+            // Died between bind and register: nothing to show.
             return;
         }
-        if (dismissPending || shownDisplayId == Display.INVALID_DISPLAY) {
-            dismissPending = false;
-            finishCompanion();
-            return;
+        if (lifecycle.register(messenger, token)) {
+            deathLinks.put(binder, death);
+        } else {
+            binder.unlinkToDeath(death, 0);
         }
-        channel.invokeMethod("companionAttached", true);
     }
 
-    /** A panel closed; ignored when it is not the current one (a replaced panel). */
-    void onCompanionUnregistered(@NonNull Messenger messenger) {
-        if (messenger.equals(companion)) onCompanionGone();
+    /** A panel unregistered or its process died. */
+    void onCompanionClosed(@NonNull Messenger messenger) {
+        final IBinder.DeathRecipient death = deathLinks.remove(messenger.getBinder());
+        if (death != null) messenger.getBinder().unlinkToDeath(death, 0);
+        lifecycle.gone(messenger);
     }
 
-    void onCompanionGone() {
-        if (companion == null) return;
-        clearCompanion();
-        shownDisplayId = Display.INVALID_DISPLAY;
-        channel.invokeMethod("companionAttached", false);
-    }
-
-    private void clearCompanion() {
-        final Messenger previous = companion;
-        final IBinder.DeathRecipient death = companionDeath;
-        companion = null;
-        companionDeath = null;
-        if (previous != null && death != null) {
-            previous.getBinder().unlinkToDeath(death, 0);
+    private void unlinkAll() {
+        for (Map.Entry<IBinder, IBinder.DeathRecipient> link : deathLinks.entrySet()) {
+            link.getKey().unlinkToDeath(link.getValue(), 0);
         }
+        deathLinks.clear();
     }
 
     void onCompanionMessage(@NonNull String json) {
@@ -324,8 +316,10 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
 
     @Override
     public void onDisplayRemoved(int displayId) {
-        if (displayId == shownDisplayId) dismiss();
+        // The list first: the page re-places the panel from it when it hears
+        // the panel went away.
         channel.invokeMethod("displaysChanged", describeDisplays());
+        if (displayId == lifecycle.displayId()) dismiss();
     }
 
     @Override

@@ -21,7 +21,8 @@ import androidx.annotation.Nullable;
  * {@link Messenger}s; everything lands on the main thread and goes to
  * {@link GameStreamCompanionDisplay}.
  *
- * <p>Panel → main: {@link #MSG_REGISTER} (replyTo = the panel's messenger),
+ * <p>Panel → main: {@link #MSG_REGISTER} (replyTo = the panel's messenger,
+ * arg1 = the launch token from its intent),
  * {@link #MSG_UNREGISTER}, {@link #MSG_TO_HOST} (one JSON message),
  * {@link #MSG_KEY} / {@link #MSG_MOTION} (controller input the panel's
  * window received). Main → panel: {@link #MSG_TO_COMPANION}, {@link #MSG_FINISH}.
@@ -59,11 +60,11 @@ public class GameStreamCompanionRelayService extends Service {
                     finishPanel(message.replyTo);
                     return true;
                 }
-                display.onCompanionRegistered(message.replyTo);
+                display.onCompanionRegistered(message.replyTo, message.arg1);
                 return true;
             case MSG_UNREGISTER:
                 if (display != null && message.replyTo != null) {
-                    display.onCompanionUnregistered(message.replyTo);
+                    display.onCompanionClosed(message.replyTo);
                 }
                 return true;
             case MSG_TO_HOST: {

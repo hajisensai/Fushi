@@ -62,8 +62,15 @@ public class GameStreamCompanionActivity extends FlutterActivity
     /** Intent extra: the display this panel was launched for. */
     static final String EXTRA_DISPLAY_ID = "app.fushi.reader.extra.COMPANION_DISPLAY_ID";
 
+    /**
+     * Intent extra: the launch this panel belongs to; sent back on register
+     * so the stream page can tell it from an earlier, replaced panel.
+     */
+    static final String EXTRA_LAUNCH_TOKEN = "app.fushi.reader.extra.COMPANION_LAUNCH_TOKEN";
+
     /** The display this panel belongs on; anywhere else it closes. */
     private int targetDisplayId = Display.INVALID_DISPLAY;
+    private int launchToken = GameStreamCompanionLifecycle.NO_TOKEN;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Messenger inbox = new Messenger(new Handler(Looper.getMainLooper(), this::onRelayMessage));
@@ -83,6 +90,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
             final Message register =
                     Message.obtain(null, GameStreamCompanionRelayService.MSG_REGISTER);
             register.replyTo = inbox;
+            register.arg1 = launchToken;
             if (!sendToRelay(register)) finish();
         }
 
@@ -125,6 +133,8 @@ public class GameStreamCompanionActivity extends FlutterActivity
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         super.onCreate(savedInstanceState);
         targetDisplayId = getIntent().getIntExtra(EXTRA_DISPLAY_ID, Display.INVALID_DISPLAY);
+        launchToken = getIntent().getIntExtra(
+                EXTRA_LAUNCH_TOKEN, GameStreamCompanionLifecycle.NO_TOKEN);
         if (isOffTargetDisplay()) {
             finish();
             return;

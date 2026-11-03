@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,14 +34,25 @@ void gameStreamCompanionMain() {
       dictionaryPopupWebViewUsesHybridComposition = false;
 
       const MethodChannel channel = FushiChannels.gameStreamCompanion;
+      // The relay answers whether it took each message: a lost one fails its
+      // request instead of leaving it waiting forever.
+      final GameStreamCompanionPipe pipe = GameStreamCompanionPipe(
+        post: (String raw) => channel.invokeMethod<bool>('send', raw),
+        spillDirectory: Directory(
+          '${gameStreamCompanionSpillRoot().path}'
+          '${Platform.pathSeparator}panel',
+        ),
+      );
       final GameStreamCompanionController controller =
-          GameStreamCompanionController(
-            send: (String raw) => channel.invokeMethod<void>('send', raw),
-          );
+          GameStreamCompanionController(send: pipe.send);
+      void receive(String raw) => pipe.receive(
+        raw,
+        controller.link.receive,
+        (Object error, StackTrace stack) =>
+            debugPrint('[Fushi-companion] bad message: $error $stack'),
+      );
       channel.setMethodCallHandler((MethodCall call) async {
-        if (call.method == 'message') {
-          controller.link.receive(call.arguments as String);
-        }
+        if (call.method == 'message') receive(call.arguments as String);
         return null;
       });
 
@@ -62,9 +74,7 @@ void gameStreamCompanionMain() {
       // stream page for everything again.
       final List<String> backlog =
           await channel.invokeListMethod<String>('listen') ?? const <String>[];
-      for (final String raw in backlog) {
-        controller.link.receive(raw);
-      }
+      backlog.forEach(receive);
       await controller.link.send(const GameStreamCompanionReady());
 
       unawaited(container.read(appProvider).initialiseForDictionaryPopup());
