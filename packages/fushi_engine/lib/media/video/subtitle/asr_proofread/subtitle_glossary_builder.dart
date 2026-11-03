@@ -22,7 +22,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
@@ -36,8 +35,19 @@ const double kSubtitleGlossaryCoverageThreshold = 0.35;
 /// 人名条目少于这个数时不做身份校验（样本太小，判不出来；同基准 `< 4`）。
 const int kSubtitleGlossaryCoverageMinNames = 4;
 
-/// 提示词 / 校验规则的版本：改了提示词要 +1，让已有表的指纹失效、重新生成。
+/// 提示词 / 校验规则的版本：改了提示词要 +1，让已有表的指纹失效、重新生成。只改
+/// 输出格式、不改表内容的改动不 +1（JSON → 行协议时 v1 的表照用，不白花钱重生成）。
 const int kSubtitleGlossaryPromptVersion = 1;
+
+/// 专名表的行格式（生成 / 重做 / 续写共用，也是重做时把现有表交回模型的写法）：
+/// `正式表記<TAB>読み<TAB>種類<TAB>誤表記、誤表記`，最后一行 [kAiLineReplyEnd]。
+/// 一行一条：输出截断时只丢最后半行，续写接着要剩下的（[kSubtitleGlossaryContinue]）。
+const String kSubtitleGlossaryLineFormat =
+    '出力は 1 行 1 項目(説明文・JSON・コードブロックなし): '
+    '正しい表記<TAB>読み(ひらがな)<TAB>種類<TAB>誤表記の例(「、」区切り、無ければ空)。'
+    '最後の行に END とだけ書く。例:\n'
+    '唯\tゆい\t人名(平沢唯の名)\t結衣、悠依\n'
+    'END';
 
 /// 生成提示词（`series_glossary.py` 的 `PROMPT`）。
 ///
@@ -52,7 +62,7 @@ const String kSubtitleGlossaryPrompt =
 各項目に正しい表記・読み(ひらがな)・音声認識で出やすい誤表記の例(あれば)を付ける。
 {sources}
 {identity}
-出力は JSON 配列のみ(説明文なし): [{"ja": "唯", "reading": "ゆい", "kind": "人名(平沢唯の名)", "misrecognitions": ["結衣", "悠依"]}, ...]''';
+$kSubtitleGlossaryLineFormat''';
 
 /// 身份确认用的 ASR 抽样（`IDENTITY`；「Web で確認」改为按资料确认）。
 const String kSubtitleGlossaryIdentity =
@@ -75,12 +85,29 @@ const String kSubtitleGlossaryRecheck =
     '''アニメ「{title}」の固有名詞表に矛盾があります。下の資料で公式サイト・Wikipedia 等の正式表記を確認し、修正した表全体を出力してください。
 - 同じ人物・用語の別表記は1項目にまとめ、正式表記を ja に、それ以外は misrecognitions に入れる。
 - 音声認識の出力をそのまま正式表記にしない。確認できない項目は削除する。「要確認」などの注記を残さない。
+- 現在の表は 正式表記<TAB>読み<TAB>種類<TAB>誤表記 の形式。
 {sources}
 矛盾:
 {issues}
 現在の表:
 {table}
-出力は JSON 配列のみ(説明文なし)。''';
+$kSubtitleGlossaryLineFormat''';
+
+/// 专名表一次 [SubtitleGlossaryBuilder] 请求（首轮 + 续写）最多问几轮。
+///
+/// 表的条目集合是开放的（模型可以一直编新条目），不像 S3 / S4 按 id 问必然收敛，所以
+/// 必须封顶。续写只在上一轮撞上输出上限时才发生；每轮上限
+/// [kSubtitleAiMaxOutputTokens]（实测 60 条 ~5k token，一轮 ~100 条），5 轮 ≈ 500 条，
+/// 远超单部作品（含全季、剧场版）的真实表；这张表还要整张放进 S3 / S4 每一批的稳定
+/// 前缀，比这更长也没法用。封顶同时限住了续写提示里 `{done}` 清单的长度。
+const int kSubtitleGlossaryMaxRounds = 5;
+
+/// 回复撞上输出上限被截断后的续写要求（追加在本次内容之后；`{done}` = 已收到的
+/// 条目的 `ja`）。
+const String kSubtitleGlossaryContinue =
+    '前回の出力は長さの上限で途中で切れました。出力済みの項目(ja): {done}\n'
+    'これらは繰り返さず、残りの項目だけを同じ形式で出力し、最後の行に END と'
+    '書いてください。残りが無ければ END だけを出力してください。';
 
 final RegExp _kKatakanaRun = RegExp('[ァ-ヺー]{2,}');
 final RegExp _kReadingNoise = RegExp(r'[\s・]');
@@ -583,12 +610,7 @@ class SubtitleGlossaryBuilder {
               .replaceAll('{sources}', sources),
           body: _templateTail(kSubtitleGlossaryRecheck, '\n矛盾:')
               .replaceAll('{issues}', bad.join('\n'))
-              .replaceAll(
-                '{table}',
-                jsonEncode(<Map<String, Object?>>[
-                  for (final SubtitleGlossaryEntry e in items) e.toJson(),
-                ]),
-              ),
+              .replaceAll('{table}', formatSubtitleGlossaryLines(items)),
         ),
         usage,
         cancel,
@@ -620,28 +642,47 @@ class SubtitleGlossaryBuilder {
     );
   }
 
-  /// 问一次、解析成条目；解析不出（不是 JSON 数组 / 没有一条有效条目）重试。
+  /// 问一张表、解析成条目。
+  ///
+  /// 表长（整季、多季的作品动辄上百条）会让输出撞上 `max_tokens` 被截断：行协议下
+  /// 写完的行照收，接着发「续写」请求只要剩下的（[kSubtitleGlossaryContinue]），直到
+  /// 某次回复写完（首轮要有条目；续写轮只回结束标记 = 没有剩下的了）。连续
+  /// [maxParseAttempts] 轮一条新条目都没拿到、或问满 [kSubtitleGlossaryMaxRounds] 轮
+  /// 仍没写完，抛 [kSubtitleAiReplyIncomplete]。
   Future<List<SubtitleGlossaryEntry>> _ask(
     _Prompt prompt,
     SubtitleAiUsageTally usage,
     SubtitleCancelToken cancel,
   ) async {
-    for (int attempt = 0; attempt < maxParseAttempts; attempt++) {
-      throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(
-        prompt.body,
-        stablePrefix: prompt.prefix,
-      );
-      usage.addCall(reply.usage);
-      final List<SubtitleGlossaryEntry>? items = parseSubtitleGlossaryReply(
-        reply.text,
-      );
-      if (items != null && items.isNotEmpty) return items;
-    }
-    throw const SubtitleAiRequestFailure(
-      kSubtitleAiReplyIncomplete,
-      detail: 'glossary: reply is not a JSON array of entries',
+    final List<SubtitleGlossaryEntry> all = <SubtitleGlossaryEntry>[];
+    final Set<String> seen = <String>{};
+    await runAiLineExchange(
+      completer: completer,
+      stablePrefix: prompt.prefix,
+      body: () => all.isEmpty
+          ? prompt.body
+          : '${prompt.body}\n\n'
+                '${kSubtitleGlossaryContinue.replaceAll('{done}', all.map((SubtitleGlossaryEntry e) => e.ja).join('、'))}',
+      absorb: (List<String> lines) {
+        int added = 0;
+        for (final String line in lines) {
+          final SubtitleGlossaryEntry? e = parseSubtitleGlossaryLine(line);
+          if (e != null && seen.add(e.ja)) {
+            all.add(e);
+            added++;
+          }
+        }
+        return added;
+      },
+      done: (AiLineReply reply) => reply.complete && all.isNotEmpty,
+      failureDetail: () =>
+          'glossary: no complete reply (${all.length} entries so far)',
+      usage: usage,
+      cancel: cancel,
+      maxAttempts: maxParseAttempts,
+      maxRounds: kSubtitleGlossaryMaxRounds,
     );
+    return all;
   }
 }
 
@@ -657,30 +698,40 @@ String _templateHead(String template, String marker) =>
 String _templateTail(String template, String marker) =>
     template.substring(template.indexOf(marker) + 1);
 
-/// 回复里的 JSON 数组 → 条目（同基准 `re.search(r"\[.*\]", ..., re.S)`）；不是数组
-/// 返回 null。`ja` 为空的条目丢弃，同一 `ja` 只留第一条。
-List<SubtitleGlossaryEntry>? parseSubtitleGlossaryReply(String reply) {
-  final int start = reply.indexOf('[');
-  final int end = reply.lastIndexOf(']');
-  if (start < 0 || end < start) return null;
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(reply.substring(start, end + 1));
-  } on FormatException {
-    return null;
-  }
-  if (decoded is! List) return null;
-  final Set<String> seen = <String>{};
-  final List<SubtitleGlossaryEntry> out = <SubtitleGlossaryEntry>[];
-  for (final Object? item in decoded) {
-    if (item is! Map) continue;
-    final SubtitleGlossaryEntry e = SubtitleGlossaryEntry.fromJson(
-      item.cast<String, Object?>(),
-    ).copyWith(userEdited: false);
-    if (e.ja.isEmpty || !seen.add(e.ja)) continue;
-    out.add(e);
-  }
-  return out;
+final RegExp _kGlossaryAltSplit = RegExp('[、,，]');
+
+/// [kSubtitleGlossaryLineFormat] 的一行 → 条目。至少要有「表記 + 一个分隔」（模型把
+/// TAB 写成 `|` 也接受）——没有分隔的行是说明文，返回 null；`ja` 为空也返回 null。
+SubtitleGlossaryEntry? parseSubtitleGlossaryLine(String line) {
+  List<String> f = line.split('\t');
+  if (f.length < 2) f = line.split('|');
+  if (f.length < 2) return null;
+  String at(int i) => i < f.length ? f[i].trim() : '';
+  final String ja = at(0);
+  if (ja.isEmpty) return null;
+  return SubtitleGlossaryEntry(
+    ja: ja,
+    reading: at(1),
+    kind: at(2),
+    misrecognitions: <String>[
+      for (final String m in at(3).split(_kGlossaryAltSplit))
+        if (m.trim().isNotEmpty && m.trim() != ja) m.trim(),
+    ],
+  );
+}
+
+/// 条目 → [kSubtitleGlossaryLineFormat] 的行（重做时把现有表交回模型）。
+String formatSubtitleGlossaryLines(List<SubtitleGlossaryEntry> entries) {
+  String clean(String s) => s.replaceAll(RegExp(r'[\t\r\n]+'), ' ').trim();
+  return <String>[
+    for (final SubtitleGlossaryEntry e in entries)
+      <String>[
+        clean(e.ja),
+        clean(e.reading),
+        clean(e.kind),
+        e.misrecognitions.map(clean).join('、'),
+      ].join('\t'),
+  ].join('\n');
 }
 
 /// 新生成的表与已有表合并：已有表里 `userEdited` 的条目原样保留（排在前面），生成

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +16,14 @@ void main() {
     title: 'sin 七つの大罪',
   );
 
-  String table(List<Map<String, Object?>> rows) => jsonEncode(rows);
+  String table(List<Map<String, Object?>> rows) => glossaryReply(rows);
+
+  List<SubtitleGlossaryEntry> entriesOf(
+    String reply,
+  ) => <SubtitleGlossaryEntry>[
+    for (final String line in reply.split('\n'))
+      if (parseSubtitleGlossaryLine(line) case final SubtitleGlossaryEntry e) e,
+  ];
 
   List<Map<String, Object?>> people(String prefix, int n) =>
       <Map<String, Object?>>[
@@ -39,12 +45,12 @@ void main() {
   test('覆盖率：错作品 2/40 不过，对的 14/21 通过（阈值 35%）', () {
     final String text = spoken.expand((List<String> e) => e).join('\n');
     final ({List<String> hit, List<String> miss}) wrong =
-        subtitleGlossaryCoverage(parseSubtitleGlossaryReply(wrongTable)!, text);
+        subtitleGlossaryCoverage(entriesOf(wrongTable), text);
     expect(wrong.hit.length, 2);
     expect(wrong.miss.length, 38);
     expect(subtitleGlossaryCoveragePasses(wrong), isFalse);
     final ({List<String> hit, List<String> miss}) right =
-        subtitleGlossaryCoverage(parseSubtitleGlossaryReply(rightTable)!, text);
+        subtitleGlossaryCoverage(entriesOf(rightTable), text);
     expect(right.hit.length, 14);
     expect(right.miss.length, 7);
     expect(subtitleGlossaryCoveragePasses(right), isTrue);
@@ -271,7 +277,7 @@ void main() {
     expect(ai.calls, 3);
   });
 
-  test('回复不是 JSON 数组：重试 3 次后抛 reply_incomplete', () async {
+  test('回复只有说明文（没有条目、没写 END）：连续 3 次后抛 reply_incomplete', () async {
     final FakeAiCompleter ai = FakeAiCompleter(
       (String prompt, int call) => '調べられませんでした',
     );
@@ -288,6 +294,86 @@ void main() {
       ),
     );
     expect(ai.calls, 3);
+  });
+
+  test('表太长输出被截断：留下写完的条目，续写只要剩下的，拼成整张表', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => switch (call) {
+        0 => '唯\tゆい\t人名\t結衣\n澪\tみお\t人名\n律\tり',
+        1 => '律\tりつ\t人名\n澪\tみお\t人名\n紬\tつ',
+        _ => '紬\tつむぎ\t人名\nEND',
+      },
+      stopReason: (int call) => call < 2 ? 'max_tokens' : 'end_turn',
+    );
+    final SubtitleGlossaryBuildResult r = await SubtitleGlossaryBuilder(
+      completer: ai,
+    ).build(context: bare, episodeTexts: const <List<String>>[]);
+    expect(ai.calls, 3);
+    expect(r.glossary.entries.map((SubtitleGlossaryEntry e) => e.ja), <String>[
+      '唯',
+      '澪',
+      '律',
+      '紬',
+    ]);
+    expect(ai.bodies[1], contains('出力済みの項目(ja): 唯、澪\n'));
+    expect(ai.bodies[2], contains('出力済みの項目(ja): 唯、澪、律\n'));
+    expect(ai.prefixes.toSet(), hasLength(1), reason: '续写不动可缓存的前缀');
+    expect(r.glossary.entries.first.misrecognitions, <String>['結衣']);
+  });
+
+  test('续写每轮都被截断、又每轮都编出新条目：问满轮数上限就抛 reply_incomplete，不无限续写', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => '新$call\tしん\t人名\n途中',
+      stopReason: (int call) => 'max_tokens',
+    );
+    await expectLater(
+      SubtitleGlossaryBuilder(
+        completer: ai,
+      ).build(context: bare, episodeTexts: const <List<String>>[]),
+      throwsA(
+        isA<SubtitleAiRequestFailure>().having(
+          (SubtitleAiRequestFailure f) => f.reason,
+          'reason',
+          kSubtitleAiReplyIncomplete,
+        ),
+      ),
+    );
+    expect(ai.calls, kSubtitleGlossaryMaxRounds);
+  });
+
+  test('行格式往返：formatSubtitleGlossaryLines → parseSubtitleGlossaryLine', () {
+    const List<SubtitleGlossaryEntry> src = <SubtitleGlossaryEntry>[
+      SubtitleGlossaryEntry(
+        ja: '唯',
+        reading: 'ゆい',
+        kind: '人名(平沢唯の名)',
+        misrecognitions: <String>['結衣', '悠依'],
+      ),
+      SubtitleGlossaryEntry(ja: '放課後ティータイム', kind: 'バンド名'),
+    ];
+    final List<SubtitleGlossaryEntry> back = entriesOf(
+      formatSubtitleGlossaryLines(src),
+    );
+    expect(
+      back.map((SubtitleGlossaryEntry e) => e.toJson()),
+      src.map((SubtitleGlossaryEntry e) => e.toJson()),
+    );
+    expect(parseSubtitleGlossaryLine('以下が表です'), isNull);
+    expect(parseSubtitleGlossaryLine('唯 | ゆい | 人名')?.reading, 'ゆい');
+  });
+
+  test('续写轮只回 END：表已写完，直接用已收到的条目', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => call == 0 ? '唯\tゆい\t人名\n澪\tみ' : 'END',
+      stopReason: (int call) => call == 0 ? 'max_tokens' : null,
+    );
+    final SubtitleGlossaryBuildResult r = await SubtitleGlossaryBuilder(
+      completer: ai,
+    ).build(context: bare, episodeTexts: const <List<String>>[]);
+    expect(ai.calls, 2);
+    expect(r.glossary.entries.map((SubtitleGlossaryEntry e) => e.ja), <String>[
+      '唯',
+    ]);
   });
 
   test('userEdited 条目原样保留、生成的同名条目丢弃；未编辑的旧条目被替换', () async {
@@ -396,7 +482,7 @@ void main() {
     expect(prompt, contains('  Sawako Yamanaka'));
     // 没给 ASR 文本时不带身份确认段。
     expect(prompt, isNot(contains('作品の特定用の資料')));
-    expect(prompt, endsWith('"misrecognitions": ["結衣", "悠依"]}, ...]'));
+    expect(prompt, endsWith(kSubtitleGlossaryLineFormat));
   });
 
   test('百科页正文进资料段', () {

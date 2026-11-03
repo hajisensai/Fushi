@@ -3,10 +3,11 @@
 ///
 /// - 每批 [SubtitleProofreader.batchSize] 句，附前后各 [SubtitleProofreader.contextLines]
 ///   句只读上下文；每句给主稿、候选稿（[SubtitleDraftCue.alternatives]）与专名表。
-/// - **回复必须覆盖本批全部 id 才写批缓存**；缺 id / 解析失败重试，最多
-///   [SubtitleProofreader.maxAttempts] 次，仍不行抛 [SubtitleAiRequestFailure]
-///   （[kSubtitleAiReplyIncomplete]）。请求本身失败（额度 / 鉴权 / 网络）不重试、
-///   原样抛出——绝不当成「没有修改」。
+/// - 回复走行协议（[runAiLineExchange]）：**只写要改的行**（`<id><TAB><正文>`，id 升序）
+///   + 结束标记。回复写完才写批缓存，没写的行就是不用改；被截断时收下写完的行，
+///   下一轮只问最后一条之后的 id，连续 [SubtitleProofreader.maxAttempts] 轮没有新行
+///   才抛 [SubtitleAiRequestFailure]（[kSubtitleAiReplyIncomplete]）。请求本身失败
+///   （额度 / 鉴权 / 网络）不重试、原样抛出——绝不当成「没有修改」。
 /// - 批缓存 `<cacheDir>/<批起点 5 位>.json`（`{"fix": {...}, "usage": {...}}`）：
 ///   重跑时已缓存的批直接复用。
 /// - 时间轴不变只改文字；结果为空的行删除；`!?` 统一成全角。
@@ -16,15 +17,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:path/path.dart' as p;
 
-/// 校对规则（`llm_fix.py` 的 `RULES`，逐字照搬；第 1、5 条提到的他言語字幕本管线
-/// 目前不提供，规则保持原样以免改变实测过的行为）。
+/// 校对规则（`llm_fix.py` 的 `RULES`，第 1–8 条逐字照搬；第 1、5 条提到的他言語字幕
+/// 本管线目前不提供，规则保持原样以免改变实测过的行为）。只有输出格式一句改了：
+/// 基准要求 JSON 写全部 id，这里只写改动的行（输出量少一个数量级，截断也不再整段作废）。
 const String kSubtitleProofreadRules =
     '''あなたは日本語アニメ字幕の校正者です。音声認識(ASR)で作った日本語字幕の誤認識だけを直します。
 入力:
@@ -39,7 +40,8 @@ const String kSubtitleProofreadRules =
 6. 音楽・雑音を文字化しただけの明らかな幻聴は空文字にしてよい。
 7. 句読点は控えめに。漢字・かなの表記は一般的な字幕の慣習に従う。
 8. 同じ人物・用語は回を通して同じ表記にする(固有名詞表の表記を優先。表に無い語を推測で固有名詞に置き換えない)。
-出力は JSON オブジェクトのみ: {"<id>": "<修正後本文>", ...}。全ての対象 id を含める。説明文は書かない。''';
+出力は修正が必要な行だけを 1 行 1 件で書く: <id><TAB><修正後本文>(例: 12\t唯が来た)。修正の無い行は書かない。行を空文字にする場合は <id><TAB> だけを書く。
+id の昇順に書き、最後の行に END とだけ書く(修正が 1 件も無ければ END だけ)。説明文・JSON・コードブロックは書かない。''';
 
 /// 专名表在 S3 提示词里的写法（同 `llm_fix.py --series-glossary`）。
 String formatGlossaryForProofread(SubtitleGlossary glossary) => <String>[
@@ -179,7 +181,7 @@ class SubtitleProofreader {
     );
   }
 
-  /// 一批：先看缓存，没有就问，回复覆盖全部 id 才落盘。
+  /// 一批：先看缓存，没有就问，回复写完才落盘。
   Future<(Map<String, Object?>, SubtitleAiUsageTally)> _batch(
     List<SubtitleDraftCue> cues,
     (int, int) range,
@@ -195,53 +197,48 @@ class SubtitleProofreader {
     final Map<String, Object?>? cached = _readBatchCache(cache, usage);
     if (cached != null) return (cached, usage);
 
-    final Set<String> want = <String>{
-      for (int i = range.$1; i < range.$2; i++) '$i',
-    };
-    final String prefix = buildProofreadStablePrefix(
-      title: title,
-      glossaryText: glossaryText,
-    );
-    final String body = buildProofreadBatchBody(
-      cues: cues,
-      lo: range.$1,
-      hi: range.$2,
-      contextLines: contextLines,
-    );
-    Set<String> missing = want;
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
-      throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(
-        body,
-        stablePrefix: prefix,
-      );
-      usage.addCall(reply.usage);
-      final Object? fix = decodeLooseAiJson(reply.text);
-      if (fix is Map) {
-        final Map<String, Object?> map = fix.map(
-          (Object? k, Object? v) => MapEntry<String, Object?>('$k', v),
-        );
-        missing = want.difference(map.keys.toSet());
-        if (missing.isEmpty) {
-          await _writeBatchCache(cache, map, usage);
-          return (map, usage);
+    final (int lo, int hi) = range;
+    // 修正跨轮累积。回复按 id 升序只写改动的行：没写完时，最后一条之前没写的行就是
+    // 不用改，下一轮只问它之后的 id（之前的行留在原位当只读参考）。只收本轮在问的
+    // id（模型顺手改的上下文行不收，否则会盖掉相邻批对同一行的修正）。
+    final Map<String, Object?> got = <String, Object?>{};
+    int next = lo;
+    await runAiLineExchange(
+      completer: completer,
+      stablePrefix: buildProofreadStablePrefix(
+        title: title,
+        glossaryText: glossaryText,
+      ),
+      body: () => buildProofreadBatchBody(
+        cues: cues,
+        lo: lo,
+        hi: hi,
+        contextLines: contextLines,
+        only: next == lo ? null : <int>{for (int i = next; i < hi; i++) i},
+      ),
+      absorb: (List<String> lines) {
+        final int from = next;
+        int added = 0;
+        for (final String line in lines) {
+          final (String, String)? record = splitAiLineRecord(line);
+          final int? id = record == null ? null : int.tryParse(record.$1);
+          if (id == null || id < from || id >= hi) continue;
+          if (got.containsKey('$id')) continue;
+          got['$id'] = record!.$2;
+          added++;
+          if (id >= next) next = id + 1;
         }
-      } else {
-        missing = want;
-      }
-    }
-    final List<String> sample =
-        (missing.toList()..sort(
-              (String a, String b) => int.parse(a).compareTo(int.parse(b)),
-            ))
-            .take(10)
-            .toList();
-    throw SubtitleAiRequestFailure(
-      kSubtitleAiReplyIncomplete,
-      detail:
-          'proofread batch ${range.$1}-${range.$2}: '
-          'reply missing ids $sample',
+        return added;
+      },
+      done: (AiLineReply reply) => reply.complete || next >= hi,
+      failureDetail: () =>
+          'proofread batch $lo-$hi: no complete reply from id $next',
+      usage: usage,
+      cancel: cancel,
+      maxAttempts: maxAttempts,
     );
+    await _writeBatchCache(cache, got, usage);
+    return (got, usage);
   }
 
   static Map<String, Object?>? _readBatchCache(
@@ -316,12 +313,14 @@ String buildProofreadStablePrefix({
   return lines.join('\n');
 }
 
-/// 一批自己的内容：前后只读上下文 + 待校对的行。
+/// 一批自己的内容：前后只读上下文 + 待校对的行。[only] 非 null 时只把其中的 id 列为
+/// 校对对象（补问上一次没答到的行），批内其余行原位写成只读参考。
 String buildProofreadBatchBody({
   required List<SubtitleDraftCue> cues,
   required int lo,
   required int hi,
   int contextLines = 3,
+  Set<int>? only,
 }) {
   final List<String> lines = <String>['\n参考(直前の行、修正不要):'];
   for (int i = lo - contextLines < 0 ? 0 : lo - contextLines; i < lo; i++) {
@@ -330,6 +329,11 @@ String buildProofreadBatchBody({
   lines.add('\n対象:');
   for (int i = lo; i < hi; i++) {
     final SubtitleDraftCue c = cues[i];
+    if (only != null && !only.contains(i)) {
+      // 补问剩下的 id 时，已答过的行留在原位当只读上下文。
+      lines.add('  参考 [${formatProofreadTime(c.startMs)}] ${c.text}');
+      continue;
+    }
     lines.add(
       'id=$i [${formatProofreadTime(c.startMs)}-'
       '${formatProofreadTime(c.endMs)}] 主: ${c.text}',

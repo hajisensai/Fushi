@@ -8,7 +8,6 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
@@ -30,13 +29,14 @@ enum SubtitleClipKind {
   }
 }
 
-/// `CLIP_PROMPT`（逐字照搬）。占位符 `{title}` / `{clips}`。
+/// `CLIP_PROMPT`（除输出格式一句外逐字照搬：基准是 JSON，这里走行协议）。占位符
+/// `{title}` / `{clips}`。
 const String kSubtitleClipPrompt =
     '''日本のアニメ「{title}」の特典映像・短編の音声認識テキストです(誤認識を含む)。各映像が何かを判定してください。
 - song: 歌だけの映像(ノンクレジットOP/ED、MV など)。台詞がほぼ無い。
 - dialogue: 台詞が主体(ショートアニメ、ドラマ、コメンタリー等)。
 - mixed: 台詞と歌が混在(予告・PV・CM など)。
-出力は JSON オブジェクトのみ: {"<id>": "song" | "dialogue" | "mixed", ...}
+出力は 1 行 1 件: <id><TAB>song / dialogue / mixed のどれか。全ての id を書き、最後の行に END とだけ書く。説明文は書かない。
 
 {clips}''';
 
@@ -66,7 +66,8 @@ class SubtitleClipClassifier {
 
   /// [clips]：clip id → 该段（校对后）的字幕文本行。缓存 [cacheFile]
   /// （`clip_kinds.json`，`{"kinds": {id: kind}, "usage": {...}}`）里已有的 id 不再问；
-  /// 其余**一次请求**问完，回复必须覆盖全部待判 id 且值合法才写缓存。
+  /// 其余**一次请求**问完（行协议，[runAiLineExchange]）；漏判的下一轮只补问漏的，
+  /// 全部待判 id 都拿到合法值才写缓存。
   Future<SubtitleClipClassification> classify({
     required Map<String, List<String>> clips,
     required String title,
@@ -82,36 +83,42 @@ class SubtitleClipClassifier {
     if (todo.isEmpty) {
       return SubtitleClipClassification(kinds: kinds, usage: usage);
     }
-    final String body = <String>[
-      for (final String id in todo) 'id=$id\n${clips[id]!.join('\n')}',
-    ].join('\n\n');
-    final String prefix = buildClipClassifyStablePrefix(title);
     final SubtitleAiUsageTally fresh = SubtitleAiUsageTally();
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
-      throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(
-        body,
-        stablePrefix: prefix,
-      );
-      fresh.addCall(reply.usage);
-      final Object? got = decodeLooseAiJson(reply.text);
-      if (got is! Map) continue;
-      final Map<String, SubtitleClipKind> parsed = <String, SubtitleClipKind>{};
-      for (final String id in todo) {
-        final SubtitleClipKind? k = SubtitleClipKind.fromName(got[id]);
-        if (k != null) parsed[id] = k;
-      }
-      if (parsed.length == todo.length) {
-        kinds.addAll(parsed);
-        usage.addTally(fresh);
-        await _writeCache(cacheFile, kinds, usage);
-        return SubtitleClipClassification(kinds: kinds, usage: usage);
-      }
-    }
-    throw SubtitleAiRequestFailure(
-      kSubtitleAiReplyIncomplete,
-      detail: 'clip classification: reply missing ${todo.length} ids',
+    final Map<String, SubtitleClipKind> parsed = <String, SubtitleClipKind>{};
+    await runAiLineExchange(
+      completer: completer,
+      stablePrefix: buildClipClassifyStablePrefix(title),
+      body: () => <String>[
+        for (final String id in todo)
+          if (!parsed.containsKey(id)) 'id=$id\n${clips[id]!.join('\n')}',
+      ].join('\n\n'),
+      absorb: (List<String> lines) {
+        int added = 0;
+        for (final String line in lines) {
+          final (String, String)? record = splitAiLineRecord(line);
+          if (record == null || !clips.containsKey(record.$1)) continue;
+          final SubtitleClipKind? k = SubtitleClipKind.fromName(
+            record.$2.trim(),
+          );
+          if (k == null || kinds.containsKey(record.$1)) continue;
+          if (parsed.containsKey(record.$1)) continue;
+          parsed[record.$1] = k;
+          added++;
+        }
+        return added;
+      },
+      done: (AiLineReply reply) => parsed.length == todo.length,
+      failureDetail: () =>
+          'clip classification: reply missing '
+          '${todo.length - parsed.length} ids',
+      usage: fresh,
+      cancel: cancel,
+      maxAttempts: maxAttempts,
     );
+    kinds.addAll(parsed);
+    usage.addTally(fresh);
+    await _writeCache(cacheFile, kinds, usage);
+    return SubtitleClipClassification(kinds: kinds, usage: usage);
   }
 
   static Map<String, SubtitleClipKind> _readCache(
