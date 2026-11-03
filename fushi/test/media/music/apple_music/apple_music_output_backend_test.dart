@@ -200,6 +200,8 @@ void main() {
         final Completer<void> gateA = Completer<void>();
         bridge.gateFor['1'] = gateA;
         final Future<void> a = backend.openPair(_item('1'), null, play: true);
+        await Future<void>.delayed(Duration.zero);
+        expect(bridge.calls, <String>['play:1:true'], reason: 'A 已下发、卡在桥里');
         final Future<void> b = backend.openPair(_item('2'), null, play: true);
         final Future<void> c = backend.openPair(_item('3'), null, play: true);
         await Future<void>.delayed(Duration.zero);
@@ -228,6 +230,8 @@ void main() {
           null,
           play: true,
         );
+        await Future<void>.delayed(Duration.zero);
+        expect(bridge.calls, <String>['play:1:true']);
         final Future<void> stop = backend.stop();
         await Future<void>.delayed(Duration.zero);
         expect(bridge.calls, <String>['play:1:true']);

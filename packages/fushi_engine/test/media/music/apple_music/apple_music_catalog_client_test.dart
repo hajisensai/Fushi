@@ -272,10 +272,18 @@ void main() {
             expect(s.bitrateKbps, kAppleMusicFullTrackBitrateKbps);
             expect(s.transcoded, isFalse);
           }
-          // 没列出过的曲目不给地址。
+          // 不可串流的曲目不交给 MusicKit（列表已滤掉；万一被点到只给试听）。
+          expect(
+            rig.client
+                .streamFor(const MusicServerTrack(id: '2', title: 'x'))
+                .uri
+                .toString(),
+            'https://audio.example/2.m4a',
+          );
+          // 本实例没见过的曲目不给地址。
           expect(
             () => rig.client.streamFor(
-              const MusicServerTrack(id: '2', title: 'x'),
+              const MusicServerTrack(id: '99', title: 'x'),
             ),
             throwsStateError,
           );

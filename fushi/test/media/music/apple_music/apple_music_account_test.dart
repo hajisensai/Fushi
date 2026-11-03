@@ -177,14 +177,23 @@ void main() {
     expect(account.lastError, isA<AppleMusicBridgeException>());
   });
 
-  test('a signed-out event from the bridge drops the state', () async {
+  test('bridge account events: sign-in re-reads, sign-out is final', () async {
     await account.refresh(force: true);
-    expect(account.canPlayFullTracks, isTrue);
+    expect(bridge.stateReads, 1);
+    // 网页桥的 auth 事件不带订阅情况：作废缓存，下次 refresh 重读。
+    bridge.ctrl.add(
+      const AppleMusicAccountChanged(
+        AppleMusicAccountState(status: AppleMusicAuthStatus.authorized),
+      ),
+    );
+    await account.refresh();
+    expect(bridge.stateReads, 2);
+    // 已退出是确定的状态：直接落下，不必再读。
     bridge.ctrl.add(
       const AppleMusicAccountChanged(AppleMusicAccountState.signedOut),
     );
     expect(account.state, AppleMusicAccountState.signedOut);
-    // 状态缓存已作废：下一次 refresh 会重读。
+    expect(account.canPlayFullTracks, isFalse);
     await account.refresh();
     expect(bridge.stateReads, 2);
   });
