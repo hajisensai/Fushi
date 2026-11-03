@@ -1,15 +1,25 @@
-//! 格式升级后的一次性整理（srs.db v17，2026-10-30 磁盘占用）。
+//! 格式升级后的一次性整理（srs.db v17，2026-10-30 磁盘占用；BUG-3993 改成低占用、防打开即崩）。
 //!
-//! v16 / v17 把冗余挪出了存储（索引、配置快照原文、投影原文），腾出来的页只进空闲链表，文件不会自己变小。升级
-//! 阶梯在事务里给 `srs_meta` 记一个 [PENDING]；打开时（写连接上、读连接还没开）在这里做一次 `VACUUM`。
+//! v16–v18 把冗余挪出了存储（索引、配置快照原文、投影原文），腾出来的页只进空闲链表，文件不会自己变小。升级
+//! 阶梯在事务里给 `srs_meta` 记一个 [PENDING]；打开时（写连接上、读连接还没开）在这里整理一次。两条路：
 //!
-//! - 空间：WAL 模式下 VACUUM 先把整理后的库写进临时文件，再经 WAL 写回，峰值约多占「两倍有效数据」。库所在卷的
-//!   空闲空间不够 `2 × 有效数据 + 余量` 就不做，原因记进 `srs_meta` 的 [LAST]，标记留着，下次打开再试。
-//! - 临时文件放在库所在目录（`temp_store_directory`）：Android 等平台没有可写的默认临时目录。整理副本落文件
-//!   （不落内存）靠构建参数 `SQLITE_TEMP_STORE=1`，见 [set_temp_dir]。
-//! - 失败（磁盘满、被别的连接占着）不影响打开：VACUUM 本身是原子的，失败时库不变；截断 WAL、记原因、下次再试。
+//! - **原地收缩**（库已是 `auto_vacuum = INCREMENTAL`）：`PRAGMA incremental_vacuum` 分块把尾部的页挪进空闲位置、截短
+//!   文件，每块后截断 WAL。额外空间只有一块的 WAL（[CHUNK]）；每块各自提交，中途被杀也只是少收缩一些。
+//! - **重写换文件**（老库 `auto_vacuum = NONE`）：`VACUUM INTO` 把整理后的库直接写成旁边的 `<库>.compact`（顺带改成
+//!   INCREMENTAL，以后走上一条），fsync 后关掉写连接、原子重命名换上去。额外空间约「一倍有效数据」（原地 `VACUUM`
+//!   要先写一份整理副本再经 WAL 写回，约两倍）。重建索引的排序溢出落库所在目录的文件（[set_temp_dir]；靠构建参数
+//!   `SQLITE_TEMP_STORE=1`，libsqlite3-sys 给 Android 默认编成 3 = 临时数据全进内存，GB 级的库一整理就 OOM）。
+//!   - 写之前把 WAL 检查点截断到 0；换之前确认关掉写连接后 WAL 已被删（还在 = 还有别的连接开着这个库，它们会继续
+//!     读写被换掉的旧文件），否则不换。
+//!   - 换上去之前在新文件里就删掉 [PENDING] / [ATTEMPTS]、写好 [LAST]，换上去的就是整理完的库。
+//!   - 任何一步崩溃都安全：重命名之前旧库没动过（WAL 已截断为空），剩下的 `<库>.compact` 下次打开删掉；重命名是原子的。
+//!
+//! 空闲空间不够就不做，原因记进 `srs_meta` 的 [LAST]，标记留着，下次打开再试。进程死在整理中途的：每次开始前记一次
+//! [ATTEMPTS]，正常结束（成功或失败）都清掉；连着 [MAX_ATTEMPTS] 次没结束就放弃这次整理，库照常打开，不陷入打开即崩的
+//! 循环。
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use serde_json::json;
@@ -18,8 +28,16 @@ use serde_json::json;
 pub(crate) const PENDING: &str = "compact_pending";
 /// 最近一次整理的结果（JSON；排查用）。
 pub(crate) const LAST: &str = "compact_last";
+/// 已开始、还没正常结束的整理次数（开始前 +1，成功或失败都删）。
+pub(crate) const ATTEMPTS: &str = "compact_attempts";
+/// 连着这么多次进程死在整理中途就放弃。
+pub(crate) const MAX_ATTEMPTS: i64 = 2;
 /// 空间余量。
-const MARGIN: u64 = 64 << 20;
+pub(crate) const MARGIN: u64 = 64 << 20;
+/// 原地收缩每块挪动的字节数（每块后截断 WAL，WAL 峰值约为这么大）。
+pub(crate) const CHUNK: u64 = 32 << 20;
+/// `PRAGMA auto_vacuum` 的 INCREMENTAL。
+const AUTO_VACUUM_INCREMENTAL: u64 = 2;
 
 fn pragma(c: &Connection, name: &str) -> rusqlite::Result<u64> {
     c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).map(|v| v.max(0) as u64)
@@ -46,7 +64,20 @@ fn record(c: &Connection, v: serde_json::Value) {
 /// - 其它平台有可用的默认临时目录，只在用得着的那一段设、用完还原，不把一个可能被删掉的目录（测试的临时库）留给别的库。
 pub(crate) fn set_temp_dir(c: &Connection, dir: &Path) {
     let dir_text = dir.to_string_lossy().replace('\'', "''");
-    let _ = c.execute_batch(&format!("PRAGMA temp_store_directory = '{dir_text}';"));
+    let _ = c.execute_batch(&format!("PRAGMA temp_store_directory = '{dir_text}'; PRAGMA temp_store = FILE;"));
+}
+
+/// 这份 SQLite 是否编成「临时库只能放内存」（`SQLITE_TEMP_STORE=3`：`PRAGMA temp_store` 改不动）。
+#[cfg(test)]
+pub(crate) fn temp_store_forced_memory(c: &Connection) -> bool {
+    let Ok(mut st) = c.prepare("PRAGMA compile_options") else {
+        return false;
+    };
+    let Ok(rows) = st.query_map([], |r| r.get::<_, String>(0)) else {
+        return false;
+    };
+    let forced = rows.flatten().any(|o| o == "TEMP_STORE=3");
+    forced
 }
 
 /// 还原 [set_temp_dir]（回到平台默认）。Android 没有平台默认可回，不还原（见 [set_temp_dir]）。
@@ -57,40 +88,174 @@ pub(crate) fn clear_temp_dir(c: &Connection) {
     let _ = c.execute_batch("PRAGMA temp_store_directory = '';");
 }
 
-/// 有 [PENDING] 就整理一次。[free] 是库所在卷的空闲字节（拿不到为 None：照样试，失败按上面的路径处理）。
-/// 返回是否整理了。
-pub(crate) fn run(c: &Connection, dir: &Path, free: Option<u64>, now: i64) -> bool {
+/// [path] 加后缀（`srs.db` → `srs.db-wal`）。
+fn suffixed(path: &Path, suffix: &str) -> PathBuf {
+    let mut s: OsString = path.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+/// 重写换文件时的新库：库旁边的 `<库>.compact`。
+pub(crate) fn staged_path(path: &Path) -> PathBuf {
+    suffixed(path, ".compact")
+}
+
+/// 删掉 [staged]（及其回滚日志）；不存在不算错。
+fn remove_staged(staged: &Path) {
+    for p in [staged.to_path_buf(), suffixed(staged, "-journal")] {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+/// 有 [PENDING] 就整理一次（见模块文档）。[c] 是 [path] 的写连接、此时没有别的连接；重写换文件时会关掉它、换完用
+/// [reopen] 重新打开，所以拿走它、还回一个（可能是新的）写连接。[free] 是库所在卷的空闲字节（拿不到为 None：照样试，
+/// 失败按上面的路径处理）。整理本身的失败只记进 [LAST]；只有换完文件后重新打开失败才返回错误。
+pub(crate) fn run(
+    c: Connection,
+    path: &Path,
+    free: Option<u64>,
+    now: i64,
+    reopen: &dyn Fn() -> Result<Connection, String>,
+) -> Result<Connection, String> {
+    let staged = staged_path(path);
+    // 上次死在重命名之前留下的半成品。
+    remove_staged(&staged);
     let pending = c.query_row("SELECT 1 FROM srs_meta WHERE key = ?1", [PENDING], |_| Ok(())).is_ok();
     if !pending {
-        return false;
+        return Ok(c);
     }
-    let (Ok(size), Ok(pages), Ok(spare)) = (pragma(c, "page_size"), pragma(c, "page_count"), pragma(c, "freelist_count")) else {
-        return false;
+    let (Ok(size), Ok(pages), Ok(spare), Ok(auto)) =
+        (pragma(&c, "page_size"), pragma(&c, "page_count"), pragma(&c, "freelist_count"), pragma(&c, "auto_vacuum"))
+    else {
+        return Ok(c);
     };
     let before = size * pages;
     let live = size * pages.saturating_sub(spare);
-    let need = live.saturating_mul(2).saturating_add(MARGIN);
+    let in_place = auto == AUTO_VACUUM_INCREMENTAL;
+    let need = if in_place { CHUNK } else { live }.saturating_add(MARGIN);
     if let Some(free) = free.filter(|&f| f < need) {
-        record(c, json!({"at": now, "ok": false, "reason": "disk", "need": need, "free": free, "bytes": before}));
-        return false;
+        record(&c, json!({"at": now, "ok": false, "reason": "disk", "need": need, "free": free, "bytes": before}));
+        return Ok(c);
     }
-    set_temp_dir(c, dir);
-    let out = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
-    clear_temp_dir(c);
-    // 成功时把整理后的页写回主文件、WAL 归零；失败时丢掉 VACUUM 写进 WAL 又回滚掉的那些帧占的空间。
-    let _ = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    let attempts: i64 = c
+        .query_row("SELECT CAST(value AS INTEGER) FROM srs_meta WHERE key = ?1", [ATTEMPTS], |r| r.get(0))
+        .unwrap_or(0);
+    if attempts >= MAX_ATTEMPTS {
+        let _ = c.execute("DELETE FROM srs_meta WHERE key IN (?1, ?2)", [PENDING, ATTEMPTS]);
+        record(&c, json!({"at": now, "ok": false, "reason": "interrupted", "attempts": attempts, "bytes": before}));
+        return Ok(c);
+    }
+    // 自动提交：进程死在整理里时这一笔已经落盘（WAL）。
+    let marked = c.execute(
+        "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![ATTEMPTS, (attempts + 1).to_string()],
+    );
+    if let Err(e) = marked {
+        record(&c, json!({"at": now, "ok": false, "reason": e.to_string(), "bytes": before}));
+        return Ok(c);
+    }
+    if in_place {
+        shrink_in_place(&c, size, before, now);
+        return Ok(c);
+    }
+    set_temp_dir(&c, path.parent().unwrap_or(Path::new(".")));
+    let rewritten = rewrite_into(&c, &staged, size, before, now);
+    clear_temp_dir(&c);
+    // 换文件前旧库上不能有打开的句柄。
+    drop(c);
+    let out = rewritten.and_then(|()| swap_in(path, &staged));
+    if out.is_err() {
+        remove_staged(&staged);
+    }
+    let c = reopen()?;
+    if let Err(e) = out {
+        let _ = c.execute("DELETE FROM srs_meta WHERE key = ?1", [ATTEMPTS]);
+        record(&c, json!({"at": now, "ok": false, "reason": e, "bytes": before}));
+    }
+    Ok(c)
+}
+
+/// 原地收缩：分块 `incremental_vacuum`，每块后截断 WAL，直到空闲链表清空。
+fn shrink_in_place(c: &Connection, size: u64, before: u64, now: i64) {
+    let chunk = (CHUNK / size.max(1)).max(1);
+    let mut out: Result<(), String> = Ok(());
+    loop {
+        let spare = pragma(c, "freelist_count").unwrap_or(0);
+        if spare == 0 {
+            break;
+        }
+        if let Err(e) = c.execute_batch(&format!("PRAGMA incremental_vacuum({chunk}); PRAGMA wal_checkpoint(TRUNCATE);")) {
+            out = Err(e.to_string());
+            break;
+        }
+        if pragma(c, "freelist_count").unwrap_or(0) >= spare {
+            out = Err("incremental_vacuum made no progress".into());
+            break;
+        }
+    }
+    let _ = c.execute("DELETE FROM srs_meta WHERE key = ?1", [ATTEMPTS]);
     match out {
         Ok(()) => {
             let after = pragma(c, "page_count").unwrap_or(0) * size;
             let _ = c.execute("DELETE FROM srs_meta WHERE key = ?1", [PENDING]);
-            record(c, json!({"at": now, "ok": true, "before": before, "after": after}));
-            true
+            record(c, json!({"at": now, "ok": true, "mode": "in_place", "before": before, "after": after}));
         }
-        Err(e) => {
-            record(c, json!({"at": now, "ok": false, "reason": e.to_string(), "bytes": before}));
-            false
-        }
+        Err(e) => record(c, json!({"at": now, "ok": false, "mode": "in_place", "reason": e, "bytes": before})),
     }
+}
+
+/// 把整理后的库写成 [staged]（auto_vacuum 改成 INCREMENTAL），在里面清掉标记、记好结果，fsync。
+fn rewrite_into(c: &Connection, staged: &Path, size: u64, before: u64, now: i64) -> Result<(), String> {
+    let staged_text = staged.to_str().ok_or_else(|| "srs.db path is not UTF-8".to_string())?;
+    // WAL 截断到 0：之后旧库的主文件本身就是完整的库，换文件之前任何一步崩溃都不丢东西。有别的连接正读着就截不动，
+    // 不整理（没在读的别的连接由 [swap_in] 按关闭后 WAL 是否还在查出来）。
+    let (busy, frames, done): (i64, i64, i64) = c
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?;
+    if busy != 0 || done != frames {
+        return Err(format!("busy: wal_checkpoint busy={busy} frames={frames} checkpointed={done}"));
+    }
+    c.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;").map_err(|e| e.to_string())?;
+    c.execute("VACUUM INTO ?1", [staged_text]).map_err(|e| e.to_string())?;
+    {
+        let s = Connection::open(staged).map_err(|e| e.to_string())?;
+        let after = pragma(&s, "page_count").map_err(|e| e.to_string())? * size;
+        s.execute("DELETE FROM srs_meta WHERE key IN (?1, ?2)", [PENDING, ATTEMPTS]).map_err(|e| e.to_string())?;
+        record(&s, json!({"at": now, "ok": true, "mode": "rewrite", "before": before, "after": after}));
+    }
+    // Windows 的 FlushFileBuffers 要写权限：只读句柄上 sync_all 报「拒绝访问」。
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(staged)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| format!("sync {}: {e}", staged.display()))
+}
+
+/// 关掉旧库的连接之后，把 [staged] 原子换成 [path]。最后一个连接关闭时 SQLite 检查点并删掉 WAL / 共享内存索引；WAL
+/// 还在就是还有别的连接开着这个库（它们会继续读写被换掉的旧文件），不换。残留的 `-shm` 删掉，免得配给新库。
+fn swap_in(path: &Path, staged: &Path) -> Result<(), String> {
+    let wal = suffixed(path, "-wal");
+    if wal.exists() {
+        return Err(format!("busy: {} still exists after closing (another connection has srs.db open)", wal.display()));
+    }
+    let shm = suffixed(path, "-shm");
+    match std::fs::remove_file(&shm) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(format!("remove {}: {e}", shm.display())),
+        _ => {}
+    }
+    std::fs::rename(staged, path).map_err(|e| format!("rename {}: {e}", staged.display()))?;
+    sync_dir(path);
+    Ok(())
+}
+
+/// 把重命名落盘（POSIX 上目录项要 fsync 目录；Windows 的 MoveFileEx 不需要）。
+fn sync_dir(path: &Path) {
+    #[cfg(unix)]
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::File::open(dir).and_then(|d| d.sync_all());
+    }
+    #[cfg(not(unix))]
+    let _ = path;
 }
 
 /// [path] 所在卷的可用空间。
@@ -167,7 +332,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/.cargo/config.toml");
         let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
         assert!(
-            text.contains("LIBSQLITE3_FLAGS = \"-USQLITE_TEMP_STORE -DSQLITE_TEMP_STORE=1\""),
+            text.contains("LIBSQLITE3_FLAGS = { value = \"-USQLITE_TEMP_STORE -DSQLITE_TEMP_STORE=1\", force = true }"),
             "{path} 缺 LIBSQLITE3_FLAGS 覆盖"
         );
     }

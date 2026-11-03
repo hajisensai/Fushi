@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3596 条。点号进各自文件。
+> 共 3597 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3993](bugs/BUG-3993-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
 | [BUG-3992](bugs/BUG-3992-browser-shortcuts-dead-after-unfocus.md) | ✅ | ✅ | 浏览器 Ctrl+F 等快捷键在焦点离开地址栏后失效 |
 | [BUG-3991](bugs/BUG-3991-browser-svg-favicon-letter.md) | ✅ | ✅ | 浏览器标签页图标退回首字母（站点声明 SVG favicon） |
 | [BUG-3990](bugs/BUG-3990-browser-tab-strip-gap.md) | ✅ | ✅ | 浏览器顶部活动标签不贴地址栏、中间露 6dp 缝 |
@@ -71,11 +72,6 @@
 | [BUG-3961](bugs/BUG-3961-srs-concurrent-reads-serialized.md) | ✅ | ✅ | 同步跑着时打开卡片 / 牌组设置很慢：srs.db 的读全排在一条队列里 |
 | [BUG-3960](bugs/BUG-3960-srs-restore-legacy-original-time.md) | ✅ | ✅ | srs-restore-legacy-original-time |
 | [BUG-3959](bugs/BUG-3959-srs-sync2-synthetic-writer-ctx-bloat.md) | ✅ | ✅ | 复习同步 v2：合成写入者 `sync2:` 进了因果上下文，本机每条新修改 ctx ≈ 780 KB |
-> 共 3563 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3959](bugs/BUG-3959-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
 | [BUG-3958](bugs/BUG-3958-floating-ball-photo-ocr-mines-no-sentence.md) | ✅ | ✅ | 悬浮球拍照查词、悬浮字幕点字制卡没有例句 |
 | [BUG-3957](bugs/BUG-3957-srs-native-pitch-graph-notation.md) | ✅ | ✅ | 复习卡原生声调图给低拍画下划线，与模板记法不一致 |
 | [BUG-3956](bugs/BUG-3956-reader-lyrics-system-back-twice.md) | ✅ | ✅ | 歌词模式下系统返回要两次才回书架 |

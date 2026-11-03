@@ -8,5 +8,7 @@
 #
 # 构建脚本（build_*_so.*、CI、tool/native_libs.ps1）都在本目录跑 cargo，这份配置对它们都生效。
 # 守卫：src/store/compact.rs 的 tests::temp_store_compiled_to_files。
+# `force = true`：环境里已有的 LIBSQLITE3_FLAGS（CI / 本机 shell 残留）也被这里覆盖，产物恒为 TEMP_STORE=1；
+# build_android_so.* 再按产物字节核对一遍。
 [env]
-LIBSQLITE3_FLAGS = "-USQLITE_TEMP_STORE -DSQLITE_TEMP_STORE=1"
+LIBSQLITE3_FLAGS = { value = "-USQLITE_TEMP_STORE -DSQLITE_TEMP_STORE=1", force = true }
