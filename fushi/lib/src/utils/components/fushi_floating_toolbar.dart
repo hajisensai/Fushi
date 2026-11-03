@@ -965,10 +965,11 @@ class FushiFloatingTopBar extends StatefulWidget {
   /// false = 旧行为：[actions] 恒平铺、[overflow] 恒进「⋯」（布局编辑器的槽位预览用）。
   final bool adaptiveOverflow;
 
-  /// true = 标题胶囊优先完整显示：测宽按标题 / 副标题的自然宽整段预留（不封顶到
-  /// [kFushiFloatingTopBarTitleMinWidth]），动作放不下就先收进「⋯」。用于标题
-  /// 短而副标题承载关键信息的页头（复习页的卡片计数，用户 2026-11-03）。书名可能
-  /// 很长的页面（阅读器）别开：会把动作全挤进「⋯」。
+  /// true = 副标题优先完整显示：测宽按副标题的自然宽整段预留（不封顶到
+  /// [kFushiFloatingTopBarTitleMinWidth]），动作放不下就先收进「⋯」；标题本身
+  /// （用户命名、长度无界）仍按保底宽封顶、放不下省略号截断，免得一个超长牌组名
+  /// 把高频动作全挤进「⋯」。用于副标题承载长度有界的关键信息的页头（复习页的
+  /// 卡片计数，用户 2026-11-03）。
   final bool titleFirst;
 
   /// true = 不画悬浮胶囊底（无底色、无投影），只剩裸图标按钮；放在自带背景的
@@ -982,6 +983,12 @@ class FushiFloatingTopBar extends StatefulWidget {
 
 /// 顶部悬浮条标题胶囊的保底宽度：动作再多也先保它（书名至少露出几个字）。
 const double kFushiFloatingTopBarTitleMinWidth = 160;
+
+/// Material 标题胶囊文字两侧的水平内边距：build 与测宽共用，免得两处手写数字漂移。
+const double _kMaterialTitleHorizontalPadding = 16;
+
+/// Apple 内联标题文字两侧的水平内边距：build 与测宽共用。
+const double _kAppleTitleHorizontalPadding = 4;
 
 /// 自适应溢出的展开回差：多放出一颗按钮需要比「刚好放得下」再多出这么多宽度。
 const double kFushiFloatingTopBarOverflowHysteresis = 24;
@@ -1103,29 +1110,53 @@ int fushiTopBarFitCount(
 /// 实际占的宽，不再按保底宽多扣——「复习」这种两个字的标题按 160 预留会白白
 /// 挤掉两三颗放得下的按钮（2026-10-20 用户：「放得下的都没必要折叠吧」）。
 ///
-/// [titleFirst] = 标题胶囊按自然宽整段预留（不封顶到保底宽），动作先收进「⋯」
-/// 也要让标题 / 副标题完整显示（复习页「牌组名 + 新卡 · 学习 · 复习」）。
+/// [subtitleWidth] 是只按副标题量的胶囊自然宽（同样含内边距）。两者都不给时
+/// 按保底宽预留。
+///
+/// [titleFirst] = 副标题按自然宽整段预留（不封顶到保底宽），动作先收进「⋯」也要
+/// 让它完整显示（复习页「新卡 · 学习 · 复习」计数，长度有界）；标题（用户命名、
+/// 长度无界，如 Anki 层级牌组全名）仍按保底宽封顶——超长标题省略号截断，不把
+/// 高频动作挤光。
 double fushiTopBarActionsBudget({
   required double maxWidth,
   int leadingCount = 0,
   required bool hasTitle,
   double? titleWidth,
+  double? subtitleWidth,
   bool titleFirst = false,
 }) =>
     maxWidth -
     leadingCount * _kTopBarLeadingSlot -
-    (!hasTitle
-        ? 0
-        : titleFirst
-        ? math.max(
-            titleWidth ?? kFushiFloatingTopBarTitleMinWidth,
-            kFushiFloatingTopBarTitleMinWidth,
+    (hasTitle
+        ? _topBarTitleReserve(
+            titleWidth: titleWidth,
+            subtitleWidth: subtitleWidth,
+            titleFirst: titleFirst,
           )
-        : math.min(
-            titleWidth ?? kFushiFloatingTopBarTitleMinWidth,
-            kFushiFloatingTopBarTitleMinWidth,
-          )) -
+        : 0) -
     8;
+
+/// 标题胶囊在动作预算里预留的宽度，见 [fushiTopBarActionsBudget]。
+double _topBarTitleReserve({
+  required double? titleWidth,
+  required double? subtitleWidth,
+  required bool titleFirst,
+}) {
+  if (titleWidth == null && subtitleWidth == null) {
+    return kFushiFloatingTopBarTitleMinWidth;
+  }
+  final double cappedTitle = math.min(
+    titleWidth ?? 0,
+    kFushiFloatingTopBarTitleMinWidth,
+  );
+  final double subtitle = subtitleWidth ?? 0;
+  return titleFirst
+      ? math.max(subtitle, cappedTitle)
+      : math.min(
+          math.max(titleWidth ?? 0, subtitle),
+          kFushiFloatingTopBarTitleMinWidth,
+        );
+}
 
 /// 前置圆钮（[FushiFloatingTopBar.leading]）在 [maxWidth] 里平铺几颗（纯函数）。
 ///
@@ -1395,7 +1426,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     double maxWidth, {
     required bool hasTitle,
     required int leadingCount,
-    double? titleWidth,
+    ({double title, double subtitle})? titleWidths,
     bool menuPinned = false,
   }) {
     if (!widget.adaptiveOverflow) {
@@ -1412,7 +1443,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         maxWidth,
         hasTitle: hasTitle,
         leadingCount: leadingCount,
-        titleWidth: titleWidth,
+        titleWidths: titleWidths,
       ),
       pinnedMenu: menuPinned || widget.menu.isNotEmpty,
       slotWidth: fushiTopBarActionSlotWidth(context),
@@ -1429,27 +1460,37 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     double maxWidth, {
     required bool hasTitle,
     required int leadingCount,
-    double? titleWidth,
+    ({double title, double subtitle})? titleWidths,
   }) =>
       fushiTopBarActionsBudget(
         maxWidth: maxWidth,
         leadingCount: leadingCount,
         hasTitle: hasTitle,
-        titleWidth: titleWidth,
+        titleWidth: titleWidths?.title,
+        subtitleWidth: titleWidths?.subtitle,
         titleFirst: widget.titleFirst,
       ) +
       (widget.actionsFollowLeading && !hasTitle ? 8 : 0);
 
-  /// 标题胶囊的自然宽，与下面 build 里同字体、同文字缩放：Material = 文字 +
-  /// 两侧各 16 内边距；Apple 内联标题 = 文字 + 两侧各 4（只在
+  /// 标题胶囊的自然宽，分别按标题、副标题量（各自含两侧内边距），与下面 build
+  /// 里同字体、同文字缩放：Material 内边距 [_kMaterialTitleHorizontalPadding]，
+  /// Apple 内联标题 [_kAppleTitleHorizontalPadding]（Apple 只在
   /// [FushiFloatingTopBar.titleFirst] 时量，其余按保底宽预留）。带
   /// [FushiFloatingTopBar.titleLeading]（宽度未知）时返回 null，测宽按保底宽预留。
-  double? _titleWidth(BuildContext context, String t, String s) {
+  ({double title, double subtitle})? _titleWidths(
+    BuildContext context,
+    String t,
+    String s,
+  ) {
     if (widget.titleLeading != null) return null;
     final bool apple = isGlassDesign(context);
     if (apple && !widget.titleFirst) return null;
     final TextTheme text = Theme.of(context).textTheme;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final double padding = apple
+        ? _kAppleTitleHorizontalPadding
+        : _kMaterialTitleHorizontalPadding;
+    // 文字宽取整 + 两侧内边距 + 2 的取整余量。
     double measure(String value, TextStyle? style) {
       if (value.isEmpty) return 0;
       final TextPainter painter = TextPainter(
@@ -1460,27 +1501,16 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       )..layout();
       final double width = painter.width;
       painter.dispose();
-      return width;
+      return width.ceilToDouble() + padding * 2 + 2;
     }
 
-    if (apple) {
-      final double appleWidth = math.max(
-        measure(t, fushiAppleInlineTitleStyle(context).copyWith(height: 1.15)),
-        measure(
-          s,
-          fushiAppleInlineSubtitleStyle(context).copyWith(height: 1.15),
-        ),
-      );
-      return appleWidth.ceilToDouble() + 8 + 2;
-    }
-    final double textWidth = math.max(
-      measure(
-        t,
-        text.titleSmall?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
-      ),
-      measure(s, text.labelSmall?.copyWith(height: 1.15)),
-    );
-    return textWidth.ceilToDouble() + 32 + 2;
+    final TextStyle? titleStyle = apple
+        ? fushiAppleInlineTitleStyle(context).copyWith(height: 1.15)
+        : text.titleSmall?.copyWith(fontWeight: FontWeight.w700, height: 1.15);
+    final TextStyle? subtitleStyle = apple
+        ? fushiAppleInlineSubtitleStyle(context).copyWith(height: 1.15)
+        : text.labelSmall?.copyWith(height: 1.15);
+    return (title: measure(t, titleStyle), subtitle: measure(s, subtitleStyle));
   }
 
   /// Apple 的标题：iOS 26 / macOS 26 导航栏的内联标题不装进玻璃——玻璃只给
@@ -1496,7 +1526,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: fushiAppleFloatingExtent(context)),
       child: Padding(
-        padding: const EdgeInsetsDirectional.symmetric(horizontal: 4),
+        padding: const EdgeInsetsDirectional.symmetric(
+          horizontal: _kAppleTitleHorizontalPadding,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -1602,8 +1634,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                   ),
                   child: Padding(
                     padding: EdgeInsetsDirectional.only(
-                      start: titleLeading == null ? 16 : 6,
-                      end: 16,
+                      start: titleLeading == null
+                          ? _kMaterialTitleHorizontalPadding
+                          : 6,
+                      end: _kMaterialTitleHorizontalPadding,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1697,9 +1731,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                   leadingCount: leadingShown,
                   // 收起的前置钮在「⋯」里：⋯ 恒占一格。
                   menuPinned: foldedLeading.isNotEmpty,
-                  titleWidth: titlePill == null
+                  titleWidths: titlePill == null
                       ? null
-                      : _titleWidth(context, t, s),
+                      : _titleWidths(context, t, s),
                 ),
               )
             : (groups: actions, overflow: overflow);
