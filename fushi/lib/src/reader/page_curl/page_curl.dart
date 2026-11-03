@@ -32,9 +32,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:material_ui/material_ui.dart' show Easing;
 
 import 'package:fushi/src/reader/page_turn_animation.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 阅读器为卷页提供的能力。所有方法都在 UI isolate 上调用，失败要自己吞掉并返回
@@ -678,6 +678,7 @@ class PageCurlController extends ChangeNotifier {
   }
 
   bool _settleCommit = false;
+  bool _settleFromRest = false;
   Offset _settleFrom = Offset.zero;
   Offset _settleTo = Offset.zero;
   Duration _settleDuration = Duration.zero;
@@ -689,6 +690,9 @@ class PageCurlController extends ChangeNotifier {
     _settleCommit = commit;
     final bool landsTurned = commit == _forward;
     _settleFrom = _point;
+    _settleFromRest =
+        _settleFrom == Offset(_size.width, _y0) ||
+        _settleFrom == pageCurlTurnedPoint(_size, _y0);
     _settleTo = landsTurned
         ? pageCurlTurnedPoint(_size, _y0)
         : Offset(_size.width, _y0);
@@ -733,9 +737,13 @@ class PageCurlController extends ChangeNotifier {
             0.0,
             1.0,
           );
-    // 动效 token：临界阻尼弹簧形状（不过冲——落点越界会把卷页顶点推出页外、
-    // 抬升弧变负），点按 / 按键与松手接力同一条曲线。
-    final double eased = FushiMotion.standard.transform(t);
+    // M3 缓动 token（三次贝塞尔，不过冲——落点越界会把卷页顶点推出页外、抬升弧
+    // 变负）。点按 / 按键从静止起步：standard 两头缓。松手接力时手指已带着速度：
+    // standardDecelerate 起点速度最大、直接减速收尾。不用弹簧 token：静止起步的
+    // 临界阻尼弹簧起点速度为 0，接力时页面会先顿住再加速。
+    final double eased =
+        (_settleFromRest ? Easing.standard : Easing.standardDecelerate)
+            .transform(t);
     final Offset p = Offset.lerp(_settleFrom, _settleTo, eased)!;
     // 翻过去的途中略微抬高，卷出弧线而不是平推。
     final double lift = math.sin(eased * math.pi) * _size.height * 0.04;
