@@ -30,6 +30,33 @@ const Duration kWebVideoSeekLandingTolerance = Duration(milliseconds: 1500);
 /// glue 命令的结果码里表示「已发出」的那些（seek 的回执随后由 seekDone 送达）。
 const Set<String> _kSeekSent = <String>{'bridge', 'direct'};
 
+/// 站点画面能不能在页面里截帧（canvas 导出）：Netflix 是硬件 DRM（PlayReady），只能拿到黑帧；
+/// 其余站点（YouTube 等 MSE 同源流）可以。
+bool webVideoFrameCaptureSupported(String href) {
+  final String host = (Uri.tryParse(href)?.host ?? '').toLowerCase();
+  if (host.isEmpty) return false;
+  return !kWebVideoNetflixHosts.any(
+    (String h) => host == h || host.endsWith('.$h'),
+  );
+}
+
+/// 解出 glue `captureFrame` 返回的 data URL 字节；结果码（'drm' / 'tainted' / 'no-video'）或
+/// 格式不对返回 null。
+@visibleForTesting
+Uint8List? decodeWebVideoFrameDataUrl(Object? result) {
+  if (result is! String || !result.startsWith('data:image/')) return null;
+  final int comma = result.indexOf(',');
+  if (comma < 0 || !result.substring(0, comma).endsWith(';base64')) {
+    return null;
+  }
+  try {
+    final Uint8List bytes = base64Decode(result.substring(comma + 1));
+    return bytes.isEmpty ? null : bytes;
+  } on FormatException {
+    return null;
+  }
+}
+
 class WebVideoPlatformPlayer extends PlatformPlayer
     implements ExternallyRenderedPlatformPlayer {
   WebVideoPlatformPlayer({required this.evaluate})
@@ -57,6 +84,10 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   /// 站点音轨（目前只有 Netflix）：media_kit 的 [Tracks.audio] 只放真实轨（没有 auto / no）。
   List<WebVideoSiteTrack> _siteAudioTracks = const <WebVideoSiteTrack>[];
 
+  /// 当前站点画面能否在页面里截帧（[webVideoFrameCaptureSupported]，随快照更新）。
+  bool get frameCaptureSupported => _frameCaptureSupported;
+  bool _frameCaptureSupported = false;
+
   @visibleForTesting
   bool get debugSeekInFlight => _pendingSeekId != null;
 
@@ -76,6 +107,8 @@ class WebVideoPlatformPlayer extends PlatformPlayer
       _pendingPlaying = null;
     }
     _lastVideoKey = s.videoKey;
+    _frameCaptureSupported =
+        s.hasVideo && webVideoFrameCaptureSupported(s.href);
     final Duration reported = Duration(milliseconds: s.positionMs ?? 0);
     final Duration duration = Duration(milliseconds: s.durationMs ?? 0);
     if (_pendingSeekId != null) {
@@ -358,12 +391,20 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   @override
   Future<void> setSubtitleTrack(SubtitleTrack track) async {}
 
-  /// 画面在站点（硬件 DRM 截不到）；截帧走制卡重放的可捕获档。
+  /// 画面在站点页面里：非 DRM 站点用页面 canvas 截当前帧（暂停 OCR / 识别画面文字用）；Netflix
+  /// 硬件 DRM 截不到，返回 null（制卡截帧另走重放的可捕获档）。站点字幕不在视频帧里，
+  /// [includeLibassSubtitles] 无意义。
   @override
   Future<Uint8List?> screenshot({
     String? format = 'image/jpeg',
     bool includeLibassSubtitles = false,
-  }) async => null;
+  }) async {
+    if (_disposed || !_frameCaptureSupported) return null;
+    final String type = format == 'image/png' ? 'image/png' : 'image/jpeg';
+    return decodeWebVideoFrameDataUrl(
+      await evaluate("window.__fushiWebVideo.captureFrame('$type')"),
+    );
+  }
 
   /// 没有 mpv 句柄：任何把它当 mpv 用的路径都该在此失败，而不是拿野指针。
   @override

@@ -6,6 +6,7 @@
 // 透出来的前提是视频区下面没有任何不透明的 Flutter 底色：页面自己让开，外层标题栏
 // 框架（盖着整个 Navigator 的 surface 底色）听 [underlayCompositionActive]。
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -116,6 +117,9 @@ class UnderlayInputExclusion {
 
   @override
   int get hashCode => Object.hash(rect, radius);
+
+  @override
+  String toString() => 'UnderlayInputExclusion($rect, radius: $radius)';
 }
 
 /// 当前所有 [UnderlayInputRegion] 的区域；底层合成关着时恒为空表。
@@ -138,44 +142,76 @@ void _collectUnderlayInputExclusions(Duration _) {
   final List<UnderlayInputExclusion> next = <UnderlayInputExclusion>[
     if (underlayCompositionActive.value)
       for (final _RenderUnderlayInputRegion box in _regionBoxes)
-        if (box.attached && box.hasSize && !box.size.isEmpty)
-          UnderlayInputExclusion(
-            MatrixUtils.transformRect(
-              box.getTransformTo(null),
-              Offset.zero & box.size,
+        if (box.enabled && box.attached && box.hasSize)
+          if (box.holeRect case final Rect hole?)
+            UnderlayInputExclusion(
+              MatrixUtils.transformRect(box.getTransformTo(null), hole),
+              math.max(0.0, box.radius - box.inset),
             ),
-            box.radius,
-          ),
   ];
   if (!listEquals(next, underlayInputExclusions.value)) {
     underlayInputExclusions.value = next;
   }
 }
 
+/// 有填色 / 有阴影的形状登记挖洞时向内收的量（逻辑 px）：边缘抗锯齿那一圈（≤ 1 物理 px，
+/// 1× 缩放下就是 1 逻辑 px）不是不透明像素，再留一点余量。
+const double kUnderlayRegionEdgeInset = 1.5;
+
 /// 标记一块「画在网页上面、要自己接鼠标」的 Flutter 区域（见 [underlayInputExclusions]）。
 /// 不改布局与绘制；底层合成关着时什么也不做。
+///
+/// 挖洞用 SetWindowRgn，同时裁掉了 WebView2 子窗口的绘制：洞里没有网页像素，透出的是
+/// Flutter 视图下的黑底，凡洞内 Flutter 不是不透明的像素都发黑。所以**洞必须落在不透明
+/// 像素里**：
+/// - [inset]：登记时四边向内收（圆角同收），把抗锯齿边、按下缩放让出的一圈排除在外；
+/// - [enabled]：只在区域内容静止且完全不透明时为 true——淡入 / 飞入动画中途不登记
+///   （半透明像素会发黑；洞经平台通道异步下发，追不上逐帧移动的图形）。
 class UnderlayInputRegion extends SingleChildRenderObjectWidget {
-  const UnderlayInputRegion({this.radius = 0, super.child, super.key});
+  const UnderlayInputRegion({
+    this.radius = 0,
+    this.inset = 0,
+    this.enabled = true,
+    super.child,
+    super.key,
+  });
 
   final double radius;
+  final double inset;
+  final bool enabled;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderUnderlayInputRegion(radius);
+      _RenderUnderlayInputRegion(radius, inset: inset, enabled: enabled);
 
   @override
   void updateRenderObject(
     BuildContext context,
     _RenderUnderlayInputRegion renderObject,
   ) {
-    renderObject.radius = radius;
+    renderObject
+      ..radius = radius
+      ..inset = inset
+      ..enabled = enabled;
   }
 }
 
 class _RenderUnderlayInputRegion extends RenderProxyBox {
-  _RenderUnderlayInputRegion(this.radius);
+  _RenderUnderlayInputRegion(
+    this.radius, {
+    required this.inset,
+    required this.enabled,
+  });
 
   double radius;
+  double inset;
+  bool enabled;
+
+  /// 本地坐标下要挖的矩形（已内收）；收没了返回 null。
+  Rect? get holeRect {
+    final Rect rect = (Offset.zero & size).deflate(inset);
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  }
 
   @override
   void attach(PipelineOwner owner) {

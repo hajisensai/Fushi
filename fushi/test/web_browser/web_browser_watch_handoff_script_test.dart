@@ -197,6 +197,89 @@ setTimeout(() => process.stdout.write(JSON.stringify(out)), 20);
       isFalse,
     );
   });
+
+  test('交接判据：站点标了自动播放的 YouTube 观看页同一条判据交接，其它页不交', () {
+    final Uri ytWatch = Uri.parse(
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    );
+    bool always(Uri _) => true;
+    bool never(Uri _) => false;
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: true,
+        autoPlaySite: always,
+      ),
+      isTrue,
+    );
+    // 没标自动播放：YouTube 观看页留在浏览器里播。
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: true,
+        autoPlaySite: never,
+      ),
+      isFalse,
+    );
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: true,
+      ),
+      isFalse,
+    );
+    // 无痕 / 没有播放页仍然不交，哪怕站点标了自动播放。
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: true,
+        playerAvailable: true,
+        autoPlaySite: always,
+      ),
+      isFalse,
+    );
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: false,
+        autoPlaySite: always,
+      ),
+      isFalse,
+    );
+    // 自动播放只认观看页：YouTube 首页不交。
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        Uri.parse('https://www.youtube.com/'),
+        incognito: false,
+        playerAvailable: true,
+        autoPlaySite: always,
+      ),
+      isFalse,
+    );
+  });
+
+  test('交接判据：站点标记只对有观看页形状的站点自动交接；Netflix 不看标记', () {
+    bool always(Uri _) => true;
+    bool never(Uri _) => false;
+    bool handOff(String url, bool Function(Uri) autoPlaySite) =>
+        webBrowserShouldHandOffWatchPage(
+          Uri.parse(url),
+          incognito: false,
+          playerAvailable: true,
+          autoPlaySite: autoPlaySite,
+        );
+    // Netflix：用户标「关」也照样交（浏览器里 DRM 画面是黑的）。
+    expect(handOff('https://www.netflix.com/watch/1', never), isTrue);
+    // youtu.be 短链也是 YouTube 观看页，按观看页形状判，不另写 YouTube 特例。
+    expect(handOff('https://youtu.be/dQw4w9WgXcQ', always), isTrue);
+    // 分不出观看页的站点：标了也不自动交（否则连首页都交走），标记只提工具栏按钮。
+    expect(handOff('https://example.com/', always), isFalse);
+    expect(handOff('https://example.com/video/1', always), isFalse);
+  });
 }
 
 String? _resolveNode() {

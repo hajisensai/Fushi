@@ -87,6 +87,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           controller.notifyExternalSeek(target.inMilliseconds),
       // BUG-2731 后续（同移动 theme）：进度条落点那次 player.seek 的 Future。
       onSeekDispatched: controller.noteExternalSeekDispatched,
+      // 网页档（站点视频）拖进度条只挪滑块、松手 seek 一次：每次指针移动都是一次页面往返，
+      // 长距离拖动会把几十次大跨度 seek 灌进 Netflix 播放器直到卡死（远跳卡住）。
+      seekOnDrag: !controller.isWebBackend,
       // TODO-669：进度条 hover 缩略图预览。seek bar hover 时 fork 把 hover 比例
       // （轨道内宽权威值）回调给 [_onSeekBarHover]，桌面转发到取帧调度器、移动端不接
       // （触屏无 hover，故仅桌面 theme 接线）。null 时 fork 零行为变化。
@@ -417,6 +420,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // BUG-2731 后续：fork 把横滑 / 双击 / 进度条落点那次 player.seek 的 Future 交过来，
       // 等它完成才开始按「正常推进」判 seek 收场（seek 还在排队时旧内容照常推进）。
       onSeekDispatched: controller.noteExternalSeekDispatched,
+      // 网页档（站点视频）拖进度条只挪滑块、松手 seek 一次：每次指针移动都是一次页面往返，
+      // 长距离拖动会把几十次大跨度 seek 灌进 Netflix 播放器直到卡死（远跳卡住）。
+      seekOnDrag: !controller.isWebBackend,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Fushi 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（鼠标无此手势；触屏经 touch* 字段复用同一套口径，屏幕亮度桌面不可控只开音量）。横滑 seek

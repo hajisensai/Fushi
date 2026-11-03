@@ -155,15 +155,23 @@ class WebVideoTrack {
     required this.lang,
     required this.cues,
     this.siteTrackId = '',
-  });
+    String? languageCode,
+  }) : languageCode = languageCode ?? lang;
 
   final String key;
   final String videoKey;
+
+  /// store key 的语言段（不含 `~trackId`）：Netflix / textTracks 是语言码，YouTube 是站点显示名
+  /// （同语言人工轨与 ASR 轨靠它区分），面板直接拿它当标签。
   final String lang;
   final List<AudioCue> cues;
 
   /// 站点播放器里的轨 id（[WebVideoSiteTrack.id]）；只有 Netflix 的整轨带，其它为空。
   final String siteTrackId;
+
+  /// 语言码（`en` / `ja-JP`），语言偏好匹配只认它。glue 的 `languageCode`（providers 的
+  /// fushiTrackLangCodes）；旧 glue / 没有记录时等于 [lang]。
+  final String languageCode;
 
   bool get isLive => lang == kWebVideoLiveTrackLang;
 }
@@ -177,6 +185,7 @@ class WebVideoSiteTrack {
     required this.name,
     this.type = '',
     this.imageBased = false,
+    this.lazySegment = '',
   });
 
   final String id;
@@ -193,11 +202,21 @@ class WebVideoSiteTrack {
   /// 图片字幕：截不到文字、不能查词，只能让站点自己画。
   final bool imageBased;
 
+  /// 非空 = providers 登记的按需加载占位轨（YouTube 等站点桥先发整份清单、只急取一条；glue 的
+  /// `lzt`），值是它在 store key 里的语言段。请求走 `__fushiWebVideo.requestLazyTrack`。
+  /// 空 = 站点播放器自己的轨（Netflix，glue 的 `nftt`），请求是让播放器切过去（`selectNetflixTrack`）。
+  final String lazySegment;
+
+  /// 按需加载的占位轨（见 [lazySegment]）。
+  bool get isLazy => lazySegment.isNotEmpty;
+
   /// 辅助轨（CC / SDH 字幕、口述影像音轨）：按语言自动选轨时排在普通轨后面。
   bool get isAssistive => type.toUpperCase() == 'ASSISTIVE';
 
-  /// 这条站点轨采到的整轨在 store 里的 key（与 subtitle-providers 的 `lang~trackId` 同形）。
-  String storeKey(String videoKey) => '$videoKey|$lang~$id';
+  /// 这条站点轨采到的整轨在 store 里的 key：占位轨是 `videoKey|语言段`，站点播放器轨与
+  /// subtitle-providers 的 `lang~trackId` 同形。
+  String storeKey(String videoKey) =>
+      isLazy ? '$videoKey|$lazySegment' : '$videoKey|$lang~$id';
 
   @override
   bool operator ==(Object other) =>
@@ -206,10 +225,12 @@ class WebVideoSiteTrack {
       other.lang == lang &&
       other.name == name &&
       other.type == type &&
-      other.imageBased == imageBased;
+      other.imageBased == imageBased &&
+      other.lazySegment == lazySegment;
 
   @override
-  int get hashCode => Object.hash(id, lang, name, type, imageBased);
+  int get hashCode =>
+      Object.hash(id, lang, name, type, imageBased, lazySegment);
 }
 
 /// 按语言偏好在站点轨里挑一条（P1-5 默认轨）：语言码精确 > 前缀（`ja` 命中 `ja-JP`）；同等匹配下
@@ -260,6 +281,15 @@ List<WebVideoSiteTrack> parseWebVideoSiteTracks(Object? raw) {
   }
   return out;
 }
+
+/// glue `lzt`（按需加载的占位轨，与 `nftt` 同形：`语言段\t语言码\t显示名\t\t0`，末行 `#`）：
+/// 每行一条 [WebVideoSiteTrack.isLazy] 轨，id 即语言段（同一视频内唯一）。坏行跳过。
+List<WebVideoSiteTrack> parseWebVideoLazySiteTracks(
+  Object? raw,
+) => <WebVideoSiteTrack>[
+  for (final WebVideoSiteTrack t in parseWebVideoSiteTracks(raw))
+    WebVideoSiteTrack(id: t.id, lang: t.lang, name: t.name, lazySegment: t.id),
+];
 
 String parseWebVideoSiteTrackCurrent(Object? raw) {
   if (raw is! String) return '';
@@ -327,8 +357,9 @@ class WebVideoPlaybackState {
   /// 页面的 og:image（封面候选）；没有为空。
   final String imageUrl;
 
-  /// 站点播放器自己的文字字幕轨（目前只有 Netflix：采集是被动的，要让播放器切到某条轨它才
-  /// 下载那条字幕，见 glue 的 `netflixTextTracks`）；其它站点为空。
+  /// 还没采到整轨、可点选加载的字幕轨（站点无关）：Netflix 是播放器自己的轨（采集是被动的，要让
+  /// 播放器切到某条轨它才下载那条字幕，见 glue 的 `netflixTextTracks`）；YouTube 等是 providers
+  /// 登记的按需加载占位轨（glue 的 `lazyTextTracks`，[WebVideoSiteTrack.isLazy]）。
   final List<WebVideoSiteTrack> siteTracks;
 
   /// 站点播放器当前开着的轨 id（[WebVideoSiteTrack.id]）；字幕关着为空。
@@ -383,6 +414,7 @@ WebVideoTrack? parseWebVideoTrackPayload(
   final String siteTrackId =
       (raw['trackId'] ?? (tilde >= 0 ? segment.substring(tilde + 1) : ''))
           .toString();
+  final String languageCode = (raw['languageCode'] ?? '').toString();
   final List<AudioCue> cues = <AudioCue>[];
   for (final Object? item in rawCues) {
     if (item is! Map) continue;
@@ -408,6 +440,7 @@ WebVideoTrack? parseWebVideoTrackPayload(
     lang: lang,
     cues: cues,
     siteTrackId: siteTrackId,
+    languageCode: languageCode.isEmpty ? null : languageCode,
   );
 }
 
@@ -442,7 +475,10 @@ WebVideoPlaybackState? parseWebVideoStatePayload(
     videoTitle: (raw['vtitle'] ?? '').toString().trim(),
     imageUrl:
         safeRemoteImageUrl((raw['vimg'] ?? '').toString())?.toString() ?? '',
-    siteTracks: parseWebVideoSiteTracks(raw['nftt']),
+    siteTracks: <WebVideoSiteTrack>[
+      ...parseWebVideoSiteTracks(raw['nftt']),
+      ...parseWebVideoLazySiteTracks(raw['lzt']),
+    ],
     siteTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nftt']),
     siteAudioTracks: parseWebVideoSiteTracks(raw['nfat']),
     siteAudioTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nfat']),
@@ -479,29 +515,31 @@ String? parseWebVideoTrackFailedKey(Object? raw) {
 }
 
 /// 选当前视频要显示的字幕轨。规则（消除「用户什么都没选就没字幕」这一特殊情况）：
-/// 1. 用户已选且仍属于当前视频 → 保持；
-/// 2. 候选只看当前 [videoKey] 的轨、且要有 cue；
-/// 3. 优先 [preferredLanguage]（语言码前缀匹配，`ja` 命中 `ja`/`ja-JP`/`日本語` 不算——只认码）；
+/// 1. [pinned]（用户显式选的轨 / 显式请求后采到的轨）仍属于当前视频且有 cue → 保持；
+/// 2. 否则**每次重算**自动结果（不把上一次的自动结果当成用户选择钉住：先到的 live 轨不能挡住
+///    后到的整轨）。候选只看当前 [videoKey] 的轨、且要有 cue；
+/// 3. 优先 [preferredLanguage]（按 [WebVideoTrack.languageCode] 前缀匹配，`ja` 命中 `ja`/`ja-JP`；
+///    显示名「日本語」不算——只认码）；
 /// 4. 其次任意非 live 整轨（整集精确时间轴 > DOM 采样）；
 /// 5. 最后 live 轨；一条都没有 → null。
 String? chooseWebVideoTrackKey({
   required Iterable<WebVideoTrack> tracks,
   required String videoKey,
   String? preferredLanguage,
-  String? current,
+  String? pinned,
 }) {
   final List<WebVideoTrack> mine = <WebVideoTrack>[
     for (final WebVideoTrack t in tracks)
       if (t.videoKey == videoKey && t.cues.isNotEmpty) t,
   ];
   if (mine.isEmpty) return null;
-  if (current != null && mine.any((WebVideoTrack t) => t.key == current)) {
-    return current;
+  if (pinned != null && mine.any((WebVideoTrack t) => t.key == pinned)) {
+    return pinned;
   }
   final String? pref = preferredLanguage?.toLowerCase();
   if (pref != null && pref.isNotEmpty) {
     for (final WebVideoTrack t in mine) {
-      final String l = t.lang.toLowerCase();
+      final String l = t.languageCode.toLowerCase();
       if (!t.isLive && (l == pref || l.startsWith('$pref-'))) return t.key;
     }
   }

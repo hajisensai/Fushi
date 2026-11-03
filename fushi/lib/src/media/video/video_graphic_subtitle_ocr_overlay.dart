@@ -242,8 +242,8 @@ class _VideoGraphicSubtitleOcrOverlayState
   _FrameKey? _pausedFrameKey() {
     final VideoPlayerController c = widget.controller;
     if (c.isPlaying || !c.hasFirstFrame) return null;
-    // 网页播放后端没有 mpv，截帧恒为 null：识别不了，不截、不重截。
-    if (c.isWebBackend) return null;
+    // 截不了帧（网页档的 DRM 站点）：识别不了，不截、不重截。非 DRM 站点照常识别。
+    if (!c.canCaptureFrame) return null;
     final int? position = c.positionMs;
     if (position == null) return null;
     return (positionMs: position, trackId: c.activeSubtitleTrackId);

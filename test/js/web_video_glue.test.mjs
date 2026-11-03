@@ -46,7 +46,8 @@ function makeSandbox({ hostname = 'www.example.com', pathname = '/watch/1' } = {
     head,
     documentElement: head,
     querySelector(sel) { return sel === 'video' ? video : null; },
-    querySelectorAll() { return []; },
+    // glue 的主视频判据（mainVideo）遍历全部 <video>：stub 与 querySelector 同一个元素。
+    querySelectorAll(sel) { return sel === 'video' && video ? [video] : []; },
     getElementById(id) { return styles.find((s) => s.id === id) || null; },
     createElement(tag) {
       const el = { tag, id: '', textContent: '', remove() { const i = styles.indexOf(el); if (i >= 0) styles.splice(i, 1); } };
@@ -115,7 +116,7 @@ test('整集字幕轨：bridge cues → providers store → 节流后整轨投�
   assert.strictEqual(tracks.length, 1);
   assert.strictEqual(tracks[0].name, 'fushiWebVideo');
   assertPlainEqual(tracks[0].payload, {
-    type: 'track', key: '81236554|ja', videoKey: '81236554', lang: 'ja', trackId: '',
+    type: 'track', key: '81236554|ja', videoKey: '81236554', lang: 'ja', languageCode: 'ja', trackId: '',
     cues: [{ s: 1000, e: 2000, t: 'こんにちは' }, { s: 3000, e: 4000, t: 'さようなら' }],
   });
 });

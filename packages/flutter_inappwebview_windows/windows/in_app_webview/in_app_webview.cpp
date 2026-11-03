@@ -2062,17 +2062,22 @@ namespace flutter_inappwebview_plugin
     }
     const double scale = deviceScaleFactor_;
     for (const auto& e : windowedExclusions_) {
-      const int left = static_cast<int>(std::floor(e[0] * scale));
-      const int top = static_cast<int>(std::floor(e[1] * scale));
-      const int right = static_cast<int>(std::ceil(e[2] * scale));
-      const int bottom = static_cast<int>(std::ceil(e[3] * scale));
-      const int diameter = static_cast<int>(std::round(e[4] * scale * 2));
+      // SetWindowRgn 同时裁掉子窗口的绘制：洞里没有网页像素，透出的是 Flutter 视图下的
+      // 黑底，洞外沿任何一个不被 Flutter 不透明像素盖住的像素都会发黑。所以一律向内
+      // 取整（左上 ceil、右下 floor），洞只会比 Dart 侧登记的形状小、不会大。
+      const int left = static_cast<int>(std::ceil(e[0] * scale));
+      const int top = static_cast<int>(std::ceil(e[1] * scale));
+      const int right = static_cast<int>(std::floor(e[2] * scale));
+      const int bottom = static_cast<int>(std::floor(e[3] * scale));
+      // 圆角直径向上取整：角越圆、区域越小，同样不越出形状。
+      const int diameter = static_cast<int>(std::ceil(e[4] * scale * 2));
       if (right <= left || bottom <= top) {
         continue;
       }
-      // CreateRoundRectRgn 的右 / 下边不含在内，补 1 像素。
+      // 两个 API 的右 / 下边都不含在内：[left, right) × [top, bottom) 正好落在形状里，
+      // 不再补像素。
       HRGN hole = diameter > 0
-        ? ::CreateRoundRectRgn(left, top, right + 1, bottom + 1, diameter, diameter)
+        ? ::CreateRoundRectRgn(left, top, right, bottom, diameter, diameter)
         : ::CreateRectRgn(left, top, right, bottom);
       if (hole) {
         ::CombineRgn(region, region, hole, RGN_DIFF);

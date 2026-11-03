@@ -712,7 +712,10 @@ void main() {
       final String features = compactCode(
         read('lib/src/web_browser/features/web_browser_features.dart'),
       );
-      expect(features, contains('WebComicFeature(ref:ref)'));
+      expect(
+        features,
+        contains('WebComicFeature(ref:ref,pageContent:pageContent)'),
+      );
       expect(
         features,
         contains('.where((WebBrowserFeaturef)=>f.available)'),
@@ -723,9 +726,7 @@ void main() {
       );
       expect(
         browser,
-        contains(
-          'parseWebBrowserSites(appModel.prefsRepo.webBrowserSitesJson)',
-        ),
+        contains('webBrowserSitesOf(appModel.prefsRepo.webBrowserSitesJson)'),
         reason: '浏览器不预置任何站点（含漫画站），iOS 上自然也没有漫画来源。',
       );
       expect(browser, isNot(contains('Platform.isIOS')));
@@ -785,7 +786,7 @@ void main() {
         compactCode(
           read('lib/src/web_browser/features/web_browser_features.dart'),
         ),
-        contains('WebNovelFeature(ref:ref)'),
+        contains('WebNovelFeature(ref:ref,pageContent:pageContent)'),
       );
       final String library = compactCode(
         read('lib/src/media/novel/web/web_novel_library.dart'),
