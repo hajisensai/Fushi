@@ -117,16 +117,16 @@ fn all_payloads(d: &Device) -> Vec<Vec<u8>> {
 
 /// 退回 v15 的载荷形态：快照原文拼回载荷、引用两列清空、快照表清空。
 fn inline_snapshots(w: &rusqlite::Connection) {
-    let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
-        .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+    let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
+        .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
         .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    for (dv, s, p, sc, at) in ops {
-        let p = super::snapshots::unpack_payload(w, p, sc, at).unwrap();
-        w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
+    for (dv, s, p, sc, at, pz) in ops {
+        let p = super::snapshots::unpack_payload(w, p, sc, at, pz).unwrap();
+        w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
             .unwrap();
     }
     w.execute_batch("DELETE FROM sync2_snapshots;").unwrap();
@@ -202,17 +202,17 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
     // 退回 v15 的存储形态：载荷内联原文，快照表清空，标 15。
     {
         let w = a.core.writer().unwrap();
-        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
-            .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
+            .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        for (dv, s, p, sc, at) in ops {
-            let p = super::snapshots::unpack_payload(&w, p, sc, at).unwrap();
+        for (dv, s, p, sc, at, pz) in ops {
+            let p = super::snapshots::unpack_payload(&w, p, sc, at, pz).unwrap();
             w.execute(
-                "UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2",
+                "UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL, pz = 0 WHERE device = ?1 AND seq = ?2",
                 rusqlite::params![dv, s, p],
             )
             .unwrap();
@@ -272,16 +272,16 @@ fn footprint_answered_reviews() {
     // 退回内联存法（v15 的形态）。
     {
         let w = a.core.writer().unwrap();
-        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
-            .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
+            .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        for (dv, s, p, sc, at) in ops {
-            let p = super::snapshots::unpack_payload(&w, p, sc, at).unwrap();
-            w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
+        for (dv, s, p, sc, at, pz) in ops {
+            let p = super::snapshots::unpack_payload(&w, p, sc, at, pz).unwrap();
+            w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
                 .unwrap();
         }
     }

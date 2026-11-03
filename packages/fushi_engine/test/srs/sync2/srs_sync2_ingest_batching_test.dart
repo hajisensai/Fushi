@@ -130,29 +130,56 @@ void main() {
       );
     });
 
-    test('消费方处理一批时不再下载（同一时刻内存里只有一批）', () async {
+    test('消费方处理一批时预读下一批，且只预读一批（同一时刻内存里最多两批）', () async {
       final List<String> paths = <String>[for (int i = 0; i < 12; i++) 'p$i'];
       final _Sized st = _Sized(<String, int?>{
         for (final String p in paths) p: 4,
       });
       int seen = 0;
+      int? prefetched;
+      final List<int> aheads = <int>[];
       await for (final SrsFetchedBatch b in srsFetchInBatches(
         paths,
         fetch: st.get,
         budgetBytes: 8,
         concurrency: 2,
       )) {
+        // 上一批处理期间预读的，正好是这一批，没有更往后的。
+        if (prefetched != null) expect(b.covered, prefetched);
         seen += b.covered;
-        final int before = st.fetched.length;
         await Future<void>.delayed(const Duration(milliseconds: 5));
-        expect(
-          st.fetched.length,
-          before,
-          reason: 'no prefetch while ingesting',
-        );
-        expect(st.fetched.length, seen);
+        prefetched = st.fetched.length - seen;
+        aheads.add(prefetched);
       }
       expect(seen, paths.length);
+      expect(st.fetched, paths, reason: 'each path read once, in order');
+      expect(aheads.last, 0);
+      expect(
+        aheads.sublist(0, aheads.length - 1),
+        everyElement(greaterThan(0)),
+        reason: 'the next batch downloads while this one is ingested',
+      );
+    });
+
+    test('预读那一批失败：之前的批照常交出，交到它时才抛', () async {
+      final List<String> got = <String>[];
+      Future<Uint8List?> fetch(String p) async {
+        if (p == 'c') throw StateError('boom');
+        return Uint8List(4);
+      }
+
+      await expectLater(() async {
+        await for (final SrsFetchedBatch b in srsFetchInBatches(
+          <String>['a', 'b', 'c', 'd'],
+          fetch: fetch,
+          budgetBytes: 8,
+          concurrency: 1,
+        )) {
+          got.add('${b.covered}');
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+      }(), throwsA(isA<StateError>()));
+      expect(got, <String>['2']);
     });
 
     test('读不到的路径计进 covered、不进 segments；空输入交出一个空批', () async {
@@ -196,7 +223,7 @@ void main() {
       expect(calls, 2);
     });
 
-    test('消费方中途停止监听：之后不再读', () async {
+    test('消费方中途停止监听：预读的那一批读完就不再读', () async {
       final List<String> paths = <String>[for (int i = 0; i < 10; i++) 'p$i'];
       final _Sized st = _Sized(<String, int?>{
         for (final String p in paths) p: 4,
@@ -210,7 +237,7 @@ void main() {
         break;
       }
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      expect(st.fetched, <String>['p0']);
+      expect(st.fetched, <String>['p0', 'p1']);
     });
   });
 

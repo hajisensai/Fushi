@@ -53,10 +53,10 @@ fn expand_payloads(d: &Device, cols: &[String], rows: &mut [Vec<String>]) {
     let (dev, seq, payload) = (at("device"), at("seq"), at("payload"));
     let w = d.core.writer().unwrap();
     let mut full: BTreeMap<(Vec<u8>, i64), Vec<u8>> = BTreeMap::new();
-    let mut st = w.prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops").unwrap();
+    let mut st = w.prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops").unwrap();
     let mut q = st.query([]).unwrap();
     while let Some(r) = q.next().unwrap() {
-        let p = super::sync2::snapshots::unpack_payload(&w, r.get(2).unwrap(), r.get(3).unwrap(), r.get(4).unwrap()).unwrap();
+        let p = super::sync2::snapshots::unpack_payload(&w, r.get(2).unwrap(), r.get(3).unwrap(), r.get(4).unwrap(), r.get(5).unwrap()).unwrap();
         full.insert((r.get(0).unwrap(), r.get(1).unwrap()), p);
     }
     let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02X}")).collect::<String>();
