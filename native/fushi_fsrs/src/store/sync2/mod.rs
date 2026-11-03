@@ -11,6 +11,7 @@
 
 pub(crate) mod channel;
 pub mod config;
+pub(crate) mod dedup;
 pub mod digest;
 pub mod media;
 pub(crate) mod mvr;
@@ -417,13 +418,19 @@ fn legacy_closure_with(
         PARTIAL_CLOSURES.with(|c| c.set(c.get() + 1));
         // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不剪快照（snapshots.rs 只剪日志），
         // 只可能压缩过。
+        // 副本骨架（dedup.rs）带着旧戳，与原文同样并进来。
         let mut stmt = conn
-            .prepare_cached("SELECT payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
+            .prepare_cached("SELECT payload, pz, purged FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
             .map_err(sql)?;
         let mut q = stmt.query(params![profile, d.0.to_vec(), s as i64, i64::from(op::KIND_EDIT)]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let p = snapshots::unpack_payload(conn, r.get(0).map_err(sql)?, None, None, r.get(1).map_err(sql)?)?;
-            if let Ok(Body::Edit(EditBody { legacy: Some(l), .. })) = Body::decode(op::KIND_EDIT, &p) {
+            let body = if r.get::<_, i64>(2).map_err(sql)? != 0 { op::skeleton_body(&p) } else { Body::decode(op::KIND_EDIT, &p) };
+            let stamp = match body {
+                Ok(Body::Edit(EditBody { legacy: Some(l), .. })) | Ok(Body::Duplicate { legacy: Some(l), .. }) => Some(l),
+                _ => None,
+            };
+            if let Some(l) = stamp {
                 out.merge(&Dvv::parse(&l.ctx_json));
                 if !is_synthetic_writer(&l.writer) {
                     out.add(&l.writer, l.seq);
@@ -767,6 +774,16 @@ pub(crate) fn project_body(conn: &Connection, profile: &str, op: &Op, body: Body
                     .map_err(sql)?;
             }
         }
+        Body::Dedup { pairs } => {
+            let own = self_device(conn, profile)?;
+            dedup::apply(conn, profile, &op.id.device, &own, &pairs, now, t)?;
+        }
+        // 副本骨架（dedup.rs）：原件另有一份，不投影、不进索引；旧修改记录的旧戳照记进闭包（与收到原文的设备相同）。
+        Body::Duplicate { legacy, .. } => {
+            if let Some(l) = &legacy {
+                note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
+            }
+        }
         // 不认识的种类 / 已清除的骨架 / 牌组别名：只保存事实，不投影。
         Body::Unknown | Body::Purged | Body::DeckAlias { .. } => {}
     }
@@ -1035,6 +1052,19 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
         t.cards.insert(card.clone());
         t.marks.log(&card);
+    } else {
+        // 同一条日志又来了一份，而先到的那份是本机自己的操作、来的这份出自 ID 更小的设备：本机流里有别的设备的副本
+        // （存量重复流），排一次收敛作业（dedup.rs；已排的不动）。
+        let first: Option<Vec<u8>> = conn
+            .prepare_cached("SELECT device FROM sync2_log_meta WHERE log_id = srs_id(?1)")
+            .map_err(sql)?
+            .query_row([&lid], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        let own = self_device(conn, profile)?;
+        if first.as_deref() == Some(&own.0[..]) && op.id.device < own {
+            dedup::enqueue(conn, profile)?;
+        }
     }
     semantics::evaluate_holds(conn, profile, "card", &card, now, t)?;
     if let Some(n) = &l.note {
@@ -1779,6 +1809,12 @@ mod tests_synthetic_ctx;
 mod tests_delivery_window;
 #[cfg(test)]
 mod tests_head_gap;
+#[cfg(test)]
+mod tests_dedup;
+#[cfg(test)]
+mod dedup_probe;
+#[cfg(test)]
+mod dedup_measure;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

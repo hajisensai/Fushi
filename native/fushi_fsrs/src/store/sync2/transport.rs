@@ -1852,6 +1852,20 @@ impl SrsCore {
         max_bytes: u64,
         max_segments: usize,
     ) -> Result<OutboxBatch, String> {
+        self.sync2_outbox_to(profile, location, key, max_bytes, max_segments, false)
+    }
+
+    /// [Self::sync2_outbox]，[archive] = 归档位置（只写不删）：副本收敛（dedup.rs）换成骨架的段不在这里同名重写——归档
+    /// 留着当初传上去的原文。彻底清除的重写照做（清除就是要连归档里的内容一起清掉）。
+    pub fn sync2_outbox_to(
+        &self,
+        profile: &str,
+        location: &str,
+        key: Option<[u8; 32]>,
+        max_bytes: u64,
+        max_segments: usize,
+        archive: bool,
+    ) -> Result<OutboxBatch, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
@@ -1859,6 +1873,12 @@ impl SrsCore {
             compact_segments(c, &local)?;
             cut_segments(c, &local)?;
             prune_stale_rewrites(c, &local, location)?;
+            if archive {
+                c.prepare_cached("DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND restamp = 2")
+                    .map_err(sql)?
+                    .execute(params![profile, location])
+                    .map_err(sql)?;
+            }
             let cuts = segments_of(c, &local)?;
             let uploaded = uploaded_of(c, profile, location)?;
             let ck = key.map(CollectionKey);

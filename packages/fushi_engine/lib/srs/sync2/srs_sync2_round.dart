@@ -79,8 +79,15 @@ const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 /// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
 /// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`
 /// 让旧版本停下。
-const int kSrsSync2Protocol = 2;
-const int kSrsSync2MinReader = 2;
+///
+/// 3 = 存量重复流收敛（BUG-4005，内核 store/sync2/dedup.rs）：段里出现新种类 `Dedup` 与带副本说明的骨架，协议 2 的
+/// 读者解不开，head 的 `minReader` = 3 让它们停下、报需要升级（[SrsSync2Report.needsUpgrade]）。
+const int kSrsSync2Protocol = 3;
+const int kSrsSync2MinReader = 3;
+
+/// 一轮里推进重复流收敛作业（[srsSync2Round] 的 `dedup`）最多用多久：作业按一个事务一步分批推进、断点续做，大库的
+/// 一次性收敛（几十万条副本）分到几轮做完，不让某一轮迟迟不发件。
+const Duration kSrsSync2DedupBudget = Duration(seconds: 20);
 
 /// 一轮的结果。
 class SrsSync2Report {
@@ -228,6 +235,19 @@ Future<SrsSync2Report> srsSync2Round({
           as String;
   final List<String> present = listed['devices/$selfBefore'] ?? <String>[];
 
+  // 2½. 存量重复流收敛（内核 store/sync2/dedup.rs）：本机流里有别的设备同一事实的副本时，作者核对、发 `Dedup`、把
+  // 副本换成骨架（已经传过的段随下面的发件同名重写）。每次一步一个事务，`done` 明确为假才再发；到预算就留给下一轮。
+  onStep?.call('dedup');
+  final Stopwatch dedupClock = Stopwatch()..start();
+  while (dedupClock.elapsed < kSrsSync2DedupBudget) {
+    final SrsSync2Result d = await host.sync2Command(<String, Object?>{
+      'op': 'dedup',
+      'now': nowMs(),
+    });
+    if (d.map['done'] != false) break;
+    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
+  }
+
   // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
   // `OUTBOX_BATCH_BYTES`）：一批全部写成后 `outbox_ack` 持久化水位，再取下一批——内存里同一时刻只有一批，
   // 上传中途断网 / 被杀只丢在途那一批，下一轮从水位接着发（以前一次取全部积压，断一次整份重来，反馈
@@ -244,6 +264,8 @@ Future<SrsSync2Report> srsSync2Round({
       'op': 'outbox',
       'location': progressId,
       'key': keyHex,
+      // 归档位置：副本收敛换下的段不同名重写，归档里留着当初的原文（内核 transport.rs `sync2_outbox_to`）。
+      'archive': archive,
       if (outboxBudgetBytes != null) 'maxBytes': outboxBudgetBytes,
       if (!audited) 'present': present,
     });

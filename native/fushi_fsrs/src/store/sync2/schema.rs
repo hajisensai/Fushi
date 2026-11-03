@@ -360,7 +360,8 @@ CREATE TABLE IF NOT EXISTS sync2_relay_gone (
 ) WITHOUT ROWID;
 "#;
 
-/// V23：`sync2_rewrites.restamp`——这条重传是不是「同名改写」（1）：彻底清除 / 骨架化把已经传过的段按同一切法、同一
+/// V23：`sync2_rewrites.restamp`——这条重传是不是「同名改写」（1 = 彻底清除；V24 起 2 = 副本收敛，dedup.rs，归档位置
+/// 不重写）：彻底清除 / 骨架化把已经传过的段按同一切法、同一
 /// 链值重新打包，名字不变，位置上的旧文件本身仍是 head 可以引用的合法段，重传只是让位置上的内容跟上本机。0 = 位置上
 /// **缺**这个名字的段（小段合并改切出的新段、作者自检发现缺的段）：它传上去之前 head 不能引用它
 /// （transport.rs `sync2_head_if_changed`）。同一个段两类都登记时按 0 算（[REWRITE_GAP_SQL]）。升级前的行缺省 0：
@@ -371,6 +372,39 @@ pub fn migrate_v23(c: &rusqlite::Connection) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// V24：存量重复流收敛作业（dedup.rs）。`sync2_dedup` = 每个 profile 一行的阶段与游标；`sync2_dedup_keys` = ID 比
+/// 本机小的设备的候选操作的内容键（同键第一份）；`sync2_dedup_pairs` = 核对过的 (本机 seq → 原件)，改了名的旧修改记录
+/// 带写入者与寄存器键；`sync2_dedup_regs` = 寄存器检查不收的寄存器。作业结束整批删掉。
+pub const V24_DEDUP: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_dedup (
+  profile_uid TEXT NOT NULL PRIMARY KEY,
+  phase INTEGER NOT NULL,
+  cur_dev BLOB NOT NULL,
+  cur_seq INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_dedup_keys (
+  profile_uid TEXT NOT NULL,
+  h BLOB NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, h)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_dedup_pairs (
+  profile_uid TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  tseq INTEGER NOT NULL,
+  writer TEXT NULL,
+  reg BLOB NULL,
+  PRIMARY KEY (profile_uid, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_dedup_regs (
+  profile_uid TEXT NOT NULL,
+  reg BLOB NOT NULL,
+  PRIMARY KEY (profile_uid, reg)
+) WITHOUT ROWID;
+"#;
 
 /// 登记「位置上缺这个段」的重传（挡 head，[migrate_v23]）：已有的同名改写登记一并升成缺段。
 pub const REWRITE_GAP_SQL: &str = "INSERT INTO sync2_rewrites (profile_uid, location, first, restamp) VALUES (srs_id(?1), ?2, ?3, 0) \

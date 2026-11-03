@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 23;
+pub const SCHEMA_VERSION: i64 = 24;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -587,6 +587,15 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 23 {
         // V23：重传登记分两类（store/sync2/schema.rs [super::sync2::schema::migrate_v23]）。只加列，可重放。
         super::sync2::schema::migrate_v23(&tx)?;
+    }
+    if current < 24 {
+        // V24：存量重复流收敛作业（store/sync2/dedup.rs）。建表，给已启用 v2 的 profile 各排一次作业（作业自己推进，
+        // 结束时排文件整理）。可重放。
+        tx.execute_batch(super::sync2::schema::V24_DEDUP).map_err(|e| e.to_string())?;
+        tx.execute_batch(
+            "INSERT OR IGNORE INTO sync2_dedup (profile_uid, phase, cur_dev, cur_seq) SELECT profile_uid, 0, x'', 0 FROM sync2_self;",
+        )
+        .map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
