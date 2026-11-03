@@ -24,6 +24,8 @@ pub(crate) mod slim;
 pub mod rows;
 mod profile_data;
 mod projections;
+#[cfg(test)]
+mod projections_scan_tests;
 pub(crate) mod queue;
 mod read_pool;
 pub mod schema;

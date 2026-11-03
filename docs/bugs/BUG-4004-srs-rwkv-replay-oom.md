@@ -1,0 +1,18 @@
+## BUG-4004 · srs-rwkv-replay-oom
+- **报告**：2026-11-03（用户：iPhone 3.3.0-debug.23213，复习 profile 约 35 万条 `srs_review_logs`、srs.db 2.4 GB；复习同步 v2 收尾（ingestFinish / finishPending）时 RSS 冲到 1.07–1.40 GB，连续 SIGABRT（malloc 失败 → Rust `handle_alloc_error` / Dart VM OOM），多次落在 `ffsrs_store_rwkv_rows` 里；崩后每次启动又进收尾 → 启动即崩循环；另一台安卓（小米 23116PN5BC / Android 16，同构建、另一 profile）11-02 起约 11 次 Scudo「internal map failure」→ SIGABRT + 2 次 EXCESSIVE_RESOURCE_USAGE，全部在 `stage=downloading`（收段逐批 ingest 中），rss 0.9–2.3 GB、PSS 最高 3.3 GB）
+- **真实性**：✅ 真 bug。两处叠加：
+  1. `native/fushi_fsrs/src/store/projections.rs:317-353`（base 1c8fd5d731）：`rwkv_replay` 一条语句扫全 profile 日志，读生成列 `l.json`（逐行把瘦存拼回原文），把每条原文 `String` 连同服务器时刻存进 `HashMap<卡, Vec<(String, Option<i64>)>>`，全部扫完才逐份历史解析、算行；局部重放的分歧计算（同文件 `:40-46`）还把血统里的原文再 clone 一份。`fetch_logs`（`:74-90`，优化器训练集 / RWKV 逐卡）同一形态。合成 36 万条日志实测 Rust 堆峰值 291.6 MiB（输出只有 25 MiB）。
+  2. 触发链：收段每片投递 / 收尾重放只要落了事件就 `_rwkvScoresRevision++`（`packages/fushi_engine/lib/srs/srs_db_store.dart:1432`，及 `:633`、`:1531`、`:4587`、`_absorbProjection` 的 `marks.rwkv`），同时 store 修订号在变（收段每一批 `sync2IngestBatch` 都会：35 万日志约 40 批 → 每批一次分数表重查 + 一次整 profile 重放）；此时任何 RWKV 对齐（作答的 `onAnswered`、排队的 `instantRetrievability`、启动时的 `_prepare`）走 `srs_rwkv_service.dart` `_refreshOnce` → 同步来的日志插在已回放的行中间、追加不成 → `_rebase`（`:908`）→ `_fetchReplay` → `rwkv_replay` 整 profile 扫描，与收段切片并发跑在读连接上，不受收段 `slice_budget` 约束；store 侧也没有任何互斥。启动时 `finishPending` 与 RWKV `_prepare`（恢复快照后对齐 / 全量重建）同样叠在一起，于是崩溃循环。
+- **[x] ① 已修复** — 未提交（见本分支提交）：
+  - Rust：`projections.rs` 扫描改读 `jslim` + 列（`slim::LOG_READ` / `log_row`，不经生成列拼原文），每条当场 `history::parse_stored` 解析成紧凑的 `ScanLog`（不留原文，写入者 ID 去重），`LogsByCard::effective(lineage, upto)` 按 rowid 过滤算分歧（不再 clone）；`fetch_logs` 同一结构；`projection::effective_by` 抽出选取→`EffLog` 的公共部分。输出逐字节不变。
+  - Dart：`SrsDbStore` 记收段会话（`sync2IngestBegin` … `sync2IngestEnd`，`sync2Ingesting` / `sync2IngestSettled`）；会话里的分数表刷新信号攒着、结束时并成一次（`_bumpRwkvScores` / `_endIngestSession`，内存态，进程死在中途时下次启动 `_loadLocal` 本就 +1、原生分数表为空，不漏刷新）；`rwkvReplay` 排到会话之外，会话开始前等在途的回放跑完。`SrsRwkvService._refreshOnce` 在会话里遇到要退回重放时不做、会话结束后对齐一次并再报「就绪」（`_alignAfterIngest`，复习页 / 牌组列表靠就绪事件重新排队）。
+  - Dart：`SrsCore.rwkvReplay` 结果从原生内存直接拷进 `TransferableTypedData`，worker 交回主 isolate 不再整块复制。
+- **[x] ② 已加自动化测试** —
+  - `native/fushi_fsrs/src/store/sync2/ingest_mem_bench.rs`（ignored，`--cfg srs_probe` 跑生产常量）：35 万日志 / 1174 段 / 40 批收段（新设备通道与已复习设备逐条两种），每批量 prepare / commit / 收尾的 Rust 与 SQLite 峰值和常驻。
+  - `native/fushi_fsrs/src/store/projections_scan_tests.rs`：合成 profile（瘦存 / 原文、撤销、重置、Anki 导入、钳位服务器时刻、前身卡、漏卡）上 13 组调用（全量、三处 rebase_since × 有无 rows_from、无尾巴、半数卡、优化器 FSRS-7/6、逐卡）的输出摘要，用改前实现录下，新实现逐字节相同；`rwkv_replay_bench`（ignored）量峰值内存与耗时。
+  - `packages/fushi_engine/test/srs/sync2/srs_sync2_ingest_slices_test.dart`：逐片收段期间 `rwkvScoresKey` 不变、会话结束只 +1；会话里发起的 `rwkvReplay` 在会话结束后才跑。
+  - `packages/fushi_engine/test/srs/srs_rwkv_service_test.dart`：会话里撤更早的作答，`refresh()` 返回 false、不退回重放；会话结束后退回重放一次（不全量重建）、再报就绪，结果与全量回放顺序相同；分数表刷新信号只 +1。
+- **备注**：
+  - 量化（合成 359,569 条日志 / 37,200 份历史，release，Windows x64，计数分配器，新旧交替各 3 轮取中位）：`rwkv_replay` 全量 Rust 峰 291.6 → 155.3 MiB（−47%）、6.2 → 5.5 s；rebase 215.3 → 140.9 MiB、6.2 → 5.4 s；优化器训练集 210.8 → 140.9 MiB、5.6 → 4.5 s；SQLite 峰不变（64 MiB 页缓存）；输出 25.1 MiB 逐字节相同。收段会话里分数表重查由「每批 / 每片一次」变为「整个会话一次」，会话里不再做整 profile 重放。
+  - 收段内核（prepare / commit / finish / replay_pending）每批峰值：prepare Rust ≤40 MiB（`PREPARED_RAW_BUDGET`），commit ≈0，SQLite 常驻停在写连接页缓存约 66 MiB，进程私有提交第 11 批起持平；没有随已收量增长的结构，内核未改。收尾分区折叠 `channel.rs` `fold_part` 的瞬时峰值随 profile 规模线性（35 万时 12.8 MiB），未改。`mmap_size=256MB` 映射的是干净的文件页，可回收、不导致 Scudo 匿名申请失败，未改（推断，未上真机）。
+  - 未在 iPhone / 安卓真机复测原始崩溃路径（本机没有该 profile 的数据副本）；安卓那 0.9–2.3 GB 归因于 Dart 侧每批 RWKV 刷新 / 重放是判断，Dart 段预读与跨 isolate 拷贝未量。

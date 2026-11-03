@@ -1750,7 +1750,7 @@ pub fn parse_device(s: &str) -> Result<Id, String> {
 }
 
 #[cfg(test)]
-mod mem_bench;
+pub(crate) mod mem_bench;
 #[cfg(test)]
 pub(crate) mod tests;
 #[cfg(test)]
@@ -1769,6 +1769,8 @@ mod tests_replay_pending;
 mod tests_cache_pending;
 #[cfg(test)]
 mod real_folder_bench;
+#[cfg(test)]
+mod ingest_mem_bench;
 #[cfg(test)]
 mod tests_footprint;
 #[cfg(test)]

@@ -375,7 +375,13 @@ pub type Parsed<'a> = (Log<'a>, Option<Outcome>, Extra<'a>);
 
 /// 一条落库日志解成 [Parsed]（与 [state_from_json] 同一套坏数据判据）。
 pub fn parse_full(json: &str, server_time: Option<i64>) -> Result<Parsed<'_>, String> {
-    let (log, res, extra) = parse_wire(json, server_time, None)?;
+    parse_stored(json, server_time, None)
+}
+
+/// [parse_full]，日志可以是瘦存 + 列（[StoredLog]，store/slim.rs `log_row`）：读 `jslim` 与列的读者不经生成列
+/// `json`（逐行拼回原文）。
+pub fn parse_stored<'a>(stored: &'a str, server_time: Option<i64>, cols: Option<&'a LogCols>) -> Result<Parsed<'a>, String> {
+    let (log, res, extra) = parse_wire(stored, server_time, cols)?;
     Ok((log, res.as_ref().map(Outcome::of), extra))
 }
 

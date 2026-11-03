@@ -112,6 +112,38 @@ void main() {
     expect(host.results.single['slices'], greaterThanOrEqualTo(2));
     expect(order, <String>['answer', 'batch']);
   });
+
+  test('收段会话：RWKV 分数表刷新在会话结束时并成一次；会话里来的 RWKV 回放等会话结束', () async {
+    final SrsMemoryLocationStore loc = await seeded(40);
+    final SrsDbStore b = await device('B');
+    final _SlicingHost host = _SlicingHost(b, sliceOps: 1);
+    final String before = b.rwkvScoresKey;
+    final Set<String> keysDuringSlices = <String>{};
+    Future<bool>? replay;
+    b.debugOnIngestSlice = () {
+      keysDuringSlices.add(b.rwkvScoresKey);
+      // 从根 zone 发起（不在独占区里）：真的去等会话。完成时会话必须已经结束。
+      replay ??= Zone.root.run(
+        () => b.dayContext().then(
+          (SrsDayContext day) => b
+              .rwkvReplay(const <String>[], const <int>[], day, since: 0)
+              .then((_) => b.sync2Ingesting),
+        ),
+      );
+    };
+    final SrsSync2Report r = await round(host, loc);
+    expect(r.error, isNull);
+    final int slices = host.results.fold(
+      0,
+      (int n, Map<String, Object?> x) => n + (x['slices']! as int),
+    );
+    expect(slices, greaterThan(100), reason: 'many slices landed events');
+    expect(keysDuringSlices, <String>{before});
+    int rev(String key) => int.parse(key.split(':').last);
+    expect(rev(b.rwkvScoresKey), rev(before) + 1);
+    expect(await replay, isFalse, reason: 'the replay ran after the session');
+    expect(b.sync2Ingesting, isFalse);
+  });
 }
 
 /// 收段时给 [SrsDbStore.sync2IngestBatch] 带上切片参数的 host 包装，记下每批的结果。
