@@ -46,9 +46,14 @@ typedef StandaloneSubtitleBookProgress =
 /// - [cueTransform]：解析出 cue 之后、生成正文与落库之前对 cue 做一次改写。远端
 ///   （流式）音频用它把整本书时间轴上的字幕按音轨切成各文件内的本地时间；缺省不改。
 ///
-/// [adoptSubtitleFile]：[subtitlePath] 是调用方取来的临时文件（如从服务器下载的
-/// 字幕），持久化时**搬**进持久目录（[AudiobookStorage.adoptFile]）而不是复制，导入
-/// 成功后它就不在原处了，调用方不用再清理；导入在持久化之前失败时它留在临时目录。
+/// [adoptSubtitleFile]：[subtitlePath] 是调用方放在 [AudiobookStorage.stagingDir]
+/// 里的暂存文件（如从服务器下载的字幕），持久化时 rename 进持久目录
+/// （[AudiobookStorage.adoptFile]）而不是复制，导入成功后它就不在原处了，调用方
+/// 不用再清理；导入失败时它可能还在暂存目录（未被接管）或已随回滚删掉，调用方在
+/// 失败路径上删掉仍在的那份。
+///
+/// 正文 EPUB 落库之后任何一步失败，都由 [rollbackStandaloneSubtitleBook] 撤掉
+/// 已落的 SrtBook、正文 EPUB 与持久目录再抛，不留孤儿行。
 ///
 /// [subtitlePath] 为 null = 没有字幕（纯听书）：不解析、不落字幕文件，但仍生成一份
 /// 只有标题的正文 EPUB，阅读器才打得开；之后补字幕走 `reimportSrtBook`，它会重建正文。
@@ -119,57 +124,121 @@ Future<SrtBook> importStandaloneSubtitleBook({
     }
   }
 
-  report(0.7, StandaloneSubtitleBookStep.persisting);
-  final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-  final String persistedSrt = subtitlePath == null
-      ? ''
-      : adoptSubtitleFile
-      ? await AudiobookStorage.adoptFile(File(subtitlePath), persistDir)
-      : await AudiobookStorage.persistFileWithProgress(
-          File(subtitlePath),
+  // 正文 EPUB 此时已经落库。之后任何一步（持久化字幕 / 音频、封面、落 SrtBook 与
+  // cue）失败都要撤掉已落的东西再抛：否则库里留一条没有 SrtBook 的正文孤儿行，
+  // 持久目录里留着已复制 / 已接管的文件，用户却只看到「导入失败」。
+  Directory? persistDir;
+  bool savedBook = false;
+  try {
+    report(0.7, StandaloneSubtitleBookStep.persisting);
+    persistDir = await AudiobookStorage.ensurePersistDir(uid);
+    final String persistedSrt = subtitlePath == null
+        ? ''
+        : adoptSubtitleFile
+        ? await AudiobookStorage.adoptFile(File(subtitlePath), persistDir)
+        : await AudiobookStorage.persistFileWithProgress(
+            File(subtitlePath),
+            persistDir,
+            onProgress: (int copied, int total) => report(
+              0.7,
+              StandaloneSubtitleBookStep.copyingFile,
+              p.basename(subtitlePath),
+            ),
+          );
+
+    // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
+    final List<String> persistedAudioPaths =
+        await AudiobookStorage.syncAudioFiles(
           persistDir,
-          onProgress: (int copied, int total) => report(
-            0.7,
-            StandaloneSubtitleBookStep.copyingFile,
-            p.basename(subtitlePath),
-          ),
+          audioPaths,
+          copy: copyAudio,
+          onFile: (String name) =>
+              report(0.8, StandaloneSubtitleBookStep.copyingFile, name),
         );
 
-  // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
-  final List<String> persistedAudioPaths =
-      await AudiobookStorage.syncAudioFiles(
-        persistDir,
-        audioPaths,
-        copy: copyAudio,
-        onFile: (String name) =>
-            report(0.8, StandaloneSubtitleBookStep.copyingFile, name),
+    report(0.9, StandaloneSubtitleBookStep.saving);
+    final SrtBook book = SrtBook()
+      ..uid = uid
+      ..title = title
+      ..srtPath = persistedSrt
+      ..importedAt = DateTime.now().millisecondsSinceEpoch
+      ..bookKey = bookKey;
+    if (persistedAudioPaths.isNotEmpty) {
+      book.audioPaths = persistedAudioPaths;
+    }
+    if (author != null) {
+      book.author = author;
+    }
+    final String? coverPath = await persistCover?.call(persistDir);
+    if (coverPath != null) {
+      book.coverPath = coverPath;
+    }
+
+    fushiDebugPrint(
+      '[fushi-import] SrtBook save: uid=$uid title="$title" '
+      'bookKey=$bookKey cues=${cues.length}',
+    );
+
+    await repo.save(book);
+    savedBook = true;
+    await repo.saveCues(uid: uid, cues: cues);
+    report(1, StandaloneSubtitleBookStep.done);
+    return book;
+  } catch (e, stack) {
+    engineLog.log('importStandaloneSubtitleBook.persist', e, stack);
+    await rollbackStandaloneSubtitleBook(
+      db: db,
+      repo: repo,
+      uid: uid,
+      bookKey: bookKey,
+      savedBook: savedBook,
+      persistDir: persistDir,
+    );
+    rethrow;
+  }
+}
+
+/// [importStandaloneSubtitleBook] 正文落库之后失败时的回滚：删已落的 `SrtBook`
+/// （[savedBook]，连带它的持久目录）、正文 EPUB 行与解包目录、这本书的持久目录
+/// [persistDir]。每步各自记日志、不打断后续步骤，原始错误由调用方照常抛出（回滚
+/// 失败不能盖掉导入失败的真实原因）。建书成功后外层再失败（如远端绑定写不进去）
+/// 也走这里，保证同一种回滚只有一份实现。
+Future<void> rollbackStandaloneSubtitleBook({
+  required FushiDatabase db,
+  required SrtBookRepository repo,
+  required String uid,
+  required String bookKey,
+  required bool savedBook,
+  required Directory? persistDir,
+}) async {
+  if (savedBook) {
+    try {
+      await repo.delete(uid);
+    } catch (e, stack) {
+      engineLog.log('importStandaloneSubtitleBook.rollbackSrtBook', e, stack);
+    }
+  }
+  if (bookKey.isNotEmpty) {
+    try {
+      final EpubBookRow? row = await db.getEpubBook(bookKey);
+      await db.deleteEpubBook(bookKey);
+      if (row != null && row.extractDir.isNotEmpty) {
+        final Directory dir = Directory(row.extractDir);
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      }
+    } catch (e, stack) {
+      engineLog.log('importStandaloneSubtitleBook.rollbackEpub', e, stack);
+    }
+  }
+  if (persistDir != null) {
+    try {
+      if (persistDir.existsSync()) await persistDir.delete(recursive: true);
+    } catch (e, stack) {
+      engineLog.log(
+        'importStandaloneSubtitleBook.rollbackPersistDir',
+        e,
+        stack,
       );
-
-  report(0.9, StandaloneSubtitleBookStep.saving);
-  final SrtBook book = SrtBook()
-    ..uid = uid
-    ..title = title
-    ..srtPath = persistedSrt
-    ..importedAt = DateTime.now().millisecondsSinceEpoch
-    ..bookKey = bookKey;
-  if (persistedAudioPaths.isNotEmpty) {
-    book.audioPaths = persistedAudioPaths;
+    }
   }
-  if (author != null) {
-    book.author = author;
-  }
-  final String? coverPath = await persistCover?.call(persistDir);
-  if (coverPath != null) {
-    book.coverPath = coverPath;
-  }
-
-  fushiDebugPrint(
-    '[fushi-import] SrtBook save: uid=$uid title="$title" '
-    'bookKey=$bookKey cues=${cues.length}',
-  );
-
-  await repo.save(book);
-  await repo.saveCues(uid: uid, cues: cues);
-  report(1, StandaloneSubtitleBookStep.done);
-  return book;
 }

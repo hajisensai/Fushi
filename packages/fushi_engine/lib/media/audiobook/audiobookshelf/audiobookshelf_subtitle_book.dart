@@ -21,7 +21,9 @@ import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
-/// 把服务器条目里的字幕文件取到本机临时目录，返回本地文件。
+/// 把服务器条目里的字幕文件取到本机 [tempDir]（缺省引擎临时根），返回本地文件。
+/// 要交给导入接管（`adoptSubtitleFile`）的，调用方传 `AudiobookStorage.stagingDir()`，
+/// 保证与持久目录同卷。
 ///
 /// 落盘文件名保留原扩展名（`parseCuesForFormat` 按扩展名分派解析器），并加上条目
 /// id 前缀避免两本书里同名的 `subtitle.srt` 互相覆盖。体积有上限（见
@@ -118,8 +120,14 @@ Future<SrtBook> importAudiobookshelfSubtitleBook({
     );
   } catch (e, stack) {
     engineLog.log('importAudiobookshelfSubtitleBook.binding', e, stack);
-    await repo.delete(book.uid);
-    if (book.bookKey.isNotEmpty) await db.deleteEpubBook(book.bookKey);
+    await rollbackStandaloneSubtitleBook(
+      db: db,
+      repo: repo,
+      uid: book.uid,
+      bookKey: book.bookKey,
+      savedBook: true,
+      persistDir: null,
+    );
     rethrow;
   }
   return book;

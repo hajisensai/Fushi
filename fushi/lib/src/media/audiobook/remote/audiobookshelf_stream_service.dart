@@ -12,6 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show kLearningLanguageCode;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_book.dart';
@@ -137,10 +138,11 @@ class AudiobookshelfStreamService {
 
     final String? subtitlePath;
     final String origin;
-    // 从服务器取下来的临时字幕：导入的持久化步骤把它**搬**进这本书的持久目录
-    // （adoptSubtitleFile），这里不再在 finally 里删——删除失败会盖掉已成功落库的
-    // 建书结果。导入在持久化前失败时它留在临时目录（随临时目录清理）。
-    bool adoptSubtitleFile = false;
+    // 从服务器取下来的字幕下载到持久根下的暂存目录（AudiobookStorage.stagingDir，
+    // 与书的持久目录同卷），导入的持久化步骤把它 rename 进这本书的持久目录
+    // （adoptSubtitleFile）。成功路径这里不删——删除失败会盖掉已成功落库的建书
+    // 结果；导入失败时（已回滚）才删掉还留在暂存目录里的那份。
+    File? staged;
     switch (subtitle) {
       case LocalSubtitleChoice(:final String path):
         subtitlePath = path;
@@ -149,39 +151,54 @@ class AudiobookshelfStreamService {
         subtitlePath = null;
         origin = RemoteAudioBinding.subtitleOriginNone;
       case ServerSubtitleChoice(:final AudiobookshelfLibraryFile file):
-        final File downloaded = await downloadAudiobookshelfSubtitle(
+        staged = await downloadAudiobookshelfSubtitle(
           api: api,
           itemId: item.id,
           file: file,
-          tempDir: _tempDir,
+          tempDir: await AudiobookStorage.stagingDir(),
         );
-        subtitlePath = downloaded.path;
+        subtitlePath = staged.path;
         origin = RemoteAudioBinding.subtitleOriginServer(file.ino);
-        adoptSubtitleFile = true;
     }
 
     final String title = episode == null
         ? item.title
         : '${item.title} – ${episode.title}';
-    return importAudiobookshelfSubtitleBook(
-      db: db,
-      repo: _books,
-      bindings: _bindings,
-      serverConfigId: serverConfigId,
-      itemId: item.id,
-      episodeId: episode?.id,
-      tracks: tracks,
-      title: title,
-      author: item.authorName,
-      subtitlePath: subtitlePath,
-      adoptSubtitleFile: adoptSubtitleFile,
-      subtitleOrigin: origin,
-      policy: policy,
-      tempDir: _tempDir,
-      persistCover: (Directory persistDir) =>
-          _persistCover(persistDir, item.id),
-      onProgress: onProgress,
-    );
+    try {
+      return await importAudiobookshelfSubtitleBook(
+        db: db,
+        repo: _books,
+        bindings: _bindings,
+        serverConfigId: serverConfigId,
+        itemId: item.id,
+        episodeId: episode?.id,
+        tracks: tracks,
+        title: title,
+        author: item.authorName,
+        subtitlePath: subtitlePath,
+        adoptSubtitleFile: staged != null,
+        subtitleOrigin: origin,
+        policy: policy,
+        tempDir: _tempDir,
+        persistCover: (Directory persistDir) =>
+            _persistCover(persistDir, item.id),
+        onProgress: onProgress,
+      );
+    } catch (_) {
+      await _discardStagedSubtitle(staged);
+      rethrow;
+    }
+  }
+
+  /// 建书失败后删掉还留在暂存目录里的服务器字幕（导入已回滚；已被接管的不在原处）。
+  /// 只在失败路径上跑，删不掉记日志——不能盖掉导入失败的真实原因。
+  Future<void> _discardStagedSubtitle(File? staged) async {
+    if (staged == null) return;
+    try {
+      if (staged.existsSync()) await staged.delete();
+    } catch (e, stack) {
+      engineLog.log('AudiobookshelfStreamService.discardStaged', e, stack);
+    }
   }
 
   /// 封面是免鉴权路由（`/api/items/:id/cover`）。取不到不算失败——书没封面照样能用。
