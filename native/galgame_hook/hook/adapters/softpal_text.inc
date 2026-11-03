@@ -11,7 +11,9 @@
 //     frame, so the count separates engine steps) and keeps the placement of
 //     sprites that carry text; PalSoundLoad hands voice loads to the worker.
 //   * HookWorker — ProcessSoftpalTextTick: composes each page, drops the
-//     speaker plate (softpal::IsSpeakerLabel), publishes the body on the
+//     speaker plate (the step machine softpal::OnPageEvent / OnVoiceEvent /
+//     OnTick: a pending page is a plate only when the next page of the same
+//     step composes), publishes the body on the
 //     exact lane of its sprite size and exports the voice of the same engine
 //     step from the game's archive with that page's text event.
 //
@@ -35,6 +37,9 @@ using SoftpalFn = uintptr_t(__cdecl*)(uintptr_t, uintptr_t, uintptr_t,
 using SoftpalFontSizeFn = int16_t(__cdecl*)();
 
 enum SoftpalEventKind : uint32_t {
+  // A sequence number whose producer could not fill its slot (a voice name
+  // that faulted): committed anyway so the consumer never waits on it.
+  kSoftpalEventDiscard = 0u,
   kSoftpalEventPage = 1u,
   kSoftpalEventVoice = 2u,
 };
@@ -79,9 +84,12 @@ struct SoftpalPage {
   std::vector<softpal::PageGlyph> glyphs;
 };
 
-struct SoftpalPacArchive {
-  std::wstring path;
-  std::vector<softpal::PacEntry> entries;
+// Where an archive entry lives: the archive (index into `archives`) and the
+// payload.
+struct SoftpalPacLocation {
+  uint32_t archive = 0u;
+  uint32_t offset = 0u;
+  uint32_t size = 0u;
 };
 
 struct SoftpalTextRuntime {
@@ -91,7 +99,7 @@ struct SoftpalTextRuntime {
   uint64_t processed_seq = 0u;
   uint32_t logged = 0u;
   SoftpalEvent copy;
-  bool has_pending = false;
+  softpal::PageStepState step;
   SoftpalPage pending;
   // The last published page and its text event.
   bool has_published = false;
@@ -99,8 +107,16 @@ struct SoftpalTextRuntime {
   uint64_t published_event = 0u;
   std::array<std::wstring, kSoftpalSpriteSlots> last_text_by_slot{};
   std::array<uintptr_t, kSoftpalSpriteSlots> last_text_sprite{};
-  bool archives_scanned = false;
-  std::vector<SoftpalPacArchive> archives;
+  // Archive index, built one archive per worker tick from install on, so
+  // no tick stalls on the whole directory; a voice before it is complete
+  // finishes it first.
+  bool archives_listed = false;
+  std::vector<std::wstring> archive_queue;
+  size_t archive_queue_next = 0u;
+  std::vector<std::wstring> archives;  // paths
+  std::unordered_map<std::string, SoftpalPacLocation> archive_index;
+  bool view_hooked = false;
+  bool release_hooked = false;
 
   // ── resolved once, read everywhere ──
   HMODULE module = nullptr;
@@ -110,8 +126,10 @@ struct SoftpalTextRuntime {
 
   // ── game threads, under page_lock ──
   SRWLOCK page_lock = SRWLOCK_INIT;
-  uint32_t last_page_setpos = 0u;
   uint64_t next_page_seq = 0u;
+  // Written under page_lock by the page producer; read by the voice
+  // producer, which does not take the lock.
+  std::atomic<uint32_t> last_page_setpos{0u};
 
   // ── shared ──
   std::atomic<bool> live{false};
@@ -175,6 +193,7 @@ constexpr LONG kSoftpalDiagPageRejected = 0x8;
 constexpr LONG kSoftpalDiagVoiceObserved = 0x10;
 constexpr LONG kSoftpalDiagVoiceExported = 0x20;
 constexpr LONG kSoftpalDiagVoiceMissing = 0x40;
+constexpr LONG kSoftpalDiagEventsLost = 0x80;
 
 void NoteSoftpalPublishedPage(const SoftpalPage& page, uint64_t text_event);
 
@@ -379,13 +398,14 @@ uintptr_t __cdecl SoftpalUnlockDetour(uintptr_t sprite, uintptr_t a1,
       event->buffer_w = tx->w;
       event->buffer_h = tx->h;
       event->page_seq = page_seq;
-      event->setpos_before = setpos - rt.last_page_setpos;
+      event->setpos_before =
+          setpos - rt.last_page_setpos.load(std::memory_order_relaxed);
       event->setpos_at = setpos;
       event->count = tx->count;
       std::memcpy(event->draws, tx->draws,
                   sizeof(softpal::GlyphDraw) * tx->count);
       CommitSoftpalEvent(event, sequence);
-      rt.last_page_setpos = setpos;
+      rt.last_page_setpos.store(setpos, std::memory_order_release);
       slot->page_seq.store(page_seq, std::memory_order_release);
       ReleaseSRWLockExclusive(&rt.page_lock);
     }
@@ -455,16 +475,15 @@ uintptr_t __cdecl SoftpalSoundDetour(uintptr_t name, uintptr_t type,
       copied = i > 0u && source[i] == '\0';
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
-    if (copied) {
-      const uint32_t setpos = rt.setpos_calls.load(std::memory_order_relaxed);
-      event->kind = kSoftpalEventVoice;
-      event->sound_type = static_cast<uint32_t>(type);
-      event->setpos_before = setpos - rt.last_page_setpos;
-      event->setpos_at = setpos;
-      event->count = 0u;
-      CommitSoftpalEvent(event, sequence);
-    }
-    // A failed copy leaves the slot at 0: the worker skips it.
+    const uint32_t setpos = rt.setpos_calls.load(std::memory_order_relaxed);
+    event->kind = copied ? kSoftpalEventVoice : kSoftpalEventDiscard;
+    event->sound_type = static_cast<uint32_t>(type);
+    event->setpos_before =
+        setpos - rt.last_page_setpos.load(std::memory_order_acquire);
+    event->setpos_at = setpos;
+    event->count = 0u;
+    // Every taken sequence is committed: the worker waits for each in order.
+    CommitSoftpalEvent(event, sequence);
   }
   return g_softpal_sound_original(name, type, a2, a3, a4, a5, a6, a7);
 }
@@ -523,6 +542,10 @@ bool InstallSoftpalText(const wchar_t* module_name) {
   const bool release = InstallSoftpalHook(
       proc("PalSpriteRelease"), reinterpret_cast<void*>(&SoftpalReleaseDetour),
       &g_softpal_release_original);
+  // The text lane works without them; the lookup does not (a hidden or
+  // released sprite would still look clickable), see InstallSoftpalLookup.
+  rt.view_hooked = view;
+  rt.release_hooked = release;
   const bool sound = InstallSoftpalHook(
       proc("PalSoundLoad"), reinterpret_cast<void*>(&SoftpalSoundDetour),
       &g_softpal_sound_original);
@@ -559,11 +582,11 @@ bool ReadSoftpalFileAt(HANDLE file, uint64_t offset, void* out,
          ReadExact(file, out, length);
 }
 
-// Every archive next to the executable, indexed once.
-void ScanSoftpalArchives() {
+// The archives next to the executable, listed once (cheap: names only).
+void ListSoftpalArchives() {
   auto& rt = g_softpal;
-  if (rt.archives_scanned) return;
-  rt.archives_scanned = true;
+  if (rt.archives_listed) return;
+  rt.archives_listed = true;
   wchar_t exe[MAX_PATH] = {};
   const DWORD chars = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (chars == 0u || chars >= MAX_PATH) return;
@@ -574,70 +597,86 @@ void ScanSoftpalArchives() {
   if (search == INVALID_HANDLE_VALUE) return;
   do {
     if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0u) continue;
-    SoftpalPacArchive archive;
-    archive.path = dir + found.cFileName;
-    HANDLE file = g_orig_CreateFileW(
-        archive.path.c_str(), GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) continue;
-    LARGE_INTEGER size = {};
-    uint8_t header[12] = {};
-    uint32_t count = 0u;
-    bool ok = GetFileSizeEx(file, &size) &&
-              ReadSoftpalFileAt(file, 0u, header, sizeof(header)) &&
-              softpal::ParsePacHeader(header, sizeof(header), &count);
-    std::vector<uint8_t> index;
-    if (ok) {
-      index.resize(static_cast<size_t>(count) * softpal::kPacEntryBytes);
-      ok = ReadSoftpalFileAt(file, softpal::kPacIndexOffset, index.data(),
-                             static_cast<uint32_t>(index.size())) &&
-           softpal::ParsePacIndex(index.data(), index.size(), count,
-                                  static_cast<uint64_t>(size.QuadPart),
-                                  &archive.entries);
-    }
-    g_orig_CloseHandle(file);
-    SoftpalLog(L"softpal: archive %s entries=%u ok=%d", found.cFileName,
-               static_cast<unsigned>(archive.entries.size()), ok ? 1 : 0);
-    if (ok) rt.archives.push_back(std::move(archive));
+    rt.archive_queue.push_back(dir + found.cFileName);
   } while (FindNextFileW(search, &found));
   FindClose(search);
+}
+
+// Index the next queued archive into the name map; false once all are done.
+bool IndexNextSoftpalArchive() {
+  auto& rt = g_softpal;
+  ListSoftpalArchives();
+  if (rt.archive_queue_next >= rt.archive_queue.size()) return false;
+  const std::wstring path = rt.archive_queue[rt.archive_queue_next++];
+  HANDLE file = g_orig_CreateFileW(
+      path.c_str(), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return true;
+  LARGE_INTEGER size = {};
+  uint8_t header[12] = {};
+  uint32_t count = 0u;
+  bool ok = GetFileSizeEx(file, &size) &&
+            ReadSoftpalFileAt(file, 0u, header, sizeof(header)) &&
+            softpal::ParsePacHeader(header, sizeof(header), &count);
+  std::vector<softpal::PacEntry> entries;
+  if (ok) {
+    std::vector<uint8_t> index(static_cast<size_t>(count) *
+                               softpal::kPacEntryBytes);
+    ok = ReadSoftpalFileAt(file, softpal::kPacIndexOffset, index.data(),
+                           static_cast<uint32_t>(index.size())) &&
+         softpal::ParsePacIndex(index.data(), index.size(), count,
+                                static_cast<uint64_t>(size.QuadPart),
+                                &entries);
+  }
+  g_orig_CloseHandle(file);
+  SoftpalLog(L"softpal: archive %s entries=%u ok=%d", path.c_str(),
+             static_cast<unsigned>(entries.size()), ok ? 1 : 0);
+  if (!ok) return true;
+  const uint32_t archive = static_cast<uint32_t>(rt.archives.size());
+  rt.archives.push_back(path);
+  for (const softpal::PacEntry& entry : entries) {
+    // The first archive that has a name wins, as the linear search did.
+    rt.archive_index.emplace(entry.name,
+                             SoftpalPacLocation{archive, entry.offset,
+                                                entry.size});
+  }
+  return true;
 }
 
 // The voice from the game's archive, written as a resource for `text_event`.
 bool ExportSoftpalVoice(const char* name, uint64_t text_event, uint64_t tick) {
   auto& rt = g_softpal;
-  ScanSoftpalArchives();
+  // A voice before the per-tick indexing finished completes it now.
+  while (IndexNextSoftpalArchive()) {
+  }
   const std::string key =
       softpal::NormalizeResourceName(name, kSoftpalNameBytes);
-  for (const SoftpalPacArchive& archive : rt.archives) {
-    const softpal::PacEntry* entry = softpal::FindPacEntry(archive.entries, key);
-    if (entry == nullptr) continue;
-    if (entry->size == 0u || entry->size > (64u << 20)) return false;
-    HANDLE file = g_orig_CreateFileW(
-        archive.path.c_str(), GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) return false;
-    std::vector<uint8_t> payload(entry->size);
-    const bool read =
-        ReadSoftpalFileAt(file, entry->offset, payload.data(), entry->size);
-    g_orig_CloseHandle(file);
-    if (!read || !softpal::IsOggPayload(payload.data(), payload.size())) {
-      return false;
-    }
-    wchar_t wide[kSoftpalNameBytes] = {};
-    MultiByteToWideChar(932, 0, key.c_str(), -1, wide, kSoftpalNameBytes);
-    if (!WriteVoiceOggAt(payload.data(), entry->size, wide, tick,
-                         text_event)) {
-      return false;
-    }
-    // The bytes are the engine's own resource for this line: the host pairs
-    // per line instead of staying on the PCM / loopback fallback.
-    SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagGameResourcePublished);
-    return true;
+  const auto found = rt.archive_index.find(key);
+  if (found == rt.archive_index.end()) return false;
+  const SoftpalPacLocation& entry = found->second;
+  if (entry.size == 0u || entry.size > (64u << 20)) return false;
+  HANDLE file = g_orig_CreateFileW(
+      rt.archives[entry.archive].c_str(), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+  std::vector<uint8_t> payload(entry.size);
+  const bool read =
+      ReadSoftpalFileAt(file, entry.offset, payload.data(), entry.size);
+  g_orig_CloseHandle(file);
+  if (!read || !softpal::IsOggPayload(payload.data(), payload.size())) {
+    return false;
   }
-  return false;
+  wchar_t wide[kSoftpalNameBytes] = {};
+  MultiByteToWideChar(932, 0, key.c_str(), -1, wide, kSoftpalNameBytes);
+  if (!WriteVoiceOggAt(payload.data(), entry.size, wide, tick, text_event)) {
+    return false;
+  }
+  // The bytes are the engine's own resource for this line: the host pairs
+  // per line instead of staying on the PCM / loopback fallback.
+  SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagGameResourcePublished);
+  return true;
 }
 
 // ── HookWorker: pages ──────────────────────────────────────────────────────
@@ -671,6 +710,8 @@ uint64_t PublishSoftpalText(const SoftpalPage& page) {
   write.byte_len = static_cast<uint32_t>(page.text.size() * sizeof(wchar_t));
   write.hook_name = kSoftpalHookName;
   write.hook_code = hook_code;
+  // The lane identity (the sprite size) is the hook code itself.
+  write.event_flags = fushi_voice_hook::kTextEventFlagLaneUniqueHookCode;
   EnterCriticalSection(&g_text_cs);
   const uint64_t event = fushi_voice_hook::WriteTextLaneEvent(
       g_header, fushi_voice_hook::kNativeThreadPreviewStart,
@@ -684,10 +725,8 @@ uint64_t PublishSoftpalText(const SoftpalPage& page) {
 
 // The pending page is a body: publish it (unless the sprite already shows
 // exactly that text).
-void FlushSoftpalPending() {
+void PublishSoftpalPending() {
   auto& rt = g_softpal;
-  if (!rt.has_pending) return;
-  rt.has_pending = false;
   SoftpalPage& page = rt.pending;
   size_t slot = kSoftpalSpriteSlots;
   for (size_t i = 0u; i < kSoftpalSpriteSlots; ++i) {
@@ -721,6 +760,19 @@ void FlushSoftpalPending() {
   NoteSoftpalPublishedPage(rt.published, event);
 }
 
+// What the step machine (softpal::OnPageEvent / OnVoiceEvent / OnTick)
+// decided for the pending page.
+void ApplySoftpalPendingFate(softpal::PendingFate fate) {
+  auto& rt = g_softpal;
+  if (fate == softpal::PendingFate::kPublish) {
+    PublishSoftpalPending();
+  } else if (fate == softpal::PendingFate::kDrop) {
+    SoftpalLog(L"softpal: speaker plate sprite=%p units=%u dropped",
+               reinterpret_cast<void*>(rt.pending.sprite),
+               static_cast<unsigned>(rt.pending.text.size()));
+  }
+}
+
 void ProcessSoftpalPageEvent(const SoftpalEvent& event) {
   auto& rt = g_softpal;
   InterlockedOr(&g_softpal_diag, kSoftpalDiagPageObserved);
@@ -732,34 +784,23 @@ void ProcessSoftpalPageEvent(const SoftpalEvent& event) {
   page.setpos_at = event.setpos_at;
   const softpal::PageResult result = softpal::ComposePage(
       event.draws, event.count, &page.text, &page.glyphs);
-  if (rt.has_pending) {
-    if (softpal::IsSpeakerLabel(rt.pending.sprite, event.sprite,
-                                event.setpos_before)) {
-      SoftpalLog(L"softpal: speaker plate sprite=%p units=%u dropped",
-                 reinterpret_cast<void*>(rt.pending.sprite),
-                 static_cast<unsigned>(rt.pending.text.size()));
-      rt.has_pending = false;
-    } else {
-      FlushSoftpalPending();
-    }
+  if (result == softpal::PageResult::kRejected) {
+    InterlockedOr(&g_softpal_diag, kSoftpalDiagPageRejected);
+    SoftpalLog(L"softpal: page sprite=%p glyphs=%u rejected",
+               reinterpret_cast<void*>(event.sprite), event.count);
   }
-  if (result != softpal::PageResult::kComposed) {
-    if (result == softpal::PageResult::kRejected) {
-      InterlockedOr(&g_softpal_diag, kSoftpalDiagPageRejected);
-      SoftpalLog(L"softpal: page sprite=%p glyphs=%u rejected",
-                 reinterpret_cast<void*>(event.sprite), event.count);
-    }
-    return;
-  }
-  rt.pending = std::move(page);
-  rt.has_pending = true;
+  // The plate decision needs the new page composed: a rejected or empty
+  // transaction leaves the pending page as it is.
+  ApplySoftpalPendingFate(softpal::OnPageEvent(
+      &rt.step, event.sprite, event.setpos_before, event.setpos_at, result));
+  if (result == softpal::PageResult::kComposed) rt.pending = std::move(page);
 }
 
 void ProcessSoftpalVoiceEvent(const SoftpalEvent& event) {
   auto& rt = g_softpal;
   InterlockedOr(&g_softpal_diag, kSoftpalDiagVoiceObserved);
-  // A voice in the step of a page closes that step: the page is a body.
-  if (rt.has_pending && event.setpos_before == 0u) FlushSoftpalPending();
+  ApplySoftpalPendingFate(
+      softpal::OnVoiceEvent(&rt.step, event.setpos_before));
   const bool paired = softpal::VoicePairsWithPage(
       event.sound_type, rt.has_published,
       rt.has_published ? event.setpos_at - rt.published.setpos_at : 1u);
@@ -784,39 +825,41 @@ void ProcessSoftpalTextTick() {
   // engine places its next sprite.
   const uint32_t setpos_now = rt.setpos_calls.load(std::memory_order_acquire);
   const uint64_t latest = rt.count.load(std::memory_order_acquire);
-  uint64_t next = rt.processed_seq + 1u;
-  if (latest - rt.processed_seq > kSoftpalEventSlots) {
-    next = latest - kSoftpalEventSlots + 1u;
+  const softpal::RingCursor start =
+      softpal::RingStart(rt.processed_seq, latest, kSoftpalEventSlots);
+  if (start.lost) {
+    InterlockedOr(&g_softpal_diag, kSoftpalDiagEventsLost);
+    SoftpalLog(L"softpal: events %llu..%llu overwritten before processing",
+               static_cast<unsigned long long>(rt.processed_seq + 1u),
+               static_cast<unsigned long long>(start.next - 1u));
+    rt.processed_seq = start.next - 1u;
   }
+  uint64_t next = start.next;
   for (; next <= latest; ++next) {
     auto& slot_seq = rt.seq[next % kSoftpalEventSlots];
-    if (slot_seq.load(std::memory_order_acquire) != next) {
-      // In flight, or the copy faulted: skip it once the producer moved on.
-      if (next < latest) {
-        rt.processed_seq = next;
-        continue;
-      }
+    // Not committed yet (a producer still copying): wait for it, in order.
+    if (!softpal::RingSlotReady(slot_seq.load(std::memory_order_acquire),
+                                next)) {
       break;
     }
     std::atomic_thread_fence(std::memory_order_acquire);
     std::memcpy(&rt.copy, &rt.events[next % kSoftpalEventSlots],
                 sizeof(SoftpalEvent));
     std::atomic_thread_fence(std::memory_order_acquire);
+    // Overwritten while copying: a lapping producer; the next tick reports
+    // the loss through RingStart.
+    if (slot_seq.load(std::memory_order_acquire) != next) break;
     rt.processed_seq = next;
-    if (slot_seq.load(std::memory_order_acquire) != next) continue;  // torn
     if (rt.copy.kind == kSoftpalEventPage) {
       ProcessSoftpalPageEvent(rt.copy);
     } else if (rt.copy.kind == kSoftpalEventVoice) {
       ProcessSoftpalVoiceEvent(rt.copy);
     }
   }
-  // The engine moved past the step of the pending page: no plate rule can
-  // apply any more, it is a body.
-  if (rt.has_pending &&
-      static_cast<int32_t>(setpos_now - rt.pending.setpos_at) > 0 &&
-      next > latest) {
-    FlushSoftpalPending();
-  }
+  ApplySoftpalPendingFate(
+      softpal::OnTick(&rt.step, setpos_now, next > latest));
+  // One archive of the voice index per tick until it is complete.
+  IndexNextSoftpalArchive();
 }
 
 void ShutdownSoftpalText() {

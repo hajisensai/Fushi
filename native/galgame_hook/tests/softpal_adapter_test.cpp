@@ -219,6 +219,145 @@ void TestComposePage() {
   assert(sp::ComposePage(control, 1, &text, &glyphs) ==
          sp::PageResult::kRejected);
   assert(sp::ComposePage(nullptr, 0, &text, &glyphs) == sp::PageResult::kEmpty);
+
+  // One enlarged glyph (a shouted 「！」 at twice the size) next to a row of
+  // ordinary text: size alone does not make the ordinary text ruby.
+  const sp::GlyphDraw shout[] = {
+      Draw("\x82\xa0", 0, 20, 24),   // あ
+      Draw("\x82\xa2", 26, 20, 24),  // い
+      Draw("\x81\x49", 52, 0, 48),   // ！ (2x)
+      Draw("\x82\xa4", 0, 70, 24),   // う on the next row
+  };
+  assert(sp::ComposePage(shout, 4, &text, &glyphs) ==
+         sp::PageResult::kComposed);
+  assert(text == L"\x3042\x3044\xff01\x3046" && glyphs.size() == 4);
+
+  // Ruby that outnumbers its base (ウィッチ over 魔女) still stays out.
+  const sp::GlyphDraw witch[] = {
+      Draw("\x96\x82", 0, 20, 24),   // 魔
+      Draw("\x8f\x97", 26, 20, 24),  // 女
+      Draw("\x83\x45", 0, 6, 12),    // ウ
+      Draw("\x83\x42", 12, 6, 12),   // ィ
+      Draw("\x83\x62", 24, 6, 12),   // ッ
+      Draw("\x83\x60", 36, 6, 12),   // チ
+  };
+  assert(sp::ComposePage(witch, 6, &text, &glyphs) ==
+         sp::PageResult::kComposed);
+  assert(text == L"\x9b54\x5973" && glyphs.size() == 2);
+
+  // A small glyph that is not over any larger one is text, not ruby.
+  const sp::GlyphDraw aside[] = {
+      Draw("\x8a\xbf", 0, 20, 24),  // 漢
+      Draw("\x82\xa9", 40, 0, 12),  // か, off to the side
+  };
+  assert(sp::ComposePage(aside, 2, &text, &glyphs) ==
+         sp::PageResult::kComposed);
+  assert(text == L"\x6f22\x304b");
+
+  // A glyph without a font size: the page cannot be told.
+  const sp::GlyphDraw unsized[] = {Draw("\x8a\xbf", 0, 20, 24),
+                                   Draw("\x8e\x9a", 26, 20, 0)};
+  assert(sp::ComposePage(unsized, 2, &text, &glyphs) ==
+         sp::PageResult::kRejected);
+}
+
+// The worker's step machine, driven event by event as the worker does.
+void TestPageSteps() {
+  using sp::PendingFate;
+  using sp::PageResult;
+  const uintptr_t body = 0x1000, plate = 0x2000, other = 0x3000;
+
+  // The plate, then the body in the same step: the plate is dropped, the
+  // body published once the engine moves on.
+  {
+    sp::PageStepState s;
+    assert(sp::OnPageEvent(&s, plate, 5, 100, PageResult::kComposed) ==
+           PendingFate::kKeep);
+    assert(sp::OnPageEvent(&s, body, 0, 100, PageResult::kComposed) ==
+           PendingFate::kDrop);
+    assert(s.has_pending && s.pending_sprite == body);
+    assert(sp::OnTick(&s, 100, true) == PendingFate::kKeep);  // same step
+    assert(sp::OnTick(&s, 101, false) == PendingFate::kKeep);  // not drained
+    assert(sp::OnTick(&s, 101, true) == PendingFate::kPublish);
+    assert(!s.has_pending);
+  }
+  // The body, then in the same step a transaction on another sprite that is
+  // rejected (a truncated UI string) or empty: the body stays and is
+  // published, never dropped as a plate.
+  for (const PageResult next : {PageResult::kRejected, PageResult::kEmpty}) {
+    sp::PageStepState s;
+    assert(sp::OnPageEvent(&s, body, 3, 200, PageResult::kComposed) ==
+           PendingFate::kKeep);
+    assert(sp::OnPageEvent(&s, other, 0, 200, next) == PendingFate::kKeep);
+    assert(s.has_pending && s.pending_sprite == body);
+    assert(sp::OnTick(&s, 201, true) == PendingFate::kPublish);
+  }
+  // ... and a voice of that step publishes it right away.
+  {
+    sp::PageStepState s;
+    sp::OnPageEvent(&s, body, 3, 200, PageResult::kComposed);
+    sp::OnPageEvent(&s, other, 0, 200, PageResult::kRejected);
+    assert(sp::OnVoiceEvent(&s, 0) == PendingFate::kPublish);
+    assert(!s.has_pending);
+    assert(sp::OnVoiceEvent(&s, 0) == PendingFate::kKeep);
+  }
+  // Two pages a frame apart: both are bodies.
+  {
+    sp::PageStepState s;
+    sp::OnPageEvent(&s, body, 3, 300, PageResult::kComposed);
+    assert(sp::OnPageEvent(&s, other, 2, 302, PageResult::kComposed) ==
+           PendingFate::kPublish);
+    assert(s.pending_sprite == other);
+  }
+  // A voice of a later step does not touch the pending page.
+  {
+    sp::PageStepState s;
+    sp::OnPageEvent(&s, body, 3, 400, PageResult::kComposed);
+    assert(sp::OnVoiceEvent(&s, 4) == PendingFate::kKeep);
+    assert(s.has_pending);
+  }
+}
+
+// Every sequence is taken in order; out-of-order commits are waited for.
+void TestEventRing() {
+  sp::RingCursor c = sp::RingStart(10, 12, 16);
+  assert(c.next == 11 && !c.lost);
+  // Slot 11 still copying (0) while 12 is committed: wait, do not skip.
+  assert(!sp::RingSlotReady(0, 11));
+  assert(sp::RingSlotReady(11, 11));
+  // An older or a newer sequence in the slot is not this one.
+  assert(!sp::RingSlotReady(11 - 16, 11) && !sp::RingSlotReady(27, 11));
+  // Nothing new.
+  c = sp::RingStart(12, 12, 16);
+  assert(c.next == 13 && !c.lost);
+  // Lapped: the oldest still in the ring, reported.
+  c = sp::RingStart(10, 40, 16);
+  assert(c.next == 25 && c.lost);
+  c = sp::RingStart(10, 26, 16);
+  assert(c.next == 11 && !c.lost);
+  c = sp::RingStart(10, 27, 16);
+  assert(c.next == 12 && c.lost);
+}
+
+void TestLookupAdmission() {
+  using sp::ImportPatch;
+  assert(sp::LookupAdmissible(ImportPatch::kPatched, ImportPatch::kPatched,
+                              true, true));
+  // The module samples with GetAsyncKeyState only.
+  assert(sp::LookupAdmissible(ImportPatch::kPatched,
+                              ImportPatch::kNotImported, true, true));
+  // GetKeyState imported but not wrapped: a claimed press would leak.
+  assert(!sp::LookupAdmissible(ImportPatch::kPatched, ImportPatch::kFailed,
+                               true, true));
+  assert(!sp::LookupAdmissible(ImportPatch::kNotImported,
+                               ImportPatch::kPatched, true, true));
+  assert(!sp::LookupAdmissible(ImportPatch::kFailed, ImportPatch::kPatched,
+                               true, true));
+  // Hide / release not tracked: a gone page would stay clickable.
+  assert(!sp::LookupAdmissible(ImportPatch::kPatched, ImportPatch::kPatched,
+                               false, true));
+  assert(!sp::LookupAdmissible(ImportPatch::kPatched, ImportPatch::kPatched,
+                               true, false));
 }
 
 void TestStepRules() {
@@ -424,6 +563,9 @@ int main() {
   TestArchives();
   TestComposePage();
   TestStepRules();
+  TestPageSteps();
+  TestEventRing();
+  TestLookupAdmission();
   TestPlacement();
   TestClaim();
   TestTouchClaim();

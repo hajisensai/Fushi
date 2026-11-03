@@ -41,6 +41,7 @@
 #include <cstring>
 #include <intrin.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
@@ -55,6 +56,7 @@
 #include "adapters/cmvs_dialogue_text_resolver.h"
 #include "adapters/cmvs_sprite_geometry_reader.h"
 #include "lookup_overlay_geometry.h"
+#include "lookup_hover_highlight_state.h"
 #include "game_main_window.h"
 #include "overlay_cursor_guard.h"
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被

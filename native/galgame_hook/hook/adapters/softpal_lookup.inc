@@ -478,7 +478,9 @@ bool UpdateSoftpalHighlight(const SoftpalModel& model) {
       return false;
     }
   }
-  RequestLookupHoverHighlight(origin.x + rect.x, origin.y + rect.y, rect.w,
+  RequestLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdSoftpal,
+      origin.x + rect.x, origin.y + rect.y, rect.w,
                               rect.h);
   return true;
 }
@@ -486,7 +488,8 @@ bool UpdateSoftpalHighlight(const SoftpalModel& model) {
 struct SoftpalHighlightScope {
   bool keep = false;
   ~SoftpalHighlightScope() {
-    if (!keep) ClearLookupHoverHighlight();
+    if (!keep) ClearLookupHoverHighlight(
+        fushi_voice_hook::kLookupGeometryProviderIdSoftpal);
   }
 };
 
@@ -947,17 +950,26 @@ bool WriteSoftpalImportSlot(uintptr_t* slot, uintptr_t value) {
 }
 
 // Point one of Pal's import slots at `ours`, publishing the original first.
-uintptr_t* PatchSoftpalImport(const char* symbol, uintptr_t ours,
-                              std::atomic<uintptr_t>* original) {
+// `*patched` is the slot only when the result is kPatched.
+softpal::ImportPatch PatchSoftpalImport(const char* symbol, uintptr_t ours,
+                                        std::atomic<uintptr_t>* original,
+                                        uintptr_t** patched) {
+  *patched = nullptr;
   uintptr_t* slot = nullptr;
+  bool faulted = false;
   __try {
     slot = FindSoftpalImportSlot(g_softpal.module, "USER32.dll", symbol);
   } __except (EXCEPTION_EXECUTE_HANDLER) {
-    slot = nullptr;
+    faulted = true;
   }
-  if (slot == nullptr || *slot == 0u || *slot == ours) return nullptr;
+  // An import table we could not read may import it: not provably absent.
+  if (faulted) return softpal::ImportPatch::kFailed;
+  if (slot == nullptr) return softpal::ImportPatch::kNotImported;
+  if (*slot == 0u || *slot == ours) return softpal::ImportPatch::kFailed;
   original->store(*slot, std::memory_order_release);
-  return WriteSoftpalImportSlot(slot, ours) ? slot : nullptr;
+  if (!WriteSoftpalImportSlot(slot, ours)) return softpal::ImportPatch::kFailed;
+  *patched = slot;
+  return softpal::ImportPatch::kPatched;
 }
 
 void RestoreSoftpalImport(uintptr_t** slot, uintptr_t ours,
@@ -975,24 +987,37 @@ bool InstallSoftpalLookup() {
       g_softpal.get_window == 0u || g_softpal.get_parameters == 0u) {
     return false;
   }
-  rt.async_slot = PatchSoftpalImport(
+  const softpal::ImportPatch async_state = PatchSoftpalImport(
       "GetAsyncKeyState", reinterpret_cast<uintptr_t>(&SoftpalGetAsyncKeyState),
-      &g_softpal_async_original);
-  rt.keystate_slot = PatchSoftpalImport(
+      &g_softpal_async_original, &rt.async_slot);
+  const softpal::ImportPatch key_state = PatchSoftpalImport(
       "GetKeyState", reinterpret_cast<uintptr_t>(&SoftpalGetKeyState),
-      &g_softpal_keystate_original);
-  SoftpalLog(L"softpal-lookup: imports async=%d keystate=%d",
-             rt.async_slot != nullptr ? 1 : 0,
-             rt.keystate_slot != nullptr ? 1 : 0);
-  // Without the sample wrapper a claimed press would still reach the engine.
-  rt.installed = rt.async_slot != nullptr;
+      &g_softpal_keystate_original, &rt.keystate_slot);
+  SoftpalLog(L"softpal-lookup: imports async=%u keystate=%u view=%d "
+             L"release=%d",
+             static_cast<unsigned>(async_state),
+             static_cast<unsigned>(key_state), g_softpal.view_hooked ? 1 : 0,
+             g_softpal.release_hooked ? 1 : 0);
+  // Fail closed: an unwrapped sampler would leak a claimed press to the
+  // engine, an untracked hide / release would leave a gone page clickable.
+  rt.installed = softpal::LookupAdmissible(async_state, key_state,
+                                           g_softpal.view_hooked,
+                                           g_softpal.release_hooked);
+  if (!rt.installed) {
+    RestoreSoftpalImport(&rt.async_slot,
+                         reinterpret_cast<uintptr_t>(&SoftpalGetAsyncKeyState),
+                         g_softpal_async_original);
+    RestoreSoftpalImport(&rt.keystate_slot,
+                         reinterpret_cast<uintptr_t>(&SoftpalGetKeyState),
+                         g_softpal_keystate_original);
+  }
   return rt.installed;
 }
 
 void ShutdownSoftpalLookup() {
   auto& rt = g_softpal_lookup;
   RetireSoftpalLookup(0u);
-  ClearLookupHoverHighlight();
+  ClearLookupHoverHighlight(fushi_voice_hook::kLookupGeometryProviderIdSoftpal);
   RestoreSoftpalWindowProcedure();
   RestoreSoftpalImport(&rt.async_slot,
                        reinterpret_cast<uintptr_t>(&SoftpalGetAsyncKeyState),

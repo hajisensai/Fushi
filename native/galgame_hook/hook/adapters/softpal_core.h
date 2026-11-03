@@ -273,30 +273,68 @@ inline uint32_t SplitCp932(const char* bytes, uint32_t length,
   return count;
 }
 
+// The width a draw's string advances: half the size per single-byte
+// character, the size per double-byte one (a broken sequence counts bytes).
+inline int32_t DrawAdvance(const GlyphDraw& draw) {
+  uint32_t units = 0u;
+  for (uint32_t i = 0u; i < draw.length;) {
+    const bool wide =
+        IsCp932LeadByte(static_cast<uint8_t>(draw.bytes[i])) &&
+        i + 1u < draw.length;
+    units += wide ? 2u : 1u;
+    i += wide ? 2u : 1u;
+  }
+  return static_cast<int32_t>(units) * draw.font_size / 2;
+}
+
+// Ruby the source carries: a glyph drawn markedly smaller (under 70%) than a
+// glyph it sits on, horizontally over it and ending above that glyph's middle
+// within its own height.  Size alone is not the rule: a page with one
+// enlarged glyph (a shouted 「！」) keeps the ordinary text around it.
+inline bool IsAnnotationDraw(const GlyphDraw* draws, size_t count,
+                             size_t index) {
+  const GlyphDraw& g = draws[index];
+  const int32_t g_left = g.x;
+  const int32_t g_right = g.x + (std::max)(1, DrawAdvance(g));
+  const int32_t g_bottom = g.y + g.font_size;
+  for (size_t j = 0u; j < count; ++j) {
+    const GlyphDraw& base = draws[j];
+    if (j == index || g.font_size * 10 >= base.font_size * 7) continue;
+    const int32_t b_left = base.x;
+    const int32_t b_right = base.x + (std::max)(1, DrawAdvance(base));
+    if (g_right <= b_left || b_right <= g_left) continue;
+    if (g_bottom > base.y + base.font_size / 2) continue;
+    if (base.y - g_bottom > g.font_size) continue;
+    return true;
+  }
+  return false;
+}
+
 // The page text and per-character cells of one text transaction.
 //
-// Glyphs drawn markedly smaller than the page's text size are annotations
-// the source carries (ruby over a word): kept out of the text, which is the
-// body as read.  A glyph string of several characters is laid out at even
-// steps of its width.
+// Annotations the source carries (ruby over a word, IsAnnotationDraw) are
+// kept out of the text, which is the body as read.  A glyph string of several
+// characters is laid out at even steps of its width.
 inline PageResult ComposePage(const GlyphDraw* draws, size_t count,
                               std::wstring* text,
                               std::vector<PageGlyph>* glyphs) {
   text->clear();
   glyphs->clear();
   if (draws == nullptr || count == 0u) return PageResult::kEmpty;
-  int32_t body_size = 0;
+  if (count > kMaxPageGlyphs) return PageResult::kRejected;
   for (size_t i = 0u; i < count; ++i) {
-    body_size = (std::max)(body_size, draws[i].font_size);
-  }
-  if (body_size <= 0 || body_size > 512) return PageResult::kRejected;
-  for (size_t i = 0u; i < count; ++i) {
-    const GlyphDraw& draw = draws[i];
-    if (draw.length == 0u || draw.length > kMaxGlyphBytes) {
+    if (draws[i].length == 0u || draws[i].length > kMaxGlyphBytes ||
+        draws[i].font_size <= 0 || draws[i].font_size > 512) {
       return PageResult::kRejected;
     }
-    // Annotation: under 70% of the body size.
-    if (draw.font_size * 10 < body_size * 7) continue;
+  }
+  bool annotation[kMaxPageGlyphs] = {};
+  for (size_t i = 0u; i < count; ++i) {
+    annotation[i] = IsAnnotationDraw(draws, count, i);
+  }
+  for (size_t i = 0u; i < count; ++i) {
+    const GlyphDraw& draw = draws[i];
+    if (annotation[i]) continue;
     // Body text whose string did not fit: the page cannot be told.
     if (draw.truncated) return PageResult::kRejected;
     uint32_t starts[kMaxGlyphBytes] = {};
@@ -310,7 +348,7 @@ inline PageResult ComposePage(const GlyphDraw* draws, size_t count,
     width = static_cast<int32_t>((chars - dbcs_units) * draw.font_size / 2 +
                                  dbcs_units * draw.font_size);
     for (size_t j = i + 1u; j < count; ++j) {
-      if (draws[j].font_size * 10 < body_size * 7) continue;
+      if (annotation[j]) continue;
       if (draws[j].y == draw.y && draws[j].x > draw.x &&
           draws[j].x - draw.x <= width * 2) {
         width = draws[j].x - draw.x;
@@ -351,11 +389,102 @@ inline PageResult ComposePage(const GlyphDraw* draws, size_t count,
 // ── step rules ─────────────────────────────────────────────────────────────
 
 // A text transaction followed, in the same engine step (no sprite placement
-// in between), by one on another sprite is that page's speaker plate.
+// in between), by a composed page on another sprite is that page's speaker
+// plate (the plate is drawn before the body).
 inline bool IsSpeakerLabel(uintptr_t sprite, uintptr_t next_sprite,
                            uint32_t setpos_between) {
   return sprite != 0u && next_sprite != 0u && sprite != next_sprite &&
          setpos_between == 0u;
+}
+
+// The page step machine: which text transaction of an engine step is the
+// body.  The worker keeps one composed page pending (it may still turn out
+// to be the plate of the body after it) and the machine says, per event,
+// what becomes of that pending page.  Only a page that composed can make the
+// pending one a plate: a transaction of the same step that is rejected
+// (not clean CP932, a truncated body-size string) or empty carries no body,
+// so the pending page stays and is published by the usual step rules.
+enum class PendingFate : uint32_t {
+  kKeep = 0,     // still pending (or nothing pending)
+  kPublish = 1,  // the pending page is a body: publish it now
+  kDrop = 2,     // the pending page is a speaker plate: drop it
+};
+
+struct PageStepState {
+  bool has_pending = false;
+  uintptr_t pending_sprite = 0u;
+  uint32_t pending_setpos_at = 0u;
+};
+
+// A text transaction ended.  `setpos_before` counts the placements since the
+// previous transaction, `setpos_at` the count at this one.  After the call a
+// composed page is the new pending one.
+inline PendingFate OnPageEvent(PageStepState* s, uintptr_t sprite,
+                               uint32_t setpos_before, uint32_t setpos_at,
+                               PageResult result) {
+  if (result != PageResult::kComposed) return PendingFate::kKeep;
+  PendingFate fate = PendingFate::kKeep;
+  if (s->has_pending) {
+    fate = IsSpeakerLabel(s->pending_sprite, sprite, setpos_before)
+               ? PendingFate::kDrop
+               : PendingFate::kPublish;
+  }
+  s->has_pending = true;
+  s->pending_sprite = sprite;
+  s->pending_setpos_at = setpos_at;
+  return fate;
+}
+
+// A voice in the step of the pending page closes that step: it is a body.
+inline PendingFate OnVoiceEvent(PageStepState* s, uint32_t setpos_before) {
+  if (!s->has_pending || setpos_before != 0u) return PendingFate::kKeep;
+  s->has_pending = false;
+  return PendingFate::kPublish;
+}
+
+// End of a worker tick.  Once every committed event was taken (`drained`)
+// and the engine placed a sprite after the pending page, no plate rule can
+// apply any more: it is a body.
+inline PendingFate OnTick(PageStepState* s, uint32_t setpos_now,
+                          bool drained) {
+  if (!s->has_pending || !drained ||
+      static_cast<int32_t>(setpos_now - s->pending_setpos_at) <= 0) {
+    return PendingFate::kKeep;
+  }
+  s->has_pending = false;
+  return PendingFate::kPublish;
+}
+
+// ── event ring ─────────────────────────────────────────────────────────────
+//
+// Producers (game threads) take a sequence number and must commit every one
+// they take, a failed copy as a discard.  The consumer takes sequence numbers
+// strictly in order: an uncommitted slot is waited for, never skipped, so a
+// producer that commits out of order (a voice load overtaking a page still
+// copying its glyphs) loses nothing.  Only a producer lapping the consumer
+// loses events, and that is reported.
+struct RingCursor {
+  uint64_t next = 0u;   // the sequence to take next
+  bool lost = false;    // events were overwritten before they were taken
+};
+
+// Where to start this tick, given the last processed sequence and the
+// newest taken one.
+inline RingCursor RingStart(uint64_t processed, uint64_t latest,
+                            uint32_t slots) {
+  RingCursor c;
+  c.next = processed + 1u;
+  if (latest > processed && latest - processed > slots) {
+    c.next = latest - slots + 1u;
+    c.lost = true;
+  }
+  return c;
+}
+
+// Whether the slot holding `committed` can be taken as sequence `next`.
+// Anything else (0: in flight, an older or a newer sequence) ends the tick.
+inline bool RingSlotReady(uint64_t committed, uint64_t next) {
+  return committed == next;
 }
 
 constexpr uint32_t kSoundTypeVoice = 1u;
@@ -486,6 +615,25 @@ inline bool TermRect(const PageGlyph* glyphs, size_t count, uint32_t start,
   *w = right - left;
   *h = bottom - top;
   return true;
+}
+
+// ── lookup admission ───────────────────────────────────────────────────────
+//
+// The lookup claims presses, so it is enabled only when every path the
+// engine sees a press through is wrapped and every sprite state the hit test
+// relies on is tracked; anything missing leaves the text lane alone and the
+// lookup off.
+
+enum class ImportPatch : uint32_t {
+  kNotImported = 0,  // the module does not import the symbol: nothing to wrap
+  kPatched = 1,
+  kFailed = 2,  // imported, but the slot could not be pointed at the wrapper
+};
+
+inline bool LookupAdmissible(ImportPatch async_state, ImportPatch key_state,
+                             bool view_hooked, bool release_hooked) {
+  return async_state == ImportPatch::kPatched &&
+         key_state != ImportPatch::kFailed && view_hooked && release_hooked;
 }
 
 // ── input claim ────────────────────────────────────────────────────────────

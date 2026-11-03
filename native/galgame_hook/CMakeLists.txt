@@ -46,6 +46,7 @@ add_library(fushi_voice_hook SHARED
   "hook/tracked_handle_table.h"
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
+  "hook/lookup_hover_highlight_state.h"
   "hook/generic_input_shield.inc"
   "hook/overlay_cursor_guard.h"
   "hook/overlay_cursor_guard.inc"
@@ -1260,3 +1261,7 @@ add_executable(fushi_softpal_adapter_test "tests/softpal_adapter_test.cpp")
 target_include_directories(fushi_softpal_adapter_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_softpal_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_softpal_adapter_test COMMAND fushi_softpal_adapter_test)
+add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highlight_state_test.cpp")
+target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
+target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
