@@ -13,6 +13,8 @@ import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
 import 'package:fushi/src/anki/source_review_navigation.dart'
     show ExternalMediaNavigation;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart'
+    show BrowseNavigationRequest, BrowseTab, externalBrowseRequest;
 import 'package:fushi/src/pages/implementations/collections_page.dart'
     show CollectionsPage;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
@@ -29,6 +31,10 @@ import 'package:fushi/src/settings/settings_schema_home_widgets.dart'
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
+import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
+    show ServerContinueCandidate;
+import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart'
+    show ServerContinueFeed;
 
 // 小组件深链的落地动作（接到 [runWidgetLink] 的回调上）。都在 navigator 已退回首页
 // 根路由之后才被调用，各自返回「有没有真的打开」，没打开时调用方停在对应 tab。
@@ -178,4 +184,44 @@ Future<void> openWidgetVocab(AppModel appModel) async {
       builder: (_) => const CollectionsPage(),
     ),
   );
+}
+
+/// 下载中心：浏览页（已被 [runWidgetLink] 切到浏览 tab）落到「下载 › 任务」页签。
+/// 首页挂载后监听 [externalBrowseRequest]，走与应用内跳转同一条路径。
+Future<void> openWidgetDownloads() async {
+  externalBrowseRequest.value = BrowseNavigationRequest(BrowseTab.downloads);
+}
+
+/// 打开「接下来」小组件指向的服务器条目：找到首页「继续」取数留下的同一个候选，
+/// 调它的 `open`（媒体服务器 = 起播，Audiobookshelf = 条目详情页）——与首页点卡
+/// 同一落地，不另发网络请求去认条目。冷启动时首页刚挂载、取数还在飞：最多等
+/// [wait]。条目已不在进行中（或首页的服务器混排被关）返回 false。
+Future<bool> openWidgetServerItem(
+  AppModel appModel,
+  WidgetServerLink link, {
+  Duration wait = const Duration(seconds: 8),
+}) async {
+  final ServerContinueFeed feed = ServerContinueFeed.of(appModel.database);
+  ServerContinueCandidate? find() {
+    for (final ServerContinueCandidate c in feed.current) {
+      if (c.key == link.key) return c;
+    }
+    return null;
+  }
+
+  ServerContinueCandidate? candidate = find();
+  if (candidate == null) {
+    // 首页的取数要等它挂载后才开始：先给它一个起步的机会，再等这一轮结束。
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    try {
+      await feed.settled().timeout(wait);
+    } on TimeoutException {
+      // 等不到就按现有结果判断。
+    }
+    candidate = find();
+  }
+  final BuildContext? context = appModel.navigatorKey.currentContext;
+  if (candidate == null || context == null || !context.mounted) return false;
+  await candidate.open(context);
+  return true;
 }

@@ -120,9 +120,33 @@ All user-visible strings are already localized and formatted in Dart.
   "vocab": [                        // up to 12, newest first, deterministic
     { "term": "...", "reading": "", "definition": "", "sentence": "", "source": "Book title",
       "origin": "mined|favorite" }
-  ]
+  ],
+
+  "downloads": {                    // Downloads widget
+    "count": 4,                     // unfinished tasks: running, queued, paused, failed
+    "running": 2,                   // active + queued; the app keeps pushing while > 0
+    "percent": 63,                  // mean progress of non-failed tasks that report one; null if none
+    "speed": "2.4 MB/s",            // summed live speed of active tasks, "" if unknown
+    "tasks": [                      // top 3: active, queued, failed, paused (newest first within a rank)
+      { "id": "...", "title": "...", "state": "active|queued|paused|failed",
+        "percent": 41 | null, "speed": "1.2 MB/s" | "" }
+    ]
+  },
+
+  "onDeck": {                       // On deck widget (media-server items)
+    "state": "none|off|ok",         // none = no server configured, off = servers exist but their
+                                    // items are not mixed into Home > Continue (opt-in), ok
+    "items": [                      // ok only; up to 4, newest first
+      { "kind": "video|audiobook", "title": "Series or title", "subtitle": "S1E2 Episode name",
+        "server": "Jellyfin", "progress": 0..1, "position": "45%", "cover": "<abs path>|''",
+        "lastActive": "2 h ago", "link": "fushi://widget/server?source=...&server=...&item=..." }
+    ]
+  }
 }
 ```
+
+`media.remaining` (every `continue` / `shelf` entry) is the pre-formatted "time to finish"
+("≈2h 10m left", `widget_label_time_left`) or `""` when it cannot be estimated honestly.
 
 ## `labels` keys (stable contract)
 
@@ -136,6 +160,8 @@ missing keys (own English fallback).
 - vocabulary / goals / shortcuts: `vocabTitle nextWord lookUp noVocab goalsTitle noGoals vocab stats settings`
 - time templates: `updatedAgo agoNow agoMinutes agoHours agoDays`
 - extras: `openToRefresh zeroTime streakSrs weekReviews weekGoalDays recentDays`
+- downloads / on deck: `downloadsTitle noDownloads downloadQueued downloadPaused downloadFailed
+  downloadsActive({n}) onDeckTitle onDeckNoServers onDeckEmpty onDeckOff kind_audiobook`
 
 Templates carry placeholders for the native side to fill at display time:
 `updatedAgo` = "Updated {age}", `agoMinutes|agoHours|agoDays`
@@ -179,6 +205,8 @@ Handled by `WidgetLink` (`widget_links.dart`), cold-start safe through `WidgetLi
 | `settings/cards` | Settings → Card creation (SRS provider) |
 | `settings/widgets` | Settings → Home-screen widgets |
 | `vocab` | collections (favorite words / mined sentences) page |
+| `downloads` | download center (Browse tab > Downloads > Tasks); ignored when the Browse module is off |
+| `server?source=<mediaServer\|audiobookshelf>&server=<id>&item=<id>` | the same server item Home > Continue shows, opened with that card's own `open` action; lands on Home first so the dashboard feed is loaded |
 
 The Anki "Open AnkiDroid" action is handled natively (launch intent for
 `srs.ankiPackage`); Flutter is not involved.
@@ -197,6 +225,53 @@ Priority rule: **per-widget choice > app default (Settings → Home-screen widge
 > built-in default (show everything)**. The SRS provider is never per-widget: it
 always follows the card destination setting.
 
+## Time to finish, Downloads, On deck
+
+Pure logic and tests: `widget_progress.dart`, `test/platform/widget_snapshot_test.dart`.
+
+**Time to finish** (`media.remaining`, shown on Continue and on the large Shelf):
+
+- Videos: `duration - position` of the single file (`VideoFileSpecs.durationMs`, `lastPositionMs`).
+  Playlists (several episodes in one row) and unprobed / streamed files have no duration: omitted.
+- Books: remaining characters / reading speed. Total length and position are in characters only when
+  `MediaItem.sourceMetadata != null` (set exactly when the chapter character counts are known); PDF,
+  manga, online manga and old books without chapter sizes are omitted, never guessed. Speed is
+  `chars / ms` from the book's own `loadStatFacts` daily rows over the last 30 stat days; if that has
+  under 5 min or 300 chars it falls back to the user's overall non-manga book speed over the same
+  window; below the same thresholds, or above 0.1 chars/ms (skimming), there is no estimate.
+  Minimum shown: "1m".
+- Audiobooks are epub-based books, so they use the book path (character progress), not playback time.
+
+**Downloads** (`DownloadsWidget`, tap = `downloads` link):
+
+- Sources: durable video / torrent jobs (`getVideoDownloadJobs` + `loadTaskSnapshots` for live progress
+  and speed of the active ones) and the direct-link queue (`discoveryDownloadQueue`). Not included:
+  manga catalog downloads, interconnect remote-host tasks, transcription tasks (their sources are
+  widget-only providers). Failed tasks older than 3 days are not listed. Seeding / finished is not
+  listed. The block is empty when the Browse module is off or the platform has no download center.
+- Publishing: signals are `watchVideoDownloadJobs()` and the queue's listener. A tick only rebuilds
+  the `downloads` block of the last full snapshot (no stats / SRS / vocab re-collection) and runs at
+  most once per 5 s (`widgetDownloadsPublishDelay`). The tick re-arms itself only while a task is
+  active or queued: no timer exists while idle. When the process stops pushing (killed), the widget
+  detects a snapshot older than 90 s while tasks are running and shows "Updated <age>" instead of
+  the speed.
+
+**On deck** (`OnDeckWidget`, item tap = the item's `link`):
+
+- Data is the dashboard's own `ServerContinueFeed` cache (Jellyfin / Emby / Plex Resume + NextUp and
+  Audiobookshelf in-progress) behind the same opt-in gates (`serverContinueGates`, shared with the
+  dashboard): the widget issues **no** server request. Consequence: items appear after Home has
+  loaded the feed once in the process (the feed's `updates` stream triggers the republish) and the
+  last published list stays on the widget until then. The feed does not cover Kavita.
+- States: `none` ("No media servers"), `off` ("Server items are off..."), `ok` with no items
+  ("Nothing in progress").
+- Covers: files under `<appSupport>/widget_covers/` (`WidgetCoverCache`): fetched through the item's
+  authenticated `coverFetcher` or the shared image cache, downscaled to 512 px (PNG), reused when the
+  file exists, pruned to the current items on every publish, time-boxed to 5 s per publish (a slow
+  server only costs the cover: glyph fallback, finished files are picked up by the next publish).
+- Privacy (`hideTitles`, per-widget override like Continue / Shelf) hides titles, covers, subtitles
+  and server names; the kind label stands in.
+
 ## Known limitations
 
 - Widgets show the **active profile** only; Fushi has no target-language setting
@@ -204,12 +279,16 @@ always follows the card destination setting.
   profile / language selection is not offered.
 - Audiobook listening time is stored as book time (`format=epub`), so it is
   counted under Reading; Listening = music (when "listening counts as study").
+- Downloads / On deck: see the section above for what is and is not covered. The Downloads speed
+  is the torrent backend's live rate; direct-link downloads report progress but no speed.
 - Fushi SRS due counts are as of the last publish (shown with an "updated" age).
   AnkiDroid counts are live but need AnkiDroid's database permission; AnkiDroid's
   API exposes no "reviewed today", so the Anki variant shows due counts only.
 
 ## Native side notes (Kotlin, `fushi/android/.../widgets/`)
 
+- `ProgressWidgets.kt`: Downloads and On deck (receivers `DownloadsReceiver`, `OnDeckReceiver`,
+  registry indices 9 and 10).
 - Files: `WidgetCommon.kt` (theme, per-instance prefs, stale rule, rings / heatmap helpers),
   `FushiWidgets.kt` (Continue, Shelf), `WidgetsToday.kt` (Immersion = `TodayWidget`, Goals,
   Streak, Week), `SrsWidget.kt` (+ live AnkiDroid read), `VocabWidget.kt`,

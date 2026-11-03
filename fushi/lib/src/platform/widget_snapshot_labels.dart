@@ -75,6 +75,18 @@ WidgetSnapshotLabels buildWidgetLabels() {
     'weekReviews': t.widget_label_week_reviews,
     'weekGoalDays': t.widget_label_goal_days,
     'recentDays': t.widget_label_last_days(n: kWidgetMonthDays),
+    // 下载 / 接下来（服务器条目）
+    'downloadsTitle': t.widget_label_downloads_title,
+    'noDownloads': t.widget_label_no_downloads,
+    'downloadQueued': t.widget_label_download_queued,
+    'downloadPaused': t.widget_label_download_paused,
+    'downloadFailed': t.widget_label_download_failed,
+    'downloadsActive': t.widget_label_downloads_active(n: n),
+    'onDeckTitle': t.widget_label_on_deck_title,
+    'onDeckNoServers': t.widget_label_on_deck_no_servers,
+    'onDeckEmpty': t.widget_label_on_deck_empty,
+    'onDeckOff': t.widget_label_on_deck_off,
+    'kind_audiobook': t.widget_label_kind_audiobook,
   });
 }
 

@@ -19,6 +19,10 @@
     <string name="widget_streak_desc">Study streak, last seven days and a monthly activity calendar.</string>
     <string name="widget_vocab_label">Fushi Vocabulary</string>
     <string name="widget_vocab_desc">A word from your saved vocabulary, with a next button.</string>
+    <string name="widget_downloads_label">Fushi Downloads</string>
+    <string name="widget_downloads_desc">Active downloads with overall progress, speed and the top tasks.</string>
+    <string name="widget_on_deck_label">Fushi On deck</string>
+    <string name="widget_on_deck_desc">What you are watching or listening to on your media servers.</string>
     <string name="widget_age_now">just now</string>
     <string name="widget_age_minutes">%d min ago</string>
     <string name="widget_age_hours">%d h ago</string>

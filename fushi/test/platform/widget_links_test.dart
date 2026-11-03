@@ -131,6 +131,52 @@ void main() {
       );
     });
 
+    test('downloads link', () {
+      expect(
+        WidgetLink.tryParse('fushi://widget/downloads'),
+        isA<WidgetDownloadsLink>(),
+      );
+    });
+
+    test('server link carries source, server and item', () {
+      final String url = WidgetServerLink.build(
+        source: WidgetServerSource.audiobookshelf,
+        serverId: 'srv 1',
+        itemId: 'li_abc/ep&1',
+      );
+      expect(url, startsWith('fushi://widget/server?'));
+      expect(
+        WidgetLink.tryParse(url),
+        const WidgetServerLink(
+          source: WidgetServerSource.audiobookshelf,
+          serverId: 'srv 1',
+          itemId: 'li_abc/ep&1',
+        ),
+      );
+      expect(
+        WidgetLink.tryParse(
+          'fushi://widget/server?source=mediaServer&server=s&item=i',
+        ),
+        const WidgetServerLink(
+          source: WidgetServerSource.mediaServer,
+          serverId: 's',
+          itemId: 'i',
+        ),
+      );
+    });
+
+    test('server link needs a known source, server and item', () {
+      for (final String bad in <String>[
+        'fushi://widget/server',
+        'fushi://widget/server?source=plex&server=s&item=i',
+        'fushi://widget/server?source=mediaServer&item=i',
+        'fushi://widget/server?source=mediaServer&server=s',
+        'fushi://widget/server?source=mediaServer&server=&item=i',
+      ]) {
+        expect(WidgetLink.tryParse(bad), isNull, reason: bad);
+      }
+    });
+
     test('malformed input never throws', () {
       for (final String bad in <String>[
         'fushi://widget/tab/%',
@@ -249,6 +295,8 @@ void main() {
     late List<String> lookups;
     late List<WidgetSettingsTarget> settingsOpens;
     late int vocabOpens;
+    late int downloadsOpens;
+    late List<WidgetServerLink> serverOpens;
     late bool itemExists;
     late bool srsHasWork;
     late ExternalMediaNavigation media;
@@ -261,6 +309,8 @@ void main() {
       lookups = <String>[];
       settingsOpens = <WidgetSettingsTarget>[];
       vocabOpens = 0;
+      downloadsOpens = 0;
+      serverOpens = <WidgetServerLink>[];
       itemExists = true;
       srsHasWork = true;
     });
@@ -301,6 +351,11 @@ void main() {
         openLookup: (String word) async => lookups.add(word),
         openSettings: (WidgetSettingsTarget t) async => settingsOpens.add(t),
         openVocab: () async => vocabOpens++,
+        openDownloads: () async => downloadsOpens++,
+        openServerItem: (WidgetServerLink l) async {
+          serverOpens.add(l);
+          return true;
+        },
         isContinueItemOpen: isContinueItemOpen,
         media: media,
       ).whenComplete(() => done = true);
@@ -539,6 +594,59 @@ void main() {
       await run(tester, const WidgetVocabLink());
       expect(selectedTabs, <HomeTab>[HomeTab.home]);
       expect(vocabOpens, 1);
+    });
+
+    testWidgets('downloads opens the browse tab then the download center', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(
+        tester,
+        const WidgetDownloadsLink(),
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.browse}),
+      );
+      expect(selectedTabs, <HomeTab>[HomeTab.browse]);
+      expect(downloadsOpens, 1);
+    });
+
+    testWidgets('downloads does nothing when the browse module is off', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetDownloadsLink());
+      expect(selectedTabs, isEmpty);
+      expect(downloadsOpens, 0);
+    });
+
+    testWidgets('server item lands on home then opens the item', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      const WidgetServerLink link = WidgetServerLink(
+        source: WidgetServerSource.mediaServer,
+        serverId: 's',
+        itemId: 'i',
+      );
+      await run(tester, link);
+      expect(selectedTabs, <HomeTab>[HomeTab.home]);
+      expect(serverOpens, <WidgetServerLink>[link]);
+    });
+
+    testWidgets('server item respects its module gate', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(
+        tester,
+        const WidgetServerLink(
+          source: WidgetServerSource.audiobookshelf,
+          serverId: 's',
+          itemId: 'i',
+        ),
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.video}),
+      );
+      expect(selectedTabs, isEmpty);
+      expect(serverOpens, isEmpty);
     });
 
     testWidgets('before onboarding new links only switch tab', (

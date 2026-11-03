@@ -76,6 +76,11 @@ private fun ContinueContent(snapshot: WidgetSnapshot, item: WidgetMedia, bitmap:
                     // agree. Started but under 1% must not read "0%".
                     Label("${item.position.ifEmpty { "$percent%" }}")
                 }
+                // Time to finish: only present when Dart could estimate it honestly.
+                if (item.remaining.isNotEmpty()) {
+                    Spacer(GlanceModifier.height(2.dp))
+                    Label(item.remaining, GlanceTheme.colors.onSurface, size = 12)
+                }
                 if (item.lastActive.isNotEmpty() && (size.wide || size.tall)) {
                     Spacer(GlanceModifier.height(2.dp))
                     Label(item.lastActive, size = 11)
@@ -141,6 +146,10 @@ private fun ShelfContent(
                             maxLines = 1,
                             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp),
                         )
+                        // Large size only: a second line under the cover with the time left.
+                        if (size.large && !hide && media.remaining.isNotEmpty()) {
+                            Label(media.remaining, size = 10)
+                        }
                     }
                 }
                 // Keep covers a constant width when fewer than the target are available.
