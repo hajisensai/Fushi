@@ -827,10 +827,16 @@ class ShelfCardMeta extends StatelessWidget {
     this.completed = false,
     this.trailing,
     this.titleMaxLines = kShelfCardMetaTitleLines,
+    this.titleOnly = false,
     super.key,
   });
 
   final String title;
+
+  /// 只有标题、不留副行与进度条位：副标题 / 进度已压在封面上的剧照小卡
+  /// （「继续」封面行）用，文字块按 [heightFor] 的 `titleOnly` 留高，卡下不再
+  /// 空出一截（用户 2026-11-02「窄屏间隙大」）。
+  final bool titleOnly;
 
   /// 标题行数上限（用户 2026-10-25：卡片标题显示两行）。网格行高按同一行数算
   /// （[heightFor] 的 `titleLines`），两边必须一致。
@@ -853,10 +859,12 @@ class ShelfCardMeta extends StatelessWidget {
 
   static const double _kTrailingMaxFraction = 0.6;
 
-  /// 文字块总高（随文字缩放）：标题 [titleLines] 行 + 副行 + 进度条 + 间距。
+  /// 文字块总高（随文字缩放）：标题 [titleLines] 行 + 副行 + 进度条 + 间距；
+  /// [titleOnly] 时只有标题（与组件的 [ShelfCardMeta.titleOnly] 一致）。
   static double heightFor(
     BuildContext context, {
     int titleLines = kShelfCardMetaTitleLines,
+    bool titleOnly = false,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
@@ -864,8 +872,10 @@ class ShelfCardMeta extends StatelessWidget {
       context,
       _titleStyle(theme, tokens, apple: false),
     );
-    return tokens.spacing.gap * 1.25 +
-        titleLine * titleLines +
+    final double titleBlock =
+        tokens.spacing.gap * 1.25 + titleLine * titleLines;
+    if (titleOnly) return titleBlock + kTextBlockSlack;
+    return titleBlock +
         _subRowHeight(context, theme) +
         _kProgressGap +
         _kProgressHeight +
@@ -951,77 +961,79 @@ class ShelfCardMeta extends StatelessWidget {
             style: titleStyle,
             maxLines: titleMaxLines,
           ),
-          SizedBox(
-            height: _subRowHeight(context, theme),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) =>
-                  Row(
-                    children: <Widget>[
-                      if (leadingIcon != null) ...<Widget>[
-                        FushiIcon(
-                          leadingIcon!,
-                          size: (subStyle.fontSize ?? 11) + 1,
-                          color: tone == ShelfMetaTone.normal
-                              ? onSurface
-                              : toneColor,
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Expanded(
-                        child: Text(
-                          subtitle ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: subStyle,
-                        ),
-                      ),
-                      if (trailing != null)
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth:
-                                constraints.maxWidth * _kTrailingMaxFraction,
+          if (!titleOnly) ...<Widget>[
+            SizedBox(
+              height: _subRowHeight(context, theme),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    Row(
+                      children: <Widget>[
+                        if (leadingIcon != null) ...<Widget>[
+                          FushiIcon(
+                            leadingIcon!,
+                            size: (subStyle.fontSize ?? 11) + 1,
+                            color: tone == ShelfMetaTone.normal
+                                ? onSurface
+                                : toneColor,
                           ),
-                          child: trailing,
+                          const SizedBox(width: 4),
+                        ],
+                        Expanded(
+                          child: Text(
+                            subtitle ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: subStyle,
+                          ),
                         ),
-                    ],
-                  ),
+                        if (trailing != null)
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth:
+                                  constraints.maxWidth * _kTrailingMaxFraction,
+                            ),
+                            child: trailing,
+                          ),
+                      ],
+                    ),
+              ),
             ),
-          ),
-          const SizedBox(height: _kProgressGap),
-          SizedBox(
-            height: _kProgressHeight,
-            child: value == null
-                ? null
-                : !eink
-                // M3E 平直静止进度（轨道间隙 + 末端停止点），与继续卡同一组件。
-                ? FushiLinearProgressIndicator(
-                    value: value.clamp(0.0, 1.0),
-                    minHeight: _kProgressHeight,
-                    wavy: false,
-                    color: fill,
-                    backgroundColor: apple ? track : null,
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(_kProgressHeight / 2),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: track,
-                        border: eink ? Border.all(color: cs.onSurface) : null,
-                        borderRadius: BorderRadius.circular(
-                          _kProgressHeight / 2,
+            const SizedBox(height: _kProgressGap),
+            SizedBox(
+              height: _kProgressHeight,
+              child: value == null
+                  ? null
+                  : !eink
+                  // M3E 平直静止进度（轨道间隙 + 末端停止点），与继续卡同一组件。
+                  ? FushiLinearProgressIndicator(
+                      value: value.clamp(0.0, 1.0),
+                      minHeight: _kProgressHeight,
+                      wavy: false,
+                      color: fill,
+                      backgroundColor: apple ? track : null,
+                    )
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(_kProgressHeight / 2),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: track,
+                          border: eink ? Border.all(color: cs.onSurface) : null,
+                          borderRadius: BorderRadius.circular(
+                            _kProgressHeight / 2,
+                          ),
                         ),
-                      ),
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: FractionallySizedBox(
-                          widthFactor: value.clamp(0.0, 1.0),
-                          heightFactor: 1,
-                          child: ColoredBox(color: fill),
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: FractionallySizedBox(
+                            widthFactor: value.clamp(0.0, 1.0),
+                            heightFactor: 1,
+                            child: ColoredBox(color: fill),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-          ),
+            ),
+          ],
         ],
       ),
     );
