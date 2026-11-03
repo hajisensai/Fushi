@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.23248",
-  "tag": "v3.3.0-debug.23248+1c8fd5d",
+  "version": "3.3.0-debug.23260",
+  "tag": "v3.3.0-debug.23260+7d57215",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 23248,
-  "notes": "Automated release-signed debug-channel build from develop @ 1c8fd5d. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 23260,
+  "notes": "Automated release-signed debug-channel build from develop @ 7d57215. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.23080-macos-arm64.dmg",
@@ -26,15 +26,6 @@
       "sha256": "feea0652836d6e305b8cf0aa25f8c958f9ab9f6cc5f858d5ca93e9126894278d"
     },
     {
-      "name": "fushi-3.3.0-debug.23248-1c8fd5d-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23248-1c8fd5d-debug.apk",
-      "releaseSequence": 23248,
-      "tag": "v3.3.0-debug.23248+1c8fd5d",
-      "version": "3.3.0-debug.23248",
-      "size": 261688538,
-      "sha256": "1889d5fd597dad22aca6800a32a9064ade9ab4ac56fdd024a8898e99949854d6"
-    },
-    {
       "name": "fushi-3.3.0-debug.23248-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23248-ios.ipa",
       "releaseSequence": 23248,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.23248",
       "size": 295058656,
       "sha256": "3f2b50fe11126d2d23e5c94873a3650d607f0da6012b3dcb23d44d819d40df59"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23260-7d57215-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23260-7d57215-debug.apk",
+      "releaseSequence": 23260,
+      "tag": "v3.3.0-debug.23260+7d57215",
+      "version": "3.3.0-debug.23260",
+      "size": 261688538,
+      "sha256": "fe5c7ec226d98a3adbe9a0c011e4d193cf60cbbf6cb6505d27da2c9bdb1709fe"
     }
   ]
 }
