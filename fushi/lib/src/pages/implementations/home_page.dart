@@ -632,10 +632,8 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
     _startWebMineBackground();
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
-    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
-    // ——spec 2026-07-10 §7 后服务由 AppModel 持有 app 级监听，消费按
-    // resolveDesktopLookupConsumer 分区（mainTab 仍只归 HomeDictionaryPage），
-    // HomePage 根节点依旧不消费查词请求。
+    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService：
+    // pending 只归 HomeDictionaryPage 消费，HomePage 根节点不消费查词请求。
     appModelNoUpdate.homeDictionaryTabRequest.addListener(
       _onHomeDictionaryTabRequested,
     );

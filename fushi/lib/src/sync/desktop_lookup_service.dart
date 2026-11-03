@@ -42,17 +42,18 @@ class DesktopLookupService extends ChangeNotifier {
   ///
   /// 注意：本方法只负责**排队**待查词（设 [pendingText] + 通知）；唤前台、切到查词
   /// tab、实际搜索都由消费侧（[bringPendingLookupToFront] + HomeDictionaryPage
-  /// 挂载消费）负责。
-  void triggerLookup(String text) {
+  /// 挂载消费）负责。返回是否真的排进了一次查词（剥注音 / 截断后为空则不排）。
+  bool triggerLookup(String text) {
     // 注音标记在这里剥（悬浮字幕行可能带 `<rふる>震</r>` 标记），且必须**先于**
     // 下面的截断：先截断会把标记拦腰切断，解析器认不出就只能把半截标记当正文留下。
     final String base = parseRubyMarkup(text).text;
     // BUG-442：所有来源在排队前先按同一码点上限截断（用 characters 不切碎代理对 /
     // 字素簇），避免超长串一路流到逐字渲染的 SourceLookupTextPanel 把主 isolate 撑爆。
     final String trimmed = _capLookupInput(base).trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return false;
     _pendingRequest = DesktopLookupRequest(text: trimmed);
     notifyListeners();
+    return true;
   }
 
   /// BUG-442：把查词输入截断到 [kMaxLookupInputChars] 个码点（字素簇），防止超长
