@@ -11,6 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -378,11 +379,22 @@ void main() {
     });
 
     test('多个时优先与音频同名的；语言后缀不影响', () {
-      final AudiobookshelfItemDetail d = detailWith(<String>[
-        'other.srt',
-        'part1.ja.srt',
-      ]);
-      expect(suggestServerSubtitle(d)?.file.filename, 'part1.ja.srt');
+      final AudiobookshelfItemDetail single = _bookDetail(
+        tracks: <Map<String, Object?>>[_track(1, '10', 0, 1)],
+        files: <Map<String, Object?>>[
+          _file('30', 'other.srt', 'unknown'),
+          _file('31', 'part1.ja.srt', 'unknown'),
+        ],
+      );
+      expect(suggestServerSubtitle(single)?.file.filename, 'part1.ja.srt');
+      expect(suggestServerSubtitle(single)?.autoAttach, isTrue);
+      // 三条音轨时 part1.ja.srt 只是第一条的分轨字幕：不当整本书的时间轴，剩下的
+      // other.srt 只作推荐（不自动挂）。
+      final AudiobookshelfSubtitleMatch? multi = suggestServerSubtitle(
+        detailWith(<String>['other.srt', 'part1.ja.srt']),
+      );
+      expect(multi?.file.filename, 'other.srt');
+      expect(multi?.autoAttach, isFalse);
     });
 
     test('其次与标题同名', () {

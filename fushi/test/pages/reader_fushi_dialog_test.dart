@@ -174,10 +174,10 @@ void main() {
       'subtitle pick is still in flight', (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    final FilePicker original = FilePicker.platform;
+    // 测试环境里 FilePicker.platform 没有默认实现（读它会 LateInitializationError），
+    // 直接换成假的（与 picker_extension_filter_test 同做法）。
     final _PendingFilePicker picker = _PendingFilePicker();
     FilePicker.platform = picker;
-    addTearDown(() => FilePicker.platform = original);
 
     await tester.pumpWidget(
       buildApp(
@@ -199,14 +199,22 @@ void main() {
     await tester.runAsync(() => state.serverBindingLoaded);
     await tester.pump();
 
-    VoidCallback? onPressedOf(String label) => tester
-        .widget<FushiFilledButton>(
-          find.ancestor(
-            of: find.text(label),
-            matching: find.byType(FushiFilledButton),
+    // 导入是 filled 主操作，取消是 text 按钮（M3E 对话框动作）。
+    VoidCallback? onPressedOf(String label) {
+      final Widget button = tester.widget(
+        find.ancestor(
+          of: find.text(label),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is FushiFilledButton || w is FushiTextButton,
           ),
-        )
-        .onPressed;
+        ),
+      );
+      return switch (button) {
+        FushiFilledButton(:final VoidCallback? onPressed) => onPressed,
+        FushiTextButton(:final VoidCallback? onPressed) => onPressed,
+        _ => throw StateError('unexpected button $button'),
+      };
+    }
 
     expect(onPressedOf(t.dialog_import), isNotNull);
     await tester.tap(find.byTooltip(t.srt_import_pick_subtitle_files));
