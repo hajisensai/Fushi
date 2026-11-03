@@ -16,6 +16,7 @@ import 'package:fushi/src/media/music/apple_music/apple_music_web_bridge.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
 /// 调 authorize 并回报是否已授权。
@@ -32,8 +33,39 @@ class AppleMusicWebLoginPage extends StatefulWidget {
 }
 
 class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
-  final GlobalKey _bridgeKey = GlobalKey();
   InAppWebViewController? _bridge;
+
+  /// renderer / WebContent 进程死亡的统一处置（守卫
+  /// `test/webview/webview_render_process_gone_guard_test.dart`）。桥页或弹窗任一死掉，
+  /// 弹窗的 opener 关系都已断：丢掉旧控制器与弹窗，桥页按新 epoch 整个重建，加载完
+  /// 重新 `authorize()`（[_bridge] 为 null 时 onLoadStop 才会接上）。
+  late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
+    surface: 'apple-music-web-login',
+    flushBeforeRebuild: () async {
+      _bridge = null;
+      _popupWindowId = null;
+    },
+    afterRebuild: () {
+      if (!mounted) return;
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+    },
+  );
+
+  void _onWebContentTerminated(InAppWebViewController _) =>
+      unawaited(_deathGuard.handleWebContentTerminated());
+
+  void _onRenderProcessGone(
+    InAppWebViewController _,
+    RenderProcessGoneDetail detail,
+  ) => unawaited(
+    _deathGuard.handleDeath(
+      didCrash: detail.didCrash,
+      rendererPriorityAtExit: detail.rendererPriorityAtExit,
+    ),
+  );
 
   /// MusicKit 开的 Apple ID 弹窗（onCreateWindow 的 windowId）；null = 没开。
   int? _popupWindowId;
@@ -97,11 +129,13 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
           // 桥页面本身（无可见内容）：撑满但留在弹窗下面。
           Positioned.fill(
             child: InAppWebView(
-              key: _bridgeKey,
+              key: _deathGuard.rebuildKey,
               initialUrlRequest: URLRequest(
                 url: WebUri.uri(kAppleMusicWebBridgePage),
               ),
               initialSettings: appleMusicWebViewSettings(),
+              onWebContentProcessDidTerminate: _onWebContentTerminated,
+              onRenderProcessGone: _onRenderProcessGone,
               onPermissionRequest:
                   (InAppWebViewController _, PermissionRequest r) =>
                       appleMusicPermissionResponse(r),
@@ -138,6 +172,8 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
                   key: ValueKey<int>(popup),
                   windowId: popup,
                   initialSettings: appleMusicWebViewSettings(),
+                  onWebContentProcessDidTerminate: _onWebContentTerminated,
+                  onRenderProcessGone: _onRenderProcessGone,
                   onCloseWindow: (InAppWebViewController _) {
                     if (mounted) setState(() => _popupWindowId = null);
                   },
