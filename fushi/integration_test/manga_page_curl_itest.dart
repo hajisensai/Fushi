@@ -449,8 +449,9 @@ Future<void> _runDirection(
       tester,
       x0: fwdStart,
       y: h * 0.85,
-      dx: fwd * w * 0.45,
-      dy: -h * 0.3,
+      // 横向为主（JS 手势按首段位移定轴，竖屏上纵向分量大了会判成纵向滑动）。
+      dx: fwd * w * 0.5,
+      dy: -h * 0.12,
       steps: 12,
       stepMs: 32,
       holdMs: 200,
