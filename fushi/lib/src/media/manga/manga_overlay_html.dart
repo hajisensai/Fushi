@@ -1823,6 +1823,32 @@ String _mangaGestureJs({
     var root = document.getElementById('manga-root');
     if (root) root.style.transition = '';
   }
+  // 卷页预览（Flutter 覆盖层，page_curl.dart）：只把 strip 瞬时挪到目标跨页的像素
+  // 位置，不改 CURRENT / PAGE_HALF，不跑任何翻页副作用（TURN_SERIAL / 重试失败页 /
+  // 闪屏 / 换页复位缩放与 onMangaZoomChanged）——那些只在提交时由
+  // __mangaApplyTranslate 跑一次；回卷撤销也就不会把原页的缩放 / 适配状态打回默认。
+  // 目标跨页不在已加载窗口里返回 false（Dart 交回普通翻页重载窗口）。
+  function _curlPlaceStrip(i){
+    var root = document.getElementById('manga-root');
+    var el = _spreadEl(i);
+    if (!root || !el) return false;
+    var prevTransition = root.style.transition;
+    root.style.transition = 'none';
+    root.style.transform = 'translateX(' + (-el.offsetLeft) + 'px)';
+    void root.offsetHeight;
+    root.style.transition = prevTransition;
+    return true;
+  }
+  window.__mangaCurlPreview = function(target){
+    _finishPageAnim();
+    _dropDragHandoff();
+    if (!_curlPlaceStrip(target)) return false;
+    _warmNeighbours(target);
+    return true;
+  };
+  window.__mangaCurlRevert = function(){
+    _curlPlaceStrip(CURRENT);
+  };
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
     // 翻到含失败页的跨页 = 读者要看它：重取一次。

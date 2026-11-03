@@ -298,6 +298,60 @@ void main() {
       );
     });
   });
+
+  // PR #2799 审查：卷页预览只算落点、不记翻页账。放弃图片 late-load 重锚资格属于
+  // 「用户真翻了页」，只能在 paginate（普通翻页 / 卷页提交）里做；预览后回卷资格仍在。
+  group('卷页预览不放弃图片 late-load 重锚资格', () {
+    late String source;
+    setUpAll(() {
+      source = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+    });
+
+    test('adjacentPageStep / curlPreview 不清资格，paginate 两条落位都清', () {
+      final String step = _functionSource(
+        source,
+        '  adjacentPageStep: function(direction) {',
+        '\n  },',
+      );
+      expect(step, isNot(contains('clearImageLateAnchor')));
+      expect(step, contains('this._settleGeometryReanchor();'));
+      final String preview = _functionSource(
+        source,
+        '  curlPreview: function(direction) {',
+        '\n  },',
+      );
+      expect(preview, isNot(contains('clearImageLateAnchor')));
+      final String body = _functionSource(
+        source,
+        '  paginate: function(direction) {',
+        '\n  curlPreview:',
+      );
+      expect('this.clearImageLateAnchor();'.allMatches(body).length, 2);
+      // 普通翻页：先落定待决几何重锚（adjacentPageStep）再清资格。
+      expect(
+        body.indexOf('var step = this.adjacentPageStep(direction);'),
+        lessThan(body.lastIndexOf('this.clearImageLateAnchor();')),
+      );
+    });
+
+    test('预览期间到达的迟到图片重锚延到回卷后补做', () {
+      final String reapply = _functionSource(
+        source,
+        '  reapplyImageLateAnchor: function() {',
+        '\n  },',
+      );
+      expect(reapply, contains('if (this._curl) {'));
+      expect(reapply, contains('this._curlLateAnchorPending = true;'));
+      final String revert = _functionSource(
+        source,
+        '  curlRevert: function() {',
+        '\n  },',
+      );
+      expect(revert, contains('this.reapplyImageLateAnchor();'));
+    });
+  });
 }
 
 String _functionSource(String source, String start, String end) {

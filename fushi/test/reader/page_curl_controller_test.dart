@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
@@ -15,6 +16,9 @@ class _FakeHost implements PageCurlHost {
   bool hasNeighbour = true;
   bool captureFails = false;
 
+  /// 非 null 时截图卡在这里，模拟准备阶段（截图最长 450ms）里到达的交错事件。
+  Completer<void>? captureGate;
+
   /// 宿主是否就绪（false = 换章 / 恢复在飞）。第一次被查询后可改，模拟连按中途跨章。
   @override
   bool canCurl = true;
@@ -22,6 +26,8 @@ class _FakeHost implements PageCurlHost {
   @override
   Future<ui.Image?> capturePage() async {
     calls.add('capture');
+    final Completer<void>? gate = captureGate;
+    if (gate != null) await gate.future;
     return captureFails ? null : image.clone();
   }
 
@@ -41,6 +47,10 @@ class _FakeHost implements PageCurlHost {
   @override
   Future<void> fallbackTurn({required bool forward}) async =>
       calls.add('fallback:${forward ? 'f' : 'b'}');
+
+  @override
+  Future<void> swipeTurn({required bool forward}) async =>
+      calls.add('swipe:${forward ? 'f' : 'b'}');
 
   @override
   Future<void> waitForPaint() async => calls.add('paint');
@@ -138,23 +148,21 @@ void main() {
     final PageCurlController curl = controllerFor(host);
     addTearDown(curl.dispose);
 
-    expect(
-      curl.dragStart(
-        position: const Offset(380, 400),
-        size: _size,
-        forward: true,
-        mirror: false,
-      ),
-      isTrue,
+    final PageCurlDrag drag = curl.dragStart(
+      position: const Offset(380, 400),
+      size: _size,
+      forward: true,
+      mirror: false,
     );
+    expect(drag.curling, isTrue);
     await settlePrepare(tester);
     expect(host.calls, <String>['capture', 'preview:f', 'paint']);
     expect(curl.visible, isTrue);
 
-    curl.dragUpdate(const Offset(200, 420));
+    drag.update(const Offset(200, 420));
     // 角点跟着手指走（相对位移），轴线随之左移。
     expect(curl.geometry.point.dx, closeTo(220, 0.5));
-    curl.dragEnd(const Offset(200, 420), -0.1);
+    drag.end(const Offset(200, 420), -0.1);
     await tester.pump();
     expect(host.calls.where((String c) => c.startsWith('commit')), <String>[
       'commit:f',
@@ -172,15 +180,15 @@ void main() {
     final PageCurlController curl = controllerFor(host);
     addTearDown(curl.dispose);
 
-    curl.dragStart(
+    final PageCurlDrag drag = curl.dragStart(
       position: const Offset(380, 400),
       size: _size,
       forward: true,
       mirror: false,
     );
     await settlePrepare(tester);
-    curl.dragUpdate(const Offset(340, 400));
-    curl.dragEnd(const Offset(340, 400), 0);
+    drag.update(const Offset(340, 400));
+    drag.end(const Offset(340, 400), 0);
     await settleAnimation(tester);
     expect(host.calls, contains('revert'));
     expect(host.calls.where((String c) => c.startsWith('commit')), isEmpty);
@@ -194,7 +202,7 @@ void main() {
     final PageCurlController curl = controllerFor(host);
     addTearDown(curl.dispose);
 
-    curl.dragStart(
+    final PageCurlDrag drag = curl.dragStart(
       position: const Offset(20, 400),
       size: _size,
       forward: false,
@@ -203,8 +211,8 @@ void main() {
     await settlePrepare(tester);
     expect(host.calls, <String>['capture', 'preview:b', 'paint', 'capture']);
     expect(curl.base, isNotNull);
-    curl.dragUpdate(const Offset(220, 400));
-    curl.dragEnd(const Offset(220, 400), 0.2);
+    drag.update(const Offset(220, 400));
+    drag.end(const Offset(220, 400), 0.2);
     await settleAnimation(tester);
     expect(host.calls, contains('commit:b'));
     expect(curl.active, isFalse);
@@ -217,7 +225,7 @@ void main() {
     final PageCurlController curl = controllerFor(host);
     addTearDown(curl.dispose);
 
-    curl.dragStart(
+    final PageCurlDrag drag = curl.dragStart(
       position: const Offset(380, 400),
       size: _size,
       forward: true,
@@ -225,9 +233,12 @@ void main() {
     );
     await settlePrepare(tester);
     expect(curl.visible, isFalse);
-    curl.dragEnd(const Offset(150, 400), 0);
+    expect(drag.curling, isFalse, reason: 'aborted drag becomes a plain swipe');
+    drag.end(const Offset(150, 400), 0);
     await tester.pump();
-    expect(host.calls, contains('fallback:f'));
+    // 拖动中途放弃 = 普通滑动：走宿主的滑动入口（跨章 / 在飞排队由宿主负责）。
+    expect(host.calls, contains('swipe:f'));
+    expect(host.calls, isNot(contains('fallback:f')));
     expect(host.calls.where((String c) => c.startsWith('commit')), isEmpty);
   });
 
@@ -239,17 +250,17 @@ void main() {
     addTearDown(curl.dispose);
 
     // 右开：前进 = 往右拖，书脊在右；几何在未镜像空间里与左开前进一致。
-    curl.dragStart(
+    final PageCurlDrag drag = curl.dragStart(
       position: const Offset(20, 400),
       size: _size,
       forward: true,
       mirror: true,
     );
     await settlePrepare(tester);
-    curl.dragUpdate(const Offset(220, 400));
+    drag.update(const Offset(220, 400));
     expect(curl.geometry.mirror, isTrue);
     expect(curl.geometry.point.dx, closeTo(200, 0.5));
-    curl.dragEnd(const Offset(220, 400), 0.3);
+    drag.end(const Offset(220, 400), 0.3);
     await settleAnimation(tester);
     expect(host.calls, contains('commit:f'));
   });
@@ -337,14 +348,14 @@ void main() {
         // 前进方向：左开往左甩，右开往右甩。屏幕坐标。
         final double sign = mirror ? 1 : -1;
         final double x0 = mirror ? 40 : 360;
-        curl.dragStart(
+        final PageCurlDrag drag = curl.dragStart(
           position: Offset(x0, 400),
           size: _size,
           forward: true,
           mirror: mirror,
         );
-        curl.dragUpdate(Offset(x0 + sign * 30, 400));
-        curl.dragEnd(Offset(x0 + sign * 60, 400), sign * 2.0);
+        drag.update(Offset(x0 + sign * 30, 400));
+        drag.end(Offset(x0 + sign * 60, 400), sign * 2.0);
         await settlePrepare(tester);
         await settleAnimation(tester);
         expect(host.calls, contains('commit:f'));
@@ -360,7 +371,7 @@ void main() {
     final PageCurlController curl = controllerFor(host);
     addTearDown(curl.dispose);
 
-    curl.dragStart(
+    final PageCurlDrag drag = curl.dragStart(
       position: const Offset(380, 400),
       size: _size,
       forward: true,
@@ -373,8 +384,8 @@ void main() {
         .then((_) => done = true);
     await tester.pump();
     expect(done, isTrue);
-    curl.dragUpdate(const Offset(340, 400));
-    curl.dragEnd(const Offset(340, 400), 0);
+    drag.update(const Offset(340, 400));
+    drag.end(const Offset(340, 400), 0);
     await settleAnimation(tester);
     expect(host.calls.where((String c) => c.startsWith('commit')), isEmpty);
   });
@@ -386,33 +397,251 @@ void main() {
     final PageCurlController curl = controllerFor(host);
     addTearDown(curl.dispose);
 
-    curl.dragStart(
+    final PageCurlDrag drag = curl.dragStart(
       position: const Offset(380, 400),
       size: _size,
       forward: true,
       mirror: false,
     );
     await settlePrepare(tester);
-    curl.dragUpdate(const Offset(100, 400));
-    curl.dragEnd(const Offset(100, 400), -0.5);
+    drag.update(const Offset(100, 400));
+    drag.end(const Offset(100, 400), -0.5);
     await tester.pump();
     expect(curl.active, isTrue, reason: 'first curl still settling');
 
-    expect(
-      curl.dragStart(
+    final PageCurlDrag second = curl.dragStart(
+      position: const Offset(380, 400),
+      size: _size,
+      forward: true,
+      mirror: false,
+    );
+    expect(second.curling, isTrue);
+    second.update(const Offset(100, 400));
+    second.end(const Offset(100, 400), -0.5);
+    await settlePrepare(tester);
+    await settleAnimation(tester);
+    expect(host.calls.where((String c) => c == 'commit:f').length, 2);
+    expect(host.calls, isNot(contains('swipe:f')));
+    expect(curl.active, isFalse);
+  });
+
+  group('drag events are bound to their own session', () {
+    testWidgets('a drag arriving while a tap prepares cannot touch the tap '
+        'and is handed over as a plain swipe', (WidgetTester tester) async {
+      final _FakeHost host = _FakeHost(image)..captureGate = Completer<void>();
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      bool tapDone = false;
+      curl
+          .turn(size: _size, forward: true, mirror: false)
+          .then((_) => tapDone = true);
+      await tester.pump();
+      expect(host.calls, <String>['capture'], reason: 'tap is preparing');
+
+      // 点按准备期间手指拖动：拿到的句柄不卷页，事件不改写点按会话。
+      final PageCurlDrag drag = curl.dragStart(
         position: const Offset(380, 400),
         size: _size,
         forward: true,
         mirror: false,
-      ),
-      isTrue,
-    );
-    curl.dragUpdate(const Offset(100, 400));
-    curl.dragEnd(const Offset(100, 400), -0.5);
-    await settlePrepare(tester);
-    await settleAnimation(tester);
-    expect(host.calls.where((String c) => c == 'commit:f').length, 2);
-    expect(curl.active, isFalse);
+      );
+      expect(drag.curling, isFalse);
+      drag.update(const Offset(360, 100));
+      drag.end(const Offset(100, 400), -0.8);
+      await tester.pump();
+      // 被拒的滑动照常翻页（宿主滑动入口，排在点按后面），而不是被吞。
+      expect(host.calls.last, 'swipe:f');
+
+      host.captureGate!.complete();
+      await settlePrepare(tester);
+      expect(tapDone, isTrue);
+      // 点按自己的会话照常提交一次、不回卷。
+      expect(host.calls.where((String c) => c == 'commit:f').length, 1);
+      expect(host.calls, isNot(contains('revert')));
+      await settleAnimation(tester);
+      expect(curl.active, isFalse);
+    });
+
+    testWidgets('a cancel from a rejected drag does not revert the tap', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)..captureGate = Completer<void>();
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      curl.turn(size: _size, forward: true, mirror: false);
+      await tester.pump();
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      drag.update(const Offset(300, 400));
+      drag.cancel();
+
+      host.captureGate!.complete();
+      await settlePrepare(tester);
+      await settleAnimation(tester);
+      expect(host.calls.where((String c) => c == 'commit:f').length, 1);
+      expect(host.calls, isNot(contains('revert')));
+      expect(host.calls, isNot(contains('swipe:f')));
+    });
+
+    testWidgets('a tap at the chapter end still crosses the chapter when a '
+        'short drag interleaves', (WidgetTester tester) async {
+      final _FakeHost host = _FakeHost(image)
+        ..hasNeighbour = false
+        ..captureGate = Completer<void>();
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      bool tapDone = false;
+      curl
+          .turn(size: _size, forward: true, mirror: false)
+          .then((_) => tapDone = true);
+      await tester.pump();
+      // 一次很短的拖动（按滑动口径不翻页）在点按准备期间松手。
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      drag.update(const Offset(370, 400));
+      drag.end(const Offset(370, 400), 0);
+
+      host.captureGate!.complete();
+      await settlePrepare(tester);
+      expect(tapDone, isTrue);
+      // 点按的跨章翻页不被拖动的进度改判。
+      expect(host.calls, contains('fallback:f'));
+      expect(host.calls, isNot(contains('swipe:f')));
+    });
+
+    testWidgets('a tap while an aborted drag is still held is not polluted', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)..hasNeighbour = false;
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      await settlePrepare(tester);
+      expect(drag.curling, isFalse, reason: 'no neighbour: aborted mid-drag');
+
+      // 手指还按着时按键翻上一页：走自己的会话。
+      host.hasNeighbour = true;
+      bool tapDone = false;
+      curl
+          .turn(size: _size, forward: false, mirror: false)
+          .then((_) => tapDone = true);
+      await settlePrepare(tester);
+      expect(tapDone, isTrue);
+      expect(host.calls, contains('commit:b'));
+
+      // 松手只按它自己的起点 / 位移判普通滑动。
+      drag.end(const Offset(330, 400), 0);
+      await tester.pump();
+      expect(host.calls, isNot(contains('swipe:f')));
+      await settleAnimation(tester);
+      expect(curl.active, isFalse);
+    });
+
+    testWidgets('while the host is mid chapter load a drag is a plain swipe', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)..canCurl = false;
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(20, 400),
+        size: _size,
+        forward: false,
+        mirror: false,
+      );
+      expect(drag.curling, isFalse);
+      drag.update(const Offset(250, 400));
+      drag.end(const Offset(250, 400), 0.1);
+      await tester.pump();
+      // 不截图、不卷，交给宿主的滑动入口（换章在飞时由宿主排队重放）。
+      expect(host.calls, <String>['swipe:b']);
+      expect(curl.active, isFalse);
+    });
+
+    testWidgets('a drag while curl is disabled by the host is a plain swipe', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+        allowCurl: false,
+      );
+      expect(drag.curling, isFalse);
+      drag.end(const Offset(340, 400), 0);
+      await tester.pump();
+      expect(host.calls, isEmpty, reason: 'short drag does not turn');
+
+      final PageCurlDrag fling = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+        allowCurl: false,
+      );
+      fling.end(const Offset(340, 400), -1.5);
+      await tester.pump();
+      expect(host.calls, <String>['swipe:f']);
+    });
+
+    testWidgets('a stale drag handle is ignored by the next session', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag first = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      await settlePrepare(tester);
+      first.cancel();
+      await settleAnimation(tester);
+      expect(curl.active, isFalse);
+
+      final PageCurlDrag second = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      await settlePrepare(tester);
+      // 旧句柄迟到的事件不动新会话。
+      first.update(const Offset(0, 0));
+      first.end(const Offset(0, 0), -3);
+      second.update(const Offset(360, 400));
+      expect(curl.geometry.point.dx, closeTo(380, 0.5));
+      second.end(const Offset(360, 400), 0);
+      await settleAnimation(tester);
+      expect(host.calls.where((String c) => c.startsWith('commit')), isEmpty);
+      expect(host.calls.where((String c) => c == 'revert').length, 2);
+    });
   });
 
   testWidgets('capture failure on a tap still turns the page', (

@@ -516,4 +516,39 @@ assert.equal(zoomResets,2,'跳页同样复位');
 '''),
     );
   });
+
+  // PR #2799 审查：卷页预览只挪 strip，不记翻页账；回卷撤销不能把原页的缩放 /
+  // 半页状态打回默认，翻页副作用只在提交（__mangaApplyTranslate）时跑一次。
+  test('卷页预览 / 回卷不跑翻页副作用，提交时只跑一次', () async {
+    await runJs(
+      harness('''
+PAGE_ANIM='curl';
+PAGE_HALF=1;
+const serial0=TURN_SERIAL;
+assert.equal(window.__mangaCurlPreview(3),true);
+assert.equal(tx(),-412,'strip 瞬时落到目标跨页');
+assert.equal(root.style.transition,'','落位后还原过渡');
+assert.equal(CURRENT,2,'预览不改语义真值 CURRENT');
+assert.equal(PAGE_HALF,1);
+assert.equal(TURN_SERIAL,serial0);
+assert.equal(zoomResets,0,'预览不复位缩放');
+window.__mangaCurlRevert();
+assert.equal(tx(),BASE,'回卷挪回原跨页');
+assert.equal(CURRENT,2);
+assert.equal(PAGE_HALF,1,'回卷不动半页状态');
+assert.equal(zoomResets,0,'回卷不把原页缩放打回默认');
+assert.equal(TURN_SERIAL,serial0);
+// 再预览一次并提交：副作用恰好一次。
+window.__mangaCurlPreview(3);
+window.__mangaApplyTranslate(3);
+assert.equal(CURRENT,3);
+assert.equal(tx(),-412);
+assert.equal(zoomResets,1,'提交时复位一次');
+assert.equal(TURN_SERIAL,serial0+1);
+// 不在已加载窗口里的跨页：不预览，交回 Dart 普通翻页。
+assert.equal(window.__mangaCurlPreview(9),false);
+assert.equal(tx(),-412);
+'''),
+    );
+  });
 }

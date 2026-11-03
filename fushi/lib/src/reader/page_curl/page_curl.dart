@@ -17,7 +17,11 @@
 ///    卷曲播完；否则回卷并撤销预览（[PageCurlHost.revertPreview]）。
 ///
 /// 相邻页不存在（章首 / 章末、漫画首尾）时预览返回 false：本次不卷页，交回宿主的普通
-/// 翻页路径（[PageCurlHost.fallbackTurn]，跨章照旧）。截图失败同样回落。
+/// 翻页路径（点按 / 按键走 [PageCurlHost.fallbackTurn]，跨章照旧）。截图失败同样回落。
+///
+/// 手指拖动的每一次事件都绑定在 [PageCurlController.dragStart] 返回的
+/// [PageCurlDrag] 句柄上，只作用于它自己发起的会话；没被卷页接住的拖动（会话忙 /
+/// 宿主在飞 / 中途放弃）松手时按普通滑动交给 [PageCurlHost.swipeTurn]。
 library;
 
 import 'dart:async';
@@ -58,6 +62,11 @@ abstract interface class PageCurlHost {
   /// 不卷页时的普通翻页（章首 / 章末跨章、截图失败等）。宿主正在换章时须自行排队，
   /// 不能在加载中的页面上执行。
   Future<void> fallbackTurn({required bool forward});
+
+  /// 一次手指滑动没被卷页接住（已有点按 / 按键会话、宿主在飞、卷页中途放弃、卷页此刻
+  /// 不可用）且按滑动阈值要翻页时调用：走宿主与**不开卷页时同一条**滑动翻页入口（含
+  /// 在飞排队 / 节流），被拒的手势与非卷页模式行为一致，不丢输入。
+  Future<void> swipeTurn({required bool forward});
 
   /// 等正文把当前状态真正画上屏（WebView 双 rAF）。覆盖层撤掉前必须等它，否则会闪
   /// 一帧旧页。
@@ -126,11 +135,6 @@ Future<ui.Image?> decodePageCurlSnapshot(Uint8List? bytes) async {
   }
 }
 
-/// 卷页一次完整翻过去的时长：取速度档对应的 [FushiMotion] token 再放大一档
-/// （卷页的位移是整页对角线、还要卷半圈，用平移的时长会显得「甩」过去）。
-Duration pageCurlTurnDuration(PageTurnAnimationSpeed speed) =>
-    speed.curlDuration;
-
 /// 卷页的几何快照（全部在「未镜像空间」：书脊在左，拎起的角在右）。
 @immutable
 class PageCurlGeometry {
@@ -187,22 +191,83 @@ bool pageCurlShouldCommit({
 
 enum _CurlPhase { idle, preparing, dragging, settling }
 
-/// 落定动画期间到达的新拖动（等上一页快进完再开）。
-class _QueuedDrag {
-  _QueuedDrag({
+/// 一次手指拖动在控制器里的角色。
+enum _DragRole {
+  /// 上一页还在落定：等它快进完再开会话。
+  queued,
+
+  /// 正在驱动（或准备驱动）本次卷页会话。
+  session,
+
+  /// 没被卷页接住（会话忙 / 宿主在飞 / 中途放弃 / 卷页此刻不可用）：松手按普通滑动
+  /// 判提交，交给 [PageCurlHost.swipeTurn]。
+  swipe,
+
+  /// 已经处理完（松手 / 取消已消费）。
+  done,
+}
+
+/// 一次手指拖动的句柄（[PageCurlController.dragStart] 返回）。
+///
+/// 宿主把本次手势后续的 move / end / cancel 一律交回**这个句柄**：控制器只让它影响
+/// 它自己发起的会话——同时在准备的点按 / 按键会话、或下一次拖动的会话，都不会被
+/// 一条迟到 / 交错的事件改写。没被卷页接住的拖动不会作废，松手时按普通滑动翻页。
+class PageCurlDrag {
+  PageCurlDrag._({
+    required PageCurlController owner,
     required this.start,
     required this.size,
     required this.forward,
     required this.mirror,
-  });
+    required bool allowCurl,
+  }) : _owner = owner,
+       _allowCurl = allowCurl,
+       latest = start;
 
+  final PageCurlController _owner;
+
+  /// 按下点（覆盖层坐标，屏幕方向）。
   final Offset start;
   final Size size;
   final bool forward;
   final bool mirror;
-  Offset? latest;
-  ({Offset position, double velocity})? end;
-  bool cancelled = false;
+  final bool _allowCurl;
+  _DragRole _role = _DragRole.swipe;
+
+  /// 最近一次手指位置（覆盖层坐标）。
+  Offset latest;
+  ({Offset position, double velocity})? _end;
+  bool _cancelled = false;
+
+  /// 本次手势已松手或被取消。
+  bool get finished => _end != null || _cancelled;
+
+  /// 本次手势正由（或排队等着由）卷页跟手；false = 按普通滑动处理。
+  bool get curling => _role == _DragRole.queued || _role == _DragRole.session;
+
+  void update(Offset position) => _owner._dragUpdate(this, position);
+
+  /// 松手。[velocityX] 为屏幕坐标下的横向末段速度（px/ms）。
+  void end(Offset position, double velocityX) =>
+      _owner._dragEnd(this, position, velocityX);
+
+  /// 手势被系统 / 选词夺走：回卷，不翻页。
+  void cancel() => _owner._dragCancel(this);
+
+  Offset _unmirror(Offset p) => mirror ? Offset(size.width - p.dx, p.dy) : p;
+
+  /// 普通滑动口径：沿翻页方向拖过的距离与末段速度是否够翻页。
+  bool _swipeCommits(Offset position, double velocityX) {
+    final Offset s = _unmirror(start);
+    final Offset p = _unmirror(position);
+    final double progress = forward ? s.dx - p.dx : p.dx - s.dx;
+    final double v = mirror ? -velocityX : velocityX;
+    return pageCurlShouldCommit(
+      progressPx: progress,
+      velocity: forward ? -v : v,
+      width: size.width,
+    );
+  }
 }
 
 /// 一次卷页会话的可视状态，覆盖层只读它。
@@ -227,9 +292,9 @@ class PageCurlController extends ChangeNotifier {
   ui.Image? _base;
   bool _visible = false;
 
-  /// 松手先于准备完成到达时暂存。
-  ({Offset position, double velocity})? _pendingEnd;
-  bool _pendingCancel = false;
+  /// 当前会话由哪一次手指拖动发起；null = 点按 / 按键会话（或空闲）。拖动事件只在
+  /// 句柄与它相同时才作用于会话。
+  PageCurlDrag? _sessionDrag;
   Ticker? _ticker;
   Completer<void>? _settled;
 
@@ -248,61 +313,75 @@ class PageCurlController extends ChangeNotifier {
     mirror: _mirror,
   );
 
-  /// 开始一次跟手卷页。[position] 为覆盖层坐标（逻辑像素），[mirror] 为从右往左读。
-  /// 返回 false = 本次不卷页（不支持 / 已有会话）。
-  bool dragStart({
+  /// 开始一次手指拖动。[position] 为按下点（覆盖层坐标，逻辑像素），[mirror] 为从右
+  /// 往左读，[allowCurl] = 宿主此刻是否用卷页（false 时整次手势按普通滑动处理）。
+  ///
+  /// 总是返回一个句柄，本次手势后续事件都交给它：能卷就开会话（上一页还在落定时排在
+  /// 它后面），卷不了（已有点按 / 按键会话在准备或落定、宿主在飞、卷页关闭）就按普通
+  /// 滑动处理——不会悄悄作废，也不会改写别的会话。
+  PageCurlDrag dragStart({
     required Offset position,
     required Size size,
     required bool forward,
     required bool mirror,
+    bool allowCurl = true,
   }) {
-    if (size.isEmpty) return false;
+    final PageCurlDrag drag = PageCurlDrag._(
+      owner: this,
+      start: position,
+      size: size,
+      forward: forward,
+      mirror: mirror,
+      allowCurl: allowCurl && !size.isEmpty,
+    );
+    if (!drag._allowCurl) return drag;
     // 上一页还在落定：快进它，这一拖排在后面接着开（连续快速滑动不丢手势）。
     if (_phase == _CurlPhase.settling) {
-      final _QueuedDrag queued = _QueuedDrag(
-        start: position,
-        size: size,
-        forward: forward,
-        mirror: mirror,
-      );
-      _queuedDrag = queued;
-      unawaited(
-        finish().then((_) {
-          if (!identical(_queuedDrag, queued)) return;
-          _queuedDrag = null;
-          if (queued.cancelled || _phase != _CurlPhase.idle) return;
-          dragStart(
-            position: queued.start,
-            size: queued.size,
-            forward: queued.forward,
-            mirror: queued.mirror,
-          );
-          final Offset? latest = queued.latest;
-          if (latest != null) dragUpdate(latest);
-          final ({Offset position, double velocity})? end = queued.end;
-          if (end != null) dragEnd(end.position, end.velocity);
-        }),
-      );
-      return true;
+      drag._role = _DragRole.queued;
+      unawaited(finish().then((_) => _promoteQueuedDrag(drag)));
+      return drag;
     }
-    if (_phase != _CurlPhase.idle) return false;
-    _beginSession(size: size, forward: forward, mirror: mirror);
-    _dragSession = true;
-    final Offset p = _unmirror(position);
-    _start = p;
-    _finger = p;
-    _y0 = p.dy.clamp(0.0, size.height);
-    _point = forward ? Offset(size.width, _y0) : pageCurlTurnedPoint(size, _y0);
-    unawaited(_prepare(_generation, fromDrag: true));
-    return true;
+    if (_phase == _CurlPhase.idle && host.canCurl) _startDragSession(drag);
+    return drag;
   }
 
-  void dragUpdate(Offset position) {
-    final _QueuedDrag? queued = _queuedDrag;
-    if (queued != null) {
-      queued.latest = position;
+  /// 落定快进完：排队的拖动开会话；那时已有别的会话 / 宿主在飞就转普通滑动。
+  void _promoteQueuedDrag(PageCurlDrag drag) {
+    if (drag._role != _DragRole.queued) return;
+    if (drag._cancelled) {
+      drag._role = _DragRole.done;
       return;
     }
+    if (_phase == _CurlPhase.idle && host.canCurl) {
+      _startDragSession(drag);
+      return;
+    }
+    drag._role = _DragRole.swipe;
+    final ({Offset position, double velocity})? end = drag._end;
+    if (end != null) _swipeEnd(drag, end.position, end.velocity);
+  }
+
+  void _startDragSession(PageCurlDrag drag) {
+    _beginSession(size: drag.size, forward: drag.forward, mirror: drag.mirror);
+    _sessionDrag = drag;
+    drag._role = _DragRole.session;
+    final Offset p = _unmirror(drag.start);
+    _start = p;
+    _finger = _unmirror(drag._end?.position ?? drag.latest);
+    _y0 = p.dy.clamp(0.0, drag.size.height);
+    _point = drag.forward
+        ? Offset(drag.size.width, _y0)
+        : pageCurlTurnedPoint(drag.size, _y0);
+    unawaited(_prepare(_generation));
+  }
+
+  bool _owns(PageCurlDrag drag) =>
+      identical(_sessionDrag, drag) && drag._role == _DragRole.session;
+
+  void _dragUpdate(PageCurlDrag drag, Offset position) {
+    if (drag.finished) return;
+    drag.latest = position;
+    if (!_owns(drag)) return;
     if (_phase != _CurlPhase.preparing && _phase != _CurlPhase.dragging) {
       return;
     }
@@ -310,38 +389,60 @@ class PageCurlController extends ChangeNotifier {
     if (_phase == _CurlPhase.dragging) _followFinger();
   }
 
-  /// 松手。[velocityX] 为屏幕坐标下的横向末段速度（px/ms）。
-  void dragEnd(Offset position, double velocityX) {
-    final _QueuedDrag? queued = _queuedDrag;
-    if (queued != null) {
-      queued.end = (position: position, velocity: velocityX);
-      return;
+  void _dragEnd(PageCurlDrag drag, Offset position, double velocityX) {
+    if (drag.finished) return;
+    drag.latest = position;
+    drag._end = (position: position, velocity: velocityX);
+    switch (drag._role) {
+      case _DragRole.queued:
+      case _DragRole.done:
+        // 排队的由 [_promoteQueuedDrag] 接着处理。
+        return;
+      case _DragRole.swipe:
+        _swipeEnd(drag, position, velocityX);
+        return;
+      case _DragRole.session:
+        if (!_owns(drag)) return;
+        _finger = _unmirror(position);
+        // 准备中：[_prepare] 就绪后读 drag._end 接着松手。
+        if (_phase != _CurlPhase.dragging) return;
+        drag._role = _DragRole.done;
+        _followFinger();
+        _release(velocityX);
     }
-    if (_phase == _CurlPhase.preparing) {
-      _finger = _unmirror(position);
-      _pendingEnd = (position: position, velocity: velocityX);
-      return;
-    }
-    if (_phase == _CurlPhase.idle) {
-      _takeAbortedDragEnd(position, velocityX);
-      return;
-    }
-    if (_phase != _CurlPhase.dragging) return;
-    _finger = _unmirror(position);
-    _followFinger();
-    _release(velocityX);
   }
 
-  /// 手势被系统 / 选词夺走：回卷。
-  void dragCancel() {
-    _abortedDrag = false;
-    _queuedDrag?.cancelled = true;
-    if (_phase == _CurlPhase.preparing) {
-      _pendingCancel = true;
-      return;
+  void _dragCancel(PageCurlDrag drag) {
+    if (drag.finished) return;
+    drag._cancelled = true;
+    switch (drag._role) {
+      case _DragRole.queued:
+        return;
+      case _DragRole.swipe:
+      case _DragRole.done:
+        drag._role = _DragRole.done;
+        return;
+      case _DragRole.session:
+        if (!_owns(drag)) return;
+        // 准备中：[_prepare] 就绪后读 drag._cancelled 回卷。
+        if (_phase != _CurlPhase.dragging) return;
+        drag._role = _DragRole.done;
+        unawaited(_settle(commit: false));
     }
-    if (_phase != _CurlPhase.dragging) return;
-    unawaited(_settle(commit: false));
+  }
+
+  /// 没被卷页接住的拖动松手：按普通滑动判，够了就走宿主的滑动翻页入口。
+  void _swipeEnd(PageCurlDrag drag, Offset position, double velocityX) {
+    drag._role = _DragRole.done;
+    if (!drag._swipeCommits(position, velocityX)) return;
+    unawaited(
+      host.swipeTurn(forward: drag.forward).catchError((
+        Object e,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log('PageCurl.swipeTurn', e, stack);
+      }),
+    );
   }
 
   /// 点按 / 按键翻页：完整播一次卷页，在这一页记账（提交或回落）后完成。
@@ -364,16 +465,13 @@ class PageCurlController extends ChangeNotifier {
 
   Future<void> _turnTail = Future<void>.value();
 
-  /// 当前会话由手指拖动发起（而非点按 / 按键）。
-  bool _dragSession = false;
-
   Future<void> _turnNow({
     required Size size,
     required bool forward,
     required bool mirror,
   }) async {
     // 手指正按着卷页：这次点按 / 按键让位给手势。
-    if (_dragSession &&
+    if (_sessionDrag != null &&
         (_phase == _CurlPhase.preparing || _phase == _CurlPhase.dragging)) {
       return;
     }
@@ -386,15 +484,13 @@ class PageCurlController extends ChangeNotifier {
     }
     _completeTurn();
     _beginSession(size: size, forward: forward, mirror: mirror);
-    _dragSession = false;
     _y0 = size.height * 0.88;
     _start = Offset(size.width, _y0);
     _finger = _start;
     _point = forward ? Offset(size.width, _y0) : pageCurlTurnedPoint(size, _y0);
-    _pendingEnd = (position: Offset.zero, velocity: double.infinity);
     final Completer<void> committed = Completer<void>();
     _turnCommitted = committed;
-    unawaited(_prepare(_generation, fromDrag: false));
+    unawaited(_prepare(_generation));
     // 只等到记账完成（或回落完成），卷页动画自己播完，连按时由 [finish] 快进。
     await committed.future;
   }
@@ -429,11 +525,10 @@ class PageCurlController extends ChangeNotifier {
     _completeTurn();
     _generation++;
     _phase = _CurlPhase.preparing;
+    _sessionDrag = null;
     _size = size;
     _forward = forward;
     _mirror = mirror;
-    _pendingEnd = null;
-    _pendingCancel = false;
     _jumpToEnd = false;
     _settled = Completer<void>();
   }
@@ -457,7 +552,7 @@ class PageCurlController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _prepare(int generation, {required bool fromDrag}) async {
+  Future<void> _prepare(int generation) async {
     bool stale() => generation != _generation;
     try {
       if (_forward) {
@@ -519,19 +614,24 @@ class PageCurlController extends ChangeNotifier {
       }
       if (stale()) return;
       _phase = _CurlPhase.dragging;
-      if (_pendingCancel) {
+      final PageCurlDrag? drag = _sessionDrag;
+      if (drag == null) {
+        // 点按 / 按键：直接完整翻过去。
+        _followFinger();
+        await _settle(commit: true);
+        return;
+      }
+      if (drag._cancelled) {
+        drag._role = _DragRole.done;
         await _settle(commit: false);
         return;
       }
       _followFinger();
-      final ({Offset position, double velocity})? end = _pendingEnd;
+      final ({Offset position, double velocity})? end = drag._end;
       if (end != null) {
-        _pendingEnd = null;
-        if (fromDrag) {
-          _release(end.velocity);
-        } else {
-          await _settle(commit: true);
-        }
+        // 准备期间就松手了：按松手点接着判。
+        drag._role = _DragRole.done;
+        _release(end.velocity);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('PageCurl.prepare', e, stack);
@@ -539,65 +639,38 @@ class PageCurlController extends ChangeNotifier {
     }
   }
 
-  /// 本次不卷页：清掉覆盖层；拖动中途放弃的由松手再决定要不要普通翻页。
+  /// 本次不卷页（截图失败 / 没有相邻页）：清掉覆盖层。点按 / 按键交给宿主的普通翻页；
+  /// 拖动转为普通滑动，由它自己的松手（已松手的立刻）判要不要翻。
   Future<void> _abort(int generation) async {
     if (generation != _generation) return;
     final bool forward = _forward;
-    final ({Offset position, double velocity})? end = _pendingEnd;
-    final bool wasTap = end != null && end.velocity == double.infinity;
-    final bool commit =
-        wasTap ||
-        (end != null &&
-            !_pendingCancel &&
-            pageCurlShouldCommit(
-              progressPx: _progressPx,
-              velocity: _directional(end.velocity),
-              width: _size.width,
-            ));
-    if (end == null && !_pendingCancel) {
-      // 手指还按着：等松手再判（dragEnd 在 aborted 态直接走普通翻页）。
-      _phase = _CurlPhase.idle;
-      _abortedDrag = true;
-      _clearImages();
-      _complete();
-      return;
-    }
+    final PageCurlDrag? drag = _sessionDrag;
+    _sessionDrag = null;
     _phase = _CurlPhase.idle;
     _clearImages();
     _complete();
-    if (commit) await host.fallbackTurn(forward: forward);
-    _completeTurn();
-  }
-
-  bool _abortedDrag = false;
-  _QueuedDrag? _queuedDrag;
-
-  /// 拖动中途放弃了卷页（截图失败 / 没有相邻页）后的松手：按普通滑动判提交并走
-  /// 普通翻页。返回是否消费了这次松手。
-  bool _takeAbortedDragEnd(Offset position, double velocityX) {
-    if (!_abortedDrag) return false;
-    _abortedDrag = false;
-    _finger = _unmirror(position);
-    if (pageCurlShouldCommit(
-      progressPx: _progressPx,
-      velocity: _directional(velocityX),
-      width: _size.width,
-    )) {
-      unawaited(host.fallbackTurn(forward: _forward));
+    if (drag == null) {
+      try {
+        await host.fallbackTurn(forward: forward);
+      } finally {
+        _completeTurn();
+      }
+      return;
     }
-    return true;
-  }
-
-  /// 屏幕坐标速度 → 沿翻页方向的速度。
-  double _directional(double velocityX) {
-    final double v = _mirror ? -velocityX : velocityX;
-    return _forward ? -v : v;
+    if (drag._cancelled) {
+      drag._role = _DragRole.done;
+      return;
+    }
+    drag._role = _DragRole.swipe;
+    final ({Offset position, double velocity})? end = drag._end;
+    if (end != null) _swipeEnd(drag, end.position, end.velocity);
   }
 
   void _release(double velocityX) {
+    final double v = _mirror ? -velocityX : velocityX;
     final bool commit = pageCurlShouldCommit(
       progressPx: _progressPx,
-      velocity: _directional(velocityX),
+      velocity: _forward ? -v : v,
       width: _size.width,
     );
     unawaited(_settle(commit: commit));
@@ -704,6 +777,7 @@ class PageCurlController extends ChangeNotifier {
       _finishing = false;
       if (generation == _generation) {
         _phase = _CurlPhase.idle;
+        _sessionDrag = null;
         _clearImages();
         _complete();
       }

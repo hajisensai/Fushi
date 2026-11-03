@@ -1191,6 +1191,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   // 卷页翻页（manga_fushi/page_curl.part.dart）：首次用到时创建，覆盖层按这个
   // key 量视口尺寸。
   PageCurlController? _pageCurl;
+
+  /// 当前这次 JS 转发的卷页手势（`onPageCurlDrag` start → end / cancel）。
+  PageCurlDrag? _pageCurlDrag;
   final GlobalKey _pageCurlOverlayKey = GlobalKey(
     debugLabel: 'manga_page_curl_overlay',
   );
@@ -1669,6 +1672,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    _pageCurlDrag = null;
     _pageCurl?.dispose();
     _pageCurl = null;
     _panelGeneration++;
@@ -3477,8 +3481,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _commitMangaSpread(target);
   }
 
-  /// 落到相邻跨页并记账（翻页一步的尾段；卷页提交也走这里）。卷页预览已经把 JS
-  /// 落到 [target] 时，`__mangaApplyTranslate` 是同位重放（瞬时、无副作用）。
+  /// 落到相邻跨页并记账（翻页一步的尾段；卷页提交也走这里）。卷页预览
+  /// （`__mangaCurlPreview`）只挪了 strip 的像素位置、没改 CURRENT，所以翻页副作用
+  /// （闪屏 / 换页复位缩放 / 重试失败页）在这里的 `__mangaApplyTranslate` 跑且只跑一次。
   Future<void> _commitMangaSpread(int target) async {
     _currentSpread = target;
     _panelCursor.reset();

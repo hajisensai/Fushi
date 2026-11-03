@@ -64,6 +64,15 @@ class _ReaderPageCurlHost implements PageCurlHost {
     await _state._paginateStep(direction);
   }
 
+  /// 与 onSwipe 同一个入口 [_paginate]：在飞时进 [_pageTurnQueue] 排队重放
+  /// （BUG-2424），卷页开着时排在当前卷页后面再播一页。
+  @override
+  Future<void> swipeTurn({required bool forward}) => _state._paginate(
+    forward
+        ? ReaderNavigationDirection.forward
+        : ReaderNavigationDirection.backward,
+  );
+
   @override
   Future<void> waitForPaint() => waitPageCurlWebViewPaint(_state._controller);
 }
@@ -103,34 +112,45 @@ extension _ReaderPageCurl on _ReaderFushiPageState {
 
   /// JS 手势转发的卷页跟手（`onPageCurlDrag`）：phase, x, y, vx, startX, startY
   /// 全是视口比例（vx 为每毫秒的视口宽比例）。
+  ///
+  /// JS 发出 'start' 后就不再走 onSwipe，所以这里**每一次** start 都要接住：拿到的
+  /// [PageCurlDrag] 句柄在卷页不可用 / 换章在飞 / 已有卷页会话时按普通滑动处理（松手
+  /// 经 [_ReaderPageCurlHost.swipeTurn] 走 [_paginate]，在飞时排队重放），后续
+  /// move / end / cancel 只交给这个句柄。
   void _onPageCurlDrag(List<dynamic> args) {
     if (args.isEmpty) return;
     final String phase = args[0] as String;
     double arg(int i) =>
         i < args.length && args[i] is num ? (args[i] as num).toDouble() : 0;
     final Size size = _pageCurlSize;
-    final PageCurlController curl = _ensurePageCurl();
     final Offset position = Offset(arg(1) * size.width, arg(2) * size.height);
     switch (phase) {
       case 'start':
-        if (!_pageCurlEnabled || _paginationInFlight) return;
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
+        // 上一次手势的 end / cancel 丢了：不让它继续占着会话。
+        _pageCurlDrag?.cancel();
         final Offset start = Offset(arg(4) * size.width, arg(5) * size.height);
         final bool leftIsForward = _readerSwipeLeftIsForward;
         final bool movedLeft = position.dx < start.dx;
-        curl.dragStart(
+        final PageCurlDrag drag = _ensurePageCurl().dragStart(
           position: start,
           size: size,
           forward: movedLeft == leftIsForward,
           mirror: !leftIsForward,
+          allowCurl: _pageCurlEnabled,
         );
-        curl.dragUpdate(position);
+        _pageCurlDrag = drag;
+        drag.update(position);
       case 'move':
-        curl.dragUpdate(position);
+        _pageCurlDrag?.update(position);
       case 'end':
-        curl.dragEnd(position, arg(3) * size.width);
+        final PageCurlDrag? drag = _pageCurlDrag;
+        _pageCurlDrag = null;
+        drag?.end(position, arg(3) * size.width);
       case 'cancel':
-        curl.dragCancel();
+        final PageCurlDrag? drag = _pageCurlDrag;
+        _pageCurlDrag = null;
+        drag?.cancel();
     }
   }
 

@@ -1918,6 +1918,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _chapterTransitionCaptureInFlight = false;
   // 卷页翻页（page_curl.part.dart）：首次用到时创建，覆盖层按这个 key 量视口尺寸。
   PageCurlController? _pageCurl;
+
+  /// 当前这次 JS 转发的卷页手势（`onPageCurlDrag` start → end / cancel）。
+  PageCurlDrag? _pageCurlDrag;
   final GlobalKey _pageCurlOverlayKey = GlobalKey(
     debugLabel: 'reader_page_curl_overlay',
   );
@@ -3663,6 +3666,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void dispose() {
     appModelNoUpdate.routeObserver.unsubscribe(this);
+    _pageCurlDrag = null;
     _pageCurl?.dispose();
     _pageCurl = null;
     _stopFollowingScrollDismissPointer();
