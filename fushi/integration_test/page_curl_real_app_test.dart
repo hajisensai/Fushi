@@ -636,7 +636,8 @@ Future<void> _chapterChecks(
   final String startFile = file;
   int presses = 0;
   Map<String, dynamic> last = <String, dynamic>{};
-  while (presses < 40 && file == startFile) {
+  // 上限按最窄屏（iPhone 竖屏竖排一页约 200 字，这一章 40 多页）留够。
+  while (presses < 150 && file == startFile) {
     await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
     presses++;
     await _pumpFor(tester, const Duration(milliseconds: 200));
