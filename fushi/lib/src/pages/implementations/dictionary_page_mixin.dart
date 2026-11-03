@@ -34,6 +34,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
         closePopupAfterAcceptedMine;
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_word_audio.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -312,6 +313,7 @@ mixin DictionaryPageMixin {
     required int entryIndex,
     required String matched,
     required String expression,
+    required String reading,
   }) async {
     if (!mounted) return;
     // 本 mixin 没有 State 的 mounted 语义可借（mounted 是抽象成员），按 lint 的要求
@@ -348,19 +350,35 @@ mixin DictionaryPageMixin {
           expression: expression.isEmpty ? null : expression,
           deck: deck,
           fields: fields,
+          // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
+          wordAudio: expression.isEmpty
+              ? null
+              : buildAdvancedMiningWordAudioSection(
+                  listChoices: () async =>
+                      await webViewKey.currentState?.listWordAudioChoices(
+                        expression,
+                        reading.isEmpty ? expression : reading,
+                      ) ??
+                      const <Map<String, String>>[],
+                ),
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
-          onConfirm: (MiningRequestOverrides overrides) async =>
-              await webViewKey.currentState?.mineEntryByIndex(
-                entryIndex,
-                // BUG-2634 第二轮：_onMineEntryImpl 在 await _mineVideoCard
-                // 之前就把草稿 / cue / 历史快照读完，连当前帧截图的 Future 都
-                // 在点击当下同步启动，所以提前关窗不会截到别的帧。
-                releaseWhenPayloadConsumed: true,
-                overrides: overrides,
-              ) ??
-              false,
+          onConfirm:
+              (
+                MiningRequestOverrides overrides, {
+                String? wordAudioUrl,
+              }) async =>
+                  await webViewKey.currentState?.mineEntryByIndex(
+                    entryIndex,
+                    // BUG-2634 第二轮：_onMineEntryImpl 在 await _mineVideoCard
+                    // 之前就把草稿 / cue / 历史快照读完，连当前帧截图的 Future 都
+                    // 在点击当下同步启动，所以提前关窗不会截到别的帧。
+                    releaseWhenPayloadConsumed: true,
+                    overrides: overrides,
+                    wordAudioUrl: wordAudioUrl,
+                  ) ??
+                  false,
         ),
       );
     });
@@ -1347,13 +1365,18 @@ mixin DictionaryPageMixin {
           // 覆盖项。只跟制卡模块走——纯查词页也有（对话框只有卡组分区）。
           onOpenAdvancedMining:
               mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
-              ? (int entryIndex, String matched, String expression) =>
-                    _openAdvancedMiningDialog(
-                      webViewKey: entry.webViewKey,
-                      entryIndex: entryIndex,
-                      matched: matched,
-                      expression: expression,
-                    )
+              ? (
+                  int entryIndex,
+                  String matched,
+                  String expression,
+                  String reading,
+                ) => _openAdvancedMiningDialog(
+                  webViewKey: entry.webViewKey,
+                  entryIndex: entryIndex,
+                  matched: matched,
+                  expression: expression,
+                  reading: reading,
+                )
               : null,
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
