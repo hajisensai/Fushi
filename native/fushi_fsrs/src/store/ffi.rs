@@ -1622,7 +1622,12 @@ mod tests {
         for start in ["pub(crate) fn sync2_dispatch(", "fn sync2_command("] {
             for line in body(start).lines() {
                 // 顶层匹配臂：8 个空格缩进、以命令名字面量开头（`"a" | "b" [if ...] =>`）；分发器里的命令名比较同样收进来。
-                let arm = line.strip_prefix("        \"").is_some() && line.contains("=>") && !line.starts_with("         ");
+                // 分发器里改投影命令的 `match op`（12 个空格缩进：`ingest_commit` / `rebuild_caches` 等在那里直接处理）也算。
+                let top = line.strip_prefix("        \"").is_some() && !line.starts_with("         ");
+                let projecting = start.starts_with("pub(crate) fn sync2_dispatch(")
+                    && line.strip_prefix("            \"").is_some()
+                    && !line.starts_with("             ");
+                let arm = (top || projecting) && line.contains("=>");
                 let compared = line.contains("op == \"");
                 if !(arm || compared) {
                     continue;
