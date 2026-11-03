@@ -209,7 +209,7 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
     insert_op_at(conn, profile, op, chain, now, deps)
 }
 
-/// [insert_op]，依赖向量已换成 `sync2_deps` 的行号 [deps]（批量投影按片缓存它，bulk.rs）。
+/// [insert_op]，依赖向量已换成 `sync2_deps` 的行号 [deps]（收段通道追加时按会话缓存它，channel.rs `Append`）。
 pub(crate) fn insert_op_at(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64, deps: i64) -> Result<(), String> {
     // 配置快照原文只存一份、其余按 zstd 压缩（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
     let packed = snapshots::pack_payload(conn, op.kind, &op.payload)?;
@@ -392,14 +392,15 @@ thread_local! {
     static PARTIAL_CLOSURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// 测试：[legacy_closure_with] 走「部分」分支的累计次数（bulk.rs 的覆盖计数用）。
+/// 测试：[legacy_closure_with] 走「部分」分支的累计次数（冷启动探针 bootstrap_probe.rs 的覆盖计数用）。
 #[cfg(test)]
 pub(crate) fn partial_closures() -> usize {
     PARTIAL_CLOSURES.with(|c| c.get())
 }
 
-/// [legacy_closure]，每台设备的 `sync2_legacy` 行由 [row] 给（批量投影里还没写回的那几行在内存里，bulk.rs）。
-pub(crate) fn legacy_closure_with(
+/// [legacy_closure]，每台设备的 `sync2_legacy` 行由 [row] 给（冷启动探针 bootstrap_probe.rs 的行在内存里；子模块
+/// 可见，不对 crate 导出）。
+fn legacy_closure_with(
     conn: &Connection,
     profile: &str,
     vv: &Vv,
@@ -638,8 +639,8 @@ pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) 
     edit_row_with(profile, op, e, |vv| legacy_closure(conn, profile, vv))
 }
 
-/// [edit_row]，旧修改记录闭包由 [closure] 算（只有 v2 写入用到它）。
-pub(crate) fn edit_row_with(
+/// [edit_row]，旧修改记录闭包由 [closure] 算（只有 v2 写入用到它；冷启动探针 bootstrap_probe.rs 另给闭包）。
+fn edit_row_with(
     profile: &str,
     op: &Op,
     e: &EditBody,
@@ -895,7 +896,7 @@ pub(crate) fn index_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody
     Ok(())
 }
 
-/// [project_edit]，旧修改记录闭包已记过（批量投影在内存里记，bulk.rs）。
+/// [project_edit]，旧修改记录闭包已记过（收段通道在追加时记，channel.rs `Append::note_legacy`）。
 pub(crate) fn project_edit_noted(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     let ent = e.entity.text();
     index_edit(conn, profile, op, e, &ent)?;
@@ -938,24 +939,8 @@ pub(crate) fn project_edit_noted(conn: &Connection, profile: &str, op: &Op, e: &
 /// → 不落；落了就删掉被它支配的）。
 pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, server: Option<i64>, now: i64, t: &mut Touched) -> Result<(), String> {
     let (eid, row) = edit_row(conn, profile, op, e)?;
-    let text = canonical(&row);
-    land_edit_row(conn, profile, e, &eid, &text, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), server, now, t)
-}
-
-/// [land_edit]，投影行（[edit_row] 的 ID、规范文本、写入者、seq）已经算好（批量投影在到达时算，bulk.rs）。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn land_edit_row(
-    conn: &Connection,
-    profile: &str,
-    e: &EditBody,
-    eid: &str,
-    row_text: &str,
-    writer: &str,
-    seq: i64,
-    server: Option<i64>,
-    now: i64,
-    t: &mut Touched,
-) -> Result<(), String> {
+    let row_text = canonical(&row);
+    let (writer, seq) = (row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0));
     let ent = e.entity.text();
     // 现存记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`：每收一条修改记录都读一遍。
     // 只读同一字段键的（支配只在同一 (种类, 实体, 字段键) 里比，registers.rs `land`）加上同 ID 的那行（「同 ID 已在
@@ -976,7 +961,7 @@ pub(crate) fn land_edit_row(
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     let mut items: Vec<crate::registers::StoredEdit<'_>> = existing.iter().map(|(_, j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
-    items.push((row_text, server, None));
+    items.push((&row_text, server, None));
     let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
     if landed.first().copied() != Some(true) {
         return Ok(());
@@ -994,7 +979,7 @@ pub(crate) fn land_edit_row(
     .map_err(sql)?
     .execute(params![eid, profile, e.kind.wire(), ent, e.key, writer, seq, row_text])
     .map_err(sql)?;
-    upsert_server_time(conn, profile, eid, server, now)?;
+    upsert_server_time(conn, profile, &eid, server, now)?;
     match e.kind {
         // 血统变了：归属组变了，链尾与前身都要重放。
         EntKind::Card if e.key.starts_with("historyFrom/") => {

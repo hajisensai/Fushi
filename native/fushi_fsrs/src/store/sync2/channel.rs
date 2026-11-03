@@ -33,7 +33,8 @@
 //! 情形下本身也随到达顺序而变。
 //!
 //! 走不走通道：会话开始时（[begin]）这个 profile 的操作日志与投影都是空的才走（新设备第一次同步）。折叠完之前本机
-//! 要写 / 会话外要投递，先把通道做完（[settle]，ffi.rs 分发器、一次收完、导入），之后按逐条投递收。
+//! 要写 / 会话外要投递，先把通道做完（[settle]，ffi.rs 分发器与 `channel_settle`、一次收完、导入），之后按逐条投递收。
+//! 做完通道与收尾一样按片、每片一个事务（[settle]），不把整份投影塞进调用方的一笔事务。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -59,11 +60,19 @@ pub(crate) const PARTS: i64 = 64;
 /// 逐条投影的操作（标签、媒体、清除……；折叠时发现落在复杂实体上的也挪进来，序号不变）。
 const PART_ONE_BY_ONE: i64 = PARTS;
 
-/// `sync2_boot.phase`。
+/// `sync2_boot.phase` 的四个取值（持久化值，不改号；schema.rs `V22_BOOT` 以这里为准）。各阶段 `cursor` 的含义见
+/// [Boot::cursor]。
+/// 追加：收段各片只写操作日志与投递顺序。
 const PHASE_APPEND: i64 = 0;
+/// 折叠：逐个分区算投影行进暂存表。
 const PHASE_FOLD: i64 = 1;
+/// 归并：暂存行按表成块写进投影。
 const PHASE_MERGE: i64 = 2;
+/// 逐条：复杂实体与不折叠的操作按投递顺序逐条投影。
 const PHASE_ONE_BY_ONE: i64 = 3;
+
+/// 通道的全部表：通道做完时这几张表里这个 profile 的行全删。
+const BOOT_TABLES: [&str; 5] = ["sync2_boot_order", "sync2_boot_complex", "sync2_boot_moves", "sync2_boot_rows", "sync2_boot"];
 
 /// 逐条阶段一次读多少条。
 const ONE_BY_ONE_CHUNK: i64 = 256;
@@ -110,21 +119,23 @@ fn fresh(c: &Connection, profile: &str) -> Result<bool, String> {
     .map_err(sql)
 }
 
-/// 收段会话开始（transport.rs `sync2_ingest_begin`）：通道还在追加阶段（上一个会话被打断）就接着追加；没有通道而
-/// 这个 profile 是新的就开一个；折叠到一半（收尾被打断）先做完，这次按逐条投递收。返回这个会话走不走通道。
-pub(crate) fn begin(c: &Connection, profile: &str) -> Result<bool, String> {
-    match boot(c, profile)? {
+/// 收段会话开始（transport.rs `sync2_ingest_begin`；[w] 是写连接，不在调用方的事务里）：通道还在追加阶段（上一个
+/// 会话被打断）就接着追加；没有通道而这个 profile 是新的就开一个；折叠 / 归并 / 逐条做到一半（收尾被打断）先按片
+/// 做完（[settle]，每片一个事务），这次按逐条投递收。返回这个会话走不走通道。
+pub(crate) fn begin(w: &Connection, profile: &str) -> Result<bool, String> {
+    if boot(w, profile)?.is_some_and(|b| b.phase != PHASE_APPEND) {
+        settle(w, profile)?;
+    }
+    super::in_savepoint(w, |c| match boot(c, profile)? {
         Some(b) if b.phase == PHASE_APPEND => Ok(true),
-        Some(_) => {
-            settle(c, profile)?;
-            Ok(false)
-        }
+        // [settle] 做完才返回、出错就报错：走到这里只能是有人在上面那次 settle 之后又开了通道。
+        Some(_) => Err("sync2 channel: still folding after settle".to_owned()),
         None if fresh(c, profile)? && !forced_off() => {
             set_boot(c, profile, &Boot { phase: PHASE_APPEND, next_rank: 0, cursor: 0 })?;
             Ok(true)
         }
         None => Ok(false),
-    }
+    })
 }
 
 // ---------------------------------------------------------------- 追加
@@ -330,7 +341,7 @@ fn advance_into(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>, t:
             params![profile, PART_ONE_BY_ONE, b.cursor, ONE_BY_ONE_CHUNK],
         )?;
         if batch.is_empty() {
-            for table in ["sync2_boot_order", "sync2_boot_complex", "sync2_boot_moves", "sync2_boot_rows", "sync2_boot"] {
+            for table in BOOT_TABLES {
                 c.execute(&format!("DELETE FROM {table} WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)?;
             }
             return Ok(true);
@@ -761,15 +772,52 @@ impl Drop for DigestTriggersOff<'_> {
     }
 }
 
-/// 把通道做完（不切片）：本机要写、会话外要投递之前（ffi.rs 分发器、一次收完、导入），以及新会话开始时上一次的
-/// 折叠没做完。之后这个 profile 按逐条投递收；会话里缓存的投递队列（带着追加状态）作废重载。要刷新的缓存与要重放
-/// 的卡留在待刷新 / 待重放集合里，与逐条投递收段途中一样等收尾。
-pub(crate) fn settle(c: &Connection, profile: &str) -> Result<(), String> {
-    if !active(c, profile)? {
+/// [settle] 一片的预算：与收尾同一个片长（[CommitBudget::timed]），一个分区 / 一块归并 / 一段逐条各自提交。
+#[cfg(any(not(test), srs_probe))]
+fn settle_budget() -> CommitBudget<'static> {
+    CommitBudget::timed(super::transport::COMMIT_SLICE)
+}
+
+/// 测试里按条数切（切点确定、小世界也切成好几片）。
+#[cfg(all(test, not(srs_probe)))]
+fn settle_budget() -> CommitBudget<'static> {
+    CommitBudget::ops(3)
+}
+
+/// 把通道做完：本机要写、会话外要投递之前（ffi.rs 分发器与 `channel_settle`、一次收完、导入、带分叉的收尾），以及
+/// 新会话开始时上一次的收尾没做完（[begin]）。[w] 是写连接，**不在调用方的事务里**。
+///
+/// 与收尾（`ingest_finish` / `replay_pending`）同样按片：每片一个 SAVEPOINT，没有外层事务时就是一次提交——WAL 只装
+/// 一片（一个分区 / 至多 [MERGE_CHUNK] 行的一块归并）写的页，失败只回滚这一片，已做的留着、下次接着做。以前整段
+/// 在调用方的一个事务里做完：整份投影（真实全量数据约 1.1 GB）落进同一笔事务，WAL 要装下全部页，失败整段回滚、
+/// 下一条写命令又从头重做。
+///
+/// 写连接上开着 Drift 事务（`is_autocommit` 为假）时中途提交不了，只能在那笔事务里一次做完：这是兜底。Dart 在开
+/// Drift 事务之前先发 `channel_settle`（srs_db_store.dart `_transactionOrReload`），正常路径走不到这里。
+///
+/// 之后这个 profile 按逐条投递收；会话里缓存的投递队列（带着追加状态）作废重载（一开始就作废：做了一片之后出错，
+/// 通道也已不在追加阶段）。要刷新的缓存与要重放的卡留在待刷新 / 待重放集合里，与逐条投递收段途中一样等收尾。
+pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
+    if !active(w, profile)? {
         return Ok(());
     }
-    advance(c, profile, &mut CommitBudget::unlimited())?;
     super::transport::bump_delivery_epoch();
+    if !w.is_autocommit() {
+        return super::in_savepoint(w, |c| advance(c, profile, &mut CommitBudget::unlimited()).map(|_| ()));
+    }
+    let mut slices = 0usize;
+    loop {
+        #[cfg(test)]
+        if FAIL_SETTLE_AT.with(|f| f.get()) == Some(slices) {
+            return Err("sync2 channel: injected settle failure".to_owned());
+        }
+        if super::in_savepoint(w, |c| Ok(advance(c, profile, &mut settle_budget())?.0))? {
+            break;
+        }
+        slices += 1;
+    }
+    #[cfg(test)]
+    SETTLE_SLICES.with(|s| s.set(s.get() + slices + 1));
     Ok(())
 }
 
@@ -790,14 +838,47 @@ pub(crate) fn absorb(t: &mut Touched, o: Touched) {
 }
 
 impl crate::store::SrsCore {
-    /// 分发器（ffi.rs）在会改投影 / 依赖完整投影的命令之前调：这个 profile 有没做完的收段通道就做完（[settle]）。
-    /// 没有通道只是一次主键查询。
+    /// 分发器（ffi.rs）在会改投影 / 依赖完整投影的命令之前调，Dart 在开 Drift 事务之前调（`channel_settle`）：这个
+    /// profile 有没做完的收段通道就按片做完（[settle]）。没有任何通道时只读内存里的标记（[SrsCore::channel_live]），
+    /// 不拿写锁、不查表——只读命令（`digest` 等）不因此排在写锁后面。
     pub(crate) fn sync2_channel_settle(&self, profile: &str) -> Result<(), String> {
-        let w = self.writer()?;
-        if !active(&w, profile)? {
+        if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(());
         }
-        super::in_savepoint(&w, |c| settle(c, profile))
+        let w = self.writer()?;
+        self.settle_channel_on(&w, profile)
+    }
+
+    /// [Self::sync2_channel_settle]，调用方已持写连接 [w]（不在事务里时按片提交，见 [settle]）。
+    pub(crate) fn settle_channel_on(&self, w: &Connection, profile: &str) -> Result<(), String> {
+        if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
+            return Ok(());
+        }
+        settle(w, profile)?;
+        self.recheck_channel_live(w)
+    }
+
+    /// 收段会话开了通道（[begin] 返回真）：之后的命令要先看通道。
+    pub(crate) fn note_channel_live(&self) {
+        self.channel_live.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// 已提交的状态里还有没有任何 profile 的通道，按它重置标记。只在写连接不在事务里时清：事务里删掉的通道行可能
+    /// 随回滚回来，标记宁可多留（多一次查表）也不能先清。
+    pub(crate) fn recheck_channel_live(&self, w: &Connection) -> Result<(), String> {
+        if w.is_autocommit() {
+            let any: bool = w.query_row("SELECT EXISTS (SELECT 1 FROM sync2_boot)", [], |r| r.get(0)).map_err(sql)?;
+            self.channel_live.store(any, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    /// 这个 profile 有没有进行中的通道（`identity` 回报给 Dart，Dart 据此决定开 Drift 事务前要不要先 `channel_settle`）。
+    pub(crate) fn sync2_channel_active(&self, profile: &str) -> Result<bool, String> {
+        if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
+            return Ok(false);
+        }
+        self.read_visible(|c| active(c, profile))
     }
 }
 
@@ -807,6 +888,22 @@ impl crate::store::SrsCore {
 thread_local! {
     static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static COVER: std::cell::Cell<[usize; 4]> = const { std::cell::Cell::new([0; 4]) };
+    /// [settle] 做到第几片（从 0 数）时报错（测试：中途失败只丢那一片）。
+    static FAIL_SETTLE_AT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// [settle] 按片提交的累计片数。
+    static SETTLE_SLICES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// 测试：之后的 [settle] 做到第 [at] 片时报错（None = 不注入）。
+#[cfg(test)]
+pub(crate) fn fail_settle_at(at: Option<usize>) {
+    FAIL_SETTLE_AT.with(|f| f.set(at));
+}
+
+/// 测试：[settle] 按片提交过的片数，取走清零。
+#[cfg(test)]
+pub(crate) fn take_settle_slices() -> usize {
+    SETTLE_SLICES.with(|s| s.replace(0))
 }
 
 /// 测试：[f] 里开的收段会话不走通道（逐条投递的对照组，tests_channel.rs）。

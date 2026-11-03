@@ -918,7 +918,7 @@ pub struct CommitBudget<'a> {
 
 /// 一片投递的时间上限（写锁里投递 + 投影部分；同一片的缓存刷新与事务提交大约再占它的一半）。只在没人等锁时
 /// 用满；它也是让出请求最晚的响应时间的来源（收片时要刷新、提交的就是已投的这部分）。
-const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
+pub(crate) const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
 /// 一片至少处理的操作数（之后才看时间与让出请求）。
 const COMMIT_SLICE_MIN_OPS: usize = 64;
 /// 新设备收段会话（[IngestSession::bootstrap]）的片长。片越短，每片提交要写的脏页（同一批随机键索引页）越多次进
@@ -951,6 +951,20 @@ impl<'a> CommitBudget<'a> {
             left: usize::MAX,
             deadline: Some(std::time::Instant::now() + max),
             yield_to: Some(yield_to),
+            floor: COMMIT_SLICE_MIN_OPS,
+            stopped: false,
+            stretchable: false,
+        }
+    }
+
+    /// 只按时间切的一片（不看让出请求）：会话外把收段通道做完（channel.rs `settle`），调用方一直持着写锁、片与片
+    /// 之间不放锁，让出请求无从响应，切片只为每片各自提交（WAL 只装一片的页）。
+    #[cfg_attr(all(test, not(srs_probe)), allow(dead_code))]
+    pub(crate) fn timed(max: std::time::Duration) -> CommitBudget<'static> {
+        CommitBudget {
+            left: usize::MAX,
+            deadline: Some(std::time::Instant::now() + max),
+            yield_to: None,
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,
             stretchable: false,
@@ -2024,9 +2038,9 @@ impl SrsCore {
     pub fn sync2_ingest(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
         let mut prepared = self.prepare_unlocked(profile, std::borrow::Cow::Borrowed(segments), key)?;
         let w = self.writer()?;
+        // 会话外投递：新设备收段通道没做完就先按片做完（各片自己提交），之后逐条投递（channel.rs `settle`）。
+        self.settle_channel_on(&w, profile)?;
         in_savepoint(&w, |c| {
-            // 会话外投递：新设备收段通道没做完就先做完，之后逐条投递（channel.rs）。
-            super::channel::settle(c, profile)?;
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut t = Touched::default();
             let mut errors = Vec::new();
@@ -2085,8 +2099,13 @@ impl SrsCore {
         // 之前被打断的会话已经找到的分叉点接着用（审查 S-12：plan 不再让 Dart 重下本机身份的段）。
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         let bootstrap = !studied_here(&w, profile, &local.device)?;
-        // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的通道折到一半就先做完。
-        let channel = in_savepoint(&w, |c| super::channel::begin(c, profile))?;
+        // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的收尾做到一半就先按片做完（各片自己提交）。
+        let channel = super::channel::begin(&w, profile)?;
+        if channel {
+            self.note_channel_live();
+        } else {
+            self.recheck_channel_live(&w)?;
+        }
         *self.ingest_session.lock().map_err(|_| "ingest session poisoned")? = Some(IngestSession {
             profile: profile.to_owned(),
             device: local.device,
@@ -2097,7 +2116,8 @@ impl SrsCore {
             channel,
         });
         self.set_ingest_hold_cache(true);
-        Ok(json!({}))
+        // Dart 据 `channel` 记下「开 Drift 事务前先 `channel_settle`」（srs_db_store.dart `_transactionOrReload`）。
+        Ok(json!({"channel": channel}))
     }
 
     /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + 不切片的 [SrsCore::sync2_ingest_commit] 连着做）。
@@ -2276,13 +2296,23 @@ impl SrsCore {
                 _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
             }
         };
+        // 换身份（会话里找到了分叉点）要在全部远端操作都投进投影之后：收段通道先按片做完（各片自己提交，channel.rs
+        // `settle`），换身份与重放再进下面这一笔事务。没有分叉点时通道按 [budget] 在事务里推进（下面的 `advance`）。
+        if session.fork_at.is_some() {
+            let settled = self.settle_channel_on(&w, profile);
+            if let Err(e) = settled {
+                self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+                return Err(e);
+            }
+        }
         let out = in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut t = Touched::default();
             let fork_at = session.fork_at.filter(|_| local.device == session.device);
             if let Some(k) = fork_at {
-                // 换身份要在全部远端操作都投进投影之后：收段通道先做完（channel.rs）。
-                super::channel::settle(c, profile)?;
+                if super::channel::active(c, profile)? {
+                    return Err("sync2 ingest: bootstrap channel not settled before rotating".to_owned());
+                }
                 rotate(c, profile, k, now, &mut t)?;
             }
             clear_fork(c, profile)?;
@@ -2655,6 +2685,9 @@ impl SrsCore {
     /// 明文、全部操作、再拷一份待投递三份同时在内存。
     pub fn sync2_import(&self, profile: &str, bytes: &[u8], now: i64) -> Result<String, String> {
         let w = self.writer()?;
+        // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；Dart 的导入在 Drift 事务里，已在开事务
+        // 前发过 `channel_settle`，这里通常没有通道）。
+        self.settle_channel_on(&w, profile)?;
         in_savepoint(&w, |c| {
             let local = match Local::load(c, profile)? {
                 Some(l) => l,
@@ -2664,8 +2697,6 @@ impl SrsCore {
             if reader.collection != local.collection {
                 return Err("this .fushisrs belongs to another profile".into());
             }
-            // 会话外投递：新设备收段通道没做完就先做完（channel.rs）。
-            super::channel::settle(c, profile)?;
             // 第一遍：校验、收集设备抬头、算本机身份与包的共同前缀 k。
             let mut runs: Vec<(Id, Vec<u8>)> = Vec::new();
             let mut own: Option<(u64, u64, bool, Chain)> = None; // (包里条数, k, 仍然对得上, 链)

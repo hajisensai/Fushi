@@ -258,6 +258,14 @@ fn cmd(d: &Device, req: Value, blobs: Vec<Vec<u8>>) -> Value {
     crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
 }
 
+/// 经生产分发器发一条 v2 命令，期望它失败：返回错误文本。
+fn cmd_err(d: &Device, req: Value) -> String {
+    let mut req = req;
+    req["profile"] = json!(P);
+    let (mut blobs, mut files) = (Vec::new(), Vec::new());
+    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap_err()
+}
+
 /// 文件夹里的 head 与段。
 fn heads_and_segments(b: &Bucket) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     let heads = b
@@ -401,11 +409,62 @@ fn channel_is_only_for_a_fresh_profile() {
     let w = x.core.writer().unwrap();
     assert!(super::channel::begin(&w, P).unwrap(), "a fresh profile opens the channel");
     assert!(super::channel::begin(&w, P).unwrap(), "an appending channel resumes");
-    super::in_savepoint(&w, |c| super::channel::settle(c, P)).unwrap();
+    super::channel::settle(&w, P).unwrap();
     assert!(!super::channel::active(&w, P).unwrap(), "settled channel leaves no rows");
     drop(w);
     let deck = super::config::default_deck_id(P);
     local(&x, NOW, vec![(deck_entity(&deck), String::new())]);
     let w = x.core.writer().unwrap();
     assert!(!super::channel::begin(&w, P).unwrap(), "a profile with ops delivers one by one");
+}
+
+/// 会话外把通道做完（分发器在本机写入前、`channel_settle`）按片提交：中途失败只丢那一片，已做的留着、下一次接着做，
+/// 结果与逐条投递相同。以前整段在调用方的一个事务里：失败整段回滚，每条写命令都从头重做。
+#[test]
+fn settling_commits_slice_by_slice_and_resumes_after_a_failure() {
+    let all = world(41);
+    let x = Device::new("ch-settle-x");
+    x.core.sync2_identity(P, NOW).unwrap();
+    let y = Device::copy_of(&x, "ch-settle-y");
+    // 只收完各片、不收尾：通道停在追加阶段。
+    let appended = |d: &Device| {
+        let (heads, segs) = heads_and_segments(&all);
+        cmd(d, json!({"op": "plan"}), heads);
+        let begun = cmd(d, json!({"op": "ingest_begin"}), vec![]);
+        for chunk in segs.chunks(2) {
+            cmd(d, json!({"op": "ingest_prepare"}), chunk.to_vec());
+            while cmd(d, json!({"op": "ingest_commit", "now": NOW, "sliceOps": 7}), vec![])["more"] == json!(true) {}
+        }
+        begun
+    };
+    assert_eq!(appended(&x)["channel"], json!(true), "a fresh profile reports the channel to Dart");
+    assert_eq!(boot_state(&x), Some((0, 0)), "appending");
+    // 第三片报错：前两片已提交，通道停在折叠里。
+    super::channel::take_settle_slices();
+    super::channel::fail_settle_at(Some(2));
+    let err = cmd_err(&x, json!({"op": "channel_settle"}));
+    super::channel::fail_settle_at(None);
+    assert!(err.contains("injected settle failure"), "{err}");
+    let (phase, cursor) = boot_state(&x).expect("the channel is still there");
+    assert!(phase >= 1 && (phase, cursor) != (1, 0), "the committed slices stay done: ({phase}, {cursor})");
+    assert_eq!(cmd(&x, json!({"op": "identity", "now": NOW}), vec![])["channel"], json!(true), "Dart learns the channel at open");
+    // 接着做完（不从头来），之后写连接上没有挂着的事务。
+    cmd(&x, json!({"op": "channel_settle"}), vec![]);
+    assert!(boot_state(&x).is_none(), "settled");
+    assert!(super::channel::take_settle_slices() > 3, "settling is sliced");
+    assert!(x.core.writer().unwrap().is_autocommit(), "every slice committed");
+    assert_eq!(cmd(&x, json!({"op": "identity", "now": NOW}), vec![])["channel"], json!(false));
+    let mut r = cmd(&x, json!({"op": "ingest_finish", "now": NOW}), vec![]);
+    while r["more"] == json!(true) {
+        r = cmd(&x, json!({"op": "replay_pending", "now": NOW}), vec![]);
+    }
+    super::channel::sequential(|| {
+        appended(&y);
+        let mut r = cmd(&y, json!({"op": "ingest_finish", "now": NOW}), vec![]);
+        while r["more"] == json!(true) {
+            r = cmd(&y, json!({"op": "replay_pending", "now": NOW}), vec![]);
+        }
+    });
+    assert_same(&x, &y, "settled slice by slice after a failure");
+    digest_is_consistent(&x);
 }

@@ -307,10 +307,12 @@ CREATE TABLE IF NOT EXISTS sync2_cache_pending (
 ) WITHOUT ROWID;
 "#;
 
-/// V22：新设备收段通道（channel.rs，先追加后折叠）。`sync2_boot` 一个 profile 一行：阶段（0 追加 / 1 折叠 / 2 逐条）、
-/// 下一个投递序号、游标（折叠 = 下一个分区，逐条 = 已投的最大序号）。`sync2_boot_order` 是追加阶段记下的投递顺序与
-/// 折叠分区（分区 64 = 逐条）；`sync2_boot_complex` 是要逐条投影的实体（删除 / 清除 / 合成写入者 / 移进复杂牌组的卡）；
-/// `sync2_boot_moves` 是追加阶段的移卡记录（追加结束时据此补复杂实体）。通道做完四张表的行全删。
+/// V22：新设备收段通道（channel.rs，先追加后折叠）。`sync2_boot` 一个 profile 一行：`phase` 取值与 `cursor` 的含义以
+/// channel.rs 的 `PHASE_*` 常量及其文档为准（追加 / 折叠 / 归并 / 逐条四个阶段，游标随阶段分别是分区、`TARGETS`
+/// 下标、已投的最大序号），这里不另抄数值；`next_rank` 是下一个投递序号。`sync2_boot_order` 是追加阶段记下的投递
+/// 顺序与折叠分区（`PART_ONE_BY_ONE` = 逐条）；`sync2_boot_complex` 是要逐条投影的实体（删除 / 清除 / 合成写入者 /
+/// 移进复杂牌组的卡）；`sync2_boot_moves` 是追加阶段的移卡记录（追加结束时据此补复杂实体）；`sync2_boot_rows` 是
+/// 折叠算出、等归并的投影行。通道做完这五张表（含 `sync2_boot` 本身）的行全删（channel.rs `BOOT_TABLES`）。
 pub const V22_BOOT: &str = r#"
 CREATE TABLE IF NOT EXISTS sync2_boot (
   profile_uid TEXT NOT NULL PRIMARY KEY,
