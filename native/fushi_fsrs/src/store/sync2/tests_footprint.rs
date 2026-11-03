@@ -482,10 +482,11 @@ fn compaction_does_not_swap_files_under_another_connection() {
 }
 
 /// 进程死在整理中途（Android 上 1.3 GB 的库被杀）：标记留着、下次打开又整理。旁边没写完的 `<库>.compact` 下次打开
-/// 删掉；连着 [MAX_ATTEMPTS] 次没正常结束就放弃这次整理、库照常打开，没到上限的照常整理并清掉计数。
+/// 删掉；连着 [MAX_ATTEMPTS] 次没正常结束就停手、库照常打开，但 [PENDING] 留着、记下停手的版本：同一版本同一升级不再
+/// 碰，整理改版（[COMPACT_REV] 变了）或又升级过（[PENDING] 变了）就重新整理。没到上限的照常整理并清掉计数。
 #[test]
 fn compaction_gives_up_after_interrupted_attempts() {
-    use crate::store::compact::{staged_path, ATTEMPTS, MAX_ATTEMPTS, PENDING};
+    use crate::store::compact::{staged_path, ATTEMPTS, COMPACT_REV, GAVE_UP, MAX_ATTEMPTS, PENDING};
     let a = busy_device("fp-interrupted");
     let (path, dir) = closed(a);
     with_spare_pages(&path, true);
@@ -495,26 +496,36 @@ fn compaction_gives_up_after_interrupted_attempts() {
     drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
     assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none());
     assert!(!staged_path(&path).exists());
-    // 已经连着死了 MAX_ATTEMPTS 次：不再整理，丢掉标记与计数，记下原因。
+    // 已经连着死了 MAX_ATTEMPTS 次：停手，标记留着，记下停手的版本与原因。
     with_spare_pages(&path, true);
     raw(&path).execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, MAX_ATTEMPTS.to_string()]).unwrap();
     let spare = pragma_of(&path, "freelist_count");
-    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: dir };
-    let (path, _dir) = closed(b);
-    assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none());
+    drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
+    assert_eq!(meta_of(&path, PENDING).as_deref(), Some("18"), "marker kept");
+    assert!(meta_of(&path, ATTEMPTS).is_none());
+    assert_eq!(meta_of(&path, GAVE_UP), Some(format!("{COMPACT_REV}/18")));
     assert!(meta_of(&path, "compact_last").unwrap().contains("\"reason\":\"interrupted\""));
     assert_eq!(pragma_of(&path, "freelist_count"), spare, "left alone");
+    // 同一版本同一升级：再打开也不碰。
+    drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
+    assert_eq!(pragma_of(&path, "freelist_count"), spare, "still left alone");
+    assert!(meta_of(&path, ATTEMPTS).is_none());
+    // 停手发生在旧版整理上（版本号不同）：新版自动重试，整理完清掉全部标记。
+    raw(&path).execute("UPDATE srs_meta SET value = ?2 WHERE key = ?1", rusqlite::params![GAVE_UP, format!("{}/18", COMPACT_REV - 1)]).unwrap();
+    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: dir };
+    let (path, _dir) = closed(b);
+    assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none() && meta_of(&path, GAVE_UP).is_none());
+    assert_eq!(pragma_of(&path, "freelist_count"), 0);
+    assert!(meta_of(&path, "compact_last").unwrap().contains("\"ok\":true"));
 }
 
-/// 升级阶梯整表重建 / 建索引与剥设备本地表的备份的临时库必须能落文件：`SQLITE_TEMP_STORE=3` 的构建里
-/// `PRAGMA temp_store = FILE` 不起作用，全进内存。Android 产物由 build_android_so.* 按编译选项字符串核对。
+/// 升级阶梯整表重建 / 建索引与剥设备本地表的备份的临时库必须能落文件：`SQLITE_TEMP_STORE=3` 的构建里临时库全进
+/// 内存。连接不改 `temp_store`（0 = 按编译默认，即 1 = 文件）。Android 产物由 build_android_so.* 按编译选项字符串核对。
 #[test]
 fn bundled_sqlite_lets_rewrites_spill_to_files() {
     let a = busy_device("fp-temp-store");
     let w = a.core.writer().unwrap();
     assert!(!crate::store::compact::temp_store_forced_memory(&w));
-    crate::store::compact::set_temp_dir(&w, &a._dir.0);
-    let in_window: i64 = w.query_row("PRAGMA temp_store", [], |r| r.get(0)).unwrap();
-    crate::store::compact::clear_temp_dir(&w);
-    assert_eq!(in_window, 1, "temp_store = FILE while rewriting");
+    let mode: i64 = w.query_row("PRAGMA temp_store", [], |r| r.get(0)).unwrap();
+    assert_eq!(mode, 0, "temp_store follows the compiled default (files)");
 }

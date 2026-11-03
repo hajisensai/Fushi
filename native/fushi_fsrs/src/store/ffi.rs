@@ -153,6 +153,27 @@ fn hand_out(buf: Vec<u8>, out: *mut *mut u8, out_len: *mut usize) {
     }
 }
 
+/// 设进程级 SQLite 临时目录（[super::compact::use_temp_dir]）：大排序 / 整理 / 快照的溢出文件落在这里。整个进程只设
+/// 一次，必须在打开任何 srs.db 之前；再传同一个目录是空操作，传别的目录报错。Android 上不设就打不开库（没有平台默认
+/// 临时目录），宿主传 app 的 cache 目录。
+#[no_mangle]
+pub extern "C" fn ffsrs_set_temp_dir(path: *const u8, path_len: usize, error_out: *mut *mut c_char) -> i32 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+        super::compact::use_temp_dir(Path::new(utf8(path, path_len)?))
+    }));
+    match outcome {
+        Ok(Ok(())) => STORE_OK,
+        Ok(Err(e)) => {
+            set_error(error_out, &e);
+            STORE_ERROR
+        }
+        Err(_) => {
+            set_error(error_out, "panic in srs set temp dir");
+            STORE_PANIC
+        }
+    }
+}
+
 /// 打开 / 新建 srs.db。成功写 `*core_out`；用 [ffsrs_store_close] 关闭。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_open(

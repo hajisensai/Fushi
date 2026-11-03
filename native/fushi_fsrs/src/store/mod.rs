@@ -276,6 +276,8 @@ impl SrsCore {
     /// [open]，库所在卷的空闲空间由 [free] 给（测试注入）：升级前空间不够就不升级、报
     /// [schema::UPGRADE_NO_SPACE]（库不动）。
     pub(crate) fn open_with_free_space(path: &Path, free: impl Fn(&Path) -> Option<u64>) -> Result<Self, String> {
+        // 升级阶梯整表重建 / 建索引、整理、快照的排序溢出都落临时文件：Android 上宿主必须先给进程级临时目录。
+        compact::require_temp_dir()?;
         let open_writer = || -> Result<Connection, String> {
             #[allow(unused_mut)]
             let mut writer = Connection::open_with_flags(
@@ -301,12 +303,7 @@ impl SrsCore {
         };
         let mut writer = open_writer()?;
         schema::check_upgrade_space(&writer, free(path))?;
-        let dir = path.parent().unwrap_or(Path::new("."));
-        // 升级阶梯整表重建、建索引，大库的排序会溢出到临时文件：与整理一样放在库所在目录（Android 没有默认临时目录）。
-        compact::set_temp_dir(&writer, dir);
-        let migrated = schema::migrate(&mut writer);
-        compact::clear_temp_dir(&writer);
-        migrated?;
+        schema::migrate(&mut writer)?;
         // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。重写换文件时会换掉写连接。
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
         let writer = compact::run(writer, path, free(path), now, &open_writer)?;
@@ -549,16 +546,15 @@ impl SrsCore {
                  COMMIT;",
             )
             .map_err(|e| e.to_string())?;
-            // 收回清掉的页。快照随源库的 auto_vacuum：INCREMENTAL（整理过 / 新建的库）就原地收缩；老库才整库
-            // VACUUM，整理副本落临时文件（构建参数 SQLITE_TEMP_STORE=1），不在内存里堆一份（大库会撑爆进程）。临时
-            // 目录不在这里改：`temp_store_directory` 是进程全局的，Android 上打开 srs.db 时已常驻成库所在目录
-            // （compact::set_temp_dir），这里改成快照目录会把它永久挪到一个随时被删的导出目录。
+            // 收回清掉的页。快照随源库的 auto_vacuum：INCREMENTAL（整理过 / 新建的库）就原地收缩，一直 step 到
+            // 空闲链表清空（compact::incremental_vacuum；只 step 一次只收 1–2 页）；老库才整库 VACUUM，整理副本落
+            // 临时文件（构建参数 SQLITE_TEMP_STORE=1、进程级临时目录 compact::use_temp_dir），不在内存里堆一份。
             let incremental = snap
                 .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
                 .map_err(|e| e.to_string())?
                 == 2;
             if incremental {
-                snap.execute_batch("PRAGMA incremental_vacuum;").map_err(|e| e.to_string())?;
+                compact::incremental_vacuum(&snap, None).map_err(|e| e.to_string())?;
             } else {
                 snap.execute_batch("VACUUM;").map_err(|e| e.to_string())?;
             }
@@ -1108,11 +1104,11 @@ mod tests {
         let p = temp("snap");
         let core = SrsCore::open(&p).unwrap();
         core.legacy_begin().unwrap();
-        core.legacy_page(
-            "srs_local_state",
-            &rows::encode(2, &[vec![Value::Text("p".into()), Value::Text("{}".into())]]),
-        )
-        .unwrap();
+        // 本机状态占几百页：剥掉后腾出的页要真的从快照文件里收掉。
+        let big = format!("{{\"pad\":\"{}\"}}", "x".repeat(4000));
+        let local: Vec<Vec<Value>> =
+            (0..300).map(|i| vec![Value::Text(format!("p{i}")), Value::Text(big.clone())]).collect();
+        core.legacy_page("srs_local_state", &rows::encode(2, &local)).unwrap();
         core.legacy_page(
             "srs_unknown_events",
             &rows::encode(
@@ -1124,6 +1120,17 @@ mod tests {
         core.legacy_commit().unwrap();
         let snap = p.with_file_name("snap.db");
         core.snapshot_into(&snap, true).unwrap();
+        let whole = p.with_file_name("whole.db");
+        core.snapshot_into(&whole, false).unwrap();
+        {
+            let raw = Connection::open(&snap).unwrap();
+            let pragma = |n: &str| raw.query_row(&format!("PRAGMA {n}"), [], |r| r.get::<_, i64>(0)).unwrap();
+            assert_eq!(pragma("auto_vacuum"), 2, "new databases are INCREMENTAL");
+            assert_eq!(pragma("freelist_count"), 0, "stripped pages reclaimed");
+        }
+        let (snap_len, whole_len) =
+            (std::fs::metadata(&snap).unwrap().len(), std::fs::metadata(&whole).unwrap().len());
+        assert!(snap_len + 200 * 4096 < whole_len, "stripped {snap_len} vs whole {whole_len}");
         let s = SrsCore::open(&snap).unwrap();
         assert_eq!(count(&s, "srs_local_state"), 0);
         assert_eq!(count(&s, "srs_unknown_events"), 1);
