@@ -98,8 +98,9 @@ const String kSrsSyncActivity = 'srs_sync';
 /// 旧根媒体后台迁移的活动面包屑名：进程死在迁移里时，下次启动报出死在第几个文件。
 const String kSrsV1MigrateActivity = 'srs_v1_migrate';
 
-/// [SrsSyncScheduler.syncWithBackend] 的轮次统计：排队数、在跑数、被合并的请求数、连续
-/// 失败数与上次失败时刻。只用于诊断（面包屑 / 失败日志）。
+/// 一条同步路径（一类后端，见 [SrsSyncScheduler.roundStatsFor] / [SrsSyncScheduler.folderRoundStats]）的
+/// 轮次统计：排队数、在跑数、被合并的请求数、连续失败数与上次失败时刻。只用于诊断（面包屑 / 失败日志）。
+/// 各路径各记一份：文件夹位置成功不会清掉云盘攒下的连续失败，面包屑里的排队数也只是这条路径自己的。
 class SrsSyncRoundStats {
   int queued = 0;
   int running = 0;
@@ -356,6 +357,32 @@ const Set<String> kSrsLocationCryptoErrors = <String>{
   kSrsSync2BadKdf,
 };
 
+/// 文件夹位置一轮报告的分类（[classifySrsFolderReport]）。
+///
+/// - `stopped`：收手了（库要关 / 位置被关掉），不是这个位置的错，下一轮接着做；
+/// - `locationError`：这个位置这一轮没同步成的原因（握手没过但不是口令类问题：`meta.json` 读不到 / 位置来自
+///   更新版本 / 操作同步出错）；成功、收手或口令类问题（[kSrsLocationCryptoErrors]，由
+///   [SrsSyncScheduler.locationCrypto] 显示）为 null。
+typedef SrsFolderRoundOutcome = ({bool stopped, String? locationError});
+
+/// 文件夹位置一轮报告的唯一分类：诊断里的连续失败与界面上的 [SrsSyncScheduler.folderErrors] 都按它，不各写一份。
+/// 口令类问题（缺口令 / 口令不对 / 加密设置不见了）是用户还没处理的配置状态，每一轮都会原样再报，不算这一轮失败——
+/// 否则没配口令的位置每轮都刷一条 roundFailed 诊断、连续失败数一直涨。
+SrsFolderRoundOutcome classifySrsFolderReport(SrsFolderSyncReport r) {
+  if (r.ops?.error == kSrsSync2Stopped) {
+    return (stopped: true, locationError: null);
+  }
+  final String? error = (r.crypto?.needsUpgrade ?? false)
+      ? kSrsSyncNeedsUpgrade
+      : r.crypto?.error;
+  return (
+    stopped: false,
+    locationError: error != null && !kSrsLocationCryptoErrors.contains(error)
+        ? error
+        : null,
+  );
+}
+
 /// 只提示一次的通知类别。
 /// 一个位置上没法自动关联的 profile（[SrsSyncNotice.profileNotLinked]）：目录里有多个有数据的同一 profile，或本机
 /// 与对方都有用户笔记（见 srs_profile_link.dart [SrsProfileLinkChoose]）。由用户选采用哪一个。
@@ -484,15 +511,8 @@ class SrsSyncScheduler {
         store,
         directoryKey,
         locationKey: locationKey,
-        onFetchProgress: (int done, int total) =>
-            srsSyncProgress.value = SrsSyncProgress(
-              stage: SrsSyncStage.downloading,
-              done: done,
-              total: total,
-            ),
-        onUploadStart: () => srsSyncProgress.value = const SrsSyncProgress(
-          stage: SrsSyncStage.uploading,
-        ),
+        onFetchProgress: _reportFetchProgress,
+        onUploadStart: _reportUploadStart,
         beforeUpload: (String? keyHex) =>
             _mediaBeforeUpload(backend, store, directoryKey, keyHex),
         shouldStop: () => _locationStopped(directoryKey),
@@ -552,6 +572,20 @@ class SrsSyncScheduler {
     }
   }
 
+  /// 一轮的阶段进度（云盘 / 互联 / 文件夹位置三条路径共用）：拉段 + 收段按段数报、开始发件报一次、开始传媒体报一次。
+  static void _reportFetchProgress(int done, int total) =>
+      srsSyncProgress.value = SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: done,
+        total: total,
+      );
+
+  static void _reportUploadStart() => srsSyncProgress.value =
+      const SrsSyncProgress(stage: SrsSyncStage.uploading);
+
+  static void _reportMediaStart() =>
+      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+
   /// 当前这一轮的细分步骤写进活动面包屑（[_trackRound] 装上、跑完卸下）：进程死在一轮里时，下次启动报
   /// 「上次进程在 srs_sync 进行中没了」带上死在哪一步、那一刻的内存（反馈 i8qNDs_V_D：大库上卡在「开始」
   /// 4.5 分钟后被系统杀，原本只知道阶段名）。
@@ -576,7 +610,7 @@ class SrsSyncScheduler {
     try {
       final Directory? root = await readMediaRoot();
       if (root == null) return;
-      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+      _reportMediaStart();
       await srsDefaultMediaSyncRunner(
         backend,
         store,
@@ -745,7 +779,7 @@ class SrsSyncScheduler {
       await Future<void>.delayed(Duration.zero);
     } while (_queuedRounds.isNotEmpty ||
         _queuedFolderRound != null ||
-        _roundStats.running > 0 ||
+        _roundStats.values.any((SrsSyncRoundStats s) => s.running > 0) ||
         _v1Media.progress != null);
   }
 
@@ -832,21 +866,28 @@ class SrsSyncScheduler {
     String? directoryKey,
   }) {
     final (SyncAssetStore, String?) requestKey = (backend, directoryKey);
+    final String label = _backendLabel(backend);
+    final SrsSyncRoundStats stats = _statsOf(label);
     final Future<SrsSync2Report>? queued = _queuedRounds[requestKey];
     if (queued != null) {
-      _roundStats.coalesced++;
+      stats.coalesced++;
       return queued;
     }
-    _roundStats.queued++;
+    stats.queued++;
     late final Future<SrsSync2Report> round;
     round = _serially(() {
       if (identical(_queuedRounds[requestKey], round)) {
         _queuedRounds.remove(requestKey);
       }
-      _roundStats.queued--;
+      stats.queued--;
       return _trackRound(
-        backend.runtimeType.toString(),
+        label,
+        stats,
         () => _syncWithBackend(backend, directoryKey),
+        errorOf: (SrsSync2Report r) => r.error,
+        countedOf: (SrsSync2Report r) =>
+            !kSrsSyncLocalStateErrors.contains(r.error) &&
+            r.error != kSrsSync2Stopped,
       );
     });
     _queuedRounds[requestKey] = round;
@@ -857,21 +898,42 @@ class SrsSyncScheduler {
   final Map<(SyncAssetStore, String?), Future<SrsSync2Report>> _queuedRounds =
       <(SyncAssetStore, String?), Future<SrsSync2Report>>{};
 
-  /// 轮次统计（诊断用）。
-  final SrsSyncRoundStats _roundStats = SrsSyncRoundStats();
+  /// 轮次统计（诊断用），按同步路径分开记：云盘 / 互联按后端类型，文件夹位置一份（[kSrsFolderRoundLabel]）。
+  final Map<String, SrsSyncRoundStats> _roundStats =
+      <String, SrsSyncRoundStats>{};
 
+  SrsSyncRoundStats _statsOf(String label) =>
+      _roundStats.putIfAbsent(label, SrsSyncRoundStats.new);
+
+  static String _backendLabel(SyncAssetStore backend) =>
+      backend.runtimeType.toString();
+
+  /// [backend] 这类后端的轮次统计。
   @visibleForTesting
-  SrsSyncRoundStats get roundStats => _roundStats;
+  SrsSyncRoundStats roundStatsFor(SyncAssetStore backend) =>
+      _statsOf(_backendLabel(backend));
+
+  /// 文件夹位置的轮次统计。
+  @visibleForTesting
+  SrsSyncRoundStats get folderRoundStats => _statsOf(kSrsFolderRoundLabel);
+
+  /// 文件夹位置那条路径在面包屑 / 诊断里的后端名。
+  static const String kSrsFolderRoundLabel = 'folder';
 
   /// 一轮的取证：开跑时**同步**写活动面包屑（后端、排队数、连续失败数、RSS），阶段变化时
   /// 覆写，跑完删掉——进程死在同步里（三次小米闪退都在补传积压期间、Dart 零日志），下次
   /// 启动 [PreviousExitLog] 会报「上次进程在 srs_sync 进行中没了」+ 当时的阶段与内存。
   /// 失败时把队列 / 失败计数 / 内存写进诊断段，随反馈上传。
-  Future<SrsSync2Report> _trackRound(
+  ///
+  /// [stats] 是这条路径自己的统计；[errorOf] 从这一轮的结果里取错误（null = 成功），用来记连续失败。
+  /// [countedOf] 为 false 的一轮（收手、本机状态没就绪、位置被关掉）既不算失败也不算成功：连续失败数原样不动。
+  Future<T> _trackRound<T>(
     String backendLabel,
-    Future<SrsSync2Report> Function() body,
-  ) async {
-    final SrsSyncRoundStats stats = _roundStats;
+    SrsSyncRoundStats stats,
+    Future<T> Function() body, {
+    required String? Function(T result) errorOf,
+    bool Function(T result)? countedOf,
+  }) async {
     stats.running++;
     String describe(String stage) =>
         'stage=$stage backend=$backendLabel ${stats.describe()} '
@@ -891,15 +953,18 @@ class SrsSyncScheduler {
     );
     srsSyncProgress.addListener(onProgress);
     try {
-      final SrsSync2Report report = await body();
-      if (report.error == null) {
+      final T result = await body();
+      final String? error = errorOf(result);
+      if (!(countedOf?.call(result) ?? true)) {
+        // 不计：见上。
+      } else if (error == null) {
         stats.consecutiveFailures = 0;
       } else {
-        _noteRoundFailure(describe, 'report error: ${report.error}');
+        _noteRoundFailure(stats, describe, 'report error: $error');
       }
-      return report;
+      return result;
     } catch (e) {
-      _noteRoundFailure(describe, e);
+      _noteRoundFailure(stats, describe, e);
       rethrow;
     } finally {
       srsSyncProgress.removeListener(onProgress);
@@ -909,10 +974,14 @@ class SrsSyncScheduler {
     }
   }
 
-  void _noteRoundFailure(String Function(String) describe, Object error) {
+  void _noteRoundFailure(
+    SrsSyncRoundStats stats,
+    String Function(String) describe,
+    Object error,
+  ) {
     final DateTime now = _clock();
-    final DateTime? previous = _roundStats.lastFailureAt;
-    _roundStats
+    final DateTime? previous = stats.lastFailureAt;
+    stats
       ..consecutiveFailures += 1
       ..lastFailureAt = now;
     ErrorLogService.instance.logDiagnostic(
@@ -1053,9 +1122,7 @@ class SrsSyncScheduler {
       try {
         final Directory? root = await readMediaRoot();
         if (root != null) {
-          srsSyncProgress.value = const SrsSyncProgress(
-            stage: SrsSyncStage.media,
-          );
+          _reportMediaStart();
           final SrsMediaSyncReport media = await _mediaRunner(
             backend,
             store,
@@ -1164,14 +1231,17 @@ class SrsSyncScheduler {
   /// 完整媒体对账），大库排上百轮，又把通道与互联 host 目录的轮次堵在后面。已有一轮**排着还没开跑**就复用它：那一轮
   /// 开跑时会看到此刻之前补上的全部绑定。已经开跑的不复用（它可能已经过了取发件箱那一步）。
   Future<SrsSyncNowResult> syncFolderLocations() {
+    final SrsSyncRoundStats stats = folderRoundStats;
     final Future<SrsSyncNowResult>? queued = _queuedFolderRound;
     if (queued != null) {
-      _roundStats.coalesced++;
+      stats.coalesced++;
       return queued;
     }
+    stats.queued++;
     late final Future<SrsSyncNowResult> round;
     round = _serially(() {
       if (identical(_queuedFolderRound, round)) _queuedFolderRound = null;
+      stats.queued--;
       return _syncFolderLocations();
     });
     _queuedFolderRound = round;
@@ -1194,32 +1264,48 @@ class SrsSyncScheduler {
     for (final SrsFolderLocation l in await read()) {
       if (l.idle || _locationStopped(l.locationId)) continue;
       try {
-        final SrsFolderSyncReport r = await srsSyncFolderLocation(
-          location: l,
-          store: store,
-          mediaRoot: mediaRoot,
-          key: _locationKey?.call(l.locationId),
-          migrationMemo: _srsMigrationMemo,
-          v1MediaMigrations: _v1Media,
-          onV1Bound: () async => unawaited(_publishFolderV1Bindings()),
-          shouldStop: () => _locationStopped(l.locationId),
+        // 每个位置从「准备」重新报起；进度 / 面包屑与云盘、互联那条路径同一套（以前这里一个都不接：大库首次从
+        // 文件夹收几百个段跑好几分钟，界面全程停在「正在准备」，进程死在里面也不留面包屑）。
+        srsSyncProgress.value = const SrsSyncProgress();
+        // 分类只做一次（[classifySrsFolderReport]）：诊断的连续失败与下面的界面分流用同一个结论。
+        final (
+          SrsFolderSyncReport r,
+          SrsFolderRoundOutcome outcome,
+        ) = await _trackRound(
+          kSrsFolderRoundLabel,
+          folderRoundStats,
+          () async {
+            final SrsFolderSyncReport report = await srsSyncFolderLocation(
+              location: l,
+              store: store,
+              mediaRoot: mediaRoot,
+              key: _locationKey?.call(l.locationId),
+              migrationMemo: _srsMigrationMemo,
+              v1MediaMigrations: _v1Media,
+              onV1Bound: () async => unawaited(_publishFolderV1Bindings()),
+              onFetchProgress: _reportFetchProgress,
+              onUploadStart: _reportUploadStart,
+              onMediaStart: _reportMediaStart,
+              shouldStop: () => _locationStopped(l.locationId),
+              onStep: _step,
+            );
+            return (report, classifySrsFolderReport(report));
+          },
+          errorOf: ((SrsFolderSyncReport, SrsFolderRoundOutcome) x) =>
+              x.$2.locationError,
+          countedOf: ((SrsFolderSyncReport, SrsFolderRoundOutcome) x) =>
+              !x.$2.stopped,
         );
         final SrsLocationPrepared? prepared = r.prepared;
         if (prepared != null) {
           srsLogMigrationLeftover(prepared, l.locationId);
         }
-        if (r.ops?.error == kSrsSync2Stopped) {
-          // 收手了（库要关 / 位置被关掉）：不是这个位置的错，下一轮接着做。
-          continue;
-        }
+        if (outcome.stopped) continue;
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
-        // 握手没过但不是口令类问题（meta.json 读不到 / 位置来自更新版本）：如实记成这个位置没同步成。
-        // 口令类问题由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
-        final String? error = (r.crypto?.needsUpgrade ?? false)
-            ? kSrsSyncNeedsUpgrade
-            : r.crypto?.error;
-        if (error != null && !kSrsLocationCryptoErrors.contains(error)) {
+        // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
+        final String? error = outcome.locationError;
+        if (error != null) {
           folderErrors[l.id] = SrsSyncReportError(error);
           continue;
         }

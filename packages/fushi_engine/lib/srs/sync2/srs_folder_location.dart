@@ -121,6 +121,10 @@ class SrsFolderSyncReport {
 /// 旧根的媒体残留：给了 [v1MediaMigrations] 就交给它在后台跑（[onV1Bound] = 补了绑定、请一轮同步发出去；
 /// [shouldStop] = 库要关了 / 位置被关掉），否则在这一轮里跑完（只搬能搬的，按名字存的旧文件等下一轮发布了绑定再删）。
 /// [shouldStop] 也管这一轮本身：操作同步每批之后、完整媒体对账开头前看一次，为真就以 [kSrsSync2Stopped] 交回。
+///
+/// 进度 / 收手 / 诊断与云盘、互联那条路径（[srsSync2Round]）同一套：[onFetchProgress] / [onUploadStart] /
+/// [shouldStop] / [onStep] 原样交给这一轮，[onMediaStart] 在开始传媒体之前调一次（发段前那一步只在真有媒体要传时）。以前这里一个都不传：大库
+/// 首次从文件夹收几百个段要跑好几分钟，界面全程停在「正在准备」、切 profile 停不下来、进程死在里面也不留面包屑。
 Future<SrsFolderSyncReport> srsSyncFolderLocation({
   required SrsFolderLocation location,
   required SrsDbStore store,
@@ -129,7 +133,11 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   SrsLocationMigrationMemo? migrationMemo,
   SrsV1MediaMigrations? v1MediaMigrations,
   Future<void> Function()? onV1Bound,
+  void Function(int done, int total)? onFetchProgress,
+  void Function()? onUploadStart,
+  void Function()? onMediaStart,
   bool Function()? shouldStop,
+  SrsSyncStepCallback? onStep,
 }) async {
   if (location.idle) return SrsFolderSyncReport();
   if (!Directory(location.path).existsSync()) {
@@ -151,6 +159,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
     memo: migrationMemo,
     archive: location.archive,
+    onStep: onStep,
   );
   if (prepared.needsUpgrade || prepared.error != null) {
     return SrsFolderSyncReport(
@@ -173,7 +182,10 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       key: key,
       // 勾了归档就一个旧 head 也不删（归档位置永不删除，§10.3）。
       archive: location.archive,
+      onFetchProgress: onFetchProgress,
+      onUploadStart: onUploadStart,
       shouldStop: shouldStop,
+      onStep: onStep,
       // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：发段之前先把本机的媒体传上去。这一步出错不拦操作
       // 同步——同一个错误在下面的完整媒体对账里照样抛给调用方。
       beforeUpload: mediaRoot != null && (location.media || location.archive)
@@ -186,6 +198,8 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
                   archive: location.archive,
                   cipher: keyHex == null ? null : SrsMediaCipher(store, keyHex),
                   uploadOnly: true,
+                  // 本机没有要先传的媒体就不报「媒体」阶段（云盘那条路径同样只在内容可能变了时才报）。
+                  onTransferStart: onMediaStart,
                 )).uploaded;
               } on FileSystemException {
                 // 见上：完整对账会再报。
@@ -252,6 +266,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   }
   SrsMediaSyncReport? media;
   if (mediaRoot != null && (location.media || location.archive)) {
+    onMediaStart?.call();
     media = await srsSyncMedia(
       location: root,
       store: store,
