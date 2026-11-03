@@ -28,6 +28,17 @@ Widget _wrapPage(Widget home) {
   );
 }
 
+Widget _wrapPageOn(Widget home, {required bool isWindows}) {
+  return ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(
+        testPlatformServices(isWindows: isWindows, isDesktop: true),
+      ),
+    ],
+    child: MaterialApp(home: home),
+  );
+}
+
 /// 点选台词列表第一句：点卡片左上角的「时间 · 来源」元信息行（不点正文——正文逐字
 /// 可点，会走查词而不是选句）。
 Future<void> _selectFirstLine(WidgetTester tester) async {
@@ -126,6 +137,71 @@ void main() {
     TexthookerService.instance.clear();
   });
   tearDown(() => TexthookerService.instance.clear());
+
+  group('hook controls by platform', () {
+    const List<String> hookOnlyKeys = <String>[
+      'game-toolbar-audio-fallback',
+      'game-toolbar-health',
+      'game-toolbar-hook-overlay',
+      'game-toolbar-external-window',
+      'game-action-launch',
+      'game-action-attach',
+    ];
+
+    testWidgets('non-Windows hides hook controls but keeps lines + clear', (
+      WidgetTester tester,
+    ) async {
+      TexthookerService.instance.appendLine('第一行');
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: false,
+        ),
+      );
+      await tester.pump();
+      for (final String key in hookOnlyKeys) {
+        expect(find.byKey(ValueKey<String>(key)), findsNothing, reason: key);
+      }
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.textContaining('第'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('non-Windows empty state uses the external texthooker copy', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: false,
+        ),
+      );
+      await tester.pump();
+      expect(find.text(t.texthooker_empty_external_body), findsOneWidget);
+      expect(find.text(t.game_capture_empty_body), findsNothing);
+      expect(find.byKey(const ValueKey<String>('game-empty-launch')), findsNothing);
+    });
+
+    testWidgets('Windows still shows hook controls', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('game-toolbar-health')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-action-launch')),
+        findsOneWidget,
+      );
+    });
+  });
 
   testWidgets('renders incoming lines reactively', (WidgetTester tester) async {
     await tester.pumpWidget(_wrapPage(const TexthookerPage()));

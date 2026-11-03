@@ -9211,6 +9211,7 @@
   "text_field_password_show": "Show password",
   "text_segmentation": "تقطيع النص",
   "texthooker": "Texthooker",
+  "texthooker_empty_external_body": "Connect a texthooker (LunaTranslator, Textractor or mpv) and enable it in Settings > Lookup; lines will appear here.",
   "texthooker_enabled": "Texthooker (استقبال النص)",
   "texthooker_enabled_hint": "الاتصال بـ Textractor/mpv/agent والبحث عن النص الوارد",
   "texthooker_urls": "Text endpoint URLs",

@@ -10115,6 +10115,10 @@ class AppModel with ChangeNotifier {
   GamesModuleForm get gamesModuleForm =>
       GamesModuleForm.on(isWindows: platformServices.isWindows);
 
+  /// games 模块是否要挂外部 texthooker 台词页（非 Windows 桌面）。
+  bool get gamesOffersExternalTexthooker => gamesModuleForm
+      .offersExternalTexthooker(isDesktop: platformServices.isDesktop);
+
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
   Future<void> setTorrentUploadIntroShown() =>
