@@ -287,10 +287,11 @@ inline int32_t DrawAdvance(const GlyphDraw& draw) {
   return static_cast<int32_t>(units) * draw.font_size / 2;
 }
 
-// Ruby the source carries: a glyph drawn markedly smaller (under 70%) than a
-// glyph it sits on, horizontally over it and ending above that glyph's middle
-// within its own height.  Size alone is not the rule: a page with one
-// enlarged glyph (a shouted 「！」) keeps the ordinary text around it.
+// Where ruby can sit: a glyph drawn markedly smaller (under 70%) than a glyph
+// it sits on, horizontally over it and ending above that glyph's middle
+// within its own height.  Geometry alone is not the rule (MarkAnnotations):
+// the row above an enlarged glyph (a shouted 「！」 opening the next row) has
+// the same shape.
 inline bool IsAnnotationDraw(const GlyphDraw* draws, size_t count,
                              size_t index) {
   const GlyphDraw& g = draws[index];
@@ -308,6 +309,28 @@ inline bool IsAnnotationDraw(const GlyphDraw* draws, size_t count,
     return true;
   }
   return false;
+}
+
+// Which draws of a page are ruby.  Ruby never shares its font size with the
+// body: a size some glyph of the page draws as body text (not over a larger
+// glyph) is body wherever it appears, so a row of ordinary text above an
+// enlarged glyph stays text while ruby (a size of its own, every glyph of it
+// over a base) stays out.  `annotation` holds `count` flags.
+inline void MarkAnnotations(const GlyphDraw* draws, size_t count,
+                            bool* annotation) {
+  bool placed[kMaxPageGlyphs] = {};
+  if (count > kMaxPageGlyphs) count = kMaxPageGlyphs;
+  for (size_t i = 0u; i < count; ++i) {
+    placed[i] = IsAnnotationDraw(draws, count, i);
+  }
+  for (size_t i = 0u; i < count; ++i) {
+    annotation[i] = placed[i];
+    for (size_t j = 0u; placed[i] && j < count; ++j) {
+      if (!placed[j] && draws[j].font_size == draws[i].font_size) {
+        annotation[i] = false;
+      }
+    }
+  }
 }
 
 // The page text and per-character cells of one text transaction.
@@ -329,9 +352,7 @@ inline PageResult ComposePage(const GlyphDraw* draws, size_t count,
     }
   }
   bool annotation[kMaxPageGlyphs] = {};
-  for (size_t i = 0u; i < count; ++i) {
-    annotation[i] = IsAnnotationDraw(draws, count, i);
-  }
+  MarkAnnotations(draws, count, annotation);
   for (size_t i = 0u; i < count; ++i) {
     const GlyphDraw& draw = draws[i];
     if (annotation[i]) continue;

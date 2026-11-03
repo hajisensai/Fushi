@@ -232,6 +232,32 @@ void TestComposePage() {
          sp::PageResult::kComposed);
   assert(text == L"\x3042\x3044\xff01\x3046" && glyphs.size() == 4);
 
+  // The row above an enlarged glyph opening the next row (the measured
+  // 0x0b / 0x31 row pitch): あい sit over the shouted 「！」 just as ruby would,
+  // but 24 is the body size of the page (う on the next row), so they stay.
+  const sp::GlyphDraw shout_below[] = {
+      Draw("\x82\xa0", 0x00, 0x0b, 24),  // あ
+      Draw("\x82\xa2", 0x1a, 0x0b, 24),  // い
+      Draw("\x81\x49", 0x00, 0x31, 48),  // ！ (2x), under あい
+      Draw("\x82\xa4", 0x30, 0x31, 24),  // う after it
+  };
+  assert(sp::ComposePage(shout_below, 4, &text, &glyphs) ==
+         sp::PageResult::kComposed);
+  assert(text == L"\x3042\x3044\xff01\x3046" && glyphs.size() == 4);
+  bool marks[4] = {};
+  sp::MarkAnnotations(shout_below, 4, marks);
+  assert(sp::IsAnnotationDraw(shout_below, 4, 0) && !marks[0] && !marks[1]);
+  // Ruby over a word on a page that also has an enlarged glyph stays out.
+  const sp::GlyphDraw ruby_and_shout[] = {
+      Draw("\x8a\xbf", 0, 20, 24),   // 漢
+      Draw("\x82\xa9", 2, 0, 12),    // か (ruby)
+      Draw("\x8e\x9a", 26, 20, 24),  // 字
+      Draw("\x81\x49", 52, 8, 48),   // ！ (2x)
+  };
+  assert(sp::ComposePage(ruby_and_shout, 4, &text, &glyphs) ==
+         sp::PageResult::kComposed);
+  assert(text == L"\x6f22\x5b57\xff01");
+
   // Ruby that outnumbers its base (ウィッチ over 魔女) still stays out.
   const sp::GlyphDraw witch[] = {
       Draw("\x96\x82", 0, 20, 24),   // 魔
