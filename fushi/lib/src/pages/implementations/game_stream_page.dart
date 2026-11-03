@@ -455,6 +455,12 @@ class _GameStreamPageState extends State<GameStreamPage>
       _runCompanionCall(
         'place',
         target == null ? display.dismiss() : display.show(target),
+        // The call did not reach the platform side (its Activity was being
+        // recreated): nothing was placed, so the next display update places
+        // it again.
+        onFailed: () {
+          if (_companionDisplayId == target) _companionDisplayId = null;
+        },
       ),
     );
   }

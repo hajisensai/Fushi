@@ -52,8 +52,15 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
   @override
   Future<void> start() async {}
 
+  /// The next [show] fails as a call to a recreated Activity does.
+  bool failNextShow = false;
+
   @override
   Future<void> show(int displayId) async {
+    if (failNextShow) {
+      failNextShow = false;
+      throw MissingPluginException('no handler');
+    }
     shown.add(displayId);
     _attached.value = true;
   }
@@ -366,6 +373,20 @@ void main() {
       _bottomScreen.id,
     ], reason: 'The same display is still there and the setting is Auto');
     expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+  });
+
+  testWidgets('a show that never reached the platform is placed again on the '
+      'next display update', (WidgetTester tester) async {
+    final _Harness h = await _Harness.pump(tester);
+    h.display.failNextShow = true;
+    h.display.losePanel();
+    await tester.pumpAndSettle();
+    expect(h.display.shown, <int>[_bottomScreen.id]);
+    // The recreated Activity pushes the current displays (a new list, as the
+    // channel decodes one per call).
+    h.display.setDisplays(<GameStreamCompanionDisplayInfo>[_bottomScreen]);
+    await tester.pumpAndSettle();
+    expect(h.display.shown, <int>[_bottomScreen.id, _bottomScreen.id]);
   });
 
   testWidgets('without a second display nothing changes', (

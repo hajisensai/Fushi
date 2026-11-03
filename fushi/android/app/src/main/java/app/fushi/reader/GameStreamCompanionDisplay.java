@@ -94,7 +94,12 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
 
     static void registerWith(@NonNull FlutterEngine engine, @NonNull Activity activity) {
         detach();
-        instance = new GameStreamCompanionDisplay(activity, engine);
+        final GameStreamCompanionDisplay created = new GameStreamCompanionDisplay(activity, engine);
+        instance = created;
+        // The engine can outlive the Activity: a stream page that was already
+        // running gets the current displays from this instance, and places
+        // its panel again from them (nothing listens to unhandled calls).
+        created.channel.invokeMethod("displaysChanged", created.describeDisplays());
     }
 
     /**
