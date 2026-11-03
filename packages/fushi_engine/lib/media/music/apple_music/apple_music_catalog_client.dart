@@ -105,6 +105,15 @@ String normalizeAppleMusicStorefront(String? raw) {
   return RegExp(r'^[a-z]{2}$').hasMatch(s) ? s : kAppleMusicDefaultStorefront;
 }
 
+/// 系统地区 → Apple Music storefront 的默认值（[choices] 里没有就落缺省 storefront）。
+String appleMusicStorefrontForCountry(
+  String? countryCode, [
+  List<String> choices = kAppleMusicStorefrontChoices,
+]) {
+  final String c = (countryCode ?? '').trim().toLowerCase();
+  return choices.contains(c) ? c : kAppleMusicDefaultStorefront;
+}
+
 /// 一首 catalog 曲目及其预览地址。
 class AppleMusicSong {
   const AppleMusicSong({

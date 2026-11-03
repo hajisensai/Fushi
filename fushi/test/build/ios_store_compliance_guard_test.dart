@@ -980,25 +980,35 @@ void main() {
           'title:t.music_plugins_title,visible:(_)=>isMusicPluginSourcesAvailable,',
         ),
       );
-      // 服务器曲库页的插件管理入口：门没过时不出现。
+      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（旧的服务器清单页已删，
+      // 插件管理入口只剩这里与设置页）。
       expect(
         compactCode(
-          read('lib/src/pages/implementations/music/music_server_pages.dart'),
+          read('lib/src/pages/implementations/music/music_sources_page.dart'),
         ),
         contains(
           // compactCode 去掉了全部空白，期望串也不能带空格。
-          'boolget_showPlugins=>'
-          'widget.loader==null&&isMusicPluginSourcesAvailable;',
+          "if(isMusicPluginSourcesAvailable)item('music_sources_add_plugin',",
         ),
       );
-      // 音乐页的推荐 / 合并搜索 / 我的歌单：插件列表只在门后读取。
+      // 音乐页的推荐 / 合并搜索 / 我的歌单 / 「来源」页：在线来源统一经
+      // loadMusicOnlineSources 读取，插件列表只在门后读取。
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_sources_page.dart'),
+        ),
+        contains(
+          'if(isMusicPluginSourcesAvailable){'
+          'for(finalInstalledMusicPluginpinawaitapp.musicPluginManager.list()){',
+        ),
+      );
       expect(
         compactCode(
           read('lib/src/pages/implementations/music/music_library_page.dart'),
         ),
-        contains(
-          'if(widget.snapshotLoader!=null||!isMusicPluginSourcesAvailable){'
-          'return;}',
+        allOf(
+          contains('awaitloadOrderedMusicOnlineSources(_app);'),
+          isNot(contains('musicPluginManager.list()')),
         ),
       );
       // 插件曲目的播放项会随队列 / 历史恢复到 iOS：取流装配点与歌词来源都挂在门后，没装配时

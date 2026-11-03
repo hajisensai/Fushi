@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart';
+import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -74,6 +75,11 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
               in widget.appModel.prefsRepo.musicSubsonicServers)
             if (c.serverId != server.serverId) c,
         ]);
+    // 明确删除才清它在「来源」页的顺序与开关（停用不清）。
+    await forgetMusicOnlineSource(
+      widget.appModel.prefsRepo,
+      musicServerSourceKey(server),
+    );
     await _toggleMix(server, false);
     _reload();
   }

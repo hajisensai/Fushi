@@ -3,6 +3,7 @@
 
 import 'dart:io';
 import 'dart:convert';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +21,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show appleMusicStorefrontForCountry, kAppleMusicStorefrontChoices;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
@@ -253,33 +256,6 @@ void main() {
     expect(musicServerBitrateLimit(0), isNull);
   });
 
-  testWidgets('服务器页：清单 → 专辑 → 曲目', (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db)
-      ..wireMusicPluginManagerForTesting(_noPlugins());
-    final _FakeBrowser browser = _FakeBrowser();
-    await _pump(
-      tester,
-      app,
-      MusicServerListPage(loader: () async => <MusicServerBrowser>[browser]),
-    );
-    expect(find.text('Navidrome'), findsWidgets);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('music-server-subsonic-1')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Remote Album'), findsOneWidget);
-    await tester.tap(find.text('Remote Album'));
-    await tester.pumpAndSettle();
-    expect(find.text('First'), findsOneWidget);
-    expect(find.text('Second'), findsOneWidget);
-    expect(find.text('1:01'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
-
   testWidgets('混排进曲库：服务器专辑排在本地专辑之后、带云朵', (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -333,7 +309,17 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     expect(prefs.musicAppleMusicEnabled, isFalse);
-    expect(prefs.musicAppleMusicStorefront, 'jp');
+    // 没选过：跟系统地区（不在可选表里落 jp）。
+    expect(
+      prefs.musicAppleMusicStorefront,
+      appleMusicStorefrontForCountry(
+        PlatformDispatcher.instance.locale.countryCode,
+        kAppleMusicStorefrontChoices,
+      ),
+    );
+    expect(appleMusicStorefrontForCountry('US', <String>['jp', 'us']), 'us');
+    expect(appleMusicStorefrontForCountry('ZZ', <String>['jp', 'us']), 'jp');
+    expect(appleMusicStorefrontForCountry(null, <String>['jp', 'us']), 'jp');
     await prefs.setMusicAppleMusicEnabled(true);
     await prefs.setMusicAppleMusicStorefront('US');
     expect(prefs.musicAppleMusicEnabled, isTrue);
