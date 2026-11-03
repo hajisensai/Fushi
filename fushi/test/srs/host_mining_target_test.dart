@@ -1,4 +1,4 @@
-// 互联主机**替别的设备**制卡（收转发 / 浏览器扩展 / 游戏串流接收端，BUG-3993）遵守本机挖词目标：
+// 互联主机**替别的设备**制卡（收转发 / 浏览器扩展 / 游戏串流接收端，BUG-4003）遵守本机挖词目标：
 // `hostMiningAnkiRepositoryProvider` → `AppModel.hostMiningAnkiRepository` →
 // `_AppModelRemoteLookupService`。目标是 Fushi 复习时落复习、不写 Anki；目标是 Anki
 // （或复习模块关着）时与原来一样直接写本机 Anki。
@@ -247,7 +247,7 @@ void main() {
       expect(await notes.readSourceNote(CardSourceLink.newSourceId()), isNull);
       expect(anki.sourceReads, 1);
     });
-    test('BUG-3993：游戏串流主机制卡适配器落复习、不写 Anki', () async {
+    test('BUG-4003：游戏串流主机制卡适配器落复习、不写 Anki', () async {
       // 串流卡是替接收端制的：AppModel 的生产工厂给出的适配器每次制卡读的仓库，
       // 必须是遵守挖词目标的主机制卡仓库，而不是裸 Anki 后端（旧实现在挖词目标是
       // 复习、又没配 Anki 牌组的主机上每张串流卡都失败）。

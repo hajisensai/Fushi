@@ -585,7 +585,7 @@ String logMineFailure(MineOutcome outcome) {
       : t.card_export_failed;
 }
 
-/// BUG-089 / BUG-3993：把一次没制成的 [MineOutcome] 的**完整诊断**写进
+/// BUG-089 / BUG-4003：把一次没制成的 [MineOutcome] 的**完整诊断**写进
 /// [ErrorLogService]——原始异常 [MineOutcome.error] 优先，其次后端的简短原因
 /// [MineOutcome.errorDetail]，都没有时记结果枚举本身。[logMineFailure] 与游戏串流
 /// 主机侧（`GameStream.mine`，结果回给对端、不出 toast）共用这一处，[source] 区分来源。
