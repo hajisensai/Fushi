@@ -15,7 +15,8 @@
 # FUSHI_DOCKER_MEMORY (default 12g).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# `pwd -W` gives C:/... on Git Bash: docker.exe cannot read /c/... paths (MSYS_NO_PATHCONV is on).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && { pwd -W 2>/dev/null || pwd; })"
 IMAGE="fushi-linux-build:trixie"
 SRC_VOL="fushi-linux-src"
 CLEAN=0; SHELL_ONLY=0; PASS=()

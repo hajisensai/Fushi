@@ -6,7 +6,8 @@
 # The same part1/part2 scripts also run against a real desktop session:
 #   APPDIR=<bundle> bash tool/linux/smoke/run_cli_smoke.sh   (app already running)
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# `pwd -W` gives C:/... on Git Bash: docker.exe cannot read /c/... paths (MSYS_NO_PATHCONV is on).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && { pwd -W 2>/dev/null || pwd; })"
 export MSYS_NO_PATHCONV=1
 OUT="$ROOT/build/linux-dist/scenario-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"

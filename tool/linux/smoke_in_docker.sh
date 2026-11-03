@@ -3,7 +3,8 @@
 # Xvfb + a D-Bus session, isolated FUSHI_TEST_ROOT, screenshot after N seconds.
 #   bash tool/linux/smoke_in_docker.sh [seconds]   -> build/linux-dist/smoke/{run.log,screen.png}
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# `pwd -W` gives C:/... on Git Bash: docker.exe cannot read /c/... paths (MSYS_NO_PATHCONV is on).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && { pwd -W 2>/dev/null || pwd; })"
 SECS="${1:-45}"
 export MSYS_NO_PATHCONV=1
 mkdir -p "$ROOT/build/linux-dist/smoke"
