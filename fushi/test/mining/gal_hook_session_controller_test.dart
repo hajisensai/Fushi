@@ -4898,7 +4898,7 @@ class _GatedLoopbackSource extends _FakeLoopbackSource {
   }
 }
 
-/// BUG-3928 用的假进程表：`alive` 里的 PID 活着，`processes` 是全量枚举结果。
+/// BUG-3993 用的假进程表：`alive` 里的 PID 活着，`processes` 是全量枚举结果。
 class _FakeGameProcessProbe implements GalgameProcessProbe {
   final Set<int> alive = <int>{};
   final List<GalgameProcessInfo> processes = <GalgameProcessInfo>[];
@@ -4919,7 +4919,7 @@ class _FakeGameProcessProbe implements GalgameProcessProbe {
   String? canonicalize(String path) => null;
 }
 
-/// BUG-3928：游戏进程退出后捕获会话自动结束（附着与启动两条路径都要）。
+/// BUG-3993：游戏进程退出后捕获会话自动结束（附着与启动两条路径都要）。
 void _gameExitWatchTests() {
   GalHookSessionController buildController({
     required _FakeGameProcessProbe probe,
@@ -4971,7 +4971,7 @@ void _gameExitWatchTests() {
   Iterable<String> codes(GalHookSessionController controller) =>
       controller.events.map((GalHookEvent event) => event.code);
 
-  test('BUG-3928：附着的游戏关掉后会话回到 idle 并通知回首页', () async {
+  test('BUG-3993：附着的游戏关掉后会话回到 idle 并通知回首页', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
       ..alive.add(2468);
@@ -5000,7 +5000,7 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
-  test('BUG-3928：启动的游戏关掉后会话同样结束', () async {
+  test('BUG-3993：启动的游戏关掉后会话同样结束', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
       ..alive.add(4242);
@@ -5025,7 +5025,7 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
-  test('BUG-3928：从没判活成功（进程打不开）时不擅自结束会话', () async {
+  test('BUG-3993：从没判活成功（进程打不开）时不擅自结束会话', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe();
     final GalHookSessionController controller = buildController(
@@ -5045,7 +5045,7 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
-  test('BUG-3928：游戏目录下有接手进程（自重启）时继续监听', () async {
+  test('BUG-3993：游戏目录下有接手进程（自重启）时继续监听', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
       ..alive.add(2468);
@@ -5084,7 +5084,7 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
-  test('BUG-3928：盘符根下的 exe 不把整盘进程当接手', () {
+  test('BUG-3993：盘符根下的 exe 不把整盘进程当接手', () {
     expect(galGameExitWatchDirectory(r'D:\Game.exe'), isNull);
     expect(galGameExitWatchDirectory(null), isNull);
     expect(
@@ -5093,7 +5093,7 @@ void _gameExitWatchTests() {
     );
   });
 
-  test('BUG-3928：手动停止后旧监视不再动作', () async {
+  test('BUG-3993：手动停止后旧监视不再动作', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
       ..alive.add(2468);

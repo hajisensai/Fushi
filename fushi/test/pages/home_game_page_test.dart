@@ -85,7 +85,7 @@ void main() {
     expect(find.byIcon(Icons.sports_esports_outlined), findsWidgets);
   });
 
-  testWidgets('BUG-3928: game exit returns the workbench to the dashboard', (
+  testWidgets('BUG-3993: game exit returns the workbench to the dashboard', (
     WidgetTester tester,
   ) async {
     final ChangeNotifier endpoints = ChangeNotifier();

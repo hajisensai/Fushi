@@ -127,7 +127,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     _controller.gameExitedCount.addListener(_onGameExited);
   }
 
-  /// 游戏关掉、会话随之自动结束（BUG-3928）：还停在捕获工作台上就回游戏首页。
+  /// 游戏关掉、会话随之自动结束（BUG-3993）：还停在捕获工作台上就回游戏首页。
   /// 用户此刻在别的子区（库、发现……）时不打扰。
   void _onGameExited() {
     if (_section != GameSection.monitor) return;
