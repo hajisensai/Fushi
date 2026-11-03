@@ -35,13 +35,13 @@
       "sha256": "923f82b8b410c251196c0e7d28cf7f2793ec52632e9a027f5d36a4b73c2c9a4c"
     },
     {
-      "name": "fushi-3.3.0-debug.23213-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23213-ios.ipa",
-      "releaseSequence": 23213,
-      "tag": "v3.3.0-debug.23213+02502aa",
-      "version": "3.3.0-debug.23213",
-      "size": 96914871,
-      "sha256": "3c4fd7dc57fe374ee7a958e74e0175be47eac11a0c5d251ce75eb1b02cc402ae"
+      "name": "fushi-3.3.0-debug.23248-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23248-ios.ipa",
+      "releaseSequence": 23248,
+      "tag": "v3.3.0-debug.23248+1c8fd5d",
+      "version": "3.3.0-debug.23248",
+      "size": 96958137,
+      "sha256": "76c073d579f75429977933fadcdbecd1aa90f839ef06fbc4c5a33fd29c8b30db"
     },
     {
       "name": "fushi-3.3.0-debug.23248-windows-setup.exe",
