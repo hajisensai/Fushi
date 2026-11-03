@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
@@ -93,12 +94,15 @@ void main() {
   late SrsDbStore store;
   late SrsMediaStore media;
   late _RecordingAnki anki;
+  late PreferencesRepository prefs;
 
   setUp(() async {
     tmp = Directory.systemTemp.createTempSync('fushi_host_mining_');
     (db, store) = await openSrsTestStore();
     media = SrsMediaStore(Directory('${tmp.path}/srs_media/$kSrsTestProfile'));
     anki = _RecordingAnki();
+    prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
   });
 
   tearDown(() async {
@@ -132,6 +136,11 @@ void main() {
     final AppModel app = c.read(appProvider);
     app.hostMiningRepositoryReader = () =>
         c.read(hostMiningAnkiRepositoryProvider);
+    // 游戏串流适配器工厂会读 gal 制卡偏好（图像模式 / 动图格式等）。
+    app.wireLocalAudioForTesting(
+      prefsRepo: prefs,
+      databaseDirectory: Directory('${tmp.path}/db')..createSync(),
+    );
     return app;
   }
 
