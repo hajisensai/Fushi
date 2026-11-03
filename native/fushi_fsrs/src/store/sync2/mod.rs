@@ -1672,6 +1672,32 @@ impl SrsCore {
         })
     }
 
+    /// 本 profile 操作日志里每条带旧 dot 的修改记录（迁移来的、备份 / 档案合并并入的）的 dot 与 HLC 物理时刻、计数：
+    /// `{"writers": {写入者: [seq, wall, logical, seq, wall, logical, ...]}}`。读操作日志而不是投影：被支配、已不在
+    /// 投影里的记录也在。档案合并（Dart `srs_profile_merge.dart` `_Writers.alias`）据此判断目标里是否已有同一批记录
+    /// （BUG-4005）。已清除内容的操作不算（载荷已剥掉）。
+    pub fn sync2_legacy_dots(&self, profile: &str) -> Result<Value, String> {
+        let r = self.reader()?;
+        let mut out: Map<String, Value> = Map::new();
+        let mut stmt = r
+            .prepare("SELECT payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND purged = 0")
+            .map_err(sql)?;
+        let mut q = stmt.query(params![profile, i64::from(op::KIND_EDIT)]).map_err(sql)?;
+        while let Some(row) = q.next().map_err(sql)? {
+            let payload = snapshots::unpack_payload(&r, row.get(0).map_err(sql)?, None, None, row.get(1).map_err(sql)?)?;
+            let Ok(Body::Edit(e)) = Body::decode(op::KIND_EDIT, &payload) else { continue };
+            let Some(l) = e.legacy else { continue };
+            let mut parts = l.hlc.splitn(3, ':');
+            let (Some(wall), Some(logical)) = (parts.next().and_then(|x| x.parse::<i64>().ok()), parts.next().and_then(|x| x.parse::<i64>().ok())) else {
+                continue;
+            };
+            if let Value::Array(a) = out.entry(l.writer).or_insert_with(|| Value::Array(Vec::new())) {
+                a.extend([json!(l.seq), json!(wall), json!(logical)]);
+            }
+        }
+        Ok(json!({"writers": out}))
+    }
+
     /// 追加一批本机内部操作（冲突解决、清除、还原点）：与 [SrsCore::sync2_apply_local] 同一条落库 / 投影 / 重放路径。
     pub(crate) fn sync2_append(&self, profile: &str, now: i64, bodies: Vec<Body>) -> Result<Value, String> {
         let w = self.writer()?;

@@ -931,7 +931,7 @@ const CACHE_PENDING_CHUNK: usize = 5;
 ///
 /// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
 /// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
-const CHANNEL_TRANSPARENT: [&str; 47] = [
+const CHANNEL_TRANSPARENT: [&str; 48] = [
     "identity",
     "channel_settle",
     "open_v1",
@@ -944,6 +944,7 @@ const CHANNEL_TRANSPARENT: [&str; 47] = [
     "ingest_end",
     "replay_pending",
     "status",
+    "legacy_dots",
     "conflicts",
     "checkpoints",
     "history",
@@ -1198,6 +1199,8 @@ fn sync2_command(
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4005）。
+        "legacy_dots" => c.sync2_legacy_dots(profile)?,
         // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。
         "digest_buckets" => c.sync2_digest_buckets(profile)?,
         // 位置媒体目录的已知内容 / 记下事实（store/sync2/media.rs）：媒体对账读日志投影，不列目录。

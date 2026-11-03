@@ -48,6 +48,7 @@ import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
@@ -1334,6 +1335,106 @@ class SrsSyncScheduler {
       await syncFolderLocations();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsSyncScheduler.publishV1', e, stack);
+    }
+  }
+
+  /// 只拉不发（BUG-4005，sync2/srs_sync2_pull_first.dart）：把已配置的全部同步位置（云盘 / 互联通道、本机目录、
+  /// 文件夹位置）上 [store] 这个 profile 已有的操作收进 [store]，最多等 [budget]。两个用处：
+  /// - 本机旧库迁移之前（[SrsDbStore.open] 的 `beforeMigrate`，srs_providers.dart）：迁移只包还没有任何设备的操作
+  ///   代表的旧行，先收到别的设备迁出的那份，第二台设备就只补差；
+  /// - 档案合并之前（[SrsDbProfileLinker.pullBeforeMerge]）：目标 uid 的数据先在本机，合并沿用目标的写入者。
+  ///
+  /// 不进 [_serially]（[store] 此刻还没交给调用方 / 正被并入，常规轮次碰不到它；而档案合并本身就在一轮里，进队列会
+  /// 等自己）。不写位置、不做 profile 关联、不对账媒体。首次同步没确认 / 库关着时不拉（与常规同步同一道门）；关掉的
+  /// 位置跳过。每个位置失败都记日志、接着拉下一个；到点没拉完记一条诊断，已收的照用。
+  Future<void> pullInto(
+    SrsDbStore store, {
+    required Duration budget,
+    required String purpose,
+  }) async {
+    if (_halted || !_firstSyncConfirmed()) return;
+    void log(Object e, StackTrace stack) => ErrorLogService.instance.log(
+      'SrsSyncScheduler.pullInto.$purpose',
+      e,
+      stack,
+    );
+    final Stopwatch watch = Stopwatch()..start();
+    int pulled = 0;
+    final bool done = await srsSync2PullWithin(
+      store,
+      (SrsSync2Host host) async {
+        Future<void> one(
+          String locationId,
+          SrsLocationStore Function() location,
+        ) async {
+          if (_locationStopped(locationId)) return;
+          try {
+            final SrsSync2Report r = await srsSync2PullOnly(
+              host: host,
+              location: location(),
+              locationId: locationId,
+              nowMs: () => store.now().$1,
+              key: _locationKey?.call(locationId),
+              shouldStop: () => _locationStopped(locationId),
+            );
+            pulled += r.applied;
+            if (r.needsUpgrade || r.error != null) {
+              ErrorLogService.instance.logDiagnostic(
+                'SrsSyncScheduler.pullInto.$purpose',
+                'location $locationId not pulled: '
+                    '${r.needsUpgrade ? kSrsSyncNeedsUpgrade : r.error}',
+              );
+            }
+          } on SrsSync2PullClosed {
+            rethrow;
+          } catch (e, stack) {
+            log(e, stack);
+          }
+        }
+
+        final ({int ran, List<Object> errors}) channels = await _channels((
+          SyncAssetStore backend,
+        ) async {
+          final String? key = await _directoryKeyOf(backend);
+          if (key == null) return;
+          await one(key, () => srsAssetLocation(backend, store.profileUid));
+        });
+        for (final Object e in channels.errors) {
+          if (e is! SrsSync2PullClosed) log(e, StackTrace.current);
+        }
+        final Future<List<SrsLocalDirectory>> Function()? local =
+            _localDirectories;
+        if (local != null) {
+          for (final SrsLocalDirectory d in await local()) {
+            await one(
+              d.directoryKey,
+              () => srsAssetLocation(d.store, store.profileUid),
+            );
+          }
+        }
+        final Future<List<SrsFolderLocation>> Function()? folders =
+            _folderLocations;
+        if (folders != null) {
+          for (final SrsFolderLocation l in await folders()) {
+            if (!l.sync || !Directory(l.path).existsSync()) continue;
+            await one(
+              l.locationId,
+              () => SrsDirectoryLocationStore(
+                srsFolderCollectionRoot(l, store.profileUid),
+              ),
+            );
+          }
+        }
+      },
+      budget: budget,
+      onError: log,
+    );
+    if (!done) {
+      ErrorLogService.instance.logDiagnostic(
+        'SrsSyncScheduler.pullInto.$purpose',
+        'budget ${budget.inSeconds}s over after ${watch.elapsedMilliseconds} ms '
+            '(applied $pulled); continuing with what was pulled',
+      );
     }
   }
 

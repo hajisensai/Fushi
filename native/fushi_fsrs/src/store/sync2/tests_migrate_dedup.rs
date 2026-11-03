@@ -101,3 +101,18 @@ fn migrating_a_library_fully_covered_by_received_ops_wraps_nothing() {
     assert_eq!(ops(&a), 10);
     assert_eq!(projection(&a), projection(&b));
 }
+
+/// 档案合并查目标里已有的旧 dot（`legacy_dots`）：读操作日志，被支配、已不在投影里的旧修改记录也在。
+#[test]
+fn legacy_dots_lists_every_legacy_edit_in_the_op_log_including_dominated_ones() {
+    let a = Device::new("dots-a");
+    legacy_library(&a);
+    legacy_extra(&a);
+    a.core.sync2_migrate(P, T0 + 10 * DAY, None).unwrap();
+    // 本机再改一次 desc：旧的 seq 3 被支配，投影里没有了，操作日志里还在。
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0 + 11 * DAY, vec![super::tests::edit("deck", &deck, "desc", json!("newer"))]);
+    assert!(a.rows("SELECT 1 FROM srs_field_edits WHERE srs_idt(writer_id) = 'old' AND seq = 3").len() == 1, "dominated: gone from the projection");
+    let dots = a.core.sync2_legacy_dots(P).unwrap();
+    assert_eq!(dots["writers"]["old"], json!([1, 1, 0, 2, 2, 0, 3, 3, 0]), "{dots}");
+}

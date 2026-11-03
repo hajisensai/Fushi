@@ -164,6 +164,12 @@ Future<List<SrsPendingProfileMerge>> srsPendingProfileMerges(
 /// 文件拷进 `<新 uid>/`（内容寻址，同名即同内容，不覆盖），删旧行之后删旧目录；不给则不动媒体。
 ///
 /// 中途失败可以用同样的参数重跑（也可以在 profile 已经是 [newUid] 时重跑：只做收尾）。
+///
+/// [pullTarget]：第一遍并入之前，先把同步位置上 [newUid] 已有的数据收进目标 store（调用方给有界的只拉不发，
+/// sync2/srs_sync2_pull_first.dart）。目标里已有同一批修改记录时并入沿用目标的写入者（[_Writers.alias]），不再
+/// 改名成 `merged-…` 造出第二份（BUG-4005）。拉取失败 / 到点没拉完照常并入（可能仍有几份改了名，之后靠收敛合并）。
+/// 只在旧 uid 还是本机 profile 时拉（profile 已切到 [newUid] 的重跑只做收尾）；拉到一半被杀：已收的批次都已提交，
+/// 并入标记还在，下次启动 [srsPendingProfileMerges] 照同样参数重跑，再拉一次（只拉缺的）再并入。
 Future<SrsProfileMergeResult> srsMergeProfileUid(
   FushiDatabase db,
   SrsDatabase srs, {
@@ -174,6 +180,7 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
   required String deviceId,
   Directory? mediaRoot,
   Future<void> Function(SrsProfileMergeStage stage)? debugFault,
+  Future<void> Function(SrsDbStore target)? pullTarget,
   int maxConvergeRounds = 3,
 }) async {
   if (oldUid.isEmpty || newUid.isEmpty || oldUid == newUid) {
@@ -220,7 +227,13 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
   int applied = 0;
   _MergePlan? plan;
   if (current == oldUid) {
-    plan = await _plan(srs, oldUid: oldUid, newUid: newUid);
+    if (pullTarget != null) await pullTarget(target);
+    plan = await _plan(
+      srs,
+      oldUid: oldUid,
+      newUid: newUid,
+      targetDots: await _targetDots(target),
+    );
     applied += await _applyMissing(target, plan);
     await debugFault?.call(SrsProfileMergeStage.afterFirstMerge);
     await db.adoptProfileUid(profileId, newUid);
@@ -228,7 +241,12 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
   }
 
   for (int round = 0; ; round++) {
-    plan = await _plan(srs, oldUid: oldUid, newUid: newUid);
+    plan = await _plan(
+      srs,
+      oldUid: oldUid,
+      newUid: newUid,
+      targetDots: await _targetDots(target),
+    );
     applied += await _applyMissing(target, plan);
     if (mediaRoot != null) await _copyMedia(mediaRoot, oldUid, newUid);
     final _MergePlan settled = plan;
@@ -308,6 +326,7 @@ Future<_MergePlan> _plan(
   SrsDatabase db, {
   required String oldUid,
   required String newUid,
+  required Map<String, Map<int, String>> targetDots,
 }) async {
   final List<SrsEvent> events = await SrsBackupSource.split(
     profiles: db,
@@ -555,12 +574,7 @@ Future<_MergePlan> _plan(
 
   // 8. 修改记录的写入者一一改名（合成的标签行写入者带笔记 ID，按 ID 映射改写）；目标集合里已经有同一批修改记录的
   //    写入者沿用目标里的名字（[_Writers.alias]）。
-  final _Writers writers = _Writers(
-    newUid,
-    ids,
-    edits,
-    await _targetDots(db, newUid),
-  );
+  final _Writers writers = _Writers(newUid, ids, edits, targetDots);
 
   // 9. 改写。
   final Map<String, int> oldServer = await _serverTimes(db, oldUid);
@@ -842,27 +856,24 @@ class _Writers {
 /// HLC 里比对用的部分（物理时刻:计数；写入者部分随改名变，不比）。
 String _hlcStamp(Hlc h) => '${h.physical}:${h.counter}';
 
-/// 目标 uid 下每个（非合成）写入者的修改记录：seq → HLC 戳（[_hlcStamp]）。只读投影行：被支配的旧记录不在其中，
-/// 只会让吻合条数少一些、不会误判为冲突。
-Future<Map<String, Map<int, String>>> _targetDots(
-  SrsDatabase db,
-  String uid,
-) async {
+/// 目标 uid 下每个写入者的旧修改记录（带旧 dot 的：迁移来的、并入的）：seq → HLC 戳（[_hlcStamp]）。读的是操作
+/// 日志（内核 `legacy_dots`，native/fushi_fsrs/src/store/sync2/mod.rs `sync2_legacy_dots`），不是投影：被支配、已不在
+/// 投影里的同 seq 记录也看得见，内容不同就判冲突、不沿用。
+Future<Map<String, Map<int, String>>> _targetDots(SrsDbStore target) async {
+  final Map<String, Object?> r = (await target.sync2Command(
+    const <String, Object?>{'op': 'legacy_dots'},
+  )).map;
   final Map<String, Map<int, String>> out = <String, Map<int, String>>{};
-  for (final QueryRow r
-      in await db
-          .customSelect(
-            "SELECT srs_idt(writer_id) AS w, seq, json_extract(json, '\$.hlc') AS h "
-            'FROM srs_field_edits WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
-          )
-          .get()) {
-    final String w = r.read<String>('w');
-    if (w.startsWith(_kSyntheticWriterPrefix)) continue;
-    final String? h = r.readNullable<String>('h');
-    if (h == null) continue;
-    final Hlc hlc = Hlc.decode(h);
-    (out[w] ??= <int, String>{})[r.read<int>('seq')] = _hlcStamp(hlc);
+  for (final MapEntry<String, Object?> e
+      in ((r['writers'] as Map?) ?? const <String, Object?>{})
+          .cast<String, Object?>()
+          .entries) {
+    if (e.key.startsWith(_kSyntheticWriterPrefix)) continue;
+    final List<Object?> flat = (e.value! as List).cast<Object?>();
+    final Map<int, String> dots = out[e.key] = <int, String>{};
+    for (int i = 0; i + 2 < flat.length; i += 3) {
+      dots[flat[i]! as int] = '${flat[i + 1]}:${flat[i + 2]}';
+    }
   }
   return out;
 }

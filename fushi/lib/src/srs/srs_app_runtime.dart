@@ -23,6 +23,8 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
+    show kSrsPullBeforeMergeBudget, kSrsPullBeforeMigrateBudget;
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show SrsSync2Report;
@@ -62,7 +64,8 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
     if (!ref.watch(srsModuleEnabledProvider)) return null;
     final AppModel app = ref.read(appProvider);
     final SrsRevisionOrigin revisionOrigin = SrsRevisionOrigin();
-    final SrsAppRuntime runtime = SrsAppRuntime(
+    late final SrsAppRuntime runtime;
+    runtime = SrsAppRuntime(
       app: app,
       readStore: () async {
         try {
@@ -99,8 +102,30 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
           await ref.read(srsSupportRootProvider)(),
         ),
         onError: ErrorLogService.instance.log,
+        // 并入之前先把目标 uid 已有的数据收进来（BUG-4005：合并沿用目标里已有的写入者，不再改名造出第二份）。
+        pullBeforeMerge: (SrsDbStore target) => runtime.sync.pullInto(
+          target,
+          budget: kSrsPullBeforeMergeBudget,
+          purpose: 'merge',
+        ),
       ),
     );
+    // 旧库迁移之前先收一轮（BUG-4005，[srsBeforeMigrateHookProvider]）。要在下面听 RWKV 之前装上：它会把
+    // srsStoreProvider 拉起来，store 打开走到迁移那一步时钩子必须已经在。
+    final SrsBeforeMigrateHook beforeMigrate = ref.read(
+      srsBeforeMigrateHookProvider,
+    );
+    Future<void> pullBeforeMigrate(SrsDbStore store) => runtime.sync.pullInto(
+      store,
+      budget: kSrsPullBeforeMigrateBudget,
+      purpose: 'migrate',
+    );
+    beforeMigrate.pull = pullBeforeMigrate;
+    ref.onDispose(() {
+      if (identical(beforeMigrate.pull, pullBeforeMigrate)) {
+        beforeMigrate.pull = null;
+      }
+    });
     // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
     // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
     listenSrsLocalWrites(ref, revisionOrigin, runtime.localPush.trigger);

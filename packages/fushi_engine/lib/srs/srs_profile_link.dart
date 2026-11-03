@@ -414,7 +414,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     required this.reopenStore,
     this.mediaRoot,
     this.onError,
+    this.pullBeforeMerge,
   });
+
+  /// 并入之前把同步位置上目标 uid 已有的数据收进目标 store（[srsMergeProfileUid] 的 `pullTarget`；app 给调度器的
+  /// 有界只拉不发）。null = 不拉（并入时目标里有什么就按什么判断）。
+  final Future<void> Function(SrsDbStore target)? pullBeforeMerge;
 
   /// 全部 profile 的 SRS 媒体根（`<support>/srs_media`）：并入时把旧 uid 的媒体与共享样式文件搬到新 uid 下。
   final Future<Directory?> Function()? mediaRoot;
@@ -623,6 +628,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         newUid: m.newUid,
         deviceId: store.deviceId,
         mediaRoot: await mediaRoot?.call(),
+        pullTarget: pullBeforeMerge,
       );
       await _addToMetaSet(store, kSrsRetiredProfileUidsKey, m.oldUid);
       resumed = true;
@@ -656,6 +662,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         newUid: uid,
         deviceId: store.deviceId,
         mediaRoot: await mediaRoot?.call(),
+        pullTarget: pullBeforeMerge,
       );
     } else {
       await srsAdoptProfileUid(
