@@ -29,8 +29,8 @@ void Check(bool condition, const char* message) {
 
 void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
-  Check(fushi_voice_hook::kSharedVersion == 25,
-        "shared ABI must be v25（game-stream native input 尾追加）");
+  Check(fushi_voice_hook::kSharedVersion == 26,
+        "shared ABI must be v26（LookupHitSlot 尾追加发布时刻）");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");

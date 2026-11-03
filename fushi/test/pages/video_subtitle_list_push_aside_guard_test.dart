@@ -7,7 +7,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///
 /// 根因：此前 `_toggleSubtitleJumpList` 误经 `_showVideoSidePanel(subtitleList)` 进 overlay
 /// side-panel 系统，且 `_showVideoSidePanel` 无条件把 `_subtitleListVisible` 置 false →
-/// 真正的 push-aside 布局 `_videoWithSubtitlePanel`（`Row[Expanded(video), 面板列]`）成死
+/// 真正的 push-aside 布局 `_videoWithSubtitlePanel`（`Row[画面格, 面板列]`）成死
 /// 代码，列表改由 overlay `Align centerRight` 浮在画面上遮挡。
 ///
 /// 修复：`_toggleSubtitleJumpList` 改驱动 `_subtitleListVisible`（push-aside）；从
@@ -133,8 +133,14 @@ void main() {
     );
     // Close is carried by the header X / Esc / subtitle button; this layout
     // function no longer closes the list directly and no longer passes a lock.
+    // BUG-3888 起画面本身作为第三个参数交给 push-aside 行（行在动画期间冻结画面
+    // 宽度），所以判据是「只传 controller / visible / 画面」，不能再多出 lock 参数。
     expect(
-      body.contains('_subtitleJumpSidePanel(controller, visible)'),
+      RegExp(
+        r'_subtitleJumpSidePanel\(\s*controller,\s*visible,\s*'
+        r'(?://.*\s*)*'
+        r'(?:_webMode \? _wrapWebVideoSurface\(video\) : video|video),?\s*\)',
+      ).hasMatch(body),
       isTrue,
       reason:
           'layout should delegate the panel column to '

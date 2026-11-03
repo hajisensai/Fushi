@@ -153,6 +153,63 @@ const String kSrsSync2Folder = 'v3';
 /// 并把里面的旧数据迁进 [kSrsSync2Folder]（srs_location_migration.dart）。
 const String kSrsSync2V1Folder = 'v2';
 
+/// 各后端身份上在途的「确保子文件夹」（`<父定位符>\0<名字>` → 结果）。只记在途的：跑完就移走，下一次照常问后端
+/// （缓存跨轮的定位符会在文件夹被删 / 换掉之后一直指向不存在的地方）。
+final Expando<Map<String, Future<String>>> _srsEnsuring =
+    Expando<Map<String, Future<String>>>('srsEnsureFolder');
+
+/// 在 [parentId] 下确保有子文件夹 [name]（[SyncAssetStore.ensureFolder]），同一 [backendIdentity] 上同一
+/// （父, 名字）进程内单飞：并发的调用共用同一次，后端「先查后建」不原子（Google Drive）也不会因为本进程里的
+/// 并发建出同名文件夹。失败不留：下一次重新问后端。
+Future<String> srsEnsureFolderShared(
+  SyncAssetStore store,
+  Object backendIdentity,
+  String parentId,
+  String name,
+) => _srsEnsureOnce(
+  backendIdentity,
+  'f\u0000$parentId\u0000$name',
+  () => store.ensureFolder(parentId, name),
+);
+
+/// 同 [srsEnsureFolderShared]，确保的是后端根下的顶层命名空间（[SyncAssetStore.ensureNamespace]）。
+Future<String> srsEnsureNamespaceShared(
+  SyncAssetStore store,
+  Object backendIdentity,
+  String name,
+) => _srsEnsureOnce(
+  backendIdentity,
+  'n\u0000$name',
+  () => store.ensureNamespace(name),
+);
+
+Future<String> _srsEnsureOnce(
+  Object backendIdentity,
+  String key,
+  Future<String> Function() ensure,
+) {
+  final Map<String, Future<String>> inFlight = _srsEnsuring[backendIdentity] ??=
+      <String, Future<String>>{};
+  final Future<String>? running = inFlight[key];
+  if (running != null) return running;
+  final Future<String> f = ensure();
+  inFlight[key] = f;
+  void settle() {
+    if (identical(inFlight[key], f)) inFlight.remove(key);
+  }
+
+  return f.then(
+    (String id) {
+      settle();
+      return id;
+    },
+    onError: (Object e, StackTrace s) {
+      settle();
+      Error.throwWithStackTrace(e, s);
+    },
+  );
+}
+
 /// [SyncAssetStore]（各云盘后端 / 互联 / 本机 host 目录）上的位置。后端的文件夹定位符是不透明 id，
 /// 这里按路径段逐级解析并缓存；正文经字节接口（开了「防扫盘混淆」时同样被混淆）。
 ///
@@ -160,19 +217,32 @@ const String kSrsSync2V1Folder = 'v2';
 /// 不再先按名查一遍——每个文件少一次网盘请求。实例按一轮同步建（不跨轮复用），列表过期的代价只是退回按名查：
 /// 定位符失效（文件刚被别的设备删掉 / 重写）就按名重查。
 ///
-/// 一轮同步会并发读写（[srsSync2Round]）：建文件夹按路径单飞（同一路径只建一次——Google Drive 允许同名文件夹，
-/// 并发各建一个会把文件写散）；[maxConcurrentWrites] 给同一命名空间并发写会互相锁冲突的后端（Dropbox：
+/// 一轮同步会并发读写（[srsSync2Round]）；[maxConcurrentWrites] 给同一命名空间并发写会互相锁冲突的后端（Dropbox：
 /// `too_many_write_operations`）限流写 / 删，读不受限。
+///
+/// **同名文件夹**（Google Drive 允许同名文件夹，`ensureFolder` 是「先查后建」、不原子）：
+/// - 建：同一后端（[backendIdentity]）上「在某个父目录下建某个名字」进程内单飞（[srsEnsureFolderShared]），
+///   不只是本实例——一轮同步、发段前的媒体上传、后台旧根迁移各自建实例，并发往新根的 `media/<前2>/` 建目录时
+///   以前会各建一个（PR #2768 审查）。
+/// - 读：一个路径解析成**全部**同名文件夹（别的设备 / 旧版本已经建重了的照样在），列目录取并集、读 / 查 / 删在
+///   每一个里找；按路径只认第一个会让另一个里的对象对所有读者都不可见。集合根 `<profileUid>/<folder>` 两级同样（[_rootDirs]）；
+///   顶层 `fushi-srs` 例外：[SyncAssetStore] 没有列后端根目录的接口，只能认 `ensureNamespace` 给的那一个。
 class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   SrsAssetLocationStore({
     required this.store,
     required this.profileUid,
     this.folder = kSrsSync2Folder,
     this.maxConcurrentWrites,
+    Object? backendIdentity,
     Directory? tempDir,
-  }) : _temp = tempDir ?? Directory.systemTemp;
+  }) : backendIdentity = backendIdentity ?? store,
+       _temp = tempDir ?? Directory.systemTemp;
 
   final SyncAssetStore store;
+
+  /// 后端身份：同一身份上建文件夹进程内单飞（[srsEnsureFolderShared]）。缺省为 [store] 本身；调用方每次给的是包装
+  /// （防扫盘混淆每次新建一层、`ensureFolder` 原样透传给里层的单例后端）时传里层那个。
+  final Object backendIdentity;
   final String profileUid;
 
   /// 集合根目录名（`fushi-srs/<profileUid>/<folder>/`）：[kSrsSync2Folder]，迁移时也开一个 [kSrsSync2V1Folder] 的。
@@ -203,11 +273,58 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     });
   }
 
-  Future<String> _root() => _once('', () async {
-    final String ns = await store.ensureNamespace(kSrsSync2Namespace);
-    final String profile = await store.ensureFolder(ns, profileUid);
-    return store.ensureFolder(profile, folder);
-  });
+  /// 集合根 `fushi-srs/<profileUid>/<folder>` 的全部同名文件夹（按定位符排序，第一个是写目标）；在途的也在这里，
+  /// 失败不缓存。
+  Future<List<String>>? _roots;
+
+  Future<List<String>> _rootDirs() {
+    final Future<List<String>>? known = _roots;
+    if (known != null) return known;
+    final Future<List<String>> f = _resolveRootDirs();
+    _roots = f;
+    f.ignore();
+    return f.catchError((Object e, StackTrace s) {
+      if (identical(_roots, f)) _roots = null;
+      Error.throwWithStackTrace(e, s);
+    });
+  }
+
+  /// 根下这两级（`<profileUid>`、`<folder>`）和集合根以下同一规则：两台设备首次同步并发建出的同名文件夹全都认，
+  /// 不按 `ensureFolder` 只取一个（Google Drive 取 `files.list` 的第一个，各设备、各轮选中哪个不确定）。
+  ///
+  /// 顶层命名空间 `fushi-srs` 仍只认 [SyncAssetStore.ensureNamespace] 给的那一个：契约没有列后端根目录的接口。
+  Future<List<String>> _resolveRootDirs() async {
+    final String ns = await srsEnsureNamespaceShared(
+      store,
+      backendIdentity,
+      kSrsSync2Namespace,
+    );
+    final List<String> profiles = await _childFoldersOrCreate(<String>[
+      ns,
+    ], profileUid);
+    return _childFoldersOrCreate(profiles, folder);
+  }
+
+  /// [parents] 下所有名为 [name] 的子文件夹（并集，按定位符排序：各设备、各轮对同一组同名文件夹选同一个写目标，
+  /// 不依赖后端列目录的顺序）；一个都没有就在第一个父目录下建（后端上进程内单飞）。
+  Future<List<String>> _childFoldersOrCreate(
+    List<String> parents,
+    String name,
+  ) async {
+    final List<String> ids = <String>[];
+    for (final String parent in parents) {
+      for (final AssetEntry e in await store.listChildren(parent)) {
+        if (e.isFolder && e.name == name && !ids.contains(e.id)) ids.add(e.id);
+      }
+    }
+    if (ids.isNotEmpty) return ids..sort();
+    return <String>[
+      await srsEnsureFolderShared(store, backendIdentity, parents.first, name),
+    ];
+  }
+
+  /// 集合根的写目标：全部同名集合根里排第一的那个。
+  Future<String> _root() => _rootDirs().then((List<String> ids) => ids.first);
 
   Future<T> _write<T>(Future<T> Function() body) async {
     final int? cap = maxConcurrentWrites;
@@ -226,39 +343,82 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     }
   }
 
-  /// [dir] 的定位符；不存在时 [create] 为真才建，否则返回 null。
-  Future<String?> _folder(String dir, {required bool create}) async {
-    final List<String> parts = dir
-        .split('/')
-        .where((String s) => s.isNotEmpty)
-        .toList();
-    String cur = await _root();
-    String key = '';
-    for (final String part in parts) {
-      key = key.isEmpty ? part : '$key/$part';
-      final Future<String>? known = _folders[key];
-      if (known != null) {
-        cur = await known;
-        continue;
-      }
-      final String parent = cur;
-      if (create) {
-        cur = await _once(key, () => store.ensureFolder(parent, part));
-      } else {
-        String? found;
-        for (final AssetEntry e in await store.listChildren(parent)) {
-          if (e.isFolder && e.name == part) {
-            found = e.id;
-            break;
-          }
-        }
-        if (found == null) return null;
-        final String id = found;
-        // 期间别的调用建好了同一路径：以它为准。
-        cur = await _once(key, () async => id);
+  /// 已解析出的目录（路径 → 全部同名文件夹的定位符，非空）；在途的也在这里（解析出空 / 失败时移走，不缓存「不在」）。
+  final Map<String, Future<List<String>>> _found =
+      <String, Future<List<String>>>{};
+
+  /// 本实例建好的目录（路径 → 定位符）：刚建的文件夹后端列目录可能还看不到，读的时候并进去。
+  final Map<String, String> _made = <String, String>{};
+
+  /// [dir]（已规范化）的全部同名文件夹定位符；不存在为空列表。
+  Future<List<String>> _dirs(String key) {
+    if (key.isEmpty) return _rootDirs();
+    final Future<List<String>>? known = _found[key];
+    if (known != null) return known;
+    final Future<List<String>> f = _resolveDirs(key);
+    _found[key] = f;
+    f.ignore();
+    return f.then(
+      (List<String> ids) {
+        if (ids.isEmpty && identical(_found[key], f)) _found.remove(key);
+        return ids;
+      },
+      onError: (Object e, StackTrace s) {
+        if (identical(_found[key], f)) _found.remove(key);
+        Error.throwWithStackTrace(e, s);
+      },
+    );
+  }
+
+  Future<List<String>> _resolveDirs(String key) async {
+    final (String parentKey, String name) = _split(key);
+    final List<String> ids = <String>[];
+    for (final String parent in await _dirs(parentKey)) {
+      for (final AssetEntry e in await store.listChildren(parent)) {
+        if (e.isFolder && e.name == name && !ids.contains(e.id)) ids.add(e.id);
       }
     }
-    return cur;
+    final String? made = _made[key];
+    if (made != null && !ids.contains(made)) ids.add(made);
+    return ids;
+  }
+
+  /// 写的目标目录（已规范化的 [key]）：已有就用第一个，没有才建（后端上进程内单飞）。
+  Future<String> _ensureDir(String key) {
+    if (key.isEmpty) return _root();
+    return _once(key, () async {
+      final List<String> ids = await _dirs(key);
+      if (ids.isNotEmpty) return ids.first;
+      final (String parentKey, String name) = _split(key);
+      final String parent = await _ensureDir(parentKey);
+      final String id = await srsEnsureFolderShared(
+        store,
+        backendIdentity,
+        parent,
+        name,
+      );
+      _made[key] = id;
+      return id;
+    });
+  }
+
+  /// [path] 所在目录里名为 [name] 的文件（在每个同名文件夹里按名查，第一个找到的）。
+  Future<AssetEntry?> _findIn(String dir, String name) async {
+    for (final String id in await _dirs(_norm(dir))) {
+      final AssetEntry? a = await store.findAsset(id, name);
+      if (a != null) return a;
+    }
+    return null;
+  }
+
+  /// [dir] 里所有名为 [name] 的文件（每个同名文件夹里各按名查一次）。
+  Future<List<AssetEntry>> _findAllIn(String dir, String name) async {
+    final List<AssetEntry> out = <AssetEntry>[];
+    for (final String id in await _dirs(_norm(dir))) {
+      final AssetEntry? a = await store.findAsset(id, name);
+      if (a != null) out.add(a);
+    }
+    return out;
   }
 
   (String, String) _split(String path) {
@@ -275,15 +435,22 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
 
   @override
   Future<List<SrsLocationEntry>> list(String dir) async {
-    final String? id = await _folder(dir, create: false);
-    if (id == null) return const <SrsLocationEntry>[];
-    final List<AssetEntry> children = await store.listChildren(id);
+    final List<String> ids = await _dirs(_norm(dir));
+    if (ids.isEmpty) return const <SrsLocationEntry>[];
+    // 同名文件夹取并集；同名的项（子文件夹、同一个内容对象）只列一次，读的时候取第一个找到的。
+    final Map<(bool, String), AssetEntry> children =
+        <(bool, String), AssetEntry>{};
+    for (final String id in ids) {
+      for (final AssetEntry e in await store.listChildren(id)) {
+        children.putIfAbsent((e.isFolder, e.name), () => e);
+      }
+    }
     _listed[_norm(dir)] = <String, String?>{
-      for (final AssetEntry e in children)
+      for (final AssetEntry e in children.values)
         if (!e.isFolder) e.name: e.id,
     };
     return <SrsLocationEntry>[
-      for (final AssetEntry e in children)
+      for (final AssetEntry e in children.values)
         SrsLocationEntry(
           e.name,
           isFolder: e.isFolder,
@@ -322,9 +489,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
         _listed[_norm(dir)]?.remove(name);
       }
     }
-    final String? id = await _folder(dir, create: false);
-    if (id == null) return null;
-    final AssetEntry? a = await store.findAsset(id, name);
+    final AssetEntry? a = await _findIn(dir, name);
     if (a == null) return null;
     return _download(a.id);
   }
@@ -342,9 +507,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
         _listed[_norm(dir)]?.remove(name);
       }
     }
-    final String? id = await _folder(dir, create: false);
-    if (id == null) return false;
-    final AssetEntry? a = await store.findAsset(id, name);
+    final AssetEntry? a = await _findIn(dir, name);
     if (a == null) return false;
     await store.getAsset(a.id, dst);
     return true;
@@ -355,9 +518,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     final (String dir, String name) = _split(path);
     final Map<String, String?>? listed = _listed[_norm(dir)];
     if (listed != null && listed.containsKey(name)) return true;
-    final String? id = await _folder(dir, create: false);
-    if (id == null) return false;
-    return await store.findAsset(id, name) != null;
+    return await _findIn(dir, name) != null;
   }
 
   @override
@@ -382,18 +543,13 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   /// 覆盖写：后端本来就是「从文件传」，直接传 [src]，不经内存。
   Future<void> _putFile(String path, File src) async {
     final (String dir, String name) = _split(path);
-    final String id = (await _folder(dir, create: true))!;
-    // 允许同名多文件的后端（Google Drive）先删旧的，免得读到旧的那份（只有清除重写的段与说明文件会覆盖）。
-    // 这一轮列过这个目录且其中没有这个名字（新段、新 head 的名字都是新的）就不必再按名查。
+    final String id = await _ensureDir(_norm(dir));
+    // 允许同名多文件的后端（Google Drive）先删旧的，免得读到旧的那份（只有清除重写的段与说明文件会覆盖）；同名
+    // 文件夹里的旧份一样删（读的时候每个都找）。这一轮列过这个目录且其中没有这个名字（新段、新 head 的名字都是新的）
+    // 就不必再按名查。
     final Map<String, String?>? listed = _listed[_norm(dir)];
     if (listed == null || listed.containsKey(name)) {
-      final String? cached = listed?[name];
-      if (cached != null) {
-        await store.deleteAsset(cached);
-      } else {
-        final AssetEntry? old = await store.findAsset(id, name);
-        if (old != null) await store.deleteAsset(old.id);
-      }
+      await _deleteAll(dir, name, listed?[name]);
     }
     await store.putAsset(id, name, src);
     listed?[name] = null;
@@ -423,8 +579,8 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     final (String dir, String name) = _split(path);
     final Map<String, String?>? listed = _listed[_norm(dir)];
     if (listed != null && listed.containsKey(name)) return;
-    final String id = (await _folder(dir, create: true))!;
-    if (listed == null && await store.findAsset(id, name) != null) return;
+    final String id = await _ensureDir(_norm(dir));
+    if (listed == null && await _findIn(dir, name) != null) return;
     await store.putAsset(id, name, src);
     listed?[name] = null;
   }
@@ -437,14 +593,19 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     final Map<String, String?>? listed = _listed[_norm(dir)];
     final String? cached = listed?[name];
     listed?.remove(name);
+    await _deleteAll(dir, name, cached);
+  }
+
+  /// 删掉 [dir] 里所有名为 [name] 的文件（[cached] = 列目录时记下的那一份的定位符）。只有一个文件夹时有 [cached]
+  /// 就不再按名查；有同名文件夹时每个里都按名查一遍（别的里可能还有一份，读的时候会读到它）。
+  Future<void> _deleteAll(String dir, String name, String? cached) async {
     if (cached != null) {
       await store.deleteAsset(cached);
-      return;
+      if ((await _dirs(_norm(dir))).length < 2) return;
     }
-    final String? id = await _folder(dir, create: false);
-    if (id == null) return;
-    final AssetEntry? a = await store.findAsset(id, name);
-    if (a != null) await store.deleteAsset(a.id);
+    for (final AssetEntry a in await _findAllIn(dir, name)) {
+      if (a.id != cached) await store.deleteAsset(a.id);
+    }
   }
 }
 

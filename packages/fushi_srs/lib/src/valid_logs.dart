@@ -50,6 +50,63 @@ class SrsCardHistory {
     };
   }
 
+  /// 从 [toWire] 的线格式还原（远程复习库：历史在主机上选取好，客户端只还原视图，不重选）。
+  SrsCardHistory._decoded(
+    this.all,
+    Set<String> effectiveIds,
+    Set<String> clamped,
+    this.lastEffective,
+    this._schedulerFrom,
+    Set<String> revoked,
+    Set<String> equivalentImports,
+  ) {
+    this.revoked = revoked;
+    this.equivalentImports = equivalentImports;
+    for (int k = 0; k < all.length; k++) {
+      _position[all[k].id] = k;
+    }
+    _clamped.addAll(clamped);
+    effective = <SrsReviewLog>[
+      for (final SrsReviewLog l in all)
+        if (effectiveIds.contains(l.id)) l,
+    ];
+  }
+
+  /// [toWire] 的逆。
+  factory SrsCardHistory.fromWire(Map<String, Object?> json) {
+    final List<SrsReviewLog> all = <SrsReviewLog>[
+      for (final Object? l in json['all']! as List<Object?>)
+        SrsReviewLog.fromJson((l! as Map).cast<String, Object?>()),
+    ];
+    SrsReviewLog? byId(Object? id) =>
+        id == null ? null : all.firstWhere((SrsReviewLog l) => l.id == id);
+    Set<String> ids(String key) => <String>{
+      for (final Object? id
+          in (json[key] as List<Object?>?) ?? const <Object?>[])
+        id! as String,
+    };
+    return SrsCardHistory._decoded(
+      all,
+      ids('eff'),
+      ids('clamped'),
+      byId(json['last']),
+      byId(json['sched']),
+      ids('rev'),
+      ids('eq'),
+    );
+  }
+
+  /// 选取结果的线格式（远程复习库把主机上的历史带给客户端）。
+  Map<String, Object?> toWire() => <String, Object?>{
+    'all': <Map<String, Object?>>[for (final SrsReviewLog l in all) l.toJson()],
+    'eff': <String>[for (final SrsReviewLog l in effective) l.id],
+    'clamped': _clamped.toList(),
+    'last': lastEffective?.id,
+    'sched': _schedulerFrom?.id,
+    'rev': revoked.toList(),
+    'eq': equivalentImports.toList(),
+  };
+
   /// 一批历史，与输入同序；整批一次 FFI 调用。
   static List<SrsCardHistory> many(List<SrsHistoryInput> inputs) {
     final List<SrsHistorySelection> sel = srsSelectHistories(inputs);

@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -108,6 +108,8 @@ import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
+import 'package:fushi/src/platform/app_exit_coordinator.dart';
+import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
@@ -893,6 +895,12 @@ void main([List<String> args = const <String>[]]) {
 
 /// Encapsulates theming, spacing and other configurable options pertaining to
 /// the entire app, with some parameters dependent on the [AppModel].
+/// 桌面退出看门狗时长（退出中的进程最长存活时间）。Windows / Linux runner 等「正在
+/// 退出的旧实例」的上界必须不小于它，守卫测试经此读出推导值与 runner 常量比对。
+@visibleForTesting
+Duration get desktopExitWatchdogTimeout =>
+    _FushiReaderAppState._exitWatchdogTimeout;
+
 class FushiReaderApp extends ConsumerStatefulWidget {
   /// Initialises an instance of the app.
   const FushiReaderApp({super.key});
@@ -971,10 +979,34 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 桌面本机控制通道（`fushi_cli` 的服务端，见 [_startCtlServer]）。
   CtlServer? _ctlServer;
 
-  /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
-  /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
-  /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
-  static const Duration _exitWatchdogTimeout = Duration(seconds: 6);
+  /// 退出链各步的超时预算。看门狗时长由它们**推出**（[_exitWatchdogTimeout]），
+  /// 给哪一步加超时 / 放宽超时，必须同时进这张表。
+  static const Duration _exitPlacementSaveTimeout = Duration(milliseconds: 800);
+  static const Duration _exitHideTimeout = Duration(milliseconds: 300);
+  static const Duration _exitBonsoirStopTimeout = Duration(milliseconds: 1500);
+  static const Duration _exitCtlStopTimeout = Duration(milliseconds: 500);
+  static const Duration _exitLocalServerStopTimeout = Duration(seconds: 2);
+  static const Duration _bookExitDrainTimeout = Duration(seconds: 5);
+
+  /// 退出总预算（看门狗）。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在
+  /// 后台多待多久」，不影响用户看到的关闭速度。过去拍了个 6s，比各步超时之和（~11s）
+  /// 还短：慢网 / 慢盘时看门狗先到点、关库被截断，且到点直接 exit 不标 clean，下次
+  /// 启动被当成闪退上报。现在 = 各串行阶段预算之和 + 余量；到点经
+  /// [AppExitCoordinator.terminate] 结束（标 clean，terminatedBy=exitWatchdog）。
+  static final Duration _exitWatchdogTimeout =
+      AppExitCoordinator.watchdogTimeoutFor(<Duration>[
+        _exitPlacementSaveTimeout,
+        _exitHideTimeout,
+        AppExitCoordinator.parallelBudget(<Duration>[
+          _exitBonsoirStopTimeout,
+          ExitFlushRegistry.perCallbackTimeout,
+          _exitCtlStopTimeout,
+          _exitLocalServerStopTimeout,
+        ]),
+        _bookExitDrainTimeout,
+        _closeDatabaseOnExitTimeout,
+        WindowsNativePreExit.prepareTimeout,
+      ]);
 
   /// 关库上界。数据根迁移路径（`data_root.part.dart`）早就有这层保护，退出路径一直
   /// 缺；WAL 崩溃安全，超时放行只损失一次 checkpoint，不损失已提交的数据。
@@ -1345,46 +1377,52 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Future<void> _flushAndExitForWindowClose() async {
     if (_shutdownStarted) return;
     _shutdownStarted = true;
+    // ⓪ 退出意图**同步**落盘，排在一切 await 之前：此后进程不论怎么没的（看门狗、
+    //    安装器 WM_CLOSE 后强杀、系统关机 / 注销），下次启动都不会再判成「停在前台时
+    //    没了，疑似闪退」。窗口 hide 之后 Windows 报的 lifecycle 是 inactive，过去
+    //    正是这条被误报。
+    AppExitCoordinator.instance.begin('windowClose');
     final Stopwatch exitWatch = Stopwatch()..start();
+    // 退出总预算看门狗：从意图落盘就开始计时，覆盖整条链（含几何保存与 hide）。
+    // ③ 的关库（内含下载管线收尾等待）与 ④ 的原生 WebView2 / DirectComposition
+    // teardown 历史上都出现过不归（BUG-192）；窗口不可见后进程再卡住就成了用户看不见
+    // 也关不掉的僵尸——到点经协调器终止（标 clean，terminatedBy=exitWatchdog，下次
+    // 启动记一条带卡住阶段的诊断）。
+    final Timer exitWatchdog = Timer(_exitWatchdogTimeout, () {
+      debugPrint(
+        '[Fushi] exit watchdog fired after '
+        '${exitWatch.elapsedMilliseconds}ms at stage '
+        '${AppExitCoordinator.instance.currentStage}; forcing exit',
+      );
+      AppExitCoordinator.instance.terminate(kExitTerminatedByWatchdog);
+    });
     // BUG-3087：先让 Linux runner 进入「正在退出」，再隐藏窗口。此后二次启动不再
     // 交给本进程（文件会随进程一起丢、隐藏的窗口会被 present 回来），而是等本
     // 进程让出 D-Bus 名后自己按首实例启动。
     if (Platform.isLinux) {
-      await LinuxExternalOpenChannel.notifyExiting(_externalVideoChannel);
+      await _guardedExitStep('linux notify exiting', () async {
+        await LinuxExternalOpenChannel.notifyExiting(_externalVideoChannel);
+      });
     }
     final AppModel appModel = ref.read(appProvider);
-    try {
+    await _guardedExitStep('window placement save', () async {
       await DesktopWindowPlacement.saveCurrentBoundsNow().timeout(
-        const Duration(milliseconds: 800),
+        _exitPlacementSaveTimeout,
       );
-    } catch (e) {
-      debugPrint('[Fushi] desktop window placement save on exit failed: $e');
-    }
+    });
     // ⓪' 几何已落盘 → 立刻把主窗从屏幕上摘掉。**用户感知的「关闭」到此为止**，后面
     //    的 flush / WAL checkpoint / 原生 teardown 都在看不见的窗口背后跑完。hide
     //    只是 ShowWindow(SW_HIDE)，不拆任何原生资源，不会把 ④ 的 WebView2 成本提前。
     //    必须排在 saveCurrentBoundsNow 之后：窗口隐藏后再读几何不可信。
-    try {
-      await windowManager.hide().timeout(const Duration(milliseconds: 300));
-    } catch (e) {
-      debugPrint('[Fushi] hide on exit failed: $e');
-    }
-    // 退出总预算看门狗。下面每步各有超时，但 ③ 的关库（内含下载管线收尾等待）与 ④
-    // 的原生 WebView2 / DirectComposition teardown 历史上都出现过不归（BUG-192）。
-    // 窗口此刻已不可见，进程再卡住就成了用户看不见也关不掉的僵尸——到点无条件终止。
-    final Timer exitWatchdog = Timer(_exitWatchdogTimeout, () {
-      debugPrint(
-        '[Fushi] exit watchdog fired after '
-        '${exitWatch.elapsedMilliseconds}ms; forcing exit',
-      );
-      exit(0);
+    await _guardedExitStep('window hide', () async {
+      await windowManager.hide().timeout(_exitHideTimeout);
     });
     // ①② 并行：切断 Bonsoir 事件源只动 mDNS 订阅，页面 flush 只写 Drift，两者互不
     //    依赖。过去串行 await 让各自的超时预算直接相加。
     await Future.wait(<Future<void>>[
       _guardedExitStep('sync source fast shutdown', () async {
         await appModel.syncServerController.shutdownForExitFast().timeout(
-          const Duration(milliseconds: 1500),
+          _exitBonsoirStopTimeout,
         );
       }),
       // ② flush 活跃页面 pending 进度/统计（缓存值落库，不碰退出期正在拆的 WebView）。
@@ -1394,20 +1432,20 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // 删掉 CLI 发现文件：exit(0) 之后不会再有 dispose，不删就留下一份残留
       // （CLI 能认出残留，但少一次连不上的探测）。
       _guardedExitStep('ctl channel stop', () async {
-        await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
+        await _ctlServer?.stop().timeout(_exitCtlStopTimeout);
       }),
       // 本机 GPT-SoVITS：Windows 不连坐子进程，exit(0) 后服务会继续占着显存和端口，
       // 解压中的 tar 也会继续往安装目录写。shutdown 同时停服务、取消安装（杀 tar）。
       // 没起过时 [TtsServices.existing] 为 null，零成本。
       _guardedExitStep('local tts server stop', () async {
         await TtsServices.existing?.localGptSovits.shutdown().timeout(
-          const Duration(seconds: 2),
+          _exitLocalServerStopTimeout,
         );
       }),
       // 本机 Irodori-TTS-Server 同理：停服务（venv 启动器连坐子进程）、取消安装中的 uv。
       _guardedExitStep('local irodori server stop', () async {
         await TtsServices.existing?.localIrodori.shutdown().timeout(
-          const Duration(seconds: 2),
+          _exitLocalServerStopTimeout,
         );
       }),
       // 本机 VOICEVOX / AivisSpeech 同理：停引擎进程、取消安装中的解压子进程。
@@ -1417,7 +1455,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         await Future.wait(<Future<void>>[
           tts.localVoicevox.shutdown(),
           tts.localAivisSpeech.shutdown(),
-        ]).timeout(const Duration(seconds: 2));
+        ]).timeout(_exitLocalServerStopTimeout);
       }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
@@ -1427,9 +1465,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     //    syncContent 默认关时只剩小 JSON，几乎瞬间返回；卡住也由 drain 上限放行，
     //    绝不无限拖住退出。drain 自身不抛（退出清理失败不阻止退出）。
     await _guardedExitStep('book-exit sync drain', () async {
-      await BookExitSyncScope.instance.drain(
-        timeout: const Duration(seconds: 5),
-      );
+      await BookExitSyncScope.instance.drain(timeout: _bookExitDrainTimeout);
     });
     // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
     //    数据完整性闸门——必须在 exit(0) 之前完成。
@@ -1462,30 +1498,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// 退出期单步执行器：统一吞掉超时/异常 + 耗时埋点。退出清理失败绝不阻止退出，但
   /// 也绝不静默——每步耗时都打出来，下次再遇「关闭慢」可直接读日志定位到具体哪一步。
-  Future<void> _guardedExitStep(
-    String label,
-    Future<void> Function() run,
-  ) async {
-    final Stopwatch watch = Stopwatch()..start();
-    try {
-      await run();
-    } on TimeoutException {
-      debugPrint(
-        '[Fushi] exit step "$label" timed out after '
-        '${watch.elapsedMilliseconds}ms; continuing',
-      );
-      return;
-    } catch (e) {
-      debugPrint(
-        '[Fushi] exit step "$label" failed after '
-        '${watch.elapsedMilliseconds}ms: $e',
-      );
-      return;
-    }
-    debugPrint(
-      '[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms',
-    );
-  }
+  Future<void> _guardedExitStep(String label, Future<void> Function() run) =>
+      AppExitCoordinator.instance.runStep(label, run);
 
   /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源），再 flush 活跃页面并 close DB。
   ///
@@ -1495,6 +1509,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Future<void> _flushAndCloseForLifecycleDetach() async {
     if (_shutdownStarted) return;
     _shutdownStarted = true;
+    // 退出意图在一切 await 之前落盘（同 [_flushAndExitForWindowClose]）。
+    AppExitCoordinator.instance.begin('lifecycleDetached');
     final AppModel appModel = ref.read(appProvider);
     try {
       await appModel.syncServerController.shutdownForExit().timeout(

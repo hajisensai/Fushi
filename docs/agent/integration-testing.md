@@ -44,6 +44,8 @@
 
 **为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `FUSHI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 
+> 帧时 / 性能探针要在**固定像素数**下比各轮时（BUG-3888），Windows 另加 `FUSHI_TEST_ONSCREEN=1 FUSHI_TEST_WINDOW_RECT=x,y,w,h`（外框物理像素）：runner 把位置和尺寸整轮钉住、Dart 启动时的工作区居中 / 恢复几何让位，**不置顶、不借前台线程输入、仍 `WS_EX_NOACTIVATE`**，被你的窗口盖住也照跑。与 `FUSHI_TEST_TOPMOST` 同时给时后者优先（那个会置顶，用户在用电脑时别用）。每轮核对探针打印的实际 size，对不上的那轮作废。
+
 > 离屏抓**真实像素**（观察功能是否渲染出来）走 Dart 抓图，不是 OS PrintWindow（后者对
 > Flutter/WebView 离屏全白）。见 [computer-use-testing.md](computer-use-testing.md) 的
 > 「离屏观察」与 `integration_test/helpers/observe_capture.dart`。

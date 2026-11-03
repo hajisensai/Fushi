@@ -78,6 +78,7 @@ void main() {
     LyricsControlsStyle style = LyricsControlsStyle.modern,
     bool expanded = false,
     bool playing = false,
+    bool heldForLookup = false,
     ValueChanged<Rect>? onLyricsRect,
   }) => MaterialApp(
     home: Scaffold(
@@ -94,6 +95,7 @@ void main() {
           chapterLabel: '第四章　聖歌',
           cover: null,
           isPlaying: playing,
+          playbackHeldForLookup: heldForLookup,
           speed: 1,
           lyricsMasked: false,
           clock: _Clock(),
@@ -431,6 +433,41 @@ void main() {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
       await tester.pump(kLyricsChromeIdleHideDelay * 3);
       expect(chromeOpacity(tester), 1);
+    });
+
+    // 反馈 awLXfD49Ep / M8YDOqJ5Bm：查词默认暂停播放（pause_on_lookup）。这段临时暂停
+    // 属于查词会话：底栏不弹回、歌词矩形不缩回（被查的词不在弹窗下挪位），恢复播放后
+    // 仍保持隐藏；只有真正的用户暂停才复位。
+    testWidgets('lookup-held pause keeps the hidden chrome and lyrics rect '
+        'frozen; a real pause still resets', (WidgetTester tester) async {
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      final Rect shown = tester.getRect(key('lyrics_view_probe'));
+      await idleUntilHidden(tester);
+      expect(chromeOpacity(tester), 0);
+      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
+      expect(hidden, isNot(shown));
+
+      // 查词：播放器暂停，但被查词按住。
+      await tester.pumpWidget(app(heldForLookup: true));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(chromeOpacity(tester), 0, reason: '查词暂停不唤出底栏');
+      expect(tester.getRect(key('lyrics_view_probe')), hidden);
+
+      // 关弹窗、恢复在途（仍按住）→ 起播落定：都不动布局。
+      await tester.pumpWidget(app(playing: true, heldForLookup: true));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpWidget(app(playing: true));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(chromeOpacity(tester), 0, reason: '恢复播放后保持隐藏');
+      expect(tester.getRect(key('lyrics_view_probe')), hidden);
+
+      // 对照：用户暂停（没被查词按住）照旧立即复位。
+      await tester.pumpWidget(app());
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(chromeOpacity(tester), 1);
+      expect(tester.getRect(key('lyrics_view_probe')), shown);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('paused: bottom chrome never auto-hides', (

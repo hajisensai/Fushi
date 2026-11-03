@@ -8,7 +8,8 @@ import 'video_fushi_page_source_corpus.dart';
 /// 行为住在 `_VideoFushiPageState` 的 part（`subtitle.part.dart`）里，字幕轨行由
 /// State 的十几个私有字段驱动，脱离整个视频页（media_kit 播放器）无法实例化，
 /// 所以按本仓惯例锁调用点不变量：
-///  - 四处外挂字幕行（主 / 副 × 本地 / 远端导入）都经 `_withSubtitleFileMenu` 包装；
+///  - 四处外挂字幕行（主 / 副 × 本地 / 远端导入）都经 `_withSubtitleFileMenu` 包装
+///    （远端两处经共享行模型 `_remoteSubtitleFileTile` 包，BUG-3984）；
 ///  - 包装只给外挂源挂手势，内嵌轨原样返回（没有可删的东西、不给菜单）；
 ///  - 长按与右键都落到同一个菜单；菜单坐标经 Overlay.globalToLocal 换算（BUG-781）；
 ///  - 删除前经共享 FushiDestructiveConfirmDialog 二次确认并显示路径；菜单与对话框
@@ -39,6 +40,10 @@ void main() {
   int count(String haystack, String needle) =>
       needle.allMatches(haystack).length;
 
+  // BUG-3984：远端主 / 副字幕的本机档行改走共享行模型 `_remoteSubtitleFileTile`（与手机
+  // 遥控字幕列表同一份 `remoteSubtitleFileEntries`），删除菜单由它统一包上。所以每个行区
+  // 里直接出现的 `_withSubtitleFileMenu(` 只剩本地列表那一处，远端那一处换成
+  // `_remoteSubtitleFileTile(`；包装本身在下面「远端行模型」那条里钉住。
   test('主字幕轨行：本地列表 + 远端导入档案两处外挂行都挂上下文菜单', () {
     final String rows = region(
       'Widget _buildSubtitleTrackRows(',
@@ -46,19 +51,23 @@ void main() {
     );
     expect(
       count(rows, '_withSubtitleFileMenu('),
-      2,
-      reason:
-          '主字幕轨里有两处会出现外挂档案的行：远端 `_importedSubtitleSources` '
-          '与本地 `_menuSubtitleSources`，两处都要能长按 / 右键删除',
+      1,
+      reason: '本地 `_menuSubtitleSources` 的外挂行要能长按 / 右键删除',
     );
-    // 两处各自的行体紧跟在包装之后（包装的是那一行，不是别的 widget）。
     expect(
       // 行控件走共享 FushiListTileControl（ListTile 的设计系统分派版）。
       RegExp(
         r'_withSubtitleFileMenu\(\s*context,\s*controller,\s*source,\s*FushiListTileControl\(',
       ).allMatches(rows).length,
-      2,
+      1,
       reason: '包装对象必须是该源自己的 ListTile 行',
+    );
+    expect(
+      count(rows, '_remoteSubtitleFileTile('),
+      1,
+      reason:
+          '远端本机导入档的行经共享行模型（内部包删除菜单），'
+          '缺了它远端下载 / 导入的字幕就删不掉',
     );
   });
 
@@ -68,11 +77,45 @@ void main() {
       'Widget _withSubtitleFileMenu(',
     );
     expect(
-      count(rows, '_withSubtitleFileMenu('),
+      count(rows, '_withSubtitleFileMenu(') +
+          count(rows, '_remoteSubtitleFileTile('),
       2,
       reason:
           '副字幕轨与主字幕轨同一份可用列表（BUG-900 / BUG-1861），'
           '删除入口要对称',
+    );
+    expect(count(rows, '_withSubtitleFileMenu('), 1, reason: '本地列表');
+    expect(count(rows, '_remoteSubtitleFileTile('), 1, reason: '远端本机档');
+  });
+
+  test('远端行模型：本机档行包删除菜单，后端默认字幕行不可删', () {
+    final String tile = region(
+      'Widget _remoteSubtitleFileTile(',
+      'List<SubtitleSource> get _menuSubtitleSources',
+    );
+    final int backendBranch = tile.indexOf('if (local == null) {');
+    expect(backendBranch, greaterThanOrEqualTo(0), reason: '后端默认行分支');
+    final int backendReturn = tile.indexOf('return FushiListTileControl(');
+    final int menuWrap = tile.indexOf('return _withSubtitleFileMenu(');
+    expect(
+      backendReturn,
+      greaterThan(backendBranch),
+      reason: '后端默认字幕是临时下载档，不给删除菜单',
+    );
+    expect(
+      menuWrap,
+      greaterThan(backendReturn),
+      reason: '本机档（local 非空）落到删除菜单包装',
+    );
+    expect(
+      _flat(tile.substring(menuWrap)),
+      contains(
+        _flat(
+          'return _withSubtitleFileMenu(context, controller, local, '
+          'FushiListTileControl(',
+        ),
+      ),
+      reason: '包装对象必须是本机档自己的 ListTile 行，且删的是 entry.local',
     );
   });
 

@@ -208,6 +208,9 @@
       transition: background-color var(--fushi-dur-short) var(--fushi-ease), color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
     }
     .hp-del:hover { background: var(--fushi-danger); color: var(--fushi-on-danger); }
+    /* EMI05fe8RJ：失败分组——重试按钮悬停不用危险色；失败原因行用错误色提示。 */
+    .hp-retry:hover { background: color-mix(in oklch, var(--fushi-text) 12%, transparent); color: var(--fushi-text); }
+    .hp-row-failed .hp-row-sub { color: var(--fushi-danger); white-space: normal; }
     .hp-empty { padding: 14px 8px 10px; text-align: center; color: var(--fushi-muted); }
 
     /* ══ M3E（缺省风格）：色角色 / 字阶 / 形状全取 theme.css 的 --md-sys-*。特异性都带 .hp-shell，
@@ -481,6 +484,7 @@
   <script src="../popup-size.js"></script>
   <script src="../profile-selection.js"></script>
   <script src="../glass-select.js"></script>
+  <script src="../mine-outcome.js"></script>
   <script src="action-popup.js"></script>
 </body>
 </html>

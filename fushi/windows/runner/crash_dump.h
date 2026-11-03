@@ -39,6 +39,12 @@ namespace fushi
   // 解析并确保 crashdumps 目录存在（`%LOCALAPPDATA%\Fushi\crashdumps`；集成测试
   // 设了 FUSHI_TEST_ROOT 时为 `<root>\logs\native\crashdumps`）。[dir] 至少 MAX_PATH。
   bool ResolveCrashDumpDirectory(wchar_t* dir);
+
+  // 会话结束取证：主窗收到 WM_ENDSESSION（wParam=TRUE，系统关机 / 注销 / Restart
+  // Manager 关应用）时调用，同步覆写 crashdumps\session_end.log 一行
+  // `pid=<pid> lparam=0x<hex>`。返回后系统随时会结束进程，Dart 侧不再有机会标 clean；
+  // 下次启动 previous_exit_log.dart 读到 pid 对得上就归为「系统结束会话」，不误报闪退。
+  void RecordSessionEnd(LPARAM lparam);
 }
 
 #endif  // RUNNER_CRASH_DUMP_H_

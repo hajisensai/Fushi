@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 打开设置页；确认返回选择，取消返回 null。
 Future<SrsAnkiMigrationSettings?> openSrsAnkiMigrationSetupPage(
@@ -31,15 +32,13 @@ Future<SrsAnkiMigrationSettings?> openSrsAnkiMigrationSetupPage(
   required String summary,
   required SrsAnkiMigrationSettings initial,
   bool sourceProbablyOpen = false,
-}) => Navigator.of(context).push<SrsAnkiMigrationSettings>(
-  adaptivePageRoute<SrsAnkiMigrationSettings>(
-    context: context,
-    builder: (_) => SrsAnkiMigrationSetupPage(
-      sourceName: sourceName,
-      summary: summary,
-      initial: initial,
-      sourceProbablyOpen: sourceProbablyOpen,
-    ),
+}) => srsPushPage<SrsAnkiMigrationSettings>(
+  context,
+  (_) => SrsAnkiMigrationSetupPage(
+    sourceName: sourceName,
+    summary: summary,
+    initial: initial,
+    sourceProbablyOpen: sourceProbablyOpen,
   ),
 );
 

@@ -320,6 +320,7 @@
   gen_partial_anki_unconfigured_kept: 'Partly generated: Anki is not configured — set up Anki in Fushi and retry (kept {kept})',
   gen_done_processed: '✓ Done: processed {done}',
   gen_done_failed_suffix: ' · failed {fail}',
+  gen_done_moved_failed_suffix: ' · {n} moved to Failed',
   gen_nf_intro_skipped: '{n} card(s) fall inside the opening rating overlay (first {sec} s); recording skipped (still queued, can be mined manually)',
   gen_nf_episode_unreachable: 'Could not open episode {id}, stopping generation',
   gen_nf_auto_progress: 'Auto-generating: {index}/{total}…',
@@ -421,6 +422,8 @@
   ap_queue_clear_confirm: 'Clear all?',
   ap_queue_open_video_hint: 'Click to open the video page',
   ap_queue_remove_title: 'Remove from queue',
+  ap_queue_failed_heading: 'Failed ({n})',
+  ap_queue_retry_title: 'Retry',
 
   // ── nested-popup.html ──
 

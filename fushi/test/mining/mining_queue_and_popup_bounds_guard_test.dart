@@ -82,10 +82,12 @@ void main() {
                 '${content.parent.path} success||duplicate 块内未归 done（duplicate 会滞留=队列永不清根因）',
           );
           // notConfigured 留队（提示配 Anki），error/网络失败留队重试。
+          // 判据只看 notConfigured 分支「立即 return 的 cls 是 unconfigured」，不钉单行 / 块
+          // 写法（EMI05fe8RJ 把返回对象扩成多字段后改成了块形式）。
           expect(
-            src.contains(
-              "if (r === 'notConfigured') return { cls: 'unconfigured'",
-            ),
+            RegExp(
+              r"if \(r === 'notConfigured'\) \{?\s*return \{\s*cls: 'unconfigured'",
+            ).hasMatch(src),
             isTrue,
             reason: '${content.parent.path} 未把 notConfigured 归为 unconfigured',
           );

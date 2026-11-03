@@ -78,19 +78,12 @@ void dataRootMigrationRestart(AppModel appModel) {
   if (lifecycle.supportsRestart) {
     lifecycle.restartApp().catchError((Object e) {
       debugPrint('DataRoot migrate: 失败视图重启也失败: $e');
-      _exitDataRootMigrationProcess();
+      return lifecycle.exitApp();
     });
     return;
   }
-  _exitDataRootMigrationProcess();
-}
-
-void _exitDataRootMigrationProcess() {
-  if (Platform.isAndroid || Platform.isIOS) {
-    FlutterExitApp.exitApp();
-  } else {
-    exit(0);
-  }
+  // 经生命周期服务退出（退出协调器标 clean），不裸 exit：否则下次启动误报闪退。
+  unawaited(lifecycle.exitApp());
 }
 
 /// 一次数据根迁移的计划：用户挑的目录已解析成迁移目标并通过触发前校验，还没动任何

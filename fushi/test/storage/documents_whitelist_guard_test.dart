@@ -18,7 +18,7 @@ import '../helpers/scan_scale.dart';
 ///  3. `${...appDirectory.path}/<child>`（字符串插值形式）。
 ///
 /// 直连 `getApplicationDocumentsDirectory()` 而**不随数据根走**的固定落点
-/// （`ErrorLogService` 的 error_log/面包屑、`video_clips`、桌面导出目录 `Hibiki`、
+/// （`video_clips`、桌面导出目录 `Hibiki`、
 /// `AudiobookStorage`——后者子目录名 `audiobooks` 已在白名单）刻意不在扫描范围：
 /// 它们不解析到迁移后的新根，搬走反而与其读写方脱节（见 AppPaths 白名单文档）。
 void main() {

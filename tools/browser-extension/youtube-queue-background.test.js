@@ -36,6 +36,7 @@ function loadBackground(queue, respond) {
   const posts = [];
   const toasts = [];
   const broadcasts = [];
+  const tabUpdates = [];
   const listeners = [];
   let releaseFetch; // 置为函数时 fetch 挂起，直到测试放行
   let holdAt = 0; // 第 n 次 /api/mine 挂起（模拟那一条慢到 SW 被杀）
@@ -56,6 +57,7 @@ function loadBackground(queue, respond) {
         return new Proxy({}, {
           get(_t2, k2) {
             if (k2 === 'sendMessage') return (tabId, msg, cb) => { toasts.push({ tabId, msg }); if (cb) cb(); };
+            if (k2 === 'update') return async (tabId, props) => { tabUpdates.push({ tabId, props }); return {}; };
             return permissive();
           },
         });
@@ -100,7 +102,7 @@ function loadBackground(queue, respond) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'mine-outcome.js'), 'utf8'), sandbox, { filename: 'mine-outcome.js' });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8'), sandbox, { filename: 'background.js' });
   return {
-    store, posts, toasts, broadcasts,
+    store, posts, toasts, broadcasts, tabUpdates,
     holdFetch() { releaseFetch = () => {}; },
     holdNth(n) { holdAt = n; },
     release() { const r = releaseFetch; releaseFetch = undefined; if (typeof r === 'function') r(); },
@@ -219,4 +221,79 @@ test('cards removed from the queue mid-batch are not mined and are not counted a
   assert.deepStrictEqual(bg.posts.map((b) => b.youtubeVideoId), ['vidA']);
   const last = bg.toasts[bg.toasts.length - 1].msg.text;
   assert.ok(!last.includes('gen_done_failed_suffix'), '用户删掉的不算失败：' + last);
+});
+
+// EMI05fe8RJ：付费电影的卡（服务端 errorKind:permanent）旧实现永远留在待生成队列里，每次生成都
+// 先把它们重新解析一遍（每条都走 5 个 client 的网络请求），拖慢并淹没新卡。
+test('permanent failure leaves the pending queue for the Failed group and is not re-mined next run', async () => {
+  const bg = loadBackground([yt('paid', 'vidPaid'), yt('ok', 'vidOk')],
+    (body) => (body.youtubeVideoId === 'vidPaid'
+      ? { result: 'error', message: 'YouTube 视频流解析失败，未制卡', errorKind: 'permanent' }
+      : { result: 'success' }));
+  bg.send({ type: 'fushiIconAction', tab: { id: 7, url: 'https://example.com/' } });
+  await flush();
+  assert.deepStrictEqual(bg.posts.map((b) => b.youtubeVideoId), ['vidPaid', 'vidOk']);
+  assert.strictEqual(bg.store.fushiQueue.length, 1, '失败项留在存储里（失败分组），成功项出队');
+  const failed = bg.store.fushiQueue[0];
+  assert.strictEqual(failed.id, 'paid');
+  assert.strictEqual(failed.failed, true);
+  assert.strictEqual(failed.lastError, 'YouTube 视频流解析失败，未制卡');
+  const summary = bg.toasts[bg.toasts.length - 1].msg.text;
+  assert.ok(summary.includes('gen_done_moved_failed_suffix'), summary);
+
+  // 第二次生成：失败分组里的项不再 POST /api/mine。
+  bg.send({ type: 'fushiIconAction', tab: { id: 7, url: 'https://example.com/' } });
+  await flush();
+  assert.strictEqual(bg.posts.length, 2, '失败项不应再次制卡');
+});
+
+test('server-tagged transient errors (AnkiConnect down / bot check) never move the queue to Failed', async () => {
+  const bg = loadBackground([yt('a', 'vidA'), yt('b', 'vidB')],
+    () => ({ result: 'error', message: 'AnkiConnect 不可达', errorKind: 'transient' }));
+  for (let i = 0; i < 5; i++) {
+    bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+    await flush();
+  }
+  assert.strictEqual(bg.posts.length, 10, '每次生成都重试全部待生成项');
+  for (const it of bg.store.fushiQueue) {
+    assert.strictEqual(it.failed, undefined, it.id + ' 不应因环境类失败被判失败');
+    assert.strictEqual(it.attempts, undefined, it.id + ' 不计次');
+  }
+});
+
+test('untyped server errors (legacy server, no errorKind) escalate to Failed after the attempt cap; unreachable app never counts', async () => {
+  let down = true;
+  const bg = loadBackground([yt('t', 'vidT')],
+    () => (down ? { __status: 502 } : { result: 'error', message: 'timeout' }));
+  for (let i = 0; i < 4; i++) {
+    bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+    await flush();
+  }
+  assert.strictEqual(bg.store.fushiQueue[0].failed, undefined, '环境类失败（app 不可达 / 5xx）不计入该项');
+  assert.strictEqual(bg.store.fushiQueue[0].attempts, undefined);
+  down = false;
+  const before = bg.posts.length;
+  for (let i = 0; i < 5; i++) {
+    bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+    await flush();
+  }
+  assert.strictEqual(bg.posts.length - before, 3, '达到 3 次后移入失败分组，不再重试');
+  assert.strictEqual(bg.store.fushiQueue[0].failed, true);
+});
+
+// EMI05fe8RJ：Netflix 批量的剧集列表必须与「进 Netflix 分支」同一判据（只认待生成项）。旧实现只要
+// 队列里有该集的项就排进批——只剩失败项的那集仍会被导航、等播放器 / 片头门、开录屏后空跑一趟。
+test('Netflix batch skips episodes whose queue items are all in the Failed group', async () => {
+  const bg = loadBackground([
+    { id: 'f1', site: 'netflix', netflixId: '111', failed: true, lastError: 'x' },
+    { id: 'p2', site: 'netflix', netflixId: '222' },
+    { id: 'f3', site: 'netflix', netflixId: '333', failed: true },
+  ], () => ({ result: 'success' }));
+  // 当前正播的就是只剩失败项的 111：不能就地开录屏，而是导航到唯一有待生成项的 222。
+  bg.send({ type: 'fushiIconAction', tab: { id: 3, url: 'https://www.netflix.com/watch/111' } });
+  await flush();
+  assert.ok(bg.store.fushiNfBatch, '有待生成项时应起 Netflix 批');
+  assert.deepStrictEqual(bg.store.fushiNfBatch.episodes, ['222'], '只剩失败项的剧集不进批');
+  assert.deepStrictEqual(bg.tabUpdates.map((u) => u.props.url), ['https://www.netflix.com/watch/222']);
+  assert.strictEqual(bg.posts.length, 0, 'Netflix 分支不走 YouTube 队列');
 });

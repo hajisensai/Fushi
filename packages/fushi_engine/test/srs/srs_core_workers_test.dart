@@ -116,6 +116,60 @@ void main() {
     expect(await pool.run(b.core.address, srsCoreWorkerCachedCores), 1);
     expect(pool.debugSpawned, 1);
   });
+
+  // BUG-3961：查询道的 worker 上限从打开的库上读（内核只读连接池的上限），不另写常量；一阵并发查询之后多起的
+  // worker 空闲满保留时长就收掉，至少留一个。
+  test('查询道：上限取库的读并发上限，空闲多起的 worker 回收到一个', () async {
+    final SrsStorage storage = await openTestSrsStorage();
+    final int address = storage.core.address;
+    final int cap = storage.core.readConcurrency;
+    expect(cap, greaterThanOrEqualTo(2));
+    final SrsCoreWorkers pool = SrsCoreWorkers.debugFresh(
+      storage.core.libraryPath,
+      queryIdleTtl: const Duration(milliseconds: 300),
+    );
+    expect(
+      pool.debugMax(SrsCoreLane.query),
+      1,
+      reason: 'before the limit is read',
+    );
+    pool.setQueryConcurrency(cap);
+    expect(pool.debugMax(SrsCoreLane.query), cap);
+    // 比上限多发一倍：活着的 worker 不超过上限，全部做完。
+    final List<Future<int>> burst = <Future<int>>[
+      for (int i = 0; i < cap * 2; i++)
+        pool.run(address, _slowShort, lane: SrsCoreLane.query),
+    ];
+    // 提交即按需起到上限（多出的排队），不会多起。
+    expect(pool.debugLive(SrsCoreLane.query), cap);
+    expect(await Future.wait(burst), everyElement(1));
+    expect(pool.debugLive(SrsCoreLane.query), cap);
+    // 空闲满 300 ms：回收到一个（等定时器，最多 5 秒）。
+    final Stopwatch sw = Stopwatch()..start();
+    while (pool.debugLive(SrsCoreLane.query) > 1 &&
+        sw.elapsed < const Duration(seconds: 5)) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(pool.debugLive(SrsCoreLane.query), 1);
+    // 留下的那个照常执行，不必重起。
+    final int spawned = pool.debugSpawned;
+    expect(await pool.run(address, _ping, lane: SrsCoreLane.query), 7);
+    expect(pool.debugSpawned, spawned);
+    // 再来一阵并发：按需重新起到上限。
+    expect(
+      await Future.wait(<Future<int>>[
+        for (int i = 0; i < cap; i++)
+          pool.run(address, _slowShort, lane: SrsCoreLane.query),
+      ]),
+      everyElement(1),
+    );
+    expect(pool.debugLive(SrsCoreLane.query), cap);
+  });
+}
+
+int _slowShort(SrsCore core) {
+  sleep(const Duration(milliseconds: 400));
+  return 1;
 }
 
 int _slow(SrsCore core) {

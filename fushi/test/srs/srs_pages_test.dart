@@ -43,6 +43,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'srs_test_support.dart' show SrsTestAppModel, openSrsTestStorage;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -1383,6 +1384,85 @@ void main() {
       }
     });
 
+    testWidgets('HrB0STYm3E：整面卡只播页面上报看得见的发音（CSS 隐藏的不播、不出重播键）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 页面替身：例句音频的容器被卡片 CSS 隐藏，只报单词那颗。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) => _VisibleSubsetFace(
+              face: face,
+              hidden: const <String>{'sent.mp3'},
+            ),
+          ),
+        ],
+      );
+      expect(audio.played, isEmpty);
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3'], reason: '隐藏的例句音频不自动播');
+      audio.played.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3'], reason: 'R 重播同一份清单');
+      await _unmount(tester);
+    });
+
+    testWidgets('整面卡问题面上报没赶上翻面：答案面不把 {{FrontSide}} 带来的正面音频再播一遍', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(() async {
+        final String nt = await store.createStockNoteType(
+          SrsStockNoteType.basic,
+          'Basic',
+        );
+        final SrsNoteTypeView v = (await store.noteType(nt))!;
+        final String front = v.fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Front')
+            .id;
+        final String back = v.fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Back')
+            .id;
+        await store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            front: 'Q[sound:front.mp3]',
+            back: 'A[sound:back.mp3]',
+          },
+        );
+      });
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 慢卡：问题面卡片脚本没跑完就翻面，问题面那次上报永远不到。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face, dropQuestionReport: true),
+          ),
+        ],
+      );
+      expect(audio.played, isEmpty, reason: '问题面还没上报，自动播放挂起');
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(audio.played, <String>['back.mp3'], reason: '答案面只自动播答案新出现的那段');
+      await _unmount(tester);
+    });
+
     testWidgets('复习布局：底部重播键放拇指那端、R 键重播、间隔副标签可关，⋯ 面板改了即生效', (
       WidgetTester tester,
     ) async {
@@ -1400,6 +1480,12 @@ void main() {
         page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
         overrides: <Override>[
           srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 整面卡的可点 / 自动播只认页面上报「看得见」的发音（HrB0STYm3E）；Lapis 正面没有
+          // 音频，键位在问题面就按答案面预排，翻面前后同一位置、同样多。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face),
+          ),
         ],
       );
       final Finder replay = find.byKey(
@@ -1430,8 +1516,30 @@ void main() {
             .width,
         greaterThanOrEqualTo(219.5),
       );
+      // 正面还没有的那段先不可点（键位已按答案面排好）。
+      final Offset wordAt = tester.getCenter(replay);
+      final Offset sentenceAt = tester.getCenter(replaySentence);
+      audio.played.clear();
+      await tester.tap(replay, warnIfMissed: false);
+      await tester.tap(replaySentence, warnIfMissed: false);
+      await _settle(tester);
+      expect(audio.played, isEmpty, reason: '问题面上答案面的音频不可点');
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
+      // 翻面后可点、播的就是那一段。
+      audio.played.clear();
+      await tester.tap(replaySentence);
+      await _settle(tester);
+      expect(audio.played, <String>['sent.mp3']);
+      expect(
+        tester.getCenter(replay).dx,
+        moreOrLessEquals(wordAt.dx, epsilon: 0.5),
+        reason: '翻面前后同一水平位置',
+      );
+      expect(
+        tester.getCenter(replaySentence).dx,
+        moreOrLessEquals(sentenceAt.dx, epsilon: 0.5),
+      );
       // #17：重播键单独一行、在评分按钮上方（不再与评分按钮并排同高），靠选定的右端。
       expect(
         tester.getRect(replaySentence).bottom,
@@ -1591,6 +1699,12 @@ void main() {
         page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
         overrides: <Override>[
           srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 整面卡的可点 / 自动播只认页面上报「看得见」的发音（HrB0STYm3E）；Lapis 正面没有
+          // 音频，键位在问题面就按答案面预排，翻面前后同一位置、同样多。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face),
+          ),
         ],
       );
       final Finder replay = find.byKey(
@@ -1641,6 +1755,12 @@ void main() {
         page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
         overrides: <Override>[
           srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 整面卡的可点 / 自动播只认页面上报「看得见」的发音（HrB0STYm3E）；Lapis 正面没有
+          // 音频，键位在问题面就按答案面预排，翻面前后同一位置、同样多。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face),
+          ),
         ],
       );
       final Finder replay = find.byKey(
@@ -2398,6 +2518,62 @@ class _FakeRwkv implements SrsRwkvScheduling {
 }
 
 /// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。
+/// 整面 WebView 卡面的替身：像页面一样在这一面上屏后上报看得见的发音（[hidden] 当作被 CSS
+/// 隐藏，不报）。
+class _VisibleSubsetFace extends StatefulWidget {
+  const _VisibleSubsetFace({
+    required this.face,
+    this.hidden = const <String>{},
+    this.dropQuestionReport = false,
+  });
+
+  final SrsCardFace face;
+  final Set<String> hidden;
+
+  /// 问题面的上报永远不到（慢卡：外部脚本还没加载完用户就翻面，页面那次上报被换卡作废）。
+  final bool dropQuestionReport;
+
+  @override
+  State<_VisibleSubsetFace> createState() => _VisibleSubsetFaceState();
+}
+
+class _VisibleSubsetFaceState extends State<_VisibleSubsetFace> {
+  @override
+  void initState() {
+    super.initState();
+    _report();
+  }
+
+  @override
+  void didUpdateWidget(_VisibleSubsetFace old) {
+    super.didUpdateWidget(old);
+    if (old.face.cardId != widget.face.cardId ||
+        old.face.showingAnswer != widget.face.showingAnswer) {
+      _report();
+    }
+  }
+
+  void _report() {
+    final SrsCardFace face = widget.face;
+    if (widget.dropQuestionReport && !face.showingAnswer) return;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted) return;
+      face.onVisibleSounds?.call(face.cardId, face.showingAnswer, <String>[
+        for (final String n in srsCardSoundNames(face.bodyHtml))
+          if (!widget.hidden.contains(n)) n,
+      ]);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(
+    widget.face.showingAnswer ? 'answer' : 'question',
+    key: ValueKey<String>(
+      widget.face.showingAnswer ? 'srs-face-answer' : 'srs-face-question',
+    ),
+  );
+}
+
 class _RecordingAudio implements SrsCardAudioOutput {
   _RecordingAudio({this.holdOpen = false});
 

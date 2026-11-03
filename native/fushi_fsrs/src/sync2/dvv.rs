@@ -95,6 +95,15 @@ impl Dvv {
         self.compact();
     }
 
+    /// 去掉写入者名以 [prefix] 开头的全部分量（vv 与 cloud 都去）。返回是否去掉了什么。各写入者的分量互不影响
+    /// （[Dvv::compact] 按写入者各自进行），所以「先合并再去掉」与「先去掉再合并」结果相同。
+    pub fn drop_writers(&mut self, prefix: &str) -> bool {
+        let before = self.vv.len() + self.cloud.len();
+        self.vv.retain(|k, _| !k.starts_with(prefix));
+        self.cloud.retain(|k, _| !k.starts_with(prefix));
+        self.vv.len() + self.cloud.len() != before
+    }
+
     pub fn is_empty(&self) -> bool {
         self.vv.is_empty() && self.cloud.is_empty()
     }
@@ -142,5 +151,22 @@ mod tests {
         let mut m = d.clone();
         m.merge(&e);
         assert!(m.contains("w", 2) && m.contains("a", 5));
+    }
+
+    /// 去掉一类写入者与合并可交换（迁移「去掉存量」与投影「不收新的」是同一个结果的依据）。
+    #[test]
+    fn dropping_writers_commutes_with_merge() {
+        let a = Dvv::parse(r#"{"vv":{"a":2,"x:1":1},"cloud":{"a":[4],"x:2":[3]}}"#);
+        let b = Dvv::parse(r#"{"vv":{"a":3,"x:1":1,"b":1},"cloud":{"x:3":[2]}}"#);
+        let mut merged_then_dropped = a.clone();
+        merged_then_dropped.merge(&b);
+        assert!(merged_then_dropped.drop_writers("x:"));
+        let (mut a2, mut b2) = (a.clone(), b.clone());
+        a2.drop_writers("x:");
+        b2.drop_writers("x:");
+        a2.merge(&b2);
+        assert_eq!(merged_then_dropped, a2);
+        assert_eq!(a2.to_json().to_string(), r#"{"vv":{"a":4,"b":1}}"#);
+        assert!(!a2.clone().drop_writers("x:"));
     }
 }

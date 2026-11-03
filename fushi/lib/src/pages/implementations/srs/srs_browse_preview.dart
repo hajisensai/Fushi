@@ -28,6 +28,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 预览区收到的动作（键盘 / 键盘桥 / 按钮统一走这里）。
 enum SrsPreviewCommand { flip, previous, next, undo, escape }
@@ -377,12 +378,8 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
     if (row == null) return;
     final String noteId = row.noteId;
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => SrsNoteEditorPage(noteId: noteId),
-        ),
-      ),
+      () =>
+          srsPushPage<void>(context, (_) => SrsNoteEditorPage(noteId: noteId)),
     );
     if (!mounted) return;
     bumpSrsRevision(ref);

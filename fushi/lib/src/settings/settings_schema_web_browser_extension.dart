@@ -923,6 +923,12 @@ const List<(String, String, String, String)> kWebBrowserVideoShortcuts =
         'Ctrl+Shift+KeyZ',
       ),
       (
+        'favorite-cue',
+        'videoShortcutFavoriteCue',
+        'opt_videoShortcutFavoriteCue',
+        'Ctrl+Shift+KeyF',
+      ),
+      (
         'offset-minus',
         'videoShortcutOffsetMinus',
         'opt_videoShortcutOffsetMinus',
