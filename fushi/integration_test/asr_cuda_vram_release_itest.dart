@@ -1,17 +1,18 @@
-/// CUDA 转录后显存 / 后台 isolate 释放的真机探针（BUG-3993）。
+/// CUDA 转录后台 isolate 退出 / 显存不跨轮叠加的真机探针（BUG-3993）。
 ///
-/// 现象：用过一次 GPU（CUDA）转录后，本进程显存常驻约 4.4 GB 直到 app 退出；
-/// 且每转录一次漏一个不退出的后台 isolate。
+/// 报告的现象：用过一次 GPU（CUDA）转录后进程显存常驻约 4.4 GB——**报告了，未复现**
+/// （实测显存在会话关闭时回落，收尾后约 180 MiB 残留应是 CUDA 主上下文，不随轮次增长）。
+/// 实测确认的是另一件事：每转录一次漏一个不退出的后台 isolate（上游已改为
+/// `Isolate.exit` 收尾）。
 ///
 /// 本测试走生产同一条路：`AsrIsolateTranscription.spawn` + 宿主真 bootstrap
 /// （挂 `BackgroundIsolateBinaryMessenger`，method channel 插件后端），CUDA 插件
 /// EP 由 `registerCudaRuntime` 注册。连跑两轮转录，每轮后读 DXGI 的**本进程**
-/// 显存占用（`QueryVideoMemoryInfo.CurrentUsage`），并给转录 isolate 挂退出监听：
+/// 显存占用（`QueryVideoMemoryInfo.CurrentUsage`），并给转录 isolate 挂退出监听，
+/// 只钉两件事：
 ///
-/// - 每轮收尾后显存回到注册后的基线附近（插件在最后一个 CUDA 会话释放时注销
-///   插件库，ORT 随之拆掉共享显存池）；
-/// - 两轮之后的水平一致（第二轮能重新装载 CUDA 插件，且不叠加）；
-/// - 转录 isolate 在任务结束后真的退出。
+/// - 转录 isolate 在任务结束后真的退出；
+/// - 每轮收尾后显存回到注册后的基线附近，且两轮之间不叠加。
 ///
 /// 输入（环境变量或 dart-define，`tool/run_windows_itest.ps1` 透传父进程环境）：
 ///   ASR_MODEL_SEED=<含 fp32 全套文件的模型目录>
@@ -107,12 +108,18 @@ Future<({int afterBytes, int peakBytes, bool isolateExited})> _round({
   });
   int peak = 0;
   bool isolateExited = false;
-  final Timer sampler = Timer.periodic(const Duration(milliseconds: 500), (
-    _,
-  ) async {
-    final int now = await _processVramBytes();
-    if (now > peak) peak = now;
-  });
+  // 串行采样：上一次查询回来才排下一次，不重叠；采样出错收进 Future，
+  // 由 finally 里 await 抛出，不变成游离的未处理异步错误。
+  bool stopSampling = false;
+  Future<void> sampleLoop() async {
+    while (!stopSampling) {
+      final int now = await _processVramBytes();
+      if (now > peak) peak = now;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  final Future<void> sampler = sampleLoop();
   try {
     final Stopwatch sw = Stopwatch()..start();
     final AsrIsolateTranscription running = await AsrIsolateTranscription.spawn(
@@ -165,7 +172,8 @@ Future<({int afterBytes, int peakBytes, bool isolateExited})> _round({
         .timeout(const Duration(seconds: 30), onTimeout: () => false);
     _log('round $index isolate exited=$isolateExited');
   } finally {
-    sampler.cancel();
+    stopSampling = true;
+    await sampler;
     isolates.close();
     exits.close();
     await jobDir.delete(recursive: true);
@@ -194,6 +202,12 @@ void main() {
     expect(store.isReady(AsrEncoderVariant.fp32), isTrue);
 
     await tester.runAsync(() async {
+      // 前置条件：DXGI 本进程显存查询必须可用，否则本探针什么也量不了。
+      expect(
+        await OnnxRuntime().getDeviceMemoryInfo(),
+        isNotNull,
+        reason: '前置条件不满足：DXGI 显存查询不可用（仅 Windows + DXGI 适配器）',
+      );
       _log('probe=${await probeCuda()}');
       final int beforeRegister = await _processVramBytes();
       _log('register=${await registerCudaRuntime(cudaDir)}');
