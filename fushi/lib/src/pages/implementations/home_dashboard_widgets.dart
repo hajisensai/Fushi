@@ -447,6 +447,10 @@ class HomePanelFlow extends MultiChildRenderObjectWidget {
   final double minColumnWidth;
   final int maxColumns;
 
+  /// 逐列数试排的次数（测试用：判据与面板高度都没变的 relayout 不该再试排）。
+  @visibleForTesting
+  static int debugColumnChoices = 0;
+
   /// 宽 [width] 下 [count] 个面板最多分几列（纯函数，测试与版面共用）。
   static int columnsFor({
     required double width,
@@ -568,14 +572,66 @@ class _RenderPanelFlow extends RenderBox
   double _columnWidth(double width, int columns) =>
       (width - _gap * (columns - 1)) / columns;
 
-  /// 按列宽真排一遍量高度（面板里有 LayoutBuilder，不支持 dry layout）；
-  /// performLayout 末尾会按选定列宽再排一次，最后那次生效。
+  /// 上次选列的判据（宽、面板数、gap / 最小列宽 / 最大列数）与选出的列数、
+  /// 当时各面板在该列宽下的高度。判据与高度都没变时直接按缓存列数排一遍，不再
+  /// 逐个列数试排——面板内部 relayout（数据到达、文字变化）尺寸没变就只排一次。
+  Object? _choiceKey;
+  int _chosenColumns = 1;
+  List<double> _chosenHeights = const <double>[];
+
+  /// 按列宽真排一遍量高度（面板里有 LayoutBuilder，不支持 dry layout）。
   List<double> _measure(List<RenderBox> kids, double colWidth) {
     final BoxConstraints c = BoxConstraints.tightFor(width: colWidth);
     return <double>[
       for (final RenderBox k in kids)
         (k..layout(c, parentUsesSize: true)).size.height,
     ];
+  }
+
+  static bool _sameHeights(List<double> a, List<double> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if ((a[i] - b[i]).abs() > 0.5) return false;
+    }
+    return true;
+  }
+
+  /// 在 2..[maxCols] 列里逐个试排，选列底空白占比最小的；返回列数与该列宽下
+  /// 各面板高度（子节点最后一次 layout 就停在选中的列宽上）。
+  ({int columns, List<double> heights}) _chooseColumns(
+    List<RenderBox> kids,
+    double width,
+    int maxCols,
+  ) {
+    HomePanelFlow.debugColumnChoices++;
+    int best = 1;
+    double bestWaste = double.infinity;
+    List<double>? bestHeights;
+    int? lastMeasured;
+    // 单列恒为零空白，不参与比较；放得下两列以上时才挑。
+    for (int cols = maxCols; cols >= 2; cols--) {
+      final List<double> heights = _measure(kids, _columnWidth(width, cols));
+      lastMeasured = cols;
+      final ({List<List<int>> columns, List<double> heights}) plan =
+          HomePanelFlow.balance(heights, cols, _gap);
+      final double tallest = plan.heights.fold<double>(0, math.max);
+      if (tallest <= 0) continue;
+      final double filled = plan.heights.fold<double>(
+        0,
+        (double a, double h) => a + h,
+      );
+      final double waste = 1 - filled / (tallest * cols);
+      // 空白差不多时偏向更多列（更矮）。
+      if (waste < bestWaste - 0.05) {
+        best = cols;
+        bestWaste = waste;
+        bestHeights = heights;
+      }
+    }
+    if (best != lastMeasured || bestHeights == null) {
+      bestHeights = _measure(kids, _columnWidth(width, best));
+    }
+    return (columns: best, heights: bestHeights);
   }
 
   @override
@@ -593,42 +649,37 @@ class _RenderPanelFlow extends RenderBox
       minColumnWidth: _minColumnWidth,
       maxColumns: _maxColumns,
     );
-    int best = 1;
-    double bestWaste = double.infinity;
-    // 单列恒为零空白，不参与比较；放得下两列以上时才挑。
-    for (int cols = maxCols; cols >= 2; cols--) {
-      final ({List<List<int>> columns, List<double> heights}) plan =
-          HomePanelFlow.balance(
-            _measure(kids, _columnWidth(width, cols)),
-            cols,
-            _gap,
-          );
-      final double tallest = plan.heights.fold<double>(0, math.max);
-      if (tallest <= 0) continue;
-      final double filled = plan.heights.fold<double>(
-        0,
-        (double a, double h) => a + h,
-      );
-      final double waste = 1 - filled / (tallest * cols);
-      // 空白差不多时偏向更多列（更矮）。
-      if (waste < bestWaste - 0.05) {
-        best = cols;
-        bestWaste = waste;
-      }
-    }
-    final double colWidth = _columnWidth(width, best);
-    final BoxConstraints childConstraints = BoxConstraints.tightFor(
-      width: colWidth,
-    );
-    for (final RenderBox k in kids) {
-      k.layout(childConstraints, parentUsesSize: true);
-    }
-    final ({List<List<int>> columns, List<double> heights}) plan =
-        HomePanelFlow.balance(
-          <double>[for (final RenderBox k in kids) k.size.height],
-          best,
-          _gap,
+    final Object key = (width, kids.length, _gap, _minColumnWidth, maxCols);
+    int columns;
+    List<double> heights;
+    if (maxCols <= 1) {
+      columns = 1;
+      heights = _measure(kids, width);
+    } else if (key == _choiceKey) {
+      // 判据没变：按缓存列数排一遍；高度也没变就沿用，变了才重新试排。
+      columns = _chosenColumns;
+      heights = _measure(kids, _columnWidth(width, columns));
+      if (!_sameHeights(heights, _chosenHeights)) {
+        (columns: columns, heights: heights) = _chooseColumns(
+          kids,
+          width,
+          maxCols,
         );
+      }
+    } else {
+      (columns: columns, heights: heights) = _chooseColumns(
+        kids,
+        width,
+        maxCols,
+      );
+    }
+    _choiceKey = key;
+    _chosenColumns = columns;
+    _chosenHeights = heights;
+
+    final double colWidth = _columnWidth(width, columns);
+    final ({List<List<int>> columns, List<double> heights}) plan =
+        HomePanelFlow.balance(heights, columns, _gap);
     double height = 0;
     for (int c = 0; c < plan.columns.length; c++) {
       double y = 0;
@@ -636,7 +687,7 @@ class _RenderPanelFlow extends RenderBox
         final _PanelFlowParentData pd =
             kids[i].parentData! as _PanelFlowParentData;
         pd.offset = Offset(c * (colWidth + _gap), y);
-        y += kids[i].size.height + _gap;
+        y += heights[i] + _gap;
       }
       height = math.max(height, y - _gap);
     }

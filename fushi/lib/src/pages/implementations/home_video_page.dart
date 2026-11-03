@@ -5557,23 +5557,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 首屏（2026-11-01 用户：「留一个大屏的显示，其他都按这个并列卡」）：最近
     // 在看的那部仍是大卡（剧照叠层 / 竖海报封面皮），其余条目换成与书架同一个
     // 封面取色并列卡（[FushiContinueCardRow]）——宽屏排在大卡旁、与大卡等高
-    // （高度够就两行），窄屏挂在大卡下面一行横滑。首页没有网格，按约 200 宽
-    // 虚拟分列，卡宽随剧照 / 海报自动占几列。
-    final double cellInset = tokens.spacing.gap * 0.75;
-    Widget sideCards(double? height) => LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints c) {
-        final int columns = (c.maxWidth / 200).floor().clamp(1, 1 << 20);
-        return FushiContinueCardRow(
-          rowKey: const ValueKey<String>('video_home_continue_row'),
-          bleed: height == null ? tokens.spacing.card : 0,
-          fitHeight: height,
-          fillWidth: true,
-          columns: columns,
-          cellInset: cellInset,
-          cellWidth: (c.maxWidth + cellInset * 2) / columns,
-          entries: spotlight.sublist(1),
-        );
-      },
+    // （高度够就两行），窄屏挂在大卡下面一行横滑。首页没有网格，卡片铺满
+    // 可见宽度，卡宽随剧照 / 海报自动定。
+    Widget sideCards(double? height) => FushiContinueCardRow.fill(
+      rowKey: const ValueKey<String>('video_home_continue_row'),
+      bleed: height == null ? tokens.spacing.card : 0,
+      fitHeight: height,
+      gap: tokens.spacing.gap * 1.5,
+      entries: spotlight.sublist(1),
     );
     final Widget? hero = spotlight.isEmpty
         ? null

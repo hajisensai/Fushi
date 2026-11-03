@@ -1666,7 +1666,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   /// 「继续游戏」段（2026-11-01 用户：「游戏也套用继续阅读这个并列卡统一一下」）：
   /// 与书架同一个封面取色并列卡（[FushiContinueCardRow]）——每张卡占两格以上、
   /// 卡缘对齐下方网格的封面竖线，底色取自游戏封面。卡上是卡盒封面 + 名字 +
-  /// 累计时长 · 最近游玩；点按启动，长按 / 右键进详情。
+  /// 游玩状态角标 + 累计时长 · 最近游玩；点按启动，长按 / 右键进详情。
   Widget _buildContinueSection(
     BuildContext context,
     List<GalgameEntry> games,
@@ -1687,7 +1687,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
       return FushiContinueEntry(
         key: ValueKey<String>('games_continue_card_${game.id}'),
         focusId: FushiFocusId('games-continue-${game.id}'),
-        cover: GameCoverThumb(game: game),
+        // 与下方网格同一个卡盒圆角。
+        cover: ShelfCoverRadiusScope(
+          radius: galgameCoverRadius(context),
+          child: GameCoverThumb(game: game),
+        ),
+        // 游玩状态（通关 / 游玩中…）角标，与列表行同一个件；未设置不画。
+        badge: galgamePlayStatusBadge(game.playStatus),
+        semanticLabel: '${t.game_focus_continue} · ${game.displayName}',
         material: ShelfCoverMaterial.gameCase,
         coverAspectRatio: kShelfGameCaseAspectRatio,
         colorSource: hasCover ? resizedFileImage(File(cover)) : null,
@@ -1700,7 +1707,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(_kGameGridEdge, 16, _kGameGridEdge, 0),
-      child: FushiContinueCardRow(
+      child: FushiContinueCardRow.grid(
         rowKey: const ValueKey<String>('games_continue_row'),
         label: t.game_focus_continue,
         bleed: _kGameGridEdge,

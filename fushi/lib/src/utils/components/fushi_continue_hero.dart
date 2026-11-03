@@ -340,7 +340,16 @@ class FushiContinueEntry {
     this.landscapeCover,
     this.subtitleIcon,
     this.colorSource,
+    this.badge,
+    this.semanticLabel,
   });
+
+  /// 取色卡（[FushiContinueCardRow]）标题下的状态角标（游戏的游玩状态）；
+  /// null = 不画。
+  final Widget? badge;
+
+  /// 整卡的无障碍标签（「继续游戏 · 名称」）；null = 由卡内文字合成。
+  final String? semanticLabel;
 
   /// 取色卡（[FushiContinueCardRow]）的取色来源：通常就是封面那张图的
   /// provider；null = 不取色，用中性卡面。
@@ -424,6 +433,8 @@ class FushiContinueEntry {
           onOpen: onOpen,
           onLongPress: onLongPress,
           colorSource: colorSource,
+          badge: badge,
+          semanticLabel: semanticLabel,
         );
 }
 

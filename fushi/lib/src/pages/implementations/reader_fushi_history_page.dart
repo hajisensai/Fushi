@@ -1815,11 +1815,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
           title: mediaSource.getDisplayTitleFromMediaItem(item),
           progress: fractionOf(item),
+          progressLabel: t.book_read_progress(
+            percent: (fractionOf(item) * 100).round(),
+          ),
           onOpen: openerOf(item),
         );
     // 封面取色并列卡（2026-11-01 用户选定设计稿「5 · 封面取色卡」）：主卡与
     // 其余在读的书同款同大，卡宽卡在网格列上。
-    return FushiContinueCardRow(
+    return FushiContinueCardRow.grid(
       rowKey: const ValueKey<String>('reader_shelf_continue_side_row'),
       label: t.book_continue_reading,
       // 外层 Padding 的左右页边距：横滑行在页边才裁切。

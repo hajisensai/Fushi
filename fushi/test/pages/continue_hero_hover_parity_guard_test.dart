@@ -58,9 +58,9 @@ void main() {
     // （视频首页宽屏时作为大卡旁的 sideBuilder 用它，大卡仍是 Spotlight）。
     const Map<String, String> pages = <String, String>{
       'lib/src/pages/implementations/reader_fushi_history_page.dart':
-          'FushiContinueCardRow(',
+          'FushiContinueCardRow.grid(',
       'lib/src/pages/implementations/games_library_page.dart':
-          'FushiContinueCardRow(',
+          'FushiContinueCardRow.grid(',
       'lib/src/pages/implementations/galgame_home_page.dart':
           'FushiContinueSpotlight(',
       'lib/src/pages/implementations/home_dashboard_page.dart':
