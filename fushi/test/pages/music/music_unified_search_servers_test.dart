@@ -337,4 +337,92 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+
+  testWidgets('共享服务器搜索缓存：综合结果与各页签同一搜索词只对每台服务器发一次', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final _FakeServer server = _FakeServer(
+      serverId: navidrome.serverId,
+      displayName: navidrome.displayName,
+      result: navidrome.result,
+    );
+    final MusicServerSearchCache cache = MusicServerSearchCache();
+    await _pump(
+      tester,
+      MusicSearchOverview(
+        query: 'song',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        serverSearch: cache,
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+        onSeeAll: (_) {},
+      ),
+    );
+    await _settleSearch(tester);
+    expect(server.searchCalls, 1);
+
+    // 切到歌曲 / 专辑页签（每个页签是新的结果视图）：同一搜索词不再发请求。
+    for (final MusicPluginSearchType type in <MusicPluginSearchType>[
+      MusicPluginSearchType.song,
+      MusicPluginSearchType.album,
+    ]) {
+      await _pump(
+        tester,
+        MusicSearchResultsView(
+          key: ValueKey<String>('results-${type.wire}'),
+          type: type,
+          query: 'song',
+          sources: const <MusicPluginManifest>[],
+          servers: <MusicServerBrowser>[server],
+          serverSearch: cache,
+          local: MusicSearchLocalItems.none,
+          localActions: _noLocalActions(),
+        ),
+      );
+      await _settleSearch(tester);
+    }
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+      ),
+      findsNothing,
+      reason: '专辑页签只投影专辑',
+    );
+    expect(server.searchCalls, 1);
+
+    // 换搜索词才重新搜。
+    await _pump(
+      tester,
+      MusicSearchResultsView(
+        key: const ValueKey<String>('results-song-2'),
+        type: MusicPluginSearchType.song,
+        query: 'other',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        serverSearch: cache,
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+      ),
+    );
+    await _settleSearch(tester);
+    expect(server.searchCalls, 2);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  test('共享服务器搜索缓存：失败的请求不留，重试会重新发', () async {
+    final _FakeServer broken = _FakeServer(
+      serverId: 'subsonic:broken',
+      displayName: 'Broken',
+      error: StateError('boom'),
+    );
+    final MusicServerSearchCache cache = MusicServerSearchCache();
+    await expectLater(cache.search(broken, 'q'), throwsStateError);
+    await Future<void>.delayed(Duration.zero);
+    await expectLater(cache.search(broken, 'q'), throwsStateError);
+    expect(broken.searchCalls, 2);
+  });
 }

@@ -68,6 +68,43 @@ const int kMusicSearchPageSize = 30;
 /// 综合结果每个插件每种类型取的条数（只取第一页）。
 const int kMusicSearchOverviewPageSize = 10;
 
+/// 统一搜索里服务器搜索的共享缓存。一次 [MusicServerBrowser.search] 已同时返回曲目 / 专辑 /
+/// 艺人，所以综合结果与歌曲 / 专辑 / 艺人各页签按（服务器, 搜索词）共用同一个请求，切页签不
+/// 再对每台服务器（含 Apple Music catalog API）重发。失败的请求不留（重试会重新发）。
+/// 由搜索页持有，随搜索页一起丢弃；只留最近 [_capacity] 个（服务器, 搜索词）的结果。
+class MusicServerSearchCache {
+  static const int _capacity = 32;
+
+  final Map<String, Future<MusicServerSearchResult>> _entries =
+      <String, Future<MusicServerSearchResult>>{};
+
+  /// [server] 上搜 [query]（取 [kMusicSearchPageSize] 条；综合结果自己截前几条）。
+  Future<MusicServerSearchResult> search(
+    MusicServerBrowser server,
+    String query,
+  ) {
+    final String key = '${server.serverId}\u0000$query';
+    final Future<MusicServerSearchResult>? hit = _entries.remove(key);
+    if (hit != null) {
+      _entries[key] = hit; // 重新插入 = 挪到最近
+      return hit;
+    }
+    final Future<MusicServerSearchResult> f = server.search(
+      query,
+      limit: kMusicSearchPageSize,
+    );
+    _entries[key] = f;
+    if (_entries.length > _capacity) _entries.remove(_entries.keys.first);
+    f.then<void>(
+      (_) {},
+      onError: (Object _) {
+        if (identical(_entries[key], f)) _entries.remove(key);
+      },
+    );
+    return f;
+  }
+}
+
 /// 综合结果右栏的歌曲条数。
 const int kMusicSearchOverviewSongCount = 5;
 
@@ -814,6 +851,7 @@ class MusicSearchResultsView extends ConsumerStatefulWidget {
     required this.local,
     required this.localActions,
     this.servers = const <MusicServerBrowser>[],
+    this.serverSearch,
   });
 
   final MusicPluginSearchType type;
@@ -829,6 +867,9 @@ class MusicSearchResultsView extends ConsumerStatefulWidget {
   final MusicSearchLocalItems local;
   final MusicSearchLocalActions localActions;
 
+  /// 搜索页共享的服务器搜索缓存（与综合结果 / 其它页签共用请求）；null = 本视图自建一个。
+  final MusicServerSearchCache? serverSearch;
+
   @override
   ConsumerState<MusicSearchResultsView> createState() =>
       _MusicSearchResultsViewState();
@@ -840,6 +881,9 @@ class _MusicSearchResultsViewState
 
   /// 服务器 id → 结果。
   Map<String, _ServerFeed> _serverFeeds = <String, _ServerFeed>{};
+  late final MusicServerSearchCache _ownServerSearch = MusicServerSearchCache();
+  MusicServerSearchCache get _serverSearch =>
+      widget.serverSearch ?? _ownServerSearch;
   Timer? _debounce;
 
   /// 防抖结束前哨兵只转圈、不发请求。
@@ -854,9 +898,12 @@ class _MusicSearchResultsViewState
   @override
   void didUpdateWidget(MusicSearchResultsView old) {
     super.didUpdateWidget(old);
-    if (old.query.trim() != widget.query.trim() || old.type != widget.type) {
+    final bool queryChanged = old.query.trim() != widget.query.trim();
+    if (queryChanged || old.type != widget.type) {
+      // 插件按类型分页，换页签要重取；服务器一次搜索已含全部类型，只随搜索词失效
+      // （[_serverItems] 按新页签投影）。
       _feeds = <String, _PluginFeed>{};
-      _serverFeeds = <String, _ServerFeed>{};
+      if (queryChanged) _serverFeeds = <String, _ServerFeed>{};
       _schedule();
     }
   }
@@ -878,9 +925,9 @@ class _MusicSearchResultsViewState
 
   Future<void> _fetchServer(MusicServerBrowser server, _ServerFeed feed) async {
     try {
-      final MusicServerSearchResult result = await server.search(
+      final MusicServerSearchResult result = await _serverSearch.search(
+        server,
         widget.query.trim(),
-        limit: kMusicSearchPageSize,
       );
       if (!mounted || !identical(_serverFeeds[server.serverId], feed)) return;
       setState(() {
@@ -1315,6 +1362,7 @@ class MusicSearchOverview extends ConsumerStatefulWidget {
     required this.localActions,
     required this.onSeeAll,
     this.servers = const <MusicServerBrowser>[],
+    this.serverSearch,
   });
 
   final String query;
@@ -1327,6 +1375,9 @@ class MusicSearchOverview extends ConsumerStatefulWidget {
   final MusicSearchLocalItems local;
   final MusicSearchLocalActions localActions;
   final ValueChanged<MusicPluginSearchType> onSeeAll;
+
+  /// 搜索页共享的服务器搜索缓存（与各页签共用请求）；null = 本视图自建一个。
+  final MusicServerSearchCache? serverSearch;
 
   @override
   ConsumerState<MusicSearchOverview> createState() =>
@@ -1346,6 +1397,9 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
   Map<String, _ServerOverviewResult> _serverResults =
       <String, _ServerOverviewResult>{};
   final Set<String> _inFlight = <String>{};
+  late final MusicServerSearchCache _ownServerSearch = MusicServerSearchCache();
+  MusicServerSearchCache get _serverSearch =>
+      widget.serverSearch ?? _ownServerSearch;
   Timer? _debounce;
   bool _armed = false;
 
@@ -1451,10 +1505,7 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
     _ServerOverviewResult result;
     try {
       result = (
-        result: await server.search(
-          widget.query.trim(),
-          limit: kMusicSearchOverviewPageSize,
-        ),
+        result: await _serverSearch.search(server, widget.query.trim()),
         error: null,
       );
     } on Object catch (e) {
@@ -1477,7 +1528,8 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
     for (final MusicServerBrowser s in widget.servers)
       if (_serverResults[s.serverId]?.result
           case final MusicServerSearchResult r)
-        ..._serverHitsOf(s, r, type),
+        // 共享缓存按列表页条数取；综合结果每台只露前几条。
+        ..._serverHitsOf(s, r, type).take(kMusicSearchOverviewPageSize),
   ];
 
   Future<void> _fetch(

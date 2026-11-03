@@ -1346,6 +1346,9 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
   /// 同曲库页：`null` = 全部来源，[kMusicSearchLocalSource] = 只看本地，其余为插件 id。
   String? _sourceFilter;
 
+  /// 综合结果与各页签共用的服务器搜索（一次搜索含全部类型，切页签不重发）。
+  final MusicServerSearchCache _serverSearch = MusicServerSearchCache();
+
   @override
   void dispose() {
     _controller.dispose();
@@ -1402,6 +1405,7 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
                             effective,
                             inputs.searchServers,
                           ),
+                          serverSearch: _serverSearch,
                           local: _musicSearchIncludesLocal(effective)
                               ? _musicLocalMatches(
                                   inputs.snapshot,
@@ -1494,6 +1498,7 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
       query: query,
       sources: _musicFilteredSources(effective, inputs.searchPlugins),
       servers: _musicFilteredServers(effective, inputs.searchServers),
+      serverSearch: _serverSearch,
       local: _musicSearchIncludesLocal(effective)
           ? _musicLocalMatches(inputs.snapshot, inputs.serverAlbums, query)
           : MusicSearchLocalItems.none,

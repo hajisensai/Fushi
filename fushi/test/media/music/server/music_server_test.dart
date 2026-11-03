@@ -256,33 +256,6 @@ void main() {
     expect(musicServerBitrateLimit(0), isNull);
   });
 
-  testWidgets('服务器页：清单 → 专辑 → 曲目', (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db)
-      ..wireMusicPluginManagerForTesting(_noPlugins());
-    final _FakeBrowser browser = _FakeBrowser();
-    await _pump(
-      tester,
-      app,
-      MusicServerListPage(loader: () async => <MusicServerBrowser>[browser]),
-    );
-    expect(find.text('Navidrome'), findsWidgets);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('music-server-subsonic-1')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Remote Album'), findsOneWidget);
-    await tester.tap(find.text('Remote Album'));
-    await tester.pumpAndSettle();
-    expect(find.text('First'), findsOneWidget);
-    expect(find.text('Second'), findsOneWidget);
-    expect(find.text('1:01'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
-
   testWidgets('混排进曲库：服务器专辑排在本地专辑之后、带云朵', (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

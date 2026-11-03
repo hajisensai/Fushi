@@ -69,7 +69,9 @@ Future<List<MusicOrderedSource>> loadOrderedMusicOnlineSources(
   );
 }
 
-/// 「来源」页里 Apple Music 关着时的占位行（关着就没有浏览器实例）。
+/// 「来源」页里 Apple Music 关着时的占位行：关着就没有浏览器实例，但这一行的开关正是
+/// 打开它的地方，所以必须有一行可点。顺序的保留不靠它（写回走
+/// [applyMusicOnlineSourceEdits]，不在场的来源一律原样保留）。
 final class _AppleMusicOffSource extends MusicOnlineSource {
   const _AppleMusicOffSource();
 
@@ -96,7 +98,8 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
   List<MusicOrderedSource>? _rows;
   final GlobalKey _addAnchor = GlobalKey(debugLabel: 'music-sources-add');
 
-  AppModel get _app => ref.read(appProvider);
+  /// initState 里取一次：await 之后页面可能已 dispose，不再经过 ref。
+  late final AppModel _app = ref.read(appProvider);
 
   @override
   void initState() {
@@ -105,6 +108,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     final List<MusicOnlineSource> sources = await loadMusicOnlineSources(_app);
     if (!sources.any((MusicOnlineSource s) => s.key == kAppleMusicSourceKey)) {
       sources.add(const _AppleMusicOffSource());
@@ -117,13 +121,20 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     setState(() => _rows = rows);
   }
 
+  /// 可见行的新顺序与开关合并回已存的完整列表：这次没加载到的来源（插件 / 服务器被停用）
+  /// 的顺序与开关原样保留，不因在这里排了一次序就被删掉。
   Future<void> _commit(List<MusicOrderedSource> rows) async {
     setState(() => _rows = rows);
     await _app.prefsRepo.setMusicOnlineSourcesRaw(
-      serializeLyricsProviders(<LyricsProviderEntry>[
-        for (final MusicOrderedSource r in rows)
-          LyricsProviderEntry(id: r.source.key, enabled: r.enabled),
-      ]),
+      serializeLyricsProviders(
+        applyMusicOnlineSourceEdits(
+          parseLyricsProviders(_app.prefsRepo.musicOnlineSourcesRaw),
+          <LyricsProviderEntry>[
+            for (final MusicOrderedSource r in rows)
+              LyricsProviderEntry(id: r.source.key, enabled: r.enabled),
+          ],
+        ),
+      ),
     );
   }
 
@@ -141,6 +152,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     if (row.source.key == kAppleMusicSourceKey) {
       // Apple Music 的开关就是启用开关：关着时没有浏览器实例，条目本身恒为显示。
       await _app.prefsRepo.setMusicAppleMusicEnabled(on);
+      if (!mounted) return;
       await _load();
       return;
     }
@@ -156,6 +168,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
 
   Future<void> _setStorefront(String sf) async {
     await _app.prefsRepo.setMusicAppleMusicStorefront(sf);
+    if (!mounted) return;
     await _load();
   }
 
@@ -210,6 +223,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
         );
     if (action == null || !mounted) return;
     await action();
+    if (!mounted) return;
     await _load();
   }
 

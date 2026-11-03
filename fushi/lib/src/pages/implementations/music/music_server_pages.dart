@@ -1,4 +1,5 @@
-/// 服务器曲库页（音乐方案 §13 P5）：服务器清单 → 专辑 / 艺人 / 搜索 → 专辑曲目 → 播放。
+/// 服务器曲库页（音乐方案 §13 P5）：专辑 / 艺人 / 搜索 → 专辑曲目 → 播放。入口是曲库页
+/// 「推荐」的来源 chip（内嵌 [MusicServerBrowsePage]）与「来源」页。
 /// 只读浏览；每一层都按服务器分页原样取（不把整库拍平成本地行），播放交给音乐引擎一条流。
 library;
 
@@ -13,12 +14,10 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
-import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
-import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -28,15 +27,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
-
-/// 打开服务器清单页。
-Future<void> openMusicServerList(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const MusicServerListPage(),
-      ),
-    );
 
 /// 专辑网格的列宽上限（本地曲库与服务器曲库同一套几何）。
 const double kMusicAlbumGridMaxExtent = 200;
@@ -170,137 +160,6 @@ EdgeInsets musicBrowsePagePadding(BuildContext context) {
       tokens.spacing.section,
     ),
   );
-}
-
-/// 服务器清单。
-class MusicServerListPage extends ConsumerStatefulWidget {
-  const MusicServerListPage({super.key, this.loader});
-
-  /// 测试注入：替代读配置。
-  final Future<List<MusicServerBrowser>> Function()? loader;
-
-  @override
-  ConsumerState<MusicServerListPage> createState() =>
-      _MusicServerListPageState();
-}
-
-class _MusicServerListPageState extends ConsumerState<MusicServerListPage> {
-  late Future<List<MusicServerBrowser>> _servers = _load();
-
-  Future<List<MusicServerBrowser>> _load() =>
-      widget.loader?.call() ?? loadMusicServerBrowsers(ref.read(appProvider));
-
-  /// 插件音源在这里只是管理入口（安装 / 启停 / 登录）；浏览走音乐页的推荐与搜索。
-  /// 合规门没过的平台（iOS）不出现。
-  bool get _showPlugins =>
-      widget.loader == null && isMusicPluginSourcesAvailable;
-
-  @override
-  Widget build(BuildContext context) {
-    return musicBrowseScaffold(
-      context,
-      title: t.music_servers_title,
-      body: FutureBuilder<List<MusicServerBrowser>>(
-        future: _servers,
-        builder:
-            (
-              BuildContext context,
-              AsyncSnapshot<List<MusicServerBrowser>> snap,
-            ) {
-              if (snap.hasError) {
-                return musicBrowseErrorView(
-                  context,
-                  snap.error!,
-                  () => setState(() {
-                    _servers = _load();
-                  }),
-                );
-              }
-              final List<MusicServerBrowser>? servers = snap.data;
-              if (servers == null) return const FushiLoadingView();
-              final int count = servers.length + (_showPlugins ? 1 : 0);
-              if (count == 0) {
-                return Center(
-                  child: FushiPlaceholderMessage(
-                    icon: FushiIcons.server,
-                    message: t.music_servers_empty,
-                    detail: t.music_servers_empty_hint,
-                  ),
-                );
-              }
-              return FushiEntranceScope(
-                child: ListView.builder(
-                  padding: musicBrowsePagePadding(context),
-                  itemCount: count,
-                  itemBuilder: fushiStaggeredItemBuilder((
-                    BuildContext context,
-                    int i,
-                  ) {
-                    if (i >= servers.length) {
-                      return FushiPressScale(
-                        child: FushiGroupedListItem(
-                          key: const ValueKey<String>(
-                            'music-plugin-management',
-                          ),
-                          index: i,
-                          count: count,
-                          onTap: () => unawaited(
-                            openMusicPluginManagement(
-                              context,
-                              appModel: ref.read(appProvider),
-                            ),
-                          ),
-                          child: FushiListItem(
-                            leading: const FushiListLeadingIcon(
-                              FushiIcons.browserExtension,
-                            ),
-                            title: Text(t.music_plugins_title),
-                            subtitle: Text(
-                              t.music_plugins_entry_hint,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: const FushiIcon(FushiIcons.chevronRight),
-                          ),
-                        ),
-                      );
-                    }
-                    final MusicServerBrowser s = servers[i];
-                    return FushiPressScale(
-                      child: FushiGroupedListItem(
-                        key: ValueKey<String>('music-server-${s.serverId}'),
-                        index: i,
-                        count: count,
-                        onTap: () => unawaited(
-                          Navigator.of(context).push<void>(
-                            adaptivePageRoute<void>(
-                              context: context,
-                              builder: (_) => MusicServerBrowsePage(browser: s),
-                            ),
-                          ),
-                        ),
-                        child: FushiListItem(
-                          leading: const FushiListLeadingIcon(
-                            FushiIcons.server,
-                          ),
-                          title: Text(s.displayName),
-                          subtitle: Text(switch (s.kind) {
-                            MusicServerKind.jellyfin => 'Jellyfin / Emby',
-                            MusicServerKind.subsonic => 'OpenSubsonic',
-                            MusicServerKind.appleMusic =>
-                              t.music_server_apple_music_subtitle,
-                          }),
-                          trailing: const FushiIcon(FushiIcons.chevronRight),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              );
-            },
-      ),
-    );
-  }
 }
 
 enum _BrowseSection { albums, artists }

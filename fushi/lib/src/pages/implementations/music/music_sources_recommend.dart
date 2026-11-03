@@ -56,7 +56,7 @@ class MusicSourcesRecommendView extends ConsumerStatefulWidget {
 
 class _MusicSourcesRecommendViewState
     extends ConsumerState<MusicSourcesRecommendView> {
-  /// 选中的来源 key；null = 全部。
+  /// 用户点选的来源 key；null = 全部。来源消失后它可能悬空，显示一律走 [_selectedSource]。
   String? _selected;
 
   MusicOnlineSource? get _selectedSource {
@@ -80,13 +80,15 @@ class _MusicSourcesRecommendViewState
 
   Widget _chips(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // chip 选中与面板内容同一个有效值：选中的来源没了（被关掉 / 停用 / 删除）两者一起回到「全部」。
+    final String? effective = _selectedSource?.key;
     Widget chip(String? key, String label) => Padding(
       padding: EdgeInsetsDirectional.only(end: tokens.spacing.gap / 2),
       child: FushiPressScale(
         child: FushiChoiceChip(
           key: ValueKey<String>('music-recommend-source-${key ?? 'all'}'),
           label: Text(label),
-          selected: _selected == key,
+          selected: effective == key,
           onSelected: (_) => _select(key),
         ),
       ),
@@ -145,7 +147,10 @@ class _MusicSourcesRecommendViewState
           for (final MusicOnlineSource o in widget.sources)
             if (o is MusicServerOnlineSource)
               _ServerShelf(
-                key: ValueKey<String>('music-recommend-shelf-${o.key}'),
+                // 身份跟着数据源走：Apple Music 换地区 = 换 serverId，换一排重新拉榜。
+                key: ValueKey<String>(
+                  'music-recommend-shelf-${o.browser.serverId}',
+                ),
                 browser: o.browser,
                 onViewAll: () => _select(o.key),
               ),
@@ -199,6 +204,15 @@ class _ServerShelfState extends State<_ServerShelf> {
 
   late Future<MusicServerPage<MusicServerAlbum>> _page = widget.browser
       .listAlbums(offset: 0);
+
+  @override
+  void didUpdateWidget(_ServerShelf oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 来源重读后是新的浏览器实例（连接配置 / 地区可能变了）：按新实例重新取。
+    if (!identical(oldWidget.browser, widget.browser)) {
+      _page = widget.browser.listAlbums(offset: 0);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -605,7 +605,6 @@ Widget musicPluginItemTile(
   };
 }
 
-/// 段标题行：标题 + 可选副标题 + 右侧动作。推荐 / 我的歌单共用。
 /// 推荐页段落标题（插件段与服务器来源段同一套样式）。
 Widget musicRecommendSectionHeader({
   required String title,
@@ -619,6 +618,7 @@ Widget musicRecommendSectionHeader({
   eyebrow: eyebrow,
 );
 
+/// 段标题行：标题 + 可选副标题 + 右侧动作。推荐 / 我的歌单共用。
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
