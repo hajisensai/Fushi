@@ -17,8 +17,10 @@
 //!
 //! 请求 `{"deck"?: 根牌组, "now", "utcOff", "rollover", "exclude"?: [卡], "pick"?: bool,
 //!        "rwkv"?: {"decks": {牌组: [目标保留率, 每天最少, 间隔次数, 间隔秒数]}, "cands": [[卡, 牌组, 上次作答|null, R]]}}`；
-//! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 调整原因|null]}, "next", "after", "eligible"}`
-//! （调整原因 = Dart `SrsNewCardBudgetReason` 的名字：reduced / paused / increased）。
+//! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 调整原因|null, 近 30 天复习数?]}, "next", "after", "eligible"}`
+//! （调整原因 = Dart `SrsNewCardBudgetReason` 的名字：reduced / paused / increased）。最后一项只在请求带 `rwkv` 时有：
+//! 子树里最近 30 天（含今天）`review_type = 'review'` 的作答数——RWKV 牌组按此刻回忆率挑卡、没有到期数，界面那一格
+//! 改显示它的日均。
 //! 牌组设置里影响计数的「新卡计划」（`newPlan`）与 RWKV 的「忽略每日复习上限」（`rwkvQueue.ignoreLimit`）都从牌组树读
 //! （[NewCardPlan::of] / `DeckTree::ignores_review_limit`）。
 //! 没给 `deck` = 全部牌组（牌组列表）；给了但不在树里 = `counts` 为 null。
@@ -48,6 +50,8 @@ struct Tally {
     due: i64,
     new_done: i64,
     review_done: i64,
+    /// 最近 30 天的复习数（只在请求带 `rwkv` 时算，见文件头）。
+    reviews30: i64,
 }
 
 impl Tally {
@@ -58,10 +62,11 @@ impl Tally {
         self.due += o.due;
         self.new_done += o.new_done;
         self.review_done += o.review_done;
+        self.reviews30 += o.reviews30;
     }
 
     fn of(r: DeckRaw) -> Tally {
-        Tally { total: r.total, new_avail: r.new_avail, learn: r.learn, due: r.due, new_done: 0, review_done: 0 }
+        Tally { total: r.total, new_avail: r.new_avail, learn: r.learn, due: r.due, new_done: 0, review_done: 0, reviews30: 0 }
     }
 }
 
@@ -812,6 +817,18 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
             x.review_done += 1;
         }
     }
+    if rwkv.is_some() {
+        // 最近 30 天的复习数按卡所在牌组记（删掉的卡没有牌组，不算；隐藏的卡照算——那是已经做过的复习）。
+        let by_card = ctx.logs.reviews_by_card();
+        let found30 = src.decks_of(&by_card.keys().map(|c| (*c).clone()).collect::<HashSet<String>>())?;
+        for (card, n) in by_card {
+            let Some((deck, _)) = found30.get(card) else { continue };
+            if !scope.contains(deck.as_str()) {
+                continue;
+            }
+            t.entry(deck.clone()).or_default().reviews30 += n;
+        }
+    }
     let counts = count_tree(&ctx, &t, &ids, root);
     let (mut next, mut after) = (None, None);
     let mut custom_out = Value::Null;
@@ -852,10 +869,11 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
     let counts_json: serde_json::Map<String, Value> = counts
         .iter()
         .map(|(id, k)| {
-            (
-                id.clone(),
-                json!([k.new_count, k.learn_count, k.review_count, k.sub.total, k.budget.limit, k.budget.allowed, k.budget.review_budget, k.budget.reason]),
-            )
+            let mut row = json!([k.new_count, k.learn_count, k.review_count, k.sub.total, k.budget.limit, k.budget.allowed, k.budget.review_budget, k.budget.reason]);
+            if rwkv.is_some() {
+                row.as_array_mut().unwrap().push(json!(k.sub.reviews30));
+            }
+            (id.clone(), row)
         })
         .collect();
     Ok(json!({
@@ -1459,6 +1477,19 @@ mod tests {
             let r = core.study(P, &json!({"now": now, "utcOff": 0, "rollover": 4, "deck": d, "pick": true})).unwrap();
             assert_eq!(r["counts"][d][2], want_due, "{d}");
             assert_eq!(!r["next"].is_null(), want_next, "{d}: {r}");
+        }
+        // 最近 30 天的复习数（请求带 `rwkv` 才给，第 9 项）：只数 review_type = 'review'，学习步与 30 天前的不算；
+        // 按卡所在牌组记、沿牌组树往上汇总。
+        log(&core, &mut logs, "IGN-001", now - 60_000, "learn", 1, "review");
+        log(&core, &mut logs, "IGN-002", now - 40 * DAY_MS, "review", 3, "review");
+        log(&core, &mut logs, "FS-015", now - 10 * DAY_MS, "review", 3, "review");
+        let plain = json!({"now": now, "utcOff": 0, "rollover": 4});
+        assert_eq!(core.study(P, &plain).unwrap()["counts"]["IGN"].as_array().unwrap().len(), 8, "不带 rwkv 不给这一项");
+        let req = json!({"now": now, "utcOff": 0, "rollover": 4, "rwkv": {"decks": {"IGN": [0.9, 0, 5, 30]}, "cands": [], "pending": true}});
+        let got = core.study(P, &req).unwrap();
+        assert_eq!(got, core.read_visible(|c| oracle::study(c, P, &req)).unwrap());
+        for (d, want) in [("IGN", 2), ("OLD", 2), ("FS", 1), ("BOOST", 0)] {
+            assert_eq!(got["counts"][d][8], json!(want), "{d}: {got}");
         }
         core.close();
         let _ = std::fs::remove_dir_all(&dir);

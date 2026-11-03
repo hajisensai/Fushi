@@ -76,7 +76,7 @@ class SrsCountTriple extends StatelessWidget {
     required this.learnCount,
     required this.reviewCount,
     this.reviewPending = false,
-    this.reviewByRwkv = false,
+    this.rwkvDailyReviews,
     this.dense = false,
     this.tight = false,
   });
@@ -89,9 +89,9 @@ class SrsCountTriple extends StatelessWidget {
   /// 「准备中」（沙漏），不把 0 显示成「今天没有到期」；有别的（FSRS）牌组的到期时数字照旧、后面跟沙漏。
   final bool reviewPending;
 
-  /// 复习卡由 RWKV 按此刻的回忆率实时挑（[SrsDeckSummary.rwkvScheduled]）：[reviewCount] 只是这一刻的快照、
-  /// 不是到期数，第三格不显示数字，只显示 RWKV 图标（有可复习的卡时高亮，没有时弱化）。
-  final bool reviewByRwkv;
+  /// 复习卡由 RWKV 按此刻的回忆率实时挑（[SrsDeckSummary.rwkvDailyReviews]）时的近 30 天日均复习数：[reviewCount]
+  /// 只是这一刻的快照、不是到期数，第三格改显示「≈日均」（此刻有可复习的卡时高亮，没有时弱化）。null = 照常显示到期数。
+  final int? rwkvDailyReviews;
   final bool dense;
 
   /// 手机竖屏牌组列表：数字列收窄（最小 20）、列间距减半，三个数合成一小块，
@@ -144,9 +144,11 @@ class SrsCountTriple extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.end,
           children: <Widget>[
-            if (reviewCount > 0 && !reviewByRwkv)
+            if (rwkvDailyReviews != null || reviewCount > 0)
               Text(
-                '$reviewCount',
+                rwkvDailyReviews != null
+                    ? '≈$rwkvDailyReviews'
+                    : '$reviewCount',
                 style: base.copyWith(
                   color: colors.review,
                   fontWeight: FontWeight.w600,
@@ -172,24 +174,27 @@ class SrsCountTriple extends StatelessWidget {
               ? 24
               : 32,
         ),
-        child: Align(
-          alignment: AlignmentDirectional.centerEnd,
-          widthFactor: 1,
-          child: FushiIcon(
-            FushiIcons.modelTraining,
-            key: const ValueKey<String>('srs-count-review-rwkv'),
-            size: (base.fontSize ?? 14) * 1.05,
+        child: Text(
+          '≈$rwkvDailyReviews',
+          key: const ValueKey<String>('srs-count-review-rwkv'),
+          textAlign: TextAlign.end,
+          style: base.copyWith(
             color: reviewCount > 0 ? colors.review : muted,
+            fontWeight: reviewCount > 0 ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),
     );
     final String reviewLabel = reviewPending
         ? '${t.srs_count_review} '
-              '${reviewCount > 0 && !reviewByRwkv ? '$reviewCount, ' : ''}'
+              '${rwkvDailyReviews != null
+                  ? '${t.srs_count_review_rwkv} $rwkvDailyReviews, '
+                  : reviewCount > 0
+                  ? '$reviewCount, '
+                  : ''}'
               '${t.srs_settings_rwkv_preparing_start}'
-        : reviewByRwkv
-        ? t.srs_count_review_rwkv
+        : rwkvDailyReviews != null
+        ? '${t.srs_count_review_rwkv} $rwkvDailyReviews'
         : '${t.srs_count_review} $reviewCount';
     return Semantics(
       label:
@@ -204,7 +209,7 @@ class SrsCountTriple extends StatelessWidget {
             cell(learnCount, colors.learn, t.srs_count_learn),
             if (reviewPending)
               pendingReviewCell()
-            else if (reviewByRwkv)
+            else if (rwkvDailyReviews != null)
               rwkvReviewCell()
             else
               cell(reviewCount, colors.review, t.srs_count_review),

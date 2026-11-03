@@ -98,6 +98,7 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
             'review': d.reviewCount,
             // RWKV 牌组的 review 是此刻回忆率低于目标的快照，不是到期数。
             if (d.rwkvScheduled) 'reviewByRwkv': true,
+            if (d.reviewsLast30 != null) 'reviewsLast30': d.reviewsLast30,
             'total': d.totalCards,
           },
       ],

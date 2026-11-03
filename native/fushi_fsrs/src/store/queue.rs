@@ -284,6 +284,8 @@ struct Fold {
     today: bool,
     reviewed: bool,
     introduced: bool,
+    /// `review_type = 'review'`（不论哪天）：最近 30 天各牌组的复习数（[LogState::reviews_by_card]）。
+    review: bool,
 }
 
 /// 计数上下文里来自日志的部分：最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡 / 全部作答。按日志 id 记
@@ -339,6 +341,18 @@ impl LogState {
         self.introduced.keys()
     }
 
+    /// 最近 30 天（含今天）每张卡的复习数（`review_type = 'review'` 的作答；学习 / 重学步不算）。RWKV 牌组没有到期数，
+    /// 牌组列表那一格改显示这个的日均（study.rs `reviews30`）。
+    pub(crate) fn reviews_by_card(&self) -> HashMap<&String, i64> {
+        let mut out: HashMap<&String, i64> = HashMap::new();
+        for f in self.folded.values() {
+            if f.review && f.slot.is_some() {
+                *out.entry(&f.card).or_default() += 1;
+            }
+        }
+        out
+    }
+
     /// 今天的全部作答 (卡, 时刻)。
     pub(crate) fn answers(&self) -> impl Iterator<Item = (&String, i64)> {
         self.answers.values().map(|(c, at)| (c, *at))
@@ -364,15 +378,16 @@ impl LogState {
         let card: String = r.get(0).map_err(sql)?;
         let id: String = r.get(4).map_err(sql)?;
         let today_log = at >= today_start;
+        let review = r.get::<_, String>(2).map_err(sql)? == "review";
         let (mut reviewed, mut introduced) = (false, false);
         if today_log {
-            reviewed = r.get::<_, String>(2).map_err(sql)? == "review";
+            reviewed = review;
             if let Some(j) = r.get::<_, Option<String>>(3).map_err(sql)? {
                 let v: Value = serde_json::from_str(&j).unwrap_or(Value::Null);
                 introduced = v["res"]["reps"].as_f64() == Some(1.0);
             }
         }
-        self.apply(id, Fold { slot, card, at, today: today_log, reviewed, introduced });
+        self.apply(id, Fold { slot, card, at, today: today_log, reviewed, introduced, review });
         Ok(())
     }
 

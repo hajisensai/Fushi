@@ -189,6 +189,7 @@ abstract final class SrsRemoteWire {
     'total': s.totalCards,
     'rp': s.rwkvPending,
     'rs': s.rwkvScheduled,
+    'r30': s.reviewsLast30,
   };
 
   static SrsDeckSummary? summaryFrom(Object? json, SrsDeckTree tree) {
@@ -219,6 +220,7 @@ abstract final class SrsRemoteWire {
       totalCards: m['total']! as int,
       rwkvPending: m['rp'] == true,
       rwkvScheduled: m['rs'] == true,
+      reviewsLast30: m['r30'] as int?,
     );
   }
 

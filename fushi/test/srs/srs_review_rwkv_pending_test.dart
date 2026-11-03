@@ -364,17 +364,19 @@ void main() {
     expect(after.reviewCount, 2);
     expect(ready.rwkvPending, isFalse);
 
-    // 就绪后 RWKV 牌组的「到期」是此刻回忆率的快照、不是到期数：第三格只显示 RWKV 图标，不显示数字。
+    // 就绪后 RWKV 牌组的「到期」是此刻回忆率的快照、不是到期数：第三格改显示近 30 天日均复习数（这里没有复习日志 → ≈0）。
     expect(after.rwkvScheduled, isTrue);
-    expect(ready.rwkvScheduled, isTrue);
+    expect(after.reviewsLast30, 0);
+    expect(after.rwkvDailyReviews, 0);
+    expect(ready.rwkvDailyReviews, 0);
     expect(
       srsNavPeekCountsLabel(
         newCount: 0,
         learnCount: 0,
         reviewCount: after.reviewCount,
-        reviewByRwkv: after.rwkvScheduled,
+        rwkvDailyReviews: after.rwkvDailyReviews,
       ),
-      t.srs_count_review_rwkv,
+      '${t.srs_count_review_rwkv} ≈0',
     );
     await tester.pumpWidget(
       TranslationProvider(
@@ -392,7 +394,7 @@ void main() {
               learnCount: after.learnCount,
               reviewCount: after.reviewCount,
               reviewPending: after.rwkvPending,
-              reviewByRwkv: after.rwkvScheduled,
+              rwkvDailyReviews: after.rwkvDailyReviews,
             ),
           ),
         ),
@@ -402,9 +404,12 @@ void main() {
       find.byKey(const ValueKey<String>('srs-count-review-rwkv')),
       findsOneWidget,
     );
+    expect(find.text('≈0'), findsOneWidget);
     expect(find.text('${after.reviewCount}'), findsNothing);
     expect(
-      find.bySemanticsLabel(RegExp(RegExp.escape(t.srs_count_review_rwkv))),
+      find.bySemanticsLabel(
+        RegExp(RegExp.escape('${t.srs_count_review_rwkv} 0')),
+      ),
       findsOneWidget,
     );
   });

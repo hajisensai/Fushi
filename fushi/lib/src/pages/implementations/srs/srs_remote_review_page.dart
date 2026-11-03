@@ -440,7 +440,7 @@ class _SrsRemoteDeckListPageState extends ConsumerState<SrsRemoteDeckListPage> {
                     learnCount: decks[i].learnCount,
                     reviewCount: decks[i].reviewCount,
                     reviewPending: decks[i].rwkvPending,
-                    reviewByRwkv: decks[i].rwkvScheduled,
+                    rwkvDailyReviews: decks[i].rwkvDailyReviews,
                     dense: true,
                     tight: true,
                   ),

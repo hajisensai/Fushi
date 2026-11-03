@@ -409,23 +409,23 @@ Future<NavPeekFeed> _loadGames({
 
 /// 复习速览的副行：「新卡 3 · 学习中 1 · 到期 20」，只列非零的计数；三个都为
 /// 零（今天已复习完）时为 null。口径与牌组列表 / 首页复习条同一份计数。
-/// [reviewByRwkv]：复习卡由 RWKV 按此刻的回忆率挑（[SrsDeckSummary.rwkvScheduled]），不写数字、只写「复习（RWKV）」。
+/// [rwkvDailyReviews]：复习卡由 RWKV 按此刻的回忆率挑（[SrsDeckSummary.rwkvDailyReviews]），没有到期数，改写近 30 天日均。
 String? srsNavPeekCountsLabel({
   required int newCount,
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
-  bool reviewByRwkv = false,
+  int? rwkvDailyReviews,
 }) {
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
     if (learnCount > 0) '${t.srs_count_learn} $learnCount',
     if (reviewPending)
       '${t.srs_count_review} '
-          '${reviewCount > 0 && !reviewByRwkv ? '$reviewCount ' : ''}'
+          '${rwkvDailyReviews == null && reviewCount > 0 ? '$reviewCount ' : ''}'
           '(${t.srs_settings_rwkv_preparing_start})'
-    else if (reviewByRwkv && reviewCount > 0)
-      t.srs_count_review_rwkv
+    else if (rwkvDailyReviews != null)
+      '${t.srs_count_review_rwkv} ≈$rwkvDailyReviews'
     else if (reviewCount > 0)
       '${t.srs_count_review} $reviewCount',
   ];
@@ -455,7 +455,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
             reviewPending: deck.rwkvPending,
-            reviewByRwkv: deck.rwkvScheduled,
+            rwkvDailyReviews: deck.rwkvDailyReviews,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完
