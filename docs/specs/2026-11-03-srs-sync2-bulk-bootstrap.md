@@ -85,7 +85,7 @@
 
 ## 5. 正确性守卫
 
-- 压缩：`snapshots.rs` 的往返测试（含省不下就原样存、混合 `pz` 行）；全部读载荷的测试（时间线、足迹、v15 升级、旧闭包）都经过解压。
+- 压缩：`snapshots.rs` 的往返测试只测纯函数 pack / unpack（含省不下就原样存、坏帧报错）；库里原样与压缩混存由 `tests_footprint.rs` 的 `v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged` 覆盖（造无 `pz` 列的 v20 库升级，旧行 `pz = 0` 照读：投影 / 摘要 / 逐条载荷 / 恢复预览 / 实体历史不变；之后新行 `pz = 1`，混存日志完整同步给第三台设备）；全部读载荷的测试（时间线、足迹、v15 升级、旧闭包）都经过解压；清除隐私断言经 `Device::ops_containing` 在还原后的原文里找，并钉住被清除行 `pz = 0`、`purged = 1`。
 - 片长：`transport.rs` `budget_tests`——只有默认片能拉长、拉长的片照样响应让出；新设备判定（没复习过 → 长片，本机复习后 → 默认片）。
 - Dart：`srs_sync2_ingest_batching_test.dart`——预读一批、预读失败时前面的批照常交出、取消后预读读完就停。
 

@@ -105,8 +105,11 @@ fn stamped_and_local_edits_never_carry_synthetic_writers() {
     assert_eq!(ctx["vv"]["old"], json!(3), "{ctx}");
     assert!(!ctx.to_string().contains("sync2:"), "{ctx}");
     // 新包的操作载荷里也没有 ctx 里的合成项（合成标签行自己的写入者名还在：它是那条记录的身份）。
-    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('sync2:tags:N2' AS BLOB)) > 0"), 0);
-    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('sync2:tags:N3' AS BLOB)) > 0"), 0);
+    // 在还原后的原文里找（v21 起载荷可能压缩存放，按存储字节找明文会恒成立）。
+    assert_eq!(a.ops_containing(&["sync2:tags:N2"]), 0);
+    assert_eq!(a.ops_containing(&["sync2:tags:N3"]), 0);
+    // 对照：合成标签行自己的写入者名还在，搜索看得见它。
+    assert!(a.ops_containing(&["sync2:tags:N1"]) > 0);
     let tags = a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'tags'");
     assert_eq!(tags[1][0], "[\"t1\"]");
 }

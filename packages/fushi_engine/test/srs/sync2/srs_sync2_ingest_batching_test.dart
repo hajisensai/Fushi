@@ -239,6 +239,44 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 5));
       expect(st.fetched, <String>['p0', 'p1']);
     });
+
+    test('停止监听返回时预读的读已收完：轮次结束后没有游离的下载', () async {
+      final List<String> paths = <String>[for (int i = 0; i < 10; i++) 'p$i'];
+      final _Sized st = _Sized(<String, int?>{
+        for (final String p in paths) p: 4,
+      }, delay: const Duration(milliseconds: 20));
+      await for (final SrsFetchedBatch _ in srsFetchInBatches(
+        paths,
+        fetch: st.get,
+        budgetBytes: 4,
+        concurrency: 1,
+      )) {
+        // 交出第一批时下一批已开始读（在途）。
+        expect(st.inFlight, 1);
+        break;
+      }
+      // break 等的是生成器的 cancel：它返回时在途的读必须已经结束，且没有开新的。
+      expect(st.inFlight, 0);
+      expect(st.fetched, <String>['p0', 'p1']);
+    });
+
+    test('收段抛错中止：在途的预读也收完才把错误交给调用方', () async {
+      final List<String> paths = <String>[for (int i = 0; i < 10; i++) 'p$i'];
+      final _Sized st = _Sized(<String, int?>{
+        for (final String p in paths) p: 4,
+      }, delay: const Duration(milliseconds: 20));
+      await expectLater(() async {
+        await for (final SrsFetchedBatch _ in srsFetchInBatches(
+          paths,
+          fetch: st.get,
+          budgetBytes: 4,
+          concurrency: 1,
+        )) {
+          throw StateError('ingest failed');
+        }
+      }(), throwsA(isA<StateError>()));
+      expect(st.inFlight, 0);
+    });
   });
 
   group('srsSync2Round 按字节分批收', () {

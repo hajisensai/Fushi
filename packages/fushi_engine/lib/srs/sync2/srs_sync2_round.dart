@@ -594,7 +594,7 @@ class SrsFetchedBatch {
 /// 交出一批的同时开始读下一批，消费方收这一批（内核在 worker isolate 上投影）与下载重叠；只预读一批，同一时刻
 /// 内存里最多两批。每批至少一个路径，所以单个超过预算的文件自成一批；[paths] 为空时也交出一个空批。
 /// 任一读失败：不再开新的，等在途的跑完后在交到那一批时抛出第一个错误（与 [srsRunPooled] 一致；之前的批照常
-/// 交出）。消费方中途停止监听，预读的那一批读完后就不再读。
+/// 交出）。消费方中途停止监听，预读的那一批读完后就不再读，且取消要等这批在途的读收完才返回（不留游离的下载）。
 Stream<SrsFetchedBatch> srsFetchInBatches(
   List<String> paths, {
   required Future<Uint8List?> Function(String path) fetch,
@@ -653,8 +653,12 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
       yield r.batch;
     }
   } finally {
-    // 消费方停止监听：预读中的那一批读完就停，不再开新的读。
+    // 消费方停止监听 / 收段抛错：不再开新的读，并等在途的读（至多 [concurrency] 个）收完再结束——生成器拥有
+    // 它启动的读，取消（await for 的 break / return / 抛错）返回时这一轮没有游离在外的下载。预读那一批的
+    // 错误已装在 _FetchRead 里，这里不会抛。
     stopped = true;
+    final Future<_FetchRead>? inFlight = ahead;
+    if (inFlight != null) await inFlight;
   }
 }
 

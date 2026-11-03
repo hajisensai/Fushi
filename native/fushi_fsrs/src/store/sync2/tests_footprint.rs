@@ -374,3 +374,75 @@ fn compaction_waits_for_disk_space() {
     assert!(w.query_row("SELECT 1 FROM srs_meta WHERE key = 'compact_pending'", [], |_| Ok(())).is_err());
     assert!(crate::store::compact::free_bytes(&a._dir.0.join("srs.db")).is_some_and(|f| f > 0));
 }
+
+/// v20 → v21 升级：v20 的 `sync2_ops` 没有 `pz` 列、载荷全是原样。重新打开后补上 `pz`、已有行一律 `pz = 0`
+/// 不重写；投影、摘要、逐条载荷（[super::load_op]）、时间线（恢复预览 / 实体历史）都与升级前相同。之后新写的
+/// 操作才压（`pz = 1`），原样与压缩混存的日志照样完整同步给第三台新设备。
+#[test]
+fn v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged() {
+    use super::timeline::RestoreTarget;
+    let a = busy_device("fp-v20");
+    let before = super::tests::projection(&a);
+    let digest = a.digest();
+    let payloads = all_payloads(&a);
+    let restore = |d: &Device| d.core.sync2_plan_restore(P, &RestoreTarget::At(T0 + 5 * DAY), true, T0 + 20 * DAY).unwrap();
+    let history = |d: &Device| d.core.sync2_history(P, "note", "N1").unwrap();
+    let preview = restore(&a);
+    let hist = history(&a);
+    // 退回 v20 的存储形态：压缩过的行解回原样，删掉 `pz` 列，标 20。
+    {
+        let w = a.core.writer().unwrap();
+        let zipped: Vec<(Vec<u8>, i64, Vec<u8>)> = w
+            .prepare("SELECT device, seq, payload FROM sync2_ops WHERE pz = 1")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (dv, s, p) in zipped {
+            let n = u32::from_le_bytes(p[..4].try_into().unwrap()) as usize;
+            let raw = zstd::bulk::decompress(&p[4..], n).unwrap();
+            w.execute("UPDATE sync2_ops SET payload = ?3, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, raw]).unwrap();
+        }
+        w.execute_batch("ALTER TABLE sync2_ops DROP COLUMN pz; UPDATE srs_meta SET value = '20' WHERE key = 'schema';").unwrap();
+    }
+    let path = a._dir.0.join("srs.db");
+    let dir = a._dir;
+    drop(a.core);
+    {
+        let c = rusqlite::Connection::open(&path).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0, "the v20 form has no pz column");
+    }
+    let b = Device { core: SrsCore::open(&path).unwrap(), _dir: dir };
+    assert_eq!(count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"), crate::store::schema::SCHEMA_VERSION);
+    assert_eq!(count(&b, "SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'"), 1, "pz column added");
+    assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz != 0"), 0, "existing rows stay raw (not rewritten)");
+    assert_eq!(super::tests::projection(&b), before);
+    assert_eq!(b.digest(), digest);
+    assert_eq!(all_payloads(&b), payloads, "old raw rows read back byte for byte");
+    assert_eq!(restore(&b), preview, "timeline restore preview reads the old rows");
+    assert_eq!(history(&b), hist, "entity history reads the old rows");
+
+    // 之后写的操作才压：日志里原样与压缩混存。
+    let deck = super::config::default_deck_id(P);
+    for i in 0..30 {
+        let at = T0 + 30 * DAY + i * DAY;
+        b.apply(at, vec![review(&format!("n{i}"), &format!("C{}", i % 3), at, 1 + i % 4, "review")]);
+        b.apply(at + 1, vec![edit("note", "N1", &format!("f/n{i}"), json!(format!("field value {i} {}", "x".repeat(200))))]);
+    }
+    b.apply(T0 + 70 * DAY, vec![edit("deck", &deck, "retention", json!(0.9))]);
+    let raw_rows = count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz = 0");
+    let zipped_rows = count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz = 1");
+    assert!(raw_rows >= payloads.len() as i64, "{raw_rows} raw rows");
+    assert!(zipped_rows > 0, "new ops are compressed");
+    // 混存的日志完整同步给第三台新设备。
+    let mut bucket = Bucket::default();
+    b.sync(&mut bucket, "loc", T0 + 71 * DAY);
+    let c = Device::new("fp-v21-c");
+    c.sync(&mut bucket, "loc", T0 + 71 * DAY);
+    assert_eq!(super::tests::projection(&c), super::tests::projection(&b));
+    assert_eq!(c.digest(), b.digest());
+    assert_eq!(all_payloads(&c), all_payloads(&b), "every op (raw and compressed) reached the new device intact");
+    assert_eq!(history(&c), history(&b));
+}
