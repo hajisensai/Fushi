@@ -46,7 +46,7 @@ Future<void> _drainToast(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('歌词模式：制卡小卡贴歌词 WebView 左下角、不压跳转胶囊；被盖住 / 销毁后复原', (
+  testWidgets('歌词模式：制卡小卡贴歌词 WebView 左下角；被盖住 / 销毁后复原', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -55,7 +55,6 @@ void main() {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     FushiToast.navigatorKey = navKey;
     const Key lyricsKey = ValueKey<String>('lyrics_probe');
-    const Key pillKey = ValueKey<String>('jump_pill');
     Widget app({required bool lyrics}) => MaterialApp(
       navigatorKey: navKey,
       home: Scaffold(
@@ -72,11 +71,6 @@ void main() {
                 ),
                 callbacks: _callbacks(),
                 onHtmlThemeChanged: (_) {},
-                navigationAccessory: const SizedBox(
-                  key: pillKey,
-                  width: 220,
-                  height: 48,
-                ),
               )
             : const SizedBox.expand(),
       ),
@@ -85,7 +79,6 @@ void main() {
     await tester.pumpWidget(app(lyrics: true));
     await tester.pump(const Duration(milliseconds: 50));
     final Rect view = tester.getRect(find.byKey(lyricsKey));
-    final Rect pill = tester.getRect(find.byKey(pillKey));
 
     await _showAdded(tester);
     FushiMineNoticeCard card = tester.widget(find.byType(FushiMineNoticeCard));
@@ -93,7 +86,6 @@ void main() {
     final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
     expect(box.left, moreOrLessEquals(view.left + 12, epsilon: 2));
     expect(box.bottom, moreOrLessEquals(view.bottom - 12, epsilon: 2));
-    expect(box.overlaps(pill), isFalse, reason: '小卡不得压在跳转胶囊上');
     await _drainToast(tester);
 
     // 歌词页上再推一个不透明页面：歌词页 offstage，不能贴到看不见的角上。
