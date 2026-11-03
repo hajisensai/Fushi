@@ -205,11 +205,11 @@ fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
     let deps = intern_deps(conn, &op.deps)?;
-    // 配置快照原文只存一份（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
-    let (payload, sc, sc_at) = snapshots::pack_payload(conn, op.kind, &op.payload)?;
+    // 配置快照原文只存一份、其余按 zstd 压缩（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
+    let packed = snapshots::pack_payload(conn, op.kind, &op.payload)?;
     conn.prepare_cached(
-        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at) \
-         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at, pz) \
+         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
     )
     .map_err(sql)?
     .execute(params![
@@ -221,12 +221,13 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
         deps,
         i64::from(op.kind),
         i64::from(op.schema),
-        payload,
+        packed.bytes,
         i64::from(op.purged),
         chain.to_vec(),
         now,
-        sc,
-        sc_at
+        packed.sc,
+        packed.sc_at,
+        packed.pz
     ])
     .map_err(sql)?;
     Ok(())
@@ -235,7 +236,7 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
 /// 读一条操作（因果判定、前缀闭包、重签发用）。
 pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Option<Op>, String> {
     conn.prepare_cached(
-        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at FROM sync2_ops o \
+        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at, o.pz FROM sync2_ops o \
          JOIN sync2_deps d ON d.id = o.deps WHERE o.profile_uid = srs_id(?1) AND o.device = ?2 AND o.seq = ?3",
     )
     .map_err(sql)?
@@ -250,13 +251,14 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
             r.get::<_, i64>(6)? != 0,
             r.get::<_, Option<String>>(7)?,
             r.get::<_, Option<i64>>(8)?,
+            r.get::<_, i64>(9)?,
         ))
     })
     .optional()
     .map_err(sql)?
-    .map(|(w, l, vv, k, s, p, purged, sc, sc_at)| {
+    .map(|(w, l, vv, k, s, p, purged, sc, sc_at, pz)| {
         let deps = Vv::read(&mut crate::sync2::codec::Reader::new(&vv)).map_err(|e| e.to_string())?;
-        let p = snapshots::unpack_payload(conn, p, sc, sc_at)?;
+        let p = snapshots::unpack_payload(conn, p, sc, sc_at, pz)?;
         Ok(Op {
             id: *id,
             hlc: Hlc { wall: w, logical: l as u32, device: id.device },
@@ -378,14 +380,14 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
             out.merge(&Dvv::parse(&ctx));
             continue;
         }
-        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不按引用存（snapshots.rs 只剪日志），
-        // 直读即原文。
+        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不剪快照（snapshots.rs 只剪日志），
+        // 只可能压缩过。
         let mut stmt = conn
-            .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
+            .prepare_cached("SELECT payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
             .map_err(sql)?;
         let mut q = stmt.query(params![profile, d.0.to_vec(), s as i64, i64::from(op::KIND_EDIT)]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
-            let p: Vec<u8> = r.get(0).map_err(sql)?;
+            let p = snapshots::unpack_payload(conn, r.get(0).map_err(sql)?, None, None, r.get(1).map_err(sql)?)?;
             if let Ok(Body::Edit(EditBody { legacy: Some(l), .. })) = Body::decode(op::KIND_EDIT, &p) {
                 out.merge(&Dvv::parse(&l.ctx_json));
                 if !is_synthetic_writer(&l.writer) {
@@ -1699,6 +1701,8 @@ mod tests_cache_pending;
 mod real_folder_bench;
 #[cfg(test)]
 mod tests_footprint;
+#[cfg(test)]
+mod bootstrap_probe;
 #[cfg(test)]
 mod tests_synthetic_ctx;
 #[cfg(test)]

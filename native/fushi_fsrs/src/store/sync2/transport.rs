@@ -895,6 +895,8 @@ pub struct CommitBudget<'a> {
     floor: usize,
     /// 这一片被预算截停过（还有没处理完的）。
     stopped: bool,
+    /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。
+    stretchable: bool,
 }
 
 /// 一片投递的时间上限（写锁里投递 + 投影部分；同一片的缓存刷新与事务提交大约再占它的一半）。只在没人等锁时
@@ -902,16 +904,28 @@ pub struct CommitBudget<'a> {
 const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
 /// 一片至少处理的操作数（之后才看时间与让出请求）。
 const COMMIT_SLICE_MIN_OPS: usize = 64;
+/// 新设备收段会话（[IngestSession::bootstrap]）的片长。片越短，每片提交要写的脏页（同一批随机键索引页）越多次进
+/// WAL、检查点越频繁：真实全量数据（68 万条）150 ms 一片 521 s、1 s 一片 458 s，检查点 177 s → 82 s
+/// （docs/specs/2026-11-03-srs-sync2-bulk-bootstrap.md §8）。新设备上本机还没复习过，没人等写锁；真有写入排队，
+/// 让出请求照样在做满 [COMMIT_SLICE_MIN_OPS] 条后收片。
+const BOOTSTRAP_SLICE: std::time::Duration = std::time::Duration::from_millis(1000);
 
 impl<'a> CommitBudget<'a> {
     /// 不切片：一次做完（一次收完的 [SrsCore::sync2_ingest]、[SrsCore::sync2_ingest_batch]、导入）。
     pub fn unlimited() -> CommitBudget<'static> {
-        CommitBudget { left: usize::MAX, deadline: None, yield_to: None, floor: 0, stopped: false }
+        CommitBudget { left: usize::MAX, deadline: None, yield_to: None, floor: 0, stopped: false, stretchable: false }
     }
 
     /// 一片：最长 [COMMIT_SLICE]，[yield_to] 置位就提前收。
     pub fn slice(yield_to: &'a std::sync::atomic::AtomicBool) -> CommitBudget<'a> {
-        CommitBudget::slice_within(yield_to, COMMIT_SLICE)
+        CommitBudget { stretchable: true, ..CommitBudget::slice_within(yield_to, COMMIT_SLICE) }
+    }
+
+    /// 默认片（[CommitBudget::slice]）的时间上限改成 [max]（从开片算起）；另给了时间或条数的片不动。
+    pub(crate) fn stretch(&mut self, max: std::time::Duration) {
+        if self.stretchable {
+            self.deadline = self.deadline.map(|d| d - COMMIT_SLICE + max);
+        }
     }
 
     /// 一片，时间上限另给（测试用：给得很长，切点就只来自让出请求）。
@@ -922,12 +936,13 @@ impl<'a> CommitBudget<'a> {
             yield_to: Some(yield_to),
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,
+            stretchable: false,
         }
     }
 
     /// 按条数切的一片（测试用：切点确定）。
     pub fn ops(n: usize) -> CommitBudget<'static> {
-        CommitBudget { left: n.max(1), deadline: None, yield_to: None, floor: 0, stopped: false }
+        CommitBudget { left: n.max(1), deadline: None, yield_to: None, floor: 0, stopped: false, stretchable: false }
     }
 
     /// 再处理一条；预算用完返回 false 并记下截停。
@@ -957,6 +972,8 @@ pub(crate) struct IngestSession {
     prepared: Option<PreparedIngest<'static>>,
     /// 上一片留下的投递队列（[Delivery::resume]）。
     delivery: Option<Delivery>,
+    /// 新设备：本机身份还没写过复习日志（[studied_here]）。这样的会话片长用 [BOOTSTRAP_SLICE]。
+    bootstrap: bool,
 }
 
 impl IngestSession {
@@ -970,6 +987,25 @@ impl IngestSession {
     pub(crate) fn delivery_resident(&self) -> Option<usize> {
         self.delivery.as_ref().map(Delivery::resident)
     }
+
+    /// 测试用：这个会话按新设备收（[IngestSession::bootstrap]）。
+    #[cfg(test)]
+    pub(crate) fn bootstrapping(&self) -> bool {
+        self.bootstrap
+    }
+}
+
+/// 本机身份在 [profile] 里写过复习日志没有（主键前缀上的一次范围扫描：本机身份的操作）。
+///
+/// 收段会话按它决定片长：没复习过的设备（刚装、正在第一次追上，或只当同步目标）没人等写锁，片拉长（[BOOTSTRAP_SLICE]）；
+/// 复习过就按默认片长，排队的作答等得短。判据跟着本机的操作走，第一次追赶被打断、下次接着收时仍算新设备。
+fn studied_here(c: &Connection, profile: &str, device: &Id) -> Result<bool, String> {
+    c.prepare_cached("SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND kind = ?3 LIMIT 1")
+        .map_err(sql)?
+        .query_row(params![profile, device.0.to_vec(), crate::sync2::op::KIND_LOG], |_| Ok(()))
+        .optional()
+        .map(|r| r.is_some())
+        .map_err(sql)
 }
 
 /// 分批收段的阶段（[SrsCore] `ingest`）。写连接放回时留不留页缓存由它推出（不是 [IngestPhase::Idle] 就留），
@@ -2083,7 +2119,8 @@ impl SrsCore {
         let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
         // 之前被打断的会话已经找到的分叉点接着用（审查 S-12：plan 不再让 Dart 重下本机身份的段）。
         let fork_at = recorded_fork(&w, profile, &local.device)?;
-        let session = IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None };
+        let bootstrap = !studied_here(&w, profile, &local.device)?;
+        let session = IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None, bootstrap };
         let mut phase = self.ingest_phase()?;
         self.set_ingest_phase(&mut phase, IngestPhase::Open(session));
         Ok(json!({}))
@@ -2212,7 +2249,12 @@ impl SrsCore {
         let mut guard = self.ingest_phase()?;
         let (device, prior, mut prepared, mut cached) = match guard.session_mut() {
             Some(s) if s.profile == profile => match s.prepared.take() {
-                Some(p) => (s.device, s.fork_at, p, s.delivery.take()),
+                Some(p) => {
+                    if s.bootstrap {
+                        budget.stretch(BOOTSTRAP_SLICE);
+                    }
+                    (s.device, s.fork_at, p, s.delivery.take())
+                }
                 None => return Err("sync2 ingest: no prepared batch to commit".to_owned()),
             },
             _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
@@ -2831,5 +2873,62 @@ mod compaction_tests {
         let plan = compaction_plan(&segs);
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].segs, vec![(1, 1), (2, 2), (3, 3), (4, 4)]);
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+    use std::time::Duration;
+
+    /// 能做多少条（最多 [cap]）。
+    fn takes(b: &mut CommitBudget<'_>, cap: usize) -> usize {
+        (0..cap).take_while(|_| b.take()).count()
+    }
+
+    /// 只有默认片能被新设备会话拉长；另给了时间（测试的 `sliceMs`）或条数（`sliceOps`）的片不动。
+    #[test]
+    fn only_the_default_slice_stretches() {
+        let flag = AtomicBool::new(false);
+        let mut b = CommitBudget::slice(&flag);
+        b.stretch(Duration::from_secs(3600));
+        assert_eq!(takes(&mut b, 10_000), 10_000, "stretched default slice");
+        let mut b = CommitBudget::slice_within(&flag, Duration::ZERO);
+        b.stretch(Duration::from_secs(3600));
+        assert_eq!(takes(&mut b, 10_000), COMMIT_SLICE_MIN_OPS, "explicit time limit is kept");
+        let mut b = CommitBudget::ops(5);
+        b.stretch(Duration::from_secs(3600));
+        assert_eq!(takes(&mut b, 10_000), 5, "explicit op count is kept");
+        // 拉长的片照样响应让出请求（做满下限之后）。
+        let mut b = CommitBudget::slice(&flag);
+        b.stretch(Duration::from_secs(3600));
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(takes(&mut b, 10_000), COMMIT_SLICE_MIN_OPS, "yield request still ends a stretched slice");
+    }
+
+    /// 新设备（本机身份没写过复习日志）的收段会话用长片；本机复习过就回到默认片长。
+    #[test]
+    fn ingest_session_is_a_bootstrap_until_this_device_reviews() {
+        use crate::store::sync2::tests::{deck_entity, edit, review, Device, P};
+        const NOW: i64 = 1_700_000_000_000;
+        let x = Device::new("bs-slice");
+        x.core.sync2_identity(P, NOW).unwrap();
+        let bootstrapping = |d: &Device| -> bool {
+            d.core.sync2_ingest_begin(P).unwrap();
+            d.core.ingest_phase().unwrap().session().unwrap().bootstrapping()
+        };
+        let local = |now: i64, events: Vec<(serde_json::Value, String)>| {
+            let input: Vec<serde_json::Value> = events.into_iter().map(|(e, note)| json!({"e": e, "note": note})).collect();
+            x.core.sync2_apply_local(P, now, &serde_json::Value::Array(input).to_string()).unwrap();
+        };
+        assert!(bootstrapping(&x), "a device that never reviewed");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        local(NOW, vec![(deck_entity(&deck), String::new()), (edit("deck", &deck, "name", json!("D")), String::new())]);
+        assert!(bootstrapping(&x), "local edits alone do not end the bootstrap");
+        let note = "0193a1b2-0000-7000-8000-000000000000";
+        let card = crate::registers::card_id(note, "t1", 0).unwrap();
+        local(NOW + 1, vec![(review("bs-r", &card, NOW + 1, 3, "learn"), note.to_owned())]);
+        assert!(!bootstrapping(&x), "a device that reviewed uses the default slice");
     }
 }

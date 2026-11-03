@@ -68,7 +68,7 @@ fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
     let mut stamped_before = HashSet::new();
     let mut stmt = conn
         .prepare(
-            "SELECT device, seq, wall, kind, CASE WHEN wall > ?2 AND purged = 0 AND kind IN (?3, ?4) THEN payload END, sc, sc_at              FROM sync2_ops WHERE profile_uid = srs_id(?1)",
+            "SELECT device, seq, wall, kind, CASE WHEN wall > ?2 AND purged = 0 AND kind IN (?3, ?4) THEN payload END, sc, sc_at, pz              FROM sync2_ops WHERE profile_uid = srs_id(?1)",
         )
         .map_err(sql)?;
     let mut rows = stmt.query(params![profile, t, i64::from(op::KIND_EDIT), i64::from(op::KIND_LOG)]).map_err(sql)?;
@@ -84,13 +84,13 @@ fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
         }
         let Some(payload) = r.get::<_, Option<Vec<u8>>>(4).map_err(sql)? else { continue };
         let kind = r.get::<_, i64>(3).map_err(sql)? as u16;
+        let payload = super::snapshots::unpack_payload(conn, payload, r.get(5).map_err(sql)?, r.get(6).map_err(sql)?, r.get(7).map_err(sql)?)?;
         let original = if kind == op::KIND_EDIT {
             match Body::decode(kind, &payload) {
                 Ok(Body::Edit(EditBody { legacy: Some(l), .. })) => hlc_physical(&l.hlc),
                 _ => None,
             }
         } else {
-            let payload = super::snapshots::unpack_payload(conn, payload, r.get(5).map_err(sql)?, r.get(6).map_err(sql)?)?;
             match Body::decode(kind, &payload) {
                 Ok(Body::Log(l)) => Some(l.at),
                 _ => None,
@@ -165,20 +165,21 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
     let mut created_after: BTreeSet<(String, String)> = BTreeSet::new();
     {
         let mut stmt = conn
-            .prepare("SELECT device, seq, payload, purged FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2")
+            .prepare("SELECT device, seq, payload, purged, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2")
             .map_err(sql)?;
         let rows = stmt
             .query_map(params![profile, i64::from(crate::sync2::op::KIND_ENTITY)], |r| {
-                Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?))
+                Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?))
             })
             .map_err(sql)?;
         // (实体种类, 实体) → (任一条身份记录在截面里, 内置)。
         let mut idents: BTreeMap<(String, String), (bool, bool)> = BTreeMap::new();
         for r in rows {
-            let (d, s, payload, purged) = r.map_err(sql)?;
+            let (d, s, payload, purged, pz) = r.map_err(sql)?;
             if purged != 0 {
                 continue;
             }
+            let payload = super::snapshots::unpack_payload(conn, payload, None, None, pz)?;
             let id = OpId {
                 device: Id(d.try_into().map_err(|_| "bad device".to_string())?),
                 seq: s as u64,

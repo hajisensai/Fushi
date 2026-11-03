@@ -64,7 +64,8 @@ const Duration kSrsSync2HeadHeartbeat = Duration(hours: 6);
 /// 64 KB。按段数分批（以前每批 128 段）在大段下一批能到 512 MB、整批跨 FFI 拷进内核再解压，移动端会被杀；按字节
 /// 切则与段多大无关。8 MiB 与旧设计「128 个 64 KB 段 ≈ 8 MB 一批」同量级：老段的批大小与进度粒度不变，大段一批
 /// 也至少两段。预算到了不再开新下载、只等在途的（读完之前不知道段多大），所以一批的实际上界是
-/// 预算 + [kSrsSync2Concurrency] × 单段上限（≈ 32 MiB），Dart 侧与内核各持一份也在百兆以内。
+/// 预算 + [kSrsSync2Concurrency] × 单段上限（≈ 32 MiB）。内核收一批时 Dart 侧预读下一批（[srsFetchInBatches]），
+/// 同一时刻最多两批在 Dart 侧、一批在内核，仍在百兆以内。
 const int kSrsSync2IngestBudgetBytes = 8 * 1024 * 1024;
 
 /// 调用方要求中途收手（库要关 / 调度器卸下）：已收的批次都已提交，下一轮接着拉。
@@ -603,11 +604,11 @@ class SrsFetchedBatch {
 }
 
 /// 按原顺序读 [paths]，同时最多 [concurrency] 个在途，按实际读到的字节切批：一批累计到 [budgetBytes] 就不再开
-/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件），
-/// 消费方收完再开下一批（同一时刻内存里只有一批）。每批至少一个路径，所以单个超过预算的文件自成一批；
-/// [paths] 为空时也交出一个空批。
-/// 任一读失败：不再开新的，等在途的跑完后抛出第一个错误（与 [srsRunPooled] 一致）。消费方中途停止监听，
-/// 当前批读完后就不再读。
+/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件）。
+/// 交出一批的同时开始读下一批，消费方收这一批（内核在 worker isolate 上投影）与下载重叠；只预读一批，同一时刻
+/// 内存里最多两批。每批至少一个路径，所以单个超过预算的文件自成一批；[paths] 为空时也交出一个空批。
+/// 任一读失败：不再开新的，等在途的跑完后在交到那一批时抛出第一个错误（与 [srsRunPooled] 一致；之前的批照常
+/// 交出）。消费方中途停止监听，预读的那一批读完后就不再读，且取消要等这批在途的读收完才返回（不留游离的下载）。
 Stream<SrsFetchedBatch> srsFetchInBatches(
   List<String> paths, {
   required Future<Uint8List?> Function(String path) fetch,
@@ -616,14 +617,18 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
 }) async* {
   assert(budgetBytes > 0 && concurrency > 0);
   int next = 0;
-  do {
+  bool stopped = false;
+
+  // 读一批。错误放进结果而不是让 Future 失败：预读的那一批可能在消费方停止监听后才失败，没人等它。
+  Future<_FetchRead> read() async {
     final int start = next;
     final Map<int, Uint8List> got = <int, Uint8List>{};
     int bytes = 0;
     Object? error;
     StackTrace? stack;
     Future<void> worker() async {
-      while (error == null &&
+      while (!stopped &&
+          error == null &&
           next < paths.length &&
           (next == start || bytes < budgetBytes)) {
         final int i = next++;
@@ -643,12 +648,41 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
     await Future.wait(<Future<void>>[
       for (int w = 0; w < min(concurrency, paths.length - start); w++) worker(),
     ]);
-    final Object? failure = error;
-    if (failure != null) Error.throwWithStackTrace(failure, stack!);
-    yield SrsFetchedBatch(<Uint8List>[
-      for (int i = start; i < next; i++) ?got[i],
-    ], covered: next - start);
-  } while (next < paths.length);
+    return _FetchRead(
+      SrsFetchedBatch(<Uint8List>[
+        for (int i = start; i < next; i++) ?got[i],
+      ], covered: next - start),
+      error,
+      stack,
+    );
+  }
+
+  Future<_FetchRead>? ahead = read();
+  try {
+    while (ahead != null) {
+      final _FetchRead r = await ahead;
+      final Object? failure = r.error;
+      if (failure != null) Error.throwWithStackTrace(failure, r.stack!);
+      ahead = next < paths.length ? read() : null;
+      yield r.batch;
+    }
+  } finally {
+    // 消费方停止监听 / 收段抛错：不再开新的读，并等在途的读（至多 [concurrency] 个）收完再结束——生成器拥有
+    // 它启动的读，取消（await for 的 break / return / 抛错）返回时这一轮没有游离在外的下载。预读那一批的
+    // 错误已装在 _FetchRead 里，这里不会抛。
+    stopped = true;
+    final Future<_FetchRead>? inFlight = ahead;
+    if (inFlight != null) await inFlight;
+  }
+}
+
+/// [srsFetchInBatches] 读完的一批，或它的第一个错误。
+class _FetchRead {
+  const _FetchRead(this.batch, this.error, this.stack);
+
+  final SrsFetchedBatch batch;
+  final Object? error;
+  final StackTrace? stack;
 }
 
 /// `head-<gen>-<tag>.json` 的代号；不是 head 返回 null。
