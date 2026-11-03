@@ -110,6 +110,9 @@ class SrsDeckSummary {
     required this.totalCards,
     this.parentId,
     this.rwkvPending = false,
+    this.rwkvScheduled = false,
+    this.rwkvReviewsLast30,
+    this.fsrsDue,
   });
 
   final SrsDeckView deck;
@@ -127,6 +130,24 @@ class SrsDeckSummary {
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没算进
   /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
   final bool rwkvPending;
+
+  /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看到期日，按**此刻**的回忆率
+  /// 实时挑（低于目标保留率的出），[reviewCount] 里它们那部分只是这一刻的快照、过一会儿就变，不是到期数。
+  /// 界面据此把到期一格拆成 FSRS 牌组的到期 [fsrsDue] 与 RWKV 牌组的 [rwkvDailyReviews]；[reviewCount] 本身照旧给出卡判断用。
+  final bool rwkvScheduled;
+
+  /// 子树里 **RWKV 牌组**最近 30 天（含今天）的复习数（`review_type = 'review'` 的作答；FSRS 牌组的复习不算）。
+  /// 内核只在排队请求带 RWKV 牌组时给，否则 null。
+  final int? rwkvReviewsLast30;
+
+  /// 子树里**非 RWKV 牌组**的到期数（同 [reviewCount] 一棵上限树截断，不含 RWKV 此刻合格的卡）。内核只在排队请求带
+  /// RWKV 牌组时给，否则 null（这时 [reviewCount] 就全是 FSRS 到期）。
+  final int? fsrsDue;
+
+  /// RWKV 牌组那部分显示的数：近 30 天日均复习数（四舍五入）。子树里没有 RWKV 牌组时为 null（照常显示到期数）。
+  int? get rwkvDailyReviews => rwkvScheduled && rwkvReviewsLast30 != null
+      ? (rwkvReviewsLast30! / 30).round()
+      : null;
 }
 
 /// 复习页一张卡的全部信息。
@@ -3464,13 +3485,14 @@ class SrsDbStore implements SrsSync2Host {
     return d;
   }
 
-  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因]` → 摘要。内核与 Dart 的牌组树
+  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, RWKV 近 30 天复习数?, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
   SrsDeckSummary _summaryFrom(
     SrsDeckView d,
     SrsDeckTree tree,
     Object? row, {
     Set<String> rwkvPendingDecks = const <String>{},
+    Set<String> rwkvDecks = const <String>{},
   }) {
     final List<Object?> c = (row as List?) ?? const <Object?>[];
     int at(int i, int fallback) =>
@@ -3496,7 +3518,24 @@ class SrsDbStore implements SrsSync2Host {
       rwkvPending:
           rwkvPendingDecks.isNotEmpty &&
           tree.subtree(d.id).any(rwkvPendingDecks.contains),
+      rwkvScheduled:
+          rwkvDecks.isNotEmpty && tree.subtree(d.id).any(rwkvDecks.contains),
+      rwkvReviewsLast30: c.length > 8 ? c[8] as int? : null,
+      fsrsDue: c.length > 9 ? c[9] as int? : null,
     );
+  }
+
+  /// 排队请求（[_studyRequest]）里按 RWKV-Instant 排队的牌组（[_instantInput] 的 `decks`，就绪与否都有）。
+  static Set<String> _rwkvDecks(Map<String, Object?> request) {
+    final Map<Object?, Object?>? rw = request['rwkv'] as Map<Object?, Object?>?;
+    if (rw == null) return const <String>{};
+    return <String>{
+      for (final Object? d
+          in (rw['decks'] as Map<Object?, Object?>? ??
+                  const <Object?, Object?>{})
+              .keys)
+        d! as String,
+    };
   }
 
   /// 排队请求（[_studyRequest]）里因 RWKV 没准备好而一张复习卡都没交的 RWKV 牌组（[_instantInput] 的 `pending`）。
@@ -3529,6 +3568,7 @@ class SrsDbStore implements SrsSync2Host {
         rwkvPendingDecks: request == null
             ? const <String>{}
             : _rwkvPendingDecks(request),
+        rwkvDecks: request == null ? const <String>{} : _rwkvDecks(request),
       ),
       next: r['next'] as String?,
       after: r['after'] as String?,
@@ -3563,6 +3603,7 @@ class SrsDbStore implements SrsSync2Host {
     final SrsDeckTree tree = await deckTree();
     final Map<String, Object?> request = await _studyRequest(tree, null);
     final Set<String> pending = _rwkvPendingDecks(request);
+    final Set<String> rwkvDecks = _rwkvDecks(request);
     final Map<Object?, Object?> counts =
         ((await _sync2(request))['counts'] as Map?) ??
         const <Object?, Object?>{};
@@ -3579,7 +3620,15 @@ class SrsDbStore implements SrsSync2Host {
       final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
         ..sort(SrsDeckView.compareSiblings);
       for (final SrsDeckView d in level) {
-        out.add(_summaryFrom(d, tree, counts[d.id], rwkvPendingDecks: pending));
+        out.add(
+          _summaryFrom(
+            d,
+            tree,
+            counts[d.id],
+            rwkvPendingDecks: pending,
+            rwkvDecks: rwkvDecks,
+          ),
+        );
         visit(d.id);
       }
     }

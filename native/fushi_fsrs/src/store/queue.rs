@@ -284,6 +284,8 @@ struct Fold {
     today: bool,
     reviewed: bool,
     introduced: bool,
+    /// `review_type = 'review'`（不论哪天）：落在 30 天窗口里时计入 [LogState::reviews_by_card]。
+    review: bool,
 }
 
 /// 计数上下文里来自日志的部分：最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡 / 全部作答。按日志 id 记
@@ -293,6 +295,8 @@ pub(crate) struct LogState {
     last30: Vec<i64>,
     introduced: HashMap<String, u32>,
     reviewed: HashMap<String, u32>,
+    /// 最近 30 天（含今天）每张卡 `review_type = 'review'` 的作答数（学习 / 重学步不算），随日志增量维护。
+    reviews30: HashMap<String, u32>,
     /// 今天的作答：日志 id → (卡, 时刻)。
     answers: HashMap<String, (String, i64)>,
     folded: HashMap<String, Fold>,
@@ -339,6 +343,12 @@ impl LogState {
         self.introduced.keys()
     }
 
+    /// 最近 30 天（含今天）每张卡的复习数（`review_type = 'review'` 的作答；学习 / 重学步不算）。RWKV 牌组没有到期数，
+    /// 牌组列表那一格改显示 RWKV 牌组这一项的日均（study.rs `reviews30`）。
+    pub(crate) fn reviews_by_card(&self) -> &HashMap<String, u32> {
+        &self.reviews30
+    }
+
     /// 今天的全部作答 (卡, 时刻)。
     pub(crate) fn answers(&self) -> impl Iterator<Item = (&String, i64)> {
         self.answers.values().map(|(c, at)| (c, *at))
@@ -364,21 +374,25 @@ impl LogState {
         let card: String = r.get(0).map_err(sql)?;
         let id: String = r.get(4).map_err(sql)?;
         let today_log = at >= today_start;
+        let review = r.get::<_, String>(2).map_err(sql)? == "review";
         let (mut reviewed, mut introduced) = (false, false);
         if today_log {
-            reviewed = r.get::<_, String>(2).map_err(sql)? == "review";
+            reviewed = review;
             if let Some(j) = r.get::<_, Option<String>>(3).map_err(sql)? {
                 let v: Value = serde_json::from_str(&j).unwrap_or(Value::Null);
                 introduced = v["res"]["reps"].as_f64() == Some(1.0);
             }
         }
-        self.apply(id, Fold { slot, card, at, today: today_log, reviewed, introduced });
+        self.apply(id, Fold { slot, card, at, today: today_log, reviewed, introduced, review });
         Ok(())
     }
 
     fn apply(&mut self, id: String, f: Fold) {
         if let Some(s) = f.slot {
             self.last30[s] += 1;
+            if f.review {
+                *self.reviews30.entry(f.card.clone()).or_default() += 1;
+            }
         }
         if f.today {
             if f.reviewed {
@@ -394,9 +408,6 @@ impl LogState {
 
     fn unapply(&mut self, id: &str) {
         let Some(f) = self.folded.remove(id) else { return };
-        if let Some(s) = f.slot {
-            self.last30[s] -= 1;
-        }
         let dec = |m: &mut HashMap<String, u32>, k: &str| {
             if let Some(n) = m.get_mut(k) {
                 *n -= 1;
@@ -405,6 +416,12 @@ impl LogState {
                 }
             }
         };
+        if let Some(s) = f.slot {
+            self.last30[s] -= 1;
+            if f.review {
+                dec(&mut self.reviews30, &f.card);
+            }
+        }
         if f.today {
             if f.reviewed {
                 dec(&mut self.reviewed, &f.card);

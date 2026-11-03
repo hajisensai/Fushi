@@ -299,6 +299,7 @@ void main() {
     );
     expect(root.reviewCount, 0);
     expect(root.rwkvPending, isTrue);
+    expect(root.rwkvScheduled, isTrue);
     expect(pending.rwkvPending, isTrue);
     expect(pending.hasWorkToday, isFalse);
     expect(
@@ -345,7 +346,7 @@ void main() {
       find.bySemanticsLabel(
         RegExp(
           '${RegExp.escape(t.srs_count_review)} '
-          '${RegExp.escape(t.srs_settings_rwkv_preparing_start)}',
+          '\\(${RegExp.escape(t.srs_settings_rwkv_preparing_start)}\\)',
         ),
       ),
       findsOneWidget,
@@ -362,5 +363,157 @@ void main() {
     expect(after.rwkvPending, isFalse);
     expect(after.reviewCount, 2);
     expect(ready.rwkvPending, isFalse);
+
+    // 就绪后 RWKV 牌组的「到期」是此刻回忆率的快照、不是到期数：第三格改显示近 30 天日均复习数（这里没有复习日志 → ≈0）。
+    expect(after.rwkvScheduled, isTrue);
+    expect(after.rwkvReviewsLast30, 0);
+    expect(after.fsrsDue, 0);
+    expect(after.rwkvDailyReviews, 0);
+    expect(ready.rwkvDailyReviews, 0);
+    expect(ready.todayFsrsDue, 0);
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: after.reviewCount,
+        fsrsDue: after.fsrsDue,
+        rwkvDailyReviews: after.rwkvDailyReviews,
+      ),
+      '${t.srs_count_review_rwkv} ≈0',
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: FushiDesignSystem.material,
+            glass: FushiGlassMaterial.off,
+            glassDesign: false,
+          ),
+          home: Scaffold(
+            body: SrsCountTriple(
+              newCount: after.newCount,
+              learnCount: after.learnCount,
+              reviewCount: after.reviewCount,
+              reviewPending: after.rwkvPending,
+              fsrsDue: after.fsrsDue,
+              rwkvDailyReviews: after.rwkvDailyReviews,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-count-review-rwkv')),
+      findsOneWidget,
+    );
+    expect(find.text('≈0'), findsOneWidget);
+    expect(find.text('${after.reviewCount}'), findsNothing);
+    expect(
+      find.bySemanticsLabel(
+        RegExp(RegExp.escape('${t.srs_count_review_rwkv} ≈0')),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  test('混合牌组：FSRS 到期不被 RWKV 日均盖掉；首页逐根求和，FSRS 根牌组的复习不算进 RWKV 日均', () async {
+    final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore(
+      clock: SrsTestClock(),
+    );
+    addTearDown(db.close);
+    final SrsDeckView deck = (await store.deckTree())[store.defaultDeckId]!;
+    SrsDeckSummary root({
+      required int reviewCount,
+      int? fsrsDue,
+      bool scheduled = false,
+      int? r30,
+      bool pending = false,
+    }) => SrsDeckSummary(
+      deck: deck,
+      fullName: deck.name,
+      depth: 0,
+      newCount: 0,
+      learnCount: 0,
+      reviewCount: reviewCount,
+      newBudget: const SrsNewCardBudget(
+        limit: 20,
+        allowed: 20,
+        reviewBudget: 100,
+        reason: null,
+      ),
+      totalCards: 100,
+      rwkvPending: pending,
+      rwkvScheduled: scheduled,
+      rwkvReviewsLast30: r30,
+      fsrsDue: fsrsDue,
+    );
+    // 纯 FSRS 根（到期 50）+ 混合根（FSRS 子牌组到期 4、RWKV 子牌组 30 天复习 41）。
+    final SrsDeckListData data = SrsDeckListData(
+      store: store,
+      decks: <SrsDeckSummary>[
+        root(reviewCount: 50, fsrsDue: 50, r30: 0),
+        root(reviewCount: 9, fsrsDue: 4, scheduled: true, r30: 41),
+      ],
+    );
+    expect(data.todayFsrsDue, 54);
+    expect(data.rwkvDailyReviews, 1, reason: '只数 RWKV 的 41 次：41 / 30 → 1');
+    expect(
+      SrsReviewCell.of(
+        reviewCount: data.todayReview,
+        fsrsDue: data.todayFsrsDue,
+        rwkvDailyReviews: data.rwkvDailyReviews,
+      ).numbers,
+      '54 · ≈1',
+    );
+    // 混合子树的牌组行：FSRS 到期在前、RWKV 日均附后；纯 RWKV（FSRS 到期 0）只显示日均。
+    expect(
+      SrsReviewCell.ofDeck(
+        root(reviewCount: 9, fsrsDue: 4, scheduled: true, r30: 41),
+      ).label(),
+      '${t.srs_count_review} 4 · ${t.srs_count_review_rwkv} ≈1',
+    );
+    expect(
+      SrsReviewCell.ofDeck(
+        root(reviewCount: 3, fsrsDue: 0, scheduled: true, r30: 60),
+      ).numbers,
+      '≈2',
+    );
+    // 准备中：FSRS 到期照旧显示（RWKV 的卡本就没进计数），速览与牌组格同一份格式。
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: 4,
+        reviewPending: true,
+        fsrsDue: 4,
+        rwkvDailyReviews: 1,
+      ),
+      '${t.srs_count_review} 4 · ${t.srs_count_review_rwkv} ≈1 '
+      '(${t.srs_settings_rwkv_preparing_start})',
+    );
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: 0,
+        reviewPending: true,
+        fsrsDue: 0,
+        rwkvDailyReviews: 1,
+      ),
+      '${t.srs_count_review_rwkv} ≈1 (${t.srs_settings_rwkv_preparing_start})',
+    );
+    // 没有 RWKV 牌组：照旧是到期数。
+    final SrsDeckListData fsrsOnly = SrsDeckListData(
+      store: store,
+      decks: <SrsDeckSummary>[root(reviewCount: 7)],
+    );
+    expect(fsrsOnly.rwkvDailyReviews, isNull);
+    expect(fsrsOnly.todayFsrsDue, 7);
+    expect(
+      srsNavPeekCountsLabel(newCount: 0, learnCount: 0, reviewCount: 7),
+      '${t.srs_count_review} 7',
+    );
   });
 }
