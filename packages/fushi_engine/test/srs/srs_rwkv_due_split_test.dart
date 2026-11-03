@@ -1,7 +1,6 @@
 // FSRS 与 RWKV 牌组混在同一棵子树里时，牌组行的「到期」一格按算法拆开（PR #2801 审查）：
-// - FSRS 子牌组的真实到期数照旧给出（[SrsDeckSummary.fsrsDue]），不被 RWKV 的日均盖掉；
-// - RWKV 日均只数 RWKV 牌组的近 30 天复习（[SrsDeckSummary.rwkvReviewsLast30]），FSRS 牌组的复习不混进来；
-// - 父行两项都沿牌组树汇总；纯 FSRS 子树没有 RWKV 日均。
+// - FSRS 子牌组的真实到期数照旧给出（[SrsDeckSummary.fsrsDue]），不含 RWKV 此刻合格的卡；
+// - 父行沿牌组树汇总；纯 FSRS 子树不标 RWKV。
 //
 // 走真实路径：真 store + Rust 内核排队，只把 RWKV 打分换成确定性假打分器。
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -93,7 +92,7 @@ void main() {
     final List<String> inR = await graduated(r, 2);
     final List<String> inPlain = await graduated(plain, 1);
     t += const Duration(days: 1).inMilliseconds;
-    // RWKV 牌组 16 次复习（日均 16/30 → 1），FSRS 牌组 5 次复习（不能算进 RWKV 日均）。
+    // RWKV 牌组 16 次复习，FSRS 牌组 5 次复习。
     for (int i = 0; i < 16; i++) {
       t += 60000;
       await s.answer(inR[0], 3, durationMs: 1000);
@@ -115,8 +114,6 @@ void main() {
     final SrsDeckSummary rootRow = rows[root]!;
     expect(rootRow.rwkvScheduled, isTrue);
     expect(rootRow.fsrsDue, 2, reason: 'FSRS 子牌组的 2 张到期在父行照旧看得到');
-    expect(rootRow.rwkvReviewsLast30, 16, reason: 'FSRS 那 5 次复习不算进 RWKV');
-    expect(rootRow.rwkvDailyReviews, 1);
     expect(
       rootRow.reviewCount,
       greaterThanOrEqualTo(2),
@@ -125,20 +122,15 @@ void main() {
 
     final SrsDeckSummary fRow = rows[f]!;
     expect(fRow.rwkvScheduled, isFalse);
-    expect(fRow.rwkvDailyReviews, isNull);
     expect(fRow.fsrsDue, 2);
     expect(fRow.reviewCount, 2);
-    expect(fRow.rwkvReviewsLast30, 0);
 
     final SrsDeckSummary rRow = rows[r]!;
     expect(rRow.rwkvScheduled, isTrue);
     expect(rRow.fsrsDue, 0);
-    expect(rRow.rwkvReviewsLast30, 16);
-    expect(rRow.rwkvDailyReviews, 1);
 
     final SrsDeckSummary plainRow = rows[plain]!;
     expect(plainRow.rwkvScheduled, isFalse);
-    expect(plainRow.rwkvDailyReviews, isNull);
     expect(plainRow.fsrsDue, 1);
     expect(plainRow.reviewCount, 1);
   });

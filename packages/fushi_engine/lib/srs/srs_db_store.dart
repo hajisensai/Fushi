@@ -112,7 +112,6 @@ class SrsDeckSummary {
     this.parentId,
     this.rwkvPending = false,
     this.rwkvScheduled = false,
-    this.rwkvReviewsLast30,
     this.fsrsDue,
   });
 
@@ -134,21 +133,12 @@ class SrsDeckSummary {
 
   /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看到期日，按**此刻**的回忆率
   /// 实时挑（低于目标保留率的出），[reviewCount] 里它们那部分只是这一刻的快照、过一会儿就变，不是到期数。
-  /// 界面据此把到期一格拆成 FSRS 牌组的到期 [fsrsDue] 与 RWKV 牌组的 [rwkvDailyReviews]；[reviewCount] 本身照旧给出卡判断用。
+  /// 界面据此只把 FSRS 牌组的到期 [fsrsDue] 当到期数显示；[reviewCount] 本身照旧给出卡判断用。
   final bool rwkvScheduled;
-
-  /// 子树里 **RWKV 牌组**最近 30 天（含今天）的复习数（`review_type = 'review'` 的作答；FSRS 牌组的复习不算）。
-  /// 内核只在排队请求带 RWKV 牌组时给，否则 null。
-  final int? rwkvReviewsLast30;
 
   /// 子树里**非 RWKV 牌组**的到期数（同 [reviewCount] 一棵上限树截断，不含 RWKV 此刻合格的卡）。内核只在排队请求带
   /// RWKV 牌组时给，否则 null（这时 [reviewCount] 就全是 FSRS 到期）。
   final int? fsrsDue;
-
-  /// RWKV 牌组那部分显示的数：近 30 天日均复习数（四舍五入）。子树里没有 RWKV 牌组时为 null（照常显示到期数）。
-  int? get rwkvDailyReviews => rwkvScheduled && rwkvReviewsLast30 != null
-      ? (rwkvReviewsLast30! / 30).round()
-      : null;
 }
 
 /// 复习页一张卡的全部信息。
@@ -3510,7 +3500,7 @@ class SrsDbStore implements SrsSync2Host {
     return d;
   }
 
-  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, RWKV 近 30 天复习数?, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
+  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
   SrsDeckSummary _summaryFrom(
     SrsDeckView d,
@@ -3545,8 +3535,7 @@ class SrsDbStore implements SrsSync2Host {
           tree.subtree(d.id).any(rwkvPendingDecks.contains),
       rwkvScheduled:
           rwkvDecks.isNotEmpty && tree.subtree(d.id).any(rwkvDecks.contains),
-      rwkvReviewsLast30: c.length > 8 ? c[8] as int? : null,
-      fsrsDue: c.length > 9 ? c[9] as int? : null,
+      fsrsDue: c.length > 8 ? c[8] as int? : null,
     );
   }
 

@@ -273,9 +273,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _learnCount = 0;
   int _reviewCount = 0;
 
-  /// 这个牌组（子树）里 RWKV 牌组的近 30 天日均复习数（[SrsDeckSummary.rwkvDailyReviews]）：[_reviewCount] 里 RWKV 那部分
-  /// 不是到期数，计数按 [SrsReviewCell] 改显示「FSRS 到期 [_fsrsDue] · ≈日均」。
-  int? _rwkvDailyReviews;
+  /// 这个牌组（子树）里有 RWKV 牌组（[SrsDeckSummary.rwkvScheduled]）：[_reviewCount] 里 RWKV 那部分不是到期数，
+  /// 计数按 [SrsReviewCell] 只显示 FSRS 到期 [_fsrsDue]。
+  bool _rwkv = false;
 
   /// 子树里有 RWKV 牌组时其中 FSRS 牌组的到期数（[SrsDeckSummary.fsrsDue]）。
   int? _fsrsDue;
@@ -461,7 +461,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
-    _rwkvDailyReviews = sum?.rwkvDailyReviews;
+    _rwkv = sum?.rwkvScheduled ?? false;
     _fsrsDue = sum?.fsrsDue;
     _deckTitle = sum?.fullName;
   }
@@ -1631,7 +1631,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         SrsReviewCell.of(
           reviewCount: _reviewCount,
           fsrsDue: _fsrsDue,
-          rwkvDailyReviews: _rwkvDailyReviews,
+          rwkv: _rwkv,
         ).label() ??
         '';
     return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
@@ -2079,7 +2079,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   learnCount: _learnCount,
                   reviewCount: _reviewCount,
                   fsrsDue: _fsrsDue,
-                  rwkvDailyReviews: _rwkvDailyReviews,
+                  rwkv: _rwkv,
                   dense: true,
                 )
               : null,
