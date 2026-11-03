@@ -443,7 +443,16 @@ Future<void> _runDirection(
     final double fwdStart = direction == 'rtl' ? w * 0.1 : w * 0.9;
     final double backStart = direction == 'rtl' ? w * 0.9 : w * 0.1;
 
-    // 3a. 斜拖停在半途：纸面只有页图（黑边不卷），纸背不透字。拖回起点松手回卷。
+    // 3a. 斜拖停在半途：纸面只有页图（黑边不卷），纸背透出镜像正文。拖回起点
+    // 松手回卷。先进到第二个跨页：宽窗口下第一个跨页是单张封面、下一个是双页，
+    // 卷起露出的双页本来就比封面宽，「纸面外不变亮」只在前后跨页同宽时成立。
+    await tester.sendKeyEvent(next);
+    await _pumpFor(tester, const Duration(milliseconds: 60));
+    final Map<String, Object?> vProbe = await _settled(tester);
+    r.check(
+      _page(vProbe) == _page(v1),
+      '$direction: probe starts on the second spread ($vProbe)',
+    );
     final Uint8List? before = await capturePageCurlBaseline(tester);
     final Map<String, Object?> diag = await _drag(
       tester,
@@ -485,8 +494,15 @@ Future<void> _runDirection(
       '$direction: nothing paper-coloured outside the page image ($shading)',
     );
     r.check(
-      _page(vDiag) == _page(v4) && _clean(vDiag),
-      '$direction: probe drag curled back ($v4 -> $vDiag)',
+      _page(vDiag) == _page(vProbe) && _clean(vDiag),
+      '$direction: probe drag curled back ($vProbe -> $vDiag)',
+    );
+    await tester.sendKeyEvent(prev);
+    await _pumpFor(tester, const Duration(milliseconds: 60));
+    final Map<String, Object?> vBack = await _settled(tester);
+    r.check(
+      _page(vBack) == _page(v4),
+      '$direction: back on the first spread after the probe ($vBack)',
     );
     final Map<String, Object?> long = await _drag(
       tester,
