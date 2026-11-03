@@ -70,7 +70,15 @@ class FushiDevice {
 
 /// Browses the LAN for peer Fushi sync servers advertised via [serviceType].
 class LanDiscoveryService {
-  LanDiscoveryService({required this.deviceId});
+  LanDiscoveryService({
+    required this.deviceId,
+    @visibleForTesting BonsoirDiscovery Function(String type)? discoveryFactory,
+  }) : _discoveryFactory = discoveryFactory ?? _defaultDiscovery;
+
+  static BonsoirDiscovery _defaultDiscovery(String type) =>
+      BonsoirDiscovery(type: type);
+
+  final BonsoirDiscovery Function(String type) _discoveryFactory;
 
   static const String serviceType = '_fushi-sync._tcp';
   static const String attributeId = 'id';
@@ -96,6 +104,15 @@ class LanDiscoveryService {
   final StreamController<List<FushiDevice>> _deviceStream =
       StreamController<List<FushiDevice>>.broadcast();
   BonsoirDiscovery? _discovery;
+
+  /// A discovery whose `initialize()` is still running. Kept apart from
+  /// [_discovery] because a platform browser may only be stopped once it has
+  /// initialised: bonsoir_linux's `stop()` dereferences the Avahi browser that
+  /// `initialize()` creates, so stopping one whose initialize failed (no Avahi
+  /// daemon: WSL, minimal installs) or is still pending threw a null-check
+  /// error. [stopDiscovery] clears this field instead; the starter sees it was
+  /// superseded and stops its own browser once initialize returns.
+  BonsoirDiscovery? _initializing;
   StreamSubscription<BonsoirDiscoveryEvent>? _sub;
   bool _disposed = false;
 
@@ -108,7 +125,7 @@ class LanDiscoveryService {
   /// 覆盖丢弃上一个」——这两件事从外部没有别的可观测面（原生 browser 在单测环境
   /// 里既不抛也不回执）。
   @visibleForTesting
-  bool get hasActiveBrowser => _discovery != null;
+  bool get hasActiveBrowser => _discovery != null || _initializing != null;
 
   Stream<List<FushiDevice>> get devices => _deviceStream.stream;
   List<FushiDevice> get currentDevices => _discoveredDevices.values.toList();
@@ -123,12 +140,26 @@ class LanDiscoveryService {
   /// 一个原生 browser 就成了既不在 controller 的活跃集合里、也没有 owner 的孤儿。
   Future<void> startDiscovery() async {
     if (_disposed) return;
-    if (_discovery != null) await stopDiscovery();
+    if (_discovery != null || _initializing != null) await stopDiscovery();
     await _refreshLocalAddresses();
     if (_disposed) return;
-    final BonsoirDiscovery discovery = BonsoirDiscovery(type: serviceType);
+    final BonsoirDiscovery discovery = _discoveryFactory(serviceType);
+    _initializing = discovery;
+    try {
+      await discovery.initialize();
+    } catch (_) {
+      // Never initialised: nothing to stop, nothing published.
+      if (identical(_initializing, discovery)) _initializing = null;
+      rethrow;
+    }
+    if (!identical(_initializing, discovery) || _disposed) {
+      // stopDiscovery() / dispose() / a newer startDiscovery() ran while this
+      // one was initialising and could not stop it; stop it here instead.
+      await discovery.stop();
+      return;
+    }
+    _initializing = null;
     _discovery = discovery;
-    await discovery.initialize();
     _sub = discovery.eventStream!.listen(_onEvent);
     await discovery.start();
     // 起完再复核一次：initialize/start 之间也可能被 dispose 抢在前面。
@@ -217,6 +248,8 @@ class LanDiscoveryService {
   void debugHandleEvent(BonsoirDiscoveryEvent event) => _onEvent(event);
 
   Future<void> stopDiscovery() async {
+    // A discovery still initialising is stopped by its own startDiscovery().
+    _initializing = null;
     await _sub?.cancel();
     _sub = null;
     await _discovery?.stop();
