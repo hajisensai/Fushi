@@ -175,6 +175,87 @@ void main() {
     expect(find.byKey(GameStreamPage.lookupModeHintKey), findsNothing);
   });
 
+  testWidgets('hiding the lookup panel goes back to the game', (
+    WidgetTester tester,
+  ) async {
+    final _Harness h = await _Harness.pump(tester);
+    await h.press(LogicalKeyboardKey.gameButtonSelect);
+    expect(find.byKey(GameStreamPage.lookupModeHintKey), findsOneWidget);
+
+    await tester.tap(find.byTooltip(t.game_stream_lookup_toggle));
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+
+    // With nothing on screen showing lookup mode, A must reach the game.
+    await h.press(LogicalKeyboardKey.gameButtonA);
+    expect(h.sent.map((GameStreamInputEvent e) => e.button), <String?>[
+      'confirm',
+      'confirm',
+    ]);
+    expect(h.lookup.terms, isEmpty);
+
+    // Showing the panel again keeps the game mode.
+    await tester.tap(find.byTooltip(t.game_stream_lookup_toggle));
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameStreamPage.lookupModeHintKey), findsNothing);
+    expect(find.text(t.game_stream_game_mode), findsOneWidget);
+  });
+
+  testWidgets('the controls sheet does not leave lookup mode', (
+    WidgetTester tester,
+  ) async {
+    final _Harness h = await _Harness.pump(tester);
+    await h.press(LogicalKeyboardKey.gameButtonSelect);
+    await tester.tap(find.byTooltip(t.game_stream_keys));
+    await tester.pumpAndSettle();
+    // The sheet hides the panel's WebView while it is up...
+    expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    // ...and gives it back with the mode the user was in.
+    expect(find.byKey(GameStreamPage.lookupModeHintKey), findsOneWidget);
+  });
+
+  testWidgets('the lookup anchors at the queried grapheme, past leading '
+      'blanks', (WidgetTester tester) async {
+    final _Harness h = await _Harness.pump(tester);
+    h.controller.applyTextEvent(
+      GameStreamTextEvent(
+        sessionId: 's1',
+        lineId: 'line-2',
+        text: '　「おはよう」',
+        timestampMs: 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await h.press(LogicalKeyboardKey.gameButtonSelect);
+    // Cursor at 0 (the full-width space): the query starts at 1.
+    await h.press(LogicalKeyboardKey.gameButtonA);
+    // The cursor moved to where the query started, so right goes to 2.
+    await h.press(LogicalKeyboardKey.arrowRight);
+    await h.press(LogicalKeyboardKey.gameButtonA);
+    expect(h.lookup.terms, <String>['「おはよう」', 'おはよう」']);
+  });
+
+  testWidgets('the mode chip appears with the first controller press', (
+    WidgetTester tester,
+  ) async {
+    await _Harness.pump(tester);
+    expect(find.byKey(GameStreamPage.modeChipKey), findsNothing);
+    // R3 does nothing by default: no input, no ack, no other rebuild.
+    await tester.sendKeyDownEvent(
+      LogicalKeyboardKey.gameButtonThumbRight,
+      platform: 'android',
+    );
+    await tester.pump();
+    expect(find.byKey(GameStreamPage.modeChipKey), findsOneWidget);
+    await tester.sendKeyUpEvent(
+      LogicalKeyboardKey.gameButtonThumbRight,
+      platform: 'android',
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a custom toggle button leaves lookup mode instead of its '
       'lookup role', (WidgetTester tester) async {
     final _Harness h = await _Harness.pump(

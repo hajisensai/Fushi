@@ -231,7 +231,18 @@ class _GameStreamPageState extends State<GameStreamPage>
   // The on-screen pad stands in for missing buttons on a touch screen; a
   // desktop has a keyboard and mouse, so it starts hidden there.
   bool _controlsVisible = !_isDesktopPlatform;
+
+  /// The user wants the lookup panel shown. Change it only through
+  /// [_setLookupVisible]: hiding the panel also leaves lookup mode.
   bool _lookupVisible = true;
+
+  /// A modal sheet is up and the panel (its WebView) steps aside meanwhile.
+  /// Separate from [_lookupVisible] so a sheet never changes what the user
+  /// chose, nor the input mode.
+  bool _lookupSuspended = false;
+
+  /// The panel is on screen.
+  bool get _lookupShown => _lookupVisible && !_lookupSuspended;
 
   /// Where controller buttons go (see [GameStreamInputMode]).
   GameStreamInputMode _inputMode = GameStreamInputMode.game;
@@ -1271,8 +1282,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   Future<void> _configureKeys() async {
     // A held control must retain its down/up mapping until it is released.
     if (_heldSources.isNotEmpty || _heldPhysical.isNotEmpty) return;
-    final bool restoreLookup = _lookupVisible;
-    setState(() => _lookupVisible = false);
+    setState(() => _lookupSuspended = true);
     try {
       await adaptiveModalSheet<void>(
         context: context,
@@ -1394,7 +1404,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         ),
       );
     } finally {
-      if (mounted) setState(() => _lookupVisible = restoreLookup);
+      if (mounted) setState(() => _lookupSuspended = false);
     }
   }
 
@@ -1511,22 +1521,28 @@ class _GameStreamPageState extends State<GameStreamPage>
         );
       case GameStreamAppAction(:final GameStreamReceiverAction action):
         if (!mounted) return;
-        setState(() {
-          switch (action) {
-            case GameStreamReceiverAction.toggleLookupPanel:
-              _lookupVisible = !_lookupVisible;
-            case GameStreamReceiverAction.toggleOnScreenPad:
-              _controlsVisible = !_controlsVisible;
-            case GameStreamReceiverAction.toggleLookupMode:
-              break;
-          }
-        });
-        if (action == GameStreamReceiverAction.toggleLookupMode) {
-          _setInputMode(GameStreamInputMode.lookup);
+        switch (action) {
+          case GameStreamReceiverAction.toggleLookupPanel:
+            _setLookupVisible(!_lookupVisible);
+          case GameStreamReceiverAction.toggleOnScreenPad:
+            setState(() => _controlsVisible = !_controlsVisible);
+          case GameStreamReceiverAction.toggleLookupMode:
+            _setInputMode(GameStreamInputMode.lookup);
         }
       case GameStreamNoAction():
         return;
     }
+  }
+
+  /// Shows or hides the lookup panel. Lookup mode lives in the panel (its
+  /// chip, hint and outline), so hiding it goes back to the game: buttons
+  /// must never be swallowed by a mode nothing on screen shows.
+  void _setLookupVisible(bool visible) {
+    if (!mounted || visible == _lookupVisible) return;
+    setState(() {
+      _lookupVisible = visible;
+      if (!visible) _inputMode = GameStreamInputMode.game;
+    });
   }
 
   /// Switches where controller buttons go. Entering lookup mode lifts every
@@ -1583,9 +1599,11 @@ class _GameStreamPageState extends State<GameStreamPage>
         controller?.currentLine?.text != line.text) {
       return;
     }
+    // The query starts at span.start (a Latin word's first letter, past
+    // leading blanks), so the highlight and D-pad right count from there too.
     setState(() {
-      _lookupCaret = index;
-      _lookupStart = index;
+      _lookupCaret = span.start;
+      _lookupStart = span.start;
     });
     unawaited(
       controller?.lookup(
@@ -1743,8 +1761,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _openSettings() async {
-    final bool restoreLookup = _lookupVisible;
-    setState(() => _lookupVisible = false);
+    setState(() => _lookupSuspended = true);
     try {
       final GameStreamVideoSettings? next = await showGameStreamSettingsSheet(
         context,
@@ -1776,7 +1793,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         );
       }
     } finally {
-      if (mounted) setState(() => _lookupVisible = restoreLookup);
+      if (mounted) setState(() => _lookupSuspended = false);
     }
   }
 
@@ -2013,9 +2030,8 @@ class _GameStreamPageState extends State<GameStreamPage>
                                   filled: _lookupVisible,
                                 ),
                               ),
-                              onPressed: () => setState(
-                                () => _lookupVisible = !_lookupVisible,
-                              ),
+                              onPressed: () =>
+                                  _setLookupVisible(!_lookupVisible),
                             ),
                           FushiIconButtonControl(
                             tooltip: t.game_stream_controls_toggle,
@@ -2057,7 +2073,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     video,
-                    if (_lookupVisible) ...<Widget>[
+                    if (_lookupShown) ...<Widget>[
                       // Full-width edge: grab the boundary anywhere with a
                       // mouse.
                       SizedBox(
@@ -2081,7 +2097,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                 // Visible grip with a 48dp touch target straddling the edge,
                 // as a centred band so the video's bottom strip still reaches
                 // the game beside it.
-                if (_lookupVisible)
+                if (_lookupShown)
                   Positioned(
                     left: 0,
                     right: 0,
@@ -2114,7 +2130,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   video,
-                  if (_lookupVisible) ...<Widget>[
+                  if (_lookupShown) ...<Widget>[
                     // Full-height edge: grab the boundary anywhere with a mouse.
                     SizedBox(
                       width: _railEdgeWidth,
@@ -2134,7 +2150,7 @@ class _GameStreamPageState extends State<GameStreamPage>
               // Visible grip with a 48dp touch target straddling the edge.
               // Only a band, not the full height: the strip it overlaps on
               // the video side would otherwise stop reaching the game.
-              if (_lookupVisible)
+              if (_lookupShown)
                 Positioned(
                   right: railWidth + _railEdgeWidth / 2 - _resizeHitExtent / 2,
                   width: _resizeHitExtent,
@@ -2488,6 +2504,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     DictionarySearchResult? result,
   ) {
     final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    final FushiSpringSpec spring = context.fushiMotion.effectsDefault;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -2525,17 +2542,37 @@ class _GameStreamPageState extends State<GameStreamPage>
                         ],
                       ),
                     ),
-                    if (lookupMode)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                        child: Text(
-                          t.game_stream_lookup_mode_hint,
-                          key: GameStreamPage.lookupModeHintKey,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: fushiNeutralSecondaryForeground(context),
-                          ),
-                        ),
+                    // Grows / shrinks with the mode instead of jumping the
+                    // line below it.
+                    AnimatedSize(
+                      duration: spring.duration,
+                      curve: spring.curve,
+                      alignment: AlignmentDirectional.topStart,
+                      child: AnimatedSwitcher(
+                        duration: spring.duration,
+                        switchInCurve: spring.curve,
+                        switchOutCurve: spring.curve,
+                        child: lookupMode
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  4,
+                                ),
+                                child: Text(
+                                  t.game_stream_lookup_mode_hint,
+                                  key: GameStreamPage.lookupModeHintKey,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: fushiNeutralSecondaryForeground(
+                                      context,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : const SizedBox(width: double.infinity),
                       ),
+                    ),
                     if (line == null)
                       Padding(
                         padding: const EdgeInsets.all(8),
@@ -2626,7 +2663,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   showBorder: false,
                   swipeDismissible: false,
                   enableSwipeToClose: false,
-                  onDismiss: () => setState(() => _lookupVisible = false),
+                  onDismiss: () => _setLookupVisible(false),
                   onTextSelected:
                       (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
                           unawaited(controller.lookup(text)),

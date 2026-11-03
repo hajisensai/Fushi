@@ -293,8 +293,11 @@ class SubtitleTranscriptText extends StatefulWidget {
   final SubtitleTranscriptHighlightRange? lookupHighlight;
 
   /// Grapheme cursor driven by the owner (e.g. a game controller's lookup
-  /// mode). Non-null shows it even without focus and replaces the keyboard
-  /// cursor; null keeps the widget's own keyboard cursor.
+  /// mode); null keeps the widget's own keyboard cursor.
+  ///
+  /// Non-null makes the cursor fully controlled: it shows even without focus,
+  /// Enter / Space look up at it, and the movement keys (arrows, Home, End)
+  /// are left to bubble up to the owner, which is the only one that moves it.
   final int? caret;
 
   @override
@@ -325,9 +328,14 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
         key == LogicalKeyboardKey.home ||
         key == LogicalKeyboardKey.end;
     if (!activate && !move) return KeyEventResult.ignored;
+    final int? controlled = widget.caret;
+    // A controlled cursor has one owner: moving it is the owner's job.
+    if (move && controlled != null) return KeyEventResult.ignored;
     if (event is KeyUpEvent) return KeyEventResult.handled;
     if (activate) {
-      if (event is KeyDownEvent) widget.onLookup(_caret, Rect.zero);
+      if (event is KeyDownEvent) {
+        widget.onLookup((controlled ?? _caret).clamp(0, count - 1), Rect.zero);
+      }
     } else {
       setState(() {
         if (key == LogicalKeyboardKey.home) {
