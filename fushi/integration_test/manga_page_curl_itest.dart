@@ -448,9 +448,10 @@ Future<void> _runDirection(
     final Map<String, Object?> diag = await _drag(
       tester,
       x0: fwdStart,
-      y: h * 0.85,
+      // 起点在页图内（竖屏信箱时页图只占中间），拖得够长让翻起的纸背有面积可量。
+      y: h * 0.6,
       // 横向为主（JS 手势按首段位移定轴，竖屏上纵向分量大了会判成纵向滑动）。
-      dx: fwd * w * 0.5,
+      dx: fwd * w * 0.75,
       dy: -h * 0.12,
       steps: 12,
       stepMs: 32,
