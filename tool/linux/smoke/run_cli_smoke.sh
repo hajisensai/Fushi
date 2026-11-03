@@ -10,7 +10,15 @@ step() {
   echo "STEP $name exit=$rc"
   printf '%s\n' "$out" | head -n "${LINES_MAX:-12}" | cut -c1-220
   echo
-  if [ -n "${SHOT_DIR:-}" ]; then sleep 1; xwd -root -silent | convert xwd:- "$SHOT_DIR/$name.png" 2>/dev/null; fi
+  if [ -n "${SHOT_DIR:-}" ]; then
+    sleep 1
+    # Wayland desktops (KDE / Steam Deck Desktop Mode) cannot be grabbed with xwd.
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v spectacle >/dev/null; then
+      timeout 20 spectacle -b -n -f -o "$SHOT_DIR/$name.png" >/dev/null 2>&1
+    else
+      xwd -root -silent | convert xwd:- "$SHOT_DIR/$name.png" 2>/dev/null
+    fi
+  fi
 }
 
 step status            cli status
