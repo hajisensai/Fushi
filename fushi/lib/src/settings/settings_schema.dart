@@ -20,6 +20,7 @@ import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
+import 'package:fushi/src/settings/settings_schema_home_widgets.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/utils.dart';
@@ -113,6 +114,7 @@ List<SettingsDestination> _buildDestinations() {
     buildSyncBackupDestination(),
     buildInterconnectDestination(),
     buildStorageDestination(),
+    buildWidgetsDestination(),
     buildSystemDestination(),
   ]);
 }

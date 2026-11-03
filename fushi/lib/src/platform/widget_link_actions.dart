@@ -8,14 +8,24 @@ import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/media.dart';
+import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
+    show deliverExternalLookup;
 import 'package:fushi/src/anki/source_review_navigation.dart'
     show ExternalMediaNavigation;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/collections_page.dart'
+    show CollectionsPage;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/platform/widget_links.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart'
+    show SettingsDetailPage;
+import 'package:fushi/src/settings/settings_schema_card_creation.dart'
+    show buildCardCreationDestination;
+import 'package:fushi/src/settings/settings_schema_home_widgets.dart'
+    show buildWidgetsDestination;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
@@ -128,6 +138,44 @@ Future<void> openWidgetStats(AppModel appModel) async {
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => const StatisticsCenterPage(),
+    ),
+  );
+}
+
+/// 查词：交给应用内查词弹窗（与 `fushi://lookup?word=` 同一条投递，见
+/// [deliverExternalLookup]）。词已在 [WidgetLookupLink] 里 trim 过。
+Future<void> openWidgetLookup(String word) async {
+  deliverExternalLookup(word);
+}
+
+/// 打开小组件指向的设置页（制卡设置 / 主屏幕小组件设置）。
+Future<void> openWidgetSettings(
+  AppModel appModel,
+  WidgetSettingsTarget target,
+) async {
+  final BuildContext? context = appModel.navigatorKey.currentContext;
+  if (context == null || !context.mounted) return;
+  final Widget page = switch (target) {
+    WidgetSettingsTarget.cards => SettingsDetailPage(
+      destination: buildCardCreationDestination(),
+    ),
+    WidgetSettingsTarget.widgets => SettingsDetailPage(
+      destination: buildWidgetsDestination(),
+    ),
+  };
+  await Navigator.of(
+    context,
+  ).push<void>(adaptivePageRoute<void>(context: context, builder: (_) => page));
+}
+
+/// 打开收藏夹（收藏词 / 收藏句 / 制卡历史）。
+Future<void> openWidgetVocab(AppModel appModel) async {
+  final BuildContext? context = appModel.navigatorKey.currentContext;
+  if (context == null || !context.mounted) return;
+  await Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => const CollectionsPage(),
     ),
   );
 }

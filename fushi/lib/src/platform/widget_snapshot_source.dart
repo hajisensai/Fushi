@@ -8,6 +8,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
+import 'package:fushi_engine/srs/srs_stats.dart' show SrsStatsData, SrsStreak;
+import 'package:fushi_engine/srs/srs_stats_loader.dart'
+    show SrsStatsBundle, loadSrsStats;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
@@ -15,19 +19,15 @@ import 'package:intl/intl.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show homeNavItemFor;
-import 'package:fushi/src/pages/implementations/home_srs_panel.dart'
-    show homeSrsPanelVisibleProvider;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
-    show formatStatChars, formatStatTime;
-import 'package:fushi/src/pages/implementations/stat_summary.dart'
-    show computeReadingStreak;
+    show formatActivityRelativeTime, formatStatChars, formatStatTime;
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_snapshot.dart';
+import 'package:fushi/src/platform/widget_snapshot_labels.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 
@@ -43,8 +43,10 @@ const int _kCoverProbeLimit = kWidgetShelfLimit;
 ///   进度 [dashboardVideoContinueProgress]，封面 [dashboardVideoCoverPath]。
 /// - 今日 / 近 7 天：[loadStatFacts] 的完整日面（阅读 + 视频 + 游戏，与首页
 ///   「今日」卡同一批行），窗口 [StatWindow]。
-/// - 复习：[srsDeckListProvider] 顶层牌组的新卡 + 学习中 + 到期之和（首页复习条
-///   显示的三个数之和），可见性 [homeSrsPanelVisibleProvider]。
+/// - 复习：provider 跟制卡去向（`srsMiningTarget` + 复习模块开关）：内置 SRS 取
+///   [srsDeckListProvider] 顶层牌组计数 + [loadSrsStats]（按修订号 / 日缓存，只在
+///   provider 是 fushi 时才读）；Anki 只带包名，计数由原生侧现读。
+/// - 目标 / 隐私 / 词汇：AppModel 的每日目标偏好、小组件隐私偏好、最近制卡与收藏词。
 ///
 /// 触发（都经 [requestRefresh] 去抖 / [refreshNow] 立即）：库内数据变化流、
 /// 复习修订号变化、界面语言或模块开关变化（[onContextChanged]）、app 进后台与
@@ -102,13 +104,29 @@ class WidgetSnapshotSource {
     _started = false;
   }
 
-  /// 根 build 每次重建都可以调：界面语言或模块开关真的变了才排一次采集。
+  /// 根 build 每次重建都可以调：界面语言、模块开关、复习去向、每日目标、小组件隐私
+  /// 或激活配置真的变了才排一次采集。
   void onContextChanged(AppModel appModel) {
     if (!enabled || !_started) return;
     final ModuleVisibility modules = appModel.moduleVisibility;
-    final String signature = [
+    final ProfileUiState profile = _ref.read(profileViewModelProvider);
+    final String signature = <Object?>[
       LocaleSettings.currentLocale.languageTag,
       for (final ModuleId id in ModuleId.values) modules.isEnabled(id) ? 1 : 0,
+      appModel.srsMiningTarget.wire,
+      appModel.readingGoalDailyChars,
+      appModel.studyGoalDailyMinutes,
+      appModel.studyGoalDailyReadingMinutes,
+      appModel.studyGoalDailyListeningMinutes,
+      appModel.studyGoalDailyVideoMinutes,
+      appModel.srsGoalDailyReviews,
+      appModel.miningGoalDailyCards,
+      appModel.widgetPrivacyHideTitles ? 1 : 0,
+      appModel.widgetPrivacyHideDefinitions ? 1 : 0,
+      appModel.widgetPrivacyHideProfile ? 1 : 0,
+      profile.activeProfile?.id,
+      profile.activeProfile?.name,
+      profile.profiles.length > 1 ? 1 : 0,
     ].join(',');
     if (signature == _contextSignature) return;
     final bool first = _contextSignature == null;
@@ -171,68 +189,200 @@ class WidgetSnapshotSource {
       if (modules.isEnabled(ModuleId.video)) ...await _collectVideos(db, facts),
     ];
 
-    final bool srsEnabled;
-    int srsDue = 0;
-    if (_ref.read(srsModuleEnabledProvider)) {
-      final SrsDeckListData? decks = await _ref.read(
-        srsDeckListProvider.future,
-      );
-      srsEnabled = _ref.read(homeSrsPanelVisibleProvider);
-      if (decks != null) {
-        srsDue = decks.todayNew + decks.todayLearn + decks.todayReview;
-      }
-    } else {
-      srsEnabled = false;
+    final WidgetSrsInput srs = await _collectSrs(appModel);
+    final WidgetImmersionInput immersion = _collectImmersion(facts, window);
+    int minedToday = 0;
+    // 制卡数口径同统计页：`mining_statistics` 按 (来源, 统计日) 聚合的计数（行很少）。
+    for (final MiningStatisticRow m in await db.getAllMiningStatistics()) {
+      if (m.dateKey == window.todayKey) minedToday += m.count;
     }
-
-    final List<String> weekKeys = window.lastDayKeys(kWidgetWeekDays);
-    final Map<String, int> msByDay = <String, int>{};
-    int todayMs = 0;
-    int todayChars = 0;
-    int weekChars = 0;
-    for (final StatFact f in facts.daily) {
-      if (f.dateKey == window.todayKey) {
-        todayMs += f.ms;
-        todayChars += f.chars;
-      }
-      if (weekKeys.contains(f.dateKey)) {
-        msByDay[f.dateKey] = (msByDay[f.dateKey] ?? 0) + f.ms;
-        weekChars += f.chars;
-      }
-    }
-    // 连续天数口径与阅读统计页一致：只看阅读域（书 + 漫画）的活跃日。
-    final Set<String> activeReadingDays = <String>{
-      for (final StatFact f in facts.dailyBooks)
-        if (f.ms > 0 || f.chars > 0 || f.pages > 0) f.dateKey,
-    };
+    final Map<String, String> weekdayLabels = await _weekdayLabels(
+      window.lastDayKeys(kWidgetWeekDays),
+    );
+    final ProfileUiState profile = _ref.read(profileViewModelProvider);
 
     return buildWidgetSnapshot(
       day: window.todayKey,
-      labels: _labels(),
-      moduleBooks: modules.isEnabled(ModuleId.books),
-      moduleManga: modules.isEnabled(ModuleId.manga),
-      moduleVideo: modules.isEnabled(ModuleId.video),
-      moduleLookup: modules.isEnabled(ModuleId.lookup),
+      generatedAt: now.millisecondsSinceEpoch,
+      labels: buildWidgetLabels(),
+      categoryLabels: buildWidgetCategoryLabels(),
+      goalLabels: buildWidgetGoalLabels(),
+      modules: WidgetModulesInput(
+        books: modules.isEnabled(ModuleId.books),
+        manga: modules.isEnabled(ModuleId.manga),
+        video: modules.isEnabled(ModuleId.video),
+        lookup: modules.isEnabled(ModuleId.lookup),
+        srs: modules.isEnabled(ModuleId.srs),
+        music: modules.isEnabled(ModuleId.music),
+        games: modules.isEnabled(ModuleId.games),
+      ),
       media: await _withCovers(media, appModel),
-      today: WidgetTodayInput(
-        ms: todayMs,
-        chars: todayChars,
-        goalChars: appModel.readingGoalDailyChars,
-        streak: computeReadingStreak(activeReadingDays, now),
+      immersion: immersion,
+      goals: WidgetGoalsInput(
+        totalMinutes: appModel.studyGoalDailyMinutes,
+        readingMinutes: appModel.studyGoalDailyReadingMinutes,
+        listeningMinutes: appModel.studyGoalDailyListeningMinutes,
+        videoMinutes: appModel.studyGoalDailyVideoMinutes,
+        reviews: appModel.srsGoalDailyReviews,
+        minedCards: appModel.miningGoalDailyCards,
+        chars: appModel.readingGoalDailyChars,
+        minedToday: minedToday,
       ),
-      week: WidgetWeekInput(
-        minutes: <int>[
-          for (final String key in weekKeys) (msByDay[key] ?? 0) ~/ 60000,
-        ],
-        days: await _weekdayLabels(weekKeys),
-        totalMs: msByDay.values.fold<int>(0, (int a, int b) => a + b),
-        totalChars: weekChars,
-      ),
-      srsEnabled: srsEnabled,
-      srsDue: srsDue,
+      srs: srs,
+      vocab: await _collectVocab(db),
+      profileName: profile.activeProfile?.name ?? '',
+      multiProfile: profile.profiles.length > 1,
+      hideTitles: appModel.widgetPrivacyHideTitles,
+      hideDefinitions: appModel.widgetPrivacyHideDefinitions,
+      hideProfile: appModel.widgetPrivacyHideProfile,
       formatTime: formatStatTime,
       formatChars: formatStatChars,
+      formatCount: _formatCount,
+      formatAge: (int epochMs) => formatActivityRelativeTime(epochMs, now),
+      weekdayLabel: (String key) => weekdayLabels[key] ?? '',
     );
+  }
+
+  /// 沉浸四类按统计日聚合（只认书 / 音乐 / 视频 / 游戏，复习不算沉浸）。毫秒与字数
+  /// 只留最近 35 天（月 + 周 + 上周环比都在里面），活跃日保留全部历史给连续天数。
+  WidgetImmersionInput _collectImmersion(StatFacts facts, StatWindow window) {
+    final String oldestKept = window.lastDayKeys(kWidgetMonthDays).first;
+    final Map<String, Map<WidgetImmersionCategory, int>> msByDay =
+        <String, Map<WidgetImmersionCategory, int>>{};
+    final Map<String, int> charsByDay = <String, int>{};
+    final Set<String> activeDays = <String>{};
+    for (final StatFact f in facts.daily) {
+      final WidgetImmersionCategory? category =
+          WidgetImmersionCategory.fromMediaKind(f.mediaKind);
+      if (category == null) continue;
+      if (f.ms > 0 || f.chars > 0 || f.pages > 0) activeDays.add(f.dateKey);
+      if (f.dateKey.compareTo(oldestKept) < 0) continue;
+      final Map<WidgetImmersionCategory, int> day = msByDay.putIfAbsent(
+        f.dateKey,
+        () => <WidgetImmersionCategory, int>{},
+      );
+      day[category] = (day[category] ?? 0) + f.ms;
+      charsByDay[f.dateKey] = (charsByDay[f.dateKey] ?? 0) + f.chars;
+    }
+    return WidgetImmersionInput(
+      msByDay: msByDay,
+      charsByDay: charsByDay,
+      activeDays: activeDays,
+    );
+  }
+
+  /// provider 规则（不另设开关，见 docs/agent/android-widgets.md）：制卡去向是 Anki
+  /// → `anki`；去向是 Fushi 复习且复习模块开着 → `fushi`；其余 → `none`。
+  Future<WidgetSrsInput> _collectSrs(AppModel appModel) async {
+    if (appModel.srsMiningTarget == SrsMiningTarget.anki) {
+      return WidgetSrsInput(
+        provider: WidgetSrsProvider.anki,
+        label: t.widget_label_provider_anki,
+      );
+    }
+    if (!_ref.read(srsMiningToReviewProvider)) {
+      return const WidgetSrsInput();
+    }
+    final SrsDeckListData? decks = await _ref.read(srsDeckListProvider.future);
+    final _SrsStatsDigest? digest = await _srsStatsDigest();
+    return WidgetSrsInput(
+      provider: WidgetSrsProvider.fushi,
+      label: t.widget_label_provider_fushi,
+      newCount: decks?.todayNew ?? 0,
+      learnCount: decks?.todayLearn ?? 0,
+      reviewCount: decks?.todayReview ?? 0,
+      reviewedToday: digest?.reviewedToday ?? 0,
+      dueTomorrow: digest?.dueTomorrow ?? 0,
+      streakCurrent: digest?.streakCurrent ?? 0,
+      streakLongest: digest?.streakLongest ?? 0,
+      reviewsByDay: digest?.reviewsByDay ?? const <int>[],
+    );
+  }
+
+  _SrsStatsDigest? _srsStatsCache;
+
+  /// [loadSrsStats] 要读整库复习日志，较重：按（store 实例、修订号、统计日）缓存，
+  /// 只有复习数据真变了或翻日才重算。失败 / store 不可用返回 null（计数当 0）。
+  Future<_SrsStatsDigest?> _srsStatsDigest() async {
+    try {
+      final SrsDbStore? store = await _ref.read(srsStoreProvider.future);
+      if (store == null) return null;
+      // 评分只 bump 本地写入号、不 bump 修订号（复习页里直接回桌面时也要新数字）。
+      final String revision =
+          '${_ref.read(srsRevisionProvider)}/${_ref.read(srsLocalWriteProvider)}';
+      final String day = StatWindow(DateTime.now()).todayKey;
+      final _SrsStatsDigest? cached = _srsStatsCache;
+      if (cached != null &&
+          identical(cached.store, store) &&
+          cached.revision == revision &&
+          cached.day == day) {
+        return cached;
+      }
+      final SrsStatsBundle bundle = await loadSrsStats(store);
+      final SrsStatsData data = bundle.data;
+      final Map<int, int> counts = data.countsByDay();
+      final SrsStreak streak = data.streak();
+      return _srsStatsCache = _SrsStatsDigest(
+        store: store,
+        revision: revision,
+        day: day,
+        reviewedToday: data.todayStats().count,
+        dueTomorrow: data.futureDue(2).dueTomorrow,
+        streakCurrent: streak.current,
+        streakLongest: streak.longest,
+        // SRS 的日序号与统计日各有各的日界（SRS 默认凌晨 4 点翻日），这里按「SRS
+        // 今天往前数 i 天」取，对齐到小组件的「最近 35 天，最旧 → 今天」。
+        reviewsByDay: <int>[
+          for (int i = kWidgetMonthDays - 1; i >= 0; i--)
+            counts[data.today - i] ?? 0,
+        ],
+      );
+    } on Object catch (error) {
+      debugPrint('WidgetSnapshotSource: srs stats failed: $error');
+      return null;
+    }
+  }
+
+  /// 最近制卡 + 最近收藏词各 [kWidgetVocabLimit] 条（窄查询，不读全表）。
+  Future<List<WidgetVocabInput>> _collectVocab(FushiDatabase db) async {
+    final List<MinedSentenceRow> mined = await db.getRecentMinedSentences(
+      kWidgetVocabLimit,
+    );
+    final List<FavoriteWordRow> favorites = await db.getRecentFavoriteWords(
+      kWidgetVocabLimit,
+    );
+    return <WidgetVocabInput>[
+      for (final MinedSentenceRow m in mined)
+        WidgetVocabInput(
+          term: m.expression,
+          reading: m.reading,
+          definition: m.glossary,
+          sentence: m.sentence,
+          source: m.documentTitle ?? '',
+          origin: 'mined',
+          createdAt: m.createdAt,
+        ),
+      for (final FavoriteWordRow f in favorites)
+        WidgetVocabInput(
+          term: f.expression,
+          reading: f.reading,
+          definition: f.glossary,
+          sentence: f.sentence,
+          source: f.title,
+          origin: 'favorite',
+          createdAt: f.createdAt,
+        ),
+    ];
+  }
+
+  String _formatCount(int count) {
+    try {
+      return NumberFormat.decimalPattern(
+        LocaleSettings.currentLocale.languageTag,
+      ).format(count);
+    } on Object {
+      return '$count';
+    }
   }
 
   /// 在读的书 / 漫画。与首页不同的一点：书合集不做「下一卷」推进，每本在读的
@@ -386,33 +536,10 @@ class WidgetSnapshotSource {
     return '';
   }
 
-  WidgetSnapshotLabels _labels() {
-    String nav(HomeTab tab) => homeNavItemFor(tab).label;
-    return WidgetSnapshotLabels(
-      kindBook: nav(HomeTab.books),
-      kindManga: nav(HomeTab.manga),
-      kindVideo: nav(HomeTab.video),
-      resume: t.home_continue,
-      today: t.stat_today,
-      streak: t.stat_streak,
-      srsDue: t.srs_count_review,
-      srsOff: t.widget_label_srs_off,
-      review: t.home_srs_panel_start,
-      srsDone: t.home_srs_panel_done,
-      recent: t.widget_label_recent,
-      weekly: t.stat_this_week,
-      books: nav(HomeTab.books),
-      manga: nav(HomeTab.manga),
-      video: nav(HomeTab.video),
-      lookup: nav(HomeTab.dictionaries),
-      openToSetUp: t.widget_label_open_to_set_up,
-    );
-  }
-
   static Future<void>? _dateSymbols;
 
-  /// 近 7 天的窄星期标签（英文 M T W…，中文 一 二 三…），随 app 内语言。
-  Future<List<String>> _weekdayLabels(List<String> dateKeys) async {
+  /// 近 7 天的窄星期标签（英文 M T W…，中文 一 二 三…），随 app 内语言；key = 统计日。
+  Future<Map<String, String>> _weekdayLabels(List<String> dateKeys) async {
     final String locale = LocaleSettings.currentLocale.languageTag;
     try {
       await (_dateSymbols ??= initializeDateFormatting());
@@ -422,13 +549,36 @@ class WidgetSnapshotSource {
       } on ArgumentError {
         format = DateFormat('EEEEE');
       }
-      return <String>[
+      return <String, String>{
         for (final String key in dateKeys)
-          format.format(FushiDatabase.statDateKeyToDay(key)),
-      ];
+          key: format.format(FushiDatabase.statDateKeyToDay(key)),
+      };
     } on Object catch (error) {
       debugPrint('WidgetSnapshotSource: weekday labels failed: $error');
-      return const <String>[];
+      return const <String, String>{};
     }
   }
+}
+
+/// 复习统计摘要的缓存条目（见 [WidgetSnapshotSource._srsStatsDigest]）。
+class _SrsStatsDigest {
+  const _SrsStatsDigest({
+    required this.store,
+    required this.revision,
+    required this.day,
+    required this.reviewedToday,
+    required this.dueTomorrow,
+    required this.streakCurrent,
+    required this.streakLongest,
+    required this.reviewsByDay,
+  });
+
+  final SrsDbStore store;
+  final String revision;
+  final String day;
+  final int reviewedToday;
+  final int dueTomorrow;
+  final int streakCurrent;
+  final int streakLongest;
+  final List<int> reviewsByDay;
 }

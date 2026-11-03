@@ -10697,6 +10697,40 @@ class AppModel with ChangeNotifier {
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
 
+  // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
+  int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
+  Future<void> setStudyGoalDailyMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyMinutes(value);
+  int get studyGoalDailyReadingMinutes =>
+      prefsRepo.studyGoalDailyReadingMinutes;
+  Future<void> setStudyGoalDailyReadingMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyReadingMinutes(value);
+  int get studyGoalDailyListeningMinutes =>
+      prefsRepo.studyGoalDailyListeningMinutes;
+  Future<void> setStudyGoalDailyListeningMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyListeningMinutes(value);
+  int get studyGoalDailyVideoMinutes => prefsRepo.studyGoalDailyVideoMinutes;
+  Future<void> setStudyGoalDailyVideoMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyVideoMinutes(value);
+  int get srsGoalDailyReviews => prefsRepo.srsGoalDailyReviews;
+  Future<void> setSrsGoalDailyReviews(int value) =>
+      prefsRepo.setSrsGoalDailyReviews(value);
+  int get miningGoalDailyCards => prefsRepo.miningGoalDailyCards;
+  Future<void> setMiningGoalDailyCards(int value) =>
+      prefsRepo.setMiningGoalDailyCards(value);
+
+  // Android 桌面小组件的默认隐私（设备本地）。
+  bool get widgetPrivacyHideTitles => prefsRepo.widgetPrivacyHideTitles;
+  Future<void> setWidgetPrivacyHideTitles(bool value) =>
+      prefsRepo.setWidgetPrivacyHideTitles(value);
+  bool get widgetPrivacyHideDefinitions =>
+      prefsRepo.widgetPrivacyHideDefinitions;
+  Future<void> setWidgetPrivacyHideDefinitions(bool value) =>
+      prefsRepo.setWidgetPrivacyHideDefinitions(value);
+  bool get widgetPrivacyHideProfile => prefsRepo.widgetPrivacyHideProfile;
+  Future<void> setWidgetPrivacyHideProfile(bool value) =>
+      prefsRepo.setWidgetPrivacyHideProfile(value);
+
   /// v92 阅读空闲门（分钟 / Duration 两种形态；阅读器建 StudyClock 时取后者）。
   /// 偏好层未就绪（精简初始化路径 / 测试 harness）时回落默认 10 分钟——阅读器
   /// 建时钟绝不能因为一个可选偏好没加载而整页崩掉。

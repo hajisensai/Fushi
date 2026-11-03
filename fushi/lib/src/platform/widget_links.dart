@@ -34,6 +34,59 @@ enum WidgetMediaKind {
   }
 }
 
+/// 桌面小组件「打开某个首页 tab」深链的目标（`tab/<wire>`）。有声书挂在书籍下面，
+/// 没有自己的 tab。
+enum WidgetTab {
+  books(ModuleId.books, HomeTab.books),
+  manga(ModuleId.manga, HomeTab.manga),
+  video(ModuleId.video, HomeTab.video),
+  music(ModuleId.music, HomeTab.music),
+  games(ModuleId.games, HomeTab.games),
+  dictionaries(ModuleId.lookup, HomeTab.dictionaries),
+  srs(ModuleId.srs, HomeTab.srs);
+
+  const WidgetTab(this.module, this.homeTab);
+
+  /// 门控模块：关着就退回首页（见 [runWidgetLink]）。
+  final ModuleId module;
+  final HomeTab homeTab;
+
+  /// 深链里的字符串值。
+  String get wire => name;
+
+  /// 小组件快照 / 原生侧用的完整链接。
+  String get link => 'fushi://widget/tab/$name';
+
+  static WidgetTab? tryParse(String? value) {
+    if (value == null) return null;
+    final String lower = value.toLowerCase();
+    for (final WidgetTab tab in values) {
+      if (tab.name == lower) return tab;
+    }
+    return null;
+  }
+}
+
+/// `settings/<wire>` 深链能打开的设置页。
+enum WidgetSettingsTarget {
+  /// 制卡设置（SRS provider 取决于它）。
+  cards,
+
+  /// 主屏幕小组件设置页（目标 / 隐私）。
+  widgets;
+
+  String get wire => name;
+
+  static WidgetSettingsTarget? tryParse(String? value) {
+    if (value == null) return null;
+    final String lower = value.toLowerCase();
+    for (final WidgetSettingsTarget t in values) {
+      if (t.name == lower) return t;
+    }
+    return null;
+  }
+}
+
 /// Android 桌面小组件点按产生的深链（`fushi://widget/...`）。
 ///
 /// 与长按图标的 [AppShortcut] 刻意分开：那个枚举会被发布成启动器快捷方式，
@@ -44,6 +97,10 @@ enum WidgetMediaKind {
 /// - `fushi://widget/srs`：开始内置复习。
 /// - `fushi://widget/stats`：打开学习统计。
 /// - `fushi://widget/open`：只把 app 带到前台。
+/// - `fushi://widget/tab/<books|manga|video|music|games|dictionaries|srs>`：切到该 tab。
+/// - `fushi://widget/lookup?word=<词>`：打开查词（带词）。
+/// - `fushi://widget/settings/<cards|widgets>`：打开对应设置页。
+/// - `fushi://widget/vocab`：打开收藏夹（收藏词 / 制卡历史）。
 sealed class WidgetLink {
   const WidgetLink();
 
@@ -55,6 +112,17 @@ sealed class WidgetLink {
   /// `continue` 的 `id` 可以为空（条目已不在时落到对应 tab）。
   static WidgetLink? tryParse(String? value) {
     if (value == null) return null;
+    try {
+      return _parse(value);
+    } on FormatException {
+      // 坏的百分号编码在读 `queryParameters` / `pathSegments` 时才抛：当「不是合法链接」。
+      return null;
+    } on ArgumentError {
+      return null;
+    }
+  }
+
+  static WidgetLink? _parse(String value) {
     final Uri? uri = Uri.tryParse(value);
     if (uri == null ||
         uri.scheme.toLowerCase() != _scheme ||
@@ -80,6 +148,21 @@ sealed class WidgetLink {
         return const WidgetStatsLink();
       case 'open':
         return const WidgetOpenLink();
+      case 'tab':
+        final WidgetTab? tab = WidgetTab.tryParse(
+          uri.pathSegments.length > 1 ? uri.pathSegments[1] : null,
+        );
+        return tab == null ? null : WidgetTabLink(tab);
+      case 'lookup':
+        final String word = (uri.queryParameters['word'] ?? '').trim();
+        return word.isEmpty ? null : WidgetLookupLink(word);
+      case 'settings':
+        final WidgetSettingsTarget? target = WidgetSettingsTarget.tryParse(
+          uri.pathSegments.length > 1 ? uri.pathSegments[1] : null,
+        );
+        return target == null ? null : WidgetSettingsLink(target);
+      case 'vocab':
+        return const WidgetVocabLink();
     }
     return null;
   }
@@ -115,6 +198,58 @@ final class WidgetStatsLink extends WidgetLink {
 
 final class WidgetOpenLink extends WidgetLink {
   const WidgetOpenLink();
+}
+
+final class WidgetTabLink extends WidgetLink {
+  const WidgetTabLink(this.tab);
+
+  final WidgetTab tab;
+
+  @override
+  bool operator ==(Object other) => other is WidgetTabLink && other.tab == tab;
+
+  @override
+  int get hashCode => tab.hashCode;
+
+  @override
+  String toString() => 'WidgetTabLink($tab)';
+}
+
+final class WidgetLookupLink extends WidgetLink {
+  const WidgetLookupLink(this.word);
+
+  /// 已 trim、非空。
+  final String word;
+
+  @override
+  bool operator ==(Object other) =>
+      other is WidgetLookupLink && other.word == word;
+
+  @override
+  int get hashCode => word.hashCode;
+
+  @override
+  String toString() => 'WidgetLookupLink($word)';
+}
+
+final class WidgetSettingsLink extends WidgetLink {
+  const WidgetSettingsLink(this.target);
+
+  final WidgetSettingsTarget target;
+
+  @override
+  bool operator ==(Object other) =>
+      other is WidgetSettingsLink && other.target == target;
+
+  @override
+  int get hashCode => target.hashCode;
+
+  @override
+  String toString() => 'WidgetSettingsLink($target)';
+}
+
+final class WidgetVocabLink extends WidgetLink {
+  const WidgetVocabLink();
 }
 
 /// 小组件深链的冷启动排队，与 `AppShortcutQueue` 同口径：冷启动时 URL 比
@@ -172,6 +307,10 @@ class WidgetLinkQueue {
 ///     对应 tab。
 ///   - 复习：[openSrsReview] 返回 false（没有待复习的卡）时留在复习 tab。
 ///   - 统计：[openStats]。
+///   - tab：只切 tab（模块已关 → 回首页，不留在一个不存在的 tab 上）。
+///   - 查词：切到词典 tab 后 [openLookup]；词典模块关着时回首页。
+///   - 设置：[openSettings]；制卡设置跟制卡模块门控，小组件设置页不门控。
+///   - 收藏夹：[openVocab]。
 Future<void> runWidgetLink(
   WidgetLink link, {
   required ModuleVisibility visibility,
@@ -181,6 +320,9 @@ Future<void> runWidgetLink(
   required Future<bool> Function(WidgetContinueLink link) openContinueItem,
   required Future<bool> Function() openSrsReview,
   required Future<void> Function() openStats,
+  required Future<void> Function(String word) openLookup,
+  required Future<void> Function(WidgetSettingsTarget target) openSettings,
+  required Future<void> Function() openVocab,
   bool Function(WidgetContinueLink link)? isContinueItemOpen,
   ExternalMediaNavigation? media,
 }) async {
@@ -194,6 +336,17 @@ Future<void> runWidgetLink(
     WidgetSrsLink() => visibility.isEnabled(ModuleId.srs) ? HomeTab.srs : null,
     WidgetStatsLink() => HomeTab.home,
     WidgetOpenLink() => null,
+    // 目标 tab 的模块关着：回首页（小组件还没刷新时点到旧入口）。
+    WidgetTabLink(:final WidgetTab tab) =>
+      visibility.isEnabled(tab.module) ? tab.homeTab : HomeTab.home,
+    WidgetLookupLink() =>
+      visibility.isEnabled(ModuleId.lookup) ? HomeTab.dictionaries : null,
+    WidgetSettingsLink(:final WidgetSettingsTarget target) =>
+      target == WidgetSettingsTarget.cards &&
+              !visibility.isEnabled(ModuleId.cardCreation)
+          ? HomeTab.home
+          : HomeTab.settings,
+    WidgetVocabLink() => HomeTab.home,
   };
   if (tab == null) return;
   if (!onboardingCompleted) {
@@ -218,6 +371,17 @@ Future<void> runWidgetLink(
     case WidgetStatsLink():
       await openStats();
     case WidgetOpenLink():
+    case WidgetTabLink():
       break;
+    case WidgetLookupLink(:final String word):
+      await openLookup(word);
+    case WidgetSettingsLink(:final WidgetSettingsTarget target):
+      if (target == WidgetSettingsTarget.cards &&
+          !visibility.isEnabled(ModuleId.cardCreation)) {
+        break;
+      }
+      await openSettings(target);
+    case WidgetVocabLink():
+      await openVocab();
   }
 }

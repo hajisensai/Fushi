@@ -17,6 +17,9 @@ void main() {
     ModuleId.video,
     ModuleId.lookup,
     ModuleId.srs,
+    ModuleId.music,
+    ModuleId.games,
+    ModuleId.cardCreation,
   });
 
   group('WidgetLink.tryParse', () {
@@ -61,6 +64,95 @@ void main() {
         isA<WidgetStatsLink>(),
       );
       expect(WidgetLink.tryParse('fushi://widget/open'), isA<WidgetOpenLink>());
+    });
+
+    test('tab links parse every destination', () {
+      for (final WidgetTab tab in WidgetTab.values) {
+        expect(WidgetLink.tryParse(tab.link), WidgetTabLink(tab));
+      }
+      expect(WidgetTab.values.map((WidgetTab t) => t.wire), <String>[
+        'books',
+        'manga',
+        'video',
+        'music',
+        'games',
+        'dictionaries',
+        'srs',
+      ]);
+      expect(
+        WidgetLink.tryParse('FUSHI://widget/TAB/Music'),
+        const WidgetTabLink(WidgetTab.music),
+      );
+    });
+
+    test('tab links reject unknown, empty or missing destinations', () {
+      expect(WidgetLink.tryParse('fushi://widget/tab'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/tab/'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/tab/audiobooks'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/tab/home'), isNull);
+    });
+
+    test('lookup carries the decoded, trimmed word', () {
+      expect(
+        WidgetLink.tryParse(
+          'fushi://widget/lookup?word=%E9%A3%9F%E3%81%B9%E3%82%8B',
+        ),
+        const WidgetLookupLink('食べる'),
+      );
+      expect(
+        WidgetLink.tryParse(
+          'fushi://widget/lookup?word=${Uri.encodeQueryComponent('  كلمة & more ')}',
+        ),
+        const WidgetLookupLink('كلمة & more'),
+      );
+    });
+
+    test('lookup without a word is rejected', () {
+      expect(WidgetLink.tryParse('fushi://widget/lookup'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/lookup?word='), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/lookup?word=%20%20'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/lookup?w=x'), isNull);
+    });
+
+    test('settings and vocab links', () {
+      expect(
+        WidgetLink.tryParse('fushi://widget/settings/cards'),
+        const WidgetSettingsLink(WidgetSettingsTarget.cards),
+      );
+      expect(
+        WidgetLink.tryParse('fushi://widget/settings/widgets'),
+        const WidgetSettingsLink(WidgetSettingsTarget.widgets),
+      );
+      expect(WidgetLink.tryParse('fushi://widget/settings'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/settings/privacy'), isNull);
+      expect(
+        WidgetLink.tryParse('fushi://widget/vocab'),
+        isA<WidgetVocabLink>(),
+      );
+    });
+
+    test('malformed input never throws', () {
+      for (final String bad in <String>[
+        'fushi://widget/tab/%',
+        'fushi://widget/lookup?word=%E0%A4%A',
+        'fushi://widget//tab/books',
+        'fushi:widget/tab/books',
+        ':::',
+        'fushi://widget/tab/books/extra?x=%zz',
+      ]) {
+        expect(() => WidgetLink.tryParse(bad), returnsNormally, reason: bad);
+      }
+    });
+
+    test('tab modules map to the module gate and home tab', () {
+      expect(WidgetTab.music.module, ModuleId.music);
+      expect(WidgetTab.music.homeTab, HomeTab.music);
+      expect(WidgetTab.games.module, ModuleId.games);
+      expect(WidgetTab.games.homeTab, HomeTab.games);
+      expect(WidgetTab.dictionaries.module, ModuleId.lookup);
+      expect(WidgetTab.dictionaries.homeTab, HomeTab.dictionaries);
+      expect(WidgetTab.srs.module, ModuleId.srs);
+      expect(WidgetTab.srs.homeTab, HomeTab.srs);
     });
 
     test('scheme, host and action match case-insensitively', () {
@@ -154,6 +246,9 @@ void main() {
     late List<WidgetContinueLink> openedItems;
     late int srsOpens;
     late int statsOpens;
+    late List<String> lookups;
+    late List<WidgetSettingsTarget> settingsOpens;
+    late int vocabOpens;
     late bool itemExists;
     late bool srsHasWork;
     late ExternalMediaNavigation media;
@@ -163,6 +258,9 @@ void main() {
       openedItems = <WidgetContinueLink>[];
       srsOpens = 0;
       statsOpens = 0;
+      lookups = <String>[];
+      settingsOpens = <WidgetSettingsTarget>[];
+      vocabOpens = 0;
       itemExists = true;
       srsHasWork = true;
     });
@@ -200,6 +298,9 @@ void main() {
           return srsHasWork;
         },
         openStats: () async => statsOpens++,
+        openLookup: (String word) async => lookups.add(word),
+        openSettings: (WidgetSettingsTarget t) async => settingsOpens.add(t),
+        openVocab: () async => vocabOpens++,
         isContinueItemOpen: isContinueItemOpen,
         media: media,
       ).whenComplete(() => done = true);
@@ -355,6 +456,102 @@ void main() {
       await run(tester, const WidgetStatsLink());
       expect(selectedTabs, <HomeTab>[HomeTab.home]);
       expect(statsOpens, 1);
+    });
+
+    testWidgets('tab links only switch the tab', (WidgetTester tester) async {
+      await pumpHome(tester);
+      for (final WidgetTab tab in WidgetTab.values) {
+        selectedTabs.clear();
+        await run(tester, WidgetTabLink(tab));
+        expect(selectedTabs, <HomeTab>[tab.homeTab], reason: '$tab');
+      }
+      expect(openedItems, isEmpty);
+      expect(srsOpens + statsOpens + vocabOpens + lookups.length, 0);
+    });
+
+    testWidgets('a tab whose module is off falls back to home', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(
+        tester,
+        const WidgetTabLink(WidgetTab.music),
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.books}),
+      );
+      expect(selectedTabs, <HomeTab>[HomeTab.home]);
+    });
+
+    testWidgets('lookup switches to the dictionary tab and delivers the word', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetLookupLink('食べる'));
+      expect(selectedTabs, <HomeTab>[HomeTab.dictionaries]);
+      expect(lookups, <String>['食べる']);
+    });
+
+    testWidgets('lookup is ignored when the dictionary module is off', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(
+        tester,
+        const WidgetLookupLink('x'),
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.books}),
+      );
+      expect(selectedTabs, isEmpty);
+      expect(lookups, isEmpty);
+    });
+
+    testWidgets('settings links open their page over the settings tab', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetSettingsLink(WidgetSettingsTarget.widgets));
+      expect(selectedTabs, <HomeTab>[HomeTab.settings]);
+      expect(settingsOpens, <WidgetSettingsTarget>[
+        WidgetSettingsTarget.widgets,
+      ]);
+    });
+
+    testWidgets('card settings need the card creation module', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetSettingsLink(WidgetSettingsTarget.cards));
+      expect(settingsOpens, <WidgetSettingsTarget>[WidgetSettingsTarget.cards]);
+
+      selectedTabs.clear();
+      settingsOpens.clear();
+      await run(
+        tester,
+        const WidgetSettingsLink(WidgetSettingsTarget.cards),
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.books}),
+      );
+      expect(selectedTabs, <HomeTab>[HomeTab.home]);
+      expect(settingsOpens, isEmpty);
+    });
+
+    testWidgets('vocab opens the collections page', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetVocabLink());
+      expect(selectedTabs, <HomeTab>[HomeTab.home]);
+      expect(vocabOpens, 1);
+    });
+
+    testWidgets('before onboarding new links only switch tab', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(
+        tester,
+        const WidgetLookupLink('x'),
+        onboardingCompleted: false,
+      );
+      expect(selectedTabs, <HomeTab>[HomeTab.dictionaries]);
+      expect(lookups, isEmpty);
     });
   });
 

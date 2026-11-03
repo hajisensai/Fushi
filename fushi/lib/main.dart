@@ -1689,6 +1689,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           openWidgetContinueItem(ref, appModel, target),
       openSrsReview: () => openWidgetSrsReview(ref, appModel),
       openStats: () => openWidgetStats(appModel),
+      openLookup: openWidgetLookup,
+      openSettings: (WidgetSettingsTarget target) =>
+          openWidgetSettings(appModel, target),
+      openVocab: () => openWidgetVocab(appModel),
       isContinueItemOpen: (WidgetContinueLink target) =>
           isWidgetContinueItemCurrentlyOpen(appModel, target),
     );

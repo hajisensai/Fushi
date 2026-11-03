@@ -22,9 +22,7 @@ object WidgetChannel {
     private const val TAG = "WidgetChannel"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val widgets: List<GlanceAppWidget> = listOf(
-        ContinueWidget(), TodayWidget(), SrsWidget(), ShelfWidget(), WeekWidget(), ShortcutsWidget(),
-    )
+    private val widgets: List<GlanceAppWidget> get() = WidgetRegistry.all
 
     @JvmStatic
     fun registerWith(engine: FlutterEngine, context: Context) {

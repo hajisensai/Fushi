@@ -24,10 +24,37 @@ data class WidgetMedia(
     val subtitle: String,
     val progress: Float,
     val cover: String?,
+    /** Reading position text ("45%"), empty when unknown (v2). */
+    val position: String = "",
+    /** Relative "last active" text ("2 h ago"), empty when unknown (v2). */
+    val lastActive: String = "",
+)
+
+/** One immersion category row (reading / listening / watching / games) of `today.categories`. */
+data class WidgetCategory(val id: String, val label: String, val ms: Long, val time: String, val link: String)
+
+/** One configured daily goal of `goals`. */
+data class WidgetGoal(
+    val id: String,
+    val label: String,
+    val value: String,
+    val target: String,
+    val frac: Float,
+    val done: Boolean,
+)
+
+/** One vocabulary card of `vocab`. [origin] is `mined` or `favorite`. */
+data class WidgetVocab(
+    val term: String,
+    val reading: String,
+    val definition: String,
+    val sentence: String,
+    val source: String,
+    val origin: String,
 )
 
 data class WidgetSnapshot(
-    /** Local date (yyyy-MM-dd) the Today numbers were computed for. */
+    /** Stat day key (yyyy-MM-dd) the today numbers were computed for. */
     val day: String,
     val labels: Map<String, String>,
     val moduleBooks: Boolean,
@@ -47,8 +74,61 @@ data class WidgetSnapshot(
     val weekDays: List<String>,
     val srsEnabled: Boolean,
     val srsDue: Int,
+    // ---- v2 (all optional; missing -> default / null / empty) ----
+    val generatedAt: Long = 0L,
+    val moduleSrs: Boolean = true,
+    val moduleMusic: Boolean = true,
+    val moduleGames: Boolean = true,
+    val privacyHideTitles: Boolean = false,
+    val privacyHideDefinitions: Boolean = false,
+    val privacyHideProfile: Boolean = false,
+    /** Active profile name; shown only when the user has more than one profile. */
+    val profileName: String = "",
+    val profileMulti: Boolean = false,
+    val todayTotalMs: Long = 0L,
+    val categories: List<WidgetCategory> = emptyList(),
+    /** 0 = no time goal configured. */
+    val goalMs: Long = 0L,
+    val goalTime: String = "",
+    val goalFrac: Float = 0f,
+    val goals: List<WidgetGoal> = emptyList(),
+    val weekPrevTime: String = "",
+    val weekDeltaPct: Int? = null,
+    val weekReviews: Int? = null,
+    val weekGoalDays: Int? = null,
+    val monthMinutes: List<Int> = emptyList(),
+    val monthTime: String = "",
+    val monthActiveDays: Int = 0,
+    val streakLongest: Int = 0,
+    val streakSrsCurrent: Int? = null,
+    val streakSrsLongest: Int? = null,
+    val streakWeek: List<Boolean> = emptyList(),
+    /** `fushi`, `anki` or `none`. */
+    val srsProvider: String = "none",
+    val srsLabel: String = "",
+    val srsNew: Int = 0,
+    val srsLearn: Int = 0,
+    val srsReview: Int = 0,
+    val srsReviewedToday: Int = 0,
+    val srsDueTomorrow: Int = 0,
+    val ankiPackage: String = "",
+    val vocab: List<WidgetVocab> = emptyList(),
 ) {
     fun label(key: String, fallback: String): String = labels[key]?.takeIf { it.isNotEmpty() } ?: fallback
+
+    /**
+     * "[title] · <profile>" when the user has several profiles (so numbers can't be mistaken for
+     * another profile's) unless the app-level "hide profile name" privacy setting is on.
+     */
+    fun withProfile(title: String): String =
+        if (profileMulti && !privacyHideProfile && profileName.isNotBlank()) "$title · $profileName" else title
+
+    /** A Dart-localized template label (`{n}` / `{age}` placeholders) filled at display time. */
+    fun template(key: String, fallback: String, vararg values: Pair<String, String>): String {
+        var text = label(key, fallback)
+        for ((name, value) in values) text = text.replace("{$name}", value)
+        return text
+    }
 }
 
 /**
@@ -88,21 +168,79 @@ object WidgetStore {
         awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }.distinctUntilChanged()
 
+    private fun JSONObject.ints(key: String): List<Int> {
+        val a = optJSONArray(key) ?: return emptyList()
+        return List(a.length()) { a.optInt(it) }
+    }
+
+    private fun JSONObject.intOrNull(key: String): Int? = if (has(key) && !isNull(key)) optInt(key) else null
+
     private fun parse(o: JSONObject): WidgetSnapshot {
         val labels = HashMap<String, String>()
         o.optJSONObject("labels")?.let { l -> l.keys().forEach { k -> labels[k] = l.optString(k) } }
         val modules = o.optJSONObject("modules")
+        val privacy = o.optJSONObject("privacy")
         val today = o.optJSONObject("today")
         val week = o.optJSONObject("week")
+        val month = o.optJSONObject("month")
+        val streak = o.optJSONObject("streak")
         val srs = o.optJSONObject("srs")
         val shelf = ArrayList<WidgetMedia>()
         o.optJSONArray("shelf")?.let { a ->
             for (i in 0 until a.length()) a.optJSONObject(i)?.let { shelf.add(media(it)) }
         }
-        val minutes = ArrayList<Int>()
-        week?.optJSONArray("minutes")?.let { a -> for (i in 0 until a.length()) minutes.add(a.optInt(i)) }
         val days = ArrayList<String>()
         week?.optJSONArray("days")?.let { a -> for (i in 0 until a.length()) days.add(a.optString(i)) }
+        val categories = ArrayList<WidgetCategory>()
+        today?.optJSONArray("categories")?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.let {
+                categories.add(
+                    WidgetCategory(
+                        id = it.optString("id"),
+                        label = it.optString("label"),
+                        ms = it.optLong("ms", 0L).coerceAtLeast(0L),
+                        time = it.optString("time"),
+                        link = it.optString("link"),
+                    ),
+                )
+            }
+        }
+        val goals = ArrayList<WidgetGoal>()
+        o.optJSONArray("goals")?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.let {
+                goals.add(
+                    WidgetGoal(
+                        id = it.optString("id"),
+                        label = it.optString("label"),
+                        value = it.optString("value"),
+                        target = it.optString("target"),
+                        frac = it.optDouble("frac", 0.0).toFloat().coerceIn(0f, 1f),
+                        done = it.optBoolean("done", false),
+                    ),
+                )
+            }
+        }
+        val streakWeek = ArrayList<Boolean>()
+        streak?.optJSONArray("week")?.let { a -> for (i in 0 until a.length()) streakWeek.add(a.optBoolean(i)) }
+        val vocab = ArrayList<WidgetVocab>()
+        o.optJSONArray("vocab")?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.let {
+                val term = it.optString("term")
+                if (term.isNotEmpty()) {
+                    vocab.add(
+                        WidgetVocab(
+                            term = term,
+                            reading = it.optString("reading"),
+                            definition = it.optString("definition"),
+                            sentence = it.optString("sentence"),
+                            source = it.optString("source"),
+                            origin = it.optString("origin"),
+                        ),
+                    )
+                }
+            }
+        }
+        val srsEnabled = srs?.optBoolean("enabled", false) ?: false
         return WidgetSnapshot(
             day = o.optString("day"),
             labels = labels,
@@ -117,11 +255,48 @@ object WidgetStore {
             todayGoal = (today?.optDouble("goal", 0.0) ?: 0.0).toFloat().coerceIn(0f, 1f),
             weekTime = week?.optString("time").orEmpty(),
             weekChars = week?.optString("chars").orEmpty(),
-            streak = today?.optInt("streak", 0) ?: 0,
-            weekMinutes = minutes,
+            streak = today?.optInt("streak", 0) ?: streak?.optInt("current", 0) ?: 0,
+            weekMinutes = week?.ints("minutes").orEmpty(),
             weekDays = days,
-            srsEnabled = srs?.optBoolean("enabled", false) ?: false,
+            srsEnabled = srsEnabled,
             srsDue = srs?.optInt("due", 0) ?: 0,
+            generatedAt = o.optLong("generatedAt", 0L),
+            moduleSrs = modules?.optBoolean("srs", true) ?: true,
+            moduleMusic = modules?.optBoolean("music", true) ?: true,
+            moduleGames = modules?.optBoolean("games", true) ?: true,
+            privacyHideTitles = privacy?.optBoolean("hideTitles", false) ?: false,
+            privacyHideDefinitions = privacy?.optBoolean("hideDefinitions", false) ?: false,
+            privacyHideProfile = privacy?.optBoolean("hideProfile", false) ?: false,
+            profileName = o.optJSONObject("profile")?.optString("name").orEmpty(),
+            profileMulti = o.optJSONObject("profile")?.optBoolean("multi", false) ?: false,
+            todayTotalMs = today?.optLong("totalMs", 0L)?.coerceAtLeast(0L) ?: 0L,
+            categories = categories,
+            goalMs = today?.optLong("goalMs", 0L)?.coerceAtLeast(0L) ?: 0L,
+            goalTime = today?.optString("goalTime").orEmpty(),
+            goalFrac = (today?.optDouble("goalFrac", 0.0) ?: 0.0).toFloat().coerceIn(0f, 1f),
+            goals = goals,
+            weekPrevTime = week?.optString("prevTime").orEmpty(),
+            weekDeltaPct = week?.intOrNull("deltaPct"),
+            weekReviews = week?.intOrNull("reviews"),
+            weekGoalDays = week?.intOrNull("goalDays"),
+            monthMinutes = month?.ints("minutes").orEmpty(),
+            monthTime = month?.optString("time").orEmpty(),
+            monthActiveDays = month?.optInt("activeDays", 0) ?: 0,
+            streakLongest = streak?.optInt("longest", 0) ?: 0,
+            streakSrsCurrent = streak?.intOrNull("srsCurrent"),
+            streakSrsLongest = streak?.intOrNull("srsLongest"),
+            streakWeek = streakWeek,
+            // v1 snapshots carry no provider: derive it from the legacy enabled flag.
+            srsProvider = srs?.optString("provider")?.takeIf { it.isNotEmpty() }
+                ?: if (srsEnabled) "fushi" else "none",
+            srsLabel = srs?.optString("label").orEmpty(),
+            srsNew = srs?.optInt("new", 0) ?: 0,
+            srsLearn = srs?.optInt("learn", 0) ?: 0,
+            srsReview = srs?.optInt("review", 0) ?: 0,
+            srsReviewedToday = srs?.optInt("reviewedToday", 0) ?: 0,
+            srsDueTomorrow = srs?.optInt("dueTomorrow", 0) ?: 0,
+            ankiPackage = srs?.optString("ankiPackage").orEmpty(),
+            vocab = vocab,
         )
     }
 
@@ -132,6 +307,8 @@ object WidgetStore {
         subtitle = o.optString("subtitle"),
         progress = o.optDouble("progress", 0.0).toFloat().coerceIn(0f, 1f),
         cover = o.optString("cover").takeIf { it.isNotEmpty() },
+        position = o.optString("position"),
+        lastActive = o.optString("lastActive"),
     )
 }
 

@@ -18,4 +18,5 @@
         <item name="android:windowBackground">#000000</item>
         <item name="android:colorControlActivated">#FF0000</item>
     </style>
+    <style name="WidgetConfigTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar" />
 </resources>

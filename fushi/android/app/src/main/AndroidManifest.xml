@@ -388,6 +388,42 @@
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/widget_shortcuts_info" />
         </receiver>
+        <receiver android:name=".widgets.GoalsReceiver"
+            android:exported="true"
+            android:label="@string/widget_goals_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_goals_info" />
+        </receiver>
+        <receiver android:name=".widgets.StreakReceiver"
+            android:exported="true"
+            android:label="@string/widget_streak_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_streak_info" />
+        </receiver>
+        <receiver android:name=".widgets.VocabReceiver"
+            android:exported="true"
+            android:label="@string/widget_vocab_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vocab_info" />
+        </receiver>
+        <!-- Per-widget settings (theme / privacy / vocabulary source); plain Views, no Flutter. -->
+        <activity android:name=".widgets.WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/WidgetConfigTheme"
+            android:label="@string/widget_config_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
     <!-- Used for AnkiDroid API.
          BUG-2195：AnkiDroid 的并行版（parallel builds）由上游 gradle 的 customSuffix
