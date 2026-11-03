@@ -25,9 +25,9 @@ const Duration kMineNoticeActionVisibleFor = Duration(seconds: 4);
 /// （`_showMineOsd`）共用的唯一长相。
 ///
 /// M3E tonal 胶囊：浅色 container 底 + 深字，左侧强调色图标块（MD3 用 M3E 表现力
-/// 形状 cookie9Sided，Apple 设计系统用正圆），第一行状态标题、第二行具体消息
-/// （牌组名 / 失败原因），底边一条随停留时长耗尽的倒计时条。颜色与图标见
-/// [mineNoticeTone]，标题见 [mineNoticeTitle]。
+/// 形状 cookie9Sided，Apple 设计系统用正圆），一行具体消息（牌组名 / 失败原因），
+/// 底边一条随停留时长耗尽的倒计时条。尺寸与普通提示胶囊一致（48 高、图标块 32）。
+/// 颜色与图标见 [mineNoticeTone]；状态标题 [mineNoticeTitle] 只进读屏 label。
 ///
 /// 动效：图标块从 -90° / 0.4 倍弹入（M3E spatial 弹簧），倒计时条线性耗尽；墨水屏与
 /// 系统「减弱动态效果」下两者都不播（[fushiMotionEnabled]），倒计时条直接不画。
@@ -47,8 +47,8 @@ class FushiMineNoticeCard extends StatefulWidget {
   /// （命中区仍是 48dp，带按钮时小卡随之长高）。
   final MineNoticeAction? action;
 
-  /// 角落小号：图标块 28、不画标题行（标题仍进读屏 label）、消息至多两行、
-  /// 字阶降到 label，给歌词模式这类「正文铺满全屏」的页面用——大卡会压住正文。
+  /// 角落小号：图标块 28、40 高、消息至多两行，给歌词模式这类「正文铺满全屏」
+  /// 的页面用——默认卡会压住正文。
   final bool compact;
 
   final MineToastStatus status;
@@ -108,8 +108,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
     final Color onContainer = eink ? Colors.black : tone.onContainer;
     final Color accent = eink ? Colors.black : tone.accent;
     final String? title = mineNoticeTitle(widget.status);
-    // 字阶走设计令牌（context.fushiType），不写裸字号：标题与单行消息用
-    // titleSmall 的 Emphasized 档，标题下的具体消息降一档到 bodyMedium。
+    // 字阶走设计令牌（context.fushiType），不写裸字号。
     final FushiTypography type = context.fushiType;
 
     final Animation<double> spring = CurvedAnimation(
@@ -117,7 +116,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
       curve: FushiMotion.release,
     );
     final bool compact = widget.compact;
-    final double iconBox = compact ? 28 : 40;
+    final double iconBox = compact ? 28 : 32;
     final Widget iconBlock = AnimatedBuilder(
       animation: spring,
       builder: (BuildContext context, Widget? child) => Transform.rotate(
@@ -137,49 +136,24 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
         child: FushiIcon(
           tone.icon,
           color: Colors.white,
-          size: compact ? 16 : 22,
+          size: compact ? 16 : 20,
         ),
       ),
     );
 
-    final Widget texts = compact
-        ? Text(
-            widget.message,
-            // 两行：「卡片已导出到『<卡组名>』」里较长的卡组名一行放不下。
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: type.labelLarge.copyWith(color: onContainer),
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (title != null)
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: type.titleSmallEmphasized.copyWith(color: onContainer),
-                ),
-              Text(
-                widget.message,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    (title == null
-                            ? type.titleSmallEmphasized
-                            : type.bodyMedium)
-                        .copyWith(
-                          color: onContainer.withValues(
-                            alpha: title == null ? 1 : 0.8,
-                          ),
-                        ),
-              ),
-            ],
-          );
+    // 默认卡与普通提示胶囊（FushiToastCapsule）同一副尺寸：单行 48 高、图标块
+    // 32、字阶 labelLarge；状态标题不再单占一行（仍进读屏 label），颜色与图标
+    // 已经说明结果。消息过长时折行。
+    final Widget texts = Text(
+      widget.message,
+      // 小卡两行：「卡片已导出到『<卡组名>』」里较长的卡组名一行放不下。
+      maxLines: compact ? 2 : 3,
+      overflow: TextOverflow.ellipsis,
+      style: type.labelLarge.copyWith(color: onContainer),
+    );
 
     final BorderRadius radius = BorderRadius.all(
-      Radius.circular(compact ? 20 : 28),
+      Radius.circular(compact ? 20 : 24),
     );
     return Semantics(
       liveRegion: true,
@@ -188,7 +162,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
       excludeSemantics: widget.action == null,
       child: Container(
         constraints: BoxConstraints(
-          minHeight: compact ? 40 : 56,
+          minHeight: compact ? 40 : 48,
           maxWidth: widget.maxWidth,
         ),
         decoration: BoxDecoration(
@@ -231,7 +205,12 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
                         widget.action == null ? 14 : 6,
                         6,
                       )
-                    : const EdgeInsetsDirectional.fromSTEB(8, 8, 20, 8),
+                    : EdgeInsetsDirectional.fromSTEB(
+                        8,
+                        8,
+                        widget.action == null ? 24 : 8,
+                        8,
+                      ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[

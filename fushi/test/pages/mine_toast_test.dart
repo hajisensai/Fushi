@@ -82,12 +82,18 @@ void main() {
     expect(icons.length, MineToastStatus.values.length);
   });
 
-  testWidgets('added：绿色结果卡 + 状态标题 + 消息', (WidgetTester tester) async {
+  testWidgets('added：绿色结果卡 + 消息，与普通提示胶囊同高', (WidgetTester tester) async {
     await _pumpToastHost(tester);
     await _show(tester, '卡片已导出到『Fushi』。', MineToastStatus.added);
 
-    expect(find.text(t.card_notice_title_added), findsOneWidget);
+    // 状态标题不单占一行（卡片与普通提示胶囊同为单行 48 高），只进读屏 label。
+    expect(find.text(t.card_notice_title_added), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp(t.card_notice_title_added)),
+      findsOneWidget,
+    );
     expect(find.text('卡片已导出到『Fushi』。'), findsOneWidget);
+    expect(tester.getSize(find.byType(FushiMineNoticeCard)).height, 48);
     expect(_cardBg(tester), mineNoticeTone(MineToastStatus.added).container);
     expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
     await tester.pump(const Duration(seconds: 3)); // 跑完自动消失计时器
@@ -97,7 +103,10 @@ void main() {
     await _pumpToastHost(tester);
     await _show(tester, '卡片已覆盖到『Fushi』。', MineToastStatus.overwritten);
 
-    expect(find.text(t.card_notice_title_overwritten), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(t.card_notice_title_overwritten)),
+      findsOneWidget,
+    );
     expect(
       _cardBg(tester),
       mineNoticeTone(MineToastStatus.overwritten).container,
@@ -113,7 +122,10 @@ void main() {
     await _pumpToastHost(tester);
     await _show(tester, 'AnkiConnect 无响应', MineToastStatus.failed);
 
-    expect(find.text(t.card_notice_title_failed), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(t.card_notice_title_failed)),
+      findsOneWidget,
+    );
     expect(_cardBg(tester), mineNoticeTone(MineToastStatus.failed).container);
     expect(find.byIcon(FushiIcons.filled(FushiIcons.error)), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
