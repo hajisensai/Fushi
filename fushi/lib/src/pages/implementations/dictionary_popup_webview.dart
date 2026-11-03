@@ -3651,7 +3651,7 @@ JSON.stringify((function(){
 
         // 「高级制卡」：popup 点某词条的「高级制卡」→ 宿主弹 app 原生顶层对话框
         // （BUG-763/766：不画在弹窗 WebView 内，那受弹窗尺寸/半透明限制）。
-        // args[0] = {entryIndex, matched, expression}。
+        // args[0] = {entryIndex, matched, expression, reading}。
         controller.addJavaScriptHandler(
           handlerName: 'openAdvancedMining',
           callback: (args) async {

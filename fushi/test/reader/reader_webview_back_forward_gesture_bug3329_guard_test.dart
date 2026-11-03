@@ -48,6 +48,11 @@ void main() {
     'lib/src/pages/implementations/music/music_plugin_login.dart':
         '浏览器类页面（音乐插件网页登录），历史对应真实网页跳转',
     'lib/src/media/novel/online/lnreader_runtime.dart': '无头运行时 WebView，不可见、无手势',
+    // 这里只有共用的 appleMusicWebViewSettings()：MusicKit 桥是 HeadlessInAppWebView；
+    // 登录页的桥页面只加载一次、无可见内容，Apple ID 弹窗是独立 windowId 的 WebView，
+    // 历史对应真实网页跳转。
+    'lib/src/media/music/apple_music/apple_music_web_bridge.dart':
+        'MusicKit 桥 / 登录页共用设置：桥页面只加载一次（无头或无可见内容），登录弹窗历史对应真实网页跳转',
     'lib/src/media/audiobook/audiobook_clip_webview_render.dart':
         '离屏渲染用 WebView，不可见、无手势',
     'lib/src/pages/implementations/dictionary_popup_webview.dart':
