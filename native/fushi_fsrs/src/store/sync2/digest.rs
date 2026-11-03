@@ -171,52 +171,6 @@ pub fn rebuild(c: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-/// 关掉触发器写的那几行的桶增量（批量投影，bulk.rs）：按触发器同一个行哈希逐行加减，[Deltas::write] 一次并进桶表。
-/// 结果与触发器逐行维护逐位相同（桶值是回绕加法和，与顺序无关；行数同理）。
-#[derive(Default)]
-pub(crate) struct Deltas(std::collections::HashMap<(String, i64), (Sum, i64)>);
-
-impl Deltas {
-    /// 插入了一行（触发器的 `_ins`）。
-    pub(crate) fn add(&mut self, profile: &str, tag: u8, id: &str, body: &str) {
-        self.apply(profile, id, Some((tag, body, false)));
-    }
-
-    /// 删掉了一行（触发器的 `_del`）。
-    pub(crate) fn sub(&mut self, profile: &str, tag: u8, id: &str, body: &str) {
-        self.apply(profile, id, Some((tag, body, true)));
-    }
-
-    /// 插入后又在同一窗里删掉的行：值、行数都不变，但触发器会建出这个桶的行（没有时），这里同样要建。
-    pub(crate) fn touch(&mut self, profile: &str, id: &str) {
-        self.apply(profile, id, None);
-    }
-
-    fn apply(&mut self, profile: &str, id: &str, row: Option<(u8, &str, bool)>) {
-        let e = self.0.entry((profile.to_owned(), bucket_of(id))).or_insert(([0; 4], 0));
-        let Some((tag, body, minus)) = row else { return };
-        let h = row_hash(tag, id, body);
-        for i in 0..4 {
-            e.0[i] = if minus { e.0[i].wrapping_sub(h[i]) } else { e.0[i].wrapping_add(h[i]) };
-        }
-        e.1 += if minus { -1 } else { 1 };
-    }
-
-    /// 并进桶表（与触发器同一条 UPSERT 语义）。
-    pub(crate) fn write(self, c: &Connection) -> Result<(), String> {
-        let mut stmt = c
-            .prepare_cached(
-                "INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) VALUES (srs_id(?1), ?2, ?3, ?4) \
-                 ON CONFLICT(profile_uid, bucket) DO UPDATE SET sum = sync2_dg_add(sum, excluded.sum), n = n + excluded.n",
-            )
-            .map_err(sql)?;
-        for ((profile, bucket), (s, n)) in self.0 {
-            stmt.execute(params![profile, bucket, bytes_of(&s), n]).map_err(sql)?;
-        }
-        Ok(())
-    }
-}
-
 /// 各桶的值（只列非空桶）：`(桶号, 值 hex, 行数)`。
 pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>, String> {
     c.prepare_cached("SELECT bucket, sum, n FROM sync2_digest_buckets WHERE profile_uid = srs_id(?1) AND n != 0 ORDER BY bucket")

@@ -9,7 +9,6 @@
 //!
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
-mod bulk;
 pub mod config;
 pub mod digest;
 pub mod media;
@@ -198,19 +197,14 @@ pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String>
     Ok(vv)
 }
 
-/// 版本向量（[Vv::encode] 的字节）在 `sync2_deps` 里的行号（没有就加一行）。
-pub(crate) fn intern_deps(conn: &Connection, bytes: &[u8]) -> Result<i64, String> {
-    conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([bytes]).map_err(sql)?;
-    conn.prepare_cached("SELECT srs_idt(id) AS id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([bytes], |r| r.get(0)).map_err(sql)
+fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
+    let bytes = deps.encode();
+    conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([&bytes]).map_err(sql)?;
+    conn.prepare_cached("SELECT srs_idt(id) AS id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
 }
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
-    let deps = intern_deps(conn, &op.deps.encode())?;
-    insert_op_at(conn, profile, op, chain, now, deps)
-}
-
-/// [insert_op]，依赖向量已换成 `sync2_deps` 的行号 [deps]（批量投影按片缓存它，bulk.rs）。
-pub(crate) fn insert_op_at(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64, deps: i64) -> Result<(), String> {
+    let deps = intern_deps(conn, &op.deps)?;
     // 配置快照原文只存一份、其余按 zstd 压缩（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
     let packed = snapshots::pack_payload(conn, op.kind, &op.payload)?;
     conn.prepare_cached(
@@ -373,47 +367,19 @@ pub(crate) fn strip_synthetic_writers(c: &Connection) -> Result<(usize, usize), 
 
 /// `L(vv)`：这个版本向量覆盖的操作里，迁移进来的旧修改记录的旧 dot 与旧上下文之并（见 dvv.rs）。
 pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Result<Dvv, String> {
-    legacy_closure_with(conn, profile, vv, |d| stored_legacy(conn, profile, d))
-}
-
-/// 一台设备的旧修改记录闭包（`sync2_legacy` 一行）：(upto, 闭包)。
-pub(crate) fn stored_legacy(conn: &Connection, profile: &str, device: &Id) -> Result<Option<(i64, Dvv)>, String> {
-    Ok(conn
-        .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
-        .map_err(sql)?
-        .query_row(params![profile, device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-        .optional()
-        .map_err(sql)?
-        .map(|(upto, ctx)| (upto, Dvv::parse(&ctx))))
-}
-
-#[cfg(test)]
-thread_local! {
-    static PARTIAL_CLOSURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// 测试：[legacy_closure_with] 走「部分」分支的累计次数（bulk.rs 的覆盖计数用）。
-#[cfg(test)]
-pub(crate) fn partial_closures() -> usize {
-    PARTIAL_CLOSURES.with(|c| c.get())
-}
-
-/// [legacy_closure]，每台设备的 `sync2_legacy` 行由 [row] 给（批量投影里还没写回的那几行在内存里，bulk.rs）。
-pub(crate) fn legacy_closure_with(
-    conn: &Connection,
-    profile: &str,
-    vv: &Vv,
-    mut row: impl FnMut(&Id) -> Result<Option<(i64, Dvv)>, String>,
-) -> Result<Dvv, String> {
     let mut out = Dvv::default();
     for (d, &s) in &vv.0 {
-        let Some((upto, ctx)) = row(d)? else { continue };
+        let row: Option<(i64, String)> = conn
+            .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
+            .map_err(sql)?
+            .query_row(params![profile, d.0.to_vec()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .map_err(sql)?;
+        let Some((upto, ctx)) = row else { continue };
         if s as i64 >= upto {
-            out.merge(&ctx);
+            out.merge(&Dvv::parse(&ctx));
             continue;
         }
-        #[cfg(test)]
-        PARTIAL_CLOSURES.with(|c| c.set(c.get() + 1));
         // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不剪快照（snapshots.rs 只剪日志），
         // 只可能压缩过。
         let mut stmt = conn
@@ -635,16 +601,6 @@ pub(crate) fn edit_row_id(op: &Op, e: &EditBody) -> String {
 /// 修改记录投影行（Dart `SrsFieldEdit.toJson`）。v2 写入：dot = (设备, seq)、ctx = 作者已应用的版本向量
 /// 并上旧修改记录闭包；迁移进来的旧记录：原样的旧 dot / 旧 ctx / 旧 HLC。
 pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) -> Result<(String, Value), String> {
-    edit_row_with(profile, op, e, |vv| legacy_closure(conn, profile, vv))
-}
-
-/// [edit_row]，旧修改记录闭包由 [closure] 算（只有 v2 写入用到它）。
-pub(crate) fn edit_row_with(
-    profile: &str,
-    op: &Op,
-    e: &EditBody,
-    closure: impl FnOnce(&Vv) -> Result<Dvv, String>,
-) -> Result<(String, Value), String> {
     let (writer, seq, ctx, hlc) = match &e.legacy {
         Some(l) => {
             let ctx = serde_json::from_str::<Value>(&l.ctx_json).unwrap_or(json!({"vv": {}}));
@@ -653,7 +609,7 @@ pub(crate) fn edit_row_with(
         }
         None => {
             let full = op.ctx();
-            let mut d = closure(&full)?;
+            let mut d = legacy_closure(conn, profile, &full)?;
             for (dev, &s) in &full.0 {
                 d.raise(&dev.text(), s as i64);
             }
@@ -700,11 +656,6 @@ fn upsert_server_time(conn: &Connection, profile: &str, id: &str, s: Option<i64>
 /// 把一条操作落进投影。[project] = false 时只记意图 / 索引 / 闭包（迁移：投影行本来就在）。
 pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     let body = op.body().map_err(|e| e.to_string())?;
-    project_body(conn, profile, op, body, now, project, t)
-}
-
-/// [project]，载荷已解析成 [body]。
-pub(crate) fn project_body(conn: &Connection, profile: &str, op: &Op, body: Body, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     match body {
         Body::Entity { kind, id, data } => {
             if project {
@@ -876,29 +827,18 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
     if let Some(l) = &e.legacy {
         note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
     }
-    project_edit_noted(conn, profile, op, e, now, project, t)
-}
-
-/// 修改操作的记账：修改记录 ID → 操作、实体 → 操作索引（移卡另记目标牌组）。
-pub(crate) fn index_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, ent: &str) -> Result<(), String> {
     let eid = edit_row_id(op, e);
     conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (srs_id(?1), srs_id(?2), ?3, ?4)")
         .map_err(sql)?
         .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
         .map_err(sql)?;
-    semantics::index(conn, profile, e.kind.wire(), ent, &op.id, &e.key)?;
+    let ent = e.entity.text();
+    semantics::index(conn, profile, e.kind.wire(), &ent, &op.id, &e.key)?;
     if e.kind == EntKind::Card && e.key == "deck" {
         if let Ok(Value::String(d)) = serde_json::from_str::<Value>(&e.value) {
             semantics::index(conn, profile, "deck", &d, &op.id, "#move")?;
         }
     }
-    Ok(())
-}
-
-/// [project_edit]，旧修改记录闭包已记过（批量投影在内存里记，bulk.rs）。
-pub(crate) fn project_edit_noted(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
-    let ent = e.entity.text();
-    index_edit(conn, profile, op, e, &ent)?;
     // 标签是 OR-Set：整列表的 `tags` 写入（迁移进来的旧记录）按「添加其中每个标签」并入。迁移时也要做：
     // 合成行替换掉旧的 `tags` 行，各设备收到同一批操作后结果相同。
     if e.kind == EntKind::Note && e.key == "tags" {
@@ -938,24 +878,6 @@ pub(crate) fn project_edit_noted(conn: &Connection, profile: &str, op: &Op, e: &
 /// → 不落；落了就删掉被它支配的）。
 pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, server: Option<i64>, now: i64, t: &mut Touched) -> Result<(), String> {
     let (eid, row) = edit_row(conn, profile, op, e)?;
-    let text = canonical(&row);
-    land_edit_row(conn, profile, e, &eid, &text, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), server, now, t)
-}
-
-/// [land_edit]，投影行（[edit_row] 的 ID、规范文本、写入者、seq）已经算好（批量投影在到达时算，bulk.rs）。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn land_edit_row(
-    conn: &Connection,
-    profile: &str,
-    e: &EditBody,
-    eid: &str,
-    row_text: &str,
-    writer: &str,
-    seq: i64,
-    server: Option<i64>,
-    now: i64,
-    t: &mut Touched,
-) -> Result<(), String> {
     let ent = e.entity.text();
     // 现存记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`：每收一条修改记录都读一遍。
     // 只读同一字段键的（支配只在同一 (种类, 实体, 字段键) 里比，registers.rs `land`）加上同 ID 的那行（「同 ID 已在
@@ -975,8 +897,9 @@ pub(crate) fn land_edit_row(
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
+    let row_text = canonical(&row);
     let mut items: Vec<crate::registers::StoredEdit<'_>> = existing.iter().map(|(_, j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
-    items.push((row_text, server, None));
+    items.push((&row_text, server, None));
     let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
     if landed.first().copied() != Some(true) {
         return Ok(());
@@ -992,9 +915,9 @@ pub(crate) fn land_edit_row(
          VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, srs_edit_pack(?8, ?1, ?2, ?3, ?4, ?5, ?6, ?7))",
     )
     .map_err(sql)?
-    .execute(params![eid, profile, e.kind.wire(), ent, e.key, writer, seq, row_text])
+    .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
     .map_err(sql)?;
-    upsert_server_time(conn, profile, eid, server, now)?;
+    upsert_server_time(conn, profile, &eid, server, now)?;
     match e.kind {
         // 血统变了：归属组变了，链尾与前身都要重放。
         EntKind::Card if e.key.starts_with("historyFrom/") => {
@@ -1009,9 +932,10 @@ pub(crate) fn land_edit_row(
     Ok(())
 }
 
-/// 日志操作的记账：意图、卡 / 笔记 → 操作索引。
-pub(crate) fn index_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, lid: &str, card: &str) -> Result<(), String> {
+fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     let (intent, arg) = intent_code(&l.intent);
+    let lid = l.id.text();
+    let card = l.card.text();
     conn.prepare_cached(
         "INSERT OR IGNORE INTO sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq) \
          VALUES (srs_id(?1), srs_id(?2), srs_id(?3), srs_id(?4), ?5, ?6, ?7, ?8)",
@@ -1019,17 +943,10 @@ pub(crate) fn index_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, 
     .map_err(sql)?
     .execute(params![lid, profile, card, l.note.as_ref().map(Key::text), intent, arg, op.id.device.0.to_vec(), op.id.seq as i64])
     .map_err(sql)?;
-    semantics::index(conn, profile, "card", card, &op.id, "#log")?;
+    semantics::index(conn, profile, "card", &card, &op.id, "#log")?;
     if let Some(n) = &l.note {
         semantics::index(conn, profile, "note", &n.text(), &op.id, "#log")?;
     }
-    Ok(())
-}
-
-fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
-    let lid = l.id.text();
-    let card = l.card.text();
-    index_log(conn, profile, op, l, &lid, &card)?;
     if !project {
         return Ok(());
     }
@@ -1786,8 +1703,6 @@ mod real_folder_bench;
 mod tests_footprint;
 #[cfg(test)]
 mod bootstrap_probe;
-#[cfg(test)]
-mod tests_bulk;
 #[cfg(test)]
 mod tests_synthetic_ctx;
 #[cfg(test)]

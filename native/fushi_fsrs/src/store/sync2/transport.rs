@@ -579,8 +579,6 @@ struct Delivery {
     ahead: BTreeSet<Id>,
     /// 载入时的 [DELIVERY_EPOCH]：收段会话跨片复用这份队列，别处投递过（代号变了）就重新载入。
     epoch: u64,
-    /// 批量投影的窗口（bulk.rs）：应用的操作在这里攒着落投影，[Delivery::checkpoint] 之前一定冲掉。
-    bulk: super::bulk::Bulk,
 }
 
 /// 收段会话之外的投递（一次收完、导入、换身份）每做一次加一：会话里跨片留着的 [Delivery] 据此知道缓冲表 / 设备
@@ -609,7 +607,6 @@ impl Delivery {
         match cached {
             Some(mut d) if d.epoch == DELIVERY_EPOCH.load(std::sync::atomic::Ordering::SeqCst) => {
                 d.vv = applied_vv(c, profile)?;
-                d.bulk.reset();
                 Ok(d)
             }
             _ => Delivery::load(c, profile),
@@ -645,7 +642,6 @@ impl Delivery {
             seen: None,
             ahead: BTreeSet::new(),
             epoch: DELIVERY_EPOCH.load(std::sync::atomic::Ordering::SeqCst),
-            bulk: super::bulk::Bulk::default(),
         })
     }
 
@@ -753,7 +749,7 @@ impl Delivery {
     }
 
     fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
-        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, bulk, .. } = self;
+        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, .. } = self;
         let mut dropped: Vec<Id> = Vec::new();
         'all: loop {
             let mut progress = false;
@@ -818,9 +814,8 @@ impl Delivery {
                     if !budget.take() {
                         break 'all;
                     }
-                    {
-                        bulk.apply(c, profile, op, &chain, now, t)?;
-                    }
+                    insert_op(c, profile, op, &chain, now)?;
+                    project(c, profile, op, now, true, t)?;
                     if op.hlc.wall.saturating_sub(now) > MAX_AHEAD_MS {
                         ahead.insert(*device);
                     } else if seen.is_none_or(|s| op.hlc > s) {
@@ -846,19 +841,15 @@ impl Delivery {
     }
 
     /// 设备进度一次写；没投上的写进缓冲；按应用了的远端操作推进并持久化本机 HLC。返回应用条数。
-    fn finish(mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<usize, String> {
-        let n = self.checkpoint(c, profile, now, t)?;
+    fn finish(mut self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
+        let n = self.checkpoint(c, profile, now)?;
         bump_delivery_epoch();
         Ok(n)
     }
 
     /// 一片收尾（[finish] 的落库部分，队列留着给下一片）：设备进度、没投上的写进缓冲、本机 HLC。返回这一片应用的
     /// 条数并清零；之后队列里每一条都已在缓冲表里（`stored`）。
-    fn checkpoint(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<usize, String> {
-        // 已应用（设备进度要推进到）的操作，投影必须先落完。
-        {
-            self.bulk.flush(c, profile, now, t)?;
-        }
+    fn checkpoint(&mut self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
         observe_remote(c, profile, self.seen.take(), &std::mem::take(&mut self.ahead), now)?;
         for (device, chain) in std::mem::take(&mut self.chains) {
             c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2")
@@ -914,8 +905,9 @@ const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
 /// 一片至少处理的操作数（之后才看时间与让出请求）。
 const COMMIT_SLICE_MIN_OPS: usize = 64;
 /// 新设备收段会话（[IngestSession::bootstrap]）的片长。片越短，每片提交要写的脏页（同一批随机键索引页）越多次进
-/// WAL、检查点越频繁：真实数据前 12 段（18.6 万条）150 ms 一片 102 s、1 s 一片 76 s（docs/specs/2026-11-03-srs-sync2-bulk-bootstrap.md
-/// §8）。新设备上本机还没复习过，没人等写锁；真有写入排队，让出请求照样在做满 [COMMIT_SLICE_MIN_OPS] 条后收片。
+/// WAL、检查点越频繁：真实全量数据（68 万条）150 ms 一片 521 s、1 s 一片 458 s，检查点 177 s → 82 s
+/// （docs/specs/2026-11-03-srs-sync2-bulk-bootstrap.md §8）。新设备上本机还没复习过，没人等写锁；真有写入排队，
+/// 让出请求照样在做满 [COMMIT_SLICE_MIN_OPS] 条后收片。
 const BOOTSTRAP_SLICE: std::time::Duration = std::time::Duration::from_millis(1000);
 
 impl<'a> CommitBudget<'a> {
@@ -1339,7 +1331,7 @@ fn deliver_prepared(
         }
     }
     let done = *next == items.len() && !budget.stopped;
-    let applied = delivery.checkpoint(c, profile, now, t)?;
+    let applied = delivery.checkpoint(c, profile, now)?;
     let pending = delivery.pending();
     *cached = Some(delivery);
     Ok((applied, done, pending))
@@ -2646,7 +2638,7 @@ impl SrsCore {
             }
             delivery.push(chunk);
             delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
-            let applied = delivery.finish(c, profile, now, &mut t)?;
+            let applied = delivery.finish(c, profile, now)?;
             let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
                 .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |r| r.get(0))
@@ -2748,5 +2740,30 @@ mod budget_tests {
         b.stretch(Duration::from_secs(3600));
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
         assert_eq!(takes(&mut b, 10_000), COMMIT_SLICE_MIN_OPS, "yield request still ends a stretched slice");
+    }
+
+    /// 新设备（本机身份没写过复习日志）的收段会话用长片；本机复习过就回到默认片长。
+    #[test]
+    fn ingest_session_is_a_bootstrap_until_this_device_reviews() {
+        use crate::store::sync2::tests::{deck_entity, edit, review, Device, P};
+        const NOW: i64 = 1_700_000_000_000;
+        let x = Device::new("bs-slice");
+        x.core.sync2_identity(P, NOW).unwrap();
+        let bootstrapping = |d: &Device| -> bool {
+            d.core.sync2_ingest_begin(P).unwrap();
+            d.core.ingest_session.lock().unwrap().as_ref().unwrap().bootstrapping()
+        };
+        let local = |now: i64, events: Vec<(serde_json::Value, String)>| {
+            let input: Vec<serde_json::Value> = events.into_iter().map(|(e, note)| json!({"e": e, "note": note})).collect();
+            x.core.sync2_apply_local(P, now, &serde_json::Value::Array(input).to_string()).unwrap();
+        };
+        assert!(bootstrapping(&x), "a device that never reviewed");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        local(NOW, vec![(deck_entity(&deck), String::new()), (edit("deck", &deck, "name", json!("D")), String::new())]);
+        assert!(bootstrapping(&x), "local edits alone do not end the bootstrap");
+        let note = "0193a1b2-0000-7000-8000-000000000000";
+        let card = crate::registers::card_id(note, "t1", 0).unwrap();
+        local(NOW + 1, vec![(review("bs-r", &card, NOW + 1, 3, "learn"), note.to_owned())]);
+        assert!(!bootstrapping(&x), "a device that reviewed uses the default slice");
     }
 }

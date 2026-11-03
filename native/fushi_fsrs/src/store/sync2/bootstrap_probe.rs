@@ -6,8 +6,8 @@
 //!   `synchronous = OFF`、大页缓存，收完再一次性重建摘要。量「不改结构只换环境」能省多少。
 //! - `probe_fold_floor`：批量通道的下限：解码验签 → 解析载荷 → 按实体分组一次 `land_stored` 折叠 → 排序后批量写
 //!   操作 / 存活修改 / 复习日志进一个新库（journal off、synchronous off）。
-//! - `probe_sliced`：生产形态端到端（8 MiB 一批、默认时间片、按节奏并回 WAL、收尾重放），`PROBE_MODE=seq` 关掉批量投影；
-//!   末尾逐表打印行数与内容哈希，两种模式对比即真实数据上的等价回归。
+//! - `probe_sliced`：生产形态端到端（8 MiB 一批、默认时间片、按节奏并回 WAL、收尾重放），`PROBE_SLICE_MS` 改片长；
+//!   末尾逐表打印行数与内容哈希，不同实现之间对比即真实数据上的等价回归。
 //! - `probe_ops_store`：只写操作日志（`sync2_ops`）的耗时与体积。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -293,13 +293,12 @@ fn probe_ops_store() {
 }
 
 /// 生产形态的端到端：与 Dart 一样按 8 MiB 一批 `ingest_prepare`、默认时间片 `ingest_commit`、WAL 按
-/// `SrsWalCheckpointPacer` 的节奏另开连接并回，最后 `ingest_finish` + `replay_pending`。`PROBE_MODE=seq` 关掉
-/// 批量投影（[super::bulk::sequential]）作 A/B；末尾打印每张表的行数与无序内容哈希，两种模式逐表对比。
+/// `SrsWalCheckpointPacer` 的节奏另开连接并回，最后 `ingest_finish` + `replay_pending`。末尾打印每张表的行数与无序
+/// 内容哈希，供不同实现之间逐表对比。
 #[test]
 #[ignore]
 fn probe_sliced() {
     let (_dir, profile, heads, segs) = setup();
-    let seq = std::env::var("PROBE_MODE").as_deref() == Ok("seq");
     let now = 1_800_000_000_000i64;
     let tmp = super::tests::tempdir::new("probe-sliced");
     let db = tmp.0.join("srs.db");
@@ -379,12 +378,11 @@ fn probe_sliced() {
         }
         let finish = ms(t);
         println!(
-            "PROBE sliced mode={} total={}ms prepare={prepare}ms commit={commit}ms slices={slices} checkpoint={ckpt}ms finish={finish}ms",
-            if seq { "seq" } else { "bulk" },
+            "PROBE sliced total={}ms prepare={prepare}ms commit={commit}ms slices={slices} checkpoint={ckpt}ms finish={finish}ms",
             ms(t0)
         );
     };
-    super::bulk::production_window(|| if seq { super::bulk::sequential(run) } else { run() });
+    run();
     let w = core.writer().unwrap();
     println!("PROBE sliced db={}MB wal={}MB", size_mb(&db), size_mb(&tmp.0.join("srs.db-wal")));
     let tables: Vec<String> = {
