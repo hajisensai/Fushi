@@ -1070,9 +1070,18 @@ fn sync2_command(
             let max_bytes = req.get("maxBytes").and_then(Value::as_u64).unwrap_or(crate::store::sync2::transport::OUTBOX_BATCH_BYTES);
             let max_segments =
                 req.get("maxSegments").and_then(Value::as_u64).map_or(crate::store::sync2::transport::OUTBOX_BATCH_SEGMENTS, |n| n as usize);
+            // `present`（可选，一轮的第一批带）：位置上 `devices/<本机>/` 的文件名。水位以下却不在的本机段先登记重传
+            // （作者自检，transport.rs `sync2_audit_own`），这一批起照当前切法补传。
+            let audited = match req.get("present").and_then(Value::as_array) {
+                Some(names) => {
+                    let present: std::collections::BTreeSet<String> = names.iter().filter_map(Value::as_str).map(str::to_owned).collect();
+                    c.sync2_audit_own(profile, s("location")?, &present)?
+                }
+                None => 0,
+            };
             let batch = c.sync2_outbox(profile, s("location")?, key32(&req["key"])?, max_bytes.max(1), max_segments.max(1))?;
             *files = batch.files;
-            json!({"upto": batch.upto, "more": batch.more, "segments": batch.segments})
+            json!({"upto": batch.upto, "more": batch.more, "segments": batch.segments, "audited": audited})
         }
         "outbox_ack" => {
             let segments: Vec<(u64, u64)> = req
@@ -1099,6 +1108,8 @@ fn sync2_command(
                 crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
                     json!({"unchanged": true, "path": path, "delete": obsolete})
                 }
+                // 要引用的段还有没传到这个位置的（发件确认后被合并改切）：不写，Dart 按「改切」结束这一轮。
+                crate::store::sync2::transport::HeadWrite::Recut => json!({"recut": true}),
             }
         }
         // `location`：这些 head 所在位置的进度身份（记下位置上有谁的哪些段，转发用，store/sync2/relay.rs）。

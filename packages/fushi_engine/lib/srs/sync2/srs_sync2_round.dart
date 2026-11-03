@@ -201,6 +201,7 @@ Future<SrsSync2Report> srsSync2Round({
   final String progressId = srsLocationProgressId(locationId, keyHex);
 
   // 1–2. 读全部 head → 拉缺的段 → 收。需要更新的读者（有设备的 head 要求）就停在这里，一个字节也不写（§8）。
+  final Map<String, List<String>> listed = <String, List<String>>{};
   if (!await srsSync2Pull(
     host: host,
     location: location,
@@ -212,9 +213,20 @@ Future<SrsSync2Report> srsSync2Round({
     ingestBudgetBytes: ingestBudgetBytes,
     fetchConcurrency: fetchConcurrency,
     onStep: onStep,
+    listed: listed,
   )) {
     return report;
   }
+  // 作者自检（transport.rs `sync2_audit_own`）：这一轮读 head 时列到的本机目录交给内核，水位以下却不在位置上的本机段
+  // 登记重传、随下面第一批发件补上（位置上缺了 head 引用的段，读者只能永远「下一轮再来」）。收段时换了身份的话新身份
+  // 在这个位置上还没有水位，自检什么都不登记。
+  final String selfBefore =
+      (await host.sync2Command(<String, Object?>{
+            'op': 'identity',
+            'now': nowMs(),
+          })).map['device']!
+          as String;
+  final List<String> present = listed['devices/$selfBefore'] ?? <String>[];
 
   // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
   // `OUTBOX_BATCH_BYTES`）：一批全部写成后 `outbox_ack` 持久化水位，再取下一批——内存里同一时刻只有一批，
@@ -226,13 +238,16 @@ Future<SrsSync2Report> srsSync2Round({
   if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
   int upto = 0;
+  bool audited = false;
   while (true) {
     final SrsSync2Result out = await host.sync2Command(<String, Object?>{
       'op': 'outbox',
       'location': progressId,
       'key': keyHex,
       if (outboxBudgetBytes != null) 'maxBytes': outboxBudgetBytes,
+      if (!audited) 'present': present,
     });
+    audited = true;
     upto = (out.map['upto'] as int?) ?? 0;
     if (out.files.isEmpty) break;
     await srsRunPooled(out.files, kSrsSync2Concurrency, (
@@ -316,6 +331,11 @@ Future<SrsSync2Report> srsSync2Round({
       'now': nowMs(),
     });
   }
+  if (head.map['recut'] == true) {
+    // 发件确认之后段被合并改切（另一轮的发件），head 要引用的段还没传到这里：不写 head（写了就引用一个位置上没有的
+    // 段），下一轮按当前切法补传后再写。
+    return report..error = kSrsSync2OutboxRecut;
+  }
   String? written;
   int? writtenAtBootMs;
   for (final (String path, Uint8List bytes) in head.files) {
@@ -359,6 +379,7 @@ Future<SrsSync2Report> srsSync2Round({
 /// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
 /// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
 /// 不按位置记 head / 转发账（旧根不是一个同步位置，记了会清掉同一位置新根的转发记账）。
+/// [listed] 给了就记下读 head 时列到的每个设备目录（`devices/<id>` → 文件名）：一轮的作者自检用本机那一份，不再多列一次。
 Future<bool> srsSync2Pull({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -370,6 +391,7 @@ Future<bool> srsSync2Pull({
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
   SrsSyncStepCallback? onStep,
+  Map<String, List<String>>? listed,
 }) async {
   // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
   onStep?.call('heads');
@@ -383,7 +405,12 @@ Future<bool> srsSync2Pull({
     (String dir) async {
       int top = -1;
       final Map<String, int> genOf = <String, int>{};
-      for (final SrsLocationEntry f in await location.list(dir)) {
+      final List<SrsLocationEntry> files = await location.list(dir);
+      listed?[dir] = <String>[
+        for (final SrsLocationEntry f in files)
+          if (!f.isFolder) f.name,
+      ];
+      for (final SrsLocationEntry f in files) {
         final int? g = _headGen(f.name);
         if (g == null) continue;
         genOf[f.name] = g;

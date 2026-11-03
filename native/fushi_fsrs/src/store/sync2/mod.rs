@@ -1777,6 +1777,8 @@ mod bootstrap_probe;
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_delivery_window;
+#[cfg(test)]
+mod tests_head_gap;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
