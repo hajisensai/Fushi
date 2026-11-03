@@ -7682,8 +7682,6 @@
   "srs_count_learn": "Learning",
   "srs_count_new": "New",
   "srs_count_review": "Due",
-  "srs_count_review_rwkv_live": "Picked by recall",
-  "srs_count_review_rwkv_live_hint": "RWKV picks review cards by their recall right now, so there is no due count. A card comes up as soon as its estimated recall drops to the desired retention.",
   "srs_custom_study_cards_value": "$n cards",
   "srs_custom_study_days_ahead": "Due within the next",
   "srs_custom_study_days_forgotten": "Forgotten within the last",

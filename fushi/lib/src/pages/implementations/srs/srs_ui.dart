@@ -70,60 +70,29 @@ class SrsMetaLine extends StatelessWidget {
 
 /// 到期一格（第三格）显示什么：牌组行 / 首页复习条 / 导航速览 / 复习页顶栏共用这一份口径与格式。
 ///
-/// - 子树里没有 RWKV 牌组（[rwkv] 为 false）：[due] 就是到期数，照旧显示；
-/// - 有 RWKV 牌组：RWKV 那部分按此刻回忆率实时挑、没有到期数，不编一个数出来（以前显示过近 30 天日均：没复习的天
-///   把它拉低、没复习完的天只反映做了多少而不是该做多少，用户 2026-11-03 拍板删掉）。同一棵子树里 FSRS 牌组的到期
-///   [due] 照旧显示；没有 FSRS 到期时格子显示「—」；
+/// - [due] 就是到期数：FSRS 牌组按存下的到期日；RWKV 牌组 = 今天结束前回忆率会降到目标保留率以下的卡（内核计数，
+///   随作答实时重算，出卡同一口径）。以前 RWKV 那部分显示过近 30 天日均，用户 2026-11-03 拍板删掉；
 /// - [pending]：RWKV 准备中（RWKV 牌组的卡这时本就没算进计数），文字后面跟「准备中」。
 @immutable
 class SrsReviewCell {
-  const SrsReviewCell({
-    required this.due,
-    this.rwkv = false,
-    this.pending = false,
-  });
-
-  /// [reviewCount] 是内核的「到期」（含 RWKV 此刻合格的卡）；[fsrsDue] 是其中 FSRS 牌组的那部分
-  /// （[SrsDeckSummary.fsrsDue]）。子树里有 RWKV 牌组时只把 FSRS 那部分当到期数。
-  factory SrsReviewCell.of({
-    required int reviewCount,
-    int? fsrsDue,
-    bool rwkv = false,
-    bool pending = false,
-  }) => SrsReviewCell(
-    due: rwkv ? (fsrsDue ?? 0) : reviewCount,
-    rwkv: rwkv,
-    pending: pending,
-  );
+  const SrsReviewCell({required this.due, this.pending = false});
 
   /// 牌组行的那一格。
-  factory SrsReviewCell.ofDeck(SrsDeckSummary d) => SrsReviewCell.of(
-    reviewCount: d.reviewCount,
-    fsrsDue: d.fsrsDue,
-    rwkv: d.rwkvScheduled,
-    pending: d.rwkvPending,
-  );
+  factory SrsReviewCell.ofDeck(SrsDeckSummary d) =>
+      SrsReviewCell(due: d.reviewCount, pending: d.rwkvPending);
 
-  /// 显示的到期数（有 RWKV 牌组时只含 FSRS 牌组的）。
   final int due;
-
-  /// 子树里有按 RWKV 排队的牌组（[SrsDeckSummary.rwkvScheduled]）。
-  final bool rwkv;
   final bool pending;
 
-  bool get _showDue => !rwkv || due > 0;
+  /// 格子里的字。
+  String get numbers => '$due';
 
-  /// 格子里的字：到期数「12」；只有 RWKV、没有 FSRS 到期时「—」。
-  String get numbers => _showDue ? '$due' : '—';
-
-  /// 带名字的文字（速览副行 / 复习页顶栏 / 读屏）：「到期 12 · 按回忆率出卡」，准备中再跟「(准备中)」
+  /// 带名字的文字（速览副行 / 复习页顶栏 / 读屏）：「到期 12」，准备中再跟「(准备中)」
   /// （准备中时到期 0 不写成「到期 0」——那不代表今天没有到期）。
-  /// [omitZero]：没有可显示的项（到期 0、没有 RWKV、不在准备中）时返回 null（速览只列非零项）。
+  /// [omitZero]：到期 0 且不在准备中时返回 null（速览只列非零项）。
   String? label({bool omitZero = false}) {
     final List<String> parts = <String>[
-      if (_showDue && !((omitZero || pending) && due == 0))
-        '${t.srs_count_review} $due',
-      if (rwkv) t.srs_count_review_rwkv_live,
+      if (!((omitZero || pending) && due == 0)) '${t.srs_count_review} $due',
     ];
     if (pending) {
       if (parts.isEmpty) parts.add(t.srs_count_review);
@@ -141,8 +110,6 @@ class SrsCountTriple extends StatelessWidget {
     required this.learnCount,
     required this.reviewCount,
     this.reviewPending = false,
-    this.fsrsDue,
-    this.rwkv = false,
     this.dense = false,
     this.tight = false,
   });
@@ -154,13 +121,6 @@ class SrsCountTriple extends StatelessWidget {
   /// RWKV 还没准备好，RWKV 牌组的复习卡没算进 [reviewCount]（[SrsDeckSummary.rwkvPending]）：到期一格显示
   /// 「准备中」（沙漏），不把 0 显示成「今天没有到期」；有别的（FSRS）牌组的到期时数字照旧、后面跟沙漏。
   final bool reviewPending;
-
-  /// 子树里有 RWKV 牌组时其中 FSRS 牌组的到期数（[SrsDeckSummary.fsrsDue]）；第三格按 [SrsReviewCell] 显示。
-  final int? fsrsDue;
-
-  /// 子树里有 RWKV 牌组（[SrsDeckSummary.rwkvScheduled]）：[reviewCount] 里 RWKV 那部分只是这一刻的快照、不是
-  /// 到期数，第三格按 [SrsReviewCell] 只显示 FSRS 到期（没有时「—」；此刻有可复习的卡时高亮，没有时弱化）。
-  final bool rwkv;
   final bool dense;
 
   /// 手机竖屏牌组列表：数字列收窄（最小 20）、列间距减半，三个数合成一小块，
@@ -179,10 +139,8 @@ class SrsCountTriple extends StatelessWidget {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             );
     final Color muted = Theme.of(context).disabledColor;
-    final SrsReviewCell review = SrsReviewCell.of(
-      reviewCount: reviewCount,
-      fsrsDue: fsrsDue,
-      rwkv: rwkv,
+    final SrsReviewCell review = SrsReviewCell(
+      due: reviewCount,
       pending: reviewPending,
     );
     Widget cell(int value, Color color, String label) => FushiTooltip(
@@ -237,27 +195,6 @@ class SrsCountTriple extends StatelessWidget {
         ),
       ),
     );
-    Widget rwkvReviewCell() => FushiTooltip(
-      message: t.srs_count_review_rwkv_live_hint,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minWidth: tight
-              ? 20
-              : dense
-              ? 24
-              : 32,
-        ),
-        child: Text(
-          review.numbers,
-          key: const ValueKey<String>('srs-count-review-rwkv'),
-          textAlign: TextAlign.end,
-          style: base.copyWith(
-            color: reviewCount > 0 ? colors.review : muted,
-            fontWeight: reviewCount > 0 ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ),
-    );
     return Semantics(
       label:
           '${t.srs_count_new} $newCount, ${t.srs_count_learn} $learnCount, '
@@ -271,8 +208,6 @@ class SrsCountTriple extends StatelessWidget {
             cell(learnCount, colors.learn, t.srs_count_learn),
             if (reviewPending)
               pendingReviewCell()
-            else if (rwkv)
-              rwkvReviewCell()
             else
               cell(reviewCount, colors.review, t.srs_count_review),
           ],

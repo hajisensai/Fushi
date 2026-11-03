@@ -574,16 +574,6 @@ class SrsDeckListData {
   bool get rwkvPending =>
       decks.any((SrsDeckSummary d) => d.depth == 0 && d.rwkvPending);
 
-  /// 首页到期一格里 FSRS 牌组的到期数：各顶层牌组的 [SrsDeckSummary.fsrsDue]（没有它时 = 那一行的
-  /// [SrsDeckSummary.reviewCount]，即全是 FSRS 到期）之和。RWKV 牌组此刻合格的卡不算进来（不是到期数）。
-  int get todayFsrsDue =>
-      _sumRoots((SrsDeckSummary d) => d.fsrsDue ?? d.reviewCount);
-
-  /// 有顶层牌组含 RWKV 牌组（[SrsDeckSummary.rwkvScheduled]）：首页到期一格只显示 [todayFsrsDue]，RWKV 那部分
-  /// 按回忆率实时出卡、没有到期数（[SrsReviewCell]）。
-  bool get rwkvScheduled =>
-      decks.any((SrsDeckSummary d) => d.depth == 0 && d.rwkvScheduled);
-
   /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡（或到期数在等 RWKV）的顶层牌组；没有时为
   /// null。等 RWKV 的牌组进复习页会看到准备进度，就绪后自动出卡。
   SrsDeckSummary? get firstRootWithWork {
