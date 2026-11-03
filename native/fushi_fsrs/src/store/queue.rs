@@ -235,6 +235,12 @@ impl StudyHub {
         lock(&self.touched).browse.take(profile, true)
     }
 
+    /// 测试：取走 [profile] 复习队列待重读的卡 / 日志 id（含未提交的），对拍两条投影路径触发的待重读用。
+    #[cfg(test)]
+    pub(crate) fn take_study(&self, profile: &str) -> Dirty {
+        lock(&self.touched).study.take(profile, true)
+    }
+
     /// 在 [profile] 的会话上跑 [f]：先取走已提交的待重读 id、并上未提交的（只读不清，见文件头「事务边界」；
     /// [_uncommitted] = [c] 是写连接上还没结束的事务，两种连接现在同一口径，参数留给调用方表态），会话不存在 /
     /// 日界不同 / 攒满了就整份重建，否则只重读那几行。[c] 是这次排队的连接（读快照，或写连接上的 SAVEPOINT）；

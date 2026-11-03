@@ -2528,6 +2528,11 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
 /// - 本机状态行写不下（坏 JSON）时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
 #[test]
 fn ingest_slice_commits_on_its_own_with_the_local_state_row() {
+    // 逐条投递的一片（各片当场落投影、推进修订号）；新设备收段通道的各片只追加，见 tests_channel.rs。
+    super::channel::sequential(ingest_slice_commits_on_its_own_with_the_local_state_row_sequential);
+}
+
+fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     let a = Device::new("lt-a");
     let mut bucket = Bucket::default();
     a.apply(T0, vec![review("r1", "C1", T0, 3, "learn"), review("r2", "C2", T0 + 1, 3, "learn"), review("r3", "C3", T0 + 2, 3, "learn")]);

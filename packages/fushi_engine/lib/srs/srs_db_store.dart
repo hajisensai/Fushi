@@ -360,6 +360,8 @@ class SrsDbStore implements SrsSync2Host {
       'now': nowMs,
     });
     _sync2Device = id['device'] as String?;
+    // 上次在新设备收段途中退出、通道没做完：开 Drift 事务前先按片做完（[_transactionOrReload]）。
+    _channelLive = id['channel'] == true;
     if (id['migrated'] == true) return;
     while (true) {
       final Map<String, Object?> m = await _sync2(<String, Object?>{
@@ -1241,8 +1243,14 @@ class SrsDbStore implements SrsSync2Host {
   };
 
   @override
-  Future<void> sync2IngestBegin() =>
-      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
+  Future<void> sync2IngestBegin() => runExclusive(() async {
+    final Map<String, Object?> r = await _sync2(const <String, Object?>{
+      'op': 'ingest_begin',
+    });
+    // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
+    // 事务前要先把它按片做完（[_transactionOrReload]）。
+    if (r['channel'] == true) _channelLive = true;
+  });
 
   @override
   Future<void> sync2IngestEnd() =>
@@ -4605,6 +4613,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 因果上下文 / 序号上继续写；也不拿重读的错误顶替原错误——以前日志里只剩 `_loadLocal` 上的
   /// 「connection was closed」，看不出是哪一步写失败。
   Future<void> _transactionOrReload(Future<void> Function() body) async {
+    await _settleChannel();
     try {
       await db.transaction(body);
     } catch (error, stack) {
@@ -4623,6 +4632,23 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 写失败后重读本机状态也失败时置上（见 [_transactionOrReload]）；之后进独占区的写入都抛它。
   StateError? _unusable;
+
+  /// 内核里可能有没做完的新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：打开时由 `identity`、
+  /// 开收段会话时由 `ingest_begin` 回报。
+  bool _channelLive = false;
+
+  /// 测试：[_channelLive]。
+  @visibleForTesting
+  bool get debugChannelLive => _channelLive;
+
+  /// 开 Drift 事务之前把没做完的收段通道按片做完（`channel_settle`，内核每片一个事务）。事务里的写命令要先做完
+  /// 通道时，内核只能把整段（真实数据约 1.1 GB 的投影）塞进这笔事务：WAL 要装下全部页，失败整段回滚、下一次写
+  /// 又从头重做。没有通道时不发命令（复习路径的 FFI 次数不变）。调用方已在独占区里。
+  Future<void> _settleChannel() async {
+    if (!_channelLive) return;
+    await _sync2(const <String, Object?>{'op': 'channel_settle'});
+    _channelLive = false;
+  }
 
   /// 副本还能写（没有被 [retire]、也没有因重读失败作废）。
   bool get isUsable => _unusable == null;

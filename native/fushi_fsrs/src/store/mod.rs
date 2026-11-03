@@ -78,6 +78,10 @@ pub struct SrsCore {
     /// [SrsCore::set_ingest_phase] 与阶段一起写，不单独置位；会话怎么结束（收尾刷完、出错作废、Dart 收手发
     /// `ingest_end`、删 profile）页缓存就随之放掉，不靠下一轮碰巧收尾。
     ingest_holds_cache: AtomicBool,
+    /// 库里可能有进行中的新设备收段通道（store/sync2/channel.rs，`sync2_boot` 有行）：打开时按已提交的表置、开通道
+    /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
+    /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
+    channel_live: AtomicBool,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -311,6 +315,8 @@ impl SrsCore {
         // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
         compact::run(&writer, dir, free(path), now);
+        let channel_live: bool =
+            writer.query_row("SELECT EXISTS (SELECT 1 FROM sync2_boot)", [], |r| r.get(0)).map_err(|e| e.to_string())?;
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
@@ -336,6 +342,7 @@ impl SrsCore {
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
             ingest_yield: AtomicBool::new(false),
             ingest_holds_cache: AtomicBool::new(false),
+            channel_live: AtomicBool::new(channel_live),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]

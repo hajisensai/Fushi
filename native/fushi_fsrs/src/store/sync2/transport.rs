@@ -474,8 +474,12 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
             None => fetch.push(json!({"device": device.text(), "files": extra, "own": false})),
         }
     }
-    // 上一次收段会话没收尾（被打断）留下的待重放卡 / 已找到的分叉点：这一轮没段可拉也要开会话收个尾（S-4 / S-12）。
-    let finish = replay_is_pending(c, profile)? || cache_is_pending(c, profile)? || (fork && known_fork.is_some());
+    // 上一次收段会话没收尾（被打断）留下的待重放卡 / 已找到的分叉点 / 没做完的新设备收段通道（channel.rs）：这一轮
+    // 没段可拉也要开会话收个尾（S-4 / S-12）。
+    let finish = replay_is_pending(c, profile)?
+        || cache_is_pending(c, profile)?
+        || super::channel::active(c, profile)?
+        || (fork && known_fork.is_some());
     Ok(Some(json!({"fetch": fetch, "fork": fork, "rejected": rejected, "finishPending": finish, "needsUpgrade": needs_upgrade})))
 }
 
@@ -508,10 +512,11 @@ impl Held {
 
 /// 投递队列里没进缓冲表的操作（本轮刚收、还投不上）在内存里最多攒这么多字节，超了就写进缓冲表、内存里只留链值。
 /// 新设备先收到某台设备、它依赖的另一台设备的段还没到（或在同一批后面）时，等着的操作可以是整个积压。
-#[cfg(not(test))]
+#[cfg(any(not(test), srs_probe))]
 const DELIVERY_HELD_BYTES: usize = 16 * 1024 * 1024;
 /// 测试里压到很小：全部端到端用例都会反复走「写进缓冲表、轮到时再读出」这条路，结果必须与全在内存里一样。
-#[cfg(test)]
+/// 冷启动探针（bootstrap_probe.rs，`--cfg srs_probe` 构建）用生产值。
+#[cfg(all(test, not(srs_probe)))]
 const DELIVERY_HELD_BYTES: usize = 2 * 1024;
 
 fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
@@ -534,10 +539,11 @@ fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<i64, 
 
 /// 投递队列每台设备在内存里最多留多少条缓冲表的行（见 [Delivery] 的分窗）：队首只用 seq 最小的几条，一窗投完再读
 /// 下一窗。每条在内存里约两百字节，一台设备一窗约 1 MB。
-#[cfg(not(test))]
-const DELIVERY_WINDOW: usize = 4096;
+#[cfg(any(not(test), srs_probe))]
+pub(crate) const DELIVERY_WINDOW: usize = 4096;
 /// 测试里压到很小：全部端到端用例都会反复走「一窗投完、读下一窗」「截窗后再读回」，结果必须与整表在内存里一样。
-#[cfg(test)]
+/// 冷启动探针用生产值（同上）。
+#[cfg(all(test, not(srs_probe)))]
 pub(crate) const DELIVERY_WINDOW: usize = 3;
 
 /// 因果投递：缓冲表里留着的 + 本轮刚收的远端操作（`(操作, 链值)`，任意顺序、可重复），按设备排成队，能接上的
@@ -579,13 +585,15 @@ struct Delivery {
     ahead: BTreeSet<Id>,
     /// 载入时的 [DELIVERY_EPOCH]：收段会话跨片复用这份队列，别处投递过（代号变了）就重新载入。
     epoch: u64,
+    /// 新设备收段通道的追加阶段（channel.rs）：有它就只追加、不逐条投影。只有收段会话设它。
+    channel: Option<super::channel::Append>,
 }
 
 /// 收段会话之外的投递（一次收完、导入、换身份）每做一次加一：会话里跨片留着的 [Delivery] 据此知道缓冲表 / 设备
 /// 进度被别处改过、要重新载入（审查 S-6）。全进程一个计数（多个库共用只会让会话多载入一次，不影响结果）。
 static DELIVERY_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-fn bump_delivery_epoch() {
+pub(crate) fn bump_delivery_epoch() {
     DELIVERY_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
@@ -642,6 +650,7 @@ impl Delivery {
             seen: None,
             ahead: BTreeSet::new(),
             epoch: DELIVERY_EPOCH.load(std::sync::atomic::Ordering::SeqCst),
+            channel: None,
         })
     }
 
@@ -749,7 +758,7 @@ impl Delivery {
     }
 
     fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
-        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, .. } = self;
+        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, channel, .. } = self;
         let mut dropped: Vec<Id> = Vec::new();
         'all: loop {
             let mut progress = false;
@@ -814,8 +823,13 @@ impl Delivery {
                     if !budget.take() {
                         break 'all;
                     }
-                    insert_op(c, profile, op, &chain, now)?;
-                    project(c, profile, op, now, true, t)?;
+                    match channel.as_mut() {
+                        Some(ch) => ch.append(c, profile, op, &chain, now)?,
+                        None => {
+                            insert_op(c, profile, op, &chain, now)?;
+                            project(c, profile, op, now, true, t)?;
+                        }
+                    }
                     if op.hlc.wall.saturating_sub(now) > MAX_AHEAD_MS {
                         ahead.insert(*device);
                     } else if seen.is_none_or(|s| op.hlc > s) {
@@ -850,6 +864,9 @@ impl Delivery {
     /// 一片收尾（[finish] 的落库部分，队列留着给下一片）：设备进度、没投上的写进缓冲、本机 HLC。返回这一片应用的
     /// 条数并清零；之后队列里每一条都已在缓冲表里（`stored`）。
     fn checkpoint(&mut self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
+        if let Some(ch) = self.channel.as_mut() {
+            ch.checkpoint(c, profile)?;
+        }
         observe_remote(c, profile, self.seen.take(), &std::mem::take(&mut self.ahead), now)?;
         for (device, chain) in std::mem::take(&mut self.chains) {
             c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2")
@@ -901,7 +918,7 @@ pub struct CommitBudget<'a> {
 
 /// 一片投递的时间上限（写锁里投递 + 投影部分；同一片的缓存刷新与事务提交大约再占它的一半）。只在没人等锁时
 /// 用满；它也是让出请求最晚的响应时间的来源（收片时要刷新、提交的就是已投的这部分）。
-const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
+pub(crate) const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
 /// 一片至少处理的操作数（之后才看时间与让出请求）。
 const COMMIT_SLICE_MIN_OPS: usize = 64;
 /// 新设备收段会话（[IngestSession::bootstrap]）的片长。片越短，每片提交要写的脏页（同一批随机键索引页）越多次进
@@ -940,13 +957,35 @@ impl<'a> CommitBudget<'a> {
         }
     }
 
+    /// 只按时间切的一片（不看让出请求）：会话外把收段通道做完（channel.rs `settle`），调用方一直持着写锁、片与片
+    /// 之间不放锁，让出请求无从响应，切片只为每片各自提交（WAL 只装一片的页）。
+    #[cfg_attr(all(test, not(srs_probe)), allow(dead_code))]
+    pub(crate) fn timed(max: std::time::Duration) -> CommitBudget<'static> {
+        CommitBudget {
+            left: usize::MAX,
+            deadline: Some(std::time::Instant::now() + max),
+            yield_to: None,
+            floor: COMMIT_SLICE_MIN_OPS,
+            stopped: false,
+            stretchable: false,
+        }
+    }
+
     /// 按条数切的一片（测试用：切点确定）。
     pub fn ops(n: usize) -> CommitBudget<'static> {
         CommitBudget { left: n.max(1), deadline: None, yield_to: None, floor: 0, stopped: false, stretchable: false }
     }
 
+    /// 一次处理了 [n] 条（收段通道折一个分区，channel.rs）：按 [n] 条扣，扣完再看是否还能接着做。
+    pub(crate) fn spend(&mut self, n: usize) -> bool {
+        let n = n.max(1);
+        self.left = self.left.saturating_sub(n - 1);
+        self.floor = self.floor.saturating_sub(n - 1);
+        self.take()
+    }
+
     /// 再处理一条；预算用完返回 false 并记下截停。
-    fn take(&mut self) -> bool {
+    pub(crate) fn take(&mut self) -> bool {
         if self.stopped {
             return false;
         }
@@ -974,6 +1013,8 @@ pub(crate) struct IngestSession {
     delivery: Option<Delivery>,
     /// 新设备：本机身份还没写过复习日志（[studied_here]）。这样的会话片长用 [BOOTSTRAP_SLICE]。
     bootstrap: bool,
+    /// 这个会话走新设备收段通道（channel.rs [super::channel::begin]）：各片只追加，收尾时折叠。
+    channel: bool,
 }
 
 impl IngestSession {
@@ -1049,11 +1090,11 @@ impl IngestPhase {
 /// 一批段在锁外预处理时保留的已解码操作上限（解压后字节，按 [held_bytes] 同一口径估）。超出的段照样验签、
 /// 重算链，只是不留操作，投递时在锁内重开再流式解一遍。一批的字节预算按压缩后体积算，正文重复度高时解开能大
 /// 两个数量级；有了这条，预处理的内存峰值与收段原先一样不随一批的解压后体积增长。
-#[cfg(not(test))]
+#[cfg(any(not(test), srs_probe))]
 const PREPARED_RAW_BUDGET: u64 = 2 * segment::SEGMENT_MAX_RAW_BYTES;
 /// 测试里压到很小：端到端用例的后几段都走「投递时重开流式解」（含切片截在段中间、下一片跳过已处理前缀），
-/// 结果必须与留在内存里一样。
-#[cfg(test)]
+/// 结果必须与留在内存里一样。冷启动探针用生产值（同上）。
+#[cfg(all(test, not(srs_probe)))]
 const PREPARED_RAW_BUDGET: u64 = 4 * 1024;
 
 /// 一个段在锁外预处理的结论。
@@ -1234,6 +1275,7 @@ fn deliver_prepared(
     errors: &mut Vec<String>,
     fork_at: &mut Option<u64>,
     cached: &mut Option<Delivery>,
+    channel: bool,
 ) -> Result<(usize, bool, i64), String> {
     if prepared.profile != profile
         || prepared.device != local.device
@@ -1246,6 +1288,10 @@ fn deliver_prepared(
     let ck = prepared.key.map(CollectionKey);
     let PreparedIngest { segments, items, next, .. } = prepared;
     let mut delivery = Delivery::resume(cached.take(), c, profile)?;
+    if channel && delivery.channel.is_none() {
+        // 重新载入的队列（或第一片）：通道还在追加阶段就接着追加（别处做完过通道 = None，按逐条投递）。
+        delivery.channel = super::channel::Append::load(c, profile)?;
+    }
     // 上一片被截停时可能还有已经接得上的操作（在缓冲表里），先投它们。
     delivery.drain(c, profile, now, t, budget)?;
     while *next < items.len() && !budget.stopped {
@@ -2062,6 +2108,8 @@ impl SrsCore {
     pub fn sync2_ingest(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
         let mut prepared = self.prepare_unlocked(profile, std::borrow::Cow::Borrowed(segments), key)?;
         let w = self.writer()?;
+        // 会话外投递：新设备收段通道没做完就先按片做完（各片自己提交），之后逐条投递（channel.rs `settle`）。
+        self.settle_channel_on(&w, profile)?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut t = Touched::default();
@@ -2078,6 +2126,7 @@ impl SrsCore {
                 &mut errors,
                 &mut fork_at,
                 &mut None,
+                false,
             )?;
             bump_delivery_epoch();
             if let Some(k) = fork_at {
@@ -2120,10 +2169,18 @@ impl SrsCore {
         // 之前被打断的会话已经找到的分叉点接着用（审查 S-12：plan 不再让 Dart 重下本机身份的段）。
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         let bootstrap = !studied_here(&w, profile, &local.device)?;
-        let session = IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None, bootstrap };
+        // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的收尾做到一半就先按片做完（各片自己提交）。
+        let channel = super::channel::begin(&w, profile)?;
+        if channel {
+            self.note_channel_live();
+        } else {
+            self.recheck_channel_live(&w)?;
+        }
+        let session = IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None, bootstrap, channel };
         let mut phase = self.ingest_phase()?;
         self.set_ingest_phase(&mut phase, IngestPhase::Open(session));
-        Ok(json!({}))
+        // Dart 据 `channel` 记下「开 Drift 事务前先 `channel_settle`」（srs_db_store.dart `_transactionOrReload`）。
+        Ok(json!({"channel": channel}))
     }
 
     /// 放掉 [profile] 的收段会话 / 收尾阶段（不是它的不动）：Dart 一轮中途收手、抓段或某一步出错时发
@@ -2247,13 +2304,13 @@ impl SrsCore {
     ) -> Result<(String, crate::store::caches::Written), String> {
         let w = self.writer()?;
         let mut guard = self.ingest_phase()?;
-        let (device, prior, mut prepared, mut cached) = match guard.session_mut() {
+        let (device, prior, mut prepared, mut cached, channel) = match guard.session_mut() {
             Some(s) if s.profile == profile => match s.prepared.take() {
                 Some(p) => {
                     if s.bootstrap {
                         budget.stretch(BOOTSTRAP_SLICE);
                     }
-                    (s.device, s.fork_at, p, s.delivery.take())
+                    (s.device, s.fork_at, p, s.delivery.take(), s.channel)
                 }
                 None => return Err("sync2 ingest: no prepared batch to commit".to_owned()),
             },
@@ -2278,6 +2335,7 @@ impl SrsCore {
                 &mut errors,
                 &mut fork_at,
                 &mut cached,
+                channel,
             )?;
             defer_replay(c, profile, &t.cards)?;
             if let Some(k) = fork_at.filter(|k| prior != Some(*k)) {
@@ -2347,16 +2405,32 @@ impl SrsCore {
         let IngestPhase::Open(session) = self.set_ingest_phase(&mut guard, IngestPhase::Draining(profile.to_owned())) else {
             unreachable!("checked above")
         };
+        // 换身份（会话里找到了分叉点）要在全部远端操作都投进投影之后：收段通道先按片做完（各片自己提交，channel.rs
+        // `settle`），换身份与重放再进下面这一笔事务。没有分叉点时通道按 [budget] 在事务里推进（下面的 `advance`）。
+        if session.fork_at.is_some() {
+            let settled = self.settle_channel_on(&w, profile);
+            if let Err(e) = settled {
+                self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+                self.set_ingest_phase(&mut guard, IngestPhase::Idle);
+                return Err(e);
+            }
+        }
         let out = in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut t = Touched::default();
             let fork_at = session.fork_at.filter(|_| local.device == session.device);
             if let Some(k) = fork_at {
+                if super::channel::active(c, profile)? {
+                    return Err("sync2 ingest: bootstrap channel not settled before rotating".to_owned());
+                }
                 rotate(c, profile, k, now, &mut t)?;
             }
             clear_fork(c, profile)?;
             defer_replay(c, profile, &t.cards)?;
-            let (replayed, more) = replay_pending(c, profile, &mut budget)?;
+            // 收段通道：折叠 + 逐条，按 [budget] 切；做完才重放（重放读完整的日志投影）。
+            let (folded, ct) = super::channel::advance(c, profile, &mut budget)?;
+            super::channel::absorb(&mut t, ct);
+            let (replayed, more) = if folded { replay_pending(c, profile, &mut budget)? } else { (BTreeSet::new(), true) };
             let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), fork_at.is_some(), more, None)?;
             let drained = !more && !cache_is_pending(c, profile)?;
             Ok((persist_local_state(c, profile, local_state, r)?, drained))
@@ -2386,8 +2460,10 @@ impl SrsCore {
     pub fn sync2_replay_pending_persisting(&self, profile: &str, mut budget: CommitBudget<'_>, local_state: Option<&str>) -> Result<String, String> {
         let w = self.writer()?;
         let out = in_savepoint(&w, |c| {
-            let (replayed, more) = replay_pending(c, profile, &mut budget)?;
-            let r = ingest_result(c, profile, Touched::default(), replayed, 0, Vec::new(), false, more, None)?;
+            // 收尾被切片：收段通道还没做完就接着做（channel.rs），做完再重放。
+            let (folded, t) = super::channel::advance(c, profile, &mut budget)?;
+            let (replayed, more) = if folded { replay_pending(c, profile, &mut budget)? } else { (BTreeSet::new(), true) };
+            let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), false, more, None)?;
             persist_local_state(c, profile, local_state, r)
         });
         self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -2731,6 +2807,9 @@ impl SrsCore {
     /// 明文、全部操作、再拷一份待投递三份同时在内存。
     pub fn sync2_import(&self, profile: &str, bytes: &[u8], now: i64) -> Result<String, String> {
         let w = self.writer()?;
+        // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；Dart 的导入在 Drift 事务里，已在开事务
+        // 前发过 `channel_settle`，这里通常没有通道）。
+        self.settle_channel_on(&w, profile)?;
         in_savepoint(&w, |c| {
             let local = match Local::load(c, profile)? {
                 Some(l) => l,
