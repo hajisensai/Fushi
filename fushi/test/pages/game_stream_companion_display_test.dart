@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -34,7 +35,11 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
   final ValueNotifier<bool> _attached = ValueNotifier<bool>(false);
   final StreamController<GameStreamCompanionMessage> _messages =
       StreamController<GameStreamCompanionMessage>.broadcast();
+  final GameStreamCompanionResets _resets = GameStreamCompanionResets();
   final List<int> shown = <int>[];
+
+  /// False: [show] only launches; the panel comes up on [attachPanel].
+  bool attachOnShow = true;
   int dismissed = 0;
   final List<GameStreamCompanionHostMessage> sent =
       <GameStreamCompanionHostMessage>[];
@@ -50,6 +55,9 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
   Stream<GameStreamCompanionMessage> get messages => _messages.stream;
 
   @override
+  Listenable get resets => _resets;
+
+  @override
   Future<void> start() async {}
 
   /// The next [show] fails as a call to a recreated Activity does.
@@ -62,7 +70,18 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
       throw MissingPluginException('no handler');
     }
     shown.add(displayId);
-    _attached.value = true;
+    if (attachOnShow) _attached.value = true;
+  }
+
+  /// The launched panel registered.
+  void attachPanel() => _attached.value = true;
+
+  /// The platform side was recreated (as the channel decodes
+  /// `companionReset`): nothing is up, the current displays are pushed.
+  void reset() {
+    _attached.value = false;
+    _displays.value = List<GameStreamCompanionDisplayInfo>.of(_displays.value);
+    _resets.fire();
   }
 
   @override
@@ -389,6 +408,33 @@ void main() {
     expect(h.display.shown, <int>[_bottomScreen.id, _bottomScreen.id]);
   });
 
+  testWidgets('a panel launched but not yet up when the platform side is '
+      'recreated is shown again on the new one', (WidgetTester tester) async {
+    final _FakeCompanionDisplay fake = _FakeCompanionDisplay()
+      ..attachOnShow = false;
+    final _Harness h = await _Harness.pump(tester, display: fake);
+    expect(h.display.shown, <int>[_bottomScreen.id]);
+    // Never attached: the old instance dropped the launch with no attached
+    // edge, and the display list is unchanged.
+    h.display.reset();
+    await tester.pumpAndSettle();
+    expect(h.display.shown, <int>[_bottomScreen.id, _bottomScreen.id]);
+    h.display.attachPanel();
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+    expect(h.display.lastState.lineId, 'line-1');
+  });
+
+  testWidgets('an attached panel lost to a recreated platform side is shown '
+      'again', (WidgetTester tester) async {
+    final _Harness h = await _Harness.pump(tester);
+    h.display.reset();
+    await tester.pumpAndSettle();
+    expect(h.display.shown.last, _bottomScreen.id);
+    expect(h.display.shown.length, greaterThanOrEqualTo(2));
+    expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+  });
+
   testWidgets('without a second display nothing changes', (
     WidgetTester tester,
   ) async {
@@ -512,6 +558,73 @@ void main() {
           const GameStreamCompanionResult(revision: 2).encode(),
         );
         expect(controller.result, isNull);
+      },
+    );
+  });
+
+  group('MethodChannelGameStreamCompanionDisplay', () {
+    test(
+      'companionReset voids the placement even with no attached edge',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        const MethodChannel channel = MethodChannel(
+          'test/game_stream_companion',
+        );
+        final TestDefaultBinaryMessenger messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          channel,
+          (MethodCall call) async => call.method == 'listDisplays'
+              ? <Object?>[
+                  <String, Object?>{
+                    'id': 2,
+                    'name': 'Bottom',
+                    'width': 1,
+                    'height': 1,
+                  },
+                ]
+              : null,
+        );
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        final Directory spills = Directory.systemTemp.createTempSync(
+          'gs_spill',
+        );
+        addTearDown(() {
+          if (spills.existsSync()) spills.deleteSync(recursive: true);
+        });
+        final MethodChannelGameStreamCompanionDisplay display =
+            MethodChannelGameStreamCompanionDisplay(
+              channel: channel,
+              spillRoot: spills,
+            );
+        await display.start();
+        int resets = 0;
+        int attachedEdges = 0;
+        display.resets.addListener(() => resets++);
+        display.attached.addListener(() => attachedEdges++);
+
+        Future<void> fromPlatform(String method, Object? arguments) =>
+            messenger.handlePlatformMessage(
+              channel.name,
+              channel.codec.encodeMethodCall(MethodCall(method, arguments)),
+              (ByteData? _) {},
+            );
+
+        // A launch that never registered: nothing attached, same displays.
+        await fromPlatform('companionReset', <Object?>[
+          <String, Object?>{'id': 2, 'name': 'Bottom', 'width': 1, 'height': 1},
+        ]);
+        expect(resets, 1, reason: 'Fires without any attached edge');
+        expect(attachedEdges, 0);
+        expect(display.displays.value.single.id, 2);
+
+        // An attached panel is reported gone by the reset itself.
+        await fromPlatform('companionAttached', true);
+        expect(display.attached.value, isTrue);
+        await fromPlatform('companionReset', <Object?>[]);
+        expect(display.attached.value, isFalse);
+        expect(display.displays.value, isEmpty);
+        expect(resets, 2);
       },
     );
   });

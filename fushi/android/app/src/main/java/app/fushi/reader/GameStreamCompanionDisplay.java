@@ -48,7 +48,8 @@ import io.flutter.plugin.common.MethodChannel;
  *   <li>Dart → Java: {@code listDisplays}, {@code show(displayId)},
  *       {@code dismiss}, {@code send(json)}.</li>
  *   <li>Java → Dart: {@code displaysChanged(list)}, {@code companionAttached(bool)},
- *       {@code companionMessage(json)}.</li>
+ *       {@code companionMessage(json)}, {@code companionReset(list)} (a new
+ *       instance took over: nothing placed before survives).</li>
  * </ul>
  *
  * <p>Controller keys the panel receives are dispatched into this Activity, so
@@ -97,9 +98,11 @@ final class GameStreamCompanionDisplay implements DisplayManager.DisplayListener
         final GameStreamCompanionDisplay created = new GameStreamCompanionDisplay(activity, engine);
         instance = created;
         // The engine can outlive the Activity: a stream page that was already
-        // running gets the current displays from this instance, and places
-        // its panel again from them (nothing listens to unhandled calls).
-        created.channel.invokeMethod("displaysChanged", created.describeDisplays());
+        // running is told its placement is void (detach above dropped any
+        // panel, also one launched but not yet registered, which reports no
+        // attached edge) and gets the current displays to place it again on
+        // this instance. Nothing listens when no page runs.
+        created.channel.invokeMethod("companionReset", created.describeDisplays());
     }
 
     /**

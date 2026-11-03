@@ -73,6 +73,13 @@ abstract class GameStreamCompanionDisplay {
   /// Messages the companion sends.
   Stream<GameStreamCompanionMessage> get messages;
 
+  /// Fires when the platform side was replaced (Android: the main Activity
+  /// was recreated while the page kept running on the cached engine).
+  /// Whatever the page placed before is gone, including a panel that was
+  /// launched but had not come up yet (so [attached] never turned true and
+  /// will not turn false either): the page must place it again.
+  Listenable get resets;
+
   /// Starts watching displays. Call once before anything else.
   Future<void> start();
 
@@ -89,6 +96,13 @@ abstract class GameStreamCompanionDisplay {
 
   /// Stops watching and closes the companion.
   void dispose();
+}
+
+/// [GameStreamCompanionDisplay.resets] as a plain event: listeners run on
+/// every [fire], with no value to compare.
+class GameStreamCompanionResets extends ChangeNotifier {
+  /// Tells the listeners the platform side was replaced.
+  void fire() => notifyListeners();
 }
 
 /// Android: `GameStreamCompanionDisplay.java` launches the companion as its
@@ -121,10 +135,14 @@ class MethodChannelGameStreamCompanionDisplay
   final ValueNotifier<bool> _attached = ValueNotifier<bool>(false);
   final StreamController<GameStreamCompanionMessage> _messages =
       StreamController<GameStreamCompanionMessage>.broadcast();
+  final GameStreamCompanionResets _resets = GameStreamCompanionResets();
 
   @override
   ValueListenable<List<GameStreamCompanionDisplayInfo>> get displays =>
       _displays;
+
+  @override
+  Listenable get resets => _resets;
 
   @override
   ValueListenable<bool> get attached => _attached;
@@ -148,6 +166,11 @@ class MethodChannelGameStreamCompanionDisplay
         _displays.value = _parseDisplays(call.arguments as List<Object?>?);
       case 'companionAttached':
         _attached.value = call.arguments == true;
+      case 'companionReset':
+        // A new platform instance: no panel is up or on its way any more.
+        _attached.value = false;
+        _displays.value = _parseDisplays(call.arguments as List<Object?>?);
+        _resets.fire();
       case 'companionMessage':
         _pipe.receive(
           call.arguments as String,
@@ -193,6 +216,7 @@ class MethodChannelGameStreamCompanionDisplay
     unawaited(_channel.invokeMethod<void>('dismiss'));
     _displays.dispose();
     _attached.dispose();
+    _resets.dispose();
     unawaited(_messages.close());
     unawaited(GameStreamCompanionPipe.clearSpills(_spillRoot));
   }

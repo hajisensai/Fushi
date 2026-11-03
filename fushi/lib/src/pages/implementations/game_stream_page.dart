@@ -411,6 +411,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     if (display == null) return;
     display.displays.addListener(_placeCompanion);
     display.attached.addListener(_onCompanionAttached);
+    display.resets.addListener(_onCompanionReset);
     _companionMessages = display.messages.listen(_onCompanionMessage);
     try {
       await display.start();
@@ -433,6 +434,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     if (display == null) return;
     display.displays.removeListener(_placeCompanion);
     display.attached.removeListener(_onCompanionAttached);
+    display.resets.removeListener(_onCompanionReset);
     unawaited(_companionMessages?.cancel());
     if (_companionDisplayId != null) unawaited(display.dismiss());
     _companionDisplayId = null;
@@ -504,6 +506,16 @@ class _GameStreamPageState extends State<GameStreamPage>
       }
     });
     if (!active) _placeCompanion();
+  }
+
+  /// The platform side was replaced: whatever was placed on the old one is
+  /// gone, also a panel that was launched but never came up (it has no
+  /// attached edge to report). Forget it unconditionally and place again on
+  /// the new one; a show the new side already has is a no-op there.
+  void _onCompanionReset() {
+    if (!mounted) return;
+    _companionDisplayId = null;
+    _placeCompanion();
   }
 
   void _setSecondScreen(GameStreamSecondScreen value) {
