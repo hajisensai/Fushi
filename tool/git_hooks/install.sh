@@ -14,6 +14,13 @@
 # tracked script when the checked-out tree has it (older refs have none).
 set -eu
 
+# A source export (tarball, Docker build volume, Flatpak build dir) has no git
+# dir and therefore no hooks to install.
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "git hooks: not a git checkout, nothing to install"
+  exit 0
+fi
+
 hooks=$(git rev-parse --path-format=absolute --git-path hooks)
 mkdir -p "$hooks"
 begin='# >>> fushi gen-i18n (tool/git_hooks/install.sh rewrites this block) >>>'

@@ -34,6 +34,8 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 
 本机没有 Linux：用 Docker Desktop（`debian:trixie` + 拷进 `/opt/flutter` 的 3.47.6 SDK）构建；源码以 `git ls-files -co --exclude-standard` 打包进 docker 卷再编，别直接 bind mount 工作区（`.dart_tool/package_config.json` 会被写成 Linux 路径）。跑 app / 集成测试用 `Xvfb :99` + `dbus-run-session`；容器里没有 user namespace，WebView 相关测试要设 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`（**只限容器测试**）。
 
+**一条命令出包（2026-11-03）**：`bash tool/linux/build_in_docker.sh [--skip-native] [--clean]`（Git Bash / Linux / macOS 宿主均可）按上面的做法在 `tool/linux/Dockerfile`（trixie + Flutter 3.47.6 + Rust 1.95.0 / 1.97.1 + protoc 31.1 + vcpkg）里跑 `tool/linux/build_bundle.sh`，产出 `build/linux-dist/fushi-<版本>-linux-x64.tar.gz`。与 app CMake 的 copy-if-present 不同，**出包时 p2p / fsrs / torrent 一律必需**，并补上 CMake 不管的 `fushi-anki-sync`、`mihon_bridge/`、`fushi_cli`；缺任何一件即失败。缓存放在 `fushi-linux-*` 命名卷里，`--skip-native` 跳过 p2p / torrent 与 bootstrap 的 Rust 重编；容器默认只用一半核心与 12 GB。产物要求 glibc ≥ 2.38（实测）。无头冒烟：`bash tool/linux/smoke_in_docker.sh [秒]` → `build/linux-dist/smoke/{run.log,screen.png}`。目标机运行库（Ubuntu 26.04 实测缺的）：`libsecret-1-0 libsoup-3.0-0 libpulse0 libwayland-server0 libkeybinder-3.0-0 libmpv2 libwpewebkit-2.0-1 libwpebackend-fdo-1.0-1 libwpe-1.0-1`，外加 PATH 上的 `ffmpeg ffprobe parecord`。
+
 ## Melos
 
 仓库根是 Melos workspace（`fushi_workspace`）。常用：`melos run analyze` / `melos run test` / `melos run build:android`。
