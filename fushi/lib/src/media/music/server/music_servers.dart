@@ -6,16 +6,21 @@
 ///   凭据键、设备本地）；
 /// - 混排进本地曲库是每台服务器的显式 opt-in（`music_server_library_mix`），混进去的是专辑卡，
 ///   点开仍走服务器专辑页（按需取曲目）。
-/// - **Apple Music catalog**（MusicKit 方案 P1b）：设置里显式打开后出现；只浏览 + 30 秒试听，
-///   不参与混排（没有「整库」可混，专辑分区只是热门榜）。
+/// - **Apple Music catalog**（MusicKit 方案 P1b / P2）：设置里显式打开后出现；未连接账号时只浏览 +
+///   30 秒试听，连接了且订阅有效（[AppleMusicAccount.canPlayFullTracks]）时整曲播放、按账号所在
+///   storefront 浏览，并多出「Apple Music 资料库」来源。都不参与混排（catalog 没有「整库」可混，
+///   资料库按方案 §4 v1 不混）。
 library;
 
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_library_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
@@ -43,12 +48,29 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
       if (c.enabled) out.add(SubsonicMusicClient(c));
     }
     if (app.prefsRepo.musicAppleMusicEnabled) {
+      final AppleMusicAccount account = app.appleMusicAccount;
+      // 没连接时不碰桥（网页桥读状态要起隐藏 WebView）；连接了读一次（有缓存）。
+      if (account.connected) await account.refresh();
+      final bool full = account.canPlayFullTracks;
       out.add(
         AppleMusicCatalogClient(
           tokens: appleMusicTokenSource,
-          storefront: app.prefsRepo.musicAppleMusicStorefront,
+          // 整曲时按账号所在地区浏览：别区的曲目账号放不了。
+          storefront: full
+              ? (account.state.storefront ??
+                    app.prefsRepo.musicAppleMusicStorefront)
+              : app.prefsRepo.musicAppleMusicStorefront,
+          fullTracks: full,
         ),
       );
+      if (full) {
+        out.add(
+          AppleMusicLibraryClient(
+            credentials: account.userCredentials,
+            displayName: t.music_apple_music_library_name,
+          ),
+        );
+      }
     }
   }
   return out;
@@ -58,6 +80,18 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
 bool musicServerSupportsLibraryMix(MusicServerKind kind) => switch (kind) {
   MusicServerKind.jellyfin || MusicServerKind.subsonic => true,
   MusicServerKind.appleMusic => false,
+};
+
+/// 来源列表 / 设置里的副标题（Apple Music 分试听与整曲）。
+String musicServerSubtitle(MusicServerBrowser server) => switch (server) {
+  AppleMusicLibraryClient() => t.music_server_apple_music_full_subtitle,
+  AppleMusicCatalogClient(fullTracks: true) =>
+    t.music_server_apple_music_full_subtitle,
+  _ => switch (server.kind) {
+    MusicServerKind.jellyfin => t.music_server_jellyfin_subtitle,
+    MusicServerKind.subsonic => t.music_server_subsonic_subtitle,
+    MusicServerKind.appleMusic => t.music_server_apple_music_subtitle,
+  },
 };
 
 /// 设置里可选的转码码率上限（kbps）；0（原样直出）另列。

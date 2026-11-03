@@ -12,6 +12,8 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 
+import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -198,25 +200,13 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
                     onChanged: (bool v) => unawaited(_setAppleMusicEnabled(v)),
                   ),
                   if (appleMusicOn)
-                    AdaptiveSettingsPickerRow<String>(
-                      key: const ValueKey<String>(
-                        'music_apple_music_storefront',
-                      ),
-                      title: t.music_apple_music_storefront,
-                      subtitle: t.music_apple_music_storefront_hint,
-                      options: <AdaptiveSettingsPickerOption<String>>[
-                        for (final String sf in kAppleMusicStorefrontChoices)
-                          AdaptiveSettingsPickerOption<String>(
-                            value: sf,
-                            label: sf.toUpperCase(),
-                          ),
-                      ],
-                      selected:
-                          kAppleMusicStorefrontChoices.contains(
-                            widget.appModel.prefsRepo.musicAppleMusicStorefront,
-                          )
-                          ? widget.appModel.prefsRepo.musicAppleMusicStorefront
-                          : kAppleMusicStorefrontChoices.first,
+                    _AppleMusicAccountRow(
+                      appModel: widget.appModel,
+                      onChanged: _reload,
+                    ),
+                  if (appleMusicOn)
+                    _AppleMusicStorefrontRow(
+                      appModel: widget.appModel,
                       onChanged: (String v) =>
                           unawaited(_setAppleMusicStorefront(v)),
                     ),
@@ -226,6 +216,187 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
           },
     );
   }
+}
+
+/// Apple Music storefront：没整曲时可选浏览哪个区；整曲时 catalog 强制按账号所在地区浏览
+/// （`buildMusicServers`），这里只说明跟随账号、不给一个改了也不生效的选择器。账号状态以
+/// [AppleMusicAccount] 为唯一来源。
+class _AppleMusicStorefrontRow extends StatelessWidget {
+  const _AppleMusicStorefrontRow({
+    required this.appModel,
+    required this.onChanged,
+  });
+
+  final AppModel appModel;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: appModel.appleMusicAccount,
+    builder: (BuildContext context, Widget? _) {
+      final AppleMusicAccount account = appModel.appleMusicAccount;
+      final String? accountStorefront = account.state.storefront;
+      final bool followsAccount =
+          account.canPlayFullTracks && accountStorefront != null;
+      final String chosen = appModel.prefsRepo.musicAppleMusicStorefront;
+      return AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        child: followsAccount
+            ? AdaptiveSettingsRow(
+                key: const ValueKey<String>(
+                  'music_apple_music_storefront_account',
+                ),
+                title: t.music_apple_music_storefront,
+                subtitle: t.music_apple_music_storefront_follows_account(
+                  storefront: accountStorefront.toUpperCase(),
+                ),
+              )
+            : AdaptiveSettingsPickerRow<String>(
+                key: const ValueKey<String>('music_apple_music_storefront'),
+                title: t.music_apple_music_storefront,
+                subtitle: t.music_apple_music_storefront_hint,
+                options: <AdaptiveSettingsPickerOption<String>>[
+                  for (final String sf in kAppleMusicStorefrontChoices)
+                    AdaptiveSettingsPickerOption<String>(
+                      value: sf,
+                      label: sf.toUpperCase(),
+                    ),
+                ],
+                selected: kAppleMusicStorefrontChoices.contains(chosen)
+                    ? chosen
+                    : kAppleMusicStorefrontChoices.first,
+                onChanged: onChanged,
+              ),
+      );
+    },
+  );
+}
+
+/// Apple Music 账号：连接 / 断开 + 授权 / 订阅状态（MusicKit 方案 §4）。连接后整曲播放、
+/// 按账号地区浏览并多出资料库来源；本平台没有 MusicKit 播放器（Linux、macOS 13）时只说明。
+class _AppleMusicAccountRow extends StatefulWidget {
+  const _AppleMusicAccountRow({
+    required this.appModel,
+    required this.onChanged,
+  });
+
+  final AppModel appModel;
+
+  /// 连接状态变了（服务器清单要重载：catalog 切整曲、资料库出现 / 消失）。
+  final VoidCallback onChanged;
+
+  @override
+  State<_AppleMusicAccountRow> createState() => _AppleMusicAccountRowState();
+}
+
+class _AppleMusicAccountRowState extends State<_AppleMusicAccountRow> {
+  AppleMusicAccount get _account => widget.appModel.appleMusicAccount;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_account.connected) {
+      _busy = true;
+      unawaited(
+        _account.refresh(force: true).whenComplete(() {
+          if (mounted) setState(() => _busy = false);
+        }),
+      );
+    }
+  }
+
+  Future<void> _connect() async {
+    setState(() => _busy = true);
+    try {
+      final AppleMusicAccountState s = await _account.connect(context);
+      if (s.isAuthorized) widget.onChanged();
+    } on Object catch (e) {
+      FushiToast.show(
+        msg: t.music_apple_music_connect_failed(error: '$e'),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 断开只管 Apple Music：桥停掉自己的播放并发出「已断开」，Apple Music 播放后端据此把正在放的
+  /// Apple Music 曲目判失败；本地 / 其它来源正在放的音乐不受影响（不停整个引擎）。
+  Future<void> _disconnect() async {
+    setState(() => _busy = true);
+    await _account.disconnect();
+    widget.onChanged();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  String _status(AppleMusicAccount a) {
+    if (!a.platformSupported) return t.music_apple_music_account_unsupported;
+    if (!a.connected) return t.music_apple_music_account_disconnected;
+    final AppleMusicAccountState s = a.state;
+    switch (s.status) {
+      case AppleMusicAuthStatus.denied:
+      case AppleMusicAuthStatus.restricted:
+        return t.music_apple_music_account_denied;
+      case AppleMusicAuthStatus.notDetermined:
+        return a.lastError != null
+            ? t.music_apple_music_account_error(error: '${a.lastError}')
+            : t.music_apple_music_account_disconnected;
+      case AppleMusicAuthStatus.authorized:
+        final String sf = (s.storefront ?? '').toUpperCase();
+        if (!s.canPlayCatalogContent) {
+          return t.music_apple_music_account_no_subscription;
+        }
+        return sf.isEmpty
+            ? t.music_apple_music_account_connected
+            : '${t.music_apple_music_account_connected} · $sf';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _account,
+    builder: (BuildContext context, Widget? _) {
+      final AppleMusicAccount a = _account;
+      final bool connected = a.platformSupported && a.connected;
+      return AdaptiveSettingsRow(
+        key: const ValueKey<String>('music_apple_music_account'),
+        icon: FushiIcons.person,
+        showIcon: true,
+        title: t.music_apple_music_account_title,
+        subtitle: _status(a),
+        trailing: !a.platformSupported
+            ? null
+            : AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: _busy
+                    ? const SizedBox.square(
+                        key: ValueKey<String>('music_apple_music_busy'),
+                        dimension: 24,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
+                      )
+                    : FushiPressScale(
+                        key: ValueKey<bool>(connected),
+                        child: connected
+                            ? FushiTextButton(
+                                key: const ValueKey<String>(
+                                  'music_apple_music_disconnect',
+                                ),
+                                onPressed: () => unawaited(_disconnect()),
+                                child: Text(t.music_apple_music_disconnect),
+                              )
+                            : FushiFilledButton(
+                                key: const ValueKey<String>(
+                                  'music_apple_music_connect',
+                                ),
+                                onPressed: () => unawaited(_connect()),
+                                child: Text(t.music_apple_music_connect),
+                              ),
+                      ),
+              ),
+      );
+    },
+  );
 }
 
 /// 添加 OpenSubsonic 服务器：填完先测连接（`ping`），通了才保存。

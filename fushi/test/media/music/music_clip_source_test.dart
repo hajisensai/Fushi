@@ -85,4 +85,14 @@ void main() {
       );
     }
   });
+
+  test('Apple Music 整曲：resolver 统一判为 DRM 保护（调用方降级成纯文本卡），不交给 ffmpeg', () async {
+    const String path = 'fushi-apple-music://song/1440857781';
+    await expectLater(
+      resolveMusicClipSource(
+        const MusicPlayItem(trackUid: path, path: path, title: 'x'),
+      ),
+      throwsA(isA<MusicClipSourceProtected>()),
+    );
+  });
 }

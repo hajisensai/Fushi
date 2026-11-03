@@ -2016,6 +2016,9 @@ class SyncRepository {
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',
     'music_exclusive_output',
+    // Apple Music 账号连接：授权（Apple ID / Music-User-Token）只在授权的那台设备上存在，
+    // 漂过去会让另一台设备显示「已连接」却拿不到 token。
+    'music_apple_music_connected',
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
     'manga_ocr_ai_mode',

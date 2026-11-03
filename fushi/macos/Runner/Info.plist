@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Fushi plays Apple Music and shows your Apple Music library when you connect your account.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Websites in Fushi's built-in browser can ask to use the camera.</string>
 	<key>NSMicrophoneUsageDescription</key>

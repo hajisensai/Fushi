@@ -5026,6 +5026,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 本机已把 Apple Music 账号连接到 Fushi（整曲播放 + 资料库）。设备本地。
+  bool get musicAppleMusicConnected =>
+      getPref('music_apple_music_connected', defaultValue: false) == true;
+
+  Future<void> setMusicAppleMusicConnected(bool value) async {
+    await setPref('music_apple_music_connected', value);
+    notifyListeners();
+  }
+
   /// Apple Music catalog 的 storefront（两位小写国家码，缺省 `jp`）。
   String get musicAppleMusicStorefront {
     final Object? raw = getPref(

@@ -58,6 +58,9 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
       FushiClipboardImage.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // Apple Music 官方集成（MusicKit，macOS 14+ 才能整曲播放）。与 iOS 同一份实现。
+      FushiAppleMusic.register(
+        binaryMessenger: controller.engine.binaryMessenger)
       // 查词浮层的真模糊背衬：WebView 下方的 NSVisualEffectView 平台视图
       // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
       FushiNativeMaterial.register(
