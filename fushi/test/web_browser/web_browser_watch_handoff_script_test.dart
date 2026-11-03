@@ -197,6 +197,70 @@ setTimeout(() => process.stdout.write(JSON.stringify(out)), 20);
       isFalse,
     );
   });
+
+  test('交接判据：站点标了自动播放的 YouTube 观看页同一条判据交接，其它页不交', () {
+    final Uri ytWatch = Uri.parse(
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    );
+    bool always(Uri _) => true;
+    bool never(Uri _) => false;
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: true,
+        autoPlaySite: always,
+      ),
+      isTrue,
+    );
+    // 没标自动播放：YouTube 观看页留在浏览器里播。
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: true,
+        autoPlaySite: never,
+      ),
+      isFalse,
+    );
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: true,
+      ),
+      isFalse,
+    );
+    // 无痕 / 没有播放页仍然不交，哪怕站点标了自动播放。
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: true,
+        playerAvailable: true,
+        autoPlaySite: always,
+      ),
+      isFalse,
+    );
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        ytWatch,
+        incognito: false,
+        playerAvailable: false,
+        autoPlaySite: always,
+      ),
+      isFalse,
+    );
+    // 自动播放只认观看页：YouTube 首页不交。
+    expect(
+      webBrowserShouldHandOffWatchPage(
+        Uri.parse('https://www.youtube.com/'),
+        incognito: false,
+        playerAvailable: true,
+        autoPlaySite: always,
+      ),
+      isFalse,
+    );
+  });
 }
 
 String? _resolveNode() {
