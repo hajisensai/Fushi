@@ -46,6 +46,10 @@ typedef StandaloneSubtitleBookProgress =
 /// - [cueTransform]：解析出 cue 之后、生成正文与落库之前对 cue 做一次改写。远端
 ///   （流式）音频用它把整本书时间轴上的字幕按音轨切成各文件内的本地时间；缺省不改。
 ///
+/// [adoptSubtitleFile]：[subtitlePath] 是调用方取来的临时文件（如从服务器下载的
+/// 字幕），持久化时**搬**进持久目录（[AudiobookStorage.adoptFile]）而不是复制，导入
+/// 成功后它就不在原处了，调用方不用再清理；导入在持久化之前失败时它留在临时目录。
+///
 /// [subtitlePath] 为 null = 没有字幕（纯听书）：不解析、不落字幕文件，但仍生成一份
 /// 只有标题的正文 EPUB，阅读器才打得开；之后补字幕走 `reimportSrtBook`，它会重建正文。
 ///
@@ -58,6 +62,7 @@ Future<SrtBook> importStandaloneSubtitleBook({
   required String title,
   String? author,
   String? subtitlePath,
+  bool adoptSubtitleFile = false,
   List<String> audioPaths = const <String>[],
   bool copyAudio = true,
   required DuplicatePolicy policy,
@@ -118,6 +123,8 @@ Future<SrtBook> importStandaloneSubtitleBook({
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
   final String persistedSrt = subtitlePath == null
       ? ''
+      : adoptSubtitleFile
+      ? await AudiobookStorage.adoptFile(File(subtitlePath), persistDir)
       : await AudiobookStorage.persistFileWithProgress(
           File(subtitlePath),
           persistDir,

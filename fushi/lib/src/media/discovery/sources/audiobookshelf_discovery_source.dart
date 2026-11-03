@@ -365,7 +365,7 @@ List<AudiobookshelfLibraryFile> audiobookshelfEpisodeCompanions(
 
   final String audioStem = stem(audioName);
   return <AudiobookshelfLibraryFile>[
-    if (suggestServerSubtitle(detail, episode: episode)
+    if (suggestServerSubtitle(detail, episode: episode)?.file
         case final AudiobookshelfLibraryFile subtitle)
       subtitle,
     if (detail.libraryFiles

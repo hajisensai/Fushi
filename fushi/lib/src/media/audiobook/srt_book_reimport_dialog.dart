@@ -50,17 +50,25 @@ class SrtBookReimportDialog extends StatefulWidget {
   final SrtBookRepository repo;
 
   @override
-  State<SrtBookReimportDialog> createState() => _SrtBookReimportDialogState();
+  State<SrtBookReimportDialog> createState() => SrtBookReimportDialogState();
 }
 
-class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
+class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
     with ImportFlowMixin<SrtBookReimportDialog> {
   static const Set<String> _subtitleExtensions = kAudiobookSubtitleExtensions;
 
   List<String>? _audioPaths;
   String? _subtitlePath;
   String? _subtitleName;
+
+  /// 正在选文件 / 从服务器取字幕（界面状态）：期间禁用导入、取消与各选择入口。
+  /// 「从服务器选」的 `itemDetail` + 下载要等网络，这段时间若能点导入，导入会拿着
+  /// 旧字幕跑，下载完成时又把它删掉、把字幕路径改写成新的一份——界面显示的字幕与
+  /// 实际导入的不一致，导入还可能读到被删的文件。
   bool _pickerActive = false;
+
+  /// 选择入口与导入按钮是否可用。
+  bool get _idle => !importing && !_pickerActive;
 
   /// 这本书绑在 Audiobookshelf 服务器上时的绑定；只有它在时才出「从服务器选」字幕。
   RemoteAudioBinding? _serverBinding;
@@ -72,10 +80,18 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
   /// 别的字幕或对话框关闭（导入完 / 取消）时就删掉，不在临时目录里越堆越多。
   File? _serverDownload;
 
+  late final Future<void> _serverBindingLoaded;
+
+  /// initState 里异步读绑定的那次查询（完成后「从服务器选」入口才会出现）。测试用
+  /// 它等到确定的完成点，而不是按时长等。
+  @visibleForTesting
+  Future<void> get serverBindingLoaded => _serverBindingLoaded;
+
   @override
   void initState() {
     super.initState();
-    unawaited(_loadServerBinding());
+    _serverBindingLoaded = _loadServerBinding();
+    unawaited(_serverBindingLoaded);
   }
 
   @override
@@ -157,14 +173,14 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
                       title: t.srt_import_pick_audio_files,
                       subtitle: _currentAudioLabel,
                       icon: FushiIcons.audio,
-                      enabled: !importing,
+                      enabled: _idle,
                       onTap: _pickAudioFiles,
                       actions: <Widget>[
                         FushiIconButton(
                           icon: FushiIcons.folderOpen,
                           tooltip: t.srt_import_pick_audio_files,
                           isWideTapArea: true,
-                          onTap: _pickAudioFiles,
+                          onTap: _idle ? _pickAudioFiles : null,
                         ),
                       ],
                     ),
@@ -172,7 +188,7 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
                       title: t.srt_import_pick_subtitle_files,
                       subtitle: _currentSubtitleLabel,
                       icon: FushiIcons.subtitles,
-                      enabled: !importing,
+                      enabled: _idle,
                       onTap: _pickSubtitle,
                       actions: <Widget>[
                         if (_serverBinding != null)
@@ -180,13 +196,13 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
                             icon: FushiIcons.cloudDownload,
                             tooltip: t.srt_book_reimport_subtitle_from_server,
                             isWideTapArea: true,
-                            onTap: _pickServerSubtitle,
+                            onTap: _idle ? _pickServerSubtitle : null,
                           ),
                         FushiIconButton(
                           icon: FushiIcons.folderOpen,
                           tooltip: t.srt_import_pick_subtitle_files,
                           isWideTapArea: true,
-                          onTap: _pickSubtitle,
+                          onTap: _idle ? _pickSubtitle : null,
                         ),
                       ],
                     ),
@@ -227,6 +243,10 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
                   ),
                 ),
               ],
+              if (_pickerActive) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                const LinearProgressIndicator(),
+              ],
               if (importing) ...<Widget>[
                 SizedBox(height: tokens.spacing.card),
                 ImportProgressCard(progress: progress, message: progressMsg),
@@ -237,71 +257,71 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
         actions: <Widget>[
           adaptiveDialogAction(
             context: context,
-            onPressed: importing ? null : () => Navigator.pop(context),
+            onPressed: _idle ? () => Navigator.pop(context) : null,
             child: Text(t.dialog_cancel),
           ),
-          buildImportAction(context, onImport: _doImport),
+          buildImportAction(context, onImport: _doImport, enabled: _idle),
         ],
       ),
     );
   }
 
-  Future<void> _pickAudioFiles() async {
-    if (_pickerActive || importing) return;
-    _pickerActive = true;
+  /// 把一次选择 / 取文件包成界面状态：开始时 [_pickerActive] 置真（禁用导入与
+  /// 其它入口），结束（成败都）时复位。已有一个在跑或正在导入时不开始。
+  Future<void> _runPicker(Future<void> Function() body) async {
+    if (!_idle) return;
+    setState(() => _pickerActive = true);
     try {
-      final AppModel appModel = ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appProvider);
-      final List<String> paths = await pickRealFilePaths(
-        context: context,
-        appModel: appModel,
-        allowedExtensions: AudiobookStorage.audioExtensionsNoDot,
-      );
-      if (!mounted || paths.isEmpty) return;
-      paths.sort(compareAudioFilePath);
-      setState(() => _audioPaths = paths);
+      await body();
     } finally {
-      _pickerActive = false;
+      if (mounted) setState(() => _pickerActive = false);
     }
   }
 
-  Future<void> _pickSubtitle() async {
-    if (_pickerActive || importing) return;
-    _pickerActive = true;
-    try {
-      // 字幕当场被解析成 cue 并复制进持久目录，不以绝对路径长期引用，故用系统文件
-      // 选择器（与 [BookImportDialog._pickSubtitle] 同口径，board 1360）。
-      final String? path = await pickSystemFilePath(
-        context: context,
-        allowedExtensions: _subtitleExtensions,
+  Future<void> _pickAudioFiles() => _runPicker(() async {
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
+    final List<String> paths = await pickRealFilePaths(
+      context: context,
+      appModel: appModel,
+      allowedExtensions: AudiobookStorage.audioExtensionsNoDot,
+    );
+    if (!mounted || paths.isEmpty) return;
+    paths.sort(compareAudioFilePath);
+    setState(() => _audioPaths = paths);
+  });
+
+  Future<void> _pickSubtitle() => _runPicker(() async {
+    // 字幕当场被解析成 cue 并复制进持久目录，不以绝对路径长期引用，故用系统文件
+    // 选择器（与 [BookImportDialog._pickSubtitle] 同口径，board 1360）。
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: _subtitleExtensions,
+    );
+    if (path == null || !mounted) return;
+    final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
+    if (!_subtitleExtensions.contains(ext)) {
+      FushiToast.show(
+        msg: t.import_unsupported_file_format(ext: '.$ext'),
+        severity: ToastSeverity.error,
       );
-      if (path == null || !mounted) return;
-      final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
-      if (!_subtitleExtensions.contains(ext)) {
-        FushiToast.show(
-          msg: t.import_unsupported_file_format(ext: '.$ext'),
-          severity: ToastSeverity.error,
-        );
-        return;
-      }
-      setState(() {
-        _discardServerDownload();
-        _subtitlePath = path;
-        _subtitleName = p.basename(path);
-        _subtitleOrigin = null;
-      });
-    } finally {
-      _pickerActive = false;
+      return;
     }
-  }
+    setState(() {
+      _discardServerDownload();
+      _subtitlePath = path;
+      _subtitleName = p.basename(path);
+      _subtitleOrigin = null;
+    });
+  });
 
   /// 「从服务器选」：列出服务器条目里的字幕（推荐的排第一），取回选中的那份到临时
   /// 目录，与本机选的字幕走同一条 [reimportSrtBook]，绑定上记成服务器来源。
-  Future<void> _pickServerSubtitle() async {
+  Future<void> _pickServerSubtitle() => _runPicker(() async {
     final RemoteAudioBinding? binding = _serverBinding;
-    if (binding == null || _pickerActive || importing) return;
+    if (binding == null) return;
     final AudiobookshelfApi? api = ProviderScope.containerOf(
       context,
       listen: false,
@@ -313,7 +333,6 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
       );
       return;
     }
-    _pickerActive = true;
     try {
       final String? episodeId = binding.episodeId;
       // 播客请求非展开形状（与条目页同口径：展开的单集清单大、慢服务器会超时）。
@@ -369,12 +388,11 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
           severity: ToastSeverity.error,
         );
       }
-    } finally {
-      _pickerActive = false;
     }
-  }
+  });
 
   Future<void> _doImport() async {
+    if (_pickerActive) return;
     if (!_hasChanges) {
       FushiToast.show(
         msg: t.srt_import_missing_input,

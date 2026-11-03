@@ -31,6 +31,8 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart'
+    show AudiobookshelfSubtitleMatch;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -259,26 +261,28 @@ class _AudiobookshelfItemPageState
         );
       } else {
         if (!mounted) return;
-        // 服务器上有对得上的字幕就直接挂上，不再弹选择框；挑不准（没有 / 多份分属不同
-        // 主干 / 只有别的语言）才让用户选。挂错了可在「重新导入」里「从服务器选」换掉。
-        final AudiobookshelfLibraryFile? matched = suggestServerSubtitle(
+        // 服务器上有足够确定的字幕就直接挂上，不再弹选择框；挑不准或只是推荐（多音轨
+        // + 一份对不上名字的字幕）才让用户选。挂错了可在「重新导入」里「从服务器选」换掉。
+        final AudiobookshelfSubtitleMatch? match = suggestServerSubtitle(
           detail,
           episode: episode,
         );
-        final AudiobookshelfSubtitleChoice? choice = matched != null
-            ? ServerSubtitleChoice(matched)
-            : await chooseAudiobookshelfSubtitle(
+        final AudiobookshelfSubtitleChoice? choice =
+            await resolveStreamSubtitleChoice(
+              match: match,
+              ask: () => chooseAudiobookshelfSubtitle(
                 context: context,
                 detail: detail,
                 episode: episode,
-              );
+              ),
+            );
         if (choice == null || !mounted) return;
         book = await _create(service, detail, episode, choice);
         if (book == null) return;
-        if (matched != null) {
+        if (match != null && match.autoAttach) {
           FushiToast.show(
             msg: t.audiobookshelf_subtitle_auto_attached(
-              name: matched.filename,
+              name: match.file.filename,
             ),
             severity: ToastSeverity.info,
           );

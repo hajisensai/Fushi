@@ -27,7 +27,6 @@ void main() {
         selectSidecarNames(
           mainFileName: 'book.epub',
           siblingNames: <String>['book.en.srt', 'book.ja.srt'],
-          langCode: 'ja',
         ).subtitle,
         'book.ja.srt',
       );
@@ -35,7 +34,6 @@ void main() {
         selectSidecarNames(
           mainFileName: 'book.epub',
           siblingNames: <String>['book.jpn.vtt'],
-          langCode: 'ja',
         ).subtitle,
         'book.jpn.vtt',
       );
@@ -43,9 +41,33 @@ void main() {
         selectSidecarNames(
           mainFileName: 'book.epub',
           siblingNames: <String>['book.en.srt', 'other.srt'],
-          langCode: 'ja',
         ).subtitle,
         isNull,
+      );
+    });
+
+    test('视频走完全同名规则：不认语言标记，带点主文件名也只认整名', () {
+      ({String? subtitle, List<String> audio}) video(
+        String main,
+        List<String> siblings,
+      ) => selectSidecarNames(
+        mainFileName: main,
+        siblingNames: siblings,
+        wantAudio: false,
+        subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+        subtitleRule: SidecarSubtitleRule.exactName,
+      );
+      // 有声书规则会把 `Movie.Eng` 拆成「movie + eng」，与 `Movie.srt` 主干不唯一而
+      // 放弃；视频只认完全同名的 `Movie.Eng.srt`。
+      expect(
+        video('Movie.Eng.mkv', <String>['Movie.Eng.srt', 'Movie.srt']).subtitle,
+        'Movie.Eng.srt',
+      );
+      expect(video('movie.mkv', <String>['movie.ja.srt']).subtitle, isNull);
+      expect(video('movie.mkv', <String>['movie.en.srt']).subtitle, isNull);
+      expect(
+        video('movie.mkv', <String>['movie.ass', 'movie.srt']).subtitle,
+        'movie.srt',
       );
     });
 

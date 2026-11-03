@@ -11,12 +11,45 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_model
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
-/// 手抄的有声书字幕集合：一个 Set 字面量里同时出现 'srt' 与 'lrc'。
+/// 手抄的有声书字幕集合：一个集合 / 列表字面量（`{...}` 或 `[...]`，不论左边有没有
+/// 类型标注、字面量带不带 `<String>`）里同时出现 `'srt'` 与 `'lrc'`（带不带点都算）。
 final RegExp _handCopiedSet = RegExp(
-  r"<String>\s*\{[^{}]*'\.?srt'[^{}]*'\.?lrc'[^{}]*\}|<String>\s*\{[^{}]*'\.?lrc'[^{}]*'\.?srt'[^{}]*\}",
+  r"\{(?=[^{}]*'\.?srt')(?=[^{}]*'\.?lrc')[^{}]*\}"
+  r"|\[(?=[^\[\]]*'\.?srt')(?=[^\[\]]*'\.?lrc')[^\[\]]*\]",
 );
 
+/// origin/develop 上 `book_import_dialog.dart` 的手抄写法（类型标注在左边、字面量
+/// 不带类型参数）——旧正则要求 `<String>{` 紧挨着，连这份都抓不到。
+const String _developBookImportDialogSample = '''
+  static const Set<String> _subtitleExtensions = {
+    'srt',
+    'lrc',
+    'vtt',
+    'ass',
+    'ssa',
+  };
+''';
+
 void main() {
+  test('守卫正则认得各种手抄写法，不误伤引用真相源的写法', () {
+    for (final String sample in <String>[
+      _developBookImportDialogSample,
+      "const Set<String> x = <String>{'srt', 'lrc'};",
+      "final Set<String> x = {'.lrc', '.srt', '.vtt'};",
+      "const List<String> x = ['srt', 'vtt', 'ass', 'ssa', 'lrc'];",
+      "const List<String> x = <String>[\n  'lrc',\n  'srt',\n];",
+    ]) {
+      expect(_handCopiedSet.hasMatch(sample), isTrue, reason: sample);
+    }
+    for (final String sample in <String>[
+      'const Set<String> x = kAudiobookSubtitleExtensions;',
+      "const Set<String> video = <String>{'srt', 'vtt', 'ass', 'ssa'};",
+      "if (ext == 'srt') { return 1; } else if (ext == 'lrc') { return 2; }",
+    ]) {
+      expect(_handCopiedSet.hasMatch(sample), isFalse, reason: sample);
+    }
+  });
+
   test('派生集合与真相源一致', () {
     expect(kDragSubtitleExtensions, same(kAudiobookSubtitleExtensions));
     expect(defaultSubtitleExts, same(kAudiobookSubtitleExtensions));

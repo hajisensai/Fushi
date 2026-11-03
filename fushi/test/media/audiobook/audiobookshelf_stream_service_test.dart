@@ -372,7 +372,7 @@ void main() {
 
     test('只有一个字幕文件 → 就是它', () {
       expect(
-        suggestServerSubtitle(detailWith(<String>['whatever.srt']))?.ino,
+        suggestServerSubtitle(detailWith(<String>['whatever.srt']))?.file.ino,
         '30',
       );
     });
@@ -382,7 +382,7 @@ void main() {
         'other.srt',
         'part1.ja.srt',
       ]);
-      expect(suggestServerSubtitle(d)?.filename, 'part1.ja.srt');
+      expect(suggestServerSubtitle(d)?.file.filename, 'part1.ja.srt');
     });
 
     test('其次与标题同名', () {
@@ -390,7 +390,7 @@ void main() {
         'x.srt',
         'Fables.vtt',
       ]);
-      expect(suggestServerSubtitle(d)?.filename, 'Fables.vtt');
+      expect(suggestServerSubtitle(d)?.file.filename, 'Fables.vtt');
     });
 
     test('多个且都对不上 → null（让用户自己选）；没有字幕 → null', () {

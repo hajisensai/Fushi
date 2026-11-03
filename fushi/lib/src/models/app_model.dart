@@ -7648,7 +7648,7 @@ class AppModel with ChangeNotifier {
   DiscoveryImportExecutor get discoveryImportExecutor =>
       _discoveryImportExecutor ??= DiscoveryImportExecutor(
         // 包里有几份字幕时挑学习语言的那份（全 app 只有日语，与视频 sidecar 同源）。
-        subtitleLangCode: JapaneseLanguage.instance.languageCode,
+        subtitleLangCode: kLearningLanguageCode,
         importers: buildProductionDiscoveryImporters(
           db: database,
           srtBookRepo: SrtBookRepository(database),

@@ -11,7 +11,11 @@ void main() {
     test('压缩包一律先解压', () {
       for (final String path in <String>['a.zip', 'b.7z', 'c.RAR']) {
         expect(
-          classifyDiscoveryFile(DiscoveryMediaKind.novel, path),
+          classifyDiscoveryFile(
+            DiscoveryMediaKind.novel,
+            path,
+            subtitleLangCode: 'ja',
+          ),
           isA<ExtractArchivePlan>(),
           reason: path,
         );
@@ -20,19 +24,35 @@ void main() {
 
     test('小说:epub/pdf/文本各走各的导入', () {
       expect(
-        classifyDiscoveryFile(DiscoveryMediaKind.novel, 'x.epub'),
+        classifyDiscoveryFile(
+          DiscoveryMediaKind.novel,
+          'x.epub',
+          subtitleLangCode: 'ja',
+        ),
         isA<ImportEpubPlan>(),
       );
       expect(
-        classifyDiscoveryFile(DiscoveryMediaKind.novel, 'x.pdf'),
+        classifyDiscoveryFile(
+          DiscoveryMediaKind.novel,
+          'x.pdf',
+          subtitleLangCode: 'ja',
+        ),
         isA<ImportPdfPlan>(),
       );
       expect(
-        classifyDiscoveryFile(DiscoveryMediaKind.novel, 'x.txt'),
+        classifyDiscoveryFile(
+          DiscoveryMediaKind.novel,
+          'x.txt',
+          subtitleLangCode: 'ja',
+        ),
         isA<ConvertTextPlan>(),
       );
       expect(
-        (classifyDiscoveryFile(DiscoveryMediaKind.novel, 'x.mp3')
+        (classifyDiscoveryFile(
+                  DiscoveryMediaKind.novel,
+                  'x.mp3',
+                  subtitleLangCode: 'ja',
+                )
                 as UnsupportedPlan)
             .blocker,
         DiscoveryImportBlocker.unknownFileType,
@@ -41,7 +61,11 @@ void main() {
 
     test('游戏:裸 exe 直接登记', () {
       final RegisterGameExesPlan plan =
-          classifyDiscoveryFile(DiscoveryMediaKind.game, r'D:\games\atri.exe')
+          classifyDiscoveryFile(
+                DiscoveryMediaKind.game,
+                r'D:\games\atri.exe',
+                subtitleLangCode: 'ja',
+              )
               as RegisterGameExesPlan;
       expect(plan.exePaths, <String>[r'D:\games\atri.exe']);
     });
@@ -51,20 +75,32 @@ void main() {
       // 不自动转录的宿主在执行时以 audiobookMissingSubtitle 挡下。
       for (final String path in <String>['x.mp3', r'D:\a\vol1.m4b']) {
         final TranscribeAudiobookPlan plan =
-            classifyDiscoveryFile(DiscoveryMediaKind.audiobook, path)
+            classifyDiscoveryFile(
+                  DiscoveryMediaKind.audiobook,
+                  path,
+                  subtitleLangCode: 'ja',
+                )
                 as TranscribeAudiobookPlan;
         expect(plan.audioPaths, <String>[path]);
         expect(plan.contentPath, isNull);
       }
       // 孤立字幕/正文则确实缺音频。
       expect(
-        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.srt')
+        (classifyDiscoveryFile(
+                  DiscoveryMediaKind.audiobook,
+                  'x.srt',
+                  subtitleLangCode: 'ja',
+                )
                 as UnsupportedPlan)
             .blocker,
         DiscoveryImportBlocker.audiobookMissingAudio,
       );
       expect(
-        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.epub')
+        (classifyDiscoveryFile(
+                  DiscoveryMediaKind.audiobook,
+                  'x.epub',
+                  subtitleLangCode: 'ja',
+                )
                 as UnsupportedPlan)
             .blocker,
         DiscoveryImportBlocker.audiobookMissingAudio,
@@ -80,7 +116,7 @@ void main() {
                 '/d/b.txt',
                 '/d/cover.jpg',
                 '/d/c.pdf',
-              ])
+              ], subtitleLangCode: 'ja')
               as MultiPlan;
       expect(plan.children, hasLength(3));
     });
@@ -90,7 +126,7 @@ void main() {
         classifyDiscoveryDirectory(DiscoveryMediaKind.novel, <String>[
           '/d/a.epub',
           '/d/cover.jpg',
-        ]),
+        ], subtitleLangCode: 'ja'),
         isA<ImportEpubPlan>(),
       );
     });
@@ -102,7 +138,7 @@ void main() {
                 '/d/book.epub',
                 '/d/book.srt',
                 '/d/01.mp3',
-              ])
+              ], subtitleLangCode: 'ja')
               as AlignAudiobookPlan;
       expect(plan.contentPath, '/d/book.epub');
       expect(plan.subtitlePath, '/d/book.srt');
@@ -115,7 +151,7 @@ void main() {
                 '/d/a.mp3',
                 '/d/book.txt',
                 '/d/book.lrc',
-              ])
+              ], subtitleLangCode: 'ja')
               as AlignAudiobookPlan;
       expect(plan.contentPath, '/d/book.txt');
     });
@@ -125,7 +161,7 @@ void main() {
         (classifyDiscoveryDirectory(DiscoveryMediaKind.audiobook, <String>[
                   '/d/book.epub',
                   '/d/book.srt',
-                ])
+                ], subtitleLangCode: 'ja')
                 as UnsupportedPlan)
             .blocker,
         DiscoveryImportBlocker.audiobookMissingAudio,
@@ -134,7 +170,7 @@ void main() {
           classifyDiscoveryDirectory(DiscoveryMediaKind.audiobook, <String>[
                 '/d/book.epub',
                 '/d/a.mp3',
-              ])
+              ], subtitleLangCode: 'ja')
               as TranscribeAudiobookPlan;
       expect(transcribe.contentPath, '/d/book.epub');
       expect(transcribe.audioPaths, <String>['/d/a.mp3']);
@@ -142,7 +178,7 @@ void main() {
           classifyDiscoveryDirectory(DiscoveryMediaKind.audiobook, <String>[
                 '/d/book.srt',
                 '/d/a.mp3',
-              ])
+              ], subtitleLangCode: 'ja')
               as SubtitleAudiobookPlan;
       expect(subtitleBook.subtitlePath, '/d/book.srt');
       expect(subtitleBook.audioPaths, <String>['/d/a.mp3']);
@@ -154,7 +190,7 @@ void main() {
                 '/d/Part 10.mp3',
                 '/d/Part 2.mp3',
                 '/d/Part １.mp3',
-              ])
+              ], subtitleLangCode: 'ja')
               as TranscribeAudiobookPlan;
       expect(plan.audioPaths, <String>[
         '/d/Part １.mp3',
@@ -167,7 +203,7 @@ void main() {
       expect(
         (classifyDiscoveryDirectory(DiscoveryMediaKind.game, <String>[
                   '/d/readme.txt',
-                ])
+                ], subtitleLangCode: 'ja')
                 as UnsupportedPlan)
             .blocker,
         DiscoveryImportBlocker.gameNoExecutable,
@@ -203,7 +239,11 @@ void main() {
     test('cbz/cbr/cb7 在漫画域走整包导入', () {
       for (final String path in <String>['v1.cbz', 'v2.CBR', 'v3.cb7']) {
         expect(
-          classifyDiscoveryFile(DiscoveryMediaKind.manga, path),
+          classifyDiscoveryFile(
+            DiscoveryMediaKind.manga,
+            path,
+            subtitleLangCode: 'ja',
+          ),
           isA<ImportMangaArchivePlan>(),
           reason: '$path 应整包交给 MangaArchiveImporter',
         );
@@ -216,18 +256,30 @@ void main() {
       // 判定顺序反了就会解成散图、丢掉 OCR 层，而且不报任何错。
       for (final String path in <String>['vol.rar', 'vol.zip']) {
         expect(
-          classifyDiscoveryFile(DiscoveryMediaKind.manga, path),
+          classifyDiscoveryFile(
+            DiscoveryMediaKind.manga,
+            path,
+            subtitleLangCode: 'ja',
+          ),
           isA<ImportMangaArchivePlan>(),
           reason: '$path 在漫画域必须先于通用解压判定命中',
         );
         // 其它域维持原行为：仍走通用解压。
         expect(
-          classifyDiscoveryFile(DiscoveryMediaKind.novel, path),
+          classifyDiscoveryFile(
+            DiscoveryMediaKind.novel,
+            path,
+            subtitleLangCode: 'ja',
+          ),
           isA<ExtractArchivePlan>(),
           reason: '$path 在小说域行为不得改变',
         );
         expect(
-          classifyDiscoveryFile(DiscoveryMediaKind.game, path),
+          classifyDiscoveryFile(
+            DiscoveryMediaKind.game,
+            path,
+            subtitleLangCode: 'ja',
+          ),
           isA<ExtractArchivePlan>(),
         );
       }
@@ -236,7 +288,11 @@ void main() {
     test('漫画域不认 pdf/epub——它们恒归小说域，免得同一文件按页签进不同的库', () {
       for (final String path in <String>['book.pdf', 'book.epub']) {
         expect(
-          classifyDiscoveryFile(DiscoveryMediaKind.manga, path),
+          classifyDiscoveryFile(
+            DiscoveryMediaKind.manga,
+            path,
+            subtitleLangCode: 'ja',
+          ),
           isA<UnsupportedPlan>(),
         );
       }
@@ -244,7 +300,11 @@ void main() {
 
     test('单张图片不成卷', () {
       expect(
-        classifyDiscoveryFile(DiscoveryMediaKind.manga, 'page01.jpg'),
+        classifyDiscoveryFile(
+          DiscoveryMediaKind.manga,
+          'page01.jpg',
+          subtitleLangCode: 'ja',
+        ),
         isA<UnsupportedPlan>(),
       );
     });
@@ -253,6 +313,7 @@ void main() {
       final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
         DiscoveryMediaKind.manga,
         <String>['/m/v1.cbz', '/m/v2.cbz', '/m/cover.jpg'],
+        subtitleLangCode: 'ja',
       );
       expect(plan, isA<MultiPlan>());
       expect((plan as MultiPlan).children, hasLength(2));
@@ -269,7 +330,7 @@ void main() {
         classifyDiscoveryDirectory(DiscoveryMediaKind.manga, <String>[
           '/m/only.cbz',
           '/m/readme.txt',
-        ]),
+        ], subtitleLangCode: 'ja'),
         isA<ImportMangaArchivePlan>(),
       );
     });
@@ -279,7 +340,7 @@ void main() {
         classifyDiscoveryDirectory(DiscoveryMediaKind.manga, <String>[
           '/m/a.txt',
           '/m/b.jpg',
-        ]),
+        ], subtitleLangCode: 'ja'),
         isA<UnsupportedPlan>(),
       );
     });
@@ -290,7 +351,11 @@ void main() {
   group('分类结果不依赖输入清单顺序', () {
     List<String> plannedPaths(List<String> input) {
       final MultiPlan plan =
-          classifyDiscoveryDirectory(DiscoveryMediaKind.novel, input)
+          classifyDiscoveryDirectory(
+                DiscoveryMediaKind.novel,
+                input,
+                subtitleLangCode: 'ja',
+              )
               as MultiPlan;
       return <String>[
         for (final DiscoveryImportPlan child in plan.children)
@@ -423,6 +488,18 @@ void main() {
         ]),
         isA<TranscribeAudiobookPlan>(),
       );
+      // 多音轨只配了其中一条的分轨字幕（缺另一份）：同样不能当整本书的时间轴。
+      expect(
+        classify(<String>['/d/part1.mp3', '/d/part2.mp3', '/d/part1.srt']),
+        isA<TranscribeAudiobookPlan>(),
+      );
+      // 多音轨 + 一份整本书字幕（对不上音轨名）：下载包没有用户可问，照用。
+      expect(
+        subtitleOf(
+          classify(<String>['/d/01.mp3', '/d/02.mp3', '/d/Whole Book.srt']),
+        ),
+        '/d/Whole Book.srt',
+      );
     });
 
     test('游戏:同层同体积平局按路径定二,与输入顺序无关', () {
@@ -444,6 +521,7 @@ void main() {
             DiscoveryMediaKind.game,
             input,
             fileSizes: sizes,
+            subtitleLangCode: 'ja',
           ),
           isA<RegisterGameExesPlan>().having(
             (RegisterGameExesPlan p) => p.exePaths,
@@ -477,7 +555,11 @@ void main() {
         ],
       ]) {
         final MultiPlan plan =
-            classifyDiscoveryDirectory(DiscoveryMediaKind.manga, input)
+            classifyDiscoveryDirectory(
+                  DiscoveryMediaKind.manga,
+                  input,
+                  subtitleLangCode: 'ja',
+                )
                 as MultiPlan;
         expect(
           <String>[

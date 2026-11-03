@@ -19,7 +19,8 @@ import 'dart:typed_data';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show kLearningLanguageCode;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -495,6 +496,7 @@ class LibraryCtlImporter {
         DiscoveryMediaKind.game,
         files,
         fileSizes: sizes,
+        subtitleLangCode: kLearningLanguageCode,
       );
       if (plan is! RegisterGameExesPlan) {
         return _unsupported(
@@ -578,7 +580,7 @@ class LibraryCtlImporter {
     final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
       DiscoveryMediaKind.audiobook,
       files,
-      subtitleLangCode: JapaneseLanguage.instance.languageCode,
+      subtitleLangCode: kLearningLanguageCode,
     );
     if (plan is TranscribeAudiobookPlan) {
       return _queueTranscription(label, plan);

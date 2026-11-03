@@ -29,6 +29,8 @@ import 'dart:typed_data';
 import 'package:args/args.dart';
 import 'package:fushi_audio/fushi_audio_core.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary_core.dart'
+    show kLearningLanguageCode;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_isbn_backfill.dart';
@@ -229,6 +231,7 @@ class _Importer {
   _Importer(this.db, this.log, this.err)
     : _executor = DiscoveryImportExecutor(
         importers: buildServerDiscoveryImporters(db),
+        subtitleLangCode: kLearningLanguageCode,
       );
 
   final FushiDatabase db;

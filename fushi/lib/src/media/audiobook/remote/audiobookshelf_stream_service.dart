@@ -9,7 +9,8 @@ import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show kLearningLanguageCode;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
@@ -42,17 +43,28 @@ class ServerSubtitleChoice extends AudiobookshelfSubtitleChoice {
   final AudiobookshelfLibraryFile file;
 }
 
-/// app 侧的服务器字幕推荐：规则见 [matchAudiobookshelfSubtitle]；学习语言取日语（全
-/// app 没有别的学习语言，与视频 sidecar 同源）。非 null = 流式建书时直接挂上、下载
-/// 单集时随附；null = 让用户选。
-AudiobookshelfLibraryFile? suggestServerSubtitle(
+/// app 侧的服务器字幕推荐：规则见 [matchAudiobookshelfSubtitle]；学习语言取
+/// [kLearningLanguageCode]。`autoAttach` = 流式建书时直接挂上；否则只是选择框里的
+/// 第一项；null = 没有推荐。
+AudiobookshelfSubtitleMatch? suggestServerSubtitle(
   AudiobookshelfItemDetail detail, {
   AudiobookshelfEpisode? episode,
 }) => matchAudiobookshelfSubtitle(
   detail,
   episode: episode,
-  langCode: JapaneseLanguage.instance.languageCode,
+  langCode: kLearningLanguageCode,
 );
+
+/// 流式建书用哪份字幕：推荐**足够确定**时直接挂上服务器那份（不弹框），否则交给
+/// [ask]（选择框，推荐的排第一）。条目页的唯一入口，抽成纯函数供行为测试。
+Future<AudiobookshelfSubtitleChoice?> resolveStreamSubtitleChoice({
+  required AudiobookshelfSubtitleMatch? match,
+  required Future<AudiobookshelfSubtitleChoice?> Function() ask,
+}) async {
+  if (match != null && match.autoAttach)
+    return ServerSubtitleChoice(match.file);
+  return ask();
+}
 
 class AudiobookshelfStreamService {
   AudiobookshelfStreamService({
@@ -124,8 +136,10 @@ class AudiobookshelfStreamService {
 
     final String? subtitlePath;
     final String origin;
-    // 从服务器取下来的临时字幕：导入时会复制进这本书的持久目录，导完（成败都）删掉。
-    File? downloaded;
+    // 从服务器取下来的临时字幕：导入的持久化步骤把它**搬**进这本书的持久目录
+    // （adoptSubtitleFile），这里不再在 finally 里删——删除失败会盖掉已成功落库的
+    // 建书结果。导入在持久化前失败时它留在临时目录（随临时目录清理）。
+    bool adoptSubtitleFile = false;
     switch (subtitle) {
       case LocalSubtitleChoice(:final String path):
         subtitlePath = path;
@@ -134,7 +148,7 @@ class AudiobookshelfStreamService {
         subtitlePath = null;
         origin = RemoteAudioBinding.subtitleOriginNone;
       case ServerSubtitleChoice(:final AudiobookshelfLibraryFile file):
-        downloaded = await downloadAudiobookshelfSubtitle(
+        final File downloaded = await downloadAudiobookshelfSubtitle(
           api: api,
           itemId: item.id,
           file: file,
@@ -142,35 +156,31 @@ class AudiobookshelfStreamService {
         );
         subtitlePath = downloaded.path;
         origin = RemoteAudioBinding.subtitleOriginServer(file.ino);
+        adoptSubtitleFile = true;
     }
 
     final String title = episode == null
         ? item.title
         : '${item.title} – ${episode.title}';
-    try {
-      return await importAudiobookshelfSubtitleBook(
-        db: db,
-        repo: _books,
-        bindings: _bindings,
-        serverConfigId: serverConfigId,
-        itemId: item.id,
-        episodeId: episode?.id,
-        tracks: tracks,
-        title: title,
-        author: item.authorName,
-        subtitlePath: subtitlePath,
-        subtitleOrigin: origin,
-        policy: policy,
-        tempDir: _tempDir,
-        persistCover: (Directory persistDir) =>
-            _persistCover(persistDir, item.id),
-        onProgress: onProgress,
-      );
-    } finally {
-      if (downloaded != null && await downloaded.exists()) {
-        await downloaded.delete();
-      }
-    }
+    return importAudiobookshelfSubtitleBook(
+      db: db,
+      repo: _books,
+      bindings: _bindings,
+      serverConfigId: serverConfigId,
+      itemId: item.id,
+      episodeId: episode?.id,
+      tracks: tracks,
+      title: title,
+      author: item.authorName,
+      subtitlePath: subtitlePath,
+      adoptSubtitleFile: adoptSubtitleFile,
+      subtitleOrigin: origin,
+      policy: policy,
+      tempDir: _tempDir,
+      persistCover: (Directory persistDir) =>
+          _persistCover(persistDir, item.id),
+      onProgress: onProgress,
+    );
   }
 
   /// 封面是免鉴权路由（`/api/items/:id/cover`）。取不到不算失败——书没封面照样能用。

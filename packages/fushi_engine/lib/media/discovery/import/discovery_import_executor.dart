@@ -54,15 +54,15 @@ class DiscoveryImportExecutor {
   DiscoveryImportExecutor({
     required DiscoveryDomainImporters importers,
     DiscoveryArchiveExtractor? extractor,
-    this.subtitleLangCode = '',
+    required this.subtitleLangCode,
   }) : _importers = importers,
        _extractor = extractor ?? DiscoveryArchiveExtractor();
 
   final DiscoveryDomainImporters _importers;
   final DiscoveryArchiveExtractor _extractor;
 
-  /// 有声书包里有几份字幕时优先的学习语言（宿主注入；空 = 没有语言偏好），
-  /// 见 [classifyDiscoveryDirectory]。
+  /// 有声书包里有几份字幕时优先的学习语言（宿主必须显式注入，通常是
+  /// `kLearningLanguageCode`），见 [classifyDiscoveryDirectory]。
   final String subtitleLangCode;
 
   /// [DiscoveryDownloadQueue] 的 importer 端口（`DiscoveryDownloadImporter`）。

@@ -109,15 +109,19 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
   /// 「导入」确认按钮：导入中禁用并渲 spinner + 文案，否则渲 [t.dialog_import]。
   /// 两个导入对话框逐字相同的 action 收敛到此；Enter/默认键语义由
   /// `adaptiveDialogAction(isDefaultAction: true)` 原样保留，焦点行为不变。
+  ///
+  /// [enabled] 为 false 时按钮同样禁用（对话框还有别的异步步骤在跑，如正在取文件，
+  /// 这时开始导入会读到半途被改写的输入）。
   Widget buildImportAction(
     BuildContext context, {
     required VoidCallback onImport,
+    bool enabled = true,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return adaptiveDialogAction(
       context: context,
       isDefaultAction: true,
-      onPressed: importing ? null : onImport,
+      onPressed: importing || !enabled ? null : onImport,
       child: importing
           ? Row(
               mainAxisSize: MainAxisSize.min,

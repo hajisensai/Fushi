@@ -232,7 +232,7 @@ bool isDiscoveryMangaArchivePath(String path) =>
 DiscoveryImportPlan classifyDiscoveryFile(
   DiscoveryMediaKind kind,
   String filePath, {
-  String subtitleLangCode = '',
+  required String subtitleLangCode,
 }) {
   // 漫画载体必须**先于**通用解压判定：`.rar`/`.zip` 两边都命中，被通用
   // 解压器截胡就会丢掉包内的 `.mokuro` OCR 层（见
@@ -273,13 +273,14 @@ DiscoveryImportPlan classifyDiscoveryFile(
 /// [fileSizes] 供游戏 exe 启发式挑主程序（字节数，缺省时全按 0）。
 ///
 /// [subtitleLangCode]：有声书有几份字幕时优先带这个学习语言标记的（如 `ja` 认
-/// `book.ja.srt` / `book.jpn.srt`），别的语言的不挑；空 = 没有语言偏好。规则见
-/// [pickAudiobookSubtitle]。
+/// `book.ja.srt` / `book.jpn.srt`），别的语言的不挑；规则见 [pickAudiobookSubtitle]。
+/// 必填、没有默认值：每个宿主都要显式传学习语言（`kLearningLanguageCode`），漏传
+/// 不能静默退化成「没有语言偏好」（`Book.en.srt` 按字典序赢过 `Book.ja.srt`）。
 DiscoveryImportPlan classifyDiscoveryDirectory(
   DiscoveryMediaKind kind,
   List<String> filePaths, {
   Map<String, int> fileSizes = const <String, int>{},
-  String subtitleLangCode = '',
+  required String subtitleLangCode,
 }) {
   // 文件系统的枚举顺序不是稳定输入：`Directory.list` 明说不保证顺序，
   // NTFS 实际按名字返回、ext4 是目录哈希序。而本函数的输出顺序是**用户可见**的：
@@ -319,14 +320,16 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
       // 几份字幕时按有声书字幕的唯一规则挑（与 Audiobookshelf / 本机导入同一条）：
       // 跟音频同名的、学习语言标记的优先；每个音轨各一份 / 只有别的语言的 → 挑不准，
       // 当作没有字幕（转录），不再拿字典序第一份去当整本书的时间轴。
-      final int? subtitleIndex = pickAudiobookSubtitle(
+      // 这里没有用户可问：不够确定的推荐（多音轨 + 一份对不上名字的字幕）也照用，
+      // 不用它就只能白跑几个小时转录；分轨字幕在规则里已经排除。
+      final AudiobookSubtitlePick? subtitlePick = pickAudiobookSubtitle(
         audioNames: audio,
         subtitleNames: subtitles,
         langCode: subtitleLangCode,
       );
-      final String? subtitle = subtitleIndex == null
+      final String? subtitle = subtitlePick == null
           ? null
-          : subtitles[subtitleIndex];
+          : subtitles[subtitlePick.index];
       // EPUB 优先当正文；没有 EPUB 再退纯文本。
       if (content == null) {
         for (final String path in paths) {

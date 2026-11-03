@@ -10,14 +10,14 @@ void main() {
     String langCode = 'ja',
     bool strict = false,
   }) {
-    final int? i = pickAudiobookSubtitle(
+    final AudiobookSubtitlePick? picked = pickAudiobookSubtitle(
       audioNames: audio,
       subtitleNames: subtitles,
       title: title,
       langCode: langCode,
       strictPerAudio: strict,
     );
-    return i == null ? null : subtitles[i];
+    return picked == null ? null : subtitles[picked.index];
   }
 
   group('splitAudiobookSubtitleName', () {
@@ -147,6 +147,51 @@ void main() {
         isNull,
       );
       expect(pick(<String>['01.mp3'], <String>['a.srt', 'b.srt']), isNull);
+    });
+
+    test('多音轨：只和其中一条同名的分轨字幕不当整本书的时间轴', () {
+      const List<String> tracks = <String>['part1.mp3', 'part2.mp3'];
+      expect(pick(tracks, <String>['part1.srt']), isNull);
+      expect(pick(tracks, <String>['part2.ja.srt', 'part2.srt']), isNull);
+      // 分轨字幕剔掉后，标题同名的整本字幕照常挑中。
+      expect(
+        pick(tracks, <String>['part1.srt', 'My Book.srt'], title: 'My Book'),
+        'My Book.srt',
+      );
+    });
+
+    test('置信度：兜底且多音轨只算推荐，其余可直接挂', () {
+      AudiobookSubtitlePick? raw(
+        List<String> audio,
+        List<String> subtitles, {
+        String? title,
+      }) => pickAudiobookSubtitle(
+        audioNames: audio,
+        subtitleNames: subtitles,
+        title: title,
+        langCode: 'ja',
+      );
+      final AudiobookSubtitlePick? bonus = raw(
+        <String>['part1.mp3', 'part2.mp3'],
+        <String>['Bonus.srt'],
+      );
+      expect(bonus?.basis, AudiobookSubtitleBasis.onlyStem);
+      expect(bonus?.confident, isFalse);
+      expect(
+        raw(<String>['book.mp3'], <String>['Bonus.srt'])?.confident,
+        isTrue,
+      );
+      expect(
+        raw(<String>['book.mp3'], <String>['book.srt'])?.basis,
+        AudiobookSubtitleBasis.audioName,
+      );
+      final AudiobookSubtitlePick? byTitle = raw(
+        <String>['01.mp3', '02.mp3'],
+        <String>['My Book.srt'],
+        title: 'My Book',
+      );
+      expect(byTitle?.basis, AudiobookSubtitleBasis.title);
+      expect(byTitle?.confident, isTrue);
     });
 
     test('不是有声书字幕格式的文件一律忽略', () {

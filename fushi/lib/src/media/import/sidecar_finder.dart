@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show kLearningLanguageCode;
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_pick.dart';
 import 'package:path/path.dart' as p;
@@ -22,6 +23,18 @@ class SidecarMatch {
 /// 默认字幕扩展集（书籍导入用，含 lrc）。视频导入传入不含 lrc 的子集，与视频
 /// 手选字幕白名单（srt/vtt/ass/ssa）保持一致——避免"自动挂载接受手选拒绝的格式"。
 const Set<String> defaultSubtitleExts = kAudiobookSubtitleExtensions;
+
+/// 同名字幕怎么认：有声书与视频是两条规则，按调用域显式选，不混用。
+enum SidecarSubtitleRule {
+  /// 有声书 / 书籍：有声书字幕唯一规则 [pickAudiobookSubtitle]（严格同主干，认
+  /// `book.ja.srt` / `book.jpn.srt` 这类学习语言标记，别的语言的不挂）。
+  audiobook,
+
+  /// 视频：只认去扩展名后与主文件**完全同名**的（`Movie.Eng.mkv` 配
+  /// `Movie.Eng.srt`），多份按格式优先级择一。视频字幕的语言判别另有一套
+  /// （`media/video/subtitle/`），这里不把有声书的语言规则套到视频上。
+  exactName,
+}
 
 /// 同前缀多段音频判定：stem 之后的余部以分隔符（空白/`.`/`_`/`-`）或数字开头，
 /// 如 `book 01` / `book-02` / `book_03` / `book01`，借此收多段、排除 `bookkeeping`。
@@ -50,17 +63,20 @@ bool _isSidecarAudio(String name) {
 /// 拼回绝对路径。
 ///
 /// 匹配规则见 `docs/superpowers/specs/2026-06-06-import-sidecar-auto-attach-design.md`：
-/// - 字幕：与主文件同主干（`book.srt`，或带语言标记的 `book.ja.srt` / `book.jpn.srt`），
-///   按有声书字幕唯一规则 [pickAudiobookSubtitle] 择一：学习语言 [langCode] 标记的 >
-///   无标记的，别的语言的不挂；同名次按格式优先级（srt > vtt > ass > ssa > lrc）。
-///   [langCode] 缺省为日语（全 app 唯一的学习语言）；
+/// - 字幕按 [subtitleRule]：
+///   - [SidecarSubtitleRule.audiobook]（缺省，书籍导入）：与主文件同主干（`book.srt`，
+///     或带语言标记的 `book.ja.srt` / `book.jpn.srt`），按有声书字幕唯一规则
+///     [pickAudiobookSubtitle] 择一：学习语言 [kLearningLanguageCode] 标记的 > 无标记
+///     的，别的语言的不挂；同名次按格式优先级（srt > vtt > ass > ssa > lrc）；
+///   - [SidecarSubtitleRule.exactName]（视频）：去扩展名后完全等于主文件 stem，多命中
+///     按同一格式优先级择一；
 /// - 音频：完全同名，或同前缀多段（[_multipartSuffix]）。
 ({String? subtitle, List<String> audio}) selectSidecarNames({
   required String mainFileName,
   required List<String> siblingNames,
   bool wantAudio = true,
   Set<String> subtitleExts = defaultSubtitleExts,
-  String? langCode,
+  SidecarSubtitleRule subtitleRule = SidecarSubtitleRule.audiobook,
 }) {
   final String stem = p.basenameWithoutExtension(mainFileName).toLowerCase();
   if (stem.isEmpty) return (subtitle: null, audio: const <String>[]);
@@ -91,16 +107,45 @@ bool _isSidecarAudio(String name) {
   }
 
   audio.sort(compareAudioFilePath);
-  final int? subtitle = pickAudiobookSubtitle(
-    audioNames: <String>[mainFileName],
-    subtitleNames: subtitles,
-    langCode: langCode ?? JapaneseLanguage.instance.languageCode,
-    strictPerAudio: true,
-  );
   return (
-    subtitle: subtitle == null ? null : subtitles[subtitle],
+    subtitle: switch (subtitleRule) {
+      SidecarSubtitleRule.audiobook => _pickAudiobookSidecar(
+        mainFileName,
+        subtitles,
+      ),
+      SidecarSubtitleRule.exactName => _pickExactNameSidecar(stem, subtitles),
+    },
     audio: audio,
   );
+}
+
+String? _pickAudiobookSidecar(String mainFileName, List<String> subtitles) {
+  final AudiobookSubtitlePick? pick = pickAudiobookSubtitle(
+    audioNames: <String>[mainFileName],
+    subtitleNames: subtitles,
+    langCode: kLearningLanguageCode,
+    strictPerAudio: true,
+  );
+  return pick == null ? null : subtitles[pick.index];
+}
+
+/// 视频的同名字幕：去扩展名后与 [stem] 完全相同，多命中按
+/// [kAudiobookSubtitleExtensions] 的格式优先级择一（不认语言标记）。
+String? _pickExactNameSidecar(String stem, List<String> subtitles) {
+  final List<String> priority = kAudiobookSubtitleExtensions.toList();
+  String? best;
+  int bestRank = 1 << 30;
+  for (final String name in subtitles) {
+    if (p.basenameWithoutExtension(name).toLowerCase() != stem) continue;
+    final int rank = priority.indexOf(
+      p.extension(name).toLowerCase().replaceFirst('.', ''),
+    );
+    if (rank >= 0 && rank < bestRank) {
+      bestRank = rank;
+      best = name;
+    }
+  }
+  return best;
 }
 
 /// 薄 IO 包装：列出 [mainFilePath] 所在目录 → [selectSidecarNames] → 拼回绝对路径。
@@ -111,6 +156,7 @@ Future<SidecarMatch> findSidecars(
   String mainFilePath, {
   bool wantAudio = true,
   Set<String> subtitleExts = defaultSubtitleExts,
+  SidecarSubtitleRule subtitleRule = SidecarSubtitleRule.audiobook,
 }) async {
   try {
     final Directory dir = File(mainFilePath).parent;
@@ -126,6 +172,7 @@ Future<SidecarMatch> findSidecars(
       siblingNames: names,
       wantAudio: wantAudio,
       subtitleExts: subtitleExts,
+      subtitleRule: subtitleRule,
     );
 
     return SidecarMatch(

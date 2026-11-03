@@ -3,11 +3,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 
 AudiobookshelfItem _item({String? author, double? seconds}) =>
@@ -215,16 +217,51 @@ void main() {
     });
   });
 
-  test('流式建书：服务器上有对得上的字幕就直接挂上，对不上才弹选择框（源码守卫）', () {
-    final String source = File(
-      'lib/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart',
-    ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
-    expect(
-      source,
-      contains(
-        'finalAudiobookshelfLibraryFile?matched=suggestServerSubtitle(detail,episode:episode,);'
-        'finalAudiobookshelfSubtitleChoice?choice=matched!=null?ServerSubtitleChoice(matched):awaitchooseAudiobookshelfSubtitle(',
-      ),
-    );
+  group('流式建书的字幕选择（resolveStreamSubtitleChoice）', () {
+    final AudiobookshelfLibraryFile file = AudiobookshelfLibraryFile.parse(
+      <String, Object?>{
+        'ino': '30',
+        'metadata': <String, Object?>{'filename': 'Book.ja.srt'},
+      },
+    )!;
+    const LocalSubtitleChoice asked = LocalSubtitleChoice('/picked.srt');
+
+    Future<(AudiobookshelfSubtitleChoice?, int)> resolve(
+      AudiobookshelfSubtitleMatch? match,
+    ) async {
+      int asks = 0;
+      final AudiobookshelfSubtitleChoice? choice =
+          await resolveStreamSubtitleChoice(
+            match: match,
+            ask: () async {
+              asks++;
+              return asked;
+            },
+          );
+      return (choice, asks);
+    }
+
+    test('足够确定的推荐直接挂上服务器那份，不弹选择框', () async {
+      final (AudiobookshelfSubtitleChoice? choice, int asks) = await resolve(
+        AudiobookshelfSubtitleMatch(file: file, autoAttach: true),
+      );
+      expect(asks, 0);
+      expect(choice, isA<ServerSubtitleChoice>());
+      expect((choice! as ServerSubtitleChoice).file.ino, '30');
+    });
+
+    test('只是推荐（多音轨 + 对不上名字的字幕）或没有推荐：弹选择框', () async {
+      for (final AudiobookshelfSubtitleMatch? match
+          in <AudiobookshelfSubtitleMatch?>[
+            AudiobookshelfSubtitleMatch(file: file, autoAttach: false),
+            null,
+          ]) {
+        final (AudiobookshelfSubtitleChoice? choice, int asks) = await resolve(
+          match,
+        );
+        expect(asks, 1);
+        expect(choice, same(asked));
+      }
+    });
   });
 }

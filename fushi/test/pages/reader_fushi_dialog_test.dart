@@ -122,10 +122,12 @@ void main() {
           ),
         ),
       );
-      // 绑定是 initState 里异步读出来的。
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 50)),
-      );
+      // 绑定是 initState 里异步读出来的：等那次查询本身完成，再重建一帧。
+      final SrtBookReimportDialogState state = tester
+          .state<SrtBookReimportDialogState>(
+            find.byType(SrtBookReimportDialog),
+          );
+      await tester.runAsync(() => state.serverBindingLoaded);
       await tester.pump();
     }
 

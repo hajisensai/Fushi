@@ -26,7 +26,7 @@ List<AudiobookshelfLibraryFile> orderedServerSubtitles(
   final AudiobookshelfLibraryFile? suggested = suggestServerSubtitle(
     detail,
     episode: episode,
-  );
+  )?.file;
   return <AudiobookshelfLibraryFile>[
     if (suggested != null) suggested,
     for (final AudiobookshelfLibraryFile file in detail.subtitleFiles)

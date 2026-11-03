@@ -137,6 +137,54 @@ abstract final class AudiobookStorage {
     return dir;
   }
 
+  /// [persistDir] 里给 [baseName] 找一个不冲突的落点。
+  ///
+  /// Avoid silently overwriting a same-basename file already persisted in
+  /// this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
+  /// Append a counter on collision so the positional audioFileIndex maps to
+  /// distinct files instead of both entries pointing at the last writer.
+  static String _freeDestIn(Directory persistDir, String baseName) {
+    if (baseName.contains('..')) {
+      throw ArgumentError('Invalid filename: $baseName');
+    }
+    String dest = p.join(persistDir.path, baseName);
+    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
+      throw ArgumentError('Path traversal detected: $dest');
+    }
+    if (File(dest).existsSync()) {
+      final String ext = p.extension(baseName);
+      final String stem = p.basenameWithoutExtension(baseName);
+      int counter = 1;
+      do {
+        dest = p.join(persistDir.path, '$stem _$counter$ext');
+        counter++;
+      } while (File(dest).existsSync());
+    }
+    return dest;
+  }
+
+  /// 把调用方交过来的**临时文件** [src] 收进 [persistDir]（不转码），返回落点。
+  ///
+  /// 与 [persistFileWithProgress]（复制、源文件归调用方）不同，这里持久化步骤接管
+  /// 源文件的生命周期：同卷直接 rename（源文件就此不在了）；rename 不可行（跨卷）
+  /// 时复制过去、复制校验成功后再删源——删除失败照常抛，此时还没落库，整次导入按
+  /// 失败处理。调用方因此不用在 finally 里清理，也就不会出现「清理失败盖掉已成功
+  /// 的导入结果」。
+  static Future<String> adoptFile(File src, Directory persistDir) async {
+    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
+      return src.path;
+    }
+    final String dest = _freeDestIn(persistDir, p.basename(src.path));
+    try {
+      return (await src.rename(dest)).path;
+    } on FileSystemException {
+      // 跨卷：rename 做不到，退到复制 + 删源。
+      final String copied = await persistFileWithProgress(src, persistDir);
+      await src.delete();
+      return copied;
+    }
+  }
+
   static Future<String> persistFileWithProgress(
     File src,
     Directory persistDir, {
@@ -151,26 +199,7 @@ abstract final class AudiobookStorage {
     final String baseName = transcode
         ? '${p.basenameWithoutExtension(src.path)}.flac'
         : p.basename(src.path);
-    if (baseName.contains('..')) {
-      throw ArgumentError('Invalid filename: $baseName');
-    }
-    String dest = p.join(persistDir.path, baseName);
-    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
-      throw ArgumentError('Path traversal detected: $dest');
-    }
-    // Avoid silently overwriting a same-basename file already persisted in
-    // this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
-    // Append a counter on collision so the positional audioFileIndex maps to
-    // distinct files instead of both entries pointing at the last writer.
-    if (File(dest).existsSync()) {
-      final String ext = p.extension(baseName);
-      final String stem = p.basenameWithoutExtension(baseName);
-      int counter = 1;
-      do {
-        dest = p.join(persistDir.path, '$stem _$counter$ext');
-        counter++;
-      } while (File(dest).existsSync());
-    }
+    final String dest = _freeDestIn(persistDir, baseName);
     final int totalBytes = await src.length();
     if (transcode) return _transcodeToFlac(src, dest, totalBytes, onProgress);
 

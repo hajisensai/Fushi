@@ -61,11 +61,16 @@ AudiobookshelfItemDetail _podcast(List<String> files) =>
       ],
     })!;
 
+AudiobookshelfSubtitleMatch? _bookMatch(
+  List<String> files, {
+  List<String>? tracks,
+}) => matchAudiobookshelfSubtitle(
+  tracks == null ? _book(files) : _book(files, tracks: tracks),
+  langCode: 'ja',
+);
+
 String? _bookPick(List<String> files, {List<String>? tracks}) =>
-    matchAudiobookshelfSubtitle(
-      tracks == null ? _book(files) : _book(files, tracks: tracks),
-      langCode: 'ja',
-    )?.filename;
+    _bookMatch(files, tracks: tracks)?.file.filename;
 
 String? _episodePick(List<String> files, {String episode = 'ep_e1'}) {
   final AudiobookshelfItemDetail detail = _podcast(files);
@@ -75,7 +80,7 @@ String? _episodePick(List<String> files, {String episode = 'ep_e1'}) {
       (AudiobookshelfEpisode e) => e.id == episode,
     ),
     langCode: 'ja',
-  )?.filename;
+  )?.file.filename;
 }
 
 void main() {
@@ -130,6 +135,41 @@ void main() {
         isNull,
       );
       expect(_bookPick(<String>['a.srt', 'b.srt']), isNull);
+    });
+
+    test('多音轨只配了其中一条的分轨字幕 → null，不当整本书的时间轴', () {
+      const List<String> tracks = <String>['part1.mp3', 'part2.mp3'];
+      expect(_bookPick(<String>['part1.srt'], tracks: tracks), isNull);
+      expect(_bookPick(<String>['part1.ja.srt'], tracks: tracks), isNull);
+    });
+
+    test('多音轨 + 一份对不上名字的字幕：只推荐（排第一），不自动挂', () {
+      const List<String> tracks = <String>['part1.mp3', 'part2.mp3'];
+      final AudiobookshelfSubtitleMatch? bonus = _bookMatch(<String>[
+        'Bonus.srt',
+      ], tracks: tracks);
+      expect(bonus?.file.filename, 'Bonus.srt');
+      expect(bonus?.autoAttach, isFalse);
+      // 分轨字幕剔掉后剩下的一份同样只是推荐。
+      final AudiobookshelfSubtitleMatch? rest = _bookMatch(<String>[
+        'part1.srt',
+        'whole.srt',
+      ], tracks: tracks);
+      expect(rest?.file.filename, 'whole.srt');
+      expect(rest?.autoAttach, isFalse);
+    });
+
+    test('自动挂只在高置信度：同名音轨 / 标题同名 / 单音轨兜底', () {
+      expect(_bookMatch(<String>['part1.srt'])?.autoAttach, isTrue);
+      expect(_bookMatch(<String>['x.srt', 'Fables.lrc'])?.autoAttach, isTrue);
+      expect(
+        _bookMatch(
+          <String>['Fables.srt'],
+          tracks: <String>['a.mp3', 'b.mp3'],
+        )?.autoAttach,
+        isTrue,
+      );
+      expect(_bookMatch(<String>['whole.srt'])?.autoAttach, isTrue);
     });
 
     test('没有字幕 → null；非字幕文件不算', () {

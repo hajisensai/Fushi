@@ -50,21 +50,57 @@ int? _langRank(String? lang, String langCode) {
   return null;
 }
 
-/// 在 [subtitleNames]（文件名或路径）里挑出该配给 [audioNames] 的那份，返回它在
-/// [subtitleNames] 里的下标；挑不准返回 null（交给用户选 / 转录）。
+/// 一份字幕为什么被挑中（决定能不能不问用户直接挂上，见 [AudiobookSubtitlePick.confident]）。
+enum AudiobookSubtitleBasis {
+  /// 主干与音频同名（多音轨时须与**每条**音轨同名，见 [pickAudiobookSubtitle]）。
+  audioName,
+
+  /// 主干与条目标题同名。
+  title,
+
+  /// 兜底：剩下的字幕全是同一个主干，但跟音频 / 标题都对不上。
+  onlyStem,
+}
+
+/// [pickAudiobookSubtitle] 的结论：挑中的下标 + 依据。
+final class AudiobookSubtitlePick {
+  const AudiobookSubtitlePick({
+    required this.index,
+    required this.basis,
+    required this.confident,
+  });
+
+  /// 在 `subtitleNames` 里的下标。
+  final int index;
+
+  final AudiobookSubtitleBasis basis;
+
+  /// 足够确定、可以**不问用户**直接挂上：同名（音频 / 标题），或兜底但整本书只有
+  /// 一条音频。多音轨 + 一份对不上名字的字幕（`Bonus.srt`）只算「推荐」：有用户在场
+  /// 的入口（Audiobookshelf 流式建书）把它排第一让用户确认，不静默挂上；没有用户的
+  /// 入口（下载包自动导入）照样用它——不用它就只能白跑几个小时转录。
+  final bool confident;
+}
+
+/// 在 [subtitleNames]（文件名或路径）里挑出该配给 [audioNames] 的那份；挑不准返回
+/// null（交给用户选 / 转录）。
 ///
 /// 先定「哪些字幕属于这份音频」：
 /// - [strictPerAudio]（播客单集、本机导入的同名扫描）：只认文件名主干与某个音频
 ///   **完全相同**的，不做任何退让——一个文件夹里常有很多集，挑错就挂上别集的字幕。
-/// - 否则（整本书）：主干与某个音频同名的 → 其次与 [title] 同名的 → 其次全部字幕。
+/// - 否则（整本书）：主干与音频同名的 → 其次与 [title] 同名的 → 其次全部字幕。
+///   多音轨时「与音频同名」指与**每一条**音轨同名：只和其中一条同名的（`part1.srt`）
+///   是那一条的分轨字幕，拿它当整本书的时间轴，后面的音轨全没有正文——这类字幕
+///   直接排除，不参与后面的标题 / 兜底（`part1.mp3` + `part2.mp3` 只配了
+///   `part1.srt` → null，交给转录）。
 ///
-/// 选出的文件必须**同一个主干**（如 `book.ja.srt` + `book.ass`）；分属不同主干（每个
-/// 音轨一份、或几份互不相干的文件）时挑哪份都可能错，返回 null。
+/// 选出的文件必须**同一个主干**（如 `book.ja.srt` + `book.ass`）；分属不同主干（几份
+/// 互不相干的文件）时挑哪份都可能错，返回 null。
 ///
 /// 再在同一主干里按名次挑：学习语言 [langCode] 标记的 > 无标记的（别的语言的不
 /// 自动挂）；同名次按格式优先级（[kAudiobookSubtitleExtensions] 的顺序），再按
 /// [subtitleNames] 的顺序。不是有声书字幕格式的文件一律忽略。
-int? pickAudiobookSubtitle({
+AudiobookSubtitlePick? pickAudiobookSubtitle({
   required List<String> audioNames,
   required List<String> subtitleNames,
   String? title,
@@ -97,24 +133,44 @@ int? pickAudiobookSubtitle({
     if (format >= 0) candidates.add(i);
   }
   if (candidates.isEmpty) return null;
-  List<int> where(bool Function(String stem) test) => <int>[
-    for (final int i in candidates)
+  List<int> where(List<int> from, bool Function(String stem) test) => <int>[
+    for (final int i in from)
       if (test(names[i].stem)) i,
   ];
 
-  // 音频整名与拆掉疑似语言标记后的主干都算：`Book.Vol.mp3` 认 `Book.Vol.en.srt`。
-  final Set<String> audioStems = <String>{
-    ...audioBases,
+  // 每条音频认的主干：整名与拆掉疑似语言标记后的主干都算（`Book.Vol.mp3` 认
+  // `Book.Vol.en.srt`）。
+  final List<Set<String>> stemsPerAudio = <Set<String>>[
     for (final String audio in audioNames)
-      splitAudiobookSubtitleName(audio).stem,
-  };
-  List<int> pool = where(audioStems.contains);
-  if (!strictPerAudio) {
+      <String>{_baseOf(audio), splitAudiobookSubtitleName(audio).stem},
+  ];
+  bool matchesSomeAudio(String stem) =>
+      stemsPerAudio.any((Set<String> stems) => stems.contains(stem));
+
+  List<int> pool;
+  AudiobookSubtitleBasis basis = AudiobookSubtitleBasis.audioName;
+  if (strictPerAudio) {
+    pool = where(candidates, matchesSomeAudio);
+  } else {
+    bool matchesEveryAudio(String stem) =>
+        stemsPerAudio.every((Set<String> stems) => stems.contains(stem));
+    // 只和部分音轨同名的是分轨字幕：从整本书的候选里剔掉。
+    final List<int> wholeBook = <int>[
+      for (final int i in candidates)
+        if (!matchesSomeAudio(names[i].stem) ||
+            matchesEveryAudio(names[i].stem))
+          i,
+    ];
+    pool = where(wholeBook, matchesEveryAudio);
     final String? wantTitle = title?.toLowerCase().trim();
     if (pool.isEmpty && wantTitle != null && wantTitle.isNotEmpty) {
-      pool = where((String stem) => stem == wantTitle);
+      pool = where(wholeBook, (String stem) => stem == wantTitle);
+      basis = AudiobookSubtitleBasis.title;
     }
-    if (pool.isEmpty) pool = candidates;
+    if (pool.isEmpty) {
+      pool = wholeBook;
+      basis = AudiobookSubtitleBasis.onlyStem;
+    }
   }
   if (<String>{for (final int i in pool) names[i].stem}.length != 1) {
     return null;
@@ -131,7 +187,13 @@ int? pickAudiobookSubtitle({
       bestKey = key;
     }
   }
-  return best;
+  if (best == null) return null;
+  return AudiobookSubtitlePick(
+    index: best,
+    basis: basis,
+    confident:
+        basis != AudiobookSubtitleBasis.onlyStem || audioNames.length == 1,
+  );
 }
 
 bool _less((int, int, int) a, (int, int, int) b) {
