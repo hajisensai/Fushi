@@ -101,6 +101,7 @@ enum WidgetSettingsTarget {
 /// - `fushi://widget/lookup?word=<词>`：打开查词（带词）。
 /// - `fushi://widget/settings/<cards|widgets>`：打开对应设置页。
 /// - `fushi://widget/vocab`：打开收藏夹（收藏词 / 制卡历史）。
+/// - `fushi://widget/music/now`：音乐播放页（「正在播放」小组件的音乐入口；有声书走 `continue`）。
 sealed class WidgetLink {
   const WidgetLink();
 
@@ -163,10 +164,18 @@ sealed class WidgetLink {
         return target == null ? null : WidgetSettingsLink(target);
       case 'vocab':
         return const WidgetVocabLink();
+      case 'music':
+        return uri.pathSegments.length > 1 &&
+                uri.pathSegments[1].toLowerCase() == 'now'
+            ? const WidgetMusicPlayerLink()
+            : null;
     }
     return null;
   }
 }
+
+/// 「正在播放」小组件的音乐入口链接（解析为 [WidgetMusicPlayerLink]）。
+const String kWidgetMusicPlayerLink = 'fushi://widget/music/now';
 
 final class WidgetContinueLink extends WidgetLink {
   const WidgetContinueLink({required this.kind, required this.id});
@@ -176,6 +185,14 @@ final class WidgetContinueLink extends WidgetLink {
   /// 书 / 漫画 = `MediaItem.mediaIdentifier`，视频 = `VideoBookRow.bookUid`；
   /// 空串 = 没有具体条目。
   final String id;
+
+  /// 小组件 / 原生侧使用的完整深链。
+  String toUri() => Uri(
+    scheme: 'fushi',
+    host: 'widget',
+    path: '/continue',
+    queryParameters: <String, String>{'kind': kind.wire, 'id': id},
+  ).toString();
 
   @override
   bool operator ==(Object other) =>
@@ -252,6 +269,11 @@ final class WidgetVocabLink extends WidgetLink {
   const WidgetVocabLink();
 }
 
+/// 音乐播放页（全屏播放 / 歌词页）；音乐模块关着时回首页。
+final class WidgetMusicPlayerLink extends WidgetLink {
+  const WidgetMusicPlayerLink();
+}
+
 /// 小组件深链的冷启动排队，与 `AppShortcutQueue` 同口径：冷启动时 URL 比
 /// `initialise()` 先到，而 HomePage.initState 会把首页 tab 重置成启动 tab，所以先
 /// 存着，等 home 挂载后的首帧再落地；连点多次只落最后一条。
@@ -311,6 +333,7 @@ class WidgetLinkQueue {
 ///   - 查词：切到词典 tab 后 [openLookup]；词典模块关着时回首页。
 ///   - 设置：[openSettings]；制卡设置跟制卡模块门控，小组件设置页不门控。
 ///   - 收藏夹：[openVocab]。
+///   - 音乐播放页：[openMusicPlayer]。
 Future<void> runWidgetLink(
   WidgetLink link, {
   required ModuleVisibility visibility,
@@ -323,6 +346,7 @@ Future<void> runWidgetLink(
   required Future<void> Function(String word) openLookup,
   required Future<void> Function(WidgetSettingsTarget target) openSettings,
   required Future<void> Function() openVocab,
+  required Future<void> Function() openMusicPlayer,
   bool Function(WidgetContinueLink link)? isContinueItemOpen,
   ExternalMediaNavigation? media,
 }) async {
@@ -347,6 +371,8 @@ Future<void> runWidgetLink(
           ? HomeTab.home
           : HomeTab.settings,
     WidgetVocabLink() => HomeTab.home,
+    WidgetMusicPlayerLink() =>
+      visibility.isEnabled(ModuleId.music) ? HomeTab.music : HomeTab.home,
   };
   if (tab == null) return;
   if (!onboardingCompleted) {
@@ -383,5 +409,8 @@ Future<void> runWidgetLink(
       await openSettings(target);
     case WidgetVocabLink():
       await openVocab();
+    case WidgetMusicPlayerLink():
+      // 模块关着时 tab 已回首页，不再往上压播放页。
+      if (visibility.isEnabled(ModuleId.music)) await openMusicPlayer();
   }
 }

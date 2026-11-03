@@ -136,6 +136,7 @@ missing keys (own English fallback).
 - vocabulary / goals / shortcuts: `vocabTitle nextWord lookUp noVocab goalsTitle noGoals vocab stats settings`
 - time templates: `updatedAgo agoNow agoMinutes agoHours agoDays`
 - extras: `openToRefresh zeroTime streakSrs weekReviews weekGoalDays recentDays`
+- now playing: `nowPlaying nothingPlaying play pause previous next skipBack skipForward kind_audiobook kind_music` (`skipBack` / `skipForward` are `{n}` templates)
 
 Templates carry placeholders for the native side to fill at display time:
 `updatedAgo` = "Updated {age}", `agoMinutes|agoHours|agoDays`
@@ -179,6 +180,7 @@ Handled by `WidgetLink` (`widget_links.dart`), cold-start safe through `WidgetLi
 | `settings/cards` | Settings → Card creation (SRS provider) |
 | `settings/widgets` | Settings → Home-screen widgets |
 | `vocab` | collections (favorite words / mined sentences) page |
+| `music/now` | music player page (Now playing widget; audiobooks use `continue?kind=book`) |
 
 The Anki "Open AnkiDroid" action is handled natively (launch intent for
 `srs.ankiPackage`); Flutter is not involved.
@@ -197,6 +199,88 @@ Priority rule: **per-widget choice > app default (Settings → Home-screen widge
 > built-in default (show everything)**. The SRS provider is never per-widget: it
 always follows the card destination setting.
 
+## Now playing
+
+Widget `NowPlayingWidget` / `NowPlayingReceiver` (`NowPlayingWidget.kt`): cover, title, artist (music) or
+author (audiobook), progress with elapsed / remaining, and transport buttons. Sizes: 2x1 (controls
+only), 4x1 (cover + text + controls), 4x2 (header, progress bar, three buttons). Per-widget theme and
+privacy apply; "hide titles" replaces the title with the kind label (`kind_music` / `kind_audiobook`)
+and drops artist / author and cover.
+
+### Playback stacks (investigated)
+
+Music (`MusicSession` + `MusicPlayerEngine`, mpv) and audiobooks (`AudiobookSession` +
+`AudiobookPlayerController`, just_audio) are different engines but share **one** audio_service
+handler (`FushiAudioHandler`, built by `AudioController`) and therefore one Android `MediaSession` owned
+by `com.ryanheise.audioservice.AudioService` (manifest service + `MediaButtonReceiver`).
+`AudioController.sessionOwner` says which of the two currently owns it. The handler's
+play / pause / skipToNext / skipToPrevious are routed to the owner.
+
+### JSON (`nowPlaying`, null when nothing was played)
+
+```jsonc
+"nowPlaying": {
+  "kind": "music|audiobook", "title": "...", "subtitle": "artist or author",
+  "cover": "<abs local path or ''>",
+  "positionMs": 30000, "durationMs": 200000,   // clamped 0..duration
+  "playing": true, "updatedAt": 1793600000000,  // sample time of positionMs
+  "link": "fushi://widget/music/now",           // audiobook: fushi://widget/continue?kind=book&id=...
+  "canSkipTrack": true,                         // music: queue has >1 item; audiobook: always true
+  "skipSeconds": 0                              // audiobook back / forward step: 0 = sentence, else seconds
+}
+```
+
+- Source (`WidgetSnapshotSource._livePlayback`): playing music > playing audiobook > paused music >
+  paused audiobook > last played song from music history (`playing=false`).
+- Publishing: the full snapshot still goes through the 3 s debounce, but `MusicSession` /
+  `AudiobookSession` listeners call `_onPlaybackChanged`, which on a track, play / pause or
+  can-skip change **immediately** republishes the last full snapshot with a fresh `nowPlaying`
+  (no debounce). Position ticks never publish. The de-dup signature
+  (`widgetSnapshotSignature`) ignores `nowPlaying.positionMs` and `updatedAt`.
+- Progress: native renders `positionMs + (now - updatedAt)` when playing, clamped to the duration.
+  Glance only re-renders on updates, so the bar is correct at each render but does not tick on its
+  own. A "playing" snapshot with no live session and older than 15 s is drawn as paused.
+- Covers: local files are used as is (native decodes down-sampled, 256 px). http(s) covers
+  (media-server library, online sources) are downloaded once to
+  `<cache>/widget_now_playing/<sha1(url)>.img` (5 s connect, 4 MB cap, at most 8 files kept).
+
+### Controls
+
+Buttons run natively with no Flutter round trip: `NowPlayingControl` takes the session token from
+`AudioService.instance` (package-private static, read by reflection; the class is kept in
+`proguard-rules.pro`), builds a platform `MediaController` and calls `transportControls`
+(`play` / `pause` / `skipToNext` / `skipToPrevious`). audio_service routes these to
+`FushiAudioHandler`, which feeds the same streams the notification and headset buttons use.
+Play vs pause is chosen from the **live** playback state, not the (possibly stale) snapshot.
+
+Audiobook back / forward are `skipToPrevious` / `skipToNext`: the audiobook session already maps
+them to the reader's skip interval (`skip_action_seconds`: 0 = previous / next sentence, else
+5 / 10 / 15 / 30 s), so the widget labels follow that setting (`-30` / `+30` chips, or
+previous / next icons for sentence mode). `FAST_FORWARD` / `REWIND` are not used: the handler maps
+them to a hard-coded 5 s that only music handles.
+
+`ACTION_MEDIA_BUTTON` to `MediaButtonReceiver` was rejected: when the service is not running it
+starts audio_service as a foreground service from the background, and a session whose Dart handler
+is not attached yet drops the key; PLAY_PAUSE is also a blind toggle.
+
+### Cold start / no live session
+
+The control path is chosen **at render time** (`NowPlayingControl.isAvailable`): the service
+instance exists in this process and has published a playback state. If not (process died, playback
+stopped, "show media notification" off for music), every button is a plain deep link to the player
+(`link`) instead, so a tap opens Fushi and never tries to start the foreground service. If the
+session disappears between render and tap, `NowPlayingActionCallback` falls back to starting
+`MainActivity` with the same link (may be blocked by background-start limits; then nothing happens).
+The widget is re-rendered on the next publish, which Dart sends when a session starts / stops.
+
+### Limitations
+
+- Progress does not tick between updates (see above); seeking does not publish.
+- Music controls need the media notification setting on (music only publishes its playback state
+  to audio_service when it is on); with it off the buttons just open the app.
+- Idle state shows the last played song, not the last audiobook (audiobooks have the Continue widget).
+- Remote (media-server) audiobook / track covers need the one-off download to have succeeded.
+
 ## Known limitations
 
 - Widgets show the **active profile** only; Fushi has no target-language setting
@@ -214,7 +298,7 @@ always follows the card destination setting.
   `FushiWidgets.kt` (Continue, Shelf), `WidgetsToday.kt` (Immersion = `TodayWidget`, Goals,
   Streak, Week), `SrsWidget.kt` (+ live AnkiDroid read), `VocabWidget.kt`,
   `ShortcutsWidget.kt`, `WidgetConfigActivity.kt`. Receivers: Continue, Today, Srs, Shelf,
-  Week, Shortcuts, Goals, Streak, Vocab.
+  Week, Shortcuts, Goals, Streak, Vocab, NowPlaying (`NowPlayingWidget.kt`).
 - Stale rule (`isFresh`): `snapshot.day` equals the device local date, or equals yesterday while it
   is before 06:00 and `generatedAt` is under 12 h old (tolerates the Dart day-reset hour).
   Otherwise today-values render as zero plus "Open Fushi to refresh".

@@ -98,6 +98,17 @@ const List<String> kWidgetLabelKeys = <String>[
   'weekReviews',
   'weekGoalDays',
   'recentDays',
+  // 正在播放
+  'nowPlaying',
+  'nothingPlaying',
+  'play',
+  'pause',
+  'previous',
+  'next',
+  'skipBack',
+  'skipForward',
+  'kind_audiobook',
+  'kind_music',
 ];
 
 /// 小组件上所有文案（已按 app 内语言本地化）。键集合见 [kWidgetLabelKeys]；
@@ -328,6 +339,85 @@ class WidgetModulesInput {
   };
 }
 
+/// 「正在播放」小组件的媒体种类（快照 `nowPlaying.kind`）。
+enum WidgetNowPlayingKind {
+  music,
+  audiobook;
+
+  String get wire => name;
+}
+
+/// 正在播放（或最近播放）的一首歌 / 一本有声书，数值是未清洗的原始输入。
+class WidgetNowPlayingInput {
+  const WidgetNowPlayingInput({
+    required this.kind,
+    required this.title,
+    required this.link,
+    required this.updatedAt,
+    this.subtitle = '',
+    this.coverPath = '',
+    this.positionMs = 0,
+    this.durationMs = 0,
+    this.playing = false,
+    this.canSkipTrack = false,
+    this.skipSeconds = 0,
+  });
+
+  final WidgetNowPlayingKind kind;
+  final String title;
+
+  /// 歌手 / 作者；没有就空串。
+  final String subtitle;
+
+  /// 本机封面图文件的绝对路径（调用方已确认存在），没有就空串。
+  final String coverPath;
+  final int positionMs;
+  final int durationMs;
+  final bool playing;
+
+  /// 取样时刻（epoch 毫秒）：原生侧用 `positionMs + (now - updatedAt)` 外推进度。
+  final int updatedAt;
+
+  /// 点按小组件主体打开的深链。
+  final String link;
+
+  /// 音乐：队列里有上一首 / 下一首可跳。有声书恒为 true（跳句 / 跳秒总是可用）。
+  final bool canSkipTrack;
+
+  /// 有声书「上一句 / 下一句」键的步长：0 = 按句，其余 = 秒数（沿用阅读器的跳句设置）。
+  final int skipSeconds;
+}
+
+/// `nowPlaying` 块（纯函数）：没有输入 / 对应模块已关 = null。位置夹到 `0..时长`
+/// （时长未知时只保证非负）。隐私开关不在这里生效（标题照常带，原生侧按开关隐藏）。
+Map<String, Object?>? buildWidgetNowPlaying(
+  WidgetNowPlayingInput? input,
+  WidgetModulesInput modules,
+) {
+  if (input == null || input.title.trim().isEmpty) return null;
+  final bool enabled = switch (input.kind) {
+    WidgetNowPlayingKind.music => modules.music,
+    WidgetNowPlayingKind.audiobook => modules.books,
+  };
+  if (!enabled) return null;
+  final int duration = _nonNegative(input.durationMs);
+  int position = _nonNegative(input.positionMs);
+  if (duration > 0 && position > duration) position = duration;
+  return <String, Object?>{
+    'kind': input.kind.wire,
+    'title': input.title.trim(),
+    'subtitle': input.subtitle.trim(),
+    'cover': input.coverPath,
+    'positionMs': position,
+    'durationMs': duration,
+    'playing': input.playing,
+    'updatedAt': _nonNegative(input.updatedAt),
+    'link': input.link,
+    'canSkipTrack': input.canSkipTrack,
+    'skipSeconds': _nonNegative(input.skipSeconds),
+  };
+}
+
 /// 夹到 0..1；NaN / 无穷当 0。
 double clampWidgetFraction(double value) {
   if (value.isNaN || value.isInfinite) return 0;
@@ -432,6 +522,7 @@ Map<String, Object?> buildWidgetSnapshot({
   Map<WidgetImmersionCategory, String> categoryLabels =
       const <WidgetImmersionCategory, String>{},
   Map<String, String> goalLabels = const <String, String>{},
+  WidgetNowPlayingInput? nowPlaying,
   String profileName = '',
   bool multiProfile = false,
   bool hideTitles = false,
@@ -591,6 +682,7 @@ Map<String, Object?> buildWidgetSnapshot({
         'ankiPackage': srs.ankiPackage,
     },
     'vocab': _vocabJson(vocab),
+    'nowPlaying': buildWidgetNowPlaying(nowPlaying, modules),
   };
 }
 
@@ -732,6 +824,23 @@ List<T> _fitTo<T>(List<T> values, int length, T filler) {
   return <T>[for (int i = values.length; i < length; i++) filler, ...values];
 }
 
+/// 去重签名：不含 `generatedAt`，也不含 `nowPlaying` 的进度 / 取样时刻（播放中它们
+/// 每次采集都变，原生侧靠它们外推，不该因此重发）。曲目、播放 / 暂停、封面等变了仍
+/// 会改变签名。
+String widgetSnapshotSignature(Map<String, Object?> snapshot) {
+  final Object? playing = snapshot['nowPlaying'];
+  return jsonEncode(<String, Object?>{
+    for (final MapEntry<String, Object?> e in snapshot.entries)
+      if (e.key == 'nowPlaying' && playing is Map<String, Object?>)
+        e.key: <String, Object?>{
+          for (final MapEntry<String, Object?> n in playing.entries)
+            if (n.key != 'positionMs' && n.key != 'updatedAt') n.key: n.value,
+        }
+      else if (e.key != 'generatedAt')
+        e.key: e.value,
+  });
+}
+
 /// 把快照 JSON 发给原生侧（Android 桌面小组件）。只在 Android 上生效，其余平台
 /// no-op；原生侧存下来并重绘小组件。
 ///
@@ -766,10 +875,7 @@ class WidgetSnapshotPublisher {
   /// 在原生侧应答（或失败）后完成，调用方可以不等。
   Future<void> publish(Map<String, Object?> snapshot) async {
     if (!platformSupported) return;
-    final String signature = jsonEncode(<String, Object?>{
-      for (final MapEntry<String, Object?> e in snapshot.entries)
-        if (e.key != 'generatedAt') e.key: e.value,
-    });
+    final String signature = widgetSnapshotSignature(snapshot);
     final DateTime now = _now();
     final DateTime? sentAt = _lastSentAt;
     if (signature == _lastSignature &&

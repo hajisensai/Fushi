@@ -49,6 +49,7 @@ void main() {
     WidgetGoalsInput goals = const WidgetGoalsInput(),
     WidgetSrsInput srs = const WidgetSrsInput(),
     List<WidgetVocabInput> vocab = const <WidgetVocabInput>[],
+    WidgetNowPlayingInput? nowPlaying,
     String day = today,
     int generatedAt = 1000,
     bool hideTitles = false,
@@ -66,6 +67,7 @@ void main() {
     goals: goals,
     srs: srs,
     vocab: vocab,
+    nowPlaying: nowPlaying,
     formatTime: time,
     formatChars: chars,
     formatCount: count,
@@ -895,6 +897,141 @@ void main() {
 
     test('generatedAt is passed through for the stale-age display', () {
       expect(build(generatedAt: 123456)['generatedAt'], 123456);
+    });
+  });
+
+  group('nowPlaying', () {
+    WidgetNowPlayingInput song({
+      int position = 30000,
+      int duration = 200000,
+      bool playing = true,
+      WidgetNowPlayingKind kind = WidgetNowPlayingKind.music,
+      String title = ' Song ',
+      String cover = '/cache/c.jpg',
+    }) => WidgetNowPlayingInput(
+      kind: kind,
+      title: title,
+      subtitle: ' Artist ',
+      coverPath: cover,
+      positionMs: position,
+      durationMs: duration,
+      playing: playing,
+      updatedAt: 5000,
+      link: kWidgetMusicPlayerLink,
+      canSkipTrack: true,
+    );
+
+    test('is null when nothing was played', () {
+      final Map<String, Object?> s = build();
+      expect(s.containsKey('nowPlaying'), isTrue);
+      expect(s['nowPlaying'], isNull);
+    });
+
+    test('has the documented shape', () {
+      final Map<String, Object?> np = mapOf(
+        build(nowPlaying: song())['nowPlaying'],
+      );
+      expect(np, <String, Object?>{
+        'kind': 'music',
+        'title': 'Song',
+        'subtitle': 'Artist',
+        'cover': '/cache/c.jpg',
+        'positionMs': 30000,
+        'durationMs': 200000,
+        'playing': true,
+        'updatedAt': 5000,
+        'link': kWidgetMusicPlayerLink,
+        'canSkipTrack': true,
+        'skipSeconds': 0,
+      });
+    });
+
+    test('audiobook carries kind and skip interval', () {
+      final Map<String, Object?> np = mapOf(
+        build(
+          nowPlaying: WidgetNowPlayingInput(
+            kind: WidgetNowPlayingKind.audiobook,
+            title: 'Book',
+            link: const WidgetContinueLink(
+              kind: WidgetMediaKind.book,
+              id: 'b1',
+            ).toUri(),
+            updatedAt: 1,
+            canSkipTrack: true,
+            skipSeconds: 30,
+          ),
+        )['nowPlaying'],
+      );
+      expect(np['kind'], 'audiobook');
+      expect(np['skipSeconds'], 30);
+      expect(
+        WidgetLink.tryParse(np['link']! as String),
+        const WidgetContinueLink(kind: WidgetMediaKind.book, id: 'b1'),
+      );
+    });
+
+    test('position is clamped to 0..duration, negatives become 0', () {
+      expect(
+        mapOf(
+          build(nowPlaying: song(position: 999999))['nowPlaying'],
+        )['positionMs'],
+        200000,
+      );
+      final Map<String, Object?> neg = mapOf(
+        build(nowPlaying: song(position: -5, duration: -1))['nowPlaying'],
+      );
+      expect(neg['positionMs'], 0);
+      expect(neg['durationMs'], 0);
+      // Unknown duration: only non-negative is guaranteed.
+      expect(
+        mapOf(
+          build(nowPlaying: song(position: 90000, duration: 0))['nowPlaying'],
+        )['positionMs'],
+        90000,
+      );
+    });
+
+    test('privacy flags do not change the block (native side hides it)', () {
+      final Map<String, Object?> shown = build(nowPlaying: song());
+      final Map<String, Object?> hidden = build(
+        nowPlaying: song(),
+        hideTitles: true,
+      );
+      expect(hidden['nowPlaying'], shown['nowPlaying']);
+      expect(mapOf(hidden['privacy'])['hideTitles'], true);
+    });
+
+    test('a blank title or a disabled module drops the block', () {
+      expect(build(nowPlaying: song(title: '  '))['nowPlaying'], isNull);
+      expect(
+        build(
+          nowPlaying: song(),
+          modules: const WidgetModulesInput(music: false),
+        )['nowPlaying'],
+        isNull,
+      );
+      expect(
+        build(
+          nowPlaying: song(kind: WidgetNowPlayingKind.audiobook),
+          modules: const WidgetModulesInput(books: false),
+        )['nowPlaying'],
+        isNull,
+      );
+    });
+
+    test('signature ignores position and sample time but not play state', () {
+      final Map<String, Object?> a = build(nowPlaying: song(position: 1000));
+      final Map<String, Object?> later = build(
+        nowPlaying: song(position: 90000),
+      );
+      final Map<String, Object?> paused = build(
+        nowPlaying: song(playing: false),
+      );
+      expect(widgetSnapshotSignature(a), widgetSnapshotSignature(later));
+      expect(
+        widgetSnapshotSignature(a),
+        isNot(widgetSnapshotSignature(paused)),
+      );
     });
   });
 

@@ -53,6 +53,25 @@ data class WidgetVocab(
     val origin: String,
 )
 
+/**
+ * The `nowPlaying` block: current (or last played) song / audiobook. Position is a sample taken at
+ * [updatedAt]; while [playing] the widget extrapolates `positionMs + (now - updatedAt)` at render time.
+ * [kind] is `music` or `audiobook`; [skipSeconds] (audiobook) is 0 for sentence skipping.
+ */
+data class WidgetNowPlaying(
+    val kind: String,
+    val title: String,
+    val subtitle: String,
+    val cover: String?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val playing: Boolean,
+    val updatedAt: Long,
+    val link: String,
+    val canSkipTrack: Boolean,
+    val skipSeconds: Int,
+)
+
 data class WidgetSnapshot(
     /** Stat day key (yyyy-MM-dd) the today numbers were computed for. */
     val day: String,
@@ -113,6 +132,7 @@ data class WidgetSnapshot(
     val srsDueTomorrow: Int = 0,
     val ankiPackage: String = "",
     val vocab: List<WidgetVocab> = emptyList(),
+    val nowPlaying: WidgetNowPlaying? = null,
 ) {
     fun label(key: String, fallback: String): String = labels[key]?.takeIf { it.isNotEmpty() } ?: fallback
 
@@ -297,6 +317,25 @@ object WidgetStore {
             srsDueTomorrow = srs?.optInt("dueTomorrow", 0) ?: 0,
             ankiPackage = srs?.optString("ankiPackage").orEmpty(),
             vocab = vocab,
+            nowPlaying = o.optJSONObject("nowPlaying")?.let { nowPlaying(it) },
+        )
+    }
+
+    private fun nowPlaying(o: JSONObject): WidgetNowPlaying? {
+        val title = o.optString("title")
+        if (title.isEmpty()) return null
+        return WidgetNowPlaying(
+            kind = o.optString("kind", "music"),
+            title = title,
+            subtitle = o.optString("subtitle"),
+            cover = o.optString("cover").takeIf { it.isNotEmpty() },
+            positionMs = o.optLong("positionMs", 0L).coerceAtLeast(0L),
+            durationMs = o.optLong("durationMs", 0L).coerceAtLeast(0L),
+            playing = o.optBoolean("playing", false),
+            updatedAt = o.optLong("updatedAt", 0L),
+            link = o.optString("link").ifEmpty { "fushi://widget/open" },
+            canSkipTrack = o.optBoolean("canSkipTrack", false),
+            skipSeconds = o.optInt("skipSeconds", 0).coerceAtLeast(0),
         )
     }
 

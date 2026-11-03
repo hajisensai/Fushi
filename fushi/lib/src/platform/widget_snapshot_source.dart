@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
@@ -15,9 +17,19 @@ import 'package:fushi_engine/srs/srs_stats_loader.dart'
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show AudiobookPlayerController;
+import 'package:fushi/src/media/audiobook/audiobook_session.dart'
+    show SessionBookInfo;
+import 'package:fushi/src/media/music/music_history.dart' show MusicRecentTrack;
+import 'package:fushi/src/media/music/music_output_backend.dart'
+    show MusicPlayItem;
+import 'package:fushi/src/media/music/music_player_engine.dart'
+    show MusicPlayerEngine;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
@@ -48,6 +60,10 @@ const int _kCoverProbeLimit = kWidgetShelfLimit;
 ///   provider 是 fushi 时才读）；Anki 只带包名，计数由原生侧现读。
 /// - 目标 / 隐私 / 词汇：AppModel 的每日目标偏好、小组件隐私偏好、最近制卡与收藏词。
 ///
+/// - 正在播放：音乐引擎 / 有声书会话的实时状态（没有就退回最近播放的一首歌，
+///   `playing=false`）。曲目或播放 / 暂停变化走 [_onPlaybackChanged] **立即**重发，
+///   不经去抖；进度不触发发布（原生侧按 `positionMs + (now - updatedAt)` 外推）。
+///
 /// 触发（都经 [requestRefresh] 去抖 / [refreshNow] 立即）：库内数据变化流、
 /// 复习修订号变化、界面语言或模块开关变化（[onContextChanged]）、app 进后台与
 /// 回前台。采集与发布全程容错——失败只影响小组件，不影响 app。
@@ -69,6 +85,13 @@ class WidgetSnapshotSource {
   final Duration debounce;
 
   StreamSubscription<void>? _dataSubscription;
+  AppModel? _playbackModel;
+
+  /// 最近一次采集 / 重发的完整快照；播放变化时只替换其中的 `nowPlaying` 立即重发。
+  Map<String, Object?>? _lastSnapshot;
+  String? _playbackKeyLast;
+  bool _nowPlayingRunning = false;
+  bool _nowPlayingRerun = false;
   ProviderSubscription<int>? _srsSubscription;
   Timer? _debounceTimer;
   String? _contextSignature;
@@ -91,10 +114,20 @@ class WidgetSnapshotSource {
       srsRevisionProvider,
       (int? _, int __) => requestRefresh(),
     );
+    appModel.musicSession.addListener(_onPlaybackChanged);
+    appModel.audiobookSession.addListener(_onPlaybackChanged);
+    _playbackModel = appModel;
+    _playbackKeyLast = _playbackKey(appModel);
     unawaited(refreshNow());
   }
 
   void dispose() {
+    final AppModel? model = _playbackModel;
+    if (model != null) {
+      model.musicSession.removeListener(_onPlaybackChanged);
+      model.audiobookSession.removeListener(_onPlaybackChanged);
+    }
+    _playbackModel = null;
     _debounceTimer?.cancel();
     _debounceTimer = null;
     unawaited(_dataSubscription?.cancel());
@@ -201,21 +234,14 @@ class WidgetSnapshotSource {
     );
     final ProfileUiState profile = _ref.read(profileViewModelProvider);
 
-    return buildWidgetSnapshot(
+    final Map<String, Object?> snapshot = buildWidgetSnapshot(
       day: window.todayKey,
       generatedAt: now.millisecondsSinceEpoch,
       labels: buildWidgetLabels(),
       categoryLabels: buildWidgetCategoryLabels(),
       goalLabels: buildWidgetGoalLabels(),
-      modules: WidgetModulesInput(
-        books: modules.isEnabled(ModuleId.books),
-        manga: modules.isEnabled(ModuleId.manga),
-        video: modules.isEnabled(ModuleId.video),
-        lookup: modules.isEnabled(ModuleId.lookup),
-        srs: modules.isEnabled(ModuleId.srs),
-        music: modules.isEnabled(ModuleId.music),
-        games: modules.isEnabled(ModuleId.games),
-      ),
+      modules: _modulesInput(modules),
+      nowPlaying: await _collectNowPlaying(appModel),
       media: await _withCovers(media, appModel),
       immersion: immersion,
       goals: WidgetGoalsInput(
@@ -241,6 +267,221 @@ class WidgetSnapshotSource {
       formatAge: (int epochMs) => formatActivityRelativeTime(epochMs, now),
       weekdayLabel: (String key) => weekdayLabels[key] ?? '',
     );
+    _lastSnapshot = snapshot;
+    return snapshot;
+  }
+
+  WidgetModulesInput _modulesInput(ModuleVisibility modules) =>
+      WidgetModulesInput(
+        books: modules.isEnabled(ModuleId.books),
+        manga: modules.isEnabled(ModuleId.manga),
+        video: modules.isEnabled(ModuleId.video),
+        lookup: modules.isEnabled(ModuleId.lookup),
+        srs: modules.isEnabled(ModuleId.srs),
+        music: modules.isEnabled(ModuleId.music),
+        games: modules.isEnabled(ModuleId.games),
+      );
+
+  // ── 正在播放 ────────────────────────────────────────────────────────────
+
+  /// 当前「谁在出声」。优先级：正在播的音乐 > 正在播的有声书 > 暂停着的音乐 / 有声书
+  /// （音乐在前：它与有声书互斥，同时有会话时音乐是后认领的）> 无（退回最近播放）。
+  _LivePlayback? _livePlayback(AppModel appModel) {
+    final MusicPlayerEngine engine = appModel.musicSession.engine;
+    final AudiobookPlayerController? book =
+        appModel.audiobookSession.controller;
+    final MusicPlayItem? track = engine.current;
+    if (track != null && engine.isPlaying) {
+      return _LivePlayback.music(track, true);
+    }
+    if (book != null && book.isPlaying) {
+      return _LivePlayback.audiobook(book, true);
+    }
+    if (track != null) return _LivePlayback.music(track, false);
+    if (book != null && appModel.audiobookSession.book != null) {
+      return _LivePlayback.audiobook(book, false);
+    }
+    return null;
+  }
+
+  /// 触发立即重发的最小身份：种类 + 曲目 / 书 + 播放态 + 能否跳曲。进度不在里面。
+  String _playbackKey(AppModel appModel) {
+    final _LivePlayback? live = _livePlayback(appModel);
+    if (live == null) return 'idle';
+    if (live.track != null) {
+      final MusicPlayerEngine engine = appModel.musicSession.engine;
+      return 'music|${live.track!.trackUid}|${live.playing}|${engine.queue.length > 1}';
+    }
+    return 'audiobook|${appModel.audiobookSession.book?.bookKey}|${live.playing}';
+  }
+
+  void _onPlaybackChanged() {
+    final AppModel? model = _playbackModel;
+    if (!enabled || !_started || model == null || !_isActive()) return;
+    final String key = _playbackKey(model);
+    if (key == _playbackKeyLast) return;
+    _playbackKeyLast = key;
+    unawaited(_publishNowPlaying());
+  }
+
+  /// 只替换 `nowPlaying` 并立即发布（绕过 [debounce]）。还没有完整快照时走一次完整采集。
+  Future<void> _publishNowPlaying() async {
+    if (_nowPlayingRunning) {
+      _nowPlayingRerun = true;
+      return;
+    }
+    _nowPlayingRunning = true;
+    try {
+      do {
+        _nowPlayingRerun = false;
+        final Map<String, Object?>? base = _lastSnapshot;
+        if (base == null) {
+          await refreshNow();
+          return;
+        }
+        if (!_isActive()) return;
+        final AppModel appModel = _ref.read(appProvider);
+        final WidgetNowPlayingInput? input = await _collectNowPlaying(appModel);
+        if (!_isActive()) return;
+        final Map<String, Object?> next = <String, Object?>{
+          ...base,
+          'generatedAt': DateTime.now().millisecondsSinceEpoch,
+          'nowPlaying': buildWidgetNowPlaying(
+            input,
+            _modulesInput(appModel.moduleVisibility),
+          ),
+        };
+        _lastSnapshot = next;
+        await _publisher.publish(next);
+      } while (_nowPlayingRerun);
+    } on Object catch (error, stack) {
+      debugPrint('WidgetSnapshotSource: nowPlaying failed: $error\n$stack');
+    } finally {
+      _nowPlayingRunning = false;
+    }
+  }
+
+  Future<WidgetNowPlayingInput?> _collectNowPlaying(AppModel appModel) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final _LivePlayback? live = _livePlayback(appModel);
+    try {
+      if (live != null && live.track != null) {
+        final MusicPlayerEngine engine = appModel.musicSession.engine;
+        final MusicPlayItem item = live.track!;
+        return WidgetNowPlayingInput(
+          kind: WidgetNowPlayingKind.music,
+          title: item.title,
+          subtitle: item.artist ?? '',
+          coverPath: await _widgetCoverFile(item.coverPath),
+          positionMs: engine.position.inMilliseconds,
+          durationMs: engine.duration?.inMilliseconds ?? item.durationMs ?? 0,
+          playing: live.playing,
+          updatedAt: now,
+          link: kWidgetMusicPlayerLink,
+          canSkipTrack: engine.queue.length > 1,
+        );
+      }
+      if (live != null && live.book != null) {
+        final SessionBookInfo? info = appModel.audiobookSession.book;
+        if (info != null) {
+          final AudiobookPlayerController controller = live.book!;
+          return WidgetNowPlayingInput(
+            kind: WidgetNowPlayingKind.audiobook,
+            title: info.title,
+            subtitle: info.author ?? '',
+            coverPath: await _widgetCoverFile(info.coverPath),
+            positionMs: controller.globalPosition.inMilliseconds,
+            durationMs: controller.totalDuration.inMilliseconds,
+            playing: live.playing,
+            updatedAt: now,
+            link: WidgetContinueLink(
+              kind: WidgetMediaKind.book,
+              id: info.mediaIdentifier,
+            ).toUri(),
+            canSkipTrack: true,
+            skipSeconds: appModel.audiobookSession.skipActionSeconds(),
+          );
+        }
+      }
+      // 没有活动会话：显示最近播放的一首歌（暂停态，按钮点按会拉起 app）。
+      final List<MusicRecentTrack> recent = await appModel.musicSession
+          .recentTracks(limit: 1);
+      if (recent.isEmpty) return null;
+      final MusicPlayItem item = recent.first.item;
+      return WidgetNowPlayingInput(
+        kind: WidgetNowPlayingKind.music,
+        title: item.title,
+        subtitle: item.artist ?? '',
+        coverPath: await _widgetCoverFile(item.coverPath),
+        durationMs: item.durationMs ?? 0,
+        updatedAt: now,
+        link: kWidgetMusicPlayerLink,
+      );
+    } on Object catch (error) {
+      debugPrint('WidgetSnapshotSource: nowPlaying collect failed: $error');
+      return null;
+    }
+  }
+
+  /// 小组件能直接解码的本地封面文件。本地文件原样用（原生侧自己降采样）；http(s)
+  /// 封面（媒体服务器 / 在线音源）下载到缓存目录一次，按 URL 哈希命名。拿不到给空串。
+  Future<String> _widgetCoverFile(String? cover) async {
+    if (cover == null || cover.isEmpty) return '';
+    try {
+      if (cover.startsWith('http://') || cover.startsWith('https://')) {
+        final Directory dir = Directory(
+          '${(await getTemporaryDirectory()).path}/widget_now_playing',
+        );
+        final File file = File(
+          '${dir.path}/${sha1.convert(cover.codeUnits).toString()}.img',
+        );
+        if (await file.exists() && await file.length() > 0) return file.path;
+        final HttpClient client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 5);
+        try {
+          final HttpClientRequest request = await client
+              .getUrl(Uri.parse(cover))
+              .timeout(const Duration(seconds: 6));
+          final HttpClientResponse response = await request.close().timeout(
+            const Duration(seconds: 8),
+          );
+          if (response.statusCode != 200 ||
+              response.contentLength > _kCoverMaxBytes) {
+            await response.drain<void>();
+            return '';
+          }
+          final BytesBuilder bytes = BytesBuilder(copy: false);
+          await for (final List<int> chunk in response.timeout(
+            const Duration(seconds: 8),
+          )) {
+            bytes.add(chunk);
+            if (bytes.length > _kCoverMaxBytes) return '';
+          }
+          await dir.create(recursive: true);
+          // 只留最近几张，避免换曲不断堆文件。
+          final List<File> old = <File>[
+            await for (final FileSystemEntity e in dir.list())
+              if (e is File) e,
+          ];
+          if (old.length >= 8) {
+            for (final File f in old) {
+              await f.delete();
+            }
+          }
+          await file.writeAsBytes(bytes.takeBytes(), flush: true);
+          return file.path;
+        } finally {
+          client.close(force: true);
+        }
+      }
+      final String path = cover.startsWith('file://')
+          ? Uri.parse(cover).toFilePath()
+          : cover;
+      return await File(path).exists() ? path : '';
+    } on Object catch (error) {
+      debugPrint('WidgetSnapshotSource: now playing cover failed: $error');
+      return '';
+    }
   }
 
   /// 沉浸四类按统计日聚合（只认书 / 音乐 / 视频 / 游戏，复习不算沉浸）。毫秒与字数
@@ -558,6 +799,19 @@ class WidgetSnapshotSource {
       return const <String, String>{};
     }
   }
+}
+
+/// 下载封面的体积上限（字节）。
+const int _kCoverMaxBytes = 4 * 1024 * 1024;
+
+/// 此刻活动的播放会话（音乐曲目 或 有声书控制器）。
+class _LivePlayback {
+  const _LivePlayback.music(this.track, this.playing) : book = null;
+  const _LivePlayback.audiobook(this.book, this.playing) : track = null;
+
+  final MusicPlayItem? track;
+  final AudiobookPlayerController? book;
+  final bool playing;
 }
 
 /// 复习统计摘要的缓存条目（见 [WidgetSnapshotSource._srsStatsDigest]）。

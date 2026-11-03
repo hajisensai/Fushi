@@ -131,6 +131,28 @@ void main() {
       );
     });
 
+    test('music player link', () {
+      expect(
+        WidgetLink.tryParse(kWidgetMusicPlayerLink),
+        isA<WidgetMusicPlayerLink>(),
+      );
+      expect(
+        WidgetLink.tryParse('FUSHI://widget/Music/NOW'),
+        isA<WidgetMusicPlayerLink>(),
+      );
+      expect(WidgetLink.tryParse('fushi://widget/music'), isNull);
+      expect(WidgetLink.tryParse('fushi://widget/music/queue'), isNull);
+    });
+
+    test('continue links round-trip through toUri', () {
+      const String id = 'reader_fushi://book/a b&c';
+      const WidgetContinueLink link = WidgetContinueLink(
+        kind: WidgetMediaKind.book,
+        id: id,
+      );
+      expect(WidgetLink.tryParse(link.toUri()), link);
+    });
+
     test('malformed input never throws', () {
       for (final String bad in <String>[
         'fushi://widget/tab/%',
@@ -249,6 +271,7 @@ void main() {
     late List<String> lookups;
     late List<WidgetSettingsTarget> settingsOpens;
     late int vocabOpens;
+    late int musicPlayerOpens;
     late bool itemExists;
     late bool srsHasWork;
     late ExternalMediaNavigation media;
@@ -261,6 +284,7 @@ void main() {
       lookups = <String>[];
       settingsOpens = <WidgetSettingsTarget>[];
       vocabOpens = 0;
+      musicPlayerOpens = 0;
       itemExists = true;
       srsHasWork = true;
     });
@@ -301,6 +325,7 @@ void main() {
         openLookup: (String word) async => lookups.add(word),
         openSettings: (WidgetSettingsTarget t) async => settingsOpens.add(t),
         openVocab: () async => vocabOpens++,
+        openMusicPlayer: () async => musicPlayerOpens++,
         isContinueItemOpen: isContinueItemOpen,
         media: media,
       ).whenComplete(() => done = true);
@@ -539,6 +564,28 @@ void main() {
       await run(tester, const WidgetVocabLink());
       expect(selectedTabs, <HomeTab>[HomeTab.home]);
       expect(vocabOpens, 1);
+    });
+
+    testWidgets('music player opens the player on the music tab', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetMusicPlayerLink());
+      expect(selectedTabs, <HomeTab>[HomeTab.music]);
+      expect(musicPlayerOpens, 1);
+    });
+
+    testWidgets('music player with the music module off falls back home', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(
+        tester,
+        const WidgetMusicPlayerLink(),
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.books}),
+      );
+      expect(selectedTabs, <HomeTab>[HomeTab.home]);
+      expect(musicPlayerOpens, 0);
     });
 
     testWidgets('before onboarding new links only switch tab', (

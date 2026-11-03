@@ -75,6 +75,17 @@ WidgetSnapshotLabels buildWidgetLabels() {
     'weekReviews': t.widget_label_week_reviews,
     'weekGoalDays': t.widget_label_goal_days,
     'recentDays': t.widget_label_last_days(n: kWidgetMonthDays),
+    // 正在播放
+    'nowPlaying': t.widget_label_now_playing,
+    'nothingPlaying': t.widget_label_nothing_playing,
+    'play': t.widget_label_play,
+    'pause': t.widget_label_pause,
+    'previous': t.widget_label_previous,
+    'next': t.widget_label_next,
+    'skipBack': t.widget_label_skip_back,
+    'skipForward': t.widget_label_skip_forward,
+    'kind_audiobook': t.widget_label_audiobook,
+    'kind_music': t.widget_label_music,
   });
 }
 

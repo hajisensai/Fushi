@@ -17,6 +17,8 @@ import 'package:fushi/src/pages/implementations/collections_page.dart'
     show CollectionsPage;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
+import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart'
+    show MusicLyricsPage;
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/platform/widget_links.dart';
@@ -176,6 +178,18 @@ Future<void> openWidgetVocab(AppModel appModel) async {
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => const CollectionsPage(),
+    ),
+  );
+}
+
+/// 打开音乐播放页（与底部迷你条点按同一个页面）。
+Future<void> openWidgetMusicPlayer(AppModel appModel) async {
+  final BuildContext? context = appModel.navigatorKey.currentContext;
+  if (context == null || !context.mounted) return;
+  await Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => const MusicLyricsPage(),
     ),
   );
 }
