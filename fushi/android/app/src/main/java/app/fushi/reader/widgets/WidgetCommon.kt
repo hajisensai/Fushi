@@ -428,7 +428,7 @@ internal val MIN_TOUCH: Dp = 48.dp
 internal object WidgetRegistry {
     val all: List<GlanceAppWidget> = listOf(
         ContinueWidget(), TodayWidget(), SrsWidget(), ShelfWidget(), WeekWidget(), ShortcutsWidget(),
-        GoalsWidget(), StreakWidget(), VocabWidget(), NowPlayingWidget(),
+        GoalsWidget(), StreakWidget(), VocabWidget(), NowPlayingWidget(), DownloadsWidget(), OnDeckWidget(),
     )
 
     /** Widget instance for an appwidget-provider receiver class name, or null. */
@@ -443,6 +443,8 @@ internal object WidgetRegistry {
         "StreakReceiver" -> all[7]
         "VocabReceiver" -> all[8]
         "NowPlayingReceiver" -> all[9]
+        "DownloadsReceiver" -> all[10]
+        "OnDeckReceiver" -> all[11]
         else -> null
     }
 }

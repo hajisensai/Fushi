@@ -50,7 +50,8 @@ class WidgetConfigActivity : Activity() {
         val widget = WidgetRegistry.forReceiver(provider)
         val isVocab = provider.endsWith("VocabReceiver")
         val hasPrivacy = isVocab || provider.endsWith("ContinueReceiver") || provider.endsWith("ShelfReceiver") ||
-            provider.endsWith("NowPlayingReceiver")
+            provider.endsWith("NowPlayingReceiver") ||
+            provider.endsWith("DownloadsReceiver") || provider.endsWith("OnDeckReceiver")
 
         scope.launch {
             val current = try {

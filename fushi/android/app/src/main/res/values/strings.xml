@@ -21,6 +21,10 @@
     <string name="widget_vocab_desc">A word from your saved vocabulary, with a next button.</string>
     <string name="widget_nowplaying_label">Fushi Now playing</string>
     <string name="widget_nowplaying_desc">Current music or audiobook with cover, progress and playback controls.</string>
+    <string name="widget_downloads_label">Fushi Downloads</string>
+    <string name="widget_downloads_desc">Active downloads with overall progress, speed and the top tasks.</string>
+    <string name="widget_on_deck_label">Fushi On deck</string>
+    <string name="widget_on_deck_desc">What you are watching or listening to on your media servers.</string>
     <string name="widget_age_now">just now</string>
     <string name="widget_age_minutes">%d min ago</string>
     <string name="widget_age_hours">%d h ago</string>

@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi/src/pages/implementations/stat_summary.dart'
     show computeWeekOverWeekPercent;
 import 'package:fushi/src/platform/widget_links.dart';
+import 'package:fushi/src/platform/widget_progress.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 快照契约版本（见 docs/agent/android-widgets.md）。
@@ -109,6 +110,17 @@ const List<String> kWidgetLabelKeys = <String>[
   'skipForward',
   'kind_audiobook',
   'kind_music',
+  // 下载 / 接下来（服务器条目）
+  'downloadsTitle',
+  'noDownloads',
+  'downloadQueued',
+  'downloadPaused',
+  'downloadFailed',
+  'downloadsActive',
+  'onDeckTitle',
+  'onDeckNoServers',
+  'onDeckEmpty',
+  'onDeckOff',
 ];
 
 /// 小组件上所有文案（已按 app 内语言本地化）。键集合见 [kWidgetLabelKeys]；
@@ -157,6 +169,7 @@ class WidgetMediaInput {
     this.subtitle = '',
     this.progress = 0,
     this.coverPath = '',
+    this.remainingMs,
   });
 
   final WidgetMediaKind kind;
@@ -176,6 +189,10 @@ class WidgetMediaInput {
 
   /// 最近活动时刻（epoch 毫秒），排序与「几小时前」用；0 = 未知。
   final int recentAt;
+
+  /// 预计还需多久读完 / 看完（毫秒）；null = 估不出来（没速度数据、没总长度），
+  /// 此时快照里 `remaining` 是空串。绝不编造，算法见 `widget_progress.dart`。
+  final int? remainingMs;
 }
 
 /// 沉浸统计的原始输入（调用方已按统计日 key 聚合，窗口至少含最近 14 天）。
@@ -519,6 +536,9 @@ Map<String, Object?> buildWidgetSnapshot({
   required String Function(int count) formatCount,
   required String Function(int epochMs) formatAge,
   required String Function(String dateKey) weekdayLabel,
+  String Function(int ms)? formatTimeLeft,
+  WidgetDownloadsInput downloads = const WidgetDownloadsInput(),
+  WidgetOnDeckInput onDeck = const WidgetOnDeckInput(),
   Map<WidgetImmersionCategory, String> categoryLabels =
       const <WidgetImmersionCategory, String>{},
   Map<String, String> goalLabels = const <String, String>{},
@@ -541,7 +561,7 @@ Map<String, Object?> buildWidgetSnapshot({
     });
   final List<Map<String, Object?>> shelf = <Map<String, Object?>>[
     for (final int i in order.take(kWidgetShelfLimit))
-      _mediaJson(visible[i], formatAge),
+      _mediaJson(visible[i], formatAge, formatTimeLeft),
   ];
 
   final List<String> monthKeys = _lastDayKeys(day, kWidgetMonthDays);
@@ -683,6 +703,8 @@ Map<String, Object?> buildWidgetSnapshot({
     },
     'vocab': _vocabJson(vocab),
     'nowPlaying': buildWidgetNowPlaying(nowPlaying, modules),
+    'downloads': buildWidgetDownloadsJson(downloads),
+    'onDeck': buildWidgetOnDeckJson(onDeck, formatAge: formatAge),
   };
 }
 
@@ -786,8 +808,10 @@ List<Map<String, Object?>> _vocabJson(List<WidgetVocabInput> vocab) {
 Map<String, Object?> _mediaJson(
   WidgetMediaInput m,
   String Function(int epochMs) formatAge,
+  String Function(int ms)? formatTimeLeft,
 ) {
   final double progress = clampWidgetFraction(m.progress);
+  final int? left = m.remainingMs;
   return <String, Object?>{
     'kind': m.kind.wire,
     'id': m.id,
@@ -797,6 +821,9 @@ Map<String, Object?> _mediaJson(
     'cover': m.coverPath,
     'position': progress > 0 ? '${(progress * 100).round()}%' : '',
     'lastActive': m.recentAt > 0 ? formatAge(m.recentAt) : '',
+    'remaining': left != null && left > 0 && formatTimeLeft != null
+        ? formatTimeLeft(left)
+        : '',
   };
 }
 

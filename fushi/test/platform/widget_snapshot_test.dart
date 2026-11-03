@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/platform/widget_links.dart';
+import 'package:fushi/src/platform/widget_progress.dart';
 import 'package:fushi/src/platform/widget_snapshot.dart';
 import 'package:fushi/src/platform/widget_snapshot_labels.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -57,6 +58,8 @@ void main() {
     bool hideProfile = false,
     String profileName = 'Default',
     bool multiProfile = false,
+    WidgetDownloadsInput downloads = const WidgetDownloadsInput(),
+    WidgetOnDeckInput onDeck = const WidgetOnDeckInput(),
   }) => buildWidgetSnapshot(
     day: day,
     generatedAt: generatedAt,
@@ -73,6 +76,9 @@ void main() {
     formatCount: count,
     formatAge: age,
     weekdayLabel: weekday,
+    formatTimeLeft: (int ms) => '~${ms ~/ 60000}m left',
+    downloads: downloads,
+    onDeck: onDeck,
     categoryLabels: <WidgetImmersionCategory, String>{
       for (final WidgetImmersionCategory c in WidgetImmersionCategory.values)
         c: 'C:${c.wire}',
@@ -176,6 +182,7 @@ void main() {
         'cover': '/data/cover.jpg',
         'position': '25%',
         'lastActive': 'age:10',
+        'remaining': '',
       });
       expect(
         (json['today'] as Map<String, dynamic>).keys,
@@ -1175,6 +1182,523 @@ void main() {
     test('is a no-op where there is no native side', () async {
       await publisher(supported: false).publish(build());
       expect(calls, isEmpty);
+    });
+  });
+
+  group('time to finish', () {
+    const String since = '2026-10-01';
+    WidgetSpeedSample sample(
+      String key,
+      int ms,
+      int chars, [
+      String d = since,
+    ]) => WidgetSpeedSample(mediaKey: key, dateKey: d, ms: ms, chars: chars);
+
+    test('needs both enough time and enough characters', () {
+      expect(widgetCharsPerMs(0, 0), isNull);
+      expect(widgetCharsPerMs(kWidgetSpeedMinMs - 1, 5000), isNull);
+      expect(
+        widgetCharsPerMs(kWidgetSpeedMinMs, kWidgetSpeedMinChars - 1),
+        isNull,
+      );
+      expect(widgetCharsPerMs(600000, 6000), closeTo(0.01, 1e-9));
+    });
+
+    test('absurd speed (skimming) gives no estimate', () {
+      expect(widgetCharsPerMs(600000, 600000 ~/ 5), isNull);
+    });
+
+    test('book speed wins, overall speed is the fallback', () {
+      final List<WidgetSpeedSample> samples = <WidgetSpeedSample>[
+        sample('a', 600000, 6000), // 0.01 chars/ms
+        sample('b', 600000, 12000), // 0.02 chars/ms
+      ];
+      final WidgetReadingSpeeds a = computeWidgetReadingSpeeds(
+        samples,
+        bookKey: 'a',
+        sinceDateKey: since,
+      );
+      expect(a.book, closeTo(0.01, 1e-9));
+      expect(a.overall, closeTo(18000 / 1200000, 1e-9));
+      expect(a.best, a.book);
+      final WidgetReadingSpeeds c = computeWidgetReadingSpeeds(
+        samples,
+        bookKey: 'unread',
+        sinceDateKey: since,
+      );
+      expect(c.book, isNull);
+      expect(c.best, c.overall);
+    });
+
+    test('days before the window and empty rows are ignored', () {
+      final WidgetReadingSpeeds speeds = computeWidgetReadingSpeeds(
+        <WidgetSpeedSample>[
+          sample('a', 600000, 6000, '2026-09-30'),
+          sample('a', 0, 5000),
+          sample('a', 600000, 0),
+        ],
+        bookKey: 'a',
+        sinceDateKey: since,
+      );
+      expect(speeds.best, isNull);
+    });
+
+    test('too little data in every window means no speed at all', () {
+      final WidgetReadingSpeeds speeds = computeWidgetReadingSpeeds(
+        <WidgetSpeedSample>[sample('a', 60000, 400)],
+        bookKey: 'a',
+        sinceDateKey: since,
+      );
+      expect(speeds.best, isNull);
+    });
+
+    test('remaining reading time', () {
+      // 100k chars left at 0.01 chars/ms = 10,000,000 ms.
+      expect(
+        widgetRemainingReadingMs(
+          totalChars: 150000,
+          positionChars: 50000,
+          charsPerMs: 0.01,
+        ),
+        10000000,
+      );
+    });
+
+    test('no length / no speed / finished book are omitted', () {
+      expect(
+        widgetRemainingReadingMs(
+          totalChars: 0,
+          positionChars: 0,
+          charsPerMs: 0.01,
+        ),
+        isNull,
+      );
+      expect(
+        widgetRemainingReadingMs(
+          totalChars: 1000,
+          positionChars: 10,
+          charsPerMs: null,
+        ),
+        isNull,
+      );
+      expect(
+        widgetRemainingReadingMs(
+          totalChars: 1000,
+          positionChars: 1000,
+          charsPerMs: 0.01,
+        ),
+        isNull,
+      );
+      expect(
+        widgetRemainingReadingMs(
+          totalChars: 1000,
+          positionChars: 5000,
+          charsPerMs: 0.01,
+        ),
+        isNull,
+      );
+    });
+
+    test('never shows less than one minute left', () {
+      expect(
+        widgetRemainingReadingMs(
+          totalChars: 1000,
+          positionChars: 990,
+          charsPerMs: 0.01,
+        ),
+        60000,
+      );
+      expect(
+        widgetRemainingPlaybackMs(durationMs: 100000, positionMs: 99000),
+        60000,
+      );
+    });
+
+    test('playback: duration minus position, null without a duration', () {
+      expect(
+        widgetRemainingPlaybackMs(durationMs: 3600000, positionMs: 1200000),
+        2400000,
+      );
+      expect(
+        widgetRemainingPlaybackMs(durationMs: null, positionMs: 5),
+        isNull,
+      );
+      expect(widgetRemainingPlaybackMs(durationMs: 0, positionMs: 5), isNull);
+      expect(
+        widgetRemainingPlaybackMs(durationMs: 1000, positionMs: 2000),
+        isNull,
+      );
+    });
+
+    test('snapshot carries the formatted remaining text, empty if unknown', () {
+      final List<Map<String, Object?>> shelf = shelfOf(
+        build(
+          media: <WidgetMediaInput>[
+            const WidgetMediaInput(
+              kind: WidgetMediaKind.book,
+              id: 'a',
+              title: 'A',
+              recentAt: 2,
+              remainingMs: 7800000,
+            ),
+            const WidgetMediaInput(
+              kind: WidgetMediaKind.video,
+              id: 'b',
+              title: 'B',
+              recentAt: 1,
+            ),
+          ],
+        ),
+      );
+      expect(shelf[0]['remaining'], '~130m left');
+      expect(shelf[1]['remaining'], '');
+    });
+  });
+
+  group('downloads block', () {
+    WidgetDownloadTaskInput task(
+      String id,
+      WidgetDownloadState state, {
+      double? progress,
+      int rate = 0,
+      int createdAt = 0,
+    }) => WidgetDownloadTaskInput(
+      id: id,
+      title: 'Task $id',
+      state: state,
+      progress: progress,
+      downRateBps: rate,
+      createdAt: createdAt,
+    );
+
+    Map<String, Object?> block(List<WidgetDownloadTaskInput> tasks) => mapOf(
+      build(downloads: WidgetDownloadsInput(tasks: tasks))['downloads'],
+    );
+
+    test('no tasks or disabled = empty block', () {
+      expect(block(const <WidgetDownloadTaskInput>[])['count'], 0);
+      final Map<String, Object?> off = mapOf(
+        build(
+          downloads: WidgetDownloadsInput(
+            enabled: false,
+            tasks: <WidgetDownloadTaskInput>[
+              task('a', WidgetDownloadState.active, progress: 0.5),
+            ],
+          ),
+        )['downloads'],
+      );
+      expect(off['count'], 0);
+      expect(listOf(off['tasks']), isEmpty);
+    });
+
+    test('aggregates count, overall percent and speed', () {
+      final Map<String, Object?> d = block(<WidgetDownloadTaskInput>[
+        task('a', WidgetDownloadState.active, progress: 0.5, rate: 2097152),
+        task('b', WidgetDownloadState.active, progress: 0.25, rate: 1048576),
+        task('c', WidgetDownloadState.queued, progress: 0),
+        task('d', WidgetDownloadState.failed, progress: 0.9),
+        task('e', WidgetDownloadState.paused),
+      ]);
+      expect(d['count'], 5);
+      expect(d['running'], 3);
+      // mean of 50, 25, 0 (failed and unknown progress do not count) = 25
+      expect(d['percent'], 25);
+      expect(d['speed'], '3.0 MB/s');
+    });
+
+    test('lists the top three: active, queued, failed, then paused', () {
+      final Map<String, Object?> d = block(<WidgetDownloadTaskInput>[
+        task('p', WidgetDownloadState.paused, createdAt: 9),
+        task('f', WidgetDownloadState.failed, createdAt: 8),
+        task('q', WidgetDownloadState.queued, createdAt: 7),
+        task('a1', WidgetDownloadState.active, createdAt: 1),
+        task('a2', WidgetDownloadState.active, createdAt: 2),
+      ]);
+      expect(
+        listOf(d['tasks']).map((Map<String, Object?> t) => t['id']),
+        <Object?>['a2', 'a1', 'q'],
+      );
+    });
+
+    test('per task: percent, state, speed only while active', () {
+      final List<Map<String, Object?>> tasks = listOf(
+        block(<WidgetDownloadTaskInput>[
+          task('a', WidgetDownloadState.active, progress: 0.999, rate: 512),
+          task('p', WidgetDownloadState.paused, progress: 0.4, rate: 999),
+          task('u', WidgetDownloadState.queued),
+        ])['tasks'],
+      );
+      expect(tasks[0]['percent'], 99);
+      expect(tasks[0]['speed'], '512 B/s');
+      // order: active, queued, paused
+      expect(tasks[1]['state'], 'queued');
+      expect(tasks[1]['percent'], isNull);
+      expect(tasks[2]['state'], 'paused');
+      expect(tasks[2]['percent'], 40);
+      expect(tasks[2]['speed'], '');
+    });
+
+    test('unknown progress everywhere = percent null', () {
+      expect(
+        block(<WidgetDownloadTaskInput>[
+          task('a', WidgetDownloadState.active),
+        ])['percent'],
+        isNull,
+      );
+    });
+
+    test('job lifecycle / backend state mapping', () {
+      expect(
+        widgetDownloadStateForJob(lifecycle: 'active'),
+        WidgetDownloadState.active,
+      );
+      expect(
+        widgetDownloadStateForJob(
+          lifecycle: 'active',
+          backendState: 'pausedDL',
+        ),
+        WidgetDownloadState.paused,
+      );
+      expect(
+        widgetDownloadStateForJob(
+          lifecycle: 'active',
+          backendState: 'queuedDL',
+        ),
+        WidgetDownloadState.queued,
+      );
+      expect(
+        widgetDownloadStateForJob(lifecycle: 'active', backendState: 'error'),
+        WidgetDownloadState.failed,
+      );
+      expect(
+        widgetDownloadStateForJob(lifecycle: 'active', backendState: 'seeding'),
+        isNull,
+      );
+      expect(widgetDownloadStateForJob(lifecycle: 'completed'), isNull);
+      expect(
+        widgetDownloadStateForJob(lifecycle: 'cancelled'),
+        WidgetDownloadState.paused,
+      );
+      expect(
+        widgetDownloadStateForJob(lifecycle: 'needsAttention'),
+        WidgetDownloadState.failed,
+      );
+      expect(
+        widgetDownloadStateForJob(lifecycle: 'failed'),
+        WidgetDownloadState.failed,
+      );
+    });
+
+    test('speed formatting', () {
+      expect(formatWidgetSpeed(0), '');
+      expect(formatWidgetSpeed(-5), '');
+      expect(formatWidgetSpeed(900), '900 B/s');
+      expect(formatWidgetSpeed(1536), '1.5 KB/s');
+      expect(formatWidgetSpeed(150 * 1024), '150 KB/s');
+      expect(formatWidgetSpeed(5 * 1048576), '5.0 MB/s');
+    });
+
+    test('running = active or queued only', () {
+      expect(const WidgetDownloadsInput().hasActive, isFalse);
+      expect(
+        WidgetDownloadsInput(
+          tasks: <WidgetDownloadTaskInput>[
+            task('p', WidgetDownloadState.paused),
+            task('f', WidgetDownloadState.failed),
+          ],
+        ).hasActive,
+        isFalse,
+      );
+      expect(
+        WidgetDownloadsInput(
+          tasks: <WidgetDownloadTaskInput>[
+            task('q', WidgetDownloadState.queued),
+          ],
+        ).hasActive,
+        isTrue,
+      );
+    });
+
+    test('publish throttle: at most one republish per interval', () {
+      final DateTime t0 = DateTime(2026, 11, 2, 12);
+      Duration? delay(DateTime? last, DateTime now) =>
+          widgetDownloadsPublishDelay(lastPublishedAt: last, now: now);
+      expect(delay(null, t0), isNull);
+      expect(delay(t0, t0), const Duration(seconds: 5));
+      expect(
+        delay(t0, t0.add(const Duration(seconds: 2))),
+        const Duration(seconds: 3),
+      );
+      expect(delay(t0, t0.add(const Duration(seconds: 5))), isNull);
+      expect(delay(t0, t0.add(const Duration(minutes: 3))), isNull);
+      // Clock moved backwards: wait a full interval rather than flood.
+      expect(
+        delay(t0, t0.subtract(const Duration(seconds: 30))),
+        const Duration(seconds: 5),
+      );
+    });
+  });
+
+  group('on deck block', () {
+    WidgetOnDeckItemInput item(
+      String id, {
+      int recent = 0,
+      WidgetServerSource source = WidgetServerSource.mediaServer,
+      String server = 's1',
+      String title = 'Title',
+      String? collection,
+      double? progress,
+      String cover = '',
+    }) => WidgetOnDeckItemInput(
+      source: source,
+      serverId: server,
+      serverName: 'Server $server',
+      itemId: id,
+      title: title,
+      collectionName: collection,
+      recentMs: recent,
+      progress: progress,
+      coverPath: cover,
+    );
+
+    Map<String, Object?> block(WidgetOnDeckInput input) =>
+        mapOf(build(onDeck: input)['onDeck']);
+
+    String linkOf(String id) => WidgetServerLink.build(
+      source: WidgetServerSource.mediaServer,
+      serverId: 's1',
+      itemId: id,
+    );
+
+    test('default input = none with no items', () {
+      final Map<String, Object?> d = mapOf(build()['onDeck']);
+      expect(d['state'], 'none');
+      expect(listOf(d['items']), isEmpty);
+    });
+
+    test('off state never lists items even if some are passed', () {
+      final Map<String, Object?> d = block(
+        WidgetOnDeckInput(
+          state: WidgetOnDeckState.off,
+          items: <WidgetOnDeckItemInput>[item('a')],
+        ),
+      );
+      expect(d['state'], 'off');
+      expect(listOf(d['items']), isEmpty);
+    });
+
+    test('ok with nothing in progress is an empty ok', () {
+      final Map<String, Object?> d = block(
+        const WidgetOnDeckInput(state: WidgetOnDeckState.ok),
+      );
+      expect(d['state'], 'ok');
+      expect(listOf(d['items']), isEmpty);
+    });
+
+    test('newest first, de-duplicated, capped at four', () {
+      final Map<String, Object?> d = block(
+        WidgetOnDeckInput(
+          state: WidgetOnDeckState.ok,
+          items: <WidgetOnDeckItemInput>[
+            item('a', recent: 1),
+            item('b', recent: 5),
+            item('a', recent: 9), // duplicate key, dropped
+            item('c', recent: 4),
+            item('d', recent: 3),
+            item('e', recent: 2),
+            item('', recent: 99), // no id, dropped
+          ],
+        ),
+      );
+      final List<Map<String, Object?>> items = listOf(d['items']);
+      expect(items, hasLength(kWidgetOnDeckLimit));
+      expect(items.map((Map<String, Object?> i) => i['link']), <String>[
+        linkOf('b'),
+        linkOf('c'),
+        linkOf('d'),
+        linkOf('e'),
+      ]);
+    });
+
+    test('item shape: series is the headline, kind, progress, cover', () {
+      final Map<String, Object?> i = listOf(
+        block(
+          WidgetOnDeckInput(
+            state: WidgetOnDeckState.ok,
+            items: <WidgetOnDeckItemInput>[
+              item(
+                'e1',
+                title: 'S1E2 Ep',
+                collection: 'Frieren',
+                progress: 0.456,
+                recent: 7,
+                cover: '/c/a.png',
+              ),
+            ],
+          ),
+        )['items'],
+      ).single;
+      expect(i['kind'], 'video');
+      expect(i['title'], 'Frieren');
+      expect(i['subtitle'], 'S1E2 Ep');
+      expect(i['server'], 'Server s1');
+      expect(i['progress'], closeTo(0.456, 1e-9));
+      expect(i['position'], '46%');
+      expect(i['cover'], '/c/a.png');
+      expect(i['lastActive'], 'age:7');
+    });
+
+    test('audiobookshelf items are audiobooks, unknown progress is empty', () {
+      final Map<String, Object?> i = listOf(
+        block(
+          WidgetOnDeckInput(
+            state: WidgetOnDeckState.ok,
+            items: <WidgetOnDeckItemInput>[
+              item('x', source: WidgetServerSource.audiobookshelf),
+            ],
+          ),
+        )['items'],
+      ).single;
+      expect(i['kind'], 'audiobook');
+      expect(i['progress'], 0);
+      expect(i['position'], '');
+      expect(i['subtitle'], '');
+    });
+
+    test('privacy: titles stay in the JSON, hiding is a flag for native', () {
+      final Map<String, Object?> snap = build(
+        hideTitles: true,
+        onDeck: WidgetOnDeckInput(
+          state: WidgetOnDeckState.ok,
+          items: <WidgetOnDeckItemInput>[item('a', title: 'Secret')],
+        ),
+      );
+      expect(mapOf(snap['privacy'])['hideTitles'], isTrue);
+      expect(listOf(mapOf(snap['onDeck'])['items']).single['title'], 'Secret');
+    });
+
+    test('cover file names are stable, safe and prunable', () {
+      expect(
+        widgetCoverFileName('abs:srv:1'),
+        widgetCoverFileName('abs:srv:1'),
+      );
+      expect(
+        widgetCoverFileName('abs:srv:1'),
+        isNot(widgetCoverFileName('abs:srv:2')),
+      );
+      expect(
+        RegExp(
+          r'^[0-9a-f]{16}\.png$',
+        ).hasMatch(widgetCoverFileName('media-server:x/y?:*')),
+        isTrue,
+      );
+      expect(
+        widgetCoversToPrune(
+          existing: <String>['a.png', 'b.png', 'c.png'],
+          keep: <String>{'b.png'},
+        ),
+        <String>['a.png', 'c.png'],
+      );
     });
   });
 

@@ -28,7 +28,51 @@ data class WidgetMedia(
     val position: String = "",
     /** Relative "last active" text ("2 h ago"), empty when unknown (v2). */
     val lastActive: String = "",
+    /** Pre-formatted time to finish ("≈2h 10m left"), empty when it cannot be estimated. */
+    val remaining: String = "",
 )
+
+/** One task row of the Downloads widget. [state] is active | queued | paused | failed. */
+data class WidgetDownloadTask(
+    val id: String,
+    val title: String,
+    val state: String,
+    /** 0..100, null = unknown. */
+    val percent: Int?,
+    val speed: String,
+)
+
+/** The `downloads` block: counts, overall percent / speed and the top tasks. */
+data class WidgetDownloads(
+    /** Unfinished tasks (running, queued, paused, failed). */
+    val count: Int = 0,
+    /** Active + queued: the app keeps pushing while this is > 0. */
+    val running: Int = 0,
+    val percent: Int? = null,
+    val speed: String = "",
+    val tasks: List<WidgetDownloadTask> = emptyList(),
+)
+
+/** One in-progress media-server item of the On deck widget. */
+data class WidgetOnDeckItem(
+    /** `video` or `audiobook`. */
+    val kind: String,
+    val title: String,
+    val subtitle: String,
+    val server: String,
+    val progress: Float,
+    val position: String,
+    val cover: String?,
+    val lastActive: String,
+    /** `fushi://widget/server?...` deep link built by Dart. */
+    val link: String,
+) {
+    /** Adapter for the shared [Cover] composable. */
+    fun asMedia() = WidgetMedia(kind = kind, id = link, title = title, subtitle = subtitle, progress = progress, cover = cover)
+}
+
+/** `state` is none (no media server) | off (servers exist, opt-in off) | ok. */
+data class WidgetOnDeck(val state: String = "none", val items: List<WidgetOnDeckItem> = emptyList())
 
 /** One immersion category row (reading / listening / watching / games) of `today.categories`. */
 data class WidgetCategory(val id: String, val label: String, val ms: Long, val time: String, val link: String)
@@ -133,6 +177,8 @@ data class WidgetSnapshot(
     val ankiPackage: String = "",
     val vocab: List<WidgetVocab> = emptyList(),
     val nowPlaying: WidgetNowPlaying? = null,
+    val downloads: WidgetDownloads = WidgetDownloads(),
+    val onDeck: WidgetOnDeck = WidgetOnDeck(),
 ) {
     fun label(key: String, fallback: String): String = labels[key]?.takeIf { it.isNotEmpty() } ?: fallback
 
@@ -261,6 +307,50 @@ object WidgetStore {
             }
         }
         val srsEnabled = srs?.optBoolean("enabled", false) ?: false
+        val downloads = o.optJSONObject("downloads")?.let { d ->
+            val tasks = ArrayList<WidgetDownloadTask>()
+            d.optJSONArray("tasks")?.let { a ->
+                for (i in 0 until a.length()) a.optJSONObject(i)?.let {
+                    tasks.add(
+                        WidgetDownloadTask(
+                            id = it.optString("id"),
+                            title = it.optString("title"),
+                            state = it.optString("state"),
+                            percent = it.intOrNull("percent")?.coerceIn(0, 100),
+                            speed = it.optString("speed"),
+                        ),
+                    )
+                }
+            }
+            WidgetDownloads(
+                count = d.optInt("count", 0),
+                running = d.optInt("running", 0),
+                percent = d.intOrNull("percent")?.coerceIn(0, 100),
+                speed = d.optString("speed"),
+                tasks = tasks,
+            )
+        } ?: WidgetDownloads()
+        val onDeck = o.optJSONObject("onDeck")?.let { d ->
+            val items = ArrayList<WidgetOnDeckItem>()
+            d.optJSONArray("items")?.let { a ->
+                for (i in 0 until a.length()) a.optJSONObject(i)?.let {
+                    items.add(
+                        WidgetOnDeckItem(
+                            kind = it.optString("kind"),
+                            title = it.optString("title"),
+                            subtitle = it.optString("subtitle"),
+                            server = it.optString("server"),
+                            progress = it.optDouble("progress", 0.0).toFloat().coerceIn(0f, 1f),
+                            position = it.optString("position"),
+                            cover = it.optString("cover").takeIf { c -> c.isNotEmpty() },
+                            lastActive = it.optString("lastActive"),
+                            link = it.optString("link"),
+                        ),
+                    )
+                }
+            }
+            WidgetOnDeck(state = d.optString("state").ifEmpty { "none" }, items = items)
+        } ?: WidgetOnDeck()
         return WidgetSnapshot(
             day = o.optString("day"),
             labels = labels,
@@ -317,6 +407,8 @@ object WidgetStore {
             srsDueTomorrow = srs?.optInt("dueTomorrow", 0) ?: 0,
             ankiPackage = srs?.optString("ankiPackage").orEmpty(),
             vocab = vocab,
+            downloads = downloads,
+            onDeck = onDeck,
             nowPlaying = o.optJSONObject("nowPlaying")?.let { nowPlaying(it) },
         )
     }
@@ -348,6 +440,7 @@ object WidgetStore {
         cover = o.optString("cover").takeIf { it.isNotEmpty() },
         position = o.optString("position"),
         lastActive = o.optString("lastActive"),
+        remaining = o.optString("remaining"),
     )
 }
 

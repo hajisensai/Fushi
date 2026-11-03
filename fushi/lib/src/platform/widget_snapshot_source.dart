@@ -7,6 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
+    show DiscoveryDownloadQueue, DiscoveryDownloadStatus, DiscoveryDownloadTask;
+import 'package:fushi_engine/media/torrent/torrent_backend.dart'
+    show TorrentSnapshot;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -32,16 +36,30 @@ import 'package:fushi/src/media/music/music_player_engine.dart'
     show MusicPlayerEngine;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatActivityRelativeTime, formatStatChars, formatStatTime;
 import 'package:fushi/src/platform/widget_links.dart';
+import 'package:fushi/src/platform/widget_cover_cache.dart';
+import 'package:fushi/src/platform/widget_progress.dart';
 import 'package:fushi/src/platform/widget_snapshot.dart';
 import 'package:fushi/src/platform/widget_snapshot_labels.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
+    show ServerContinueCandidate, ServerContinueSource;
+import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart'
+    show ServerContinueFeed;
+import 'package:fushi/src/utils/misc/dashboard_server_continue_gates.dart'
+    show serverContinueGates;
+import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
+    show audiobookshelfTabServers;
+import 'package:fushi/src/media/video/media_server/media_server_config.dart'
+    show MediaServerConfig;
 
 /// 快照里每个封面最多探测的候选数 = 书架上限，封面文件探测只对入选的几条做。
 const int _kCoverProbeLimit = kWidgetShelfLimit;
@@ -94,6 +112,14 @@ class WidgetSnapshotSource {
   bool _nowPlayingRerun = false;
   ProviderSubscription<int>? _srsSubscription;
   Timer? _debounceTimer;
+
+  // ---- Downloads widget: light republish loop (see [_scheduleDownloadsTick]) ----
+  StreamSubscription<void>? _downloadsSubscription;
+  StreamSubscription<void>? _serverFeedSubscription;
+  DiscoveryDownloadQueue? _downloadQueue;
+  Timer? _downloadsTimer;
+  DateTime? _downloadsPublishedAt;
+  final WidgetCoverCache _coverCache = WidgetCoverCache();
   String? _contextSignature;
   bool _started = false;
   bool _running = false;
@@ -118,7 +144,25 @@ class WidgetSnapshotSource {
     appModel.audiobookSession.addListener(_onPlaybackChanged);
     _playbackModel = appModel;
     _playbackKeyLast = _playbackKey(appModel);
+    _startProgressFeeds(appModel);
     unawaited(refreshNow());
+  }
+
+  /// Downloads: the durable job table and the direct-link queue say "something
+  /// changed" (never a per-byte stream: ticks are throttled to one per 5 s and only
+  /// run while a task is running). On deck: the dashboard's own server feed says a
+  /// fetch finished; the widget sends no request of its own.
+  void _startProgressFeeds(AppModel appModel) {
+    _downloadsSubscription = appModel.database.watchVideoDownloadJobs().listen(
+      (_) => _onDownloadsSignal(),
+    );
+    if (StoreRestrictedCapability.downloads.isAvailable) {
+      _downloadQueue = appModel.discoveryDownloadQueue
+        ..addListener(_onDownloadsSignal);
+    }
+    _serverFeedSubscription = ServerContinueFeed.of(
+      appModel.database,
+    ).updates.listen((_) => requestRefresh());
   }
 
   void dispose() {
@@ -130,6 +174,15 @@ class WidgetSnapshotSource {
     _playbackModel = null;
     _debounceTimer?.cancel();
     _debounceTimer = null;
+    _downloadsTimer?.cancel();
+    _downloadsTimer = null;
+    unawaited(_downloadsSubscription?.cancel());
+    _downloadsSubscription = null;
+    unawaited(_serverFeedSubscription?.cancel());
+    _serverFeedSubscription = null;
+    _downloadQueue?.removeListener(_onDownloadsSignal);
+    _downloadQueue = null;
+    _lastSnapshot = null;
     unawaited(_dataSubscription?.cancel());
     _dataSubscription = null;
     _srsSubscription?.close();
@@ -195,7 +248,10 @@ class WidgetSnapshotSource {
         try {
           final Map<String, Object?> snapshot = await collect();
           if (!_isActive()) return;
+          _lastSnapshot = snapshot;
+          _downloadsPublishedAt = DateTime.now();
           await _publisher.publish(snapshot);
+          _afterPublish(snapshot);
         } on Object catch (error, stack) {
           debugPrint('WidgetSnapshotSource: collect failed: $error\n$stack');
         }
@@ -218,7 +274,7 @@ class WidgetSnapshotSource {
     final List<WidgetMediaInput> media = <WidgetMediaInput>[
       if (modules.isEnabled(ModuleId.books) ||
           modules.isEnabled(ModuleId.manga))
-        ...await _collectBooks(appModel),
+        ...await _collectBooks(appModel, facts, window),
       if (modules.isEnabled(ModuleId.video)) ...await _collectVideos(db, facts),
     ];
 
@@ -266,6 +322,10 @@ class WidgetSnapshotSource {
       formatCount: _formatCount,
       formatAge: (int epochMs) => formatActivityRelativeTime(epochMs, now),
       weekdayLabel: (String key) => weekdayLabels[key] ?? '',
+      formatTimeLeft: (int ms) =>
+          t.widget_label_time_left(time: formatStatTime(ms)),
+      downloads: await _collectDownloads(appModel),
+      onDeck: await _collectOnDeck(appModel),
     );
     _lastSnapshot = snapshot;
     return snapshot;
@@ -616,6 +676,226 @@ class WidgetSnapshotSource {
     ];
   }
 
+  // ---------------------------------------------------------------------------
+  // Downloads widget
+  // ---------------------------------------------------------------------------
+
+  void _onDownloadsSignal() {
+    if (!enabled || !_started) return;
+    _scheduleDownloadsTick();
+  }
+
+  /// After a full publish: keep the light loop going only while a task runs.
+  void _afterPublish(Map<String, Object?> snapshot) {
+    final Object? block = snapshot['downloads'];
+    if (block is Map<String, Object?> &&
+        ((block['running'] as int?) ?? 0) > 0) {
+      _scheduleDownloadsTick();
+    }
+  }
+
+  /// At most one pending timer, firing at most every
+  /// [kWidgetDownloadsPublishInterval] since the last publish. No timer exists
+  /// while idle: a tick re-arms itself only when it saw a running task.
+  void _scheduleDownloadsTick() {
+    if (_downloadsTimer != null) return;
+    final Duration delay =
+        widgetDownloadsPublishDelay(
+          lastPublishedAt: _downloadsPublishedAt,
+          now: DateTime.now(),
+        ) ??
+        Duration.zero;
+    _downloadsTimer = Timer(delay, () {
+      _downloadsTimer = null;
+      unawaited(_downloadsTick());
+    });
+  }
+
+  /// Rebuilds only the `downloads` block of the last full snapshot (no stats /
+  /// vocab / SRS re-collection) and republishes it.
+  Future<void> _downloadsTick() async {
+    if (!enabled || !_started || !_isActive()) return;
+    final Map<String, Object?>? base = _lastSnapshot;
+    if (base == null) {
+      unawaited(refreshNow());
+      return;
+    }
+    // A full refresh in flight publishes the downloads block itself.
+    if (_running) return;
+    try {
+      final WidgetDownloadsInput input = await _collectDownloads(
+        _ref.read(appProvider),
+      );
+      if (!_isActive()) return;
+      final Map<String, Object?> next = <String, Object?>{
+        ...base,
+        'generatedAt': DateTime.now().millisecondsSinceEpoch,
+        'downloads': buildWidgetDownloadsJson(input),
+      };
+      _lastSnapshot = next;
+      _downloadsPublishedAt = DateTime.now();
+      await _publisher.publish(next);
+      if (input.hasActive) _scheduleDownloadsTick();
+    } on Object catch (error) {
+      debugPrint('WidgetSnapshotSource: downloads tick failed: $error');
+    }
+  }
+
+  /// Unfinished tasks of the download center that have a local, cheap source:
+  /// durable video/torrent jobs (live progress + speed from the torrent backend
+  /// for the active ones) and the direct-link queue. Manga catalog downloads,
+  /// remote-host and transcription tasks are not included.
+  Future<WidgetDownloadsInput> _collectDownloads(AppModel appModel) async {
+    if (!StoreRestrictedCapability.downloads.isAvailable ||
+        !appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
+      return const WidgetDownloadsInput(enabled: false);
+    }
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int failureCutoff =
+        now - kWidgetDownloadsFailureMaxAge.inMilliseconds;
+    final List<WidgetDownloadTaskInput> tasks = <WidgetDownloadTaskInput>[];
+
+    final List<VideoDownloadJobRow> jobs = await appModel.database
+        .getVideoDownloadJobs();
+    final List<VideoDownloadJobRow> active = <VideoDownloadJobRow>[
+      for (final VideoDownloadJobRow j in jobs)
+        if (j.lifecycle == VideoDownloadJobLifecycle.active) j,
+    ];
+    Map<String, TorrentSnapshot> snapshots = const <String, TorrentSnapshot>{};
+    if (active.isNotEmpty) {
+      try {
+        snapshots =
+            await appModel.videoDownloadPipelineService
+                ?.loadTaskSnapshots(active)
+                .timeout(const Duration(seconds: 4)) ??
+            snapshots;
+      } on Object catch (error) {
+        // Live numbers are decoration: fall back to the durable stage progress.
+        debugPrint('WidgetSnapshotSource: torrent snapshots failed: $error');
+      }
+    }
+    for (final VideoDownloadJobRow job in jobs) {
+      final TorrentSnapshot? snap = snapshots[job.jobId];
+      final WidgetDownloadState? state = widgetDownloadStateForJob(
+        lifecycle: job.lifecycle,
+        backendState: snap?.state,
+      );
+      if (state == null) continue;
+      if (state == WidgetDownloadState.failed &&
+          job.updatedAt < failureCutoff) {
+        continue;
+      }
+      tasks.add(
+        WidgetDownloadTaskInput(
+          id: job.jobId,
+          title: job.title,
+          state: state,
+          progress: snap?.progress ?? job.stageProgress,
+          downRateBps: snap?.downRateBps ?? 0,
+          createdAt: job.createdAt,
+        ),
+      );
+    }
+
+    for (final DiscoveryDownloadTask task
+        in appModel.discoveryDownloadQueue.tasks) {
+      final WidgetDownloadState? state = switch (task.status) {
+        DiscoveryDownloadStatus.running => WidgetDownloadState.active,
+        DiscoveryDownloadStatus.queued ||
+        DiscoveryDownloadStatus.waitingRetry => WidgetDownloadState.queued,
+        DiscoveryDownloadStatus.failed =>
+          task.createdAt < failureCutoff ? null : WidgetDownloadState.failed,
+        DiscoveryDownloadStatus.done ||
+        DiscoveryDownloadStatus.cancelled => null,
+      };
+      if (state == null) continue;
+      final int? total = task.totalBytes;
+      tasks.add(
+        WidgetDownloadTaskInput(
+          id: 'direct:${task.taskId}',
+          title: task.item.title,
+          state: state,
+          progress: total != null && total > 0
+              ? task.receivedBytes / total
+              : null,
+          createdAt: task.createdAt,
+        ),
+      );
+    }
+    return WidgetDownloadsInput(tasks: tasks);
+  }
+
+  // ---------------------------------------------------------------------------
+  // On deck widget
+  // ---------------------------------------------------------------------------
+
+  /// In-progress items of the user's media servers, taken from the **dashboard's
+  /// own** [ServerContinueFeed] cache (the same Jellyfin / Emby / Plex /
+  /// Audiobookshelf fetch Home > Continue does, behind the same opt-in gates):
+  /// the widget issues no server request. Until Home has loaded once in this
+  /// process the cache is empty and the list is empty too.
+  Future<WidgetOnDeckInput> _collectOnDeck(AppModel appModel) async {
+    final ModuleVisibility modules = appModel.moduleVisibility;
+    final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
+        serverContinueGates(appModel);
+    bool hasMedia = false;
+    if (modules.isEnabled(ModuleId.video)) {
+      try {
+        final List<MediaServerConfig> configs = await SyncRepository(
+          appModel.database,
+        ).getMediaServers();
+        hasMedia = configs.isNotEmpty;
+      } on Object catch (error) {
+        debugPrint('WidgetSnapshotSource: media server configs failed: $error');
+      }
+    }
+    final bool hasAbs =
+        modules.isEnabled(ModuleId.books) &&
+        audiobookshelfTabServers(
+          appModel.prefsRepo.discoveryAudiobookshelfServers,
+        ).isNotEmpty;
+    if (!hasMedia && !hasAbs) return const WidgetOnDeckInput();
+    final bool media = hasMedia && gates.mediaServers;
+    final bool abs = hasAbs && gates.audiobookshelf;
+    if (!media && !abs) {
+      return const WidgetOnDeckInput(state: WidgetOnDeckState.off);
+    }
+    final List<ServerContinueCandidate> candidates =
+        <ServerContinueCandidate>[
+          for (final ServerContinueCandidate c in ServerContinueFeed.of(
+            appModel.database,
+          ).current)
+            if (c.source == ServerContinueSource.mediaServer ? media : abs) c,
+        ]..sort(
+          (ServerContinueCandidate a, ServerContinueCandidate b) =>
+              b.recentMs.compareTo(a.recentMs),
+        );
+    final List<ServerContinueCandidate> top = candidates
+        .take(kWidgetOnDeckLimit)
+        .toList();
+    // Covers are local files; slow servers only cost the cover (time-boxed).
+    final Map<String, String> covers = await _coverCache.resolve(top);
+    return WidgetOnDeckInput(
+      state: WidgetOnDeckState.ok,
+      items: <WidgetOnDeckItemInput>[
+        for (final ServerContinueCandidate c in top)
+          WidgetOnDeckItemInput(
+            source: c.source == ServerContinueSource.mediaServer
+                ? WidgetServerSource.mediaServer
+                : WidgetServerSource.audiobookshelf,
+            serverId: c.serverId,
+            serverName: c.serverName,
+            itemId: c.itemId,
+            title: c.title,
+            collectionName: c.collectionName,
+            recentMs: c.recentMs,
+            progress: c.progress,
+            coverPath: covers[c.key] ?? '',
+          ),
+      ],
+    );
+  }
+
   String _formatCount(int count) {
     try {
       return NumberFormat.decimalPattern(
@@ -628,7 +908,11 @@ class WidgetSnapshotSource {
 
   /// 在读的书 / 漫画。与首页不同的一点：书合集不做「下一卷」推进，每本在读的
   /// 书各算一条。
-  Future<List<WidgetMediaInput>> _collectBooks(AppModel appModel) async {
+  Future<List<WidgetMediaInput>> _collectBooks(
+    AppModel appModel,
+    StatFacts facts,
+    StatWindow window,
+  ) async {
     final List<MediaItem> books = await _ref.read(
       fushiBooksProvider(JapaneseLanguage.instance).future,
     );
@@ -643,6 +927,23 @@ class WidgetSnapshotSource {
     );
     final ModuleVisibility modules = appModel.moduleVisibility;
     final List<WidgetMediaInput> result = <WidgetMediaInput>[];
+    // Reading-speed samples: non-manga book days of the last
+    // [kWidgetSpeedWindowDays] stat days that logged both time and characters.
+    final String sinceKey = window.lastDayKeys(kWidgetSpeedWindowDays).first;
+    final List<WidgetSpeedSample> speedSamples = <WidgetSpeedSample>[
+      for (final StatFact f in facts.daily)
+        if (f.isBook &&
+            !f.isManga &&
+            f.ms > 0 &&
+            f.chars > 0 &&
+            f.dateKey.compareTo(sinceKey) >= 0)
+          WidgetSpeedSample(
+            mediaKey: f.mediaKey,
+            dateKey: f.dateKey,
+            ms: f.ms,
+            chars: f.chars,
+          ),
+    ];
     for (final MediaItem item in books) {
       if (!isDashboardContinueBook(item, completed)) continue;
       final WidgetMediaKind kind = _bookKind(item);
@@ -650,6 +951,24 @@ class WidgetSnapshotSource {
       final String bookKey =
           ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
           item.mediaIdentifier;
+      // `MediaItem.position / duration` are in characters only for text books whose
+      // chapter sizes are known (`ReaderFushiSource._bookToMediaItem` sets
+      // `sourceMetadata` exactly then); otherwise they are pages / chapters and no
+      // time-left estimate is made (never guessed).
+      final int? remainingMs =
+          kind == WidgetMediaKind.book &&
+              item.sourceMetadata != null &&
+              item.duration > 1
+          ? widgetRemainingReadingMs(
+              totalChars: item.duration,
+              positionChars: item.position,
+              charsPerMs: computeWidgetReadingSpeeds(
+                speedSamples,
+                bookKey: bookKey,
+                sinceDateKey: sinceKey,
+              ).best,
+            )
+          : null;
       result.add(
         WidgetMediaInput(
           kind: kind,
@@ -658,6 +977,7 @@ class WidgetSnapshotSource {
           subtitle: item.author ?? '',
           progress: item.duration > 0 ? item.position / item.duration : 0,
           recentAt: lastReadByUid[uidByKey[bookKey] ?? bookKey] ?? 0,
+          remainingMs: remainingMs,
         ),
       );
     }
@@ -709,6 +1029,14 @@ class WidgetSnapshotSource {
           recentAt: watchAt[v.bookUid] ?? v.importedAt ?? 0,
           // 视频封面候选先放在 coverPath，真正是否存在在 [_withCovers] 里探测。
           coverPath: v.coverPath ?? '',
+          // Real playback time: duration - position of the single file. Playlists
+          // (several episodes in one row) have no whole-playlist duration: omitted.
+          remainingMs: playlistEpisodeCount(v.playlistJson) >= 2
+              ? null
+              : widgetRemainingPlaybackMs(
+                  durationMs: specs[v.videoPath]?.durationMs,
+                  positionMs: v.lastPositionMs,
+                ),
         ),
     ];
   }
@@ -735,6 +1063,7 @@ class WidgetSnapshotSource {
           subtitle: m.subtitle,
           progress: m.progress,
           recentAt: m.recentAt,
+          remainingMs: m.remainingMs,
           coverPath: m.kind == WidgetMediaKind.video
               ? await dashboardVideoCoverPath(
                       collectionCovers: const <String?>[],

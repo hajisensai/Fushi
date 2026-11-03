@@ -87,6 +87,29 @@ enum WidgetSettingsTarget {
   }
 }
 
+/// 「接下来」小组件里一条服务器条目的来源（深链 `server?source=` 的值）。
+enum WidgetServerSource {
+  /// Jellyfin / Emby / Plex（视频模块）。
+  mediaServer,
+
+  /// Audiobookshelf（有声书，书模块）。
+  audiobookshelf;
+
+  String get wire => name;
+
+  /// 门控模块：关着时深链不落地。
+  ModuleId get module => this == mediaServer ? ModuleId.video : ModuleId.books;
+
+  static WidgetServerSource? tryParse(String? value) {
+    if (value == null) return null;
+    final String lower = value.toLowerCase();
+    for (final WidgetServerSource s in values) {
+      if (s.name.toLowerCase() == lower) return s;
+    }
+    return null;
+  }
+}
+
 /// Android 桌面小组件点按产生的深链（`fushi://widget/...`）。
 ///
 /// 与长按图标的 [AppShortcut] 刻意分开：那个枚举会被发布成启动器快捷方式，
@@ -102,6 +125,9 @@ enum WidgetSettingsTarget {
 /// - `fushi://widget/settings/<cards|widgets>`：打开对应设置页。
 /// - `fushi://widget/vocab`：打开收藏夹（收藏词 / 制卡历史）。
 /// - `fushi://widget/music/now`：音乐播放页（「正在播放」小组件的音乐入口；有声书走 `continue`）。
+/// - `fushi://widget/downloads`：打开下载中心（浏览 › 下载 › 任务）。
+/// - `fushi://widget/server?source=<mediaServer|audiobookshelf>&server=<id>&item=<id>`：
+///   打开首页「继续」里的那条服务器条目（与首页点卡同一落地）。
 sealed class WidgetLink {
   const WidgetLink();
 
@@ -169,6 +195,16 @@ sealed class WidgetLink {
                 uri.pathSegments[1].toLowerCase() == 'now'
             ? const WidgetMusicPlayerLink()
             : null;
+      case 'downloads':
+        return const WidgetDownloadsLink();
+      case 'server':
+        final WidgetServerSource? source = WidgetServerSource.tryParse(
+          uri.queryParameters['source'],
+        );
+        final String server = uri.queryParameters['server'] ?? '';
+        final String item = uri.queryParameters['item'] ?? '';
+        if (source == null || server.isEmpty || item.isEmpty) return null;
+        return WidgetServerLink(source: source, serverId: server, itemId: item);
     }
     return null;
   }
@@ -274,6 +310,56 @@ final class WidgetMusicPlayerLink extends WidgetLink {
   const WidgetMusicPlayerLink();
 }
 
+final class WidgetDownloadsLink extends WidgetLink {
+  const WidgetDownloadsLink();
+}
+
+final class WidgetServerLink extends WidgetLink {
+  const WidgetServerLink({
+    required this.source,
+    required this.serverId,
+    required this.itemId,
+  });
+
+  final WidgetServerSource source;
+  final String serverId;
+
+  /// 与 `ServerContinueCandidate.itemId` 同口径（ABS 播客集是 `<item>/<episode>`）。
+  final String itemId;
+
+  /// 快照里给原生侧的完整链接（参数做百分号编码）。
+  static String build({
+    required WidgetServerSource source,
+    required String serverId,
+    required String itemId,
+  }) => Uri(
+    scheme: WidgetLink._scheme,
+    host: WidgetLink._host,
+    path: '/server',
+    queryParameters: <String, String>{
+      'source': source.wire,
+      'server': serverId,
+      'item': itemId,
+    },
+  ).toString();
+
+  /// 首页 feed 里的候选键（`ServerContinueCandidate.key`）。
+  String get key => '${source.name}|$serverId|$itemId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is WidgetServerLink &&
+      other.source == source &&
+      other.serverId == serverId &&
+      other.itemId == itemId;
+
+  @override
+  int get hashCode => Object.hash(source, serverId, itemId);
+
+  @override
+  String toString() => 'WidgetServerLink($source, $serverId, $itemId)';
+}
+
 /// 小组件深链的冷启动排队，与 `AppShortcutQueue` 同口径：冷启动时 URL 比
 /// `initialise()` 先到，而 HomePage.initState 会把首页 tab 重置成启动 tab，所以先
 /// 存着，等 home 挂载后的首帧再落地；连点多次只落最后一条。
@@ -334,6 +420,10 @@ class WidgetLinkQueue {
 ///   - 设置：[openSettings]；制卡设置跟制卡模块门控，小组件设置页不门控。
 ///   - 收藏夹：[openVocab]。
 ///   - 音乐播放页：[openMusicPlayer]。
+///   - 下载中心：浏览模块开着才落地（切到浏览 tab）；之后 [openDownloads] 切到
+///     「下载 › 任务」页签。
+///   - 服务器条目：落到首页（让首页「继续」的取数起来），[openServerItem] 返回 false
+///     （条目已不在进行中）时留在首页。
 Future<void> runWidgetLink(
   WidgetLink link, {
   required ModuleVisibility visibility,
@@ -349,6 +439,8 @@ Future<void> runWidgetLink(
   required Future<void> Function() openMusicPlayer,
   bool Function(WidgetContinueLink link)? isContinueItemOpen,
   ExternalMediaNavigation? media,
+  Future<void> Function()? openDownloads,
+  Future<bool> Function(WidgetServerLink link)? openServerItem,
 }) async {
   if (link is WidgetOpenLink) return;
   if (link is WidgetContinueLink && (isContinueItemOpen?.call(link) ?? false)) {
@@ -373,6 +465,10 @@ Future<void> runWidgetLink(
     WidgetVocabLink() => HomeTab.home,
     WidgetMusicPlayerLink() =>
       visibility.isEnabled(ModuleId.music) ? HomeTab.music : HomeTab.home,
+    WidgetDownloadsLink() =>
+      visibility.isEnabled(ModuleId.browse) ? HomeTab.browse : null,
+    WidgetServerLink(:final WidgetServerSource source) =>
+      visibility.isEnabled(source.module) ? HomeTab.home : null,
   };
   if (tab == null) return;
   if (!onboardingCompleted) {
@@ -412,5 +508,9 @@ Future<void> runWidgetLink(
     case WidgetMusicPlayerLink():
       // 模块关着时 tab 已回首页，不再往上压播放页。
       if (visibility.isEnabled(ModuleId.music)) await openMusicPlayer();
+    case WidgetDownloadsLink():
+      await openDownloads?.call();
+    case WidgetServerLink():
+      await openServerItem?.call(link);
   }
 }

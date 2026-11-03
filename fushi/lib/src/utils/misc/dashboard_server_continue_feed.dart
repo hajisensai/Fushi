@@ -54,6 +54,14 @@ class ServerContinueFeed {
   /// 上一轮的结果（页面重建首帧直接用，不闪）。
   List<ServerContinueCandidate> get current => _current;
 
+  final StreamController<void> _updates = StreamController<void>.broadcast();
+
+  /// 每取完一轮就响一次（桌面「接下来」小组件据此重发快照，不另发任何请求）。
+  Stream<void> get updates => _updates.stream;
+
+  /// 当前排队 / 进行中的取数全部结束后完成（没有在跑的取数就立即完成）。
+  Future<void> settled() => _tail;
+
   bool _isFresh(String gate) {
     final int? at = _fetchedAt;
     return at != null && _gate == gate && _nowMs() - at < ttl.inMilliseconds;
@@ -76,6 +84,7 @@ class ServerContinueFeed {
       _current = loaded;
       _gate = gate;
       _fetchedAt = startedAt;
+      if (!_updates.isClosed) _updates.add(null);
       return loaded;
     });
     _tail = run.then<void>((_) {}, onError: (Object _) {});
