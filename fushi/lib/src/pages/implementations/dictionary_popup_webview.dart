@@ -333,6 +333,29 @@ Set<String> enabledDictionaryFontPaths(List<Map<String, dynamic>> fonts) =>
         .map(p.canonicalize)
         .toSet();
 
+/// 「高级制卡」确认往返回点出来的制卡 fields 在交宿主前要并进的两样选择：
+///
+/// * [wordAudioUrl]：单词音频就是 fields 的 `audio`（popup.js 现解析的默认源）。
+///   null = 不改；空串 = 不要（清空）；其余 = 换成这条 URL。原地换掉后下游各车道
+///   （本机、互联转发、待发队列）按原样处理，不必认识新字段。
+/// * [overrides]：对话框里的其余调整，经 [MiningRequestOverrides.attach] 附上。
+///
+/// 纯函数、不读 State：`mineEntry` / `updateEntry` / `queueOverwrite` /
+/// `minedCardAction` 四个桥 handler 经 [DictionaryPopupWebViewState] 的
+/// `_withConfirmMineOverrides` 共用这一处，测试直接调它验合并规则。
+Map<String, String> applyConfirmMineChoices(
+  Map<String, String> fields, {
+  MiningRequestOverrides? overrides,
+  String? wordAudioUrl,
+}) {
+  Map<String, String> out = fields;
+  if (wordAudioUrl != null) {
+    out = <String, String>{...out, 'audio': wordAudioUrl};
+  }
+  if (overrides == null) return out;
+  return MiningRequestOverrides.attach(out, overrides);
+}
+
 /// 词条「高级制卡」按钮的宿主回调。
 ///
 /// * [entryIndex]：该词条在 `:scope > .entry` 里的稳定 DOM 序，确认时
@@ -1635,22 +1658,31 @@ JSON.stringify((function(){
     );
   }
 
+  /// 只重新解析第 [sourceIndex] 个音频源（「高级制卡」确认时刷新互联源的短时令牌）。
+  /// 别的设备的结果没有可刷新的源，回空列表（调用方退回打开时那条）。
+  Future<List<Map<String, String>>> listWordAudioChoicesForSource(
+    String expression,
+    String reading,
+    int sourceIndex,
+  ) async {
+    if (widget.resourceSource != null) return const <Map<String, String>>[];
+    return listWordAudioWebViewChoicesForSource(
+      ref.read(appProvider),
+      expression,
+      reading,
+      sourceIndex,
+    );
+  }
+
   /// 三个制卡桥 handler 解析出 fields 后**同步**调用：本次往返带了覆盖项就并进去。
   /// 必须在把 fields 交给宿主之前、且不隔 await——否则 finally 清掉之后才到的桥调用
-  /// （或下一次普通「+」）会读错。
-  Map<String, String> _withConfirmMineOverrides(Map<String, String> fields) {
-    final String? wordAudioUrl = _confirmMineWordAudioUrl;
-    final MiningRequestOverrides? overrides = _confirmMineOverrides;
-    Map<String, String> out = fields;
-    // 单词音频就是 fields 的 `audio`（popup.js 现解析的默认源）：用户在对话框里
-    // 换了源 / 选了「不要」，在交宿主前原地换掉，下游各车道（本机、互联转发、
-    // 待发队列）按原样处理，不必认识新字段。
-    if (wordAudioUrl != null) {
-      out = <String, String>{...out, 'audio': wordAudioUrl};
-    }
-    if (overrides == null) return out;
-    return MiningRequestOverrides.attach(out, overrides);
-  }
+  /// （或下一次普通「+」）会读错。合并规则见 [applyConfirmMineChoices]。
+  Map<String, String> _withConfirmMineOverrides(Map<String, String> fields) =>
+      applyConfirmMineChoices(
+        fields,
+        overrides: _confirmMineOverrides,
+        wordAudioUrl: _confirmMineWordAudioUrl,
+      );
 
   /// 宿主已接手 payload：**只解除超时**，不关窗。三个制卡桥 handler 都在把 payload
   /// 交出去的那一刻调。

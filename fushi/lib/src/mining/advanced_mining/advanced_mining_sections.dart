@@ -710,13 +710,47 @@ String advancedMiningWordAudioLabel(AdvancedMiningWordAudioChoice choice) {
   return '$name · $variant';
 }
 
+/// 整列候选的显示名（与 [AdvancedMiningController.wordAudioChoices] 逐位对应）。
+/// 显示名撞车的（没起名、同 host 的两个模板源都显示成 host）补上它在音频源设置里
+/// 的序号「#n」；同一个源内仍撞车的再补出现次序，保证每行都分得出来。
+List<String> advancedMiningWordAudioLabels(
+  List<AdvancedMiningWordAudioChoice> choices,
+) {
+  List<String> labels = <String>[
+    for (final AdvancedMiningWordAudioChoice c in choices)
+      advancedMiningWordAudioLabel(c),
+  ];
+  Map<String, int> counts(List<String> xs) {
+    final Map<String, int> m = <String, int>{};
+    for (final String x in xs) {
+      m[x] = (m[x] ?? 0) + 1;
+    }
+    return m;
+  }
+
+  Map<String, int> n = counts(labels);
+  labels = <String>[
+    for (final (int i, String l) in labels.indexed)
+      (n[l] ?? 0) > 1 && choices[i].sourceIndex >= 0
+          ? '$l · #${choices[i].sourceIndex + 1}'
+          : l,
+  ];
+  n = counts(labels);
+  final Map<String, int> seen = <String, int>{};
+  return <String>[
+    for (final String l in labels)
+      if ((n[l] ?? 0) > 1) '$l (${seen[l] = (seen[l] ?? 0) + 1})' else l,
+  ];
+}
+
 /// 窄屏摘要行的值：选中的源 / 「不要」/ 「暂无」。
 String advancedMiningWordAudioSummary(AdvancedMiningController c) {
   if (c.omitWordAudio) return t.popup_advanced_mining_audio_none;
   if (!c.wordAudioLoaded) return '…';
-  final AdvancedMiningWordAudioChoice? chosen = c.selectedWordAudio;
-  if (chosen == null) return t.popup_advanced_mining_word_audio_unavailable;
-  return advancedMiningWordAudioLabel(chosen);
+  if (c.selectedWordAudio == null) {
+    return t.popup_advanced_mining_word_audio_unavailable;
+  }
+  return advancedMiningWordAudioLabels(c.wordAudioChoices)[c.wordAudioIndex];
 }
 
 /// 单词音频分区：每个启用音频源解析出的候选一行一条（左侧试听钮、右侧选中标记），
@@ -738,6 +772,9 @@ class AdvancedMiningWordAudioPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AdvancedMiningController c = controller;
+    final List<String> labels = advancedMiningWordAudioLabels(
+      c.wordAudioChoices,
+    );
     final Widget body;
     if (!c.wordAudioLoaded) {
       body = const SizedBox(
@@ -757,10 +794,9 @@ class AdvancedMiningWordAudioPanel extends StatelessWidget {
                 t.popup_advanced_mining_word_audio_unavailable,
               ),
             ),
-          for (final (int i, AdvancedMiningWordAudioChoice choice)
-              in c.wordAudioChoices.indexed)
+          for (final (int i, String label) in labels.indexed)
             _WordAudioRow(
-              label: advancedMiningWordAudioLabel(choice),
+              label: label,
               selected: c.wordAudioIndex == i,
               loading: c.wordAudioPreviewing == i,
               onPreview: c.locked ? null : () => onPreview(i),

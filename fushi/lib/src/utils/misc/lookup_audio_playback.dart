@@ -205,31 +205,26 @@ String lookupAudioSourceDisplayName(AudioSourceConfig source) {
   }
 }
 
+/// 「选择音频源」候选的 wire key：源在 `audioSourceConfigs` 里的下标（十进制串）。
+/// 弹窗 ♪ 菜单（popup.js）不认这个键、原样忽略；「高级制卡」靠它区分两个显示名
+/// 相同的源（没起名、同 host 的两个模板源），并在确认时只刷新选中的那一个源。
+/// 不对应任何已配置源（TTS 兜底、别的设备给的结果）时为 `-1`。
+const String kWordAudioChoiceSourceIndexKey = 'sourceIndex';
+
+/// 「选择音频源」候选的 wire key：源种类（[AudioSourceKind.name]）；不对应已配置源时为空串。
+const String kWordAudioChoiceKindKey = 'kind';
+
 /// 「选择音频源」菜单的弹窗桥返回值（`listWordAudioSources`）：每项
-/// `{name, variant, url}`，`url` 已经过 [audioRefToWebViewUrl]，弹窗 `<audio>`
-/// 可直接播放。转不出可播 URL 的候选（本地文件已不在）直接跳过。
+/// `{name, variant, url, sourceIndex, kind}`，`url` 已经过 [audioRefToWebViewUrl]，
+/// 弹窗 `<audio>` 可直接播放。转不出可播 URL 的候选（本地文件已不在）直接跳过。
 Future<List<Map<String, String>>> listWordAudioWebViewChoices(
   AppModel appModel,
   String expression,
   String reading,
 ) async {
-  final List<WordAudioCandidate> candidates = await listLookupAudioCandidates(
-    appModel,
-    expression,
-    reading,
+  final List<Map<String, String>> choices = await _webViewChoicesOf(
+    await listLookupAudioCandidates(appModel, expression, reading),
   );
-  final List<String?> urls = await Future.wait(<Future<String?>>[
-    for (final WordAudioCandidate c in candidates) audioRefToWebViewUrl(c.ref),
-  ]);
-  final List<Map<String, String>> choices = <Map<String, String>>[
-    for (int i = 0; i < candidates.length; i++)
-      if (urls[i] != null && urls[i]!.isNotEmpty)
-        <String, String>{
-          'name': lookupAudioSourceDisplayName(candidates[i].source),
-          'variant': candidates[i].variant,
-          'url': urls[i]!,
-        },
-  ];
   if (choices.isNotEmpty) return choices;
   // 与单击 ♪ 同一兜底（[resolveLookupAudioUrl]）：菜单不能说「暂无发音」而单击却能播。
   final String? ttsUrl = await audioRefToWebViewUrl(
@@ -241,7 +236,47 @@ Future<List<Map<String, String>>> listWordAudioWebViewChoices(
         'name': t.models_tts_fallback_voice,
         'variant': '',
         'url': ttsUrl,
+        kWordAudioChoiceSourceIndexKey: '-1',
+        kWordAudioChoiceKindKey: '',
       },
+  ];
+}
+
+/// 只重新解析第 [sourceIndex] 个已配置源（形状同 [listWordAudioWebViewChoices]，
+/// 不带 TTS 兜底）。「高级制卡」确认时刷新用户选中的互联源用：它的 URL 带短时令牌
+/// （TODO-766），其余源的 URL 不会过期，不必把全部源再跑一遍。
+Future<List<Map<String, String>>> listWordAudioWebViewChoicesForSource(
+  AppModel appModel,
+  String expression,
+  String reading,
+  int sourceIndex,
+) async {
+  return _webViewChoicesOf(
+    await _buildLookupAudioResolver(appModel).listConfiguredSource(
+      expression: expression,
+      reading: reading,
+      sources: _lookupAudioSourceConfigs(appModel, null),
+      sourceIndex: sourceIndex,
+    ),
+  );
+}
+
+Future<List<Map<String, String>>> _webViewChoicesOf(
+  List<WordAudioCandidate> candidates,
+) async {
+  final List<String?> urls = await Future.wait(<Future<String?>>[
+    for (final WordAudioCandidate c in candidates) audioRefToWebViewUrl(c.ref),
+  ]);
+  return <Map<String, String>>[
+    for (int i = 0; i < candidates.length; i++)
+      if (urls[i] != null && urls[i]!.isNotEmpty)
+        <String, String>{
+          'name': lookupAudioSourceDisplayName(candidates[i].source),
+          'variant': candidates[i].variant,
+          'url': urls[i]!,
+          kWordAudioChoiceSourceIndexKey: '${candidates[i].sourceIndex}',
+          kWordAudioChoiceKindKey: candidates[i].source.kind.name,
+        },
   ];
 }
 

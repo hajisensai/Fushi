@@ -360,6 +360,14 @@ mixin DictionaryPageMixin {
                         reading.isEmpty ? expression : reading,
                       ) ??
                       const <Map<String, String>>[],
+                  refreshSource: (int sourceIndex) async =>
+                      await webViewKey.currentState
+                          ?.listWordAudioChoicesForSource(
+                            expression,
+                            reading.isEmpty ? expression : reading,
+                            sourceIndex,
+                          ) ??
+                      const <Map<String, String>>[],
                 ),
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈

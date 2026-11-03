@@ -114,6 +114,8 @@ class AdvancedMiningWordAudioChoice {
     required this.name,
     required this.variant,
     required this.url,
+    this.sourceIndex = -1,
+    this.refreshAtConfirm = false,
   });
 
   /// 源的显示名（用户起的名字 / host / 「TTS 兜底」）；别的设备给的结果可能为空。
@@ -125,10 +127,16 @@ class AdvancedMiningWordAudioChoice {
   /// 弹窗可直接播放的 URL（远端 `http(s)`、本地文件转成的 `data:`）。
   final String url;
 
-  /// 同一个候选的身份：确认时重新解析后按它找回（远端互联源的 URL 带短时令牌，
-  /// 不能拿打开对话框时的旧 URL 去制卡，见 popup.js 的 TODO-766）。
+  /// 源在音频源配置里的下标；不对应任何已配置源（TTS 兜底、别的设备给的默认一条）
+  /// 时为 -1。显示名不能当身份：没起名、同 host 的两个模板源显示名一模一样。
+  final int sourceIndex;
+
+  /// URL 带短时令牌（互联源），确认时要重新解析它那一个源再制卡（popup.js TODO-766）。
+  final bool refreshAtConfirm;
+
+  /// 同一个候选的身份（源下标 + 源内变体）：确认时重新解析后按它找回。
   bool sameSourceAs(AdvancedMiningWordAudioChoice other) =>
-      other.name == name && other.variant == variant;
+      other.sourceIndex == sourceIndex && other.variant == variant;
 }
 
 /// 单词音频分区：所有制卡表面都有（与卡组分区一样由开窗函数统一组装）。
@@ -140,10 +148,16 @@ class AdvancedMiningWordAudioSection {
     required this.listChoices,
     required this.preview,
     required this.stopPreview,
+    this.refreshSource,
   });
 
   /// 当前词每个启用音频源各自解析出的候选（按音频源配置顺序）。空 = 这个词没有发音。
   final Future<List<AdvancedMiningWordAudioChoice>> Function() listChoices;
+
+  /// 只重新解析第 sourceIndex 个源的候选（确认时刷新带令牌的那一条用）；null =
+  /// 这个表面不能刷新，一律用打开时的 URL。
+  final Future<List<AdvancedMiningWordAudioChoice>> Function(int sourceIndex)?
+  refreshSource;
 
   /// 试听一条候选；返回是否真的开始播放。
   final Future<bool> Function(String url) preview;

@@ -663,9 +663,17 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 宿主不交播放句柄，起播后按「已开始」显示，再点一次就是重播）。
   int? wordAudioPreviewing;
 
-  /// 自上次停止以来是否真的起播过单词发音。没播过就不去叫宿主停止：宿主的停止是
-  /// 全局的单词音频播放器，白停一次可能掐掉别处的声音。
+  /// 自上次停止以来是否**可能**在响单词发音（起播请求一发出就算，不等它落地）。
+  /// 没发过就不去叫宿主停止：宿主的停止是全局的单词音频播放器，白停一次可能掐掉
+  /// 别处的声音。
   bool _wordAudioPlayed = false;
+
+  /// 单词试听的代次：每次起播、每次停止都 +1。起播落地时代次已变 = 途中被停止 /
+  /// 被新的试听取代（同 [_previewGen] 之于句子试听）。
+  int _wordPreviewGen = 0;
+
+  /// 最近一次起播拿到的代次；落地时代次已变但仍等于它 = 被**停止**而不是被新试听取代。
+  int _wordPreviewLatestStart = 0;
 
   bool get omitWordAudio => wordAudioIndex == kWordAudioOmitted;
 
@@ -714,6 +722,11 @@ class AdvancedMiningController extends ChangeNotifier {
     selectWordAudio(index);
     // 两段试听不叠着响：单词发音起播前先停句子音频。
     await stopPreview();
+    final int gen = ++_wordPreviewGen;
+    _wordPreviewLatestStart = gen;
+    // 发起即视为可能在响：起播还在 await（远端要缓冲、data: 要先落盘）时到来的停止
+    // （句子试听起播、取消 / 确认）必须真的叫宿主停，不能因「还没落地」而跳过。
+    _wordAudioPlayed = true;
     wordAudioPreviewing = index;
     _notify();
     bool ok;
@@ -723,8 +736,15 @@ class AdvancedMiningController extends ChangeNotifier {
       fushiDebugPrint('AdvancedMining.previewWordAudio: $e\n$stack');
       ok = false;
     }
-    if (ok) _wordAudioPlayed = true;
-    if (_disposed) return ok;
+    if (_disposed || gen != _wordPreviewGen) {
+      // 起播途中已被停止 / 对话框已关：那次停止早于这段落地，宿主随后才把它放出来，
+      // 补停一次。被更新的试听取代时不停——新的那段起播前宿主自己会打断旧的。
+      if (ok && (_disposed || gen == _wordPreviewLatestStart)) {
+        await _stopHostWordPreview(section);
+      }
+      return ok;
+    }
+    _wordAudioPlayed = ok;
     if (wordAudioPreviewing == index) {
       wordAudioPreviewing = null;
       _notify();
@@ -739,8 +759,15 @@ class AdvancedMiningController extends ChangeNotifier {
       wordAudioPreviewing = null;
       _notify();
     }
+    _wordPreviewGen++;
     if (!_wordAudioPlayed) return;
     _wordAudioPlayed = false;
+    await _stopHostWordPreview(section);
+  }
+
+  Future<void> _stopHostWordPreview(
+    AdvancedMiningWordAudioSection section,
+  ) async {
     try {
       await section.stopPreview();
     } catch (e, stack) {
@@ -752,18 +779,25 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 没动 / 选的就是第一项 → null（一键「+」本来就用它）；「不要」→ 空串；
   /// 其余 → 那一条的 URL。
   ///
-  /// 选了非默认项时**重新解析一遍**再按源身份找回：互联源的 URL 带 5 分钟令牌，
-  /// 对话框开着的时间可能比它长，拿旧 URL 制卡会得到一个空 `[sound:]`
-  /// （popup.js TODO-766 同一个坑）。重新解析失败 / 找不到同一源时退回打开时那条。
+  /// 只有 URL 带短时令牌的候选（[AdvancedMiningWordAudioChoice.refreshAtConfirm]：
+  /// 互联源，5 分钟令牌，对话框开着的时间可能比它长，拿旧 URL 制卡会得到一个空
+  /// `[sound:]`，popup.js TODO-766 同一个坑）才在确认时**只重新解析它那一个源**，
+  /// 按 [AdvancedMiningWordAudioChoice.sameSourceAs] 找回；本地 `data:` 与普通模板
+  /// URL 不会过期，直接用打开时那条，不再把全部源跑一遍。重新解析失败 / 找不到
+  /// 同一候选时退回打开时那条。
   Future<String?> resolveWordAudioUrl() async {
     final AdvancedMiningWordAudioSection? section = wordAudioSection;
     if (section == null) return null;
     if (omitWordAudio) return '';
     final AdvancedMiningWordAudioChoice? chosen = selectedWordAudio;
     if (chosen == null || wordAudioIndex == 0) return null;
+    final Future<List<AdvancedMiningWordAudioChoice>> Function(int)? refresh =
+        section.refreshSource;
+    if (!chosen.refreshAtConfirm || refresh == null) return chosen.url;
     try {
-      final List<AdvancedMiningWordAudioChoice> fresh = await section
-          .listChoices();
+      final List<AdvancedMiningWordAudioChoice> fresh = await refresh(
+        chosen.sourceIndex,
+      );
       for (final AdvancedMiningWordAudioChoice c in fresh) {
         if (c.sameSourceAs(chosen)) return c.url;
       }

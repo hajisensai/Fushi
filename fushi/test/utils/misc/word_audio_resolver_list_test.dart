@@ -87,6 +87,66 @@ void main() {
     },
   );
 
+  test('listConfiguredSource resolves only the requested source', () async {
+    int remoteCalls = 0;
+    final List<int> localDbIndexes = <int>[];
+    final WordAudioResolver resolver = WordAudioResolver(
+      queryLocalAudio: (_, __) async => null,
+      queryLocalAudioByDbIndex: (_, __, int dbIndex) async {
+        localDbIndexes.add(dbIndex);
+        return <String, dynamic>{'file': 'a$dbIndex', 'source': 'nhk'};
+      },
+      extractLocalAudio: (_, __, {int dbIndex = 0}) async =>
+          '/tmp/local$dbIndex.mp3',
+      queryRemoteAudio: (_, __) async {
+        remoteCalls++;
+        return 'https://peer.test/a.mp3?token=$remoteCalls';
+      },
+      fetchAudioSourceList: (String url) async =>
+          throw StateError('the template source must not be fetched'),
+    );
+    final List<AudioSourceConfig> sources = <AudioSourceConfig>[
+      AudioSourceConfig.remoteAudio(url: 'https://list.test/?term={term}'),
+      AudioSourceConfig.localAudio(label: 'A', path: '/a', enabled: true),
+      AudioSourceConfig.localAudio(label: 'Off', path: '/b', enabled: false),
+      AudioSourceConfig.fushiRemote(enabled: true),
+      AudioSourceConfig.localAudio(label: 'C', path: '/c', enabled: true),
+    ];
+
+    final List<WordAudioCandidate> remote = await resolver.listConfiguredSource(
+      expression: '猫',
+      reading: 'ねこ',
+      sources: sources,
+      sourceIndex: 3,
+    );
+    expect(remote.single.ref, 'https://peer.test/a.mp3?token=1');
+    expect(remote.single.sourceIndex, 3);
+    expect(localDbIndexes, isEmpty, reason: '只刷新互联源，不去读本地库');
+
+    final List<WordAudioCandidate> local = await resolver.listConfiguredSource(
+      expression: '猫',
+      reading: 'ねこ',
+      sources: sources,
+      sourceIndex: 4,
+    );
+    // dbIndex 与 listConfigured 同口径：之前启用的本地库个数（停用的那个不算）。
+    expect(localDbIndexes, <int>[1]);
+    expect(local.single.sourceIndex, 4);
+
+    for (final int i in <int>[2, -1, 9]) {
+      expect(
+        await resolver.listConfiguredSource(
+          expression: '猫',
+          reading: 'ねこ',
+          sources: sources,
+          sourceIndex: i,
+        ),
+        isEmpty,
+        reason: '停用 / 越界的下标没有候选',
+      );
+    }
+  });
+
   test(
     'an unreachable source is skipped and cooled down, others still listed',
     () async {

@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -39,21 +40,78 @@ void main() {
       expect(await c.resolveWordAudioUrl(), isNull);
     });
 
-    test('选别的音源：确认时重新解析，交出同一源的新 URL', () async {
+    test('选带令牌的互联源：确认时只刷新它那一个源，交出新 URL', () async {
       final AdvancedMiningController c = await loaded();
       c.selectWordAudio(2);
       final String? url = await c.resolveWordAudioUrl();
-      expect(host.wordAudioListCalls, 2, reason: '确认时必须重新解析一次');
-      expect(url, 'https://audio.test/Forvo/strawberrybrown?token2');
+      expect(host.wordAudioListCalls, 1, reason: '不该把全部源再列一遍');
+      expect(host.wordAudioRefreshedSources, <int>[1]);
+      expect(url, 'https://audio.test/Forvo/strawberrybrown/1?token2');
+    });
+
+    test('URL 不会过期的源（本地 data: / 普通模板）：确认不重新解析', () async {
+      host.wordAudioRefreshAtConfirm = false;
+      final AdvancedMiningController c = await loaded();
+      c.selectWordAudio(1);
+      expect(
+        await c.resolveWordAudioUrl(),
+        'https://audio.test/Forvo/akitomo/1?token1',
+      );
+      expect(host.wordAudioRefreshedSources, isEmpty);
+      expect(host.wordAudioListCalls, 1);
+    });
+
+    test('两个同名源（没起名、同 host）：按源下标找回第二个，列表上分得出来', () async {
+      host.wordAudioSources = <(String, String, int)>[
+        ('NHK', '', 0),
+        ('127.0.0.1', '', 1),
+        ('127.0.0.1', '', 2),
+      ];
+      final AdvancedMiningController c = await loaded();
+      expect(advancedMiningWordAudioLabels(c.wordAudioChoices), <String>[
+        'NHK',
+        '127.0.0.1 · #2',
+        '127.0.0.1 · #3',
+      ]);
+      c.selectWordAudio(2);
+      expect(
+        await c.resolveWordAudioUrl(),
+        'https://audio.test/127.0.0.1//2?token2',
+      );
+      expect(host.wordAudioRefreshedSources, <int>[2]);
+    });
+
+    test('同一源内显示名仍撞车：补出现次序', () {
+      const List<AdvancedMiningWordAudioChoice> choices =
+          <AdvancedMiningWordAudioChoice>[
+            AdvancedMiningWordAudioChoice(
+              name: 'L',
+              variant: 'forvo',
+              url: 'a',
+              sourceIndex: 0,
+            ),
+            AdvancedMiningWordAudioChoice(
+              name: 'L',
+              variant: 'forvo',
+              url: 'b',
+              sourceIndex: 0,
+            ),
+            AdvancedMiningWordAudioChoice(name: '', variant: '', url: 'c'),
+          ];
+      expect(advancedMiningWordAudioLabels(choices), <String>[
+        'L · forvo · #1 (1)',
+        'L · forvo · #1 (2)',
+        t.popup_advanced_mining_word_audio_default_source,
+      ]);
     });
 
     test('重新解析找不到同一源：退回打开时那条', () async {
       final AdvancedMiningController c = await loaded();
       c.selectWordAudio(1);
-      host.wordAudioSources = <(String, String)>[('NHK', '')];
+      host.wordAudioSources = <(String, String, int)>[('NHK', '', 0)];
       expect(
         await c.resolveWordAudioUrl(),
-        'https://audio.test/Forvo/akitomo?token1',
+        'https://audio.test/Forvo/akitomo/1?token1',
       );
     });
 
@@ -71,9 +129,74 @@ void main() {
       expect(await c.previewWordAudio(1), isTrue);
       expect(c.wordAudioIndex, 1);
       expect(host.wordAudioPreviews, <String>[
-        'https://audio.test/Forvo/akitomo?token1',
+        'https://audio.test/Forvo/akitomo/1?token1',
       ]);
       expect(c.wordAudioPreviewing, isNull);
+    });
+
+    AdvancedMiningController withSentenceAudio() => AdvancedMiningController(
+      host.capabilities(
+        deck: host.deck(),
+        wordAudio: host.wordAudio(),
+        sentence: host.sentence(),
+        audio: host.audio(),
+      ),
+    );
+
+    test('单词试听起播途中点句子试听：叫宿主停，单词那段落地后补停', () async {
+      final AdvancedMiningController c = withSentenceAudio();
+      await c.load();
+      final Completer<bool> gate = Completer<bool>();
+      host.wordAudioPreviewGate = gate;
+      final Future<bool> word = c.previewWordAudio(1);
+      await Future<void>.delayed(Duration.zero);
+      await c.togglePreview();
+      expect(host.wordAudioStopCalls, 1, reason: '起播还没落地也必须叫宿主停');
+      gate.complete(true);
+      await word;
+      expect(host.wordAudioStopCalls, 2, reason: '落地晚于停止：补停，不与句子音频叠着响');
+      expect(c.wordAudioPreviewing, isNull);
+    });
+
+    test('单词试听起播途中取消 / 确认（stopWordAudioPreview）：落地后补停', () async {
+      final AdvancedMiningController c = await loaded();
+      final Completer<bool> gate = Completer<bool>();
+      host.wordAudioPreviewGate = gate;
+      final Future<bool> word = c.previewWordAudio(1);
+      await Future<void>.delayed(Duration.zero);
+      await c.stopWordAudioPreview();
+      expect(host.wordAudioStopCalls, 1);
+      gate.complete(true);
+      await word;
+      expect(host.wordAudioStopCalls, 2);
+    });
+
+    test('单词试听起播途中对话框已销毁：落地后补停', () async {
+      final AdvancedMiningController c = await loaded();
+      final Completer<bool> gate = Completer<bool>();
+      host.wordAudioPreviewGate = gate;
+      final Future<bool> word = c.previewWordAudio(1);
+      await Future<void>.delayed(Duration.zero);
+      c.dispose();
+      gate.complete(true);
+      await word;
+      expect(host.wordAudioStopCalls, 1);
+    });
+
+    test('被新的单词试听取代：旧的落地不去停新的那段', () async {
+      final AdvancedMiningController c = await loaded();
+      final Completer<bool> gate = Completer<bool>();
+      host.wordAudioPreviewGate = gate;
+      final Future<bool> first = c.previewWordAudio(1);
+      await Future<void>.delayed(Duration.zero);
+      final Future<bool> second = c.previewWordAudio(2);
+      gate.complete(true);
+      await Future.wait(<Future<bool>>[first, second]);
+      expect(host.wordAudioStopCalls, 0);
+      expect(c.wordAudioIndex, 2);
+      // 新那段确实在响：之后的停止仍要叫宿主。
+      await c.stopWordAudioPreview();
+      expect(host.wordAudioStopCalls, 1);
     });
 
     test('句子音频起播前停掉在响的单词发音；没播过就不去停', () async {
@@ -102,7 +225,7 @@ void main() {
     });
 
     test('没有候选：只剩「不要」，确认不改', () async {
-      host.wordAudioSources = <(String, String)>[];
+      host.wordAudioSources = <(String, String, int)>[];
       final AdvancedMiningController c = await loaded();
       expect(c.wordAudioChoices, isEmpty);
       expect(c.selectedWordAudio, isNull);
@@ -163,7 +286,7 @@ void main() {
       expect(host.wordAudioPreviews, hasLength(1));
       await confirm(tester);
       expect(host.confirmWordAudioUrls, <String?>[
-        'https://audio.test/Forvo/akitomo?token2',
+        'https://audio.test/Forvo/akitomo/1?token2',
       ]);
     });
 

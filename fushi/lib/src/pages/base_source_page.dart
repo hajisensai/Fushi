@@ -1408,6 +1408,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         reading.isEmpty ? expression : reading,
                       ) ??
                       const <Map<String, String>>[],
+                  refreshSource: (int sourceIndex) async =>
+                      await webViewKey.currentState
+                          ?.listWordAudioChoicesForSource(
+                            expression,
+                            reading.isEmpty ? expression : reading,
+                            sourceIndex,
+                          ) ??
+                      const <Map<String, String>>[],
                 ),
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。

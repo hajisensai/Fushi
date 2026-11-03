@@ -52,18 +52,28 @@ class FakeAdvancedMiningHost {
   static const int sentenceStartMs = 723400;
 
   // ── 单词音频 ──
-  /// 每次 listChoices 交出的候选；[wordAudioUrlSuffix] 拼进 url，模拟互联源每次解析
-  /// 出新令牌（确认时必须拿到新的那条）。
-  List<(String, String)> wordAudioSources = <(String, String)>[
-    ('NHK', ''),
-    ('Forvo', 'akitomo'),
-    ('Forvo', 'strawberrybrown'),
+  /// 每次解析交出的候选 `(源名, 变体, 源下标)`；[wordAudioUrlSuffix] 拼进 url，模拟
+  /// 互联源每次解析出新令牌（确认时必须拿到新的那条）。
+  List<(String, String, int)> wordAudioSources = <(String, String, int)>[
+    ('NHK', '', 0),
+    ('Forvo', 'akitomo', 1),
+    ('Forvo', 'strawberrybrown', 1),
   ];
+
+  /// 候选是否带短时令牌（互联源）：true 时确认会走 refreshSource 只刷新选中的源。
+  bool wordAudioRefreshAtConfirm = true;
   int wordAudioListCalls = 0;
-  String get wordAudioUrlSuffix => 'token$wordAudioListCalls';
+
+  /// refreshSource 每次被要求刷新的源下标。
+  final List<int> wordAudioRefreshedSources = <int>[];
+  String get wordAudioUrlSuffix =>
+      'token${wordAudioListCalls + wordAudioRefreshedSources.length}';
   final List<String> wordAudioPreviews = <String>[];
   int wordAudioStopCalls = 0;
   bool wordAudioPreviewResult = true;
+
+  /// 非 null 时试听卡在这里，直到测试 complete 它（模拟远端缓冲 / data: 落盘）。
+  Completer<bool>? wordAudioPreviewGate;
 
   // ── 确认 ──
   final List<MiningRequestOverrides> confirms = <MiningRequestOverrides>[];
@@ -260,20 +270,33 @@ class FakeAdvancedMiningHost {
     loadPreview: preview,
   );
 
+  List<AdvancedMiningWordAudioChoice> _wordAudioChoices({
+    int? onlySource,
+  }) => <AdvancedMiningWordAudioChoice>[
+    for (final (String name, String variant, int index) in wordAudioSources)
+      if (onlySource == null || onlySource == index)
+        AdvancedMiningWordAudioChoice(
+          name: name,
+          variant: variant,
+          url: 'https://audio.test/$name/$variant/$index?$wordAudioUrlSuffix',
+          sourceIndex: index,
+          refreshAtConfirm: wordAudioRefreshAtConfirm,
+        ),
+  ];
+
   AdvancedMiningWordAudioSection wordAudio() => AdvancedMiningWordAudioSection(
     listChoices: () async {
       wordAudioListCalls++;
-      return <AdvancedMiningWordAudioChoice>[
-        for (final (String name, String variant) in wordAudioSources)
-          AdvancedMiningWordAudioChoice(
-            name: name,
-            variant: variant,
-            url: 'https://audio.test/$name/$variant?$wordAudioUrlSuffix',
-          ),
-      ];
+      return _wordAudioChoices();
+    },
+    refreshSource: (int sourceIndex) async {
+      wordAudioRefreshedSources.add(sourceIndex);
+      return _wordAudioChoices(onlySource: sourceIndex);
     },
     preview: (String url) async {
       wordAudioPreviews.add(url);
+      final Completer<bool>? gate = wordAudioPreviewGate;
+      if (gate != null) return gate.future;
       return wordAudioPreviewResult;
     },
     stopPreview: () async => wordAudioStopCalls++,

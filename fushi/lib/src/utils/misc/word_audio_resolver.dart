@@ -273,22 +273,11 @@ class WordAudioResolver {
     required List<AudioSourceConfig> sources,
   }) async {
     final List<Future<List<WordAudioCandidate>>> pending =
-        <Future<List<WordAudioCandidate>>>[];
-    int localDbIndex = 0;
-    for (int i = 0; i < sources.length; i++) {
-      final AudioSourceConfig source = sources[i];
-      if (!source.enabled) continue;
-      switch (source.kind) {
-        case AudioSourceKind.fushiRemote:
-          pending.add(_listFushiRemote(source, i, expression, reading));
-        case AudioSourceKind.localAudio:
-          final int dbIndex = localDbIndex;
-          localDbIndex++;
-          pending.add(_listLocal(source, i, expression, reading, dbIndex));
-        case AudioSourceKind.remoteAudio:
-          pending.add(_listRemote(source, i, expression, reading));
-      }
-    }
+        <Future<List<WordAudioCandidate>>>[
+          for (int i = 0; i < sources.length; i++)
+            if (sources[i].enabled)
+              _listSourceAt(sources, i, expression, reading),
+        ];
     final List<List<WordAudioCandidate>> groups = await Future.wait(pending);
     final Set<String> seen = <String>{};
     return <WordAudioCandidate>[
@@ -296,6 +285,48 @@ class WordAudioResolver {
         for (final WordAudioCandidate c in group)
           if (seen.add(c.ref)) c,
     ];
+  }
+
+  /// 只解析第 [sourceIndex] 个已配置源（[listConfigured] 的单源版，逐源语义相同）。
+  /// 给「高级制卡」确认时刷新用户选中的那一个源用：只有它要重新签令牌，不必把
+  /// 全部源再跑一遍。下标越界 / 源已停用 → 空列表。
+  Future<List<WordAudioCandidate>> listConfiguredSource({
+    required String expression,
+    required String reading,
+    required List<AudioSourceConfig> sources,
+    required int sourceIndex,
+  }) async {
+    if (sourceIndex < 0 || sourceIndex >= sources.length) {
+      return const <WordAudioCandidate>[];
+    }
+    if (!sources[sourceIndex].enabled) return const <WordAudioCandidate>[];
+    return _listSourceAt(sources, sourceIndex, expression, reading);
+  }
+
+  /// 第 [i] 个源的候选。本地库的 dbIndex = 它之前启用的本地库个数（与
+  /// [resolveConfigured] 的计数一致）。
+  Future<List<WordAudioCandidate>> _listSourceAt(
+    List<AudioSourceConfig> sources,
+    int i,
+    String expression,
+    String reading,
+  ) {
+    final AudioSourceConfig source = sources[i];
+    switch (source.kind) {
+      case AudioSourceKind.fushiRemote:
+        return _listFushiRemote(source, i, expression, reading);
+      case AudioSourceKind.localAudio:
+        int dbIndex = 0;
+        for (int j = 0; j < i; j++) {
+          if (sources[j].enabled &&
+              sources[j].kind == AudioSourceKind.localAudio) {
+            dbIndex++;
+          }
+        }
+        return _listLocal(source, i, expression, reading, dbIndex);
+      case AudioSourceKind.remoteAudio:
+        return _listRemote(source, i, expression, reading);
+    }
   }
 
   Future<List<WordAudioCandidate>> _listLocal(
