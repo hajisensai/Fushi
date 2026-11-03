@@ -289,7 +289,13 @@ void main() {
       ).listSync(),
       isEmpty,
     );
-    expect(books.listSync(), isEmpty, reason: '正文 EPUB 的解包目录也要删掉');
+    // 正文 EPUB 的解包目录（`<books>/fushi_books/<key>/`）也要删掉；基目录本身可留。
+    final List<Directory> extracted = books
+        .listSync(recursive: true)
+        .whereType<Directory>()
+        .where((Directory d) => p.basename(d.path) != 'fushi_books')
+        .toList();
+    expect(extracted, isEmpty, reason: '正文 EPUB 的解包目录也要删掉');
   });
 
   testWidgets('封面取不到不影响建书', (WidgetTester tester) async {
