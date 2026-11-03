@@ -1294,19 +1294,47 @@
     if (!active && tracks.length) { st.activeLang = tracks[0].lang; active = tracks[0]; }
     st.cues = active ? shiftedCues(active.cues, trackOffset(active.key)) : [];
   }
+  // 上一句 / 下一句的 seek 锚点（对齐 App 视频页的 _seekTargetCueIndex）：Netflix 的 player.seek /
+  // HTML5 的 currentTime 常落在目标句 startMs 前几毫秒；相邻两句首尾相接时，按位置会认成「还在
+  // 前一句」，再按上一句就一次跨两句。锚点只在「当前位置紧贴锚句句首之前」时生效，换轨（st.cues
+  // 换了数组）即失效。
+  var SHORTCUT_SEEK_ANCHOR_SLACK_MS = 200;
+  var shortcutSeekAnchor = null;
+  function shortcutSeekToCue(i) {
+    shortcutSeekAnchor = { cues: st.cues, index: i };
+    seekTo(st.cues[i].startMs);
+  }
+  // 当前所在句：锚点优先，其次按位置；落在句间空隙返回 -1。
+  function shortcutCurrentCueIndex(now) {
+    var a = shortcutSeekAnchor;
+    if (a && a.cues === st.cues && a.index < st.cues.length) {
+      var c = st.cues[a.index];
+      if (now >= c.startMs - SHORTCUT_SEEK_ANCHOR_SLACK_MS && now < c.endMs) return a.index;
+    }
+    return cueIndexAt(st.cues, now);
+  }
+  // 上一句（DudosCydv0）：严格的「当前句的前一条」，与 App 视频页 prevCueIndexFor / 有声书
+  // _prevCueIndex 同口径（BUG-3791 撤掉了「已播超过阈值先回句首」的音乐播放器语义）。旧实现
+  // lastCueStartBefore(now - 600) 在进句超过 600ms 时命中的是本句自己，回到句首后时间继续走，
+  // 两次按键间隔一过 600ms 又只回本句，永远到不了上一句。重播本句走独立的 replay-cue。
+  // - 在句 k 内 → k-1；首句内 → 不动作，返回 false 放行给站点；
+  // - 句间空隙 → 刚播完的那句（起点早于当前时刻的最后一句）。
   function shortcutSeekPrev() {
     if (!st.cues.length) return false;
-    // 上一句：开播 >600ms 时先回本句句首（与播放器「上一曲」惯例一致），再按一次才到上一句。
-    var i = lastCueStartBefore(videoTimeMs() - 600);
+    var now = videoTimeMs();
+    var cur = shortcutCurrentCueIndex(now);
+    var i = cur >= 0 ? cur - 1 : lastCueStartBefore(now);
     if (i < 0) return false;
-    seekTo(st.cues[i].startMs);
+    shortcutSeekToCue(i);
     return true;
   }
   function shortcutSeekNext() {
     if (!st.cues.length) return false;
-    var i = firstCueAfter(videoTimeMs());
-    if (i < 0) return false;
-    seekTo(st.cues[i].startMs);
+    var now = videoTimeMs();
+    var cur = shortcutCurrentCueIndex(now);
+    var i = cur >= 0 ? cur + 1 : firstCueAfter(now);
+    if (i < 0 || i >= st.cues.length) return false;
+    shortcutSeekToCue(i);
     return true;
   }
   // 重播本句：回句首**并起播**（Dbd86l4kA-，与 App 视频页同口径：重播类动作一律起播，

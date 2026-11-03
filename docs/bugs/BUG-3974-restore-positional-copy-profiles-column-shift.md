@@ -1,0 +1,6 @@
+## BUG-3974 · restore-positional-copy-profiles-column-shift
+- **报告**：2026-11-02（用户：应用内反馈 zxzKphM20J，Windows 安装日语推荐包后启动报 `FormatException: Invalid radix-10 number` 且 UUID 出现在报错里）
+- **真实性**：✅ 真 bug（静态推导 + 测试复现列序错位）。推荐包是一份备份 zip，覆盖恢复后用 pre-restore.bak 回灌本机设置层 / Profile 层，写法是按**位置**复制 `INSERT INTO t SELECT * FROM bak.t`（`fushi/lib/src/sync/backup_service/restore.part.dart` 原 500 / 811 / 2049 / 2055 / 2060 / 2112 / 2118 / 2129 / 2179 共九处）。新装库 onCreate 建表 profiles 列序 id,name,uid,created_at,updated_at（`packages/fushi_core/lib/src/database/tables.dart:603`），推荐包里旧库经 v117 `m.addColumn(profiles, profiles.uid)`（`packages/fushi_core/lib/src/database/database.dart:2443`）把 uid 补在表尾——UUID 被写进 created_at，drift 读 ProfileRow 时 `int.parse` 抛，库已写坏、每次启动复现。
+- **[x] ① 已修复** — `restore.part.dart` 新增 `_copyTableByColumnNames`（PRAGMA main / 附加库 table_info 取列名交集，显式列清单复制），九处全部替换；`database.dart` beforeOpen 新增 `_repairProfilesColumnShift`，在任何生成查询之前把已写坏的 profiles 行按两种错位方向轮换还原（判据只命中 UUID 落在整数列、uid 为纯数字串的行）。（未提交，由编排者提交）
+- **[x] ② 已加自动化测试** — `fushi/test/sync/backup_restore_column_order_test.dart`：真 `restoreBackup(importSettings:false)`，备份库 uid 在表尾、本机库 uid 在中间，裸 sqlite 断言落盘值不串列再经 FushiDatabase 读回；已写坏库两种方向开库即还原；源码守卫禁止 backup_service 里出现按位置的 `INSERT … SELECT *`。
+- **备注**：`dictionary_metadata.display_name`（v101 addColumn）同样可能按位置错位过，但都是 TEXT 列、不炸也无法可靠识别，未做存量修复，只靠前向修复止血。

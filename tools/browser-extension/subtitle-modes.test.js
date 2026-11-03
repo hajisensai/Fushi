@@ -217,8 +217,9 @@ test('快捷键执行端：上一句/下一句/重播/复制/偏移', () => {
   // 下一句：0ms → 句 1 句首。
   assert.strictEqual(h.shortcut('next-cue'), true);
   assert.strictEqual(h.video.currentTime, 1);
-  // 上一句：句 2 中间 → 句 1 句首（4500-600=3900 前最近句首是 1000）。
-  h.video.currentTime = 4.5;
+  // 上一句：严格「当前句的前一条」（DudosCydv0，与 App BUG-3791 同口径）——句 2 中后段 → 句 1 句首，
+  // 不因已进句超过某阈值而先回本句句首。
+  h.video.currentTime = 4.8;
   assert.strictEqual(h.shortcut('prev-cue'), true);
   assert.strictEqual(h.video.currentTime, 1);
   // 重播本句：句内任意位置回句首。
@@ -255,4 +256,49 @@ test('Dbd86l4kA-：暂停时按「重播本句」起播，上一句 / 下一句�
   h.video.currentTime = 1.5;
   assert.strictEqual(h.shortcut('replay-cue'), true);
   assert.strictEqual(h.video.playCount, 1);
+});
+
+function threeCueStore() {
+  return {
+    'example.com/video/1|ja': [
+      { startMs: 1000, endMs: 2000, text: '一' },
+      { startMs: 2000, endMs: 4000, text: '二' }, // 与句一首尾相接
+      { startMs: 5000, endMs: 6000, text: '三' },
+    ],
+  };
+}
+
+test('上一句是严格的前一条：句内任意位置、句间空隙、首句内（DudosCydv0）', () => {
+  const h = loadPanel({ stored: { netflixSubtitlePanel: true }, store: threeCueStore() });
+  // 句三里已播 900ms（旧实现 now-600 命中句三自己 → 只回本句句首）。
+  h.video.currentTime = 5.9;
+  assert.strictEqual(h.shortcut('prev-cue'), true);
+  assert.strictEqual(h.video.currentTime, 2, '应到句二句首，而不是回句三句首');
+  // 刚进句三 100ms：同样到句二。
+  h.video.currentTime = 5.1;
+  assert.strictEqual(h.shortcut('prev-cue'), true);
+  assert.strictEqual(h.video.currentTime, 2);
+  // 句二与句三之间的空隙（4.5s）：上一句 = 刚播完的句二。
+  h.video.currentTime = 4.5;
+  assert.strictEqual(h.shortcut('prev-cue'), true);
+  assert.strictEqual(h.video.currentTime, 2);
+  // 首句中段：没有上一句，放行给站点。
+  h.video.currentTime = 1.5;
+  assert.strictEqual(h.shortcut('prev-cue'), false);
+  assert.strictEqual(h.video.currentTime, 1.5);
+});
+
+test('seek 落在目标句句首前几毫秒，再按上一句仍只退一句（锚点）', () => {
+  const h = loadPanel({ stored: { netflixSubtitlePanel: true }, store: threeCueStore() });
+  h.video.currentTime = 5.5;
+  assert.strictEqual(h.shortcut('prev-cue'), true);
+  assert.strictEqual(h.video.currentTime, 2);
+  // 播放器把 seek 落在句二 startMs 前 5ms——按位置那是句一（首尾相接）。
+  h.video.currentTime = 1.995;
+  assert.strictEqual(h.shortcut('prev-cue'), true);
+  assert.strictEqual(h.video.currentTime, 1, '应只退到句一，不能因落点偏早而被当成已在句一');
+  // 下一句同样认锚点：落在句一句首前 5ms 时按下一句到句二，不重复跳回句一。
+  h.video.currentTime = 0.995;
+  assert.strictEqual(h.shortcut('next-cue'), true);
+  assert.strictEqual(h.video.currentTime, 2);
 });

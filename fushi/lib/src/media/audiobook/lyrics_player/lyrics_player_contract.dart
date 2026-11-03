@@ -140,6 +140,7 @@ class LyricsPlayerData {
     required this.speed,
     required this.lyricsMasked,
     required this.clock,
+    this.playbackHeldForLookup = false,
     this.chapterLabel,
     this.statsTimerPaused = false,
     this.illustrations,
@@ -194,8 +195,17 @@ class LyricsPlayerData {
   /// 封面（无封面为 null，设计系统画占位）。
   final ImageProvider? cover;
 
-  /// 是否正在播放。
+  /// 是否正在播放（播放器实际状态；播放键图标按它画）。
   final bool isPlaying;
+
+  /// 播放只是被查词**临时**按住（「查词时暂停」）：查词会话结束会自动恢复，包括
+  /// 已发出恢复、播放器还没真正起播的那一小段。这段暂停属于查词会话，不是用户暂停。
+  final bool playbackHeldForLookup;
+
+  /// 「有效播放态」：实际在播，或只是被查词临时按住。覆盖层的自动隐藏 / 光标空闲隐藏
+  /// 按它判，查词前后布局冻结——不复位底栏、不缩歌词矩形、文字不重排挪位（反馈
+  /// awLXfD49Ep / M8YDOqJ5Bm）。
+  bool get playbackActive => isPlaying || playbackHeldForLookup;
 
   /// 当前倍速。
   final double speed;

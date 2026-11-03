@@ -30,6 +30,8 @@ import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
+    show srsLoadErrorDetail;
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -39,6 +41,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 「更改笔记类型」的入口（由别的模块提供）：传入要改的笔记 ID。
 typedef SrsChangeNoteTypeFlow =
@@ -113,6 +116,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   bool _loading = true;
   bool _canSchedule = true;
+
+  /// 最近一次重算失败的原因（库打不开 / 内核报错 / 结果连着两次被挤掉）。非 null 时列表区换成出错占位页 + 重试，
+  /// 不再停在加载态（BUG：以前 [_refresh] 不收口异常，[_loading] 永远是 true，页面一直转圈）。
+  Object? _loadError;
 
   /// 原生侧的常驻浏览会话（搜索语料与列数据在 Rust 里，随写入增量更新；本页只取可见行）。
   SrsBrowseSession? _session;
@@ -189,19 +196,43 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   /// 按当前查询 / 排序 / 模式重算（原生会话先按 id 重读写过的行，不整份重读）。[reuse]：条件没变且之后没有
   /// 写入时原生侧直接给回上次的结果（预览返回之类不写库的刷新，零重算）。
   Future<void> _refresh({bool reuse = false}) async {
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null || !mounted) return;
-    SrsBrowseSession? session = _session;
-    if (session == null || !identical(session.store, store)) {
-      session = _session = SrsBrowseSession(store);
-    }
-    final bool first = _result == null && _loading;
     final int generation = ++_queryGeneration;
-    final _QueryResult result = await _compute(session, reuse: reuse);
+    final bool first = _result == null && _loading;
+    final SrsDbStore store;
+    final _QueryResult result;
+    try {
+      final SrsDbStore? opened = await ref.read(srsStoreProvider.future);
+      if (!mounted || generation != _queryGeneration) return;
+      if (opened == null) {
+        // 复习模块没开 / 库不可用：明说，不停在加载态。
+        setState(() {
+          _loading = false;
+          _loadError = t.srs_engine_unavailable;
+        });
+        return;
+      }
+      store = opened;
+      SrsBrowseSession? session = _session;
+      if (session == null || !identical(session.store, store)) {
+        // 换了库（profile 切换 / 库重开）：旧会话注销，按新库开一份。
+        if (session != null) srsRunLogged('SrsBrowse.close', session.close);
+        session = _session = SrsBrowseSession(store);
+      }
+      result = await _compute(session, reuse: reuse);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.refresh', e, stack);
+      if (!mounted || generation != _queryGeneration) return;
+      setState(() {
+        _loading = false;
+        _loadError = e;
+      });
+      return;
+    }
     if (!mounted || generation != _queryGeneration) return;
     setState(() {
       _canSchedule = store.canSchedule;
       _loading = false;
+      _loadError = null;
       _apply(result);
     });
     // 带着 initialCardId 打开：列表首次出现后把这一行滚进视口。
@@ -214,9 +245,36 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     }
   }
 
+  /// 出错占位页的「重试」：回到加载态再重算一次（库没打开的话连库一起重开）。
+  void _retryLoad() {
+    final bool storeFailed = _session == null;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    if (storeFailed) ref.invalidate(srsStoreProvider);
+    unawaited(_refresh());
+  }
+
   /// 按当前查询 / 排序 / 模式在原生会话上查（筛选、排序都在 Rust 里），再查出选中项 / 当前行 / 锚点在新结果里的
   /// 行号，取好首屏与当前行那一页。查询不合法 / 不支持时给出原因、列表为空。
+  ///
+  /// 刚查出的结果在取行号 / 首屏之前被挤掉（[SrsBrowseResultGone]：控制通道等别的持有者在同一个原生会话上连查了
+  /// 好几次，或会话被释放）时，按同样条件重查**一次**——重查会让原生侧重建会话与结果；连着两次都被挤掉说明不是
+  /// 偶发竞争，异常交给 [_refresh] 转出错状态，而不是无限递归重查（以前这里递归没有上限）。
   Future<_QueryResult> _compute(
+    SrsBrowseSession session, {
+    required bool reuse,
+  }) async {
+    try {
+      return await _computeOnce(session, reuse: reuse);
+    } on SrsBrowseResultGone catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.resultGone', e, stack);
+      return _computeOnce(session, reuse: false);
+    }
+  }
+
+  Future<_QueryResult> _computeOnce(
     SrsBrowseSession session, {
     required bool reuse,
   }) async {
@@ -272,9 +330,6 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         anchorId: null,
         anchorAt: -1,
       );
-    } on SrsBrowseResultGone {
-      // 刚查出的结果被并发的另一条查询（控制通道）挤掉：再查一次。
-      return _compute(session, reuse: false);
     }
   }
 
@@ -484,12 +539,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   Future<void> _openPreviewPage(int index) async {
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) =>
-              SrsBrowsePreviewPage(result: _result!, initialIndex: index),
-        ),
+      () => srsPushPage<void>(
+        context,
+        (_) => SrsBrowsePreviewPage(result: _result!, initialIndex: index),
       ),
     );
     // 预览只读（编辑会写库）：没有写入时原生侧直接给回同一份结果，不重算。
@@ -498,12 +550,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   Future<void> _editNote(String noteId) async {
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => SrsNoteEditorPage(noteId: noteId),
-        ),
-      ),
+      () =>
+          srsPushPage<void>(context, (_) => SrsNoteEditorPage(noteId: noteId)),
     );
     if (!mounted) return;
     bumpSrsRevision(ref);
@@ -1110,6 +1158,27 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     );
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            key: const ValueKey<String>('srs-browse-load-error'),
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.error_load_failed,
+            detail: srsLoadErrorDetail(loadError),
+            action: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('srs-browse-load-retry'),
+              onPressed: _retryLoad,
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ),
+      );
     }
     final int offset = controls == null ? 0 : 1;
     final SrsBrowseResult? result = _result;

@@ -226,6 +226,36 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_web_browser_next_tab;
       case ShortcutAction.webBrowserPreviousTab:
         return t.shortcut_action_web_browser_previous_tab;
+      case ShortcutAction.webBrowserSelectTab1:
+        return t.shortcut_action_web_browser_tab_select(n: 1);
+      case ShortcutAction.webBrowserSelectTab2:
+        return t.shortcut_action_web_browser_tab_select(n: 2);
+      case ShortcutAction.webBrowserSelectTab3:
+        return t.shortcut_action_web_browser_tab_select(n: 3);
+      case ShortcutAction.webBrowserSelectTab4:
+        return t.shortcut_action_web_browser_tab_select(n: 4);
+      case ShortcutAction.webBrowserSelectTab5:
+        return t.shortcut_action_web_browser_tab_select(n: 5);
+      case ShortcutAction.webBrowserSelectTab6:
+        return t.shortcut_action_web_browser_tab_select(n: 6);
+      case ShortcutAction.webBrowserSelectTab7:
+        return t.shortcut_action_web_browser_tab_select(n: 7);
+      case ShortcutAction.webBrowserSelectTab8:
+        return t.shortcut_action_web_browser_tab_select(n: 8);
+      case ShortcutAction.webBrowserSelectLastTab:
+        return t.shortcut_action_web_browser_last_tab_select;
+      case ShortcutAction.webBrowserNewIncognitoTab:
+        return t.shortcut_action_web_browser_incognito_tab_open;
+      case ShortcutAction.webBrowserFindNext:
+        return t.shortcut_action_web_browser_find_next;
+      case ShortcutAction.webBrowserFindPrevious:
+        return t.shortcut_action_web_browser_find_previous;
+      case ShortcutAction.webBrowserHistoryOpen:
+        return t.shortcut_action_web_browser_history_open;
+      case ShortcutAction.webBrowserBookmarksOpen:
+        return t.shortcut_action_web_browser_bookmarks_open;
+      case ShortcutAction.webBrowserDownloadsOpen:
+        return t.shortcut_action_web_browser_downloads_open;
       case ShortcutAction.webBrowserFocusAddress:
         return t.shortcut_action_web_browser_focus_address;
       case ShortcutAction.webBrowserBack:

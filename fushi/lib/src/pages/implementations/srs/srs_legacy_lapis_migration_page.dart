@@ -22,17 +22,13 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 打开「迁移旧 Lapis 到新模板」页；页面关掉后返回。需要 [context] 在 [ProviderScope] 之下。
 ///
 /// 供笔记类型页与 Anki 一键迁移的结果页调用（迁移 / 补迁都在页内确认后才写入）。
 Future<void> openSrsLegacyLapisMigrationPage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const SrsLegacyLapisMigrationPage(),
-      ),
-    );
+    srsPushPage<void>(context, (_) => const SrsLegacyLapisMigrationPage());
 
 /// 变体识别依据 → 文案。
 String srsLapisVariantKindLabel(SrsLapisVariantKind kind) => switch (kind) {

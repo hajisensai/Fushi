@@ -114,6 +114,11 @@ const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
         // 新字幕 sidecar 的原子安装（临时文件 writeAsBytes + rename）。
         '_installSidecarAtTargetAtomically',
       },
+  // 路径派生的定义处（videoCoversDirectory / gameCoversDirectory 在这里）。4w_veZGiQ7
+  // 起多了一处裸写：启动期把旧版落在平台 Documents 根的诊断文件（error_log.txt、
+  // 崩溃面包屑、activity_*.breadcrumb，按确切文件名白名单筛）rename / copy 进
+  // 诊断目录——搬的是日志，不是封面；封面目录在本文件仍只派生不落盘。
+  'lib/src/storage/app_paths.dart': <String>{'migrateLegacyDiagnostics'},
 };
 
 /// **封面目的地派生点的完整注册表**（TODO-2715 ③）。
@@ -212,8 +217,10 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     'galgame 封面解析/落盘，字节走 applyCover*。',
   ),
   'lib/src/storage/app_paths.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '目录派生的定义处，自身不落盘。',
+    CoverDeriverRole.rawWritesNonCoverAssets,
+    '目录派生的定义处，封面目录只派生不落盘。文件里唯一的裸写是 '
+        'migrateLegacyDiagnostics 把旧版诊断文件搬进诊断目录（4w_veZGiQ7），'
+        '与封面无关（逐函数名单见 kNonCoverRawWriters）。',
   ),
   'lib/main.dart': (
     CoverDeriverRole.derivesPathOnly,

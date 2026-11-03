@@ -40,10 +40,22 @@ void main() {
         // TODO-1331：HTTP/网络层失败（401/连接拒绝/404/4xx/5xx）不再静默 retry——
         // 经 fushiMineHttpFailureReason 区分鉴权/连不上/服务端后给 ✗ 原因，终结
         // 「你看日志却查不到条目」（BUG-603 只覆盖 server 回带诊断，未覆盖 HTTP 层）。
+        // 判据：HTTP/网络失败分支（`!resp || !resp.ok || !resp.data` 到读 resp.data 之间）里
+        // 原因取自 fushiMineHttpFailureReason，且 notice 是 '✗ ' + 该原因。不钉内联写法——
+        // EMI05fe8RJ 把原因先存进局部变量，同时记进 reason（失败分组显示）。
+        final int httpIdx = outcome.indexOf(
+          'if (!resp || !resp.ok || !resp.data)',
+        );
+        final int dataIdx = outcome.indexOf('const d = resp.data;', httpIdx);
+        expect(httpIdx, greaterThanOrEqualTo(0), reason: '$root 缺 HTTP 失败分支');
+        expect(dataIdx, greaterThan(httpIdx), reason: '$root 缺 HTTP 失败分支终点');
+        final String httpBranch = outcome.substring(httpIdx, dataIdx);
+        final RegExpMatch? whyDecl = RegExp(
+          r'const (\w+) = fushiMineHttpFailureReason\(resp, t\);',
+        ).firstMatch(httpBranch);
         expect(
-          outcome.contains(
-            "notice: '✗ ' + fushiMineHttpFailureReason(resp, t)",
-          ),
+          whyDecl != null &&
+              httpBranch.contains("notice: '✗ ' + ${whyDecl.group(1)},"),
           isTrue,
           reason: '$root HTTP 失败分支未给 ✗ 原因',
         );
@@ -52,10 +64,20 @@ void main() {
           isTrue,
           reason: '$root 未区分 401 鉴权失败原因',
         );
-        // 三态契约不变。
+        // 分类契约：done / unconfigured / retry，外加 EMI05fe8RJ 的 failed（永久失败进失败
+        // 分组）。retry / failed 由 errorKind / HTTP 状态三元式给出，不钉字面写法。
         expect(outcome.contains("cls: 'done'"), isTrue);
         expect(outcome.contains("cls: 'unconfigured'"), isTrue);
-        expect(outcome.contains("cls: 'retry'"), isTrue);
+        expect(
+          RegExp(r"cls: [^,\n]*'retry'").hasMatch(outcome),
+          isTrue,
+          reason: '$root 分类器缺 retry 类',
+        );
+        expect(
+          RegExp(r"cls: [^,\n]*'failed'").hasMatch(outcome),
+          isTrue,
+          reason: '$root 分类器缺 failed 类',
+        );
         // content.js 用这份判据，并把原因弹出来（401/4xx 可点直达设置）。
         final String src = File('$root/content.js').readAsStringSync();
         expect(

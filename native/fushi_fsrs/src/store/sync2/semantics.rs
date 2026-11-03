@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
-use super::{canonical, edit_row, load_op, sql, Touched};
+use super::{canonical, edit_row_id, load_op, sql, Touched};
 use crate::sync2::id::Id;
 use crate::sync2::op::{Body, EditBody, EntKind, Op};
 use crate::sync2::vv::OpId;
@@ -317,7 +317,7 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
             .exists(params![profile, d.id.device.0.to_vec(), d.id.seq as i64])
             .map_err(sql)?;
         if !conflicting.is_empty() {
-            let (eid, _) = edit_row(conn, profile, d, &body)?;
+            let eid = edit_row_id(d, &body);
             if conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([&eid]).map_err(sql)? > 0 {
                 t.dominated.push(eid);
             }

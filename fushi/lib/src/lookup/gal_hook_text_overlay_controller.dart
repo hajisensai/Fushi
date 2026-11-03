@@ -1556,6 +1556,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
         toolbarLabels: _readToolbarLabels(),
       );
       _pushedHoverAutoLookup = hoverAutoLookup;
+      // 浮窗一出来就把桌面查词窗的静态段预热好：浮窗里第一次点词不再现场灌几十 MB。
+      if (_visible) {
+        unawaited(GlobalLookupController.instance.prewarmDesktopStatic());
+      }
       // HBK-AUDIT-047：show 往返期间 applyTheme 因 _visible=false 只记下了主题。
       // 记账「真正下发成功的配色」，与此刻的期望配色不同就补发一次。
       if (_visible) {

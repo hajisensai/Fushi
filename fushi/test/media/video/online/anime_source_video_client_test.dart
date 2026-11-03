@@ -598,6 +598,92 @@ void main() {
     });
   });
 
+  group('Video.audioTracks / mpvArgs 有消费方（EXlaIL2eKQ）', () {
+    List<Object?> dashVideos() => <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/video-only.m4s',
+        'quality': '1080p',
+        'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
+        'audioTracks': <Object?>[
+          <Object?, Object?>{
+            'url': 'https://cdn.example/audio.m4a',
+            'lang': '日本語',
+          },
+          <Object?, Object?>{'url': '', 'lang': 'Broken'},
+        ],
+        'mpvArgs': <Object?>[
+          <Object?, Object?>{
+            'key': 'http-header-fields',
+            'value': 'Origin: https://site.example,Accept: a/b, c/d',
+          },
+          <Object?, Object?>{'key': 'user-agent', 'value': 'FixtureUA/1'},
+          <Object?, Object?>{
+            'key': 'audio-files',
+            'value': 'https://cdn.example/dub.m4a',
+          },
+          <Object?, Object?>{'key': 'script', 'value': '/evil.lua'},
+        ],
+      },
+    ];
+
+    test('audioTracks 与 mpvArgs 的 audio-files 作为可选外挂音轨交给播放页，'
+        '不占用「必须选中」的 audioStreamUrl', () async {
+      runtime.videos = dashVideos();
+      final AnimeSourceVideoClient c = client();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(
+        c.remoteVideos.first.id,
+      );
+      expect(urls.audioStreamUrl, isNull);
+      expect(
+        urls.externalAudioTracks.map(
+          (RemoteVideoExternalAudioTrack t) => t.url,
+        ),
+        <String>[
+          'https://cdn.example/audio.m4a',
+          'https://cdn.example/dub.m4a',
+        ],
+      );
+      expect(urls.externalAudioTracks.first.label, '日本語');
+    });
+
+    test('mpvArgs 白名单里的请求头并入取流头，Video.headers 优先；白名单外忽略', () async {
+      runtime.videos = dashVideos();
+      final AnimeSourceVideoClient c = client();
+      await c.remoteVideoStreamUrls(c.remoteVideos.first.id);
+      expect(c.httpHeaderFields, <String, String>{
+        'Origin': 'https://site.example',
+        'Accept': 'a/b, c/d',
+        'User-Agent': 'FixtureUA/1',
+        'Referer': 'https://site.example/',
+      });
+    });
+
+    test('下载分离流时画面与外挂音轨一起交给下载器合成，不再下成无声视频', () async {
+      runtime.videos = dashVideos();
+      final _AudioRecordingDownloader d = _AudioRecordingDownloader();
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        httpClient: MockClient((_) async => http.Response('', 404)),
+        subtitleLanguageResolver: () => null,
+        downloader: d,
+      );
+      await c.downloadRemoteVideo(
+        c.remoteVideos.first.id,
+        File('${root.path}/ep.mkv'),
+      );
+      expect(d.plainCalls, 0);
+      expect(d.muxCalls.single.url, 'https://cdn.example/video-only.m4s');
+      expect(d.muxCalls.single.audioUrls, <String>[
+        'https://cdn.example/audio.m4a',
+        'https://cdn.example/dub.m4a',
+      ]);
+      expect(d.muxCalls.single.headers['User-Agent'], 'FixtureUA/1');
+    });
+  });
+
   test('episodeIds from library rows override the derived ids', () {
     final AnimeSourceVideoClient c = AnimeSourceVideoClient(
       manager: manager,
@@ -822,5 +908,39 @@ class _RecordingDownloader extends AnimeEpisodeDownloader {
   }) async {
     calls.add(_DownloadCall(url, headers, dest, cancelSignal));
     onProgress?.call(1.0);
+  }
+}
+
+class _AudioRecordingDownloader extends AnimeEpisodeDownloader {
+  int plainCalls = 0;
+  final List<
+    ({String url, List<String> audioUrls, Map<String, String> headers})
+  >
+  muxCalls =
+      <({String url, List<String> audioUrls, Map<String, String> headers})>[];
+
+  @override
+  Future<void> download({
+    required String url,
+    required Map<String, String> headers,
+    required File dest,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    plainCalls++;
+  }
+
+  @override
+  Future<void> downloadWithExternalAudio({
+    required String url,
+    required List<String> audioUrls,
+    required Map<String, String> headers,
+    required File dest,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    muxCalls.add((url: url, audioUrls: audioUrls, headers: headers));
   }
 }

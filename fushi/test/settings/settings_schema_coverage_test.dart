@@ -1033,6 +1033,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/P2P (torrent) proxy':
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
+  // 云备份通道总开关：写 sync_cloud_enabled，生效点是 enabledSyncChannelBackends 不再列出
+  // 云通道（常规 / 复习同步与资产传输都从这份枚举取通道）；harness 里没有同步在跑，
+  // 专项测试咬住「关掉后通道枚举里没有云通道、凭据保留、复习同步入口不调 body」。
+  'syncBackup/Enable cloud backup': 'test/sync/cloud_sync_toggle_test.dart',
   // 复习数据的自动同步（反馈 VNz9dsLeIy）：写 srs_sync_auto，生效点是 SrsSyncScheduler 的几个
   // 自动触发口（常规同步后置步骤 / 互联快速通道 / 本机写入后推送 / host 收到写入）；harness 里没有
   // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。

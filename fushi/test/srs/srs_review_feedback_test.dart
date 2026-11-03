@@ -18,7 +18,9 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart' show SrsCardAppearance;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -451,6 +453,62 @@ void main() {
     });
   });
 
+  group('HrB0STYm3E 隐藏的区块不播（自动播放 / 重播与卡面同一份计划）', () {
+    testWidgets('关了显示图片、例句为空：片段与例句音频不画也不播，底栏只剩单词键', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addFushiCard(tester, store, <String, String>{
+        'Term': '飲む',
+        'MainDefinition': 'to drink',
+        'Media': inlineVideoCoverHtml('clip.webm'),
+        'TermAudio': '[sound:w.mp3]',
+        'SentenceAudio': '[sound:s.mp3]',
+      });
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpReview(
+        tester,
+        store: store,
+        app: _ReplayApp(),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          srsCardAppearanceProvider.overrideWithValue(
+            const SrsCardAppearance(showPicture: false),
+          ),
+        ],
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      // 卡面画出来的：只有单词发音键。
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-word-audio')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-picture')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-sentence-audio')),
+        findsNothing,
+      );
+      // 自动播放交给播放出口的清单与之完全一致。
+      expect(audio.played, <String>['w.mp3']);
+      expect(
+        find.byKey(const ValueKey<String>('srs-bottom-replay-1')),
+        findsNothing,
+        reason: '底栏不再给看不见的片段 / 例句出键',
+      );
+      audio.played.clear();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-bottom-replay-0')),
+      );
+      await _settle(tester);
+      expect(audio.played, <String>['w.mp3'], reason: '底栏重播同一份清单');
+      await _unmount(tester);
+    });
+  });
+
   group('#10 视频片段与例句发音键联动、同一时刻只出一路声音', () {
     testWidgets('同步片段卡：例句键播的是片段（经同一个序列），不再另起一路纯音频', (
       WidgetTester tester,
@@ -495,13 +553,17 @@ void main() {
     });
   });
 
-  group('原生卡面媒体清单（srsFushiCardMedia）', () {
+  group('原生卡面媒体清单（srsFushiCardPlan）', () {
+    SrsFushiCardMedia mediaOf(Map<String, String> fields) =>
+        srsFushiCardPlan(fields, const SrsCardAppearance()).media;
+
     test('片段自带例句：例句单元 = 片段，无陪播音频', () {
-      final SrsFushiCardMedia m = srsFushiCardMedia(<String, String>{
+      final SrsFushiCardMedia m = mediaOf(<String, String>{
+        'Sentence': '例文',
         'Media': inlineVideoCoverHtml('clip.webm'),
         'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
         'TermAudio': inlineVideoWordAudioHtml('w.mp3'),
-      }, audioCardFront: false);
+      });
       expect(m.clipCarriesSentence, isTrue);
       expect(m.back, <String>['w.mp3', 'clip.webm']);
       expect(m.companionSentence, isEmpty);
@@ -509,10 +571,11 @@ void main() {
     });
 
     test('例句音频是另一个文件：片段只陪播画面，不单独进序列', () {
-      final SrsFushiCardMedia m = srsFushiCardMedia(<String, String>{
+      final SrsFushiCardMedia m = mediaOf(<String, String>{
+        'Sentence': '例文',
         'Media': inlineVideoCoverHtml('clip.webm'),
         'SentenceAudio': '[sound:s.mp3]',
-      }, audioCardFront: false);
+      });
       expect(m.clipCarriesSentence, isFalse);
       expect(m.back, <String>['s.mp3']);
       expect(m.companionSentence, <String>['s.mp3']);
@@ -520,16 +583,18 @@ void main() {
 
     test('听力卡正面：有例句音频播例句，否则播单词', () {
       expect(
-        srsFushiCardMedia(<String, String>{
+        mediaOf(<String, String>{
+          'IsAudioCard': 'x',
           'SentenceAudio': '[sound:s.mp3]',
           'TermAudio': '[sound:w.mp3]',
-        }, audioCardFront: true).front,
+        }).front,
         <String>['s.mp3'],
       );
       expect(
-        srsFushiCardMedia(<String, String>{
+        mediaOf(<String, String>{
+          'IsAudioCard': 'x',
           'TermAudio': '[sound:w.mp3]',
-        }, audioCardFront: true).front,
+        }).front,
         <String>['w.mp3'],
       );
     });

@@ -5,7 +5,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 
-import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show kGalgameHelperInstallDirectoryName;
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
@@ -1143,10 +1143,15 @@ class WindowsInstaller {
     await Future<void>.delayed(Duration.zero);
     // 主动让位给安装器是正常退出：不标 clean 的话下次启动会把这次更新当成
     // 「停在前台时没了，疑似闪退」弹闪退报告（反馈 3PqGTEsweI / 9ZYafFWPky /
-    // hfzlMGXJWr / msySECp2Cy 都是 WindowsInstaller.handoff 之后的这种误报）。
-    PreviousExitLog.markCleanExit();
-    await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
-    (exitProcess ?? exit)(0);
+    // hfzlMGXJWr / msySECp2Cy 都是 WindowsInstaller.handoff 之后的这种误报）。意图先于
+    // 原生 teardown 落盘，teardown 卡住 / 被安装器强杀也不误报；结束经唯一出口标 clean。
+    final AppExitCoordinator coordinator = AppExitCoordinator.instance;
+    coordinator.begin('updateHandoff');
+    await coordinator.runStep(
+      'native pre-exit',
+      () => WindowsNativePreExit.prepareForExit(WindowsExitReason.update),
+    );
+    coordinator.terminate('updateHandoff', exitWith: exitProcess);
   }
 
   static Future<String> _sha256OfInstaller(File file) =>
@@ -2014,8 +2019,10 @@ class MacInstaller {
 
     // 7. 退出本进程，让脚本接管替换。主动退出 = 正常退出，标 clean，免得下次启动
     // 把这次更新误报成闪退（同 Windows 安装器交接）。
-    PreviousExitLog.markCleanExit();
-    (exitProcess ?? _defaultExit)(0);
+    AppExitCoordinator.instance.terminate(
+      'updateHandoff',
+      exitWith: exitProcess,
+    );
   }
 
   static Future<MacSwapStartedProcess> _startDetachedScript(
@@ -2026,8 +2033,6 @@ class MacInstaller {
     ], mode: ProcessStartMode.detached);
     return MacSwapStartedProcess(pid: process.pid);
   }
-
-  static void _defaultExit(int code) => exit(code);
 
   static String? _findAppBundleIn(Directory dir) {
     try {

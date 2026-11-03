@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/controls/drag_auto_scroll_region.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -62,6 +63,10 @@ class _VideoControlLayoutEditOverlayState
   late VideoControlLayout _layout = widget.layout;
   bool _dirty = false;
 
+  /// 拖拽边缘自动滚动区：chip 的 Draggable 把指针位置交给它（Wn1SZdlyhl）。
+  final GlobalKey<DragAutoScrollRegionState> _autoScrollKey =
+      GlobalKey<DragAutoScrollRegionState>();
+
   @override
   void didUpdateWidget(VideoControlLayoutEditOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -88,14 +93,19 @@ class _VideoControlLayoutEditOverlayState
     return Material(
       color: Colors.black.withValues(alpha: 0.34),
       child: SafeArea(
-        child: FushiEntranceScope(
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool compact =
-                  constraints.maxWidth < 760 || constraints.maxHeight < 460;
-              if (compact) return _buildCompactLayout(constraints);
-              return _buildSpatialLayout(constraints);
-            },
+        child: DragAutoScrollRegion(
+          key: _autoScrollKey,
+          // 覆盖层压在画面上，外面没有该参与的滚动视口。
+          includeAncestorScrollable: false,
+          child: FushiEntranceScope(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final bool compact =
+                    constraints.maxWidth < 760 || constraints.maxHeight < 460;
+                if (compact) return _buildCompactLayout(constraints);
+                return _buildSpatialLayout(constraints);
+              },
+            ),
           ),
         ),
       ),
@@ -205,6 +215,12 @@ class _VideoControlLayoutEditOverlayState
   }
 
   Widget _buildCompactLayout(BoxConstraints constraints) {
+    // 手机横屏（宽且矮）：调色板放左侧整高一列、槽位在右侧独立滚动，而不是把
+    // 调色板压在顶上——那样 ~340 高的横屏里槽位视口只剩一百多像素（Wn1SZdlyhl）。
+    final bool sideBySide =
+        constraints.maxWidth >= 600 &&
+        constraints.maxWidth > constraints.maxHeight;
+    if (sideBySide) return _buildCompactSideBySideLayout(constraints);
     final double availableWidth = math.max(0, constraints.maxWidth - 24);
     final double tileWidth = availableWidth >= 440
         ? (availableWidth - 8) / 2
@@ -225,29 +241,62 @@ class _VideoControlLayoutEditOverlayState
             ),
           ),
           const SizedBox(height: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: <Widget>[
-                  for (final (int index, VideoControlSlot slot)
-                      in _editorSlots.indexed)
-                    SizedBox(
-                      width: tileWidth,
-                      child: _enter(
-                        index + 1,
-                        _buildSlotRegion(
-                          slot,
-                          tray: slot == VideoControlSlot.hidden,
-                        ),
-                      ),
-                    ),
-                ],
+          Expanded(child: _buildCompactSlotScroll(tileWidth)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactSideBySideLayout(BoxConstraints constraints) {
+    final double innerWidth = math.max(0, constraints.maxWidth - 24);
+    final double paletteWidth = math.min(300, math.max(220, innerWidth * 0.36));
+    final double slotsWidth = math.max(0, innerWidth - paletteWidth - 8);
+    final double tileWidth = slotsWidth >= 440
+        ? (slotsWidth - 8) / 2
+        : slotsWidth;
+    final double paletteHeight = math.max(0, constraints.maxHeight - 24);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: paletteWidth,
+            child: _enter(
+              0,
+              _buildCompactPalette(
+                maxWidth: paletteWidth,
+                maxHeight: paletteHeight,
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          Expanded(child: _buildCompactSlotScroll(tileWidth)),
         ],
+      ),
+    );
+  }
+
+  /// 紧凑布局的槽位滚动区：注册进拖拽自动滚动区，拖到视口上下边缘时自己滚。
+  Widget _buildCompactSlotScroll(double tileWidth) {
+    return SingleChildScrollView(
+      key: const ValueKey<String>('video-control-edit-compact-slots'),
+      child: DragAutoScrollTarget(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final (int index, VideoControlSlot slot)
+                in _editorSlots.indexed)
+              SizedBox(
+                width: tileWidth,
+                child: _enter(
+                  index + 1,
+                  _buildSlotRegion(slot, tray: slot == VideoControlSlot.hidden),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -324,7 +373,11 @@ class _VideoControlLayoutEditOverlayState
                     ),
                   ),
                 ),
-                Expanded(child: SingleChildScrollView(child: chipList)),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: DragAutoScrollTarget(child: chipList),
+                  ),
+                ),
               ],
             ),
           ),
@@ -380,7 +433,11 @@ class _VideoControlLayoutEditOverlayState
             if (maxHeight == null)
               chipList
             else
-              Expanded(child: SingleChildScrollView(child: chipList)),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: DragAutoScrollTarget(child: chipList),
+                ),
+              ),
             const SizedBox(height: 6),
             if (!tightHeight) ...<Widget>[
               Text(
@@ -510,17 +567,19 @@ class _VideoControlLayoutEditOverlayState
                   else
                     Flexible(
                       child: SingleChildScrollView(
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: <Widget>[
-                            for (int index = 0; index < items.length; index++)
-                              _buildPlacedControlChip(
-                                items[index],
-                                sourceSlot: slot,
-                                sourceIndex: index,
-                              ),
-                          ],
+                        child: DragAutoScrollTarget(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: <Widget>[
+                              for (int index = 0; index < items.length; index++)
+                                _buildPlacedControlChip(
+                                  items[index],
+                                  sourceSlot: slot,
+                                  sourceIndex: index,
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -553,6 +612,11 @@ class _VideoControlLayoutEditOverlayState
         child: _controlChipBody(item, dragging: true, maxWidth: 220),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: chip),
+      onDragUpdate: (DragUpdateDetails details) =>
+          _autoScrollKey.currentState?.updateDrag(details.globalPosition),
+      onDragEnd: (DraggableDetails _) => _autoScrollKey.currentState?.endDrag(),
+      onDraggableCanceled: (Velocity _, Offset __) =>
+          _autoScrollKey.currentState?.endDrag(),
       child: chip,
     );
   }

@@ -374,7 +374,9 @@ void main() {
     final int lifecycleHook = lifecycleCode.indexOf(
       'WindowsNativePreExit.prepareForExit(',
     );
-    final int lifecycleExit = lifecycleCode.indexOf('exit(0)');
+    final int lifecycleExit = lifecycleCode.indexOf(
+      "coordinator.terminate('exitApp')",
+    );
     expect(
       lifecycleHook,
       greaterThanOrEqualTo(0),
@@ -393,7 +395,9 @@ void main() {
     final int updaterHook = updaterCode.indexOf(
       'WindowsNativePreExit.prepareForExit(',
     );
-    final int updaterExit = updaterCode.indexOf('(exitProcess ?? exit)(0)');
+    final int updaterExit = updaterCode.indexOf(
+      "coordinator.terminate('updateHandoff'",
+    );
     expect(
       updaterHook,
       greaterThanOrEqualTo(0),

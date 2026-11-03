@@ -779,6 +779,19 @@ void main() {
       // 两条通道的自动同步开关分开报（反馈 5nWEirdCs2）。
       expect(text, contains('云同步自动同步：关'));
       expect(text, contains('互联自动同步：开'));
+      // 旧 app 不带 cloudEnabled：不显示云备份总开关。
+      expect(text, isNot(contains('云备份：')));
+      final String off = render('sync', 'ls', <String, Object?>{
+        'cloudEnabled': false,
+        'autoSync': false,
+        'interconnectEnabled': true,
+        'running': false,
+        'channels': <Object?>[
+          <String, Object?>{'id': 'interconnect', 'backend': 'fushiServer'},
+        ],
+        'backends': <Object?>[],
+      });
+      expect(off, contains('云备份：关'));
     });
 
     test('dl add 远端 / dl detail / dl targets / pair-link / migrate', () {

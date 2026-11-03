@@ -170,9 +170,13 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   /// 只有 MD3 新版布局宽屏播放中才自动隐藏（Apple / 经典 / 暂停 / 窄屏一律常显）。
   /// 无障碍导航（读屏）开着时也常显：淡到 0 的子树会退出语义树，读屏的探索 /
   /// 双击走无障碍动作、不产生指针事件，隐藏后既找不到也唤不回。
+  ///
+  /// 播放态取「有效播放态」（[LyricsPlayerData.playbackActive]）：查词时的临时暂停
+  /// 不算暂停，否则一查词底栏就弹回、歌词矩形缩回、正文重排，被查的词在弹窗下挪位
+  /// （反馈 awLXfD49Ep / M8YDOqJ5Bm）。
   bool get _autoHideEnabled =>
       mounted &&
-      widget.data.isPlaying &&
+      widget.data.playbackActive &&
       widget.data.controlsStyle == LyricsControlsStyle.modern &&
       _wide &&
       !isGlassDesign(context) &&
@@ -298,9 +302,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   void didUpdateWidget(covariant ReaderLyricsPlayerOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.data.cover != widget.data.cover) _resolveCoverScheme();
-    if (oldWidget.data.isPlaying != widget.data.isPlaying ||
+    if (oldWidget.data.playbackActive != widget.data.playbackActive ||
         oldWidget.data.controlsStyle != widget.data.controlsStyle) {
-      // 播放态变化本身算一次活动：刚按下播放不该立刻吞掉底栏。
+      // 播放态变化本身算一次活动：刚按下播放不该立刻吞掉底栏。查词的临时暂停 / 恢复
+      // 不改有效播放态，不算活动（布局保持冻结）。
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoHide());
     }
   }

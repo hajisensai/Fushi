@@ -90,6 +90,123 @@ Object? _withEmptySteps(Object? view, Map<String, Object?> vector) {
   };
 }
 
+/// 向量里寄存器 [key] 的生效值：`expect.regs` 里胜出的记录 id 在 `edits` 里的值。同一 id 的重复修改（向量里
+/// 故意造的 dup，值可以不同）按内核规则「同 ID 留最后一条」（registers.rs 文件头）取 `edits` 里最后一条。
+/// 没有这个键或没有胜出者时返回 `null`。
+({Object? value})? _winnerValue(Map<String, Object?> vector, String key) {
+  String? winner;
+  for (final Object? r in _map(vector['expect'])['regs']! as List<Object?>) {
+    final List<Object?> reg = r! as List<Object?>;
+    final List<Object?> ids = reg[1]! as List<Object?>;
+    if (reg[0] == key && ids.isNotEmpty) winner = ids.first as String?;
+  }
+  if (winner == null) return null;
+  final List<Object?> values = <Object?>[
+    for (final Object? j in vector['edits']! as List<Object?>)
+      if (_map(jsonDecode(j! as String)) case final Map<String, Object?> edit
+          when edit['id'] == winner)
+        edit['v'],
+  ];
+  if (values.isEmpty) return null;
+  return (value: values.last);
+}
+
+/// 向量里有没有寄存器 [key]（有生效记录）。
+bool _hasReg(Map<String, Object?> vector, String key) =>
+    (_map(vector['expect'])['regs']! as List<Object?>).any((Object? r) {
+      final List<Object?> reg = r! as List<Object?>;
+      return reg[0] == key && (reg[1]! as List<Object?>).isNotEmpty;
+    });
+
+/// 向量里某前缀（`f/` / `fieldDef/` / `tmplDef/` / `fieldDesc/`）下生效值确定为 null 的子键。
+Set<String> _nullEntries(Map<String, Object?> vector, String prefix) =>
+    <String>{
+      for (final Object? r in _map(vector['expect'])['regs']! as List<Object?>)
+        if ((r! as List<Object?>)[0] case final String key
+            when key.startsWith(prefix))
+          if (_winnerValue(vector, key) case (value: null))
+            key.substring(prefix.length),
+    };
+
+/// 向量生成之后改了的语义（BUG-3987，2026-11-01）：生效值为 null 的映射项（笔记 `f/`、笔记类型 `fieldDef/`
+/// `tmplDef/` `fieldDesc/`）= 未设，与没有记录同一状态（registers.rs `Entity::is_set`）。时间线恢复把「那一刻
+/// 还没有的键」写回 null，旧实现把它物化成一份全空的项——内置笔记类型的空模板盖住代码默认模板（编辑页正反面
+/// 都空）。现在这一项不存在：笔记少这一个字段（读的地方一律按缺字段 = 空串：`SrsNoteView.field`、导出、卡面
+/// 渲染）；笔记类型非内置的少这一项，内置的回落代码默认定义（重新按 ord / id 排序，与 `note_type_view` 一致），
+/// null 的字段说明不再盖掉内置字段的默认说明。
+///
+/// 向量冻结的是已删除的旧实现的输出，没法重生，所以按向量自己的输入把期望显式改成新语义。
+Object? _withNullMapEntriesUnset(Object? view, Map<String, Object?> vector) {
+  if (view is! Map) return view;
+  final Map<String, Object?> v = view.cast<String, Object?>();
+  switch (vector['kind']) {
+    case 'note':
+      final Set<String> unset = _nullEntries(vector, 'f/');
+      if (unset.isEmpty) return view;
+      return <String, Object?>{
+        ...v,
+        'fields': <Object?>[
+          for (final Object? f in v['fields']! as List<Object?>)
+            if (!unset.contains((f! as List<Object?>)[0])) f,
+        ],
+      };
+    case 'notetype':
+      final Set<String> defs = _nullEntries(vector, 'fieldDef/');
+      final Set<String> tmpls = _nullEntries(vector, 'tmplDef/');
+      final Set<String> descs = _nullEntries(vector, 'fieldDesc/');
+      if (defs.isEmpty && tmpls.isEmpty && descs.isEmpty) return view;
+      final SrsBuiltinNoteType? builtin = vector['builtin'] == null
+          ? null
+          : _builtinOf(_map(vector['builtin']));
+      // 字段说明（`fieldDesc/` 生效且非 null 时盖在定义上，见 note_type_view）。
+      String? descOverride(String id) =>
+          switch (_winnerValue(vector, 'fieldDesc/$id')) {
+            (value: final String s) => s,
+            (value: final Object _) => '',
+            _ => null,
+          };
+      int byOrd(Object? a, Object? b) {
+        final Map<String, Object?> x = _map(a), y = _map(b);
+        final int c = (x['ord']! as int).compareTo(y['ord']! as int);
+        return c != 0 ? c : (x['id']! as String).compareTo(y['id']! as String);
+      }
+
+      final List<Object?> fields = <Object?>[
+        for (final Object? f in v['fields']! as List<Object?>)
+          if (!defs.contains(_map(f)['id']))
+            // 定义是记录写的（不是 null）时内置默认说明早被整份定义替换掉，null 说明仍是空串；
+            // 定义跟随内置时 null 说明回落内置默认说明。
+            descs.contains(_map(f)['id']) &&
+                    !_hasReg(vector, 'fieldDef/${_map(f)['id']}')
+                ? <String, Object?>{
+                    ..._map(f),
+                    'description':
+                        builtin?.fields
+                            .where((SrsFieldDef b) => b.id == _map(f)['id'])
+                            .firstOrNull
+                            ?.description ??
+                        '',
+                  }
+                : f,
+        if (builtin != null)
+          for (final SrsFieldDef b in builtin.fields)
+            if (defs.contains(b.id) && !b.deleted)
+              _fieldDefJson(
+                b.copyWith(description: descOverride(b.id) ?? b.description),
+              ),
+      ]..sort(byOrd);
+      final List<Object?> templates = <Object?>[
+        for (final Object? t in v['templates']! as List<Object?>)
+          if (!tmpls.contains(_map(t)['id'])) t,
+        if (builtin != null)
+          for (final SrsTemplateDef b in builtin.templates)
+            if (tmpls.contains(b.id) && !b.deleted) _tmplDefJson(b),
+      ]..sort(byOrd);
+      return <String, Object?>{...v, 'fields': fields, 'templates': templates};
+  }
+  return view;
+}
+
 List<SrsEditItem> _items(Object? edits, Map<String, Object?> server) {
   return <SrsEditItem>[
     for (final Object? j in edits! as List<Object?>)
@@ -319,6 +436,7 @@ void main() {
 
   test('实体：寄存器 / 删除 / 删除并发 / 物化视图 / no-op 与旧实现逐条一致', () {
     int checked = 0;
+    int unsetAdjusted = 0;
     for (final Map<String, Object?> v in ofKind(<String>{
       'note',
       'notetype',
@@ -340,15 +458,16 @@ void main() {
       if (v['kind'] == 'edits') continue;
       expect(got['deletedAt'], e['deletedAt']);
       expect(got['concurrent'], e['concurrent']);
-      expect(
-        jsonEncode(got['view']),
-        jsonEncode(_withEmptySteps(_withLaterDefaults(e['view']), v)),
-        reason: jsonEncode(v),
-      );
+      final Object? before = _withEmptySteps(_withLaterDefaults(e['view']), v);
+      final Object? want = _withNullMapEntriesUnset(before, v);
+      if (jsonEncode(want) != jsonEncode(before)) unsetAdjusted++;
+      expect(jsonEncode(got['view']), jsonEncode(want), reason: jsonEncode(v));
       expect(got['noop'], e['noop'], reason: jsonEncode(v));
       checked++;
     }
     expect(checked, greaterThan(1200));
+    // BUG-3987 语义偏离实际改动的向量条数（全部来自 null 的 f/ fieldDef/ tmplDef/ fieldDesc/）。
+    expect(unsetAdjusted, 33);
   });
 
   test('整批与逐个同结果（一批多个实体一次 FFI）', () {
@@ -365,7 +484,10 @@ void main() {
     ]);
     for (int i = 0; i < notes.length; i++) {
       final Map<String, Object?> e = _map(notes[i]['expect']);
-      expect(jsonEncode(_noteJson(batch[i])), jsonEncode(e['view']));
+      expect(
+        jsonEncode(_noteJson(batch[i])),
+        jsonEncode(_withNullMapEntriesUnset(e['view'], notes[i])),
+      );
       expect(_regs(batch[i].edits), e['regs']);
     }
   });

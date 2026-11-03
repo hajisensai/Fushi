@@ -1337,7 +1337,9 @@ class _ModernWideChrome extends StatelessWidget {
                         'lyrics_modern_immersive_progress',
                       ),
                       borderRadius: const BorderRadius.all(Radius.circular(2)),
-                      child: LinearProgressIndicator(
+                      // 3dp 的收起态提示条：平直静止（不跑波浪），只是指示进度。
+                      child: FushiLinearProgressIndicator(
+                        wavy: false,
                         value: total.inSeconds > 0
                             ? (position.inSeconds / total.inSeconds).clamp(
                                 0.0,

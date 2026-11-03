@@ -348,7 +348,23 @@ bool ScriptResultIsTrue(HRESULT error_code, LPCWSTR result_json) {
 //     defaulting to application/octet-stream.
 // The page only references dictmedia:// for the dictionary's own <link>
 // stylesheets, so text/css is the faithful type; image:// covers gaiji/<img>.
+// 大结果词条的取回地址（Dart `GlobalLookupEntriesStore.urlPrefix`，两处字面量由
+// fushi/test/lookup/global_lookup_entries_fetch_test.dart 钉成一致）。卡片 iframe 的
+// 文档在 https://hibiki.popup，这是跨源 fetch：响应必须带
+// Access-Control-Allow-Origin，且一次性字节不进 HTTP 缓存。
+constexpr char kGlobalLookupEntriesUrlPrefix[] =
+    "https://fushi.local/popup-entries/glookup/";
+
+bool IsGlobalLookupEntriesUrl(const std::string& url) {
+  return url.rfind(kGlobalLookupEntriesUrlPrefix, 0) == 0;
+}
+
 std::wstring MediaContentTypeHeader(const std::string& url) {
+  if (IsGlobalLookupEntriesUrl(url)) {
+    return L"Content-Type: application/json; charset=utf-8\r\n"
+           L"Access-Control-Allow-Origin: *\r\n"
+           L"Cache-Control: no-store";
+  }
   const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
   if (is_dictmedia) {
     return L"Content-Type: text/css";
@@ -1730,6 +1746,11 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
   }
+  // 游戏内嵌查词耗时诊断：Dart 的 revealStack 何时真正到达平台线程、对应脚本何时在
+  // 页面里执行完，两个 QPC 微秒读数与 gal-latency 行同一时钟。
+  const uint64_t resize_enter_qpc_us = fushi_voice_hook::QpcMicrosNow();
+  NativeGlog("gal resize enter epoch=" + std::to_string(geometry_epoch) +
+             " qpc=" + std::to_string(resize_enter_qpc_us));
   // BUG-2921 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
   // 而不是 union 高度。
   if (root_height > 0) {
@@ -1907,7 +1928,17 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   // animation frames (with a bounded fallback when an off-screen WebView2
   // suspends rAF); WebMessageReceived commits the matching HRGN/shadow
   // immediately before forwarding that paint-ready ack to Dart.
-  const HRESULT shift_hr = webview_->ExecuteScript(shift_script.c_str(), nullptr);
+  const HRESULT shift_hr = webview_->ExecuteScript(
+      shift_script.c_str(),
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [geometry_epoch, resize_enter_qpc_us](HRESULT, LPCWSTR) -> HRESULT {
+            const uint64_t done = fushi_voice_hook::QpcMicrosNow();
+            NativeGlog("gal resize script done epoch=" +
+                       std::to_string(geometry_epoch) + " after_us=" +
+                       std::to_string(done - resize_enter_qpc_us));
+            return S_OK;
+          })
+          .Get());
   if (FAILED(shift_hr)) {
     ReportOverlayError("gal layer-shift ExecuteScript call failed", shift_hr);
   }
@@ -3492,7 +3523,9 @@ void GlobalLookupWindow::ConfigureWebView() {
             // the virtual host.
             const bool is_image = url.rfind("image://", 0) == 0;
             const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
-            if (!is_image && !is_dictmedia) {
+            // 大结果词条的取回（in-app P1-B 的应用外版本）走同一个 Dart 解析器。
+            const bool is_entries = IsGlobalLookupEntriesUrl(url);
+            if (!is_image && !is_dictmedia && !is_entries) {
               return S_OK;  // Let the virtual host serve popup assets.
             }
             if (!media_resolver_) {

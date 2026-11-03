@@ -4,7 +4,7 @@ const assert = require('node:assert');
 // 文案走 i18n（模块里 tr() 读全局 fushiT）：测试按 zh-CN 字典断言。
 globalThis.fushiT = require('./scripts/i18n-fixture.js').makeFushiT();
 const {
-  fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
+  fushiFilterQueue, fushiSplitQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
   fushiQueueItemUrl, fushiTabSite, fushiGenButtonState,
   fushiOverlayToggleState, fushiOverlayToggleWrite,
 } = require('./vendor/action-popup.js');
@@ -199,4 +199,19 @@ test('fushiFontSizeStep: follow starts from 16, clamps into the popup-size.js ra
   assert.strictEqual(fushiFontSizeStep(20, 1), 21);
   assert.strictEqual(fushiFontSizeStep(S.FUSHI_POPUP_FONT_SIZE_MIN, -1), S.FUSHI_POPUP_FONT_SIZE_MIN);
   assert.strictEqual(fushiFontSizeStep(S.FUSHI_POPUP_FONT_SIZE_MAX, 1), S.FUSHI_POPUP_FONT_SIZE_MAX);
+});
+
+// EMI05fe8RJ：失败分组里的项不参与生成，也不计入待生成数。
+test('fushiSplitQueue separates Failed items; gen button counts only pending ones', () => {
+  const q = [
+    { id: 'a', site: 'youtube', youtubeId: 'v1' },
+    { id: 'b', site: 'youtube', youtubeId: 'v2', failed: true, lastError: '需购买' },
+  ];
+  const split = fushiSplitQueue(q);
+  assert.deepStrictEqual(split.pending.map((x) => x.id), ['a']);
+  assert.deepStrictEqual(split.failed.map((x) => x.id), ['b']);
+  assert.strictEqual(fushiGenButtonState(q, false, 'other', null).label, fushiGenButtonState([q[0]], false, 'other', null).label);
+  const onlyFailed = fushiGenButtonState([q[1]], false, 'other', null);
+  assert.strictEqual(onlyFailed.mode, 'empty');
+  assert.strictEqual(onlyFailed.enabled, false);
 });

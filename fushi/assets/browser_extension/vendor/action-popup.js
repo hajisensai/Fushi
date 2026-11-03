@@ -11,6 +11,26 @@ function fushiApT(key, params) {
   return (g && typeof g.fushiT === 'function') ? g.fushiT(key, params) : key;
 }
 
+// 队列状态判据的唯一真源是 ../mine-outcome.js（content / background / popup 共用）：扩展页由
+// action-popup.html 先装入它（挂在 self 上），node 测试直接 require。
+const fushiApQueueState = (typeof module !== 'undefined' && module.exports && typeof require === 'function')
+  ? require('../mine-outcome.js')
+  : (typeof self !== 'undefined' ? self : globalThis);
+
+// EMI05fe8RJ：待生成 / 失败分组拆开。失败项（永久失败或反复失败）不参与生成、不计入待生成数，
+// 单独列在「失败」分组里给出原因，可手动重试或删除。
+function fushiSplitQueue(queue) {
+  const list = Array.isArray(queue) ? queue : [];
+  const pending = [];
+  const failed = [];
+  for (const q of list) {
+    if (!q) continue;
+    if (fushiApQueueState.fushiQueueItemPending(q)) pending.push(q);
+    else failed.push(q);
+  }
+  return { pending, failed };
+}
+
 // 纯函数：从队列里剔除指定 id（读-改-写的核心）。抽出来供 node 测试，无 chrome 依赖。
 function fushiFilterQueue(queue, removeId) {
   const list = Array.isArray(queue) ? queue : [];
@@ -90,7 +110,8 @@ function fushiGenButtonState(queue, batchActive, tabSite, ytBatch) {
   }
   // 当前 tab 还没查到（null）：不知道是不是 Netflix 播放页，点了可能走错分支 → 先禁用。
   if (tabSite == null) return { mode: 'pending', label: t('ap_gen_start'), enabled: false, hint: '' };
-  const list = Array.isArray(queue) ? queue : [];
+  // 失败分组里的项不参与生成（EMI05fe8RJ）：按钮状态只看待生成项。
+  const list = fushiSplitQueue(queue).pending;
   const nf = list.filter((q) => q && q.site === 'netflix' && q.netflixId).length;
   const yt = list.filter((q) => q && q.site === 'youtube' && q.youtubeId).length;
   if (!list.length) {
@@ -185,7 +206,7 @@ function fushiFontSizeStep(current, delta) {
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
+    fushiFilterQueue, fushiSplitQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
     fushiQueueItemUrl, fushiTabSite, fushiGenButtonState, fushiUpdateNotice,
     fushiOverlayToggleState, fushiOverlayToggleWrite, fushiQuickToggleOn,
     FUSHI_AP_QUICK_DEFAULTS, fushiFontSizeStep,
@@ -365,6 +386,13 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     render(remaining);
   }
 
+  // 失败分组的「重试」：清掉失败标记，回到待生成（下次点生成时重新制）。
+  async function retryItem(id) {
+    const next = fushiApQueueState.fushiQueueRetryFailed(await readQueue(), id);
+    try { await chrome.storage.local.set({ fushiQueue: next }); } catch (_) {}
+    render(next);
+  }
+
   // TODO-1881：清空队列（原来 N 条要点 N 次 ×）。二次确认：首点变「确认清空？」，3 秒内再点才清。
   let clearConfirmTimer = null;
   async function clearQueue() {
@@ -402,12 +430,14 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   }
 
   function render(queue) {
-    const list = Array.isArray(queue) ? queue : [];
+    const all = Array.isArray(queue) ? queue : [];
+    const split = fushiSplitQueue(all);
+    const list = split.pending;
     if (countEl) countEl.textContent = list.length ? String(list.length) : '';
-    refreshGenButton(list);
+    refreshGenButton(all);
     if (!listEl) return;
     listEl.textContent = '';
-    if (!list.length) {
+    if (!list.length && !split.failed.length) {
       const empty = document.createElement('div');
       empty.className = 'hp-empty';
       empty.textContent = fushiApT('ap_queue_empty');
@@ -441,56 +471,80 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     });
     heading.appendChild(clearBtn);
     listEl.appendChild(heading);
-    for (const q of list) {
-      const row = document.createElement('div');
-      row.className = 'hp-row';
-      if (q && q.site && q.site !== 'other') {
-        const site = document.createElement('span');
-        site.className = 'hp-row-site';
-        site.textContent = q.site === 'netflix' ? 'NF' : (q.site === 'youtube' ? 'YT' : q.site);
-        row.appendChild(site);
-      }
-      // TODO-1270：主标签(词) + 下方暗色上下文句子；同一字幕行不同词的卡片靠「词」区分，不再一模一样。
-      const main = document.createElement('div');
-      main.className = 'hp-row-main';
-      const text = document.createElement('span');
-      text.className = 'hp-row-text';
-      const label = fushiQueueItemLabel(q);
-      text.textContent = label;
-      main.appendChild(text);
-      const context = fushiQueueItemContext(q);
-      if (context) {
-        const sub = document.createElement('span');
-        sub.className = 'hp-row-sub';
-        sub.textContent = context;
-        main.appendChild(sub);
-      }
-      // TODO-1881：条目可点击跳回对应视频页（Netflix 生成必须在其页面；wrongSite hint 引导到这里）。
-      const jumpUrl = fushiQueueItemUrl(q);
-      if (jumpUrl) {
-        main.dataset.url = jumpUrl;
-        main.title = (context ? (label + ' — ' + context) : label) + '\n' + fushiApT('ap_queue_open_video_hint');
-        main.addEventListener('click', () => {
-          try { chrome.tabs.create({ url: jumpUrl }); } catch (_) {}
-        });
-      } else {
-        main.title = context ? (label + ' — ' + context) : label;
-      }
-      const del = document.createElement('button');
-      del.className = 'hp-del';
-      del.type = 'button';
-      // Material Symbols Rounded「close」（icons.js 在扩展页已装入）；node 测试壳里没有它，退回 ×。
-      const delIcon = typeof self.fushiIcon === 'function' ? self.fushiIcon('close', { size: 18 }) : null;
-      if (delIcon) del.appendChild(delIcon);
-      else del.textContent = '×';
-      del.title = fushiApT('ap_queue_remove_title');
-      del.setAttribute('aria-label', del.title);
-      const id = q && q.id;
-      del.addEventListener('click', () => { if (id) removeItem(id); });
-      row.appendChild(main);
-      row.appendChild(del);
-      listEl.appendChild(row);
+    for (const q of list) listEl.appendChild(buildRow(q, false));
+    if (split.failed.length) {
+      const failedHeading = document.createElement('div');
+      failedHeading.className = 'hp-list-title hp-list-title-failed';
+      const failedText = document.createElement('span');
+      failedText.textContent = fushiApT('ap_queue_failed_heading', { n: split.failed.length });
+      failedHeading.appendChild(failedText);
+      listEl.appendChild(failedHeading);
+      for (const q of split.failed) listEl.appendChild(buildRow(q, true));
     }
+  }
+
+  // 一行队列项。failed=true：失败分组——次要行显示失败原因（lastError），多一个「重试」按钮。
+  function buildRow(q, failed) {
+    const row = document.createElement('div');
+    row.className = failed ? 'hp-row hp-row-failed' : 'hp-row';
+    if (q && q.site && q.site !== 'other') {
+      const site = document.createElement('span');
+      site.className = 'hp-row-site';
+      site.textContent = q.site === 'netflix' ? 'NF' : (q.site === 'youtube' ? 'YT' : q.site);
+      row.appendChild(site);
+    }
+    // TODO-1270：主标签(词) + 下方暗色上下文句子；同一字幕行不同词的卡片靠「词」区分，不再一模一样。
+    const main = document.createElement('div');
+    main.className = 'hp-row-main';
+    const text = document.createElement('span');
+    text.className = 'hp-row-text';
+    const label = fushiQueueItemLabel(q);
+    text.textContent = label;
+    main.appendChild(text);
+    const context = failed ? String((q && q.lastError) || '') : fushiQueueItemContext(q);
+    if (context) {
+      const sub = document.createElement('span');
+      sub.className = 'hp-row-sub';
+      sub.textContent = context;
+      main.appendChild(sub);
+    }
+    // TODO-1881：条目可点击跳回对应视频页（Netflix 生成必须在其页面；wrongSite hint 引导到这里）。
+    const jumpUrl = fushiQueueItemUrl(q);
+    if (jumpUrl) {
+      main.dataset.url = jumpUrl;
+      main.title = (context ? (label + ' — ' + context) : label) + '\n' + fushiApT('ap_queue_open_video_hint');
+      main.addEventListener('click', () => {
+        try { chrome.tabs.create({ url: jumpUrl }); } catch (_) {}
+      });
+    } else {
+      main.title = context ? (label + ' — ' + context) : label;
+    }
+    row.appendChild(main);
+    const id = q && q.id;
+    if (failed) {
+      const retry = document.createElement('button');
+      retry.className = 'hp-del hp-retry';
+      retry.type = 'button';
+      const retryIcon = typeof self.fushiIcon === 'function' ? self.fushiIcon('refresh', { size: 18 }) : null;
+      if (retryIcon) retry.appendChild(retryIcon);
+      else retry.textContent = '\u21bb';
+      retry.title = fushiApT('ap_queue_retry_title');
+      retry.setAttribute('aria-label', retry.title);
+      retry.addEventListener('click', () => { if (id) retryItem(id); });
+      row.appendChild(retry);
+    }
+    const del = document.createElement('button');
+    del.className = 'hp-del';
+    del.type = 'button';
+    // Material Symbols Rounded「close」（icons.js 在扩展页已装入）；node 测试壳里没有它，退回 ×。
+    const delIcon = typeof self.fushiIcon === 'function' ? self.fushiIcon('close', { size: 18 }) : null;
+    if (delIcon) del.appendChild(delIcon);
+    else del.textContent = '×';
+    del.title = fushiApT('ap_queue_remove_title');
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', () => { if (id) removeItem(id); });
+    row.appendChild(del);
+    return row;
   }
 
   // 「开始生成/录制」：按钮点击=用户手势 → 拿当前 tab → 让 background 跑 fushiIconClick。

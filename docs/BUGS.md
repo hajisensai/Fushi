@@ -38,6 +38,44 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3959](bugs/BUG-3959-study-clock-covering-overlays.md) | ✅ | ✅ | study-clock-covering-overlays |
+> 共 3596 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3992](bugs/BUG-3992-browser-shortcuts-dead-after-unfocus.md) | ✅ | ✅ | 浏览器 Ctrl+F 等快捷键在焦点离开地址栏后失效 |
+| [BUG-3991](bugs/BUG-3991-browser-svg-favicon-letter.md) | ✅ | ✅ | 浏览器标签页图标退回首字母（站点声明 SVG favicon） |
+| [BUG-3990](bugs/BUG-3990-browser-tab-strip-gap.md) | ✅ | ✅ | 浏览器顶部活动标签不贴地址栏、中间露 6dp 缝 |
+| [BUG-3989](bugs/BUG-3989-srs-v1-media-migration-never-finishes.md) | ✅ | ✅ | srs-v1-media-migration-never-finishes |
+| [BUG-3988](bugs/BUG-3988-srs-deck-settings-slow-open.md) | ✅ | ✅ | srs-deck-settings-slow-open |
+| [BUG-3987](bugs/BUG-3987-srs-timeline-restore-empty-templates.md) | ✅ | ✅ | srs-timeline-restore-empty-templates |
+| [BUG-3986](bugs/BUG-3986-online-source-dash-external-audio.md) | ✅ | ✅ | online-source-dash-external-audio |
+| [BUG-3985](bugs/BUG-3985-control-layout-drag-edge-autoscroll.md) | ✅ | ✅ | control-layout-drag-edge-autoscroll |
+| [BUG-3984](bugs/BUG-3984-video-remote-subtitle-state-model.md) | ✅ | ✅ | video-remote-subtitle-state-model |
+| [BUG-3983](bugs/BUG-3983-srs-autoplay-hidden-media.md) | ✅ | ✅ | srs-autoplay-hidden-media |
+| [BUG-3982](bugs/BUG-3982-srs-card-selection-gesture-ownership.md) | ✅ | ✅ | srs-card-selection-gesture-ownership |
+| [BUG-3981](bugs/BUG-3981-srs-remote-review-scope-leak-and-browse-ops.md) | ✅ | ✅ | srs-remote-review-scope-leak-and-browse-ops |
+| [BUG-3980](bugs/BUG-3980-netflix-handoff-before-commit.md) | ✅ | ✅ | 浏览器 Netflix 观看页先在网页里建会话再交给播放器，同账号双会话 |
+| [BUG-3979](bugs/BUG-3979-diagnostics-outside-fushi-folder.md) | ✅ | ✅ | 桌面端错误日志 / 面包屑写在用户 Documents 根，不在 Fushi 目录 |
+| [BUG-3978](bugs/BUG-3978-reader-ruby-tail-tap-highlight.md) | ✅ | ✅ | 阅读器点 ruby 词的后半个基字：查的只有后半、亮的却是整个词 |
+| [BUG-3977](bugs/BUG-3977-ext-youtube-queue-permanent-failure.md) | ✅ | ✅ | YouTube 批量制卡：付费视频的卡永远留队、每次生成都重跑 |
+| [BUG-3976](bugs/BUG-3976-ext-prev-cue-strict.md) | ✅ | ✅ | 浏览器扩展「上一句」进句超过 600ms 只回本句句首 |
+| [BUG-3975](bugs/BUG-3975-ext-audio-menu-outside-click.md) | ✅ | ✅ | 浏览器扩展：右键音频源菜单点选项即关查词窗、不播放 |
+| [BUG-3974](bugs/BUG-3974-restore-positional-copy-profiles-column-shift.md) | ✅ | ✅ | restore-positional-copy-profiles-column-shift |
+| [BUG-3973](bugs/BUG-3973-exit-intent-misreported-as-crash.md) | ✅ | ✅ | exit-intent-misreported-as-crash |
+| [BUG-3972](bugs/BUG-3972-srs-restore-deletes-migrated-builtins.md) | ✅ | ✅ | srs-restore-deletes-migrated-builtins |
+| [BUG-3971](bugs/BUG-3971-srs-sync-scheduler-hol-dup-folders.md) | ✅ | ✅ | srs-sync-scheduler-hol-dup-folders |
+| [BUG-3970](bugs/BUG-3970-srs-sync-pending-backlog-loaded-whole.md) | ✅ | ✅ | srs-sync-pending-backlog-loaded-whole |
+| [BUG-3969](bugs/BUG-3969-sync-compare-cards-not-selectable.md) | ✅ | ✅ | sync-compare-cards-not-selectable |
+| [BUG-3968](bugs/BUG-3968-srs-browse-forever-spinner.md) | ✅ | ✅ | srs-browse-forever-spinner |
+| [BUG-3967](bugs/BUG-3967-srs-builtin-template-restore.md) | ✅ | ✅ | srs-builtin-template-restore |
+| [BUG-3966](bugs/BUG-3966-music-lyrics-mining-plugin-path.md) | ✅ | ✅ | music-lyrics-mining-plugin-path |
+| [BUG-3965](bugs/BUG-3965-music-plugin-liked-list-refresh.md) | ✅ | ✅ | music-plugin-liked-list-refresh |
+| [BUG-3964](bugs/BUG-3964-lyrics-lookup-pause-and-past-hover.md) | ✅ | ✅ | lyrics-lookup-pause-and-past-hover |
+| [BUG-3963](bugs/BUG-3963-lyrics-document-input-chain.md) | ✅ | ✅ | lyrics-document-input-chain |
+| [BUG-3962](bugs/BUG-3962-srs-split-executor-close-hang-and-writer-pool-wait.md) | ✅ | ✅ | srs-split-executor-close-hang-and-writer-pool-wait |
+| [BUG-3961](bugs/BUG-3961-srs-concurrent-reads-serialized.md) | ✅ | ✅ | 同步跑着时打开卡片 / 牌组设置很慢：srs.db 的读全排在一条队列里 |
+| [BUG-3960](bugs/BUG-3960-srs-restore-legacy-original-time.md) | ✅ | ✅ | srs-restore-legacy-original-time |
+| [BUG-3959](bugs/BUG-3959-srs-sync2-synthetic-writer-ctx-bloat.md) | ✅ | ✅ | 复习同步 v2：合成写入者 `sync2:` 进了因果上下文，本机每条新修改 ctx ≈ 780 KB |
 | [BUG-3958](bugs/BUG-3958-floating-ball-photo-ocr-mines-no-sentence.md) | ✅ | ✅ | 悬浮球拍照查词、悬浮字幕点字制卡没有例句 |
 | [BUG-3957](bugs/BUG-3957-srs-native-pitch-graph-notation.md) | ✅ | ✅ | 复习卡原生声调图给低拍画下划线，与模板记法不一致 |
 | [BUG-3956](bugs/BUG-3956-reader-lyrics-system-back-twice.md) | ✅ | ✅ | 歌词模式下系统返回要两次才回书架 |

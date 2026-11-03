@@ -76,6 +76,7 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
     show AudiobookSpeedSlider;
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lookup_resume_hold.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout_editor.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
@@ -322,6 +323,60 @@ bool shouldReclaimReaderFocusAfterGesture({
   required bool popupVisible,
   required bool chromeHasFocus,
 }) => !popupVisible && !chromeHasFocus;
+
+/// 阅读器整页焦点判据（[PageFocusOwnership] 的 `canOwn`）：[cause] 这个落点要不要把
+/// Flutter 焦点收回正文 `_focusNode`。抽成纯函数按矩阵单测。
+///
+/// **歌词模式下 `_focusNode` 仍是唯一键盘入口**（反馈 NmpRV-amTY / PHs18V7U3K）：歌词
+/// 独立文档没有任何「自有焦点路径」，旧判据以「歌词自有焦点路径」为由在 popupRendered /
+/// appResumed / overlayClosed 上一律对歌词让位，结果点词出弹窗后 Esc 关不掉、关设置面板
+/// 或切回前台后 Space / Esc 失灵。现在只有两类落点仍对歌词让位：contentReady /
+/// surfaceRemounted —— 它们由文档加载触发，歌词 WebView loadData 后强夺焦会顶焦重置
+/// 滚动并闪烁（BUG-767）；歌词的键盘由任一交互后的 reclaim + 歌词文档键桥覆盖。
+bool readerCanOwnFocus(
+  FocusReclaimCause cause, {
+  required bool lyricsMode,
+  required bool dictionaryShown,
+  required bool chromeHasFocus,
+  required bool contentReady,
+  required bool caretBusy,
+  required bool routeIsCurrent,
+}) {
+  switch (cause) {
+    // BUG-1071 ②：词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，指针唤出它时 OS
+    // 焦点落在弹窗上。弹窗可见时必须把焦点拉回正文，否则关词典键（Esc / 绑定键）永远
+    // 抵达不了 `_handleKeyEvent`。歌词模式同理（PHs18V7U3K）。
+    case FocusReclaimCause.popupRendered:
+      return dictionaryShown;
+    // 整条查词浮层栈关闭：曾持键盘的弹窗 WebView 已消失，不归还用户会被困死。
+    case FocusReclaimCause.popupDismissed:
+      return true;
+    // TODO-700 T8：底栏整体是 ExcludeFocus，任何时刻都不是合法的焦点所有者；切底栏只是
+    // 重新确认焦点仍在正文（歌词模式 / 内容未就绪下也一样）。
+    case FocusReclaimCause.chromeToggled:
+      return true;
+    // BUG-136：原生 WebView 在任一指针手势上捕获 OS 焦点。只让位给另一个合法的
+    // Flutter 焦点所有者（可见弹窗 / 底栏 chrome），其余一律收回。
+    case FocusReclaimCause.gesture:
+      return shouldReclaimReaderFocusAfterGesture(
+        popupVisible: dictionaryShown,
+        chromeHasFocus: chromeHasFocus,
+      );
+    // 由文档加载触发的归位：歌词态不抢（BUG-767 loadData 后夺焦闪烁）。
+    case FocusReclaimCause.contentReady:
+    case FocusReclaimCause.surfaceRemounted:
+      if (lyricsMode || !contentReady) return false;
+      return !caretBusy && !dictionaryShown && routeIsCurrent;
+    // 切窗回前台 / 覆盖层（设置面板等）关闭：与加载无关，歌词态同样要归位，否则
+    // 关掉设置面板后歌词模式的 Space / Esc 再次失灵。正文态仍要求内容就绪。
+    case FocusReclaimCause.appResumed:
+    case FocusReclaimCause.overlayClosed:
+      if (!lyricsMode && !contentReady) return false;
+      // 光标态 / 弹窗 WebView 持焦期间不抢；上方压着别的路由（设置 / 查词大对话框）
+      // 时不抢（Never break userspace），那些覆盖层关闭时各自的返回点会归还焦点。
+      return !caretBusy && !dictionaryShown && routeIsCurrent;
+  }
+}
 
 /// 视口尺寸变化是否大到需要重排分页（BUG-210 / TODO-146）。
 ///
@@ -2441,6 +2496,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _lyricsMode ? _lyricsWebViewKey : _webViewKey;
 
   bool _pausedForLookup = false;
+
+  /// 关查词弹窗后的「恢复播放」还在途、播放器尚未起播（见 `_clearLookupState`）。
+  bool _lookupResumeInFlight = false;
 
   /// v92：本页**唯一**的阅读时钟兼累计器（时长 / 字数同一段同一 uid），取代旧的
   /// `ReadingTimeTracker` + `_sessionReadingMs` / `_sessionCharsRead` 三处各算各的账
@@ -5083,50 +5141,16 @@ $liveConfigJs
   /// 「阅读器正文此刻应当持有键盘」的统一判据，按回收原因分流。
   bool _canOwnReaderFocus(FocusReclaimCause cause) {
     if (!mounted) return false;
-    switch (cause) {
-      // BUG-1071 ②：词典弹窗是**纯原生 WebView**、没有 Flutter 焦点节点，指针唤出
-      // 它时 OS 焦点落在弹窗上。必须在弹窗可见时把 Flutter 焦点拉回正文，否则关词典
-      // 键（Esc / 绑定键）永远抵达不了 [_handleKeyEvent]。故此 cause 与下面 gesture
-      // 的「弹窗可见就让位」正好相反——这正是两者当初必须是两个 helper 的原因。
-      case FocusReclaimCause.popupRendered:
-        return _lyricsMode ? false : isDictionaryShown;
-      // 整条查词浮层栈关闭：曾持键盘的弹窗 WebView 已消失，不归还用户会被困死
-      // （收不到任何按键，没有任何办法回到正文）。
-      case FocusReclaimCause.popupDismissed:
-        return true;
-      // TODO-700 T8：底栏整体是 ExcludeFocus（见 [_wrapBottomChromeBar]），任何时刻
-      // 都不是合法的焦点所有者，故切底栏没有「让位给谁」这回事——只是重新确认焦点
-      // 仍在正文，正文已持焦时是纯 no-op。**不套**下面那组严格门控：歌词模式 / 内容
-      // 未就绪下正文键盘节点依然是 [_handleKeyEvent] 的唯一入口，此时不归位就等于
-      // 切一下底栏把键丢了（统一前这里是无条件 requestFocus，行为保持不变）。
-      case FocusReclaimCause.chromeToggled:
-        return true;
-      // BUG-136：原生 WebView 在任一指针手势上捕获 OS 焦点。只让位给另一个**合法的
-      // Flutter 焦点所有者**（可见弹窗 / 底栏 chrome），其余一律收回。
-      case FocusReclaimCause.gesture:
-        return shouldReclaimReaderFocusAfterGesture(
-          popupVisible: isDictionaryShown,
-          chromeHasFocus: _chromeFocusScope.hasFocus,
-        );
-      // TODO-700 T3 / TODO-900：内容就绪、切窗回前台、底栏显隐后的归位。严格门控：
-      // 光标态 / 词典弹窗态 / 歌词态都不抢（否则会覆盖正在用的光标焦点）。整页 Focus
-      // 的 autofocus:true 仍保留作冷启动兜底，这里只是把「确定性到位」补在每个落点
-      // （含切应用回来 / 重启后重进，不再依赖 FocusManager 进程内记忆）。
-      case FocusReclaimCause.contentReady:
-      case FocusReclaimCause.appResumed:
-      case FocusReclaimCause.surfaceRemounted:
-      case FocusReclaimCause.overlayClosed:
-        if (!_readerContentReady || _lyricsMode) return false;
-        if (_caretActive || _caretSurface != CaretSurface.none) return false;
-        if (isDictionaryShown) return false; // 弹窗 WebView 持焦点期间不抢
-        // resumed 是全局生命周期回调，阅读器上方可能压着设置 / 查词大对话框；
-        // 直接抢会夺走对话框焦点（Never break userspace 红线）。那些覆盖层关闭
-        // 时各自的返回点会归还焦点。contentReady / surfaceRemounted 同理：在设置
-        // 侧边弹窗里改排版会触发重排就绪，不能借机把弹窗的键盘焦点收回正文。
-        final ModalRoute<Object?>? owner = ModalRoute.of(context);
-        if (owner != null && !owner.isCurrent) return false;
-        return true;
-    }
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    return readerCanOwnFocus(
+      cause,
+      lyricsMode: _lyricsMode,
+      dictionaryShown: isDictionaryShown,
+      chromeHasFocus: _chromeFocusScope.hasFocus,
+      contentReady: _readerContentReady,
+      caretBusy: _caretActive || _caretSurface != CaretSurface.none,
+      routeIsCurrent: owner == null || owner.isCurrent,
+    );
   }
 
   @override

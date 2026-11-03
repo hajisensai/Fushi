@@ -232,6 +232,8 @@ Future<RemoteBookClient?> resolveShelfRemoteBookClient(
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     if (await backend.restoreAuth(syncRepo)) return backend;
   }
+  // 云备份通道被用户关掉时不回落到云盘（与同步通道枚举同一判据）。
+  if (!await syncRepo.isCloudSyncEnabled()) return null;
   final SyncBackendType type = await syncRepo.getBackendType();
   final SyncBackend backend = resolveSyncBackend(type);
   if (!await backend.restoreAuth(syncRepo)) return null;

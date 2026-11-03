@@ -67,11 +67,23 @@ class DesktopWindowPlacement {
 
   static bool get geometryMemorySuspended => _geometryMemorySuspended;
 
+  /// Windows 集成测试 runner（FUSHI_TEST_HIDDEN）带了 FUSHI_TEST_WINDOW_RECT：
+  /// 窗口外框由 runner 钉住（见 `windows/runner/test_window_origin_pin.h`）。
+  static bool get isTestWindowRectPinned {
+    if (!Platform.isWindows) return false;
+    final Map<String, String> env = Platform.environment;
+    return (env['FUSHI_TEST_HIDDEN']?.isNotEmpty ?? false) &&
+        (env['FUSHI_TEST_WINDOW_RECT']?.isNotEmpty ?? false);
+  }
+
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   static Future<void> applyInitialPlacement() async {
     if (!_isDesktop) return;
+    // BUG-3888：集成测试 runner 用 FUSHI_TEST_WINDOW_RECT 钉死窗口外框（帧时探针要在
+    // 同一像素数下比各轮），按工作区居中 / 恢复上次几何会把它改掉，测试模式下让位。
+    if (isTestWindowRectPinned) return;
 
     try {
       final Rect? currentBounds = await _tryGetCurrentBounds();
