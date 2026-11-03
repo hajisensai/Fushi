@@ -51,8 +51,35 @@ class FakeAdvancedMiningHost {
   /// 一句 1 秒：区间 = 第一句起 → 最后一句止（未加偏移）。
   static const int sentenceStartMs = 723400;
 
+  // ── 单词音频 ──
+  /// 每次解析交出的候选 `(源名, 变体, 源下标)`；[wordAudioUrlSuffix] 拼进 url，模拟
+  /// 互联源每次解析出新令牌（确认时必须拿到新的那条）。
+  List<(String, String, int)> wordAudioSources = <(String, String, int)>[
+    ('NHK', '', 0),
+    ('Forvo', 'akitomo', 1),
+    ('Forvo', 'strawberrybrown', 1),
+  ];
+
+  /// 候选是否带短时令牌（互联源）：true 时确认会走 refreshSource 只刷新选中的源。
+  bool wordAudioRefreshAtConfirm = true;
+  int wordAudioListCalls = 0;
+
+  /// refreshSource 每次被要求刷新的源下标。
+  final List<int> wordAudioRefreshedSources = <int>[];
+  String get wordAudioUrlSuffix =>
+      'token${wordAudioListCalls + wordAudioRefreshedSources.length}';
+  final List<String> wordAudioPreviews = <String>[];
+  int wordAudioStopCalls = 0;
+  bool wordAudioPreviewResult = true;
+
+  /// 非 null 时试听卡在这里，直到测试 complete 它（模拟远端缓冲 / data: 落盘）。
+  Completer<bool>? wordAudioPreviewGate;
+
   // ── 确认 ──
   final List<MiningRequestOverrides> confirms = <MiningRequestOverrides>[];
+
+  /// 与 [confirms] 逐位对应：每次确认交来的 `wordAudioUrl`。
+  final List<String?> confirmWordAudioUrls = <String?>[];
   bool confirmResult = true;
   Completer<bool>? confirmGate;
   final List<String> setDefaultDeckCalls = <String>[];
@@ -243,9 +270,42 @@ class FakeAdvancedMiningHost {
     loadPreview: preview,
   );
 
+  List<AdvancedMiningWordAudioChoice> _wordAudioChoices({
+    int? onlySource,
+  }) => <AdvancedMiningWordAudioChoice>[
+    for (final (String name, String variant, int index) in wordAudioSources)
+      if (onlySource == null || onlySource == index)
+        AdvancedMiningWordAudioChoice(
+          name: name,
+          variant: variant,
+          url: 'https://audio.test/$name/$variant/$index?$wordAudioUrlSuffix',
+          sourceIndex: index,
+          refreshAtConfirm: wordAudioRefreshAtConfirm,
+        ),
+  ];
+
+  AdvancedMiningWordAudioSection wordAudio() => AdvancedMiningWordAudioSection(
+    listChoices: () async {
+      wordAudioListCalls++;
+      return _wordAudioChoices();
+    },
+    refreshSource: (int sourceIndex) async {
+      wordAudioRefreshedSources.add(sourceIndex);
+      return _wordAudioChoices(onlySource: sourceIndex);
+    },
+    preview: (String url) async {
+      wordAudioPreviews.add(url);
+      final Completer<bool>? gate = wordAudioPreviewGate;
+      if (gate != null) return gate.future;
+      return wordAudioPreviewResult;
+    },
+    stopPreview: () async => wordAudioStopCalls++,
+  );
+
   AdvancedMiningCapabilities capabilities({
     AdvancedMiningDeckSection? deck,
     AdvancedMiningFieldsSection? fields,
+    AdvancedMiningWordAudioSection? wordAudio,
     AdvancedMiningSentenceSection? sentence,
     AdvancedMiningAudioSection? audio,
     AdvancedMiningVideoImageSection? video,
@@ -256,6 +316,7 @@ class FakeAdvancedMiningHost {
     expression: '諦める',
     deck: deck,
     fields: fields,
+    wordAudio: wordAudio,
     sections: AdvancedMiningSections(
       sentence: sentence,
       audio: audio,
@@ -264,11 +325,13 @@ class FakeAdvancedMiningHost {
       stillImage: still,
       onClosed: () async => closedCalls++,
     ),
-    onConfirm: (MiningRequestOverrides overrides) async {
-      confirms.add(overrides);
-      if (confirmGate != null) return confirmGate!.future;
-      return confirmResult;
-    },
+    onConfirm:
+        (MiningRequestOverrides overrides, {String? wordAudioUrl}) async {
+          confirms.add(overrides);
+          confirmWordAudioUrls.add(wordAudioUrl);
+          if (confirmGate != null) return confirmGate!.future;
+          return confirmResult;
+        },
   );
 
   /// 视频页的全部分区（卡组 + 句子 + 音频 + 视频图片）。
