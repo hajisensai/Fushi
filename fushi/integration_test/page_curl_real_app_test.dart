@@ -434,7 +434,8 @@ Future<void> _dragChecks(
   r.evidence['$wm/shading'] = shading;
   r.check(
     ((shading['backSamples'] as int?) ?? 0) >= 30 &&
-        ((shading['backSpread'] as int?) ?? 999) <= 3,
+        ((shading['backSpread'] as int?) ?? 999) <= 3 &&
+        (shading['backColor'] as List<Object?>?)?.last == 255,
     '$wm: page back is plain paper, no bleed-through ($shading)',
   );
   r.check(
