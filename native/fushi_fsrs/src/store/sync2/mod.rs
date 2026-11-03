@@ -1243,30 +1243,87 @@ const MIGRATE_QUEUE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sync2_migrate_que
 /// `srs_meta` 里「这个 profile 的迁移已开始、队列已排好」的标记键前缀（值 = 开始时刻）。
 const MIGRATING_KEY: &str = "sync2_migrating/";
 
-/// 把这一刻已有的旧行按迁移顺序排进队列：身份记录按创建时刻再按 ID；修改记录按旧 writer 再按旧 seq（同一旧
-/// 写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
-fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
-    let phases: [(i64, &str, &str); 4] = [
+/// 把这一刻已有、**还没有任何设备的操作代表**的旧行按迁移顺序排进队列：身份记录按创建时刻再按 ID；修改记录按旧
+/// writer 再按旧 seq（同一旧写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
+/// 返回排进的条数。
+///
+/// 「已被代表」逐条判（以前整库判：本库里只要有别的设备的操作就整个不迁，自己独有的旧行永远不进操作日志；本库里
+/// 还没有别的设备的操作就整个包一遍，两台设备各迁一遍同一份旧库 = 两条重复的操作流，见 BUG-4005）：
+/// - 修改记录：`sync2_edit_ops` 里有这个 ID（迁移出的修改记录投影 ID 由旧 dot 派生，[edit_row_id]，同一条旧记录
+///   在哪台设备迁出都是同一个 ID）；合成写入者 `sync2:` 的行是操作投影出来的，从不包；
+/// - 日志：`sync2_log_meta` 里有这个 ID；
+/// - 身份记录 / 不认识的事件：没有按 ID 的操作索引，扫一遍操作日志里这两种操作（每个实体 / 事件一条，量小）。
+fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<i64, String> {
+    c.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS sync2_migrate_known (phase INTEGER NOT NULL, id BLOB NOT NULL, PRIMARY KEY (phase, id)) WITHOUT ROWID; \
+         DELETE FROM temp.sync2_migrate_known;",
+    )
+    .map_err(sql)?;
+    {
+        let mut stmt = c
+            .prepare("SELECT kind, payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind IN (?2, ?3) AND purged = 0")
+            .map_err(sql)?;
+        let mut known = c.prepare("INSERT OR IGNORE INTO temp.sync2_migrate_known (phase, id) VALUES (?1, srs_id(?2))").map_err(sql)?;
+        let mut q = stmt
+            .query(params![profile, i64::from(op::KIND_ENTITY), i64::from(op::KIND_LEGACY_UNKNOWN)])
+            .map_err(sql)?;
+        while let Some(r) = q.next().map_err(sql)? {
+            let kind: i64 = r.get(0).map_err(sql)?;
+            let payload = snapshots::unpack_payload(c, r.get(1).map_err(sql)?, None, None, r.get(2).map_err(sql)?)?;
+            let (phase, id) = match Body::decode(kind as u16, &payload) {
+                Ok(Body::Entity { id, .. }) => (0, id.text()),
+                Ok(Body::LegacyUnknown { json }) => {
+                    let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
+                    (3, v["x"]["id"].as_str().map(str::to_owned).unwrap_or(json))
+                }
+                _ => continue,
+            };
+            known.execute(params![phase, id]).map_err(sql)?;
+        }
+    }
+    let phases: [(i64, &str, &str, &str); 4] = [
         // 按 ID 文本排（store/ids.rs：非 UUID 的文本与 BLOB 混排时 SQLite 的顺序不同），包装顺序与旧版本逐条相同。
-        (0, "srs_entities", "created_at, srs_idt(id)"),
-        (1, "srs_field_edits", "srs_idt(writer_id), seq"),
-        (2, "srs_review_logs", "occurred_at, srs_idt(id)"),
-        (3, "srs_unknown_events", "srs_idt(id)"),
+        (
+            0,
+            "srs_entities",
+            "t.created_at, srs_idt(t.id)",
+            "NOT EXISTS (SELECT 1 FROM temp.sync2_migrate_known k WHERE k.phase = 0 AND k.id = t.id)",
+        ),
+        (
+            1,
+            "srs_field_edits",
+            "srs_idt(t.writer_id), t.seq",
+            "srs_idt(t.writer_id) NOT LIKE 'sync2:%' AND NOT EXISTS (SELECT 1 FROM sync2_edit_ops o WHERE o.edit_id = t.id)",
+        ),
+        (
+            2,
+            "srs_review_logs",
+            "t.occurred_at, srs_idt(t.id)",
+            "NOT EXISTS (SELECT 1 FROM sync2_log_meta m WHERE m.log_id = t.id)",
+        ),
+        (
+            3,
+            "srs_unknown_events",
+            "srs_idt(t.id)",
+            "NOT EXISTS (SELECT 1 FROM temp.sync2_migrate_known k WHERE k.phase = 3 AND k.id = t.id)",
+        ),
     ];
     let mut base: i64 = 0;
-    for (phase, table, order) in phases {
+    for (phase, table, order, fresh) in phases {
         let added = c
             .execute(
                 &format!(
                     "INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) \
-                     SELECT srs_id(?1), ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, srs_idt(id) FROM {table} WHERE profile_uid = srs_id(?1)"
+                     SELECT srs_id(?1), ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, srs_idt(t.id) FROM {table} t \
+                     WHERE t.profile_uid = srs_id(?1) AND {fresh}"
                 ),
                 params![profile, base, phase],
             )
             .map_err(sql)?;
         base += added as i64;
     }
-    Ok(())
+    c.execute_batch("DELETE FROM temp.sync2_migrate_known;").map_err(sql)?;
+    Ok(base)
 }
 
 /// 一条排队的旧行 → 操作载荷；行已经不在了（不会发生：迁移期间独占写）返回 `None`。
@@ -1569,17 +1626,12 @@ impl SrsCore {
                 .exists([&marker])
                 .map_err(sql)?;
             if !started {
-                // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
-                // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
-                let has_ops: bool = c
-                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device != ?2 LIMIT 1")
-                    .map_err(sql)?
-                    .exists(params![profile, local.device.0.to_vec()])
-                    .map_err(sql)?;
-                if has_ops {
+                // 只排还没有任何设备的操作代表的旧行（[enqueue_legacy_rows]）：v2 之后的备份恢复出来的库（本机身份被
+                // 快照剥掉、迁移标记随之没了，但投影行全是操作投影出来的）一条都不排，只补标记；先收到了别的设备迁出的
+                // 同一份旧库的操作，只包本机独有的那些——不造第二条重复的操作流，也不丢本机独有的旧行。
+                if enqueue_legacy_rows(c, profile)? == 0 {
                     return finish_migration(c, &mut local, profile, now, 0);
                 }
-                enqueue_legacy_rows(c, profile)?;
                 c.execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", params![marker, now.to_string()]).map_err(sql)?;
             }
             let mut applied = applied_vv(c, profile)?;
@@ -1777,6 +1829,8 @@ mod bootstrap_probe;
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_delivery_window;
+#[cfg(test)]
+mod tests_migrate_dedup;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

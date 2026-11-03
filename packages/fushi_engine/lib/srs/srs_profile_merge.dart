@@ -553,8 +553,14 @@ Future<_MergePlan> _plan(
     for (final SrsUnknownEvent u in unknown) u.id,
   ]);
 
-  // 8. 修改记录的写入者一一改名（合成的标签行写入者带笔记 ID，按 ID 映射改写）。
-  final _Writers writers = _Writers(newUid, ids, edits);
+  // 8. 修改记录的写入者一一改名（合成的标签行写入者带笔记 ID，按 ID 映射改写）；目标集合里已经有同一批修改记录的
+  //    写入者沿用目标里的名字（[_Writers.alias]）。
+  final _Writers writers = _Writers(
+    newUid,
+    ids,
+    edits,
+    await _targetDots(db, newUid),
+  );
 
   // 9. 改写。
   final Map<String, int> oldServer = await _serverTimes(db, oldUid);
@@ -728,8 +734,20 @@ class _Registers {
 }
 
 /// 修改记录写入者的确定性改名（一一对应：支配关系与因果上下文原样保留）。
+///
+/// 例外（[alias]）：目标 uid 下已经有同一批修改记录（某个写入者与它同 seq、同 HLC 物理时刻与计数）时沿用目标里那个
+/// 写入者的名字，而不是改成 `merged-…`。（沿用的只能是别的名字：同名同 seq 的记录 ID 相同，`srs_field_edits.id` 是全局
+/// 主键，新旧两个 uid 在本机不可能同时有。）否则同一条修改记录在目标集合里就成了两条：dot 不同 → ID 不同，
+/// 投影里每个寄存器各一份，操作日志里也各一份（BUG-4005：宿主把旧 profile 并入后，`merged-f18df189…` 的 31 万条与
+/// 01a173ca 迁移出的 `2RIr94…#1` 逐条同 seq 同 HLC）。沿用后 dot 相同 → 修改记录 ID 相同，[_applyMissing] 按 ID
+/// 认出已在、不再并。
 class _Writers {
-  _Writers(this.newUid, this.ids, List<SrsFieldEdit> edits) {
+  _Writers(
+    this.newUid,
+    this.ids,
+    List<SrsFieldEdit> edits,
+    Map<String, Map<int, String>> target,
+  ) {
     final Set<String> all = <String>{};
     for (final SrsFieldEdit e in edits) {
       all
@@ -738,9 +756,21 @@ class _Writers {
         ..addAll(e.ctx.vv.keys)
         ..addAll(e.ctx.cloud.keys);
     }
+    final Map<String, Map<int, String>> own = <String, Map<int, String>>{};
+    for (final SrsFieldEdit e in edits) {
+      (own[e.dot.writerId] ??= <int, String>{})[e.dot.seq] = _hlcStamp(e.hlc);
+    }
+    final Set<String> taken = <String>{};
+    for (final String w in all.toList()..sort()) {
+      if (w.startsWith(_kSyntheticWriterPrefix)) continue;
+      final String? t = alias(own[w], target, taken: taken);
+      if (t == null) continue;
+      _m[w] = t;
+      taken.add(t);
+    }
     final List<String> plain = <String>[
       for (final String w in all)
-        if (!w.startsWith(_kSyntheticWriterPrefix)) w,
+        if (!w.startsWith(_kSyntheticWriterPrefix) && !_m.containsKey(w)) w,
     ];
     final List<String> renamed = uuidV5Batch(<(String, String)>[
       for (final String w in plain)
@@ -755,6 +785,45 @@ class _Writers {
   final _IdMap ids;
   final Map<String, String> _m = <String, String>{};
 
+  /// 旧写入者（它的修改记录 seq → HLC 戳 [mine]）在目标 uid 下的同一身份：目标里某个写入者 T 至少有一条修改记录与它
+  /// 同 seq 同 HLC，同 seq 的没有一条 HLC 不同（不同 = 两条不同的记录，沿用就撞 ID），且旧写入者用到的最大 seq 不超过
+  /// T 在目标里的（不会以 T 的名义写出 T 自己将来要用的 seq）。取吻合条数最多的；已被别的旧写入者占用的 [taken] 不再用。
+  /// 都不合格返回 null（照常改名）。
+  static String? alias(
+    Map<int, String>? mine,
+    Map<String, Map<int, String>> target, {
+    required Set<String> taken,
+  }) {
+    if (mine == null || mine.isEmpty) return null;
+    final int maxMine = mine.keys.reduce((int a, int b) => a > b ? a : b);
+    String? best;
+    int bestHits = 0;
+    for (final String t in target.keys.toList()..sort()) {
+      if (taken.contains(t)) continue;
+      final Map<int, String> theirs = target[t]!;
+      int hits = 0;
+      bool clash = false;
+      for (final MapEntry<int, String> e in mine.entries) {
+        final String? h = theirs[e.key];
+        if (h == null) continue;
+        if (h != e.value) {
+          clash = true;
+          break;
+        }
+        hits++;
+      }
+      if (clash || hits == 0) continue;
+      if (maxMine > theirs.keys.reduce((int a, int b) => a > b ? a : b)) {
+        continue;
+      }
+      if (hits > bestHits) {
+        best = t;
+        bestHits = hits;
+      }
+    }
+    return best;
+  }
+
   String operator [](String w) =>
       _m[w] ?? (w.startsWith(_kSyntheticWriterPrefix) ? ids.sub(w) : w);
 
@@ -768,6 +837,34 @@ class _Writers {
         this[e.key]: e.value,
     },
   );
+}
+
+/// HLC 里比对用的部分（物理时刻:计数；写入者部分随改名变，不比）。
+String _hlcStamp(Hlc h) => '${h.physical}:${h.counter}';
+
+/// 目标 uid 下每个（非合成）写入者的修改记录：seq → HLC 戳（[_hlcStamp]）。只读投影行：被支配的旧记录不在其中，
+/// 只会让吻合条数少一些、不会误判为冲突。
+Future<Map<String, Map<int, String>>> _targetDots(
+  SrsDatabase db,
+  String uid,
+) async {
+  final Map<String, Map<int, String>> out = <String, Map<int, String>>{};
+  for (final QueryRow r
+      in await db
+          .customSelect(
+            "SELECT srs_idt(writer_id) AS w, seq, json_extract(json, '\$.hlc') AS h "
+            'FROM srs_field_edits WHERE profile_uid = ?',
+            variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
+          )
+          .get()) {
+    final String w = r.read<String>('w');
+    if (w.startsWith(_kSyntheticWriterPrefix)) continue;
+    final String? h = r.readNullable<String>('h');
+    if (h == null) continue;
+    final Hlc hlc = Hlc.decode(h);
+    (out[w] ??= <int, String>{})[r.read<int>('seq')] = _hlcStamp(hlc);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- 落库

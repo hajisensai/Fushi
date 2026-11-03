@@ -318,6 +318,7 @@ class SrsDbStore implements SrsSync2Host {
     int Function()? fallbackRolloverHour,
     SrsStyleStore? styles,
     SrsExclusiveOuter? exclusiveOuter,
+    Future<void> Function(SrsDbStore store)? beforeMigrate,
   }) async {
     final SrsDbStore s = SrsDbStore._(
       db: db,
@@ -343,7 +344,7 @@ class SrsDbStore implements SrsSync2Host {
       await s.afterRestore();
     }
     await s.ensureBuiltins();
-    await s._sync2Open();
+    await s._sync2Open(beforeMigrate);
     return s;
   }
 
@@ -353,7 +354,13 @@ class SrsDbStore implements SrsSync2Host {
   /// 缓存不用刷新。迁移分批（[kSrsSync2MigrateBatch] 条一批），每批是内核里一个独立提交的 savepoint：进程被杀 /
   /// 关库只丢正在做的那一批，下次打开从剩下的接着做（大库在慢设备上一次做不完也不会每次从头来）。整个迁移
   /// 在独占区里：迁移期间不会插进本机写入（它们要等迁移做完才落库）。
-  Future<void> _sync2Open() => runExclusive(() async {
+  ///
+  /// [beforeMigrate]：还没迁移时、迁移之前在同一个独占区里先跑一次（store 还没交给调用方，不会有本机写入），用来先
+  /// 收一轮同步位置上别的设备已迁出的操作：迁移只包还没有任何设备的操作代表的旧行（内核 store/sync2/mod.rs
+  /// `enqueue_legacy_rows`，BUG-4005），先收到的那部分旧行不会再被包成第二条重复的操作流。已迁移时不调用。
+  Future<void> _sync2Open([
+    Future<void> Function(SrsDbStore store)? beforeMigrate,
+  ]) => runExclusive(() async {
     final (int nowMs, _) = now();
     final Map<String, Object?> id = await _sync2(<String, Object?>{
       'op': 'identity',
@@ -363,6 +370,7 @@ class SrsDbStore implements SrsSync2Host {
     // 上次在新设备收段途中退出、通道没做完：开 Drift 事务前先按片做完（[_transactionOrReload]）。
     _channelLive = id['channel'] == true;
     if (id['migrated'] == true) return;
+    if (beforeMigrate != null) await beforeMigrate(this);
     while (true) {
       final Map<String, Object?> m = await _sync2(<String, Object?>{
         'op': 'migrate',
