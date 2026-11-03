@@ -12,7 +12,7 @@
 ///    与 probe 结果，假时钟 + 假 probe 即可完整单测；
 /// 3. [GalgamePlayTracker]——只负责按 200ms / 1s 起定时器驱动 2，并在 Windows 上
 ///    注入 1 的真实实现。非 Windows 平台整体 no-op（galgame 只做 Windows，见根
-///    `CLAUDE.md`「Galgame Hook 硬规则」）。
+///    `CLAUDE.md`「领域硬边界」）。
 ///
 /// 会话结束时**不落库**，只回调 [GalgamePlaySessionSink]；写 `galgame_sessions`
 /// 由调用方接线，计时器本身不认识数据库。

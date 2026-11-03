@@ -20,7 +20,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 两个要点各自都有坑：
 /// * **搜索**必须走共享的 `matchesMediaSearch`，而不是裸 `toLowerCase().contains`
 ///   ——它统一做全角→半角、大写→小写、片假名→平假名的归一化。对日语字幕这是刚需，
-///   而且 CLAUDE.md 的术语表把「用户可见搜索禁裸 contains」列为硬性口径。
+///   而且 docs/agent/naming.md 的术语表把「用户可见搜索禁裸 contains」列为硬性口径。
 /// * **Ctrl+F** 面板必须自己接一份：视频页那张整表快捷键装在 media_kit controls 的
 ///   `CallbackShortcuts` 上，只包住 controls 子树，而面板是它的**兄弟节点**，
 ///   焦点一进面板那张表就收不到任何按键。

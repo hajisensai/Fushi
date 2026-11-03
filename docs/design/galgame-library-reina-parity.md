@@ -233,7 +233,7 @@ Bangumi（实测 `GET /v0/subjects/935`、`POST /v0/search/subjects`）：
 - 会话结束：`durationSeconds >= 60` 才写 `galgame_sessions`。
 
 用现有 `win32` 依赖，不引新包。非 Windows 平台整体 no-op（galgame hook 本来就只做
-Windows，见根 `CLAUDE.md`「Galgame Hook 硬规则」）。
+Windows，见根 `CLAUDE.md`「领域硬边界」）。
 
 ### 3.1 与现有 activity_events 的关系（**必须处理，否则双计**）
 
