@@ -17,8 +17,9 @@ class MineNoticeAction {
   final VoidCallback onPressed;
 }
 
-/// 带动作按钮的结果卡停留多久：普通结果卡只停 2.4 秒，来不及去点按钮。
-const Duration kMineNoticeActionVisibleFor = Duration(seconds: 6);
+/// 带动作按钮的结果卡停留多久：普通结果卡只停 2.4 秒，来不及去点按钮；
+/// 6 秒又挡视线太久（用户反馈），取 4 秒。
+const Duration kMineNoticeActionVisibleFor = Duration(seconds: 4);
 
 /// 制卡结果卡片：底部制卡 toast（`FushiToast.showMine`）与视频页左上角制卡 OSD
 /// （`_showMineOsd`）共用的唯一长相。
@@ -242,7 +243,16 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
                       FushiTextButton(
                         key: const ValueKey<String>('mine-notice-action'),
                         onPressed: action.onPressed,
-                        style: TextButton.styleFrom(foregroundColor: accent),
+                        // 紧凑小按钮：默认 40 高 + 48 命中区 + labelLarge 在
+                        // 两行卡片里比正文还抢眼，收成 32 高、正文同级字号。
+                        style: TextButton.styleFrom(
+                          foregroundColor: accent,
+                          textStyle: type.labelMedium,
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
                         child: Text(action.label),
                       ),
                     ],
