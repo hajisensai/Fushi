@@ -410,19 +410,38 @@ final CoverColorSchemeCache coverColorSchemeCache = CoverColorSchemeCache();
 
 /// 按（封面 provider，明暗）缓存 [ColorScheme.fromImageProvider] 的结果；失败记
 /// null 不再重试。
+///
+/// 已算好的结果按最近使用淘汰（LRU，上限 [capacity]）：书架 / 视频库条目多、
+/// 封面 provider 会被反复新建时，缓存不随浏览量无限增长。正在算的请求不计入上限
+/// （同一时刻在屏的卡片数量本身有限）。
 class CoverColorSchemeCache {
+  CoverColorSchemeCache({this.capacity = 256}) : assert(capacity > 0);
+
+  /// 最多保留多少个已算好的配色。
+  final int capacity;
+
+  // Dart 默认 Map 是 LinkedHashMap：按插入顺序迭代，命中时删了重插即「最近使用」。
   final Map<(ImageProvider, Brightness), ColorScheme?> _done =
       <(ImageProvider, Brightness), ColorScheme?>{};
   final Map<(ImageProvider, Brightness), Future<ColorScheme?>> _pending =
       <(ImageProvider, Brightness), Future<ColorScheme?>>{};
 
+  /// 当前缓存的已算好条目数（测试用）。
+  @visibleForTesting
+  int get length => _done.length;
+
   /// 已算好的结果；没算过 / 算失败返回 null。
-  ColorScheme? peek(ImageProvider image, Brightness brightness) =>
-      _done[(image, brightness)];
+  ColorScheme? peek(ImageProvider image, Brightness brightness) {
+    final (ImageProvider, Brightness) key = (image, brightness);
+    if (!_done.containsKey(key)) return null;
+    return _touch(key);
+  }
 
   Future<ColorScheme?> resolve(ImageProvider image, Brightness brightness) {
     final (ImageProvider, Brightness) key = (image, brightness);
-    if (_done.containsKey(key)) return Future<ColorScheme?>.value(_done[key]);
+    if (_done.containsKey(key)) {
+      return Future<ColorScheme?>.value(_touch(key));
+    }
     return _pending[key] ??= () async {
       ColorScheme? scheme;
       try {
@@ -433,10 +452,32 @@ class CoverColorSchemeCache {
       } on Object {
         scheme = null;
       }
-      _done[key] = scheme;
+      _store(key, scheme);
       _pending.remove(key);
       return scheme;
     }();
+  }
+
+  /// 直接写入一条结果（测试用；正常路径经 [resolve]）。
+  @visibleForTesting
+  void debugStore(
+    ImageProvider image,
+    Brightness brightness,
+    ColorScheme? scheme,
+  ) => _store((image, brightness), scheme);
+
+  ColorScheme? _touch((ImageProvider, Brightness) key) {
+    final ColorScheme? scheme = _done.remove(key);
+    _done[key] = scheme;
+    return scheme;
+  }
+
+  void _store((ImageProvider, Brightness) key, ColorScheme? scheme) {
+    _done.remove(key);
+    _done[key] = scheme;
+    while (_done.length > capacity) {
+      _done.remove(_done.keys.first);
+    }
   }
 }
 

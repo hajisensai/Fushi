@@ -1759,10 +1759,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 继续阅读区：所有库页共用的「继续」组件 [FushiContinueSpotlight]
-  /// （2026-10-31 方案 A + 合一）。主卡是最近读的那本（光面书皮封面，「继续阅读」
-  /// 眉标 + 书名 + 进度「已读 x%」，整卡点按开书）；宽屏时其余在读的书按最近
-  /// 阅读排成旁边的封面行，不再是一张卡贴左、右边一片空。
+  /// 继续阅读区：库页共用的封面取色并列卡 [FushiContinueCardRow]
+  /// （2026-11-01 用户选定设计稿「5 · 封面取色卡」）。最近读的那本排第一张
+  /// （光面书皮封面、书名、进度「已读 x%」，整卡点按开书），其余在读的书按最近
+  /// 阅读同款同大并列，卡宽卡在书架网格列上。
   Widget _buildContinueReadingHero(
     MediaItem hero,
     FushiDesignTokens tokens,
