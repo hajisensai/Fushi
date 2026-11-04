@@ -1,4 +1,4 @@
-## BUG-4004 · page-curl-back-bleed-and-manga-letterbox
+## BUG-4008 · page-curl-back-bleed-and-manga-letterbox
 - **报告**：2026-11-03（用户：iPhone 录屏 + 截图，「卷页模式着色还有不少问题，还有穿透」「漫画穿帮严重，跟画面大小不一致」）
 - **真实性**：✅ 真 bug。用户 2026-11-04 纠正方向：纸背**要**像苹果图书那样透出镜像正文，「穿透」不是指透字；毛病在着色和折痕。根因：
   1. 纸背几乎全是纸色：`fushi/shaders/page_curl.frag` 旧 `backAt` 只混入 7% 镜像正文（`page_curl.dart` 旧 `setFloat(12, 0.07)`），看着像一层脏纸，不像苹果图书那样能看出反写的正文。（第一轮误判成「不该透字」，改成了纯纸色背面，已推翻。）

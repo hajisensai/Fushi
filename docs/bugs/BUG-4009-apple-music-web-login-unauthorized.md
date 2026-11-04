@@ -1,4 +1,4 @@
-## BUG-4004 · apple-music-web-login-unauthorized
+## BUG-4009 · apple-music-web-login-unauthorized
 - **报告**：2026-11-04（用户：应用内反馈 FK0EFFDLIS「Apple Music 登录失败」；之前点登录无反应，现报 `AUTHORIZATION_ERROR: Unauthorized`）
 - **真实性**：✅ 真 bug（HiBreak 真机探针取证）。三处：
   1. 回传通道断：托管页 `services/leaderboard/src/musickit_page.js:258` 原为 `Referrer-Policy: no-referrer`，加上 Android WebView 多窗口（`window.open` → 新 WebView）本身不带 referrer，Apple 授权弹窗 sessionStorage 里没有 `ac`（opener 地址），不对 `window.opener` 建 JSON-RPC 通道——即使有订阅，token 也回不到桥页，只看到窗关了 → Unauthorized。
