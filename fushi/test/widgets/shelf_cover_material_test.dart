@@ -449,7 +449,8 @@ void main() {
       );
       final RadialGradient gradient =
           (shadowBox.decoration as BoxDecoration).gradient! as RadialGradient;
-      final Rect box = Offset.zero & Size(shadow.width, 16);
+      final Rect box =
+          Offset.zero & Size(shadow.width, kShelfContactShadowHeight);
       final Matrix4? stretch = gradient.transform?.transform(box);
       expect(stretch, isNotNull);
       final Offset rimRight = MatrixUtils.transformPoint(
