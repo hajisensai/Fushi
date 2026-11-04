@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -310,6 +311,12 @@ enum LyricsIllustrationCue {
 /// 一下跨过好几张插图不该一张张弹出来，只静默更新「已听到」的范围。
 const Duration kLyricsIllustrationNaturalAdvance = Duration(seconds: 90);
 
+/// 插图卡弹出后**没有进入停留**时的展示时长，到点自动收起（插图位留缩略图 +
+/// 提示点）。停留只在「图片暂停」> 0、连续播放、阅读器可见时才开始；其余经过插图
+/// 的路径（图片暂停 0 秒、±10 秒 / 拖进度跨过插图、窗口不可见）此前没有任何收起
+/// 逻辑，卡永久留在角落（反馈 yR5QF92EHO / BUG-4065）。这是展示时长，不是动效时长。
+const Duration kLyricsIllustrationCardAutoClose = Duration(seconds: 5);
+
 /// 「弹出停留」的连续播放判据（纯函数）：两次观测之间是否是顺着播过去的。
 ///
 /// 只认控制器登记的显式跳转标记（`AudiobookPlayerController.playbackJumpSerial`）：
@@ -342,6 +349,12 @@ class LyricsIllustrationController extends ChangeNotifier {
   int? _lastAudioMs;
   bool _cardOpen = false;
   bool _rightToLeft = false;
+
+  /// 卡片自动收起计时（[observe] 弹卡时起；停留接管 / 用户接手 / 收起时作废）。
+  Timer? _cardAutoCloseTimer;
+
+  /// 弹卡后没进停留时多久自动收起（测试可调）。
+  Duration cardAutoCloseAfter = kLyricsIllustrationCardAutoClose;
 
   /// 顺着播放走过插图时是否自动弹出插图卡（[cardVisible]）。true = 「弹出停留」
   /// （偏好 `lyrics_illustration_cue` = popup，默认）；false = 「红点」：插图位只
@@ -399,6 +412,7 @@ class LyricsIllustrationController extends ChangeNotifier {
         : lastReachedLyricsIllustration(_items, position);
     _shown = null;
     _cardOpen = false;
+    _cancelCardAutoClose();
     // 没有基线位置（进歌词模式时当前 cue 还解析不出来）时，第一次观测只当基线、
     // 不弹出：否则第一次 observe 会把书里第一张插图当成「刚走过」盖住封面。
     _lastAudioMs = position == null ? null : audioPosition?.inMilliseconds;
@@ -433,12 +447,19 @@ class LyricsIllustrationController extends ChangeNotifier {
         _shown = previous + 1;
         _cardOpen = autoOpenCard;
         revealed = true;
+        // 弹卡与收起成对：先按展示时长计时，调用方真的开始停留时用
+        // [holdCardOpen] 接管（停留结束再 [closeCard]）。
+        _cancelCardAutoClose();
+        if (_cardOpen) {
+          _cardAutoCloseTimer = Timer(cardAutoCloseAfter, closeCard);
+        }
       }
     } else {
       final int? shown = _shown;
       if (shown != null && shown > next) {
         _shown = null;
         _cardOpen = false;
+        _cancelCardAutoClose();
       }
     }
     notifyListeners();
@@ -447,6 +468,7 @@ class LyricsIllustrationController extends ChangeNotifier {
 
   /// 回到封面（插图卡一起收起）。
   void dismiss() {
+    _cancelCardAutoClose();
     if (_shown == null && !_cardOpen) return;
     _shown = null;
     _cardOpen = false;
@@ -456,6 +478,7 @@ class LyricsIllustrationController extends ChangeNotifier {
   /// 只收起插图卡，插图位仍是这张插图的缩略图（带提示点，点它还能看大图）。
   /// 「弹出停留」到点自动收起走这里。
   void closeCard() {
+    _cancelCardAutoClose();
     if (!_cardOpen) return;
     _cardOpen = false;
     notifyListeners();
@@ -466,6 +489,8 @@ class LyricsIllustrationController extends ChangeNotifier {
     if (_reached < 0) return;
     final int target = index.clamp(0, _reached);
     if (target == _shown) return;
+    // 用户在翻看插图：不再自动收起，卡留到用户自己关。
+    _cancelCardAutoClose();
     _shown = target;
     notifyListeners();
   }
@@ -484,5 +509,24 @@ class LyricsIllustrationController extends ChangeNotifier {
     final int? index = _shown;
     if (index == null || index >= _reached) return;
     showAt(index + 1);
+  }
+
+  /// 调用方开始了「停留」（播放器按图片暂停秒数停住）：卡的收起改由停留结束负责，
+  /// 作废展示时长计时。
+  void holdCardOpen() => _cancelCardAutoClose();
+
+  /// 自动收起计时是否在走（测试用）。
+  @visibleForTesting
+  bool get debugCardAutoClosePending => _cardAutoCloseTimer != null;
+
+  void _cancelCardAutoClose() {
+    _cardAutoCloseTimer?.cancel();
+    _cardAutoCloseTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelCardAutoClose();
+    super.dispose();
   }
 }

@@ -34,9 +34,13 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3676 条。点号进各自文件。
+> 共 3678 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4080](bugs/BUG-4080-reader-lookup-highlight-invisible-light-theme.md) | ✅ | ✅ | 浅色跟随主题下阅读器查词选区高亮几乎看不出来 |
+| [BUG-4079](bugs/BUG-4079-reader-focus-steals-dialog-keyboard.md) | ✅ | ✅ | 小说阅读器高级制卡对话框的句子输入框键盘弹出即收回 |
+| [BUG-4078](bugs/BUG-4078-lyrics-overlay-menu-duplicate-seek.md) | ✅ | ✅ | 歌词覆盖层 ⋯ 菜单的 -10s / +10s 与播放器上的 ±10 键重复 |
 | [BUG-4077](bugs/BUG-4077-android-startup-scudo-oom-loop-pre-23152.md) | ✅ | ✅ | Android 启动约 6 s 内 Scudo OOM 中止并反复重启（23152 之前的版本） |
 | [BUG-4076](bugs/BUG-4076-desktop-unexpected-exit-no-evidence.md) | 🚧 | 🚧 | 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS） |
 | [BUG-4075](bugs/BUG-4075-mobile-srs-sync-memory-exhaustion.md) | 🚧 | 🚧 | iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory） |
@@ -49,7 +53,7 @@
 | [BUG-4068](bugs/BUG-4068-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
 | [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | 🚧 | 🚧 | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
 | [BUG-4066](bugs/BUG-4066-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |
-| [BUG-4065](bugs/BUG-4065-feedback-bottom-left-image-no-material.md) | 🚧 | 🚧 | 左下角图片不自动消失（反馈材料拉取失败，未定位） |
+| [BUG-4065](bugs/BUG-4065-feedback-bottom-left-image-no-material.md) | ✅ | ✅ | 歌词模式左下角插图卡不自动收起 |
 | [BUG-4064](bugs/BUG-4064-video-volume-popover-md2-slider.md) | ✅ | ✅ | 视频音量浮层仍是 MD2 圆钮细轨、外框不分设计系统 |
 | [BUG-4063](bugs/BUG-4063-filled-field-label-clipped-desktop-density.md) | ✅ | ✅ | 带标题输入框 / 下拉的浮起标题贴住或骑出填充块上沿（文字显示不全） |
 | [BUG-4062](bugs/BUG-4062-srs-type-answer-unsupported.md) | ✅ | ✅ | 迁移后打字输入卡变成基础卡 |
