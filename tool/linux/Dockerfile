@@ -9,6 +9,8 @@ FROM debian:trixie
 ARG FLUTTER_VERSION=3.47.6
 ARG RUST_P2P=1.95.0
 ARG RUST_ANKI=1.97.1
+ARG RUSTUP_VERSION=1.28.2
+ARG RUSTUP_SHA256=20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c
 ARG PROTOC_VERSION=31.1
 ARG PROTOC_SHA256=96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065
 
@@ -42,11 +44,17 @@ RUN mkdir -p /opt/toolchain-shim \
 
 # Rust: 1.95.0 for the Fushi crates (names.sh P2P_RUST), 1.97.1 for fushi-anki-sync
 # (native/fushi_anki_sync/rust-toolchain.toml picks it from the crate dir).
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "$RUST_P2P" \
+# rustup-init is a pinned, checksum-verified binary (no `curl | sh`; https only).
+RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init \
+      "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
+    && echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain "$RUST_P2P" \
+    && rm /tmp/rustup-init \
     && rustup toolchain install "$RUST_ANKI" --profile minimal \
     && rustup target add x86_64-unknown-linux-gnu
 
-RUN curl -fsSL -o /tmp/protoc.zip \
+RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/protoc.zip \
       "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
     && echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c - \
     && unzip -q /tmp/protoc.zip -d /opt/protoc && rm /tmp/protoc.zip

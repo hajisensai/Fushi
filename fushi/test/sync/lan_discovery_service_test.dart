@@ -92,8 +92,10 @@ void main() {
         );
         await service.startDiscovery(); // 兜底接管，不抛
         expect(service.usingMdnsFallback, isTrue);
+        expect(service.hasActiveBrowser, isTrue);
         expect(transport.queries, isNotEmpty, reason: '兜底必须真的发出查询');
         await service.stopDiscovery();
+        expect(service.usingMdnsFallback, isFalse);
         expect(service.hasActiveBrowser, isFalse);
         expect(transport.closed, isTrue);
         await service.dispose();
