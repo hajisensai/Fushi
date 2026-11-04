@@ -450,41 +450,25 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     }
   }
 
+  /// 浮层的 M3E 中性底色：按**页面**主题（不是浮层内换过的中性方案）取，与悬浮
+  /// 胶囊同一种（[videoM3eFloatingColor]）；Apple / 墨水屏不用。
+  Color? get _videoPopoverM3eSurface => _m3eChrome && !isEinkTheme(context)
+      ? videoM3eFloatingColor(Theme.of(context).colorScheme)
+      : null;
+
   Widget _buildControlPopoverFrame({
     required double width,
     required Widget child,
   }) {
     final ColorScheme cs = _videoPopoverColorScheme(context);
     final bool neutral = _m3eChrome && !isEinkTheme(context);
-    final Widget frame = Material(
-      color: Colors.transparent,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          // 浮层 alpha 两档制的实底档（UI 巡检 PR-4）。
-          // M3E：与悬浮胶囊同一无色相中性表面（[videoM3eFloatingColor]）。
-          color: neutral
-              ? videoM3eFloatingColor(Theme.of(context).colorScheme)
-              : cs.surfaceContainerHighest.withValues(
-                  alpha: kVideoOverlaySolidAlpha,
-                ),
-          borderRadius: FushiBorderRadius.menu,
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.28),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints.tightFor(width: width),
-          child: Padding(
-            padding: EdgeInsets.all(10 * _videoUiScale),
-            child: child,
-          ),
-        ),
-      ),
+    // 与音量浮层同一外框（Apple 玻璃 / M3E 中性面 / 墨水屏实底）。
+    final Widget frame = VideoControlPopoverFrame(
+      width: width,
+      padding: EdgeInsets.all(10 * _videoUiScale),
+      colorScheme: cs,
+      m3eSurfaceColor: _videoPopoverM3eSurface,
+      child: child,
     );
     if (!neutral) return frame;
     // M3E：浮层内的文字按钮 / 滑条读无色相中性方案（白字，强调色仍是主题 primary）。
@@ -507,6 +491,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           maximum: max,
           uiScale: _videoUiScale,
           colorScheme: cs,
+          m3eSurfaceColor: _videoPopoverM3eSurface,
           icon: _volumeIconFor(clamped),
           tooltip: t.shortcut_action_video_toggle_mute,
           onToggleMute: () => unawaited(_toggleMute()),

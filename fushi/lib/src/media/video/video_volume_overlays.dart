@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
+import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -23,48 +25,59 @@ const Key videoBrightnessHudProgressKey = ValueKey<String>(
   'video-brightness-hud-progress',
 );
 
-class VideoVolumePopoverCard extends StatelessWidget {
-  const VideoVolumePopoverCard({
+/// 播放器控件轻浮层（音量 / 倍速）的外框——两个浮层共用的**唯一**表面，按设计
+/// 系统分派（反馈 DYSX-jy-6K「音量控制仍为 MD2 样式」）：
+///
+/// - Apple：深色液态玻璃（[VideoGlassHud]，与音量 / 亮度 HUD、跳转提示同一种），
+///   里面白字白图标；
+/// - MD3E：与悬浮胶囊同一无色相中性表面（[m3eSurfaceColor]，调用方按页面主题取
+///   `videoM3eFloatingColor`），M3 菜单圆角 + 投影；
+/// - 墨水屏 / 没给中性色：实底档 surfaceContainerHighest。
+///
+/// [frameKey] 挂在外框上，宽 = [width]（真实渲染测试量它，而不是全屏 barrier）。
+class VideoControlPopoverFrame extends StatelessWidget {
+  const VideoControlPopoverFrame({
     super.key,
     required this.width,
-    required this.value,
-    required this.uiScale,
+    required this.padding,
     required this.colorScheme,
-    required this.icon,
-    required this.tooltip,
-    required this.onToggleMute,
-    required this.onChanged,
-    this.maximum = 100.0,
-    this.frameKey = videoVolumePopoverFrameKey,
-    this.sliderKey = videoVolumePopoverSliderKey,
+    required this.child,
+    this.m3eSurfaceColor,
+    this.frameKey,
   });
 
   final double width;
-  final double value;
-
-  /// 滑条上限（百分比）：音量上限设置（100 / 150 / 200），超过 100 即放大。
-  final double maximum;
-  final double uiScale;
+  final EdgeInsets padding;
   final ColorScheme colorScheme;
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onToggleMute;
-  final ValueChanged<double> onChanged;
-  final Key frameKey;
-  final Key sliderKey;
+  final Color? m3eSurfaceColor;
+  final Key? frameKey;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final double scale = math.max(0.1, uiScale);
-    final double max = math.max(100.0, maximum);
-    final double clamped = value.clamp(0.0, max).toDouble();
-    final double controlHeight = 40 * scale;
+    if (videoAppleChrome(context)) {
+      return SizedBox(
+        key: frameKey,
+        width: width,
+        child: VideoGlassHud(
+          padding: padding,
+          radius: FushiRadii.menuValue,
+          child: child,
+        ),
+      );
+    }
+    final bool eink = isEinkTheme(context);
+    final Color surface = !eink && m3eSurfaceColor != null
+        ? m3eSurfaceColor!
+        : colorScheme.surfaceContainerHighest.withValues(
+            alpha: kVideoOverlaySolidAlpha,
+          );
     return Material(
       color: Colors.transparent,
       child: DecoratedBox(
         key: frameKey,
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.94),
+          color: surface,
           borderRadius: FushiBorderRadius.menu,
           border: Border.all(
             color: colorScheme.outlineVariant.withValues(alpha: 0.7),
@@ -79,68 +92,140 @@ class VideoVolumePopoverCard extends StatelessWidget {
         ),
         child: ConstrainedBox(
           constraints: BoxConstraints.tightFor(width: width),
-          child: Padding(
-            padding: EdgeInsets.all(8 * scale),
-            child: SizedBox(
-              height: controlHeight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  FushiTooltip(
-                    message: tooltip,
-                    child: FushiIconButtonControl(
-                      icon: FushiIcon(icon),
-                      iconSize: 20 * scale,
-                      color: colorScheme.primary,
-                      padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tightFor(
-                        width: controlHeight,
-                        height: controlHeight,
-                      ),
-                      onPressed: onToggleMute,
-                    ),
-                  ),
-                  SizedBox(width: 4 * scale),
-                  Expanded(
-                    child: SizedBox(
-                      height: controlHeight,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 3.0 * scale,
-                          thumbShape: RoundSliderThumbShape(
-                            enabledThumbRadius: 7.0 * scale,
-                          ),
-                          overlayShape: RoundSliderOverlayShape(
-                            overlayRadius: 14.0 * scale,
-                          ),
-                        ),
-                        child: FushiSlider(
-                          key: sliderKey,
-                          value: clamped,
-                          min: 0,
-                          max: max,
-                          onChanged: onChanged,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 6 * scale),
-                  Text(
-                    '${clamped.round()}%',
-                    style: TextStyle(
-                      color: colorScheme.onSurface,
-                      fontSize: 12 * scale,
-                      fontWeight: FontWeight.w600,
-                      // 百分比随拖动逐帧变化：等宽数字。
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
-                    ),
-                  ),
-                ],
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// 音量轻浮层：静音键 + 滑条 + 百分比。
+///
+/// 滑条不再用 `RoundSliderThumbShape` + 3px 细轨覆写主题（那是 MD2 / 2023 版
+/// 的圆钮细轨，反馈 DYSX-jy-6K）：MD3E 下沿用主题的 2024 版滑块（粗轨道 + 竖条
+/// 把手 + 缝 + 停止点），只把轨道粗细与把手高度按播放器界面缩放折进浮层行高；
+/// Apple 下 [FushiSlider] 本就是 iOS 滑块；墨水屏保留细轨圆钮（主题刻意留 2023
+/// 版，缝与停止点在低分辨率面板上会糊）。
+class VideoVolumePopoverCard extends StatelessWidget {
+  const VideoVolumePopoverCard({
+    super.key,
+    required this.width,
+    required this.value,
+    required this.uiScale,
+    required this.colorScheme,
+    required this.icon,
+    required this.tooltip,
+    required this.onToggleMute,
+    required this.onChanged,
+    this.maximum = 100.0,
+    this.m3eSurfaceColor,
+    this.frameKey = videoVolumePopoverFrameKey,
+    this.sliderKey = videoVolumePopoverSliderKey,
+  });
+
+  final double width;
+  final double value;
+
+  /// 滑条上限（百分比）：音量上限设置（100 / 150 / 200），超过 100 即放大。
+  final double maximum;
+  final double uiScale;
+  final ColorScheme colorScheme;
+
+  /// MD3E 浮层底色（见 [VideoControlPopoverFrame.m3eSurfaceColor]）。
+  final Color? m3eSurfaceColor;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onToggleMute;
+  final ValueChanged<double> onChanged;
+  final Key frameKey;
+  final Key sliderKey;
+
+  /// M3E XS 滑块的轨道粗细（`fushiSliderMetrics(FushiSliderSize.xs)`），按界面缩放。
+  static const double _kM3eTrackHeight = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    final double scale = math.max(0.1, uiScale);
+    final double max = math.max(100.0, maximum);
+    final double clamped = value.clamp(0.0, max).toDouble();
+    final double controlHeight = 40 * scale;
+    final bool apple = videoAppleChrome(context);
+    final bool eink = isEinkTheme(context);
+    final Color foreground = apple ? Colors.white : colorScheme.onSurface;
+    final Color iconColor = apple ? Colors.white : colorScheme.primary;
+    final SliderThemeData base = SliderTheme.of(context);
+    final SliderThemeData sliderTheme = eink
+        ? base.copyWith(
+            trackHeight: 3.0 * scale,
+            thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7.0 * scale),
+            overlayShape: RoundSliderOverlayShape(overlayRadius: 14.0 * scale),
+          )
+        : base.copyWith(
+            trackHeight: _kM3eTrackHeight * scale,
+            // 2024 版竖条把手：宽 4（按下 2），高贴满浮层行高。
+            thumbSize: WidgetStateProperty.resolveWith<Size?>(
+              (Set<WidgetState> states) => Size(
+                states.contains(WidgetState.pressed) ||
+                        states.contains(WidgetState.dragged)
+                    ? 2
+                    : 4,
+                controlHeight,
               ),
             ),
-          ),
+          );
+    return VideoControlPopoverFrame(
+      frameKey: frameKey,
+      width: width,
+      padding: EdgeInsets.all(8 * scale),
+      colorScheme: colorScheme,
+      m3eSurfaceColor: m3eSurfaceColor,
+      child: SizedBox(
+        height: controlHeight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiTooltip(
+              message: tooltip,
+              child: FushiIconButtonControl(
+                icon: FushiIcon(icon),
+                iconSize: 20 * scale,
+                color: iconColor,
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints.tightFor(
+                  width: controlHeight,
+                  height: controlHeight,
+                ),
+                onPressed: onToggleMute,
+              ),
+            ),
+            SizedBox(width: 4 * scale),
+            Expanded(
+              child: SizedBox(
+                height: controlHeight,
+                child: SliderTheme(
+                  data: sliderTheme,
+                  child: FushiSlider(
+                    key: sliderKey,
+                    value: clamped,
+                    min: 0,
+                    max: max,
+                    onChanged: onChanged,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(width: 6 * scale),
+            Text(
+              '${clamped.round()}%',
+              style: TextStyle(
+                color: foreground,
+                fontSize: 12 * scale,
+                fontWeight: FontWeight.w600,
+                // 百分比随拖动逐帧变化：等宽数字。
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
         ),
       ),
     );
