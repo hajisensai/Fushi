@@ -100,11 +100,24 @@ void main() {
       isTrue,
       reason: 'TestFlight 门必须限定 beta/formal 通道',
     );
-    // 上传步骤本身必须挂在门的输出上，不能是 always() 或无条件。
+    // 上传步骤本身必须挂在门的输出上，不能是 always() 或无条件。签名 IPA 的构建走
+    // `signed`（build_only 也签、不传），上传只认 `testflight`。
     expect(
-      content.contains("if: steps.signing.outputs.testflight == 'true'"),
+      RegExp(
+        r"- name: Upload to TestFlight\n\s+if: needs\.ios\.outputs\.testflight == 'true'",
+      ).hasMatch(content),
       isTrue,
-      reason: '上传步骤必须由 signing 步骤的 testflight 输出把关',
+      reason: 'TestFlight 上传步骤必须由 ios job 的 testflight 输出把关',
+    );
+    expect(
+      content.contains('testflight: \${{ steps.signing.outputs.testflight }}'),
+      isTrue,
+      reason: 'ios job 的 testflight 输出必须直接取 signing 步骤的上传门',
+    );
+    expect(
+      content.contains(r'SIGNED="$TESTFLIGHT"'),
+      isTrue,
+      reason: '要传 TestFlight 就一定要先签：signed 以上传门为底',
     );
     expect(
       RegExp(
