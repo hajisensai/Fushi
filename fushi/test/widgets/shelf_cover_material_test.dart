@@ -229,6 +229,53 @@ void main() {
     expect(shadow().lifted, isTrue);
   });
 
+  testWidgets('扫光 / 镜面高光可见时自己按封面圆角裁切，静止时不压裁切', (WidgetTester tester) async {
+    const ShelfCoverMaterial material = ShelfCoverMaterial.glossyPoster;
+    final BorderRadius radius = shelfMaterialRadius(material);
+    await tester.pumpWidget(
+      harness(
+        FushiHoverLift(
+          builder: (BuildContext _, bool __) =>
+              ShelfCoverFrame(child: cover('a')),
+        ),
+        material: material,
+      ),
+    );
+    Iterable<ClipRRect> clipsUnder(Type owner) => tester.widgetList<ClipRRect>(
+      find.descendant(of: find.byType(owner), matching: find.byType(ClipRRect)),
+    );
+
+    // 外层不再整体裁切，裁切职责落到这两层自身：圆角必须由材质这一处传下去。
+    expect(
+      tester.widget<ShelfCoverSheen>(find.byType(ShelfCoverSheen)).clipRadius,
+      radius,
+    );
+    expect(
+      tester.widget<FushiTiltGlare>(find.byType(FushiTiltGlare)).clipRadius,
+      radius,
+    );
+    expect(clipsUnder(ShelfCoverSheen), isEmpty, reason: '静止时光带不画，不该留常驻裁切');
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.byType(ShelfMaterialSurface)));
+    // 扫到一半：光带可见。
+    await tester.pump();
+    await tester.pump(
+      shelfSheenDuration(tester.element(find.byType(ShelfCoverSheen))) ~/ 2,
+    );
+    final List<ClipRRect> sheenClips = clipsUnder(ShelfCoverSheen).toList();
+    expect(sheenClips, hasLength(1), reason: '光带可见时必须按圆角裁切，否则溢出封面');
+    expect(sheenClips.single.borderRadius, radius);
+    final List<ClipRRect> glareClips = clipsUnder(FushiTiltGlare).toList();
+    expect(glareClips, hasLength(1), reason: '高光跟随指针可见时必须按圆角裁切');
+    expect(glareClips.single.borderRadius, radius);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('专辑唱片材质：8dp 圆角、1:1、多张走右上叠层', (WidgetTester tester) async {
     expect(kShelfAlbumAspectRatio, 1);
     expect(

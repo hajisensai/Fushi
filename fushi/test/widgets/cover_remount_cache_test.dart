@@ -103,6 +103,66 @@ void main() {
     expect(find.byType(PrebakedBlurImage), findsNothing);
   });
 
+  testWidgets('采色途中 evict（同路径换封面）：旧图主色不得回填进 memo', (WidgetTester tester) async {
+    final Uint8List bytes = (await tester.runAsync<Uint8List>(
+      () => pngBytes(64, 36),
+    ))!;
+    final MemoryImage provider = MemoryImage(bytes);
+
+    await tester.pumpWidget(card(provider));
+    // 卡片的监听先注册；这里排在它后面：解码一到，卡片的 _onImage 已发起异步采色，
+    // 紧接着同步驱逐——正是「采样途中 evictLocalCoverCache」的窗口。
+    final ImageStream stream = provider.resolve(ImageConfiguration.empty);
+    bool evicted = false;
+    final ImageStreamListener evictOnArrival = ImageStreamListener((
+      ImageInfo info,
+      bool _,
+    ) {
+      info.dispose();
+      CoverProbeMemo.evict(provider);
+      evicted = true;
+    });
+    stream.addListener(evictOnArrival);
+    addTearDown(() => stream.removeListener(evictOnArrival));
+
+    await settleAsync(tester);
+    expect(evicted, isTrue, reason: '前置：解码已到、驱逐已发生');
+    expect(
+      CoverProbeMemo.seedOf(provider, 64 / 36).known,
+      isFalse,
+      reason: 'evict 之后才回来的旧采样不得以同一 provider 写回 memo',
+    );
+    expect(CoverProbeMemo.aspectOf(provider), isNull);
+  });
+
+  testWidgets('烘焙途中 evict：旧图的模糊纹理不得进缓存', (WidgetTester tester) async {
+    final Uint8List bytes = (await tester.runAsync<Uint8List>(
+      () => pngBytes(64, 36),
+    ))!;
+    final MemoryImage provider = MemoryImage(bytes);
+
+    await tester.pumpWidget(card(provider));
+    // 等到垫底层挂上：它挂上的那一帧 build 就发起了 Picture.toImage 烘焙。
+    for (int i = 0; i < 50; i++) {
+      if (find.byType(PrebakedBlurImage).evaluate().isNotEmpty) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump();
+    }
+    expect(find.byType(PrebakedBlurImage), findsOneWidget, reason: '前置：垫底已挂');
+    expect(prebakedBlurCacheLength, 0, reason: '前置：烘焙仍在飞');
+    evictPrebakedBlur(provider);
+
+    await settleAsync(tester);
+    expect(bakedLayer, findsOneWidget, reason: '本卡照常画出（它显示的就是这张源图）');
+    expect(
+      prebakedBlurCacheLength,
+      0,
+      reason: 'evict 之后才回来的烘焙结果不得以同一 provider 进缓存，否则别的卡命中旧纹理',
+    );
+  });
+
   test('CoverProbeMemo：同一 provider 解出不同尺寸（换了图）时旧主色作废', () {
     final MemoryImage provider = MemoryImage(Uint8List(4));
     CoverProbeMemo.rememberSeed(provider, 16 / 9, const Color(0xFF112233));
