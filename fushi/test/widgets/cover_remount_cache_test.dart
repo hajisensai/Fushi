@@ -43,11 +43,15 @@ void main() {
     matching: find.byType(RawImage),
   );
 
-  Widget card(ImageProvider provider) => MaterialApp(
+  Widget card(
+    ImageProvider provider, {
+    double width = 100,
+    double height = 150,
+  }) => MaterialApp(
     home: Center(
       child: SizedBox(
-        width: 100,
-        height: 150,
+        width: width,
+        height: height,
         child: PortraitCoverImage(image: provider, imageKey: fgKey),
       ),
     ),
@@ -137,32 +141,36 @@ void main() {
     expect(CoverProbeMemo.aspectOf(provider), isNull);
   });
 
-  testWidgets('烘焙途中 evict：旧图的模糊纹理不得进缓存', (WidgetTester tester) async {
+  testWidgets('evict 后用旧解码重烘（换尺寸）：旧图的模糊纹理不得进缓存', (WidgetTester tester) async {
     final Uint8List bytes = (await tester.runAsync<Uint8List>(
       () => pngBytes(64, 36),
     ))!;
     final MemoryImage provider = MemoryImage(bytes);
 
     await tester.pumpWidget(card(provider));
-    // 等到垫底层挂上：它挂上的那一帧 build 就发起了 Picture.toImage 烘焙。
-    for (int i = 0; i < 50; i++) {
-      if (find.byType(PrebakedBlurImage).evaluate().isNotEmpty) break;
+    await settleAsync(tester);
+    expect(prebakedBlurCacheLength, 1, reason: '前置：首次挂载已烘焙进缓存');
+    final int firstWidth = tester.widget<RawImage>(bakedLayer).image!.width;
+
+    // 同路径换了封面：缓存被清、代际号前进。卡片没重新 resolve（provider 相等），
+    // 手里还是旧解码；此时布局尺寸一变就会拿旧解码按新尺寸重烘——这份结果若进
+    // 缓存，就会以同一个 provider 扩散到别的卡（异步烘焙途中被驱逐也是同一条路）。
+    evictPrebakedBlur(provider);
+    expect(prebakedBlurCacheLength, 0);
+    await tester.pumpWidget(card(provider, width: 140, height: 210));
+    for (int i = 0; i < 10; i++) {
       await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );
       await tester.pump();
     }
-    expect(find.byType(PrebakedBlurImage), findsOneWidget, reason: '前置：垫底已挂');
-    expect(prebakedBlurCacheLength, 0, reason: '前置：烘焙仍在飞');
-    evictPrebakedBlur(provider);
-
-    await settleAsync(tester);
-    expect(bakedLayer, findsOneWidget, reason: '本卡照常画出（它显示的就是这张源图）');
+    await tester.pumpAndSettle();
     expect(
-      prebakedBlurCacheLength,
-      0,
-      reason: 'evict 之后才回来的烘焙结果不得以同一 provider 进缓存，否则别的卡命中旧纹理',
+      tester.widget<RawImage>(bakedLayer).image!.width,
+      isNot(firstWidth),
+      reason: '前置：按新尺寸的重烘已落地（本卡照常用它）',
     );
+    expect(prebakedBlurCacheLength, 0, reason: '驱逐前拿到的源图烘出的结果不得进缓存');
   });
 
   test('CoverProbeMemo：同一 provider 解出不同尺寸（换了图）时旧主色作废', () {
