@@ -147,8 +147,12 @@ Future<void> evictLocalCoverCache(String path) async {
     FileImage(file),
     resizedFileImage(file),
   ]) {
+    // 先清 ImageCache 再推进代际号：反过来的话，两步之间 resolve 到的仍是旧
+    // completer（旧字节），却记下了新代际号，旧图结果就能通过代际校验进缓存。
+    // 这个顺序下夹缝里 resolve 到的是新 completer + 旧代际号，最坏只是新图结果
+    // 不进缓存（下次重挂再算一次），不会错。
+    await provider.evict();
     CoverProbeMemo.evict(provider);
     evictPrebakedBlur(provider);
-    await provider.evict();
   }
 }

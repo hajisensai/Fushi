@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -173,6 +175,63 @@ void main() {
     expect(prebakedBlurCacheLength, 0, reason: '驱逐前拿到的源图烘出的结果不得进缓存');
   });
 
+  testWidgets('resolve 之后、旧字节解码到达之前 evict：宽高比 / 主色 / 模糊纹理都不得进缓存', (
+    WidgetTester tester,
+  ) async {
+    final ui.Image oldImage = (await tester.runAsync<ui.Image>(() async {
+      final ui.PictureRecorder recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawRect(
+        const ui.Rect.fromLTWH(0, 0, 64, 36),
+        ui.Paint()..color = const ui.Color(0xFF3355FF),
+      );
+      return recorder.endRecording().toImage(64, 36);
+    }))!;
+    addTearDown(oldImage.dispose);
+    final _GatedImageProvider provider = _GatedImageProvider();
+
+    // 之前见过这张图（memo 记着横图宽高比）：重挂首帧就挂上模糊层，前景探测与
+    // 模糊层都在下面这一帧里 resolve 到同一个尚未解码完的 completer。
+    CoverProbeMemo.rememberAspect(provider, 64 / 36, epoch: 0);
+    await tester.pumpWidget(card(provider));
+    expect(
+      find.byType(PrebakedBlurImage),
+      findsOneWidget,
+      reason: '前置：模糊层已挂载并 resolve',
+    );
+    expect(provider.loads, 1);
+
+    // 同路径换封面（evictLocalCoverCache 的同序动作）：此时旧文件字节已读进来、
+    // 解码还在跑——已挂的 completer 照样会把旧图回调给两个监听者。
+    imageCache.evict(provider);
+    CoverProbeMemo.evict(provider);
+    evictPrebakedBlur(provider);
+
+    provider.gate.complete(ImageInfo(image: oldImage.clone()));
+    for (int i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(bakedLayer, findsOneWidget, reason: '前置：旧解码已到达、本卡照常烘焙上屏');
+
+    // 三项一起比：任何一个缓存被旧图回填，失败信息里都能直接看到是哪个。
+    expect(
+      <String, Object?>{
+        'aspect': CoverProbeMemo.aspectOf(provider),
+        'seedKnown': CoverProbeMemo.seedOf(provider, 64 / 36).known,
+        'bakedCacheLength': prebakedBlurCacheLength,
+      },
+      <String, Object?>{
+        'aspect': null,
+        'seedKnown': false,
+        'bakedCacheLength': 0,
+      },
+      reason: 'resolve 之后才驱逐：到达的是旧字节，宽高比 / 主色 / 模糊纹理都不得回填缓存',
+    );
+  });
+
   test('CoverProbeMemo：同一 provider 解出不同尺寸（换了图）时旧主色作废', () {
     final MemoryImage provider = MemoryImage(Uint8List(4));
     CoverProbeMemo.rememberSeed(
@@ -182,7 +241,11 @@ void main() {
       epoch: CoverProviderEpoch.of(provider),
     );
     expect(CoverProbeMemo.seedOf(provider, 16 / 9).known, isTrue);
-    CoverProbeMemo.rememberAspect(provider, 4 / 3);
+    CoverProbeMemo.rememberAspect(
+      provider,
+      4 / 3,
+      epoch: CoverProviderEpoch.of(provider),
+    );
     expect(CoverProbeMemo.aspectOf(provider), 4 / 3);
     expect(CoverProbeMemo.seedOf(provider, 4 / 3).known, isFalse);
     CoverProbeMemo.evict(provider);
@@ -191,7 +254,7 @@ void main() {
 
   test('CoverProbeMemo 有上限（LRU 淘汰最久未用）', () {
     for (int i = 0; i < CoverProbeMemo.capacity + 10; i++) {
-      CoverProbeMemo.rememberAspect(FileImage(File('/c/$i.png')), 1);
+      CoverProbeMemo.rememberAspect(FileImage(File('/c/$i.png')), 1, epoch: 0);
     }
     expect(CoverProbeMemo.length, CoverProbeMemo.capacity);
     expect(CoverProbeMemo.aspectOf(FileImage(File('/c/0.png'))), isNull);
@@ -202,4 +265,24 @@ void main() {
       1,
     );
   });
+}
+
+/// load 何时完成由测试掌控的 provider：模拟「已 resolve、旧字节仍在解码」的窗口。
+/// 按实例身份相等（每个实例就是一个独立的图源）。
+class _GatedImageProvider extends ImageProvider<_GatedImageProvider> {
+  final Completer<ImageInfo> gate = Completer<ImageInfo>();
+  int loads = 0;
+
+  @override
+  Future<_GatedImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_GatedImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _GatedImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    loads++;
+    return OneFrameImageStreamCompleter(gate.future);
+  }
 }

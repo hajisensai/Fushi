@@ -72,11 +72,20 @@ abstract final class CoverProbeMemo {
     return (known: true, seed: entry.seed);
   }
 
-  static void rememberAspect(ImageProvider provider, double aspect) =>
-      _entryFor(provider, aspect);
+  /// 记下解码出的宽高比。[epoch] 是**拿到 [ImageStream]（resolve）那一刻**的
+  /// [CoverProviderEpoch.of]：此后被驱逐过（换了图）说明这份解码可能是旧字节，
+  /// 丢弃，不回填旧图的宽高比。
+  static void rememberAspect(
+    ImageProvider provider,
+    double aspect, {
+    required int epoch,
+  }) {
+    if (CoverProviderEpoch.of(provider) != epoch) return;
+    _entryFor(provider, aspect);
+  }
 
-  /// 记下按 [aspect] 采到的主色。[epoch] 是开始采样（拿到源图）时的
-  /// [CoverProviderEpoch.of]：期间被驱逐过（换了图）就丢弃，不回填旧图的结果。
+  /// 记下按 [aspect] 采到的主色。[epoch] 同 [rememberAspect]：取自 resolve 时，
+  /// 不是解码 / 采样完成时——驱逐可能发生在旧字节解码途中，到达时再读就晚了。
   static void rememberSeed(
     ImageProvider provider,
     double aspect,
@@ -130,6 +139,10 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
 
   ImageStream? _stream;
   ImageStreamListener? _listener;
+
+  /// 拿到 [_stream] 时 provider 的 [CoverProviderEpoch]。解码结果按它写 memo：
+  /// resolve 之后才发生的驱逐（旧字节还在解码）会让它过期，旧图结果不进 memo。
+  int _streamEpoch = 0;
   double? _aspect;
   bool _failed = false;
   Color? _backdropSeed;
@@ -206,6 +219,7 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
       onError: _onError,
     );
     _stream = newStream;
+    _streamEpoch = CoverProviderEpoch.of(provider);
     _listener = listener;
     newStream.addListener(listener);
   }
@@ -213,7 +227,8 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   void _onImage(ImageInfo info, bool syncCall) {
     final double aspect = info.image.width / info.image.height;
     final ImageProvider provider = probedImageOf(widget);
-    CoverProbeMemo.rememberAspect(provider, aspect);
+    final int epoch = _streamEpoch;
+    CoverProbeMemo.rememberAspect(provider, aspect, epoch: epoch);
     if (needsBackdropSeed(aspect)) {
       final ({bool known, Color? seed}) remembered = CoverProbeMemo.seedOf(
         provider,
@@ -238,7 +253,7 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
         _sampleGeneration,
         provider,
         aspect,
-        CoverProviderEpoch.of(provider),
+        epoch,
       );
     }
     info.dispose();
@@ -251,7 +266,7 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
 
   /// 异步取垫底底色。[generation] 用来丢弃过期结果：采样期间 widget 可能已经换图。
   /// 结果按 [provider] 记进 [CoverProbeMemo]（即使本卡已卸载，下次挂载也用得上）；
-  /// [epoch] 是拿到这张源图时 provider 的代际号，采样期间被驱逐过就不写 memo。
+  /// [epoch] 是拿到这条 [ImageStream] 时 provider 的代际号，此后被驱逐过就不写 memo。
   Future<void> _sampleBackdrop(
     ui.Image image,
     int generation,

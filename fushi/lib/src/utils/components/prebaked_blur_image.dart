@@ -116,8 +116,10 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
   ImageStreamListener? _listener;
   ui.Image? _source;
 
-  /// [_source] 解码到达时 [widget.image] 的 [CoverProviderEpoch]：用它烘焙出的
-  /// 结果只在代际号未变时进缓存（期间被驱逐 = 换了图，旧源图不能扩散到别的卡）。
+  /// 拿到 [_source] 所属 [ImageStream]（resolve）时 [widget.image] 的
+  /// [CoverProviderEpoch]：用它烘焙出的结果只在代际号未变时进缓存（期间被驱逐 =
+  /// 换了图，旧源图不能扩散到别的卡）。不在解码到达时读：驱逐可能发生在旧字节
+  /// 解码途中，到达时读到的已是驱逐后的代际号。
   int _sourceEpoch = 0;
 
   _BakeKey? _bakedKey;
@@ -149,7 +151,7 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
     _source?.dispose();
     _source = null;
     _pendingKey = null;
-    final ImageProvider provider = widget.image;
+    final int epoch = CoverProviderEpoch.of(widget.image);
     _stream = next;
     _listener = ImageStreamListener(
       (ImageInfo info, bool _) {
@@ -160,7 +162,7 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
         setState(() {
           _source?.dispose();
           _source = info.image.clone();
-          _sourceEpoch = CoverProviderEpoch.of(provider);
+          _sourceEpoch = epoch;
         });
         info.dispose();
       },
@@ -286,7 +288,7 @@ abstract final class _BakedBlurCache {
   }
 
   /// 收下 [image] 的所有权并返回一份调用方持有的句柄。[epoch] 是烘焙所用源图
-  /// 解码到达时的 [CoverProviderEpoch.of]；与当前代际号不符（期间被驱逐过）的结果
+  /// 的 [ImageStream] 被 resolve 时的 [CoverProviderEpoch.of]；与当前代际号不符（期间被驱逐过）的结果
   /// 不进缓存，原样交还调用方。
   static ui.Image store(_BakeKey key, ui.Image image, {required int epoch}) {
     if (key.bytes > maxBytes ~/ 2) return image;
