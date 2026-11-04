@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3607 条。点号进各自文件。
+> 共 3610 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4006](bugs/BUG-4006-lyrics-modern-wide-missing-stats.md) | ✅ | ✅ | 歌词模式新版宽屏缺阅读速度 / 已读字数 / 阅读时长 |
+| [BUG-4005](bugs/BUG-4005-lyrics-esc-exits-book.md) | ✅ | ✅ | 歌词模式按 Esc 先回阅读器、要再按一次才回书架 |
+| [BUG-4004](bugs/BUG-4004-manga-download-bytes-as-pages.md) | ✅ | ✅ | 漫画下载进度把字节数显示成页数 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
