@@ -1470,6 +1470,7 @@
   "av_sync": "音声/テキスト同期",
   "av_sync_reset": "リセット",
   "back": "戻る",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "オーディオブックの音声",
   "backup_category_audiobooks_desc": "オーディオブックの音声とアラインメント",
   "backup_category_books": "書籍の内容",

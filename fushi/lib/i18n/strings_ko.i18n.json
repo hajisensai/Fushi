@@ -1470,6 +1470,7 @@
   "av_sync": "A/V 동기화",
   "av_sync_reset": "초기화",
   "back": "뒤로",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "오디오북 오디오",
   "backup_category_audiobooks_desc": "오디오북 오디오 및 정렬",
   "backup_category_books": "책 내용",

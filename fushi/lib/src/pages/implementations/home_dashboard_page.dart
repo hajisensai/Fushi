@@ -77,7 +77,6 @@ import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
@@ -1882,11 +1881,6 @@ class _HomeDashboardPageState
             // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
             // SizedBox.shrink），没有更新的日子首页不多一块空卡。
             UpdatesDashboardBanner(service: appModel.updateFeedService),
-            // 常规同步 / 复习同步在跑时的进度条；没在跑时零高度、不留空白。
-            SyncProgressBanner(
-              key: const ValueKey<String>('home-sync-progress'),
-              margin: EdgeInsets.only(bottom: tokens.spacing.card),
-            ),
             // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
             if (appModel.isMigrationReadonly) ...<Widget>[
               _MigrationReadonlyBanner(appModel: appModel),

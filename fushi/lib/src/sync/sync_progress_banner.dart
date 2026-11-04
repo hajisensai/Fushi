@@ -12,7 +12,11 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 同步进行中的细进度条 —— 挂在媒体页列表上方。
+/// 同步进行中的细进度条 —— 挂在「同步与历史」页列表上方。
+///
+/// 首页各 tab 不再挂它（2026-11-03：两行横幅常驻挤掉近一行封面），改由外壳的
+/// 「后台任务」入口（`background_tasks_indicator.dart`，分段进度环）承载；这里
+/// 只留给推出去、看不到外壳入口的同步页。
 ///
 /// 下拉同步一次全量可能要几十秒，光靠 RefreshIndicator 那个圈用户看不出在干什么、
 /// 卡在哪一步。这条 banner 直接消费全局 [syncInProgress] / [syncProgress]，因此它
@@ -30,18 +34,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 ///
 /// 没有同步在跑时收成零高度（[SizedBox.shrink]），不占布局、不改现有几何。
 class SyncProgressBanner extends StatelessWidget {
-  const SyncProgressBanner({
-    this.compact = false,
-    this.margin = EdgeInsets.zero,
-    super.key,
-  });
-
-  /// Use the compact status strip in mobile book libraries.
-  final bool compact;
-
-  /// 只在有同步在跑（banner 可见）时才加的外边距：放进带间距的列表时用它留出与下一项的
-  /// 间隔，空闲时仍是零高度、不留空白。
-  final EdgeInsetsGeometry margin;
+  const SyncProgressBanner({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -68,33 +61,28 @@ class SyncProgressBanner extends StatelessWidget {
           duration: motion.spatialDefault.duration,
           curve: motion.spatialDefault.curve,
           alignment: Alignment.topCenter,
-          child: Padding(
-            padding: margin,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (syncing)
-                  _buildRow(
-                    context,
-                    key: const ValueKey<String>('sync-progress-banner-general'),
-                    line: p != null
-                        ? syncProgressLine(p)
-                        : (activity != null
-                              ? syncActivityLine(activity)
-                              : null),
-                    fraction: p?.fraction,
-                  ),
-                if (syncing && srs != null) SizedBox(height: compact ? 2 : 6),
-                if (srs != null)
-                  _buildRow(
-                    context,
-                    key: const ValueKey<String>('sync-progress-banner-srs'),
-                    line: srsSyncProgressLine(srs),
-                    fraction: srsSyncProgressFraction(srs),
-                  ),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (syncing)
+                _buildRow(
+                  context,
+                  key: const ValueKey<String>('sync-progress-banner-general'),
+                  line: p != null
+                      ? syncProgressLine(p)
+                      : (activity != null ? syncActivityLine(activity) : null),
+                  fraction: p?.fraction,
+                ),
+              if (syncing && srs != null) const SizedBox(height: 6),
+              if (srs != null)
+                _buildRow(
+                  context,
+                  key: const ValueKey<String>('sync-progress-banner-srs'),
+                  line: srsSyncProgressLine(srs),
+                  fraction: srsSyncProgressFraction(srs),
+                ),
+            ],
           ),
         );
       },
@@ -119,37 +107,33 @@ class SyncProgressBanner extends StatelessWidget {
       children: <Widget>[
         if (line != null)
           Padding(
-            padding: compact
-                ? const EdgeInsets.fromLTRB(12, 0, 12, 2)
-                : const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Row(
               children: <Widget>[
                 // M3E：行首一枚小号同步图标（tonal 圆底），让这条
                 // 文字一眼读成「同步状态」而不是普通说明文字。
-                if (!compact) ...<Widget>[
-                  DecoratedBox(
-                    decoration: BoxDecoration(
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: eink
+                        ? theme.colorScheme.surface
+                        : theme.colorScheme.secondaryContainer,
+                    shape: BoxShape.circle,
+                    border: eink
+                        ? Border.all(color: theme.colorScheme.outline)
+                        : null,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: FushiIcon(
+                      FushiIcons.sync,
+                      size: 14,
                       color: eink
-                          ? theme.colorScheme.surface
-                          : theme.colorScheme.secondaryContainer,
-                      shape: BoxShape.circle,
-                      border: eink
-                          ? Border.all(color: theme.colorScheme.outline)
-                          : null,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(3),
-                      child: FushiIcon(
-                        FushiIcons.sync,
-                        size: 14,
-                        color: eink
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSecondaryContainer,
-                      ),
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSecondaryContainer,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                ],
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   // 阶段文字切换走 effects 弹簧淡入淡出，不跳字。
                   child: AnimatedSwitcher(
@@ -169,9 +153,9 @@ class SyncProgressBanner extends StatelessWidget {
                       key: ValueKey<String>(line),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: (compact ? type.labelSmall : type.bodySmall)
-                          .tabular
-                          .copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      style: type.bodySmall.tabular.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
@@ -182,12 +166,10 @@ class SyncProgressBanner extends StatelessWidget {
         // 下钉成 0——不定态动画在墨水屏上是整条带子持续刷新，且默认
         // 轨道色塌成底色，给实色轨道才看得见）。M3E 下是波浪进度。
         Padding(
-          padding: compact
-              ? EdgeInsets.zero
-              : const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: FushiLinearProgressIndicator(
             value: einkSafeProgressValue(context, fraction),
-            minHeight: compact ? 2 : 4,
+            minHeight: 4,
             backgroundColor: eink ? theme.colorScheme.surface : null,
           ),
         ),

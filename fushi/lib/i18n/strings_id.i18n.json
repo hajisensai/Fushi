@@ -1470,6 +1470,7 @@
   "av_sync": "Sinkronisasi A/V",
   "av_sync_reset": "Atur Ulang",
   "back": "Kembali",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Audio buku audio",
   "backup_category_audiobooks_desc": "Audio buku audio dan penyelarasan",
   "backup_category_books": "Buku",

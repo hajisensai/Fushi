@@ -1470,6 +1470,7 @@
   "av_sync": "مزامنة الصوت/الصورة",
   "av_sync_reset": "إعادة تعيين",
   "back": "رجوع",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "صوت الكتب الصوتية",
   "backup_category_audiobooks_desc": "صوت الكتب الصوتية والمحاذاة",
   "backup_category_books": "الكتب",

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -676,6 +678,218 @@ class _WavyCircularPainter extends CustomPainter {
       oldDelegate.strokeWidth != strokeWidth ||
       oldDelegate.gap != gap ||
       oldDelegate.wavy != wavy ||
+      oldDelegate.clockwise != clockwise ||
+      oldDelegate.progress != progress;
+}
+
+// ---------------------------------------------------------------------------
+// 分段圆环
+// ---------------------------------------------------------------------------
+
+/// 多任务分段进度环：一圈按 [values] 的个数切成等长弧段（段间留缝），每段是
+/// 一项任务自己的进度；只有一段时就是整圈（与 [FushiWavyCircularProgress] 的
+/// 确定态同形）。
+///
+/// - MD3：已填部分是波浪（振幅 1.6、波长约 15，两端收平），未填部分是直线轨道；
+///   某段为 null（不定态）时，一小截波浪在该段内来回滑动。
+/// - Apple：细圆头弧、不画波浪；不定态段画成半透明满段（同
+///   [FushiAppleLinearProgress] 静止不定态）、不跑动画。
+///
+/// 外框 [size] × [size]，环贴外框内沿画（没有内边距），中心留给调用方叠图标。
+/// [colors] 与 [values] 一一对应。墨水屏调用方先过 `einkSafeProgressValue`
+/// 把不定态钉成 0（不跑往复动画）。
+class FushiSegmentedProgressRing extends StatefulWidget {
+  const FushiSegmentedProgressRing({
+    super.key,
+    required this.values,
+    required this.colors,
+    required this.trackColor,
+    this.size = 40,
+    this.strokeWidth = 3,
+    this.semanticsLabel,
+  }) : assert(values.length == colors.length);
+
+  final List<double?> values;
+  final List<Color> colors;
+  final Color trackColor;
+  final double size;
+  final double strokeWidth;
+  final String? semanticsLabel;
+
+  @override
+  State<FushiSegmentedProgressRing> createState() =>
+      _FushiSegmentedProgressRingState();
+}
+
+class _FushiSegmentedProgressRingState extends State<FushiSegmentedProgressRing>
+    with
+        SingleTickerProviderStateMixin<FushiSegmentedProgressRing>,
+        _RepeatingTicker<FushiSegmentedProgressRing> {
+  // 不定态的滑块一个来回 2.4 秒；确定态同一个控制器推波形相位。
+  @override
+  Duration get tickerPeriod => const Duration(milliseconds: 2400);
+
+  // 任一段不定 → 一直跑；全部确定时把各段之和当「值」，任一段推进即流动。
+  @override
+  double? get progressValue {
+    double sum = 0;
+    for (final double? v in widget.values) {
+      if (v == null) return null;
+      sum += v;
+    }
+    return sum;
+  }
+
+  @override
+  bool wantsAnimation(BuildContext context) =>
+      _motionAllowed(context) && !isGlassDesign(context);
+
+  @override
+  Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final bool motion = _motionAllowed(context) && !apple;
+    return Semantics(
+      label: widget.semanticsLabel,
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: RepaintBoundary(
+          child: CustomPaint(
+            painter: _SegmentedRingPainter(
+              progress: ticker,
+              values: widget.values,
+              colors: widget.colors,
+              trackColor: widget.trackColor,
+              strokeWidth: apple
+                  ? math.min(widget.strokeWidth, widget.size <= 28 ? 2 : 3)
+                  : widget.strokeWidth,
+              wavy: motion,
+              animateIndeterminate: motion,
+              clockwise: Directionality.of(context) != TextDirection.rtl,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentedRingPainter extends CustomPainter {
+  _SegmentedRingPainter({
+    required this.progress,
+    required this.values,
+    required this.colors,
+    required this.trackColor,
+    required this.strokeWidth,
+    required this.wavy,
+    required this.animateIndeterminate,
+    required this.clockwise,
+  }) : super(repaint: progress);
+
+  final Animation<double>? progress;
+  final List<double?> values;
+  final List<Color> colors;
+  final Color trackColor;
+  final double strokeWidth;
+  final bool wavy;
+  final bool animateIndeterminate;
+  final bool clockwise;
+
+  /// 不定态滑块占所在段的比例。
+  static const double _chunk = 0.35;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final int n = values.length;
+    final double side = math.min(size.width, size.height);
+    if (n == 0 || side <= 0) return;
+    final double amp = wavy ? 1.6 * (side / 40).clamp(0.0, 1.0) : 0;
+    final Offset c = size.center(Offset.zero);
+    final double radius = side / 2 - strokeWidth / 2 - amp;
+    if (radius <= 0) return;
+    final int waves = math.max(3, (2 * math.pi * radius / 15).round());
+    final double t = progress?.value ?? 0;
+    final double phase = t * 2 * math.pi;
+    final double dir = clockwise ? 1 : -1;
+    // 缝（含两侧圆头）换算成弧度；段间缝与段内「已填 / 轨道」缝同宽。
+    final double gap = (strokeWidth + 3) / radius;
+    final double segment = n == 1 ? 2 * math.pi : (2 * math.pi - n * gap) / n;
+    if (segment <= 0) return;
+    final Rect rect = Rect.fromCircle(center: c, radius: radius);
+    final Paint stroked = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    void waveArc(double start, double sweep, double a, Color color) {
+      if (sweep <= 0) return;
+      final Path path = Path();
+      final int steps = math.max(8, (sweep * radius).ceil());
+      for (int i = 0; i <= steps; i++) {
+        final double theta = start + sweep * i / steps;
+        final double r = radius + a * math.sin(waves * theta - phase);
+        final double angle = -math.pi / 2 + dir * theta;
+        final Offset p = c + Offset(math.cos(angle), math.sin(angle)) * r;
+        if (i == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+      canvas.drawPath(path, stroked..color = color);
+    }
+
+    void trackArc(double start, double end, Color color) {
+      if (end - start <= 0) return;
+      canvas.drawArc(
+        rect,
+        -math.pi / 2 + dir * start,
+        dir * (end - start),
+        false,
+        stroked..color = color,
+      );
+    }
+
+    for (int i = 0; i < n; i++) {
+      // 第一段从 12 点（偏半个缝）起；单段整圈时尾端留一个缝给轨道收口。
+      final double start = n == 1 ? 0 : i * (segment + gap) + gap / 2;
+      final double end = n == 1 ? 2 * math.pi - gap : start + segment;
+      final double usable = end - start;
+      final Color color = colors[i];
+      final double? v = values[i];
+      if (v != null) {
+        final double value = v.clamp(0.0, 1.0);
+        final double filled = (n == 1 ? 2 * math.pi : usable) * value;
+        waveArc(
+          start,
+          math.min(filled, usable),
+          amp * _amplitudeEase(value),
+          color,
+        );
+        trackArc(value <= 0 ? start : start + filled + gap, end, trackColor);
+        continue;
+      }
+      if (!animateIndeterminate) {
+        trackArc(start, end, color.withValues(alpha: color.a * 0.5));
+        continue;
+      }
+      // 不定态：一截波浪在段内往返（余弦缓动，两端停顿自然）。
+      final double chunk = usable * _chunk;
+      final double travel = 0.5 - 0.5 * math.cos(2 * math.pi * t);
+      final double s = start + (usable - chunk) * travel;
+      trackArc(start, s - gap, trackColor);
+      waveArc(s, chunk, amp, color);
+      trackArc(s + chunk + gap, end, trackColor);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SegmentedRingPainter oldDelegate) =>
+      !listEquals(oldDelegate.values, values) ||
+      !listEquals(oldDelegate.colors, colors) ||
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.strokeWidth != strokeWidth ||
+      oldDelegate.wavy != wavy ||
+      oldDelegate.animateIndeterminate != animateIndeterminate ||
       oldDelegate.clockwise != clockwise ||
       oldDelegate.progress != progress;
 }

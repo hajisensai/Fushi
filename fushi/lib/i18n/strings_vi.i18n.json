@@ -1470,6 +1470,7 @@
   "av_sync": "Đồng bộ A/V",
   "av_sync_reset": "Đặt lại",
   "back": "Quay lại",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Âm thanh sách nói",
   "backup_category_audiobooks_desc": "Âm thanh và căn chỉnh sách nói",
   "backup_category_books": "Nội dung sách",

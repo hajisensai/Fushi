@@ -1470,6 +1470,7 @@
   "av_sync": "A/V-Sync",
   "av_sync_reset": "Zurücksetzen",
   "back": "Zurück",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Hörbuch-Audio",
   "backup_category_audiobooks_desc": "Hörbuch-Audio und Ausrichtung",
   "backup_category_books": "Bücher",
