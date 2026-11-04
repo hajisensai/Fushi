@@ -39,22 +39,6 @@ VideoMediaReference videoDownloadJobMediaReference(VideoDownloadJobRow job) {
     job.identityJson,
   );
   if (stored != null) {
-    // 剧集身份被整理器改判成单部正片（9Fpg5zXriP：TV 版身份下到单文件剧场版）：
-    // 这份快照描述的是**那部剧**，不论哪家资料源——AniDB / MAL 的剧集条目与剧场版
-    // 各是一个条目，原名与别名也是剧的。整份不认，任务只剩自己的标题（已改成按
-    // 文件取的名字），交给媒体库自动识别；保留任何一个 id 都会把剧场版绑回 TV 版
-    // （库内补刮也经 [videoDownloadJobConfirmedLookups] 读这里）。
-    if (stored.mediaKind == VideoMetadataMediaKind.tv &&
-        mediaKind == VideoMetadataMediaKind.movie) {
-      return VideoMediaReference(
-        providerId: 'unknown',
-        mediaId: job.title,
-        mediaKind: mediaKind,
-        discoveryCategory: category,
-        title: job.title,
-        year: job.year,
-      );
-    }
     // 任务形态被整理器改判过（BUG-2760：电影身份配上多集合集包）：TMDB 的
     // /movie 与 /tv 是两个 id 空间，IMDb 的电影条目也不是剧集条目。这些 id
     // 描述的是**另一部作品**，带着它们刮削/搜字幕只会绑错，丢掉交给自动识别；
