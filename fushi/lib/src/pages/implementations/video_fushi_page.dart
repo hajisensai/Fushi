@@ -215,6 +215,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
 import 'package:fushi/src/media/video/web_video_browser_return.dart';
 import 'package:fushi/src/media/video/web_video_return_bar.dart';
+import 'package:fushi/src/media/video/web_video_series_collection.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;

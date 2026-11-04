@@ -33,46 +33,29 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3676 条。点号进各自文件。
+> 共 3699 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4100](bugs/BUG-4100-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
+| [BUG-4099](bugs/BUG-4099-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |
+| [BUG-4098](bugs/BUG-4098-ai-resources-burned-in-unflagged.md) | ✅ | ✅ | AI 助手把硬字幕 / 只有配音的资源当同等候选推荐给学习 |
+| [BUG-4097](bugs/BUG-4097-music-album-cover-under-top-bar.md) | ✅ | ✅ | MD3 专辑页 / 单曲详情页首项被悬浮顶栏盖住 |
+| [BUG-4096](bugs/BUG-4096-ass-drawing-offset-by-bbox-min.md) | ✅ | ✅ | ASS 矢量绘图遮罩落点减掉了包围盒最小角，与 libass 错位成白条 |
+| [BUG-4095](bugs/BUG-4095-video-web-return-bar-under-caption.md) | ✅ | ✅ | video-web-return-bar-under-caption |
+| [BUG-4094](bugs/BUG-4094-paired-host-mine-failure-unlabeled.md) | ✅ | ✅ | 开着「制卡到已配对设备」时主机 Anki 落卡失败，客户端只显示「连不上 AnkiConnect」看不出是主机 |
+| [BUG-4093](bugs/BUG-4093-inline-notice-actions-mid-banner.md) | ✅ | ✅ | 横幅（FushiInlineNotice）同行动作按钮停在横幅中间 |
+| [BUG-4092](bugs/BUG-4092-video-panel-scheme-ignores-app-surface.md) | ✅ | ✅ | 播放器面板（字幕轨抽屉等）表面色与自定义主题页面底色不同族 |
+| [BUG-4091](bugs/BUG-4091-ass-style-transfer-japanese-italic.md) | ✅ | ✅ | 参考英语ASS生成的日语ASS整行变斜体 |
+| [BUG-4090](bugs/BUG-4090-tv-job-single-movie-file-organize-fails.md) | ✅ | ✅ | 剧集身份的下载任务下到单文件剧场版，整理报 unable to determine episode number |
+| [BUG-4089](bugs/BUG-4089-ms-translator-tts-tfettts-500.md) | ✅ | ✅ | 微软翻译朗读恒失败：bing tfettts 接口已弃用 |
+| [BUG-4088](bugs/BUG-4088-web-browser-enter-ignores-address.md) | ✅ | ✅ | web-browser-enter-ignores-address |
+| [BUG-4087](bugs/BUG-4087-advanced-mining-srs-deck-ignored.md) | ✅ | ✅ | 高级制卡在挖词目标为 Fushi 复习时仍列 Anki 牌组、所选牌组不生效 |
+| [BUG-4086](bugs/BUG-4086-download-task-search-ctrl-f.md) | ✅ | ✅ | 浏览 › 下载任务页按 Ctrl+F 不聚焦任务搜索框 |
+| [BUG-4085](bugs/BUG-4085-video-subtitle-lookup-highlight-leading-punct.md) | ✅ | ✅ | 视频字幕查词高亮落在句首括号上，没覆盖真正查到的词 |
 | [BUG-4084](bugs/BUG-4084-web-browser-hidden-tab-autoplay.md) | ✅ | ✅ | 浏览页被视频页盖住时网页预告片仍自动播放 |
-| [BUG-4081](bugs/BUG-4081-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
-| [BUG-4078](bugs/BUG-4078-ass-style-transfer-japanese-italic.md) | ✅ | ✅ | 参考英语ASS生成的日语ASS整行变斜体 |
-| [BUG-4078](bugs/BUG-4078-tv-job-single-movie-file-organize-fails.md) | ✅ | ✅ | 剧集身份的下载任务下到单文件剧场版，整理报 unable to determine episode number |
-| [BUG-4078](bugs/BUG-4078-ms-translator-tts-tfettts-500.md) | ✅ | ✅ | 微软翻译朗读恒失败：bing tfettts 接口已弃用 |
-> 共 3677 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4079](bugs/BUG-4079-video-web-return-bar-under-caption.md) | ✅ | ✅ | video-web-return-bar-under-caption |
-| [BUG-4078](bugs/BUG-4078-web-browser-enter-ignores-address.md) | ✅ | ✅ | web-browser-enter-ignores-address |
-> 共 3678 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4080](bugs/BUG-4080-ai-resources-burned-in-unflagged.md) | ✅ | ✅ | AI 助手把硬字幕 / 只有配音的资源当同等候选推荐给学习 |
-| [BUG-4079](bugs/BUG-4079-paired-host-mine-failure-unlabeled.md) | ✅ | ✅ | 开着「制卡到已配对设备」时主机 Anki 落卡失败，客户端只显示「连不上 AnkiConnect」看不出是主机 |
-| [BUG-4078](bugs/BUG-4078-advanced-mining-srs-deck-ignored.md) | ✅ | ✅ | 高级制卡在挖词目标为 Fushi 复习时仍列 Anki 牌组、所选牌组不生效 |
-> 共 3681 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4083](bugs/BUG-4083-extension-mined-panel-transparent.md) | ✅ | ✅ | 浏览器扩展「卡片已在 Anki 中」面板底板透明，字叠字 |
 | [BUG-4082](bugs/BUG-4082-manga-macos-context-menu-stack.md) | ✅ | ✅ | macOS 漫画阅读器右键菜单不消失、重复叠加 |
-| [BUG-4081](bugs/BUG-4081-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |
-| [BUG-4080](bugs/BUG-4080-music-album-cover-under-top-bar.md) | ✅ | ✅ | MD3 专辑页 / 单曲详情页首项被悬浮顶栏盖住 |
-| [BUG-4079](bugs/BUG-4079-inline-notice-actions-mid-banner.md) | ✅ | ✅ | 横幅（FushiInlineNotice）同行动作按钮停在横幅中间 |
-| [BUG-4078](bugs/BUG-4078-download-task-search-ctrl-f.md) | ✅ | ✅ | 浏览 › 下载任务页按 Ctrl+F 不聚焦任务搜索框 |
-> 共 3678 条。点号进各自文件。
-> 共 3679 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4080](bugs/BUG-4080-ass-drawing-offset-by-bbox-min.md) | ✅ | ✅ | ASS 矢量绘图遮罩落点减掉了包围盒最小角，与 libass 错位成白条 |
-| [BUG-4079](bugs/BUG-4079-video-panel-scheme-ignores-app-surface.md) | ✅ | ✅ | 播放器面板（字幕轨抽屉等）表面色与自定义主题页面底色不同族 |
-| [BUG-4078](bugs/BUG-4078-video-subtitle-lookup-highlight-leading-punct.md) | ✅ | ✅ | 视频字幕查词高亮落在句首括号上，没覆盖真正查到的词 |
 | [BUG-4081](bugs/BUG-4081-shelf-contact-shadow-dot.md) | ✅ | ✅ | shelf-contact-shadow-dot |
 | [BUG-4080](bugs/BUG-4080-reader-lookup-highlight-invisible-light-theme.md) | ✅ | ✅ | 浅色跟随主题下阅读器查词选区高亮几乎看不出来 |
 | [BUG-4079](bugs/BUG-4079-reader-focus-steals-dialog-keyboard.md) | ✅ | ✅ | 小说阅读器高级制卡对话框的句子输入框键盘弹出即收回 |

@@ -15,7 +15,7 @@
 ///   描边 / 阴影 / 模糊（`\bord` `\shad` `\blur` `\be`），且只认**作用于整行**的：行中被
 ///   同名标签改掉或被 `\r` 复位的行首标签是给开头几个词的强调（`{\i1}That{\i0} song.`），
 ///   不继承。斜体一律不继承，样式本身是斜体时日语行写 `\i0`：日文排版没有斜体
-///   （BUG-4078）。其余一律丢弃：卡拉 OK（`\k`
+///   （BUG-4091）。其余一律丢弃：卡拉 OK（`\k`
 ///   系）、`\t` 动画、`\p` 绘图只对参考原文的字 / 时间有意义；透明度（`\alpha`
 ///   `\1a`–`\4a`）与裁剪（`\clip` `\iclip`）常是 `\t` 动画的起点
 ///   （`{\alpha&HFF&\t(0,200,\alpha&H00&)}`），去掉 `\t` 只留起点会让日语行整行不可见
@@ -228,7 +228,7 @@ String renderAssWithReferenceStyle({
       styleCounts: styleCounts,
     );
     final String style = ref?.style ?? reference.defaultStyle;
-    // 样式本身是斜体（字幕组的 Italics / 内心独白样式）：日语行显式关掉（BUG-4078）。
+    // 样式本身是斜体（字幕组的 Italics / 内心独白样式）：日语行显式关掉（BUG-4091）。
     final String tags =
         '${ref == null ? '' : _inheritableTags(lineLevelLeadingTags(ref.text))}'
         '${italicStyles.contains(style) ? r'\i0' : ''}';
@@ -333,7 +333,7 @@ final RegExp _positionTag = RegExp(r'\\(pos|move|i?clip)\(');
 
 /// 可继承的行首覆盖标签（白名单，整条标签全匹配）；不在表里的一律丢弃，理由见文件头。
 ///
-/// 不含斜体 `\i`（BUG-4078）：日文排版没有斜体，假名被斜切只会难看；英文字幕组
+/// 不含斜体 `\i`（BUG-4091）：日文排版没有斜体，假名被斜切只会难看；英文字幕组
 /// 的斜体（强调词、内心独白、画外音）对日语行没有对应含义。
 final RegExp _inheritableTag = RegExp(
   r'^\\(?:'
@@ -358,7 +358,7 @@ String? _tagName(String tag) {
 
 /// 参考事件里真正作用于整行的行首标签：行中又被同名标签改掉（`{\i1}That{\i0} song.`、
 /// `{\c&HFF&}名字{\c}…`）或被 `\r` 复位的，只是给开头几个词的强调 / 着色，不继承
-/// （BUG-4078）。
+/// （BUG-4091）。
 List<String> lineLevelLeadingTags(String text) {
   final List<String> leading = assLeadingOverrideTags(text);
   int i = 0;
