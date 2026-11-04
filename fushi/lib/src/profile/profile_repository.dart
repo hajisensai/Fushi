@@ -6,7 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show kDictKanjiPartSettingKeys, kanjiPartSettingsIn;
 import 'package:fushi_engine/profile/profile_document.dart';
-import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/models/dictionary_repository.dart';
@@ -17,7 +18,6 @@ import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/sync/backup_path_rebase.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
