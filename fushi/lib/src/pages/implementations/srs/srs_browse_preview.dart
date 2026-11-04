@@ -229,7 +229,7 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
             if (_loading && hasFace)
               const Align(
                 alignment: Alignment.topCenter,
-                child: IgnorePointer(child: LinearProgressIndicator()),
+                child: IgnorePointer(child: FushiLinearProgressIndicator()),
               ),
             ?overlay,
           ],

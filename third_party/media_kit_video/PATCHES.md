@@ -984,3 +984,17 @@ calls `AcquireSync`, and ANGLE only exposes the mutex through
 `eglQuerySurfacePointerANGLE(EGL_DXGI_KEYED_MUTEX_ANGLE)` without acquiring it.
 A keyed mutex needs an engine patch that acquires it on the raster side first
 (see BUG-3888, 2026-11-04 (二)); the source guard refuses a producer-only one.
+
+### Keyed mutex (2026-11-05)
+
+That engine patch now exists:
+`ci/patches/flutter-engine/3.47.6/engine-d3d-keyed-mutex.patch`. A patched
+`flutter_windows.dll` exports `FlutterDesktopGpuSurfaceSupportsKeyedMutex`;
+`ANGLESurfaceManager::EngineSyncsKeyedMutexTextures()` resolves it once with
+`GetProcAddress`. Only when it returns true does `CreateD3DTexture` create the
+texture Flutter reads with `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` (instead of
+`D3D11_RESOURCE_MISC_SHARED`), and `Draw()` then wraps its `CopyResource` in
+`AcquireSync(0, INFINITE)` / `ReleaseSync(0)`. The engine holds key 0 only for
+its own `CopyResource` out of the texture into an engine-owned copy (it never
+samples the shared texture), so the wait is bounded by one copy call. On a
+stock engine nothing changes: legacy shared texture, `CopyResource` + `Flush`.

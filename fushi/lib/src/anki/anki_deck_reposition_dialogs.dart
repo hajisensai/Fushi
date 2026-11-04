@@ -387,6 +387,11 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.anki_reposition_cancelled)),
       );
+    } on AnkiRepositionUnsupportedException {
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        FushiSnackBar(content: Text(t.anki_reposition_ankiconnect_unsupported)),
+      );
     } catch (e) {
       if (!mounted) return;
       messenger?.showSnackBar(
@@ -433,6 +438,10 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         ),
       );
       await _refreshSnapshot();
+    } on AnkiRepositionUnsupportedException {
+      messenger?.showSnackBar(
+        FushiSnackBar(content: Text(t.anki_reposition_ankiconnect_unsupported)),
+      );
     } catch (e) {
       messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),

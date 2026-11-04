@@ -16,6 +16,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/notice_dwell.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -113,11 +115,34 @@ Future<void> _pumpReview(
 Finder _chip(int rating) =>
     find.byKey(ValueKey<String>('srs-rated-chip-$rating'));
 
+/// 一帧帧推进到 [finder] 出现为止（评分后下一张卡异步载入，提示随之出现）；
+/// 出现即停，不多推时间——提示本身只停留 [FushiNoticeDwell.flash]。
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (int i = 0; i < 60; i++) {
+    if (finder.evaluate().isNotEmpty) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(finder, findsOneWidget, reason: '评分后提示应出现');
+}
+
+Future<void> _rate(WidgetTester tester, int rating) async {
+  await tester.tap(find.byKey(ValueKey<String>('srs-rate-$rating')));
+  await _pumpUntilFound(tester, _chip(rating));
+}
+
 Future<void> _answer(WidgetTester tester, int rating) async {
   await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
   await _settle(tester);
-  await tester.tap(find.byKey(ValueKey<String>('srs-rate-$rating')));
-  await _settle(tester, rounds: 24);
+  await _rate(tester, rating);
+}
+
+/// 走完退场动画（[FushiMotion.micro]）。
+Future<void> _pumpExit(WidgetTester tester) async {
+  await tester.pump(FushiMotion.micro);
+  await tester.pump(const Duration(milliseconds: 50));
 }
 
 void main() {
@@ -164,8 +189,7 @@ void main() {
       expect(_chip(3), findsNothing, reason: '翻面后收起');
 
       // 再评「重来」：提示换成重来。
-      await tester.tap(find.byKey(const ValueKey<String>('srs-rate-1')));
-      await _settle(tester, rounds: 24);
+      await _rate(tester, 1);
       expect(_chip(1), findsOneWidget);
       expect(_chip(3), findsNothing);
 
@@ -173,6 +197,49 @@ void main() {
       await tester.tap(find.byKey(const ValueKey<String>('srs_review_undo')));
       await _settle(tester, rounds: 24);
       expect(_chip(1), findsNothing, reason: '撤销后不再声称已评');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('apple=$apple: the rated chip only flashes — it hides by '
+        'itself after FushiNoticeDwell.flash while the question stays up '
+        '(feedback vKGS1y9-v2)', (WidgetTester tester) async {
+      final SrsDbStore store = await _seed(tester);
+      final List<SrsCardFace> faces = <SrsCardFace>[];
+      await _pumpReview(tester, store: store, faces: faces, apple: apple);
+
+      await _answer(tester, 1);
+      expect(_chip(1), findsOneWidget, reason: '评分后先闪出提示');
+      expect(
+        find.byKey(const ValueKey<String>('srs-show-answer')),
+        findsOneWidget,
+        reason: '仍停在下一张的问题面（没翻面）',
+      );
+
+      // 还没满停留时长：仍在。
+      await tester.pump(
+        FushiNoticeDwell.flash - const Duration(milliseconds: 200),
+      );
+      expect(_chip(1), findsOneWidget, reason: '停留未满不收');
+
+      // 停留满 + 退场：自行收起，问题面不动。
+      await tester.pump(const Duration(milliseconds: 200));
+      await _pumpExit(tester);
+      expect(_chip(1), findsNothing, reason: '闪一下就收，不一直挂到翻面');
+      expect(
+        find.byKey(const ValueKey<String>('srs-show-answer')),
+        findsOneWidget,
+      );
+
+      // 同一次评分的重建不让它再冒出来；下一次评分重新闪。
+      await tester.pump(const Duration(seconds: 2));
+      expect(_chip(1), findsNothing);
+      await _answer(tester, 4);
+      expect(_chip(4), findsOneWidget, reason: '新的一次评分重新闪');
+      await tester.pump(FushiNoticeDwell.flash);
+      await _pumpExit(tester);
+      expect(_chip(4), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
