@@ -574,12 +574,25 @@ void recordLookupStackDepth(int depth, String? topTerm) {
 /// 文案」逻辑被复制 5 份后各自漂移。[outcome] 应满足 `result == MineResult.error`。
 String logMineFailure(MineOutcome outcome) {
   logMineOutcomeDiagnostics(outcome);
-  // TODO-752a：失败已分类（errorCode 非空）时，用与 locale 无关的稳定码映射本地化
-  // toast——绝不把后端带回的 errorDetail（可能含 socket/http 的英文/latin1 乱码原文）
-  // 直接喂给用户。errorDetail/error 仍写进上面的诊断日志。未分类失败维持旧行为。
+  return mineFailureMessage(outcome);
+}
+
+/// 一次制卡失败给用户看的文案（不记日志）：[logMineFailure] 与待发队列页共用。
+///
+/// TODO-752a：失败已分类（errorCode 非空）时，用与 locale 无关的稳定码映射本地化
+/// toast——绝不把后端带回的 errorDetail（可能含 socket/http 的英文/latin1 乱码原文）
+/// 直接喂给用户。errorDetail/error 仍写进诊断日志。未分类失败维持旧行为。
+///
+/// 反馈 E52FUMdbR6：[AnkiErrorCode.pairedDeviceMineFailed] 的 errorDetail 是已配对
+/// 主机回传的（主机已本地化的）原因，必须带上「服务端上的 Anki」前缀，用户才知道
+/// 失败的不是本机的 Anki。
+String mineFailureMessage(MineOutcome outcome) {
+  final String? detail = outcome.errorDetail;
+  if (outcome.errorCode == AnkiErrorCode.pairedDeviceMineFailed) {
+    return t.anki_error_paired_device_mine_failed(reason: detail ?? '');
+  }
   final String? localized = localizeAnkiMineError(outcome.errorCode);
   if (localized != null) return localized;
-  final String? detail = outcome.errorDetail;
   return detail != null && detail.isNotEmpty
       ? t.card_export_failed_detail(reason: detail)
       : t.card_export_failed;

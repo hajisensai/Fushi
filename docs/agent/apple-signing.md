@@ -62,6 +62,7 @@ MethodChannel 前缀已同批切到 `app.fushi.reader/*`（Dart 真相源
 | `IOS_DIST_CERT_P12_BASE64` | Apple Distribution 证书 + 私钥的 p12，base64 单行 | iOS |
 | `IOS_DIST_CERT_P12_PASSWORD` | 上面 p12 的导出口令 | iOS |
 | `IOS_PROVISIONING_PROFILE_BASE64` | App Store 描述文件，base64 单行 | iOS |
+| `IOS_WIDGETS_PROVISIONING_PROFILE_BASE64` | 主屏小组件扩展 `app.fushi.reader.widgets` 的 App Store 描述文件（可选，见「主屏小组件」） | iOS |
 | `MACOS_DEVELOPER_ID_P12_BASE64` | Developer ID Application 证书 + 私钥的 p12 | macOS |
 | `MACOS_DEVELOPER_ID_P12_PASSWORD` | 上面 p12 的导出口令 | macOS |
 
@@ -271,6 +272,53 @@ com.apple.security.cs.disable-library-validation
 **将来如果引入自研加密（比如端到端加密的互联同步），必须回头改这个值并补交年度
 自分类报告。**
 
+## 主屏小组件（App Group）
+
+iOS 的主屏 / 锁屏小组件、灵动岛（Live Activity）、控制中心控件，以及 macOS 的小组件，都住在
+扩展 `FushiWidgets.appex`（bundle `app.fushi.reader.widgets`）里。它和主 app 靠 **App Group**
+共享主 app 写的快照（`<group>/home_widgets/snapshot.json` + `covers/`）：Dart 的
+`WidgetSnapshotPublisher` 把与 Android **同一份** JSON 经 `app.fushi.reader/widgets` 的
+`updateSnapshot` 推给原生，`FushiHomeWidgets.swift` 的 `FushiWidgetSnapshotSink` 缩略封面、落盘、
+重载时间线（契约见 [android-widgets.md](android-widgets.md)「Apple (WidgetKit)」）。工程里的 target 由
+`fushi/tool/apple/widgets_target.rb add ios|macos` 生成，源码在 `fushi/apple/HomeWidgets/`。
+
+**iOS 一次性配置（Apple Developer 后台；2026-11-04 用户已配好 App Group、App ID、两份描述文件与
+`IOS_WIDGETS_PROVISIONING_PROFILE_BASE64`，CI 按此签扩展）**，缺任何一步，CI 都会**摘掉扩展**（`widgets_target.rb
+strip ios`）再签，TestFlight 照常上传、只是没有小组件，job 打一条 notice，不会红：
+
+1. Identifiers → App Groups → **+** → `group.app.fushi.reader`。
+2. Identifiers → `app.fushi.reader` → 勾 **App Groups** → Configure 选中上面的组 → Save。
+3. Identifiers → **+** → App IDs → `app.fushi.reader.widgets`（Explicit），同样勾 App Groups、选同一个组。
+4. 重新生成主 app 的 App Store 描述文件（勾了 capability 之后，旧描述文件里没有这个组），再给
+   `app.fushi.reader.widgets` 新建一份 App Store 描述文件（同一张 Apple Distribution 证书）。
+5. `tool/apple_signing_secrets.sh --ios-profile <主> --ios-widgets-profile <扩展> …`：校验两份
+   描述文件都带这个组，写入 `IOS_PROVISIONING_PROFILE_BASE64` 和
+   `IOS_WIDGETS_PROVISIONING_PROFILE_BASE64`。
+
+**CI 怎么判**（`release-desktop.yml`「Install provisioning profile and signing xcconfig」）：
+`Runner.entitlements` 里的每一项都只在描述文件本身带它时才签进去，和 `aps-environment` 同一套
+规矩——描述文件没有的项先从 runner 上的副本里 `PlistBuddy Delete` 掉，剩下至少一项才接入
+`CODE_SIGN_ENTITLEMENTS`（守卫 `ios_entitlements_profile_gating_guard_test.dart`、
+`feedback_push_wiring_guard_test.dart`）。扩展的 `FushiWidgets.entitlements` 同一规则，对照的是扩展
+自己那份描述文件。两份描述文件都带 App Group 时才保留这项，往 `ios/Flutter/FushiWidgets.xcconfig`
+追加扩展自己的手动签名，并在 ExportOptions 里登记扩展的描述文件；缺任何一份就删掉这项并把扩展
+target 整个摘掉（`tool/apple/widgets_target.rb strip ios`）。
+
+**未签名侧载 IPA** 里带着扩展。侧载工具重签时会给扩展另起一个 App ID；免费账号每周只能建
+10 个，扩展会多占一个。没有 App Group 时，小组件只显示「打开 Fushi 一次」，不影响主 app。
+
+**模拟器**不按描述文件核对，所以 `Debug.xcconfig` / `Release.xcconfig` /
+`FushiWidgets.xcconfig` 用 `CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]` 无条件接入
+（守卫只禁止无条件的 `CODE_SIGN_ENTITLEMENTS =`）。
+
+**macOS 不需要后台配置**：Developer ID 下，带 Team ID 前缀的组（`<TEAM>.app.fushi.reader`）
+不要描述文件。macOS 的难点在重签：前面几轮 `codesign --deep --sign -` 和 Developer ID 逐个
+Mach-O 的重签都**不带 entitlements**，扩展会丢掉 `app-sandbox`，而 WidgetKit 不加载不在沙盒里的
+扩展。所以两条签名路径都要在签外层之前调用 `tool/apple/macos_widgets_sign.sh appex …`，带回
+沙盒与 App Group；外层 entitlements 由同一个脚本展开 `$(FUSHI_APP_GROUP)` 生成（codesign 不展开
+Xcode 变量）。运行时 app 和扩展各自读**自己签进去的** application-groups
+（`FushiAppGroup.identifier`），Info.plist 里的值只是 ad-hoc 构建的兜底。
+
 ## APNs 推送密钥（反馈回复推送）
 
 开发者在反馈处理台回复 / 改状态后，排行榜 Worker（`services/leaderboard/src/feedback_push.js`）
@@ -285,10 +333,14 @@ com.apple.security.cs.disable-library-validation
 2. **重新生成 App Store 描述文件**（勾了 capability 之后旧描述文件里没有 `aps-environment`）：
    Profiles → 原来那份 `IOS_APP_STORE` 描述文件 → Edit → Save → 下载，然后照「仓库 Secrets
    清单」重写 `IOS_PROVISIONING_PROFILE_BASE64`（`tool/apple_signing_secrets.sh`）。
-   `release-desktop.yml` 解出描述文件时发现它带 `aps-environment`，才往 `Release.xcconfig` 追加
-   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（值取描述文件里的，App Store 描述文件
-   是 `production`）；不带就照旧不接入——**描述文件没开 Push 却签进 aps-environment，codesign
-   会直接失败**，所以这一步不能写死在工程里。
+   `release-desktop.yml` 解出描述文件后对 `Runner.entitlements` 里的**每一项**逐个对照：
+   描述文件授予了才保留（`aps-environment` 的值取描述文件里的，App Store 描述文件是
+   `production`），没授予就在 runner 上把那一项删掉；至少剩一项才往 `Release.xcconfig` 追加
+   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`——**描述文件没授予的 entitlement 签进去，
+   codesign 会直接失败**，所以这一步不能写死在工程里。同一机制也管
+   `com.apple.developer.kernel.extended-virtual-addressing`（BUG-4013，App ID 勾
+   「Extended Virtual Addressing」后同样要重新生成描述文件；缺失时 CI 打 warning）。守卫：
+   `fushi/test/build/ios_entitlements_profile_gating_guard_test.dart`。
 3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
    （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key
    对团队下所有 App、sandbox 与 production 都有效，不像旧的 .p12 推送证书一年一换。

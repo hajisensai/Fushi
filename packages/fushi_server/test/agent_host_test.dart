@@ -2,10 +2,13 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart'
+    show kAiAgentHistoryRetention;
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
@@ -668,6 +671,149 @@ void main() {
       }
       expect(admin.settings['subtitleLanguage'], 'ja');
       await sessions.dispose();
+    });
+
+    test('BUG-4067：会话按发起设备存进服务端库，那台设备能列出、续接；共享口令看不到', () async {
+      await db.upsertPairedPeer(
+        FushiPairedPeersCompanion.insert(
+          peerId: 'phone-1',
+          deviceName: const Value<String?>('Pixel'),
+          token: 'tok-phone',
+          pairedAtMs: 1,
+        ),
+      );
+      final AgentAssistantHost host = createServerAgentAssistantHost(
+        config: () => config(ai),
+        db: db,
+        dispatch: () => admin.handle,
+        llmFactory: (AiProviderConfig _) => _StubLlm(<AiChatTurn>[
+          const AiChatTurn(text: '好', toolCalls: <AiChatToolCall>[]),
+          const AiChatTurn(text: '还在', toolCalls: <AiChatToolCall>[]),
+        ]),
+      );
+      expect(
+        (await host.capability())[kHostAssistantAgentHistoryKey],
+        kHostAssistantAgentHistoryVersion,
+      );
+      const HostAssistantCaller phone = HostAssistantCaller(
+        peerToken: 'tok-phone',
+      );
+      final HostAssistantSessions sessions = HostAssistantSessions(host);
+      final Map<String, Object?> first = await sessions.open(
+        kHostAssistantFeatureAgent,
+        locale: 'zh',
+        caller: phone,
+      );
+      final String tableId = first['id']! as String;
+      final String agentId = (first['view']! as Map)['id']! as String;
+      await sessions.act(tableId, <String, Object?>{
+        'type': 'text',
+        'text': '你好',
+      });
+      for (int i = 0; i < 200; i++) {
+        if (await db.getAiAgentSession(agentId) != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await sessions.close(tableId);
+      final AiAgentSessionRow row = (await db.getAiAgentSession(agentId))!;
+      expect(row.originPeerId, 'phone-1');
+      expect(row.scene, 'remote');
+      expect(row.title, '你好');
+
+      expect(
+        (await sessions.listHistory(
+          kHostAssistantFeatureAgent,
+          phone,
+        )).map((Map<String, Object?> s) => s['id']),
+        <String>[agentId],
+      );
+      await expectLater(
+        sessions.listHistory(
+          kHostAssistantFeatureAgent,
+          HostAssistantCaller.anonymous,
+        ),
+        throwsA(isA<HostAssistantPeerRequired>()),
+      );
+      final Map<String, Object?> resumed = await sessions.open(
+        kHostAssistantFeatureAgent,
+        locale: 'zh',
+        caller: phone,
+        resume: agentId,
+      );
+      expect(
+        ((resumed['view']! as Map)['entries']! as List).length,
+        2,
+        reason: '续接读回整场对话',
+      );
+      await sessions.dispose();
+    });
+  });
+
+  group('ServerAgentHistoryPruner', () {
+    late FushiDatabase db;
+    late DateTime now;
+
+    setUp(() {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      now = DateTime.utc(2026, 11, 5);
+    });
+
+    tearDown(() => db.close());
+
+    Future<void> archived(String id, Duration age) =>
+        db.saveAiAgentSessionSnapshot(
+          id: id,
+          title: id,
+          scene: 'remote',
+          payloadJson: '{"entries":[]}',
+          totalTokens: 0,
+          createdAt: 1,
+          updatedAt: now.subtract(age).millisecondsSinceEpoch,
+          profileUid: '',
+          originPeerId: 'phone',
+        );
+
+    Future<List<String>> ids() async => <String>[
+      for (final AiAgentSessionSummary s
+          in await db.listAiAgentSessionSummaries())
+        s.id,
+    ];
+
+    test('起来先清一次：超过保留期（30 天）的远端会话删掉，期内的留着', () async {
+      expect(kAiAgentHistoryRetention, const Duration(days: 30));
+      await archived('old', const Duration(days: 31));
+      await archived('fresh', const Duration(days: 29));
+      final ServerAgentHistoryPruner pruner = ServerAgentHistoryPruner(
+        db,
+        clock: () => now,
+      );
+      addTearDown(pruner.stop);
+      await pruner.start();
+      expect(await ids(), <String>['fresh']);
+    });
+
+    test('常驻不重启：之后按周期再清；stop 后不再清', () async {
+      await archived('fresh', const Duration(days: 1));
+      final ServerAgentHistoryPruner pruner = ServerAgentHistoryPruner(
+        db,
+        clock: () => now,
+        every: const Duration(milliseconds: 10),
+      );
+      addTearDown(pruner.stop);
+      await pruner.start();
+      expect(await ids(), <String>['fresh']);
+
+      // 过了一个月：同一个进程里那场也到期了。
+      now = now.add(const Duration(days: 30));
+      for (int i = 0; i < 200 && (await ids()).isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(await ids(), isEmpty);
+
+      pruner.stop();
+      await archived('later', const Duration(days: 40));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await ids(), <String>['later'], reason: 'stop 之后定时器不再跑');
     });
   });
 }

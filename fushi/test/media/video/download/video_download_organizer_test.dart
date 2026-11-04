@@ -824,6 +824,159 @@ void main() {
     );
   });
 
+  group('a tv request holding a single standalone feature (9Fpg5zXriP)', () {
+    VideoOrganizationRequest tvRequest() => VideoOrganizationRequest(
+      torrentId: 'hash',
+      title: 'Hibike! Euphonium',
+      year: 2015,
+      kind: VideoOrganizationKind.episodic,
+      sourceRoot: _localRoot,
+      pathMapping: VideoDownloadPathMapping(
+        remoteRoot: '/library',
+        localRoot: _localRoot,
+      ),
+    );
+
+    test('is reorganized as a movie named after the file, not the series', () {
+      // 用户原样：TV 版身份（tv · 2015）配上单文件剧场版。修前两趟都认不出集号，
+      // 抛 `unable to determine episode number`，下到 100% 的任务卡在整理。
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer()
+          .plan(tvRequest(), <TorrentFileEntry>[
+            const TorrentFileEntry(
+              name:
+                  '[FFF-Kantai] Hibike! Euphonium - Chikai no Finale '
+                  '[BD][1080p-FLAC].mkv',
+              size: 8000,
+              progress: 1,
+              index: 0,
+            ),
+          ]);
+
+      expect(plan.kind, VideoOrganizationKind.movie);
+      expect(
+        plan.standaloneFeatureTitle,
+        'Hibike! Euphonium - Chikai no Finale',
+      );
+      // 不进 TV 版的 `Hibike! Euphonium (2015)/`，也不编 S00E01。
+      expect(
+        plan.files.single.targetRelativePath,
+        'Hibike! Euphonium - Chikai no Finale/'
+        'Hibike! Euphonium - Chikai no Finale.mkv',
+      );
+      expect(plan.files.single.seasonNumber, isNull);
+      expect(plan.files.single.episodeNumber, isNull);
+    });
+
+    test('replaying with the reclassified movie request yields the same '
+        'targets', () {
+      // 管线先把任务改成电影（标题 = standaloneFeatureTitle、无年份）再整理；
+      // 崩溃重放时以那份电影请求重算，必须落到同一批路径。
+      final List<TorrentFileEntry> files = <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Release/[Grp] Liz to Aoi Tori [BD 1080p].mkv',
+          size: 9000,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'Release/SPs/[Grp] Liz to Aoi Tori Menu.mkv',
+          size: 30,
+          progress: 1,
+          index: 1,
+        ),
+      ];
+      final VideoOrganizationPlan first = const VideoDownloadOrganizer().plan(
+        tvRequest(),
+        files,
+      );
+      final VideoOrganizationPlan replay = const VideoDownloadOrganizer().plan(
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: first.standaloneFeatureTitle!,
+          kind: VideoOrganizationKind.movie,
+          sourceRoot: _localRoot,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: _localRoot,
+          ),
+        ),
+        files,
+      );
+
+      expect(first.kind, VideoOrganizationKind.movie);
+      expect(
+        first.files.map((VideoOrganizationFilePlan f) => f.targetRelativePath),
+        <String>[
+          'Liz to Aoi Tori/Liz to Aoi Tori.mkv',
+          'Liz to Aoi Tori/Extras/SPs/[Grp] Liz to Aoi Tori Menu.mkv',
+        ],
+      );
+      expect(
+        replay.files.map((VideoOrganizationFilePlan f) => f.finalLocalPath),
+        first.files.map((VideoOrganizationFilePlan f) => f.finalLocalPath),
+      );
+      expect(replay.standaloneFeatureTitle, isNull);
+    });
+
+    test('a torrent of only explicit extras still fails explicitly', () {
+      expect(
+        () =>
+            const VideoDownloadOrganizer().plan(tvRequest(), <TorrentFileEntry>[
+              const TorrentFileEntry(
+                name: 'Show NCOP.mkv',
+                size: 100,
+                progress: 1,
+                index: 0,
+              ),
+            ]),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException error) => error.message,
+            'message',
+            contains('unable to determine episode number'),
+          ),
+        ),
+      );
+    });
+
+    test('an extra larger than the only feature still fails explicitly', () {
+      // 改判后电影整理按体量抬正片：特典比唯一正片还大时两边会指向不同文件，
+      // 重放排出另一套路径——宁可显式失败。
+      expect(
+        () =>
+            const VideoDownloadOrganizer().plan(tvRequest(), <TorrentFileEntry>[
+              const TorrentFileEntry(
+                name: 'Pack/Feature.mkv',
+                size: 100,
+                progress: 1,
+                index: 0,
+              ),
+              const TorrentFileEntry(
+                name: 'Pack/Extras/Making of.mkv',
+                size: 200,
+                progress: 1,
+                index: 1,
+              ),
+            ]),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('standaloneFeatureTitleOf strips release tags but keeps the subtitle '
+        'after the dash', () {
+      expect(
+        standaloneFeatureTitleOf(
+          'Root/[FFF-Kantai] Hibike! Euphonium - Chikai no Finale '
+          '[BD][1080p-FLAC].mkv',
+        ),
+        'Hibike! Euphonium - Chikai no Finale',
+      );
+      expect(standaloneFeatureTitleOf('【字幕组】劇場版 響け！ 【1080P】.mp4'), '劇場版 響け！');
+      // 整个名字都在括号里：退回原文件名，不出空标题。
+      expect(standaloneFeatureTitleOf('[Only Tags].mkv'), '[Only Tags]');
+    });
+  });
+
   test('a specials-only torrent falls back to filename parsing instead of '
       'failing (BUG-1865)', () {
     // 纯特典种子（用户单独下的 SP 盘）：所有视频都在 `SPs/` 下，先分类会一集都
@@ -1225,12 +1378,20 @@ void main() {
       addTearDown(() async {
         if (await root.exists()) await root.delete(recursive: true);
       });
+      // 两个无集号正片：说不清谁是作品、是不是电影（单部正片会改判电影，见
+      // 9Fpg5zXriP 用例），仍须在动后端之前显式失败。
       final _FakeBackend backend = _FakeBackend(<TorrentFileEntry>[
         const TorrentFileEntry(
           name: 'unknown.mkv',
           size: 100,
           progress: 1,
           index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'another unknown.mkv',
+          size: 90,
+          progress: 1,
+          index: 1,
         ),
       ]);
 

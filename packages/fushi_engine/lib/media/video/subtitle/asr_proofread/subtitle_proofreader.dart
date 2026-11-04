@@ -19,6 +19,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:path/path.dart' as p;
@@ -42,6 +43,27 @@ const String kSubtitleProofreadRules =
 8. 同じ人物・用語は回を通して同じ表記にする(固有名詞表の表記を優先。表に無い語を推測で固有名詞に置き換えない)。
 出力は修正が必要な行だけを 1 行 1 件で書く: <id><TAB><修正後本文>(例: 12\t唯が来た)。修正の無い行は書かない。行を空文字にする場合は <id><TAB> だけを書く。
 id の昇順に書き、最後の行に END とだけ書く(修正が 1 件も無ければ END だけ)。説明文・JSON・コードブロックは書かない。''';
+
+/// 这一集带证据（spec `2026-11-04-video-subtitle-multisource-evidence` §4）时接在
+/// [kSubtitleProofreadRules] 之后的补充规则。没有证据的集不加，提示词与改版前逐字相同。
+const String kSubtitleProofreadEvidenceRules = '''補足規則(既存字幕):
+9. 「同言語字幕」は同じ映像に付いていた日本語字幕(人手の字幕、または画像字幕の OCR)。聞こえる台詞と合う限り、語・表記はそちらを優先して採用する。ただし OCR は形の似た字を誤読することがあり、人手の字幕は口癖・言い淀みを省くことがある(規則 3 に従い残す)。台詞と明らかに違う箇所は ASR を優先する。
+10. 「他言語字幕」は翻訳。規則 1・5 のとおり、人名・用語・意味を判断する手掛かりにだけ使う。
+11. 「主(既存字幕から補完)」の行は ASR が拾えなかった台詞を既存字幕から補ったもの。前後の文脈と矛盾しなければそのまま残す(直す場合も本文だけを書き、この印は書かない)。''';
+
+/// 一行的证据在提示词里的写法：同语言 `同言語字幕[<来源>]`，他言語 `他言語字幕(<语言>)`。
+List<String> formatProofreadEvidenceLines(
+  SubtitleEvidenceIndex evidence,
+  SubtitleDraftCue cue,
+) => <String>[
+  for (final SubtitleEvidenceMatch m in evidence.matchesFor(
+    cue.startMs,
+    cue.endMs,
+  ))
+    sameSubtitleLanguage(m.track.language, evidence.targetLanguage)
+        ? '    同言語字幕[${m.track.kind == SubtitleEvidenceKind.ocr ? 'OCR' : '字幕'}]: ${m.text}'
+        : '    他言語字幕(${m.track.language}): ${m.text}',
+];
 
 /// 专名表在 S3 提示词里的写法（同 `llm_fix.py --series-glossary`）。
 String formatGlossaryForProofread(SubtitleGlossary glossary) => <String>[
@@ -108,10 +130,14 @@ class SubtitleProofreader {
     required String title,
     required SubtitleGlossary glossary,
     required Directory cacheDir,
+    SubtitleEvidenceIndex? evidence,
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
     void Function(int doneBatches, int totalBatches)? onProgress,
   }) async {
     final String glossaryText = formatGlossaryForProofread(glossary);
+    final SubtitleEvidenceIndex? usable = evidence == null || evidence.isEmpty
+        ? null
+        : evidence;
     final List<(int, int)> ranges = <(int, int)>[
       for (int lo = 0; lo < cues.length; lo += batchSize)
         (lo, lo + batchSize > cues.length ? cues.length : lo + batchSize),
@@ -136,6 +162,7 @@ class SubtitleProofreader {
             title,
             glossaryText,
             cacheDir,
+            usable,
             cancel,
           );
           fixes[index] = r.$1;
@@ -188,6 +215,7 @@ class SubtitleProofreader {
     String title,
     String glossaryText,
     Directory cacheDir,
+    SubtitleEvidenceIndex? evidence,
     SubtitleCancelToken cancel,
   ) async {
     final File cache = File(
@@ -208,6 +236,7 @@ class SubtitleProofreader {
       stablePrefix: buildProofreadStablePrefix(
         title: title,
         glossaryText: glossaryText,
+        withEvidence: evidence != null,
       ),
       body: () => buildProofreadBatchBody(
         cues: cues,
@@ -215,6 +244,7 @@ class SubtitleProofreader {
         hi: hi,
         contextLines: contextLines,
         only: next == lo ? null : <int>{for (int i = next; i < hi; i++) i},
+        evidence: evidence,
       ),
       absorb: (List<String> lines) {
         final int from = next;
@@ -299,9 +329,11 @@ String buildProofreadBatchPrompt({
 String buildProofreadStablePrefix({
   required String title,
   required String glossaryText,
+  bool withEvidence = false,
 }) {
   final List<String> lines = <String>[
     kSubtitleProofreadRules,
+    if (withEvidence) kSubtitleProofreadEvidenceRules,
     '',
     '作品名: $title',
   ];
@@ -321,6 +353,7 @@ String buildProofreadBatchBody({
   required int hi,
   int contextLines = 3,
   Set<int>? only,
+  SubtitleEvidenceIndex? evidence,
 }) {
   final List<String> lines = <String>['\n参考(直前の行、修正不要):'];
   for (int i = lo - contextLines < 0 ? 0 : lo - contextLines; i < lo; i++) {
@@ -336,11 +369,16 @@ String buildProofreadBatchBody({
     }
     lines.add(
       'id=$i [${formatProofreadTime(c.startMs)}-'
-      '${formatProofreadTime(c.endMs)}] 主: ${c.text}',
+      '${formatProofreadTime(c.endMs)}] '
+      '${c.origin != null && !c.origin!.startsWith('lyrics:') ? '主(既存字幕から補完)' : '主'}: '
+      '${c.text}',
     );
     for (int k = 0; k < c.alternatives.length; k++) {
       if (c.alternatives[k].trim().isEmpty) continue;
       lines.add('    候補(${k + 1}): ${c.alternatives[k]}');
+    }
+    if (evidence != null) {
+      lines.addAll(formatProofreadEvidenceLines(evidence, c));
     }
   }
   lines.add('\n参考(直後の行、修正不要):');

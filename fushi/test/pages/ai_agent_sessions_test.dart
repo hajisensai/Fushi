@@ -8,6 +8,8 @@ import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_sessions.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:material_ui/material_ui.dart';
@@ -15,9 +17,18 @@ import 'package:material_ui/material_ui.dart';
 /// 内存里的会话库：行为与 `AiAgentController` 的会话库约定一致（改动后加一
 /// [sessionsRevision]，删当前这场后变成未落库的新对话）。
 class _FakeLibrary extends ChangeNotifier implements AiAgentSessionLibrary {
-  _FakeLibrary(this.sessions, {this.currentSessionId});
+  _FakeLibrary(this.sessions, {this.currentSessionId, this.storedOn});
 
   final List<AiAgentSessionSummary> sessions;
+
+  @override
+  final String? storedOn;
+
+  /// 读列表抛错（远端执行设备连不上）。
+  bool failList = false;
+
+  /// 这几场正在别处打开着：不让删。
+  final Set<String> inUse = <String>{};
   final ValueNotifier<int> _revision = ValueNotifier<int>(0);
   final List<String> calls = <String>[];
 
@@ -40,8 +51,10 @@ class _FakeLibrary extends ChangeNotifier implements AiAgentSessionLibrary {
   ValueListenable<int> get sessionsRevision => _revision;
 
   @override
-  Future<List<AiAgentSessionSummary>> listSessions() async =>
-      List<AiAgentSessionSummary>.of(sessions);
+  Future<List<AiAgentSessionSummary>> listSessions() async {
+    if (failList) throw StateError('unreachable');
+    return List<AiAgentSessionSummary>.of(sessions);
+  }
 
   @override
   Future<bool> switchToSession(String sessionId) async {
@@ -83,14 +96,16 @@ class _FakeLibrary extends ChangeNotifier implements AiAgentSessionLibrary {
   }
 
   @override
-  Future<void> deleteSession(String sessionId) async {
+  Future<bool> deleteSession(String sessionId) async {
     calls.add('delete:$sessionId');
+    if (inUse.contains(sessionId)) return false;
     sessions.removeWhere((AiAgentSessionSummary s) => s.id == sessionId);
     if (currentSessionId == sessionId) {
       currentSessionId = null;
       notifyListeners();
     }
     _revision.value++;
+    return true;
   }
 
   /// 外部改了存档（另一处界面 / 存档写入）：通知列表重读。
@@ -106,16 +121,23 @@ class _FakeLibrary extends ChangeNotifier implements AiAgentSessionLibrary {
   }
 }
 
-AiAgentSessionSummary _summary(String id, String title, int updatedAt) =>
-    AiAgentSessionSummary(
-      id: id,
-      title: title,
-      scene: 'general',
-      profileUid: 'uid-a',
-      totalTokens: 0,
-      createdAt: updatedAt,
-      updatedAt: updatedAt,
-    );
+AiAgentSessionSummary _summary(
+  String id,
+  String title,
+  int updatedAt, {
+  String originPeerId = '',
+  String? originDeviceName,
+}) => AiAgentSessionSummary(
+  id: id,
+  title: title,
+  scene: 'general',
+  profileUid: 'uid-a',
+  totalTokens: 0,
+  createdAt: updatedAt,
+  updatedAt: updatedAt,
+  originPeerId: originPeerId,
+  originDeviceName: originDeviceName,
+);
 
 void main() {
   ThemeData theme({required bool apple}) => buildFushiThemeData(
@@ -273,6 +295,81 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(t.ai_agent_sessions_empty), findsOneWidget);
       expect(find.byKey(aiAgentSessionRowKey('s1')), findsNothing);
+    });
+
+    testWidgets('$ds：BUG-4067 host 端标「来自 X」；远端会话库说明存在哪、读失败说原因', (
+      WidgetTester tester,
+    ) async {
+      final _FakeLibrary local = _FakeLibrary(<AiAgentSessionSummary>[
+        _summary(
+          'r1',
+          '手机问的',
+          2000,
+          originPeerId: 'phone-1',
+          originDeviceName: 'Pixel',
+        ),
+        _summary('r2', '老设备问的', 1500, originPeerId: 'gone'),
+        _summary('s1', '本机问的', 1000),
+      ], currentSessionId: 's1');
+      addTearDown(local.dispose);
+      await pumpList(tester, local, apple: apple);
+      expect(
+        find.descendant(
+          of: find.byKey(aiAgentSessionRowKey('r1')),
+          matching: find.textContaining(
+            t.ai_agent_session_from_device(device: 'Pixel'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(aiAgentSessionRowKey('r2')),
+          matching: find.textContaining(t.ai_agent_session_from_paired_device),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(aiAgentSessionRowKey('s1')),
+          matching: find.textContaining(t.ai_agent_session_from_paired_device),
+        ),
+        findsNothing,
+      );
+
+      final _FakeLibrary remote = _FakeLibrary(<AiAgentSessionSummary>[
+        _summary('h1', '在电脑上问的', 1000),
+      ], storedOn: 'PC');
+      addTearDown(remote.dispose);
+      await pumpList(tester, remote, apple: apple);
+      expect(
+        find.text(t.ai_agent_sessions_remote_hint(device: 'PC')),
+        findsOneWidget,
+      );
+      expect(find.text(t.ai_agent_sessions_retention_hint), findsNothing);
+
+      remote.failList = true;
+      remote.bump();
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.ai_agent_remote_unreachable(device: 'PC')),
+        findsOneWidget,
+      );
+      expect(find.text('在电脑上问的'), findsOneWidget, reason: '列表保留上一次读到的');
+    });
+
+    testWidgets('$ds：首次读列表就失败：不转圈，空态 + 原因', (WidgetTester tester) async {
+      final _FakeLibrary remote = _FakeLibrary(
+        <AiAgentSessionSummary>[],
+        storedOn: 'PC',
+      )..failList = true;
+      addTearDown(remote.dispose);
+      await pumpList(tester, remote, apple: apple);
+      expect(find.byType(FushiCircularProgressIndicator), findsNothing);
+      expect(
+        find.text(t.ai_agent_remote_unreachable(device: 'PC')),
+        findsOneWidget,
+      );
     });
   }
 }

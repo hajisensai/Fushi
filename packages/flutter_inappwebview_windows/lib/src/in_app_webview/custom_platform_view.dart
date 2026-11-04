@@ -231,7 +231,16 @@ class CustomPlatformViewController
   int _textureId = 0;
   bool _isDisposed = false;
 
-  Future<void> get ready => _creatingCompleter.future;
+  /// native 实例的创建结果：成功 true，失败 false。
+  ///
+  /// BUG-4073：创建失败的异常只走一条上报路径——[initialize] rethrow →
+  /// [CustomPlatformView.onCreationError]。尺寸 / 位置上报这类「等创建完成再干活」
+  /// 的等待者只需要知道成没成；若它们直接 await 带错误的 completer，同一个
+  /// PlatformException 会作为未捕获异常再冒两次（崩溃报告里的「× 多次」）。
+  /// 构造时就挂上监听，保证 completer 的错误不会因暂无监听者被当成未处理。
+  late final Future<bool> created = _creatingCompleter.future.then(
+      (_) => true,
+      onError: (Object _, StackTrace __) => false);
 
   late MethodChannel _methodChannel;
   late EventChannel _eventChannel;
@@ -256,7 +265,10 @@ class CustomPlatformViewController
   Stream<SystemMouseCursor> get _cursor => _cursorStreamController.stream;
 
   CustomPlatformViewController()
-      : super(CustomFlutterViewControllerValue.uninitialized());
+      : super(CustomFlutterViewControllerValue.uninitialized()) {
+    // 立即求值 late final，让监听在 completer 可能 completeError 之前就挂上。
+    unawaited(created);
+  }
 
   /// Initializes the underlying platform view.
   ///
@@ -780,7 +792,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     // 先等 native WebView2 跨帧创建完成；await 之后旧的 box/context 可能已随
     // widget 销毁/重建失效（TODO-965），必须复检 mounted 并重新取 box，
     // 否则 View.of 返回 null 被 `!` 解引用、box.localToGlobal 崩溃。
-    await _controller.ready;
+    if (!await _controller.created) return;
     if (!mounted) return;
     final BuildContext? context = _key.currentContext;
     final RenderBox? box = context?.findRenderObject() as RenderBox?;
@@ -855,7 +867,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   }
 
   void _reportWidgetPosition() async {
-    await _controller.ready;
+    if (!await _controller.created) return;
     if (!mounted) return;
     final BuildContext? context = _key.currentContext;
     final RenderBox? box = context?.findRenderObject() as RenderBox?;

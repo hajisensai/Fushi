@@ -2201,7 +2201,16 @@ jobs:
             echo "::error title=Unexpected bundle id::${bundle_id}（TCC 授权按 bundle id 钉，改包名等于让所有用户重新授权，须同步这里）"
             exit 1
           fi
+          # 主屏小组件扩展：前面几轮 `--deep` 重签把它的沙盒 / App Group entitlements 洗掉了，
+          # WidgetKit 不载不在沙盒里的扩展，先单独带 entitlements 重签它（ad-hoc 没有 Team，
+          # 组名不带前缀，与 Xcode 展开的 Info.plist 兜底值一致）。外层也带上展开后的
+          # entitlements，主 app 读写同一个组容器。
+          bash fushi/tool/apple/macos_widgets_sign.sh appex "$app_dir" app.fushi.reader \
+            --sign - --timestamp=none
+          bash fushi/tool/apple/macos_widgets_sign.sh entitlements \
+            fushi/macos/Runner/Release.entitlements app.fushi.reader "$RUNNER_TEMP/fushi-app.entitlements"
           codesign --force --sign - --timestamp=none \
+            --entitlements "$RUNNER_TEMP/fushi-app.entitlements" \
             -r="designated => identifier \"$bundle_id\"" "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
           designated="$(codesign -d -r- "$app_dir" 2>&1 | grep '^designated')"
@@ -2259,10 +2268,17 @@ jobs:
         if: steps.signing.outputs.macos_signed == 'true'
         working-directory: fushi
         shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           APP="build/macos/Build/Products/Release/fushi.app"
-          ENTITLEMENTS="macos/Runner/Release.entitlements"
+          # Release.entitlements 里的 App Group 是 Xcode 变量，codesign 不展开：按 Team ID
+          # 生成展开后的副本（macOS 组名必须带 Team 前缀，Developer ID 下无需描述文件）。
+          WIDGETS_GROUP="$APPLE_TEAM_ID.app.fushi.reader"
+          ENTITLEMENTS="$RUNNER_TEMP/fushi-app-developer-id.entitlements"
+          bash tool/apple/macos_widgets_sign.sh entitlements \
+            macos/Runner/Release.entitlements "$WIDGETS_GROUP" "$ENTITLEMENTS"
           JVM_ENTITLEMENTS="$RUNNER_TEMP/mihon-jvm.entitlements"
           if [ ! -d "$APP" ]; then
             echo "::error title=macOS app missing::Expected $APP"
@@ -2345,6 +2361,11 @@ jobs:
             echo "signing bundle: $item"
             sign_one "$item"
           done < <(find "$APP/Contents/Frameworks" -maxdepth 1 -name '*.framework' -print0 2>/dev/null)
+          # 主屏小组件扩展：上面逐个 Mach-O 的重签不带 entitlements，扩展要带回沙盒与 App Group
+          # 才会被 WidgetKit 加载（内层先于外层）。
+          bash tool/apple/macos_widgets_sign.sh appex "$APP" "$WIDGETS_GROUP" \
+            --timestamp --options runtime \
+            --keychain "$MACOS_KEYCHAIN_PATH" --sign "$MACOS_SIGN_IDENTITY"
           codesign --force --timestamp --options runtime \
             --entitlements "$ENTITLEMENTS" \
             --keychain "$MACOS_KEYCHAIN_PATH" \
@@ -2993,6 +3014,7 @@ jobs:
         shell: bash
         env:
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_WIDGETS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_WIDGETS_PROVISIONING_PROFILE_BASE64 }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
@@ -3007,7 +3029,7 @@ jobs:
           APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")"
           PROFILE_BUNDLE_ID="${APP_ID#*.}"
           EXPECTED_BUNDLE_ID="$(sed -n 's/.*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' \
-            fushi/ios/Runner.xcodeproj/project.pbxproj | grep -v RunnerTests | head -n 1)"
+            fushi/ios/Runner.xcodeproj/project.pbxproj | grep -v -e RunnerTests -e '\.widgets$' | head -n 1)"
           if [ "$PROFILE_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]; then
             echo "::error title=Provisioning profile mismatch::Profile is for '$PROFILE_BUNDLE_ID' but Runner builds '$EXPECTED_BUNDLE_ID'. A wildcard profile cannot be used for App Store distribution."
             exit 1
@@ -3032,19 +3054,97 @@ jobs:
             echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
             echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
           } >> fushi/ios/Flutter/Release.xcconfig
-          # APNs 推送（反馈回复，fushi/ios/Runner/Runner.entitlements）：只有描述文件本身带
-          # aps-environment（App ID 已勾 Push Notifications 并重新生成描述文件）才接入那份
-          # entitlements——描述文件没有这项却签进去，codesign 会直接失败。值取描述文件里的
-          # （App Store 描述文件 = production），不在仓库里写死。
+          # fushi/ios/Runner/Runner.entitlements 列出 app 要的全部 entitlement，但描述文件
+          # 没授予的任何一项签进去 codesign 都直接失败（App ID 勾了能力还要重新生成描述
+          # 文件并更新 IOS_PROVISIONING_PROFILE_BASE64）。所以逐项对照描述文件：授予了才
+          # 保留，没授予就从 runner 上这份 Runner.entitlements 删掉（不入库）；至少剩一项
+          # 才接入 CODE_SIGN_ENTITLEMENTS。FushiWidgets 扩展的 entitlements 同一规则，对照的
+          # 是扩展自己那份描述文件（app.fushi.reader.widgets）。
+          ENTITLEMENTS_FILE="fushi/ios/Runner/Runner.entitlements"
+          WIDGETS_ENTITLEMENTS_FILE="fushi/ios/FushiWidgets/FushiWidgets.entitlements"
+          WIRE_ENTITLEMENTS=0
+          # APNs 推送（反馈回复）：值取描述文件里的（App Store 描述文件 = production），
+          # 不在仓库里写死。
           APS_ENV="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST" 2>/dev/null || true)"
           if [ -n "$APS_ENV" ]; then
-            {
-              echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements"
-              echo "FUSHI_APS_ENVIRONMENT = $APS_ENV"
-            } >> fushi/ios/Flutter/Release.xcconfig
+            echo "FUSHI_APS_ENVIRONMENT = $APS_ENV" >> fushi/ios/Flutter/Release.xcconfig
+            WIRE_ENTITLEMENTS=1
             echo "APNs push entitlement enabled (aps-environment=$APS_ENV)"
           else
+            /usr/libexec/PlistBuddy -c 'Delete :aps-environment' "$ENTITLEMENTS_FILE"
             echo "Provisioning profile has no aps-environment: building without push (feedback replies fall back to background checks)"
+          fi
+          # BUG-4013：扩展虚拟地址空间。iOS 进程默认的地址空间被词典映射 / WebKit / Dart
+          # 堆吃满后任何分配都 abort；这项 entitlement 让系统给更大的地址空间。
+          EXTENDED_VA="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.kernel.extended-virtual-addressing' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ "$EXTENDED_VA" = "true" ]; then
+            WIRE_ENTITLEMENTS=1
+            echo "Extended virtual addressing entitlement enabled"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.extended-virtual-addressing' "$ENTITLEMENTS_FILE"
+            echo "::warning title=Extended virtual addressing missing::The provisioning profile does not grant com.apple.developer.kernel.extended-virtual-addressing. Enable it on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4013)."
+          fi
+          # 主屏小组件 / Live Activity（FushiWidgets 扩展）的 App Group：主 app 描述文件带
+          # group 才保留这项；扩展那份描述文件（app.fushi.reader.widgets）也逐项对照它的
+          # entitlement（App Group 是扩展唯一的 entitlement，也是扩展能读快照的前提）。缺任何
+          # 一样就把这项从 Runner.entitlements 删掉，并把扩展 target 从工程里摘掉
+          # （tool/apple/widgets_target.rb strip），主 app 照常上传，小组件不出现。
+          APP_GROUP=group.app.fushi.reader
+          WIDGETS_BUNDLE_ID="${PROFILE_BUNDLE_ID}.widgets"
+          WIDGETS=false
+          WIDGETS_PROFILE_NAME=""
+          WIDGETS_NOTE="IOS_WIDGETS_PROVISIONING_PROFILE_BASE64 not set"
+          if /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$PROFILE_PLIST" 2>/dev/null | grep -qF "$APP_GROUP"; then
+            if [ -n "${IOS_WIDGETS_PROVISIONING_PROFILE_BASE64:-}" ]; then
+              W_PATH="$RUNNER_TEMP/fushi-widgets.mobileprovision"
+              W_PLIST="$RUNNER_TEMP/fushi-widgets-profile.plist"
+              printf '%s' "$IOS_WIDGETS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$W_PATH"
+              security cms -D -i "$W_PATH" > "$W_PLIST"
+              W_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$W_PLIST")"
+              if [ "${W_APP_ID#*.}" != "$WIDGETS_BUNDLE_ID" ]; then
+                WIDGETS_NOTE="widgets profile is for ${W_APP_ID#*.}, expected $WIDGETS_BUNDLE_ID"
+              elif ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$W_PLIST" 2>/dev/null | grep -qF "$APP_GROUP"; then
+                WIDGETS_NOTE="widgets profile has no App Group $APP_GROUP"
+              else
+                WIDGETS_PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$W_PLIST")"
+                W_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$W_PLIST")"
+                cp "$W_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$W_UUID.mobileprovision"
+                WIDGETS=true
+              fi
+              rm -f "$W_PATH" "$W_PLIST"
+            fi
+          else
+            WIDGETS_NOTE="main profile has no App Group $APP_GROUP"
+          fi
+          if [ "$WIDGETS" = true ]; then
+            WIRE_ENTITLEMENTS=1
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' "$ENTITLEMENTS_FILE"
+            GEM_HOME="$(gem env gemdir)" ruby fushi/tool/apple/widgets_target.rb strip ios
+            echo "::notice title=Home screen widgets not signed::$WIDGETS_NOTE. The TestFlight build ships without the widget extension (docs/agent/apple-signing.md「主屏小组件」)."
+          fi
+          if [ "$WIRE_ENTITLEMENTS" = 1 ]; then
+            echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements" >> fushi/ios/Flutter/Release.xcconfig
+            plutil -lint "$ENTITLEMENTS_FILE"
+          fi
+          WIDGETS_EXPORT=""
+          if [ "$WIDGETS" = true ]; then
+            # 扩展 target 的 base configuration；与 Runner 同一张证书，各自一份描述文件。
+            # 扩展 entitlements 里剩下的项（App Group）上面已对照扩展描述文件确认过。
+            plutil -lint "$WIDGETS_ENTITLEMENTS_FILE"
+            {
+              echo ""
+              echo "// Injected by .github/workflows/release-desktop.yml for the TestFlight build."
+              echo "CODE_SIGN_STYLE = Manual"
+              echo "DEVELOPMENT_TEAM = $APPLE_TEAM_ID"
+              echo "PROVISIONING_PROFILE_SPECIFIER = $WIDGETS_PROFILE_NAME"
+              echo "CODE_SIGN_IDENTITY = Apple Distribution"
+              echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
+              echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
+              echo "CODE_SIGN_ENTITLEMENTS = FushiWidgets/FushiWidgets.entitlements"
+            } >> fushi/ios/Flutter/FushiWidgets.xcconfig
+            WIDGETS_EXPORT="<key>${WIDGETS_BUNDLE_ID}</key><string>${WIDGETS_PROFILE_NAME}</string>"
+            echo "Home screen widgets enabled (App Group $APP_GROUP, profile $WIDGETS_PROFILE_NAME)"
           fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -3059,6 +3159,7 @@ jobs:
             <key>provisioningProfiles</key>
             <dict>
               <key>${PROFILE_BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+              ${WIDGETS_EXPORT}
             </dict>
             <key>uploadSymbols</key><true/>
             <key>manageAppVersionAndBuildNumber</key><false/>

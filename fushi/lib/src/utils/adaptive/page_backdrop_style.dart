@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+
+import 'package:fushi/src/models/home_tab.dart';
 
 /// 页面背景（路由层 `FushiPageBackdrop` 垫在每一页下面的那层）的可切换样式。
 ///
@@ -105,11 +109,20 @@ const String kPageBackdropLandscapeImagePrefKey =
 const String kPageBackdropPortraitImagePrefKey = 'page_backdrop_image_portrait';
 const String kPageBackdropSeedCachePrefKey = 'page_backdrop_seed_cache';
 
+/// 按模块单独设的背景预设（反馈 DYI1IOZxSM）：JSON 对象 `{模块 wire: 预设 wire}`，
+/// 没出现的模块跟随全局。样式类，随 Profile 走。
+const String kPageBackdropModulePresetsPrefKey = 'page_backdrop_module_presets';
+
+/// 按模块单独设的背景图片：JSON 对象
+/// `{模块 wire: {"landscape": 路径, "portrait": 路径}}`。文件只在这台设备上，设备本地。
+const String kPageBackdropModuleImagesPrefKey = 'page_backdrop_module_images';
+
 /// 设备本地的那几个键（图片文件路径 + 取色缓存）。
 const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
   kPageBackdropLandscapeImagePrefKey,
   kPageBackdropPortraitImagePrefKey,
   kPageBackdropSeedCachePrefKey,
+  kPageBackdropModuleImagesPrefKey,
 ];
 
 /// 当前生效的页面背景设置（不可变快照）。
@@ -229,3 +242,170 @@ String? existingPageBackdropImagePath(
 /// Riverpod）。
 final ValueNotifier<PageBackdropSettings> pageBackdropSettings =
     ValueNotifier<PageBackdropSettings>(const PageBackdropSettings());
+
+// ── 按模块单独设置（反馈 DYI1IOZxSM，2026-11-04）─────────────────────────────
+//
+// 「模块」= 主导航顶层 tab（[HomeTab]）。某个模块单独设了预设（可以是自定义图片）
+// 就用它，没设的模块用全局背景。只覆盖「画什么」（预设 + 图片）：强度 / 模糊 /
+// 遮罩 / 漂移动效沿用全局；**应用配色只取全局背景图**（用户要求主题配色全局统一，
+// 不随模块切换变色），所以模块图片不参与取色。
+
+/// 模块在偏好里的 wire（冻结：改了等于数据迁移）。不直接用 `HomeTab.name`，
+/// 免得枚举改名悄悄丢掉用户的设置。
+String pageBackdropModuleWire(HomeTab tab) => switch (tab) {
+  HomeTab.home => 'home',
+  HomeTab.books => 'books',
+  HomeTab.manga => 'manga',
+  HomeTab.video => 'video',
+  HomeTab.music => 'music',
+  HomeTab.browse => 'browse',
+  HomeTab.dictionaries => 'dictionaries',
+  HomeTab.srs => 'srs',
+  HomeTab.games => 'games',
+  HomeTab.web => 'web',
+  HomeTab.settings => 'settings',
+};
+
+/// [pageBackdropModuleWire] 的反向；认不出的返回 null（旧版本 / 别的设备写的）。
+HomeTab? pageBackdropModuleFromWire(Object? raw) {
+  for (final HomeTab tab in HomeTab.values) {
+    if (pageBackdropModuleWire(tab) == raw) return tab;
+  }
+  return null;
+}
+
+/// 某个模块单独设的背景（不可变）。
+@immutable
+class PageBackdropModuleOverride {
+  const PageBackdropModuleOverride({
+    required this.preset,
+    this.landscapeImagePath,
+    this.portraitImagePath,
+  });
+
+  final PageBackdropPreset preset;
+
+  /// 本模块的横屏图（以及没单独设竖屏图时的竖屏图）；已核对过存在。
+  final String? landscapeImagePath;
+
+  /// 本模块竖屏单独用的图；null = 与本模块横屏图共用。
+  final String? portraitImagePath;
+
+  /// 选了自定义图片却没有可用的图（换了设备 / 文件被删）时，这个模块退回全局。
+  bool get usable =>
+      preset != PageBackdropPreset.custom || landscapeImagePath != null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PageBackdropModuleOverride &&
+      other.preset == preset &&
+      other.landscapeImagePath == landscapeImagePath &&
+      other.portraitImagePath == portraitImagePath;
+
+  @override
+  int get hashCode =>
+      Object.hash(preset, landscapeImagePath, portraitImagePath);
+}
+
+/// 把模块单独的设置叠到全局设置上：没设 / 不可用时原样返回全局。
+PageBackdropSettings resolvePageBackdropSettings(
+  PageBackdropSettings global,
+  PageBackdropModuleOverride? override,
+) {
+  if (override == null || !override.usable) return global;
+  return global.copyWith(
+    preset: override.preset,
+    landscapeImagePath: () => override.landscapeImagePath,
+    portraitImagePath: () => override.portraitImagePath,
+  );
+}
+
+/// 解析 [kPageBackdropModulePresetsPrefKey] 的值：坏 JSON / 认不出的模块或预设
+/// 一律跳过（等于那个模块跟随全局）。
+Map<HomeTab, PageBackdropPreset> decodePageBackdropModulePresets(Object? raw) {
+  final Map<String, Object?> json = _decodeJsonObject(raw);
+  final Map<HomeTab, PageBackdropPreset> out = <HomeTab, PageBackdropPreset>{};
+  json.forEach((String key, Object? value) {
+    final HomeTab? tab = pageBackdropModuleFromWire(key);
+    if (tab == null || value is! String) return;
+    final PageBackdropPreset? preset = _presetFromWireOrNull(value);
+    if (preset != null) out[tab] = preset;
+  });
+  return out;
+}
+
+String encodePageBackdropModulePresets(Map<HomeTab, PageBackdropPreset> map) =>
+    jsonEncode(<String, String>{
+      for (final MapEntry<HomeTab, PageBackdropPreset> e in map.entries)
+        pageBackdropModuleWire(e.key): e.value.wire,
+    });
+
+/// 某个模块的两张图片路径（未核对存在与否）。
+typedef PageBackdropModuleImages = ({String? landscape, String? portrait});
+
+/// 解析 [kPageBackdropModuleImagesPrefKey] 的值；空串路径视为没有。
+Map<HomeTab, PageBackdropModuleImages> decodePageBackdropModuleImages(
+  Object? raw,
+) {
+  final Map<String, Object?> json = _decodeJsonObject(raw);
+  final Map<HomeTab, PageBackdropModuleImages> out =
+      <HomeTab, PageBackdropModuleImages>{};
+  json.forEach((String key, Object? value) {
+    final HomeTab? tab = pageBackdropModuleFromWire(key);
+    if (tab == null || value is! Map) return;
+    String? path(Object? v) => v is String && v.isNotEmpty ? v : null;
+    final PageBackdropModuleImages images = (
+      landscape: path(value['landscape']),
+      portrait: path(value['portrait']),
+    );
+    if (images.landscape != null || images.portrait != null) {
+      out[tab] = images;
+    }
+  });
+  return out;
+}
+
+String encodePageBackdropModuleImages(
+  Map<HomeTab, PageBackdropModuleImages> map,
+) => jsonEncode(<String, Object>{
+  for (final MapEntry<HomeTab, PageBackdropModuleImages> e in map.entries)
+    if (e.value.landscape != null || e.value.portrait != null)
+      pageBackdropModuleWire(e.key): <String, String>{
+        if (e.value.landscape case final String l) 'landscape': l,
+        if (e.value.portrait case final String p) 'portrait': p,
+      },
+});
+
+/// 偏好值不是 JSON 对象（缺键、空串、坏数据）时按「没有任何模块单独设置」处理。
+Map<String, Object?> _decodeJsonObject(Object? raw) {
+  if (raw is! String || raw.isEmpty) return const <String, Object?>{};
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    return const <String, Object?>{};
+  }
+  return decoded is Map<String, Object?> ? decoded : const <String, Object?>{};
+}
+
+PageBackdropPreset? _presetFromWireOrNull(String raw) {
+  for (final PageBackdropPreset preset in PageBackdropPreset.values) {
+    if (preset.wire == raw) return preset;
+  }
+  return null;
+}
+
+/// 全局发布点：各模块单独设的背景（只含有设置的模块）。`ThemeNotifier` 写入，
+/// 路由层背景与设置页监听。
+final ValueNotifier<Map<HomeTab, PageBackdropModuleOverride>>
+pageBackdropModuleOverrides =
+    ValueNotifier<Map<HomeTab, PageBackdropModuleOverride>>(
+      const <HomeTab, PageBackdropModuleOverride>{},
+    );
+
+/// [module] 实际生效的背景设置（null = 不属于任何模块，用全局）。
+PageBackdropSettings pageBackdropSettingsFor(HomeTab? module) =>
+    resolvePageBackdropSettings(
+      pageBackdropSettings.value,
+      module == null ? null : pageBackdropModuleOverrides.value[module],
+    );

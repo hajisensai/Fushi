@@ -236,12 +236,12 @@ void main() {
       expect(cap.dictionaryMedia.single.bytes, <int>[9, 9]);
     });
 
-    // 「制卡所在字符数」标签（`chars_12345`）：小说阅读器算好字面量放进
+    // 制卡位置文本（写进 MiscInfo，反馈 MhQHXQI-sB）：小说阅读器格式化好放进
     // AnkiMiningContext，远端制卡时必须原样搬进转发 payload——否则卡落在主机上
-    // 就只有本机才有这条标签，同一本书两台设备制的卡对不上。
+    // 就丢了位置，同一本书两台设备制的卡对不上。
     // 撤掉 remote_mining_anki_repository.dart 里
-    // `charPositionTag: context.charPositionTag` 这一行 → 第一条断言红。
-    test('制卡位置标签从 context 搬进转发 payload', () async {
+    // `charPositionText: context.charPositionText` 这一行 → 第一条断言红。
+    test('制卡位置从 context 搬进转发 payload', () async {
       final _FakeSender sender = _FakeSender(<String, dynamic>{
         'result': 'success',
       });
@@ -257,18 +257,18 @@ void main() {
         context: const AnkiMiningContext(
           sentence: '猫がいる',
           source: AnkiMiningSource.book,
-          charPositionTag: 'chars_12345',
+          charPositionText: '制卡位置：第 12345 字',
         ),
       );
-      expect(sender.captured!.charPositionTag, 'chars_12345');
+      expect(sender.captured!.charPositionText, '制卡位置：第 12345 字');
 
       // 开关关闭 / 非小说来源 / 锚点取不到 → context 侧就是 null，转发也保持 null
-      // （主机端 buildNoteTags 不追加，绝不补一个 chars_0）。
+      // （主机端不写 MiscInfo 位置，绝不补一个「第 0 字」）。
       await repo.mineEntry(
         rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '犬'}),
         context: const AnkiMiningContext(sentence: '犬がいる'),
       );
-      expect(sender.captured!.charPositionTag, isNull);
+      expect(sender.captured!.charPositionText, isNull);
     });
 
     test('http 单词音频不搬字节（留给服务端下载）', () async {
@@ -319,6 +319,36 @@ void main() {
         MineResult.error,
       );
       expect(await run(null), MineResult.error); // 无可达主机
+    });
+
+    test('主机侧 Anki 落卡失败（反馈 E52FUMdbR6）：分类成「已配对设备制卡失败」，主机原因与分类码不丢', () async {
+      const String hostReason =
+          'Could not connect to Anki: connection refused.';
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(<String, dynamic>{
+          'result': 'error',
+          'message': hostReason,
+          'detail': 'SocketException: Connection refused',
+          'errorCode': AnkiErrorCode.connectionRefused,
+        }),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceMineFailed);
+      expect(outcome.errorDetail, hostReason);
+      expect(
+        outcome.error.toString(),
+        contains(AnkiErrorCode.connectionRefused),
+      );
+      expect(outcome.error.toString(), contains('Connection refused'));
     });
 
     test('不可达提示说明失败结果和恢复路径，不暴露内部术语', () async {

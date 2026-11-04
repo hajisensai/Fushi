@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
@@ -13,6 +17,7 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
@@ -76,6 +81,12 @@ Future<List<FushiClientUrl>> loadDownloadExecutionHostUrls(
       .where((FushiClientUrl u) => u.enabled)
       .toList(growable: false);
 }
+
+/// 「下载执行设备」那一行的设置项 id（搜索落点 / 跨页跳转的定位挂点）。
+///
+/// 「AI › AI 下视频」里的「交给互联电脑办」是指向这一行的链接（反馈 sOLqsIv6R9：
+/// 同一偏好只在下载页渲染一份控件），跳转时把它写进 `SettingsSearchReveal`。
+const String kDownloadExecutionHostSettingsItemId = 'downloads.execution_host';
 
 /// 下载目录不可用原因的人读文案。设置页与控制通道共用。
 String downloadSaveRootIssueMessage(DownloadSaveRootIssue issue) {
@@ -162,7 +173,6 @@ class _TorrentSettingsSectionState
     final List<FushiClientUrl> enabled = await loadDownloadExecutionHostUrls(
       ref.read(appProvider),
     );
-    if (enabled.isEmpty) return;
     if (mounted) {
       setState(() {
         _pairedUrls = enabled;
@@ -542,36 +552,88 @@ class _TorrentSettingsSectionState
     );
   }
 
-  /// 「下载执行设备」：新任务默认投给哪台已配对的互联 host（设计 §3.3，手机让
-  /// 电脑下）。这一层在「后端」之上——手机不需要知道电脑用的是内置引擎还是外接
-  /// qb。没配对任何 host 时不渲染：只剩「本机」一个选项。
+  /// 互联模块在当前平台 / 模块开关下可见时才给「去配对」入口（关掉时只留说明，不推
+  /// 一个空页面）。prefs 没就绪（测试 seam / 极早期）按不可见处理。
+  bool _interconnectVisible(AppModel appModel) =>
+      appModel.isPreferencesReady &&
+      isSettingsDestinationVisible(
+        SettingsDestinationId.interconnect,
+        appModel.moduleVisibility,
+      );
+
+  Future<void> _openInterconnectSettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => Scaffold(
+          body: SafeArea(
+            child: ModuleSettingsView.route(
+              destinationId: SettingsDestinationId.interconnect,
+              title: t.settings_destination_interconnect,
+            ),
+          ),
+        ),
+      ),
+    );
+    // 从互联页回来可能刚配好一台：重新读配对清单。
+    if (mounted) unawaited(_loadPairedHosts());
+  }
+
+  /// 「下载执行设备」：新任务（含 AI 下视频的整场对话）默认投给哪台已配对的互联
+  /// host（设计 §3.3，手机让电脑下）。这一层在「后端」之上——手机不需要知道电脑用的
+  /// 是内置引擎还是外接 qb。
+  ///
+  /// 没配对任何 host 时也渲染一行（说明 + 去配对），而不是整行消失：AI 设置页的
+  /// 「交给互联电脑办」链接落在这一行上，未配对时用户得在落点看到这条路怎么打通。
   Widget _executionHostRow(AppModel appModel) {
     return SettingsSearchTarget(
-      key: const ValueKey<String>('downloads.execution_host'),
-      id: 'downloads.execution_host',
-      child: AdaptiveSettingsPickerRow<String>(
-        key: const ValueKey<String>('downloads-execution-host'),
-        title: t.download_execution_host_title,
-        subtitle: t.download_execution_host_hint,
-        selected: _executionHostValue(appModel),
-        options: <AdaptiveSettingsPickerOption<String>>[
+      key: const ValueKey<String>(kDownloadExecutionHostSettingsItemId),
+      id: kDownloadExecutionHostSettingsItemId,
+      child: _pairedHosts.isEmpty
+          ? _executionHostUnpairedRow(appModel)
+          : _executionHostPickerRow(appModel),
+    );
+  }
+
+  Widget _executionHostUnpairedRow(AppModel appModel) {
+    final bool canPair = _interconnectVisible(appModel);
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('downloads-execution-host-unpaired'),
+      title: t.download_execution_host_title,
+      subtitle: t.download_execution_host_unpaired,
+      trailing: canPair
+          ? FushiIcon(
+              FushiIcons.chevronRight,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            )
+          : null,
+      onTap: canPair ? () => unawaited(_openInterconnectSettings()) : null,
+    );
+  }
+
+  Widget _executionHostPickerRow(AppModel appModel) {
+    return AdaptiveSettingsPickerRow<String>(
+      key: const ValueKey<String>('downloads-execution-host'),
+      title: t.download_execution_host_title,
+      subtitle: t.download_execution_host_hint,
+      selected: _executionHostValue(appModel),
+      options: <AdaptiveSettingsPickerOption<String>>[
+        AdaptiveSettingsPickerOption<String>(
+          value: '',
+          label: t.download_target_local,
+        ),
+        for (final FushiClientUrl host in _pairedHosts)
           AdaptiveSettingsPickerOption<String>(
-            value: '',
-            label: t.download_target_local,
-          ),
-          for (final FushiClientUrl host in _pairedHosts)
-            AdaptiveSettingsPickerOption<String>(
-              value: host.url,
-              label: t.download_target_remote(
-                device: host.deviceName ?? host.url,
-              ),
+            value: host.url,
+            label: t.download_target_remote(
+              device: host.deviceName ?? host.url,
             ),
-        ],
-        onChanged: (String value) async {
-          await appModel.prefsRepo.setDownloadExecutionHostUrl(value);
-          if (mounted) setState(() {});
-        },
-      ),
+          ),
+      ],
+      onChanged: (String value) async {
+        await appModel.prefsRepo.setDownloadExecutionHostUrl(value);
+        if (mounted) setState(() {});
+      },
     );
   }
 
@@ -632,11 +694,10 @@ class _TorrentSettingsSectionState
     // 分组行、靠自绘小节标题和内部分割线分段」。
     final List<Widget> groups = <Widget>[
       if (common) ...<Widget>[
-        if (_pairedHosts.isNotEmpty)
-          _group(
-            key: 'downloads.group.execution_host',
-            rows: <Widget>[_executionHostRow(appModel)],
-          ),
+        _group(
+          key: 'downloads.group.execution_host',
+          rows: <Widget>[_executionHostRow(appModel)],
+        ),
         // BUG-1207：无内置引擎的平台（现在只剩 iOS）不渲染选择器——选择器里放一个
         // 够不着的档位，选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，
         // 比没有选项更糟。改为一句说明交代本平台只有外接 qb。

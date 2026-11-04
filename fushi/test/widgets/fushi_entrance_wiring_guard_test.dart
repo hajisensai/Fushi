@@ -98,6 +98,9 @@ void main() {
       // 同步冲突 / 复习完成页。
       'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
       'lib/src/pages/implementations/srs/srs_browse_page.dart',
+      // 2026-11-04 卡片浏览器重设计：检查器（编辑 / 历史页签）、表格 / 出处视图。
+      'lib/src/pages/implementations/srs/srs_browse_inspector.dart',
+      'lib/src/pages/implementations/srs/srs_browse_views.dart',
       // 表单类页面（笔记编辑 / 更改笔记类型 / 笔记类型编辑…）共用的分栏正文
       // SrsAdaptiveSections：窗口与逐项包装都在这里，页面经它接入（见下一条）。
       'lib/src/pages/implementations/srs/srs_ui.dart',

@@ -898,6 +898,14 @@ pub(crate) fn sync2_dispatch(
         })?;
         return Ok(json!({"filled": n}));
     }
+    // 补出处分组键列（srs.db v25 / Dart 缓存修订号 10；只改笔记缓存的这一列，不算缓存写入，不要缓存配置）。
+    if op == "backfill_source_keys" {
+        let w = c.writer()?;
+        let n = crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::caches::backfill_source_keys(conn, profile)
+        })?;
+        return Ok(json!({"filled": n}));
+    }
     if PROJECTING_OPS.contains(&op)
         || op == "refresh_caches"
         || op == "rebuild_caches"
@@ -1089,6 +1097,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "anki_dupes",
     "anki_tags",
     "browse_stats",
+    "browse_counts",
+    "browse_sources",
     "outbox",
     "outbox_ack",
     "head",
@@ -1137,6 +1147,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "restore",
     "backfill_dupe_norms",
     "backfill_tag_sources",
+    "backfill_source_keys",
 ];
 
 const PROJECTING_OPS: &[&str] = &[
@@ -1221,9 +1232,8 @@ fn sync2_command(
         // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭；AnkiConnect 的
         // 搜索 / 查重 / 标签走同一个会话。
         "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close"
-        | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" => {
-            c.browse(op, profile, req, files)?
-        }
+        | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" | "browse_counts"
+        | "browse_sources" => c.browse(op, profile, req, files)?,
         // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。
         "lineages" => {
             let cards: Vec<String> = req

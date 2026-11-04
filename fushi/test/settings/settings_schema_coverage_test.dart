@@ -876,16 +876,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add work title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
       'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
-  // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo
+  // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB，原「chars_12345 标签」）。写 prefsRepo
   // （changed=true），真正的消费点在制卡路径 reader_fushi/mining.part.dart 的
-  // charPositionTag（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
-  // 也没有 Anki，探不到「卡上真带了这个 tag」。两端各有专项测试咬住：注入点由源码
-  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），tag 装配由
-  // fushi_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
-  'cardCreation/Auto-add mining position to tags':
+  // charPositionText（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
+  // 也没有 Anki，探不到「卡上 MiscInfo 真写了位置」。两端各有专项测试咬住：注入点由源码
+  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），落字段由
+  // fushi_anki 的 charPositionTargetField / buildMinedFields 用例钉死。
+  'cardCreation/Write mining position to MiscInfo':
       'test/pages/reader_mining_char_position_tag_guard_test.dart + '
-      'packages/fushi_anki/test/mining_tag_and_parallel_test.dart '
-      '(charPositionTag group)',
+      'packages/fushi_anki/test/mining_char_position_misc_info_test.dart',
   // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
   // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
   // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
@@ -1580,7 +1579,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 八个媒体类型绑定写的是 `media_type_profiles` 表，getAllPrefs() 的 diff 结构上
   // 看不到。穷尽断言「每个 ProfileMediaKind 都有绑定行」+ 表级往返 + resolveProfileId
   // 优先级链共同咬住；epub/srtbook/audiobook/lyrics 四类共用同一条
-  // resolveProfileId/autoApplyBinding 链，没有逐类型 guard。
+  // resolveProfileId/enterWorkSession 链，没有逐类型 guard。
   'profiles/Book': _kMediaTypeBindingEvidence,
   'profiles/Subtitle book': _kMediaTypeBindingEvidence,
   'profiles/Audiobook': _kMediaTypeBindingEvidence,
@@ -1732,10 +1731,23 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'ai/TVmaze':
       'test/settings/ai_web_knowledge_settings_test.dart + '
       'test/ai/web_knowledge_test.dart',
+  // 联网搜索后端（SearXNG / Brave）：生效点是字幕生成装配歌词补齐的查词后端（有可用
+  // 配置时加 WebSearchSubtitleLyricsFinder），harness 里没有字幕管线。生效测试从设置项
+  // 的写入助手一路走到服务交给管线的 lyricsFinder；偏好读写与客户端（含抓页 SSRF 防护）
+  // 各有窄测试。
+  'ai/Search backend':
+      'test/media/video/subtitle/video_subtitle_web_search_setting_effect_test.dart + '
+      'test/ai/ai_web_search_prefs_test.dart + '
+      '../packages/fushi_engine/test/ai/web_search_test.dart',
+  // 「把抓到的网页交给 AI」（首次确认落下的决定）：没答过 / 关着时 AI 功能读到的联网
+  // 搜索是 null。生效测试同上：关着时管线只装 LRCLIB，打开后装上网页搜索。
+  'ai/Send fetched pages to AI':
+      'test/media/video/subtitle/video_subtitle_web_search_setting_effect_test.dart + '
+      'test/ai/ai_web_search_prefs_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /
-/// autoApplyBinding 链 + 同一张 `media_type_profiles` 表）。
+/// enterWorkSession 链 + 同一张 `media_type_profiles` 表）。
 const String _kMediaTypeBindingEvidence =
     'test/profile/media_type_binding_new_kinds_guard_test.dart + '
     'test/profile/media_type_binding_video_guard_test.dart + '

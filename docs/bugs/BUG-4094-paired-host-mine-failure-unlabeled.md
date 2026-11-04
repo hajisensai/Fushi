@@ -1,0 +1,6 @@
+## BUG-4094 · 开着「制卡到已配对设备」时主机 Anki 落卡失败，客户端只显示「连不上 AnkiConnect」看不出是主机
+- **报告**：2026-11-04（用户：应用内反馈 E52FUMdbR6，iPad 3.0.0+19763）
+- **真实性**：✅ 真 bug（用户可见层面）。iPad 本地后端是 AnkiMobile（刷新牌组能跳 AnkiMobile），但日志里 `Anki.mineEntry` 的 `anki_error_connection_refused` 只有 AnkiConnect 会产生，同时互联在工作 → 实际路径是「制卡到已配对设备」：`ankiRepositoryProvider` 把制卡包进 `RemoteMiningAnkiRepository` 转发给桌面主机，主机 AnkiConnect 没开，`remoteMineResultFromOutcome`（`fushi/lib/src/models/app_model.dart:12455`）回传主机已本地化的「连不上 AnkiConnect」文案；客户端 `_outcomeFromResponse`（`fushi/lib/src/anki/remote_mining_anki_repository.dart:148`）把它当成不带分类码的普通失败原文显示，没有任何「这是已配对主机上的失败」的上下文，主机侧分类码也丢了。用户和开发者都把它读成本机 Anki 的问题。
+- **[x] ① 已修复** — 新增 `AnkiErrorCode.pairedDeviceMineFailed`：客户端收到主机 `error` 结果时分类成它（errorDetail = 主机原因），`mineFailureMessage`（`logMineFailure` 与待发队列页共用）包成「卡片已发到 Fushi 互联服务端，但那台设备上的 Anki 制卡失败：…」；`RemoteMineResult` 加 `errorCode`，主机在 `/api/mine` 与 `/api/mine/forward` 响应里回传 `errorCode`，客户端写进诊断日志。该码不属于「确定没送到」，不进待发队列。
+- **[x] ② 已加自动化测试** — `fushi/test/anki/remote_mining_anki_repository_test.dart`、`fushi/test/anki/mine_failure_surfacing_test.dart`、`fushi/test/mining/remote_mine_result_logging_test.dart`、`fushi/test/sync/forwarded_mine_response_test.dart`。
+- **备注**：分诊计划第 2 点（mineToServer 开着时 Anki 设置页标明「制卡走主机」/ 隐藏本地 AnkiMobile 配置）是 UI 产品取舍，本轮未做。真机验证未做。

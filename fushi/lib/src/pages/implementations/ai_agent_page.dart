@@ -31,6 +31,8 @@ import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dar
         kHostAssistantReasonNoProvider,
         kHostAssistantReasonNotReady;
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
+import 'package:fushi/src/models/preferences_repository.dart'
+    show kAiAgentExecutorLocal, kAiAgentExecutorRemote;
 import 'package:fushi/src/ocr/screen_text_capture.dart'
     show screenTextCaptureSupported;
 import 'package:fushi/src/ops/app_op_context.dart';
@@ -74,11 +76,12 @@ Future<void> openAiAgent(
   BuildContext context, {
   AgentUiContext? uiContext,
 }) async {
-  final AiAgentConversationController? controller =
-      await _resolveAiAgentConversation(context);
-  if (controller == null || !context.mounted) return;
+  final _AiAgentResolution? resolution = await _resolveAiAgentConversation(
+    context,
+  );
+  if (resolution == null || !context.mounted) return;
   if (MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint) {
-    await _showSidePanel(context, controller, uiContext);
+    await _showSidePanel(context, resolution, uiContext);
     return;
   }
   await adaptiveModalSheet<void>(
@@ -86,14 +89,24 @@ Future<void> openAiAgent(
     expandable: true,
     builder: (BuildContext sheetContext) => SizedBox(
       height: MediaQuery.sizeOf(sheetContext).height * 0.55,
-      child: AiAgentConversation(
-        controller: controller,
-        uiContext: uiContext,
-        compact: true,
-        onExpand: () {
-          Navigator.of(sheetContext).pop();
-          unawaited(pushAiAgentPage(context, uiContext: uiContext));
-        },
+      child: _AiAgentExecutorSwitcher(
+        initial: resolution,
+        builder:
+            (
+              BuildContext _,
+              AiAgentConversationController controller,
+              _AiAgentExecutorToggle? toggle,
+            ) => AiAgentConversation(
+              controller: controller,
+              uiContext: uiContext,
+              compact: true,
+              onSwitchExecutor: toggle?.onSwitch,
+              switchExecutorTooltip: toggle?.tooltip,
+              onExpand: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(pushAiAgentPage(context, uiContext: uiContext));
+              },
+            ),
       ),
     ),
   );
@@ -104,59 +117,145 @@ Future<void> pushAiAgentPage(
   BuildContext context, {
   AgentUiContext? uiContext,
 }) async {
-  final AiAgentConversationController? controller =
-      await _resolveAiAgentConversation(context);
-  if (controller == null || !context.mounted) return;
+  final _AiAgentResolution? resolution = await _resolveAiAgentConversation(
+    context,
+  );
+  if (resolution == null || !context.mounted) return;
   await Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
-      builder: (BuildContext _) =>
-          AiAgentPage(controller: controller, uiContext: uiContext),
+      builder: (BuildContext _) => _AiAgentExecutorSwitcher(
+        initial: resolution,
+        builder:
+            (
+              BuildContext _,
+              AiAgentConversationController controller,
+              _AiAgentExecutorToggle? toggle,
+            ) => AiAgentPage(
+              controller: controller,
+              uiContext: uiContext,
+              onSwitchExecutor: toggle?.onSwitch,
+              switchExecutorTooltip: toggle?.tooltip,
+            ),
+      ),
     ),
   );
 }
 
-/// 本机还是远端（spec §6.5）——**只在这里决定**，[openAiAgent] / [pushAiAgentPage]
-/// 共用：
+/// 一次解析的结果：用哪个控制器；本机配了 AI、又有已配对的「下载执行设备」时界面上
+/// 出「本地 AI / 远端 AI」切换（[canSwitch]，BUG-4067）。
+class _AiAgentResolution {
+  const _AiAgentResolution(
+    this.controller, {
+    required this.canSwitch,
+    this.remoteLabel,
+  });
+
+  final AiAgentConversationController controller;
+  final bool canSwitch;
+
+  /// 执行设备的名字（切换按钮的提示文字用）。
+  final String? remoteLabel;
+}
+
+/// 本机还是远端（spec §6.5）——**只在这里决定**，[openAiAgent] / [pushAiAgentPage] /
+/// 界面上的「本地 AI / 远端 AI」切换共用：
 ///
-/// - 本机给「AI 助手」指派了提供商 → 本机会话；
-/// - 否则「下载执行设备」（与 AI 下视频远端同一个设置）指向一台已配对设备、且它
-///   宣告了 `agent` → 整场会话交给它跑（复用正在用的那场，浮层 / 整页不丢对话）；
-/// - 那台设备连不上 / 开不了 → 如实报原因，**不**退回本机；
+/// - 用户在界面上选过（偏好 `ai_agent_executor`）就按选的来；[executor] 非空 = 此刻
+///   切换要的那一边（切换失败时返回 null，调用方保持现状）；
+/// - 没选过：本机给「AI 助手」指派了提供商 → 本机会话；否则「下载执行设备」（与 AI
+///   下视频远端同一个设置）指向一台已配对设备、且它宣告了 `agent` → 整场会话交给它
+///   跑（复用正在用的那场，浮层 / 整页不丢对话）；
+/// - 远端连不上 / 开不了 → 如实报原因。本机没配 AI 时**不**退回本机；本机配了 AI、
+///   只是上次选了远端时开本机那场（切换按钮还在，用户能再切）；
 /// - 都没有 → 保持现状：引导去「设置 › 模型 › LLM」，不发任何请求。
-Future<AiAgentConversationController?> _resolveAiAgentConversation(
-  BuildContext context,
-) async {
+Future<_AiAgentResolution?> _resolveAiAgentConversation(
+  BuildContext context, {
+  String? executor,
+}) async {
   final AiAgentController? local = AiAgentController.instanceOrNull;
   if (local == null) return null;
-  if (local.hasProvider) {
-    await local.syncWithActiveProfile();
-    return local;
-  }
   final opContext = appOpContext;
   final String url =
       opContext?.appModel.prefsRepo.downloadExecutionHostUrl ?? '';
-  if (opContext == null || url.isEmpty) {
-    await _guideToProviderSettings(context);
-    return null;
+  SyncRepository? repo;
+  FushiClientUrl? paired;
+  if (opContext != null && url.isNotEmpty) {
+    repo = SyncRepository(opContext.appModel.database);
+    // 解绑 / 停用了那台设备：偏好停在死地址上，按「没设执行设备」处理（与下载
+    // 入口 resolveDownloadExecution 同一判据）。
+    paired = interconnectPeerRepresentativeOf(
+      await repo.getFushiClientUrls(),
+      url,
+    );
   }
-  final SyncRepository repo = SyncRepository(opContext.appModel.database);
-  // 解绑 / 停用了那台设备：偏好停在死地址上，按「没设执行设备」处理（与下载
-  // 入口 resolveDownloadExecution 同一判据）。
-  final FushiClientUrl? paired = interconnectPeerRepresentativeOf(
-    await repo.getFushiClientUrls(),
-    url,
+  if (!context.mounted) return null;
+  final bool localReady = local.hasProvider;
+  final String? remoteLabel = paired == null ? null : paired.deviceName ?? url;
+  final bool canSwitch = localReady && paired != null;
+  final String wanted =
+      executor ?? opContext?.appModel.prefsRepo.aiAgentExecutor ?? '';
+
+  Future<_AiAgentResolution?> openLocal() async {
+    if (!localReady) {
+      await _guideToProviderSettings(context);
+      return null;
+    }
+    await local.syncWithActiveProfile();
+    return _AiAgentResolution(
+      local,
+      canSwitch: canSwitch,
+      remoteLabel: remoteLabel,
+    );
+  }
+
+  final bool useRemote =
+      paired != null &&
+      wanted != kAiAgentExecutorLocal &&
+      (wanted == kAiAgentExecutorRemote || !localReady);
+  if (!useRemote) {
+    if (executor == kAiAgentExecutorRemote) {
+      // 要切到远端，可执行设备已经解绑了。
+      _showAiAgentMessage(
+        context,
+        t.ai_agent_remote_unreachable(device: remoteLabel ?? url),
+      );
+      return null;
+    }
+    return openLocal();
+  }
+  final RemoteAiAgentSession? remote = await _openRemoteAiAgent(
+    context,
+    repo: repo!,
+    url: url,
+    deviceLabel: remoteLabel!,
+    locale: opContext!.appModel.appLocale.toLanguageTag(),
   );
   if (!context.mounted) return null;
-  if (paired == null) {
-    await _guideToProviderSettings(context);
-    return null;
+  if (remote != null) {
+    return _AiAgentResolution(
+      remote,
+      canSwitch: canSwitch,
+      remoteLabel: remoteLabel,
+    );
   }
+  // 原因已经报过了。界面上要切过去的：保持现状；入口打开的：本机能用就开本机。
+  if (executor != null || !localReady) return null;
+  return openLocal();
+}
+
+/// 在「下载执行设备」上开（或复用）一场远端会话；开不了时提示原因、返回 null。
+Future<RemoteAiAgentSession?> _openRemoteAiAgent(
+  BuildContext context, {
+  required SyncRepository repo,
+  required String url,
+  required String deviceLabel,
+  required String locale,
+}) async {
   final RemoteAiAgentSession? existing = RemoteAiAgentSession.active;
   if (existing != null && existing.isUsable && existing.target.baseUrl == url) {
     return existing;
   }
   existing?.dispose();
-  final String deviceLabel = paired.deviceName ?? url;
   final InterconnectAssistantClient client = InterconnectAssistantClient(
     repo: repo,
   );
@@ -183,7 +282,7 @@ Future<AiAgentConversationController?> _resolveAiAgentConversation(
     final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
       client: client,
       target: target,
-      locale: opContext.appModel.appLocale.toLanguageTag(),
+      locale: locale,
     );
     if (!context.mounted) {
       session.dispose();
@@ -212,6 +311,88 @@ Future<AiAgentConversationController?> _resolveAiAgentConversation(
       );
     }
     return null;
+  }
+}
+
+/// 「本地 AI / 远端 AI」切换按钮要的东西。
+class _AiAgentExecutorToggle {
+  const _AiAgentExecutorToggle({required this.onSwitch, required this.tooltip});
+
+  /// null = 正在切换（按钮暂时不可点）。
+  final VoidCallback? onSwitch;
+  final String tooltip;
+}
+
+/// 「本地 AI」「远端 AI」切换的外壳（BUG-4067）：持有当前控制器，切换时重新解析
+/// 另一边、记住用户的选择（偏好 `ai_agent_executor`），对话区淡入淡出换成另一边的
+/// 那场。切走的那一边不关：本机会话是单例，远端会话留在 [RemoteAiAgentSession.active]，
+/// 切回来接着说。切换失败（远端连不上）原因已提示，保持现状。
+class _AiAgentExecutorSwitcher extends StatefulWidget {
+  const _AiAgentExecutorSwitcher({
+    required this.initial,
+    required this.builder,
+  });
+
+  final _AiAgentResolution initial;
+  final Widget Function(
+    BuildContext context,
+    AiAgentConversationController controller,
+    _AiAgentExecutorToggle? toggle,
+  )
+  builder;
+
+  @override
+  State<_AiAgentExecutorSwitcher> createState() =>
+      _AiAgentExecutorSwitcherState();
+}
+
+class _AiAgentExecutorSwitcherState extends State<_AiAgentExecutorSwitcher> {
+  late AiAgentConversationController _controller = widget.initial.controller;
+  bool _switching = false;
+
+  bool get _remote => _controller.executorLabel != null;
+
+  Future<void> _switch() async {
+    if (_switching) return;
+    setState(() => _switching = true);
+    final String target = _remote
+        ? kAiAgentExecutorLocal
+        : kAiAgentExecutorRemote;
+    final _AiAgentResolution? next = await _resolveAiAgentConversation(
+      context,
+      executor: target,
+    );
+    if (next != null) {
+      await appOpContext?.appModel.prefsRepo.setAiAgentExecutor(target);
+    }
+    if (!mounted) return;
+    setState(() {
+      _switching = false;
+      if (next != null) _controller = next.controller;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final _AiAgentExecutorToggle? toggle = widget.initial.canSwitch
+        ? _AiAgentExecutorToggle(
+            onSwitch: _switching ? null : () => unawaited(_switch()),
+            tooltip: _remote
+                ? t.ai_agent_executor_use_local
+                : t.ai_agent_executor_use_remote(
+                    device: widget.initial.remoteLabel ?? '',
+                  ),
+          )
+        : null;
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      child: KeyedSubtree(
+        key: ObjectKey(_controller),
+        child: widget.builder(context, _controller, toggle),
+      ),
+    );
   }
 }
 
@@ -264,7 +445,7 @@ Future<void> _guideToProviderSettings(BuildContext context) async {
 
 Future<void> _showSidePanel(
   BuildContext context,
-  AiAgentConversationController controller,
+  _AiAgentResolution resolution,
   AgentUiContext? uiContext,
 ) {
   return showGeneralDialog<void>(
@@ -296,14 +477,26 @@ Future<void> _showSidePanel(
                 child: SizedBox(
                   width: 440,
                   height: double.infinity,
-                  child: AiAgentConversation(
-                    controller: controller,
-                    uiContext: uiContext,
-                    compact: true,
-                    onExpand: () {
-                      Navigator.of(dialogContext).pop();
-                      unawaited(pushAiAgentPage(context, uiContext: uiContext));
-                    },
+                  child: _AiAgentExecutorSwitcher(
+                    initial: resolution,
+                    builder:
+                        (
+                          BuildContext _,
+                          AiAgentConversationController controller,
+                          _AiAgentExecutorToggle? toggle,
+                        ) => AiAgentConversation(
+                          controller: controller,
+                          uiContext: uiContext,
+                          compact: true,
+                          onSwitchExecutor: toggle?.onSwitch,
+                          switchExecutorTooltip: toggle?.tooltip,
+                          onExpand: () {
+                            Navigator.of(dialogContext).pop();
+                            unawaited(
+                              pushAiAgentPage(context, uiContext: uiContext),
+                            );
+                          },
+                        ),
                   ),
                 ),
               ),
@@ -345,14 +538,30 @@ const ValueKey<String> kAiAgentSessionsButtonKey = ValueKey<String>(
   'ai-agent-sessions',
 );
 
+/// 「本地 AI / 远端 AI」切换按钮（BUG-4067）。
+const ValueKey<String> kAiAgentExecutorSwitchKey = ValueKey<String>(
+  'ai-agent-executor-switch',
+);
+
 /// 整页外壳。宽屏把会话列表常驻在对话左侧；窄屏在页头放「会话」按钮弹出列表。
-/// 远端会话没有本机存档（[AiAgentConversationController.sessionLibrary] 为 null），
-/// 两者都不出现。
+/// 执行设备是老版本、没有会话历史时（[AiAgentConversationController.sessionLibrary]
+/// 为 null）两者都不出现。
 class AiAgentPage extends StatelessWidget {
-  const AiAgentPage({required this.controller, this.uiContext, super.key});
+  const AiAgentPage({
+    required this.controller,
+    this.uiContext,
+    this.onSwitchExecutor,
+    this.switchExecutorTooltip,
+    super.key,
+  });
 
   final AiAgentConversationController controller;
   final AgentUiContext? uiContext;
+
+  /// 「本地 AI / 远端 AI」切换；null（[switchExecutorTooltip] 也为 null）= 不出按钮，
+  /// 只有 [switchExecutorTooltip] = 正在切换。
+  final VoidCallback? onSwitchExecutor;
+  final String? switchExecutorTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -363,6 +572,17 @@ class AiAgentPage extends StatelessWidget {
     return FushiPageScaffold(
       title: t.ai_agent_title,
       actions: <Widget>[
+        if (switchExecutorTooltip != null)
+          ListenableBuilder(
+            listenable: controller,
+            builder: (BuildContext _, Widget? _) => FushiIconButtonControl(
+              key: kAiAgentExecutorSwitchKey,
+              tooltip: switchExecutorTooltip,
+              // 一轮跑着时不切（与「新对话」同一判据）。
+              onPressed: controller.running ? null : onSwitchExecutor,
+              icon: const FushiIcon(FushiIcons.devices),
+            ),
+          ),
         if (library != null && !sideList)
           FushiIconButtonControl(
             key: kAiAgentSessionsButtonKey,
@@ -413,10 +633,17 @@ class AiAgentConversation extends StatefulWidget {
     this.uiContext,
     this.compact = false,
     this.onExpand,
+    this.onSwitchExecutor,
+    this.switchExecutorTooltip,
     super.key,
   });
 
   final AiAgentConversationController controller;
+
+  /// 「本地 AI / 远端 AI」切换（紧凑顶栏里的按钮，整页由 [AiAgentPage] 的页头承担）。
+  /// [switchExecutorTooltip] 为 null = 不出按钮；[onSwitchExecutor] 为 null = 正在切换。
+  final VoidCallback? onSwitchExecutor;
+  final String? switchExecutorTooltip;
 
   /// 打开时所在的页面 / 条目（悬浮球按场景带上，spec §6.4），随每句话注入。
   final AgentUiContext? uiContext;
@@ -630,6 +857,13 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               onPressed: () => unawaited(_undoAll()),
               child: Text(t.ai_agent_undo_all(n: '$undoable')),
             ),
+          if (widget.switchExecutorTooltip != null)
+            FushiIconButtonControl(
+              key: kAiAgentExecutorSwitchKey,
+              tooltip: widget.switchExecutorTooltip,
+              onPressed: _controller.running ? null : widget.onSwitchExecutor,
+              icon: const FushiIcon(FushiIcons.devices),
+            ),
           ?_sessionsButton(context),
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-new-session'),
@@ -651,7 +885,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     );
   }
 
-  /// 浮层 / 侧栏顶栏的「会话」按钮：弹出会话列表（远端会话没有本机存档，不出现）。
+  /// 浮层 / 侧栏顶栏的「会话」按钮：弹出会话列表（执行设备没有会话历史时不出现）。
   Widget? _sessionsButton(BuildContext context) {
     final AiAgentSessionLibrary? library = _controller.sessionLibrary;
     if (library == null) return null;
