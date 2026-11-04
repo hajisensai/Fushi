@@ -696,6 +696,8 @@ class _SrsTodayBar extends StatelessWidget {
 class _SrsDeckProgress extends StatelessWidget {
   const _SrsDeckProgress({super.key, required this.value});
 
+  static const double _height = 4;
+
   final double value;
 
   @override
@@ -707,9 +709,9 @@ class _SrsDeckProgress extends StatelessWidget {
         ? appleColorsOf(context).tertiaryFill
         : scheme.surfaceContainerHighest;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(2),
+      borderRadius: BorderRadius.circular(_height / 2),
       child: SizedBox(
-        height: 4,
+        height: _height,
         child: DecoratedBox(
           decoration: BoxDecoration(color: track),
           child: Align(

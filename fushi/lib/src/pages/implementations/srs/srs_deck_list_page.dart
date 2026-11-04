@@ -567,8 +567,28 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (focus != null) _setFocus(focus.parentId);
   }
 
+  /// 牌组列表刷新后，丢掉已不存在牌组的 id（被删 / 被合并），
+  /// 让焦点与选中态和数据同步，而不是留着悬空 id 靠 [_deckById] 兜底。
+  void _dropStaleIds(SrsDeckListData? data) {
+    if (data == null) return;
+    final bool focusGone =
+        _focusId != null && _deckById(data, _focusId) == null;
+    final bool selectedGone =
+        _selectedId != null && _deckById(data, _selectedId) == null;
+    if (!focusGone && !selectedGone) return;
+    setState(() {
+      if (focusGone) _focusId = null;
+      if (selectedGone) _selectedId = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<SrsDeckListData?>>(
+      srsDeckListProvider,
+      (AsyncValue<SrsDeckListData?>? _, AsyncValue<SrsDeckListData?> next) =>
+          _dropStaleIds(next.valueOrNull),
+    );
     final AsyncValue<SrsDeckListData?> data = ref.watch(srsDeckListProvider);
     final int conflicts = ref.watch(srsConflictCountProvider).valueOrNull ?? 0;
     final bool apple = isGlassDesign(context);

@@ -851,6 +851,61 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 复习首页：选中 / 进入的牌组被删后丢掉悬空 id，宽屏回落到仍存在的进入牌组', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String jp = (await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP'),
+      ))!;
+      final String kanji = (await tester.runAsync(
+        () => store.ensureDeckPath('Kanji'),
+      ))!;
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(412, 915),
+      );
+      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+      Finder detail(String id) =>
+          find.byKey(ValueKey<String>('srs-home-detail-$id'));
+
+      // 手机：进入 Spark（_focusId = Spark）。
+      final String spark = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(jp)!,
+      ))!;
+      await tester.tap(
+        find.descendant(of: row(spark), matching: find.text('Spark')),
+      );
+      await _settle(tester);
+      expect(detail(spark), findsOneWidget);
+
+      // 转成宽屏：没有「进入」层，右栏沿用进入的牌组；再点 Kanji 行选中它。
+      tester.view.physicalSize = const Size(1100, 900);
+      await _settle(tester, rounds: 40);
+      expect(detail(spark), findsOneWidget, reason: '宽屏右栏沿用手机进入的牌组');
+      await tester.tap(
+        find.descendant(of: row(kanji), matching: find.text('Kanji')),
+      );
+      await _settle(tester);
+      expect(detail(kanji), findsOneWidget);
+
+      // 选中的 Kanji 被删（别处 / 同步删掉）：选中 id 必须清掉，右栏回到仍存在的 Spark，
+      // 而不是让悬空的选中 id 盖过进入的牌组、掉到默认牌组。
+      await tester.runAsync(() => store.deleteDeck(kanji));
+      ProviderScope.containerOf(
+        tester.element(find.byType(SrsDeckListPage)),
+      ).read(srsRevisionProvider.notifier).state++;
+      await _settle(tester, rounds: 40);
+      expect(row(kanji), findsNothing);
+      expect(detail(spark), findsOneWidget, reason: '悬空选中 id 已丢弃');
+      expect(tester.takeException(), isNull);
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 牌组列表：父牌组箭头收起 / 展开子牌组，键盘 ←/→ 同样生效并写库', (
       WidgetTester tester,
     ) async {
