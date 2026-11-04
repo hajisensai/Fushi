@@ -410,6 +410,7 @@ class RemoteMineResult {
     this.detail,
     this.deckName,
     this.errorKind,
+    this.errorCode,
   });
 
   final String result;
@@ -421,6 +422,11 @@ class RemoteMineResult {
   /// 「下次可能成功」（网络、超时、限流）：前者移出待生成队列进失败分组，不再每次生成都
   /// 重新解析一遍。null = 未分型（旧实现 / 非 error），扩展按可重试处理。旧客户端忽略即可。
   final RemoteMineErrorKind? errorKind;
+
+  /// 反馈 E52FUMdbR6：`error` 时主机侧的稳定分类码（`AnkiErrorCode`，如
+  /// `ANKI_CONNECTION_REFUSED`），随响应回传给互联客户端写进诊断日志；未分类为 null。
+  /// 旧客户端 / 扩展忽略即可。
+  final String? errorCode;
 
   /// BUG-1549：`success` 时主机**实际落卡**的牌组名（主机侧配置的 deck），随
   /// `/api/mine/forward` 响应回传给客户端的成功 toast；失败为 `null`。旧客户端

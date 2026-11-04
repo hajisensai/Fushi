@@ -583,6 +583,7 @@
   "anki_error_field_mapping_mismatch": "当前的字段映射没有一个属于所选的笔记类型，Anki 因此拒收了这张卡。请在 Anki 设置里重新映射字段，或使用「一键创建 Lapis 卡组」。",
   "anki_error_first_field_empty": "所选笔记类型的第一个字段为空，Anki 不接受这样的卡片。请在 Anki 设置里给它映射一个字段。",
   "anki_error_http": "无法导出到 Anki：连接 AnkiConnect 时发生 HTTP 错误。",
+  "anki_error_paired_device_mine_failed": "卡片已发到 Fushi 互联服务端，但那台设备上的 Anki 制卡失败：$reason",
   "anki_error_paired_device_unreachable": "无法制卡：当前连不上 Fushi 互联服务端。请确认服务端上的 Fushi 正在运行；如果要在本机制卡，请关闭「制卡到 Fushi 互联服务端」。",
   "anki_error_permission_denied": "AnkiDroid 尚未授予卡片访问权限。请在刚弹出的系统授权对话框中允许，然后再次点击按钮制卡。",
   "anki_error_permission_permanently_denied": "AnkiDroid 卡片访问权限已被永久拒绝，系统不再弹出授权对话框。请到应用设置里授予该权限后重试。",

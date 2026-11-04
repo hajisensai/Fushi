@@ -12461,6 +12461,7 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
         message: reason,
         detail: outcome.errorDetail,
         errorKind: RemoteMineErrorKind.transient,
+        errorCode: outcome.errorCode,
       );
     case MineResult.success:
       final String? warn = outcome.audioWarning;

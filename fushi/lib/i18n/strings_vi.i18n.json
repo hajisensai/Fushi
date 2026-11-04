@@ -583,6 +583,7 @@
   "anki_error_field_mapping_mismatch": "Không có ánh xạ trường nào của bạn khớp với loại ghi chú đã chọn, nên Anki đã từ chối thẻ này. Hãy mở Cài đặt Anki để ánh xạ lại các trường, hoặc dùng 'Tạo bộ thẻ Lapis'.",
   "anki_error_first_field_empty": "Trường đầu tiên của loại ghi chú đã chọn đang trống, và Anki không nhận ghi chú như vậy. Hãy ánh xạ một trường vào đó trong Cài đặt Anki.",
   "anki_error_http": "Không thể xuất sang Anki: đã xảy ra lỗi HTTP khi liên hệ với AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Không thể tạo thẻ vì không kết nối được thiết bị đã ghép nối nào. Hãy đảm bảo Fushi đang chạy trên thiết bị đã ghép nối, hoặc tắt Gửi thẻ đến thiết bị đã ghép nối trong Cài đặt Anki để tạo thẻ cục bộ.",
   "anki_error_permission_denied": "AnkiDroid chưa cấp quyền truy cập thẻ. Chấp nhận hộp thoại quyền hệ thống vừa xuất hiện, sau đó nhấn lại nút để xuất.",
   "anki_error_permission_permanently_denied": "Quyền truy cập thẻ của AnkiDroid đã bị từ chối vĩnh viễn nên hệ thống không hiện hộp thoại cấp quyền nữa. Hãy mở cài đặt ứng dụng và cấp quyền AnkiDroid, rồi thử lại.",
