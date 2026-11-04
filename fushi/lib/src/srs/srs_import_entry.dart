@@ -304,18 +304,16 @@ Future<void> showSrsImportReportDialog(
   builder: (BuildContext dialogContext) => FushiAlertDialog(
     icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
     title: Text(t.srs_import_report_title),
-    content: SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (final String line in srsImportReportLines(report))
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(line),
-            ),
-        ],
-      ),
+    content: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final String line in srsImportReportLines(report))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(line),
+          ),
+      ],
     ),
     actions: <Widget>[
       if (onKeepFsrs != null && report.fsrsDecks.isNotEmpty)

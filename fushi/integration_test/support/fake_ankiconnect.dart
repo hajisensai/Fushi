@@ -17,12 +17,19 @@
 //   * `findNotes {query}` / `findCards {query}` / `guiBrowse {query}`：
 //     支持本仓实际发出的几种搜索式——`deck:"X" "Field:value"`（findNotesByField）、
 //     `(did:a OR did:b) ("dupe:mid,text" OR …)`（ankiDuplicateSearchQuery）、
-//     `nid:a,b,c`（guiBrowse）、`did:N is:new -deck:filtered`（重排）、
+//     `nid:a,b,c`（guiBrowse）、`did:N is:new -is:suspended -is:buried -deck:filtered`（重排）、
 //     `"<文件名>"` / `sourceId=…` 裸文本（媒体去重 / 来源反查）
 //   * `notesInfo {notes:[id]}` → `[{noteId, modelName, tags, fields:{name:{value, order}}, cards}]`，
 //     不存在的 note 回 `{}`；`cardsInfo {cards:[id]}` 同理（`AnkiCardInfo.fromJson` 认的键）
-//   * `updateNoteFields {note:{id, fields}}` / `addTags {notes, tags}` /
-//     `setSpecificValueOfCard {card, keys, newValues}` → `[true]`
+//   * `updateNoteFields {note:{id, fields}}` / `addTags {notes, tags}` →
+//     `[true]`；`setSpecificValueOfCard` 只认非 `due` 键——与 AnkiConnect
+//     26.10.11.0 起重写的 `legacy.py` 同口径，`due` 回
+//     `Use native scheduling commands for protected state.`
+//   * `POST /api/v1`（JSON-RPC 2.0，单条或批次数组）：`api.describe` →
+//     `{apiMajor, methods:[{name, available, reason}]}`；
+//     `scheduling.repositionNewCards {cardIds, startingFrom, …}` → `{changedCount}`。
+//     [FakeAnkiConnect.start] 的 `nativeReposition: false` 模拟「已禁写 due、
+//     又还没有原生重排」的发布版（describe 里没有这个方法）
 //   * `storeMediaFile {filename, data|path}` / `deleteMediaFile` / `getMediaFilesNames {pattern}` /
 //     `getMediaDirPath`（真的落在一个临时目录里，`close()` 时删除）
 //   * `multi {actions:[{action, version, params}]}` 逐条分发，子项带 version 就回
@@ -42,6 +49,7 @@ class FakeAnkiConnect {
     required HttpServer server,
     required this.deckName,
     required this.apiKey,
+    required this.nativeReposition,
     required Directory mediaDir,
   }) : _server = server,
        _mediaDir = mediaDir {
@@ -90,6 +98,13 @@ class FakeAnkiConnect {
   /// 非空时每个请求（含 `multi` 子项）必须带同值 `key`，否则回
   /// `valid api key must be provided`（真插件文案）。
   final String apiKey;
+
+  /// `api.describe` 里有没有 `scheduling.repositionNewCards`（上游 master
+  /// a579cd5d76 起才有）。
+  final bool nativeReposition;
+
+  /// 收到的每条 `/api/v1` JSON-RPC 请求（批次拆开逐条登记），按到达顺序。
+  final List<Map<String, Object?>> rpcRequests = <Map<String, Object?>>[];
 
   final HttpServer _server;
   final Directory _mediaDir;
@@ -151,6 +166,7 @@ class FakeAnkiConnect {
   static Future<FakeAnkiConnect> start({
     String deckName = 'FushiItest',
     String apiKey = '',
+    bool nativeReposition = true,
   }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
@@ -163,6 +179,7 @@ class FakeAnkiConnect {
       server: server,
       deckName: deckName,
       apiKey: apiKey,
+      nativeReposition: nativeReposition,
       mediaDir: mediaDir,
     );
   }
@@ -191,6 +208,10 @@ class FakeAnkiConnect {
         return;
       }
       final String body = await utf8.decoder.bind(request).join();
+      if (request.uri.path == '/api/v1') {
+        await _onRpc(request, body);
+        return;
+      }
       Object? decoded;
       Map<String, Object?>? envelope;
       try {
@@ -221,6 +242,97 @@ class FakeAnkiConnect {
       } catch (_) {
         // 连接已断，无事可做。
       }
+    }
+  }
+
+  /// `/api/v1`：JSON-RPC 2.0。apiKey 走 `Authorization: Bearer`，错了回空体 401
+  /// （上游 `web.py` 同口径）。
+  Future<void> _onRpc(HttpRequest request, String body) async {
+    if (apiKey.isNotEmpty &&
+        request.headers.value(HttpHeaders.authorizationHeader) !=
+            'Bearer $apiKey') {
+      request.response.statusCode = HttpStatus.unauthorized;
+      await request.response.close();
+      return;
+    }
+    final Object? decoded = jsonDecode(body);
+    final Object reply = decoded is List
+        ? <Object?>[for (final Object? item in decoded) _rpcReply(item)]
+        : _rpcReply(decoded);
+    request.response
+      ..statusCode = HttpStatus.ok
+      ..headers.contentType = ContentType.json
+      ..write(jsonEncode(reply));
+    await request.response.close();
+  }
+
+  Map<String, Object?> _rpcReply(Object? raw) {
+    final Map<String, Object?> req = raw is Map
+        ? Map<String, Object?>.from(raw)
+        : <String, Object?>{};
+    rpcRequests.add(req);
+    final Object? id = req['id'];
+    Map<String, Object?> error(int code, String type, String message) =>
+        <String, Object?>{
+          'jsonrpc': '2.0',
+          'id': id,
+          'error': <String, Object?>{
+            'code': code,
+            'message': message,
+            'data': <String, Object?>{'type': type},
+          },
+        };
+    final Object? rawParams = req['params'];
+    final Map<String, Object?> params = rawParams is Map
+        ? Map<String, Object?>.from(rawParams)
+        : <String, Object?>{};
+    switch (req['method']) {
+      case 'api.describe':
+        return <String, Object?>{
+          'jsonrpc': '2.0',
+          'id': id,
+          'result': <String, Object?>{
+            'apiMajor': 1,
+            'ankiVersion': '26.09.3',
+            'schema': <String, Object?>{},
+            'methods': <Map<String, Object?>>[
+              <String, Object?>{
+                'name': 'api.describe',
+                'available': true,
+                'reason': null,
+              },
+              if (nativeReposition)
+                <String, Object?>{
+                  'name': 'scheduling.repositionNewCards',
+                  'available': true,
+                  'reason': null,
+                },
+            ],
+            'limits': <String, Object?>{},
+          },
+        };
+      case 'scheduling.repositionNewCards' when nativeReposition:
+        final Object? ids = params['cardIds'];
+        final int? start = _asInt(params['startingFrom']);
+        if (ids is! List || ids.isEmpty || start == null) {
+          return error(-32602, 'invalidParams', 'Invalid params.');
+        }
+        final List<Map<String, Object?>> targets = <Map<String, Object?>>[];
+        for (final Object? cid in ids) {
+          final Map<String, Object?>? n = _noteByCardId(_asInt(cid));
+          if (n == null) return error(1001, 'notFound', 'Card not found.');
+          targets.add(n);
+        }
+        for (int i = 0; i < targets.length; i++) {
+          targets[i]['due'] = start + i * (_asInt(params['stepSize']) ?? 1);
+        }
+        return <String, Object?>{
+          'jsonrpc': '2.0',
+          'id': id,
+          'result': <String, Object?>{'changedCount': targets.length},
+        };
+      default:
+        return error(-32601, 'methodNotFound', 'Method not found.');
     }
   }
 
@@ -652,6 +764,7 @@ class FakeAnkiConnect {
   }
 
   /// 与插件同形：成功 `[true]`；卡不存在 `[[false, "<msg>"]]`；参数形状不对裸 `false`。
+  /// `due` 与 AnkiConnect 26.10.11.0 起的 `legacy.py` 一样直接拒绝。
   Object? _setSpecificValueOfCard(Map<String, Object?> params) {
     final Object? keys = params['keys'];
     final Object? values = params['newValues'];
@@ -664,10 +777,8 @@ class FakeAnkiConnect {
         <Object?>[false, 'card was not found: ${params['card']}'],
       ];
     }
-    for (int i = 0; i < keys.length; i++) {
-      if (keys[i].toString() == 'due') {
-        n['due'] = _asInt(values[i]) ?? n['due'];
-      }
+    if (keys.any((Object? k) => k.toString() == 'due')) {
+      throw _AnkiError('Use native scheduling commands for protected state.');
     }
     return <Object?>[true];
   }

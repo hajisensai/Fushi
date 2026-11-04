@@ -120,7 +120,9 @@ class _VideoSpecsPanelState extends State<VideoSpecsPanel> {
       return const SizedBox.shrink();
     }
 
+    // 按内容收高：作对话框内容（FushiAlertDialog 的滚动外壳）时有界高度下也不撑满。
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         if (widget.showTitle) ...<Widget>[

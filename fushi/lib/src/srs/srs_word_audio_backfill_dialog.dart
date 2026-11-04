@@ -303,13 +303,11 @@ class SrsWordAudioBackfillDialog extends StatelessWidget {
             title: Text(t.srs_word_audio_backfill_title),
             content: SizedBox(
               width: contentWidth,
-              child: SingleChildScrollView(
-                child: FushiAnimatedSize(
-                  duration: fushiMotionDuration(context, FushiMotion.short),
-                  curve: FushiMotion.standard,
-                  alignment: Alignment.topCenter,
-                  child: _body(context),
-                ),
+              child: FushiAnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                alignment: Alignment.topCenter,
+                child: _body(context),
               ),
             ),
             actions: <Widget>[

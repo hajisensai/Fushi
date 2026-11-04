@@ -19,6 +19,7 @@ class MusicBackendRoute {
     required this.handles,
     required this.create,
     required this.capabilities,
+    this.itemCapabilities,
   });
 
   /// 路由名（日志 / 测试用），各路由唯一。
@@ -32,6 +33,14 @@ class MusicBackendRoute {
 
   /// 这条路由的后端对它的曲目能做什么（静态声明，不必建后端就能问）。
   final MusicBackendCapabilities capabilities;
+
+  /// 按曲目细分的能力（同一后端里不同种类的项能力不同，如 Apple Music 整曲 vs 电台）；
+  /// null = 一律 [capabilities]。
+  final MusicBackendCapabilities Function(MusicPlayItem item)? itemCapabilities;
+
+  /// [item]（已知归这条路由）的能力。
+  MusicBackendCapabilities capabilitiesOf(MusicPlayItem item) =>
+      itemCapabilities?.call(item) ?? capabilities;
 }
 
 /// [item] 落到哪条路由；null = 默认链路。
@@ -50,13 +59,13 @@ MusicBackendCapabilities musicBackendCapabilitiesFor(
   List<MusicBackendRoute> routes,
   MusicPlayItem item,
 ) =>
-    musicBackendRouteFor(routes, item)?.capabilities ??
+    musicBackendRouteFor(routes, item)?.capabilitiesOf(item) ??
     MusicBackendCapabilities.full;
 
 /// 默认链路的路由名。
 const String kMusicDefaultBackendRoute = 'default';
 
-class MusicRoutingBackend implements MusicOutputBackend {
+class MusicRoutingBackend implements MusicExternalQueueBackend {
   MusicRoutingBackend({
     required MusicOutputBackend Function() fallback,
     this.routes = const <MusicBackendRoute>[],
@@ -240,6 +249,14 @@ class MusicRoutingBackend implements MusicOutputBackend {
   @override
   Future<void> setAbLoop(Duration? a, Duration? b) async =>
       _activeChild?.setAbLoop(a, b);
+
+  /// 转给正在出声的子后端（它自管队列时）；接力中 / 不自管队列时什么都不做。
+  @override
+  Future<void> skipToNext() async {
+    if (_handingOff) return;
+    final MusicOutputBackend? child = _activeChild;
+    if (child is MusicExternalQueueBackend) await child.skipToNext();
+  }
 
   @override
   Future<void> stop() async {

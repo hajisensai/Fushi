@@ -377,6 +377,8 @@ void main() {
             for (final String k in const <String>[
               'SrsReviewPage',
               'SrsDeckListPage',
+              // 复习首页一层的内容（SrsDeckListPage 的 part 里）：复习页盖着时不该跟着重建。
+              '_SrsHomeView',
               'SrsFushiCardView',
               'SrsWebCardFace',
               'FushiFloatingTopBar',

@@ -150,6 +150,7 @@ class PageCurlGeometry {
     required this.point,
     required this.mirror,
     required this.paper,
+    required this.radius,
   });
 
   /// 被拎起的角（纸面上的原位置）。
@@ -164,6 +165,9 @@ class PageCurlGeometry {
   /// 纸面在覆盖层里的矩形（屏幕坐标）。[corner] / [point] 是相对它的局部坐标：
   /// 原点在书脊那一侧的上角，x 朝拎起的角。
   final Rect paper;
+
+  /// 此刻的卷曲圆柱半径（[constrainPageCurl] 按书脊约束收紧过）。
+  final double radius;
 }
 
 /// 纸背蒙在镜像正文上的纸色比例：纸背像苹果图书那样透出镜像的正文（用户
@@ -189,6 +193,138 @@ Offset clampPageCurlPoint(
 
 /// 「完全翻过」时角点的位置。
 Offset pageCurlTurnedPoint(Size size, double y0) => Offset(-size.width, y0);
+
+double _dot(Offset a, Offset b) => a.dx * b.dx + a.dy * b.dy;
+
+/// 书脊约束（苹果图书的「可拖动范围」）：纸是装订在书脊上的，卷起来的圆柱和
+/// 翻起的那片都不能越过书脊（x = 0 那条边）。越过了着色器就会在书脊处切出缺口、
+/// 台阶和三角形的「怪折痕」，也会出现整页斜着翻飞的极限姿态。
+///
+/// 判据：两个书脊角 S 都必须落在卷轴的平铺一侧。按着色器的轴线公式（轴线在角点
+/// 中垂线朝 [point] 一侧再偏 πr/2）展开，等价于 |P − S|² ≤ |C − S|² − π·r·|C − P|。
+/// 返回满足它、离 [point] 最近的角点位置（对两个圆交替投影），以及此刻能用的半径：
+///
+/// - 拖动（[settling] = false）：按完整半径约束，圆柱始终整根留在书脊右侧，手指拉过
+///   头时书角停在可行区域的边上，翻起的面积仍跟着手指。
+/// - 落定动画（[settling] = true）：只要求折痕不越过书脊（r = 0 的约束），快贴到书脊
+///   时半径随之收紧——翻到底时卷成一条细线再平铺，而不是带着整根圆柱穿过书脊。
+@visibleForTesting
+({Offset point, double radius}) constrainPageCurl({
+  required Offset corner,
+  required Offset point,
+  required Size size,
+  required double radius,
+  required bool settling,
+}) {
+  final List<Offset> spine = <Offset>[Offset.zero, Offset(0, size.height)];
+  Offset p = point;
+  for (int i = 0; i < 6; i++) {
+    final double len = (corner - p).distance;
+    final double r = settling ? 0.0 : math.min(radius, len / math.pi);
+    for (final Offset s in spine) {
+      final double rho = math.sqrt(
+        math.max(0.0, (corner - s).distanceSquared - math.pi * r * len),
+      );
+      final Offset v = p - s;
+      final double dist = v.distance;
+      if (dist > rho && dist > 0) p = s + v * (rho / dist);
+    }
+  }
+  double len = (corner - p).distance;
+  if (len < 0.5) return (point: p, radius: radius);
+  final Offset n = (corner - p) / len;
+  double k = double.infinity;
+  for (final Offset s in spine) {
+    k = math.min(k, _dot(corner - s, n));
+  }
+  // 投影迭代的收尾保险：沿卷曲方向截到严格可行的长度。
+  final double maxLen = math.max(
+    0.0,
+    settling ? 2 * k : (k >= math.pi * radius ? 2 * k - math.pi * radius : k),
+  );
+  if (len > maxLen) {
+    p = corner - n * maxLen;
+    len = maxLen;
+  }
+  final double r = math.max(
+    0.0,
+    math.min(radius, math.min(len / math.pi, (2 * k - len) / math.pi)),
+  );
+  return (point: p, radius: r);
+}
+
+/// 纸边追上手指所用的拖动距离（占纸面宽）：从页中间按下时，纸边先在这段距离里
+/// 平滑追到手指下，之后贴着手指走（苹果图书的手感：手里捏着的是纸边）。
+const double kPageCurlCatchUpFraction = 0.25;
+
+/// 角点抬到手指高度所用的拖动距离（占纸面宽）。
+const double kPageCurlLiftFraction = 0.5;
+
+double _smoothstep(double edge0, double edge1, double x) {
+  if (edge1 <= edge0) return x < edge0 ? 0 : 1;
+  final double t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+  return t * t * (3 - 2 * t);
+}
+
+/// 按下点离被拎起的角多近（0 = 按在边缘中段，1 = 按在角附近）。决定角点抬向手指
+/// 的程度：按在角附近拖出斜折痕（掀书角），按在中段保持竖直折痕。
+@visibleForTesting
+double pageCurlCornerWeight({
+  required Size size,
+  required double startY,
+  required double cornerY,
+}) {
+  final double fromCorner =
+      (startY - cornerY).abs() / math.max(1.0, size.height);
+  return 1 - _smoothstep(0.2, 0.45, fromCorner);
+}
+
+/// 拖动按下时拎哪个角（纸面局部 y）：上半页拎上角，下半页拎下角（苹果图书）。
+@visibleForTesting
+double pageCurlCornerYFor(Size size, double startY) =>
+    startY < size.height / 2 ? 0 : size.height;
+
+/// 拖动跟手时角点的位置（纸面局部、未镜像空间，未做书脊约束）。
+///
+/// - 横向：前进时纸边从「按下点到纸边的距离」开始，在 [kPageCurlCatchUpFraction]
+///   的拖动距离内平滑追到手指下，之后纸边就在手指下；后退时上一页的边以两倍速
+///   从书脊另一侧拉回来（手指从左缘拖到右缘刚好铺平）。
+/// - 纵向：手指的上下位移原样带给角点；另外按在角附近时，角点随拖动逐渐抬到手指
+///   高度（[kPageCurlLiftFraction]），卷出斜的折痕，而不是整条竖线平推。
+@visibleForTesting
+Offset pageCurlFollowPoint({
+  required Size size,
+  required Offset start,
+  required Offset finger,
+  required double cornerY,
+  required bool forward,
+}) {
+  final double w = size.width;
+  final double weight = pageCurlCornerWeight(
+    size: size,
+    startY: start.dy,
+    cornerY: cornerY,
+  );
+  final double progress = forward ? start.dx - finger.dx : finger.dx - start.dx;
+  final double lift =
+      (start.dy - cornerY) *
+      weight *
+      _smoothstep(0, kPageCurlLiftFraction * w, progress);
+  final double y = cornerY + (finger.dy - start.dy) + lift;
+  if (forward) {
+    final double gap = math.max(0.0, w - start.dx);
+    final double catchUp = _smoothstep(
+      0,
+      kPageCurlCatchUpFraction * w,
+      progress,
+    );
+    final double x = finger.dx + gap * (1 - catchUp);
+    // 往反方向拖：纸面留在起点，不倒卷。
+    return Offset(math.min(x, w), y);
+  }
+  final double x = -w + 2 * (finger.dx - start.dx);
+  return Offset(math.max(x, -w), y);
+}
 
 /// 由松手时的位移 / 速度判断是否提交（与平移 / 覆盖的拖动跟手同一阈值）。
 ///
@@ -344,7 +480,24 @@ class PageCurlController extends ChangeNotifier {
     point: _point,
     mirror: _mirror,
     paper: _paper,
+    radius: _radius,
   );
+
+  /// 当前圆柱半径（书脊约束收紧过）。
+  double _radius = 0;
+
+  /// 把 [raw] 按书脊约束落成角点位置与半径。
+  void _placePoint(Offset raw, {required bool settling}) {
+    final ({Offset point, double radius}) c = constrainPageCurl(
+      corner: Offset(_size.width, _y0),
+      point: clampPageCurlPoint(raw, size: _size, y0: _y0),
+      size: _size,
+      radius: pageCurlRadiusFor(_size),
+      settling: settling,
+    );
+    _point = c.point;
+    _radius = c.radius;
+  }
 
   /// 开始一次手指拖动。[position] 为按下点（覆盖层坐标，逻辑像素），[mirror] 为从右
   /// 往左读，[allowCurl] = 宿主此刻是否用卷页（false 时整次手势按普通滑动处理）。
@@ -569,15 +722,17 @@ class PageCurlController extends ChangeNotifier {
     return Offset(_mirror ? _paper.width - x : x, p.dy - _paper.top);
   }
 
-  /// 按当前纸面矩形定卷曲的起点：拖动从按下点的高度拎起，点按 / 按键从靠下的
-  /// 角拎起；角点回到「平铺」（前进）或「完全翻过」（后退）。
+  /// 按当前纸面矩形定卷曲的起点：拖动拎离按下点近的那个真角（上半页上角、下半页
+  /// 下角），点按 / 按键拎下角；角点回到「平铺」（前进）或「完全翻过」（后退）。
   void _anchorToPaper() {
     _y0 = _sessionDrag == null
-        ? _size.height * 0.88
-        : _start.dy.clamp(0.0, _size.height);
+        ? _size.height
+        : pageCurlCornerYFor(_size, _start.dy);
     _point = _forward
         ? Offset(_size.width, _y0)
         : pageCurlTurnedPoint(_size, _y0);
+    // 平铺时半径无所谓（着色器直接画平面）；完全翻过时卷轴贴在书脊上，半径为 0。
+    _radius = _forward ? pageCurlRadiusFor(_size) : 0;
   }
 
   /// 收窄纸面到宿主报告的页面矩形（与视口取交集；拿不到 / 太小就保持整个视口）。
@@ -599,15 +754,16 @@ class PageCurlController extends ChangeNotifier {
       _forward ? _start.dx - _finger.dx : _finger.dx - _start.dx;
 
   void _followFinger() {
-    final Offset delta = _finger - _start;
-    final Offset raw = _forward
-        ? Offset(_size.width, _y0) + delta
-        : pageCurlTurnedPoint(_size, _y0) + Offset(delta.dx * 2, delta.dy);
-    // 往反方向拖：纸面留在起点（前进）/ 完全翻过（后退），不倒卷。
-    final Offset bounded = _forward
-        ? Offset(math.min(raw.dx, _size.width), raw.dy)
-        : Offset(math.max(raw.dx, -_size.width), raw.dy);
-    _point = clampPageCurlPoint(bounded, size: _size, y0: _y0);
+    final Offset raw = pageCurlFollowPoint(
+      size: _size,
+      start: _start,
+      finger: _finger,
+      cornerY: _y0,
+      forward: _forward,
+    );
+    // 往回翻是从「整页已翻过」拉回来：按落定口径让半径从书脊处由 0 长起来，
+    // 不然一按下书脊上就凭空冒出一整根圆柱。
+    _placePoint(raw, settling: !_forward);
     notifyListeners();
   }
 
@@ -785,6 +941,7 @@ class PageCurlController extends ChangeNotifier {
     }
     if (_jumpToEnd) {
       _point = _settleTo;
+      _radius = 0;
       await _finishSettle(generation);
       return;
     }
@@ -811,17 +968,19 @@ class PageCurlController extends ChangeNotifier {
         (_settleFromRest ? Easing.standard : Easing.standardDecelerate)
             .transform(t);
     final Offset p = Offset.lerp(_settleFrom, _settleTo, eased)!;
-    // 翻过去的途中略微抬高，卷出弧线而不是平推。
-    final double lift = math.sin(eased * math.pi) * _size.height * 0.04;
-    _point = clampPageCurlPoint(
-      Offset(p.dx, p.dy - lift),
-      size: _size,
-      y0: _y0,
-    );
+    // 翻过去的途中把角往页心抬，卷出弧线而不是平推。点按 / 按键从静止起翻：角从
+    // 下角掀起、中途明显上弧再落平（苹果图书点按翻页）；松手接力时手指已带出了
+    // 折痕的斜度，只补一点弧线。
+    final double towardCenter = _y0 > _size.height / 2 ? -1.0 : 1.0;
+    final double liftAmount = _settleFromRest ? 0.14 : 0.04;
+    final double lift =
+        math.sin(eased * math.pi) * _size.height * liftAmount * towardCenter;
+    _placePoint(Offset(p.dx, p.dy + lift), settling: true);
     notifyListeners();
     if (t >= 1.0) {
       _ticker?.stop();
       _point = _settleTo;
+      _radius = 0;
       unawaited(_finishSettle(_generation));
     }
   }
@@ -997,7 +1156,7 @@ class _PageCurlPainter extends CustomPainter {
       ..setFloat(7, geometry.corner.dy)
       ..setFloat(8, geometry.point.dx)
       ..setFloat(9, geometry.point.dy)
-      ..setFloat(10, pageCurlRadiusFor(paper.size))
+      ..setFloat(10, geometry.radius)
       ..setFloat(11, geometry.mirror ? 1 : 0)
       ..setFloat(12, base != null ? 1 : 0)
       ..setFloat(13, paperColor.r)

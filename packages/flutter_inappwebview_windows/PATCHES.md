@@ -145,3 +145,19 @@ verified at runtime on this machine.
 - Tests: source guards `fushi/test/widgets/texture_bridge_stop_guard_test.dart`,
   `wgc_pump_tick_agile_guard_test.dart`, `wgc_pump_interval_guard_test.dart`,
   `wgc_capture_logging_guard_test.dart`, `inappwebview_windows_native_guards_test.dart`.
+
+## `contentEncoding` is the charset (BUG-4102, 2026-11-05)
+
+- `windows/utils/content_type.h` `contentTypeWithCharset`, used by
+  `types/web_resource_response.cpp` and `types/custom_scheme_response.cpp`.
+  Upstream appended `contentEncoding` as an HTTP `Content-Encoding` header. In
+  the platform interface it is the response charset (Android
+  `WebResourceResponse`'s `encoding`, iOS `textEncodingName`), so it now rides
+  as the `charset=` parameter of `Content-Type` and no `Content-Encoding` header
+  is emitted. Without it WebView2 decoded intercepted documents lacking
+  `<meta charset>` with the system ANSI code page (GBK on zh-CN): EPUB chapters
+  showed UTF-8 curly quotes as mojibake. Unchanged when the type already has a
+  `charset=` parameter, or when `contentEncoding` is empty or `binary`.
+  The Linux fork carries the same helper (`linux/utils/content_type.h`).
+- Keep `content_type.h` pure ASCII: MSVC reads sources in the system code page
+  and the plugin builds with `/WX`, so a non-ASCII comment fails with C4819.

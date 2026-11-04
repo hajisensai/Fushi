@@ -18,6 +18,8 @@ import MusicKit
 ///   developer token 由系统按 App ID（已勾 MusicKit 服务）自动生成，不用 Worker 代签的那枚。
 /// - 订阅：`MusicSubscription.current`；账号地区：`MusicDataRequest.currentCountryCode`。
 /// - 播放：`ApplicationMusicPlayer`，队列只放 Dart 指定的一首（Fushi 的队列是唯一真相）。
+///   电台（`playStation`）例外：队列是整个电台、由 MusicKit 自己换歌，换歌时推 `nowPlaying`，
+///   `skipToNext` 走 `skipToNextEntry()`。
 ///   macOS 上 `ApplicationMusicPlayer` 要 14.0+，13.x 的 `play` 等回 `unsupported`
 ///   （Dart 侧按系统版本不建桥，正常走不到）。
 /// - 进度：主线程 250 ms 轮询 `playbackTime` / `playbackStatus` 推给 Dart；自然播完以
@@ -86,7 +88,7 @@ final class FushiAppleMusic: NSObject, FlutterStreamHandler {
         let userToken = try await provider.userToken(for: developerToken, options: [])
         return ["developerToken": developerToken, "userToken": userToken]
       }
-    case "play", "pause", "resume", "stop", "seek":
+    case "play", "playStation", "skipToNext", "pause", "resume", "stop", "seek":
       run(result) { @MainActor [weak self] in
         guard #available(iOS 15.0, macOS 14.0, *) else {
           throw BridgeError.unsupported("ApplicationMusicPlayer needs macOS 14")
@@ -101,6 +103,14 @@ final class FushiAppleMusic: NSObject, FlutterStreamHandler {
           let startMs = (args["startMs"] as? NSNumber)?.intValue ?? 0
           let autoplay = (args["autoplay"] as? Bool) ?? true
           try await player.play(songId: songId, startMs: startMs, autoplay: autoplay)
+        case "playStation":
+          guard let stationId = args["stationId"] as? String, !stationId.isEmpty else {
+            throw BridgeError.badArgs("stationId required")
+          }
+          let autoplay = (args["autoplay"] as? Bool) ?? true
+          try await player.playStation(stationId: stationId, autoplay: autoplay)
+        case "skipToNext":
+          try await player.skipToNext()
         case "pause":
           player.pause()
         case "resume":
@@ -190,6 +200,11 @@ enum BridgeError: Error {
 
 #if canImport(MusicKit)
 /// `ApplicationMusicPlayer` 的单曲控制 + 进度轮询。
+///
+/// 电台（`playStation`）例外：Apple 不公开电台的曲目列表，队列只能是整个电台、由 MusicKit 自己
+/// 换歌。同一轮询里发现 `queue.currentEntry` 换了就推一次 `nowPlaying`（是歌曲时带 catalog id /
+/// 时长，直播节目只有标题 / 副标题 / 封面）；电台只在队列空了（`currentEntry == nil`）时报
+/// `ended`，每首歌之间的停顿不算播完。
 @available(iOS 15.0, macOS 14.0, *)
 @MainActor
 final class AppleMusicPlayerCore {
@@ -197,7 +212,12 @@ final class AppleMusicPlayerCore {
   private let player = ApplicationMusicPlayer.shared
   private var timer: Timer?
 
+  /// 单曲：Dart 给的那首；电台：当前条目是歌曲时它的 catalog id（直播节目为 nil）。
   private var songId: String?
+  /// 正在放的电台（`playStation` 成功后才置上）；单曲时为 nil。
+  private var stationId: String?
+  /// 电台里上一次报过 `nowPlaying` 的条目（`Queue.Entry.id`）。
+  private var entryId: String?
   private var durationMs: Int?
   private var wasPlaying = false
   private var lastPositionMs = 0
@@ -218,6 +238,8 @@ final class AppleMusicPlayerCore {
     stopRequested = true
     // 换曲期间不再推上一首的进度 / 结束（Dart 侧也按 songId 过滤，这里先止住）。
     self.songId = nil
+    stationId = nil
+    entryId = nil
     var catalogRequest = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songId))
     catalogRequest.limit = 1
     let response = try await catalogRequest.response()
@@ -244,6 +266,45 @@ final class AppleMusicPlayerCore {
     tick()
   }
 
+  /// 放一个 catalog 电台：队列交给 MusicKit 自管。与 `play` 同样按 `requestId` 防后到先完成。
+  func playStation(stationId: String, autoplay: Bool) async throws {
+    requestId += 1
+    let request = requestId
+    stopRequested = true
+    songId = nil
+    self.stationId = nil
+    entryId = nil
+    var catalogRequest = MusicCatalogResourceRequest<Station>(
+      matching: \.id, equalTo: MusicItemID(stationId))
+    catalogRequest.limit = 1
+    let response = try await catalogRequest.response()
+    guard request == requestId else { return }
+    guard let station = response.items.first else {
+      throw BridgeError.notFound("station \(stationId) not in catalog")
+    }
+    player.queue = ApplicationMusicPlayer.Queue(for: [station])
+    try await player.prepareToPlay()
+    guard request == requestId else { return }
+    self.stationId = stationId
+    durationMs = nil
+    lastPositionMs = 0
+    wasPlaying = false
+    stopRequested = false
+    if autoplay {
+      try await player.play()
+      guard request == requestId else { return }
+    }
+    startTimer()
+    tick()
+  }
+
+  /// 电台里换下一首（单曲队列不理会：Dart 侧只在电台时调）。
+  func skipToNext() async throws {
+    guard stationId != nil else { return }
+    try await player.skipToNextEntry()
+    tick()
+  }
+
   func pause() {
     stopRequested = true
     player.pause()
@@ -262,6 +323,8 @@ final class AppleMusicPlayerCore {
     stopRequested = true
     player.stop()
     songId = nil
+    stationId = nil
+    entryId = nil
     timer?.invalidate()
     timer = nil
     if wasPlaying {
@@ -286,7 +349,9 @@ final class AppleMusicPlayerCore {
   }
 
   private func tick() {
-    guard let songId else { return }
+    guard songId != nil || stationId != nil else { return }
+    checkStationEntry()
+    let songId = self.songId
     let status = player.state.playbackStatus
     let playing = status == .playing
     if playing && !wasPlaying {
@@ -295,20 +360,27 @@ final class AppleMusicPlayerCore {
       stopRequested = false
     }
     let positionMs = Int((player.playbackTime * 1000).rounded())
-    var progress: [String: Any] = ["type": "progress", "positionMs": positionMs, "songId": songId]
+    var progress: [String: Any] = ["type": "progress", "positionMs": positionMs]
+    if let songId { progress["songId"] = songId }
     if let durationMs { progress["durationMs"] = durationMs }
     if playing != wasPlaying {
       if wasPlaying && !playing && !stopRequested && reachedEnd() {
-        // 自然播完：位置到尾部或队列已空。
+        // 自然播完：单曲位置到尾部或队列已空；电台只认队列已空。
         wasPlaying = false
         timer?.invalidate()
         timer = nil
-        emit(["type": "ended", "songId": songId])
+        var ended: [String: Any] = ["type": "ended"]
+        if let songId { ended["songId"] = songId }
+        emit(ended)
         self.songId = nil
+        stationId = nil
+        entryId = nil
         return
       }
       wasPlaying = playing
-      emit(["type": "playing", "playing": playing, "songId": songId])
+      var changed: [String: Any] = ["type": "playing", "playing": playing]
+      if let songId { changed["songId"] = songId }
+      emit(changed)
     }
     if playing || positionMs != lastPositionMs {
       emit(progress)
@@ -316,8 +388,41 @@ final class AppleMusicPlayerCore {
     lastPositionMs = positionMs
   }
 
+  /// 电台：当前条目换了就推 `nowPlaying`（同时换掉 `songId` / `durationMs`，之后的进度按新曲报）。
+  private func checkStationEntry() {
+    guard stationId != nil, let entry = player.queue.currentEntry else { return }
+    guard entry.id != entryId else { return }
+    entryId = entry.id
+    lastPositionMs = 0
+    var event: [String: Any] = ["type": "nowPlaying"]
+    if case .song(let song)? = entry.item {
+      songId = song.id.rawValue
+      durationMs = song.duration.map { Int(($0 * 1000).rounded()) }
+      event["songId"] = song.id.rawValue
+      event["title"] = song.title
+      event["artist"] = song.artistName
+      if let album = song.albumTitle { event["album"] = album }
+      if let durationMs { event["durationMs"] = durationMs }
+      if let url = song.artwork?.url(width: 600, height: 600) {
+        event["artworkUrl"] = url.absoluteString
+      }
+    } else {
+      // 直播节目 / 非歌曲条目：没有 catalog 曲目身份与时长。
+      songId = nil
+      durationMs = nil
+      event["title"] = entry.title
+      if let subtitle = entry.subtitle { event["artist"] = subtitle }
+      if let url = entry.artwork?.url(width: 600, height: 600) {
+        event["artworkUrl"] = url.absoluteString
+      }
+    }
+    emit(event)
+  }
+
   private func reachedEnd() -> Bool {
     if player.queue.currentEntry == nil { return true }
+    // 电台每首之间也会短暂停下：只有队列空了才算结束。
+    if stationId != nil { return false }
     guard let durationMs, durationMs > 0 else { return false }
     return lastPositionMs >= durationMs - 1500
   }

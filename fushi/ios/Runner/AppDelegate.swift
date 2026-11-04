@@ -713,19 +713,33 @@ final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
       for crash in payload.crashDiagnostics ?? [] {
         var data = crash.jsonRepresentation()
         if data.count > FushiCrashDiagnostics.maxBytes {
-          // 调用树太大：只留元数据（异常类型 / 码 / 信号 / 终止原因），仍是合法 JSON。
-          let meta: [String: Any] = [
-            "appVersion": crash.applicationVersion,
-            "exceptionType": crash.exceptionType?.intValue ?? -1,
-            "exceptionCode": crash.exceptionCode?.intValue ?? -1,
-            "signal": crash.signal?.intValue ?? -1,
-            "terminationReason": crash.terminationReason ?? "",
-            "virtualMemoryRegionInfo": crash.virtualMemoryRegionInfo ?? "",
-            "callStackTreeDropped": data.count,
-          ]
-          data =
-            (try? JSONSerialization.data(withJSONObject: ["diagnosticMetaData": meta]))
-            ?? Data()
+          // BUG-4102：超限的几乎总是「全部线程」的调用树（内存耗尽时几十条线程各一棵），而 Dart
+          // 摘要（previous_exit_log.dart summarizeMetricKitCrash）只读崩溃线程那一棵。先只丢别的
+          // 线程；只剩崩溃线程仍超限才退到元数据——以前一超限就整棵丢，崩溃线程与机型 / 系统 /
+          // 构建号一起没了，报告只剩「app=x(null) os=null device=null」。
+          if let slim = FushiCrashDiagnostics.attributedThreadOnly(data),
+            slim.count <= FushiCrashDiagnostics.maxBytes
+          {
+            data = slim
+          } else {
+            let md = crash.metaData
+            let meta: [String: Any] = [
+              "appVersion": crash.applicationVersion,
+              "appBuildVersion": md.applicationBuildVersion,
+              "osVersion": md.osVersion,
+              "deviceType": md.deviceType,
+              "platformArchitecture": md.platformArchitecture,
+              "exceptionType": crash.exceptionType?.intValue ?? -1,
+              "exceptionCode": crash.exceptionCode?.intValue ?? -1,
+              "signal": crash.signal?.intValue ?? -1,
+              "terminationReason": crash.terminationReason ?? "",
+              "virtualMemoryRegionInfo": crash.virtualMemoryRegionInfo ?? "",
+              "callStackTreeDropped": data.count,
+            ]
+            data =
+              (try? JSONSerialization.data(withJSONObject: ["diagnosticMetaData": meta]))
+              ?? Data()
+          }
         }
         let stamp = Int(payload.timeStampEnd.timeIntervalSince1970 * 1000)
         let name = "crash-\(stamp)-\(UUID().uuidString.prefix(8)).json"
@@ -733,6 +747,20 @@ final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
       }
     }
     prune(dir)
+  }
+
+  /// 只留崩溃线程（`threadAttributed == true`）的调用树，其余线程丢掉，并记下丢了几条
+  /// （`callStacksDropped`）；元数据原样保留。解析不了返回 nil。
+  static func attributedThreadOnly(_ data: Data) -> Data? {
+    guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+      var tree = root["callStackTree"] as? [String: Any],
+      let stacks = tree["callStacks"] as? [[String: Any]]
+    else { return nil }
+    let kept = stacks.filter { ($0["threadAttributed"] as? Bool) == true }
+    tree["callStacks"] = kept
+    tree["callStacksDropped"] = stacks.count - kept.count
+    root["callStackTree"] = tree
+    return try? JSONSerialization.data(withJSONObject: root)
   }
 
   private func prune(_ dir: URL) {

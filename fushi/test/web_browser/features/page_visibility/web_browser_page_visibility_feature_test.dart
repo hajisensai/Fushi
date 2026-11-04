@@ -10,7 +10,9 @@ class _FakeController extends Fake implements InAppWebViewController {
   final String name;
 }
 
-/// 记下每个控制器收到的步骤：`hold` / `release` / `hide` / `show`。
+/// 记下每个控制器收到的步骤：`hold`（按住并记下在播的，[kWebBrowserCoverHoldMediaScript]）/
+/// `rehold`（只按住不记，[kWebBrowserHoldMediaScript]）/ `release`（解除并续播记下的，
+/// [kWebBrowserCoverReleaseMediaScript]）/ `hide` / `show`。
 class _Recorder {
   final List<String> log = <String>[];
 
@@ -33,9 +35,11 @@ class _Recorder {
   }
 
   Future<void> runScript(InAppWebViewController c, String source) async {
-    final String step = source == kWebBrowserHoldMediaScript
+    final String step = source == kWebBrowserCoverHoldMediaScript
         ? 'hold'
-        : source == kWebBrowserReleaseMediaScript
+        : source == kWebBrowserHoldMediaScript
+        ? 'rehold'
+        : source == kWebBrowserCoverReleaseMediaScript
         ? 'release'
         : 'other';
     _record('${(c as _FakeController).name}:$step');
@@ -142,7 +146,7 @@ void main() {
     expect(rec.log, <String>['a:show', 'a:release']);
   });
 
-  test('盖住期间整页换了文档：新文档重新按住', () async {
+  test('盖住期间整页换了文档：新文档重新按住，但不记续播（此刻在播的是盖住后才开播的）', () async {
     await load(a, ca);
     feature.onPlaybackCoverChanged(covered: true);
     await settle();
@@ -154,7 +158,55 @@ void main() {
       Uri.parse('https://www.netflix.com/title/1'),
     );
     await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
+    expect(rec.log, <String>['a:rehold', 'a:hide']);
+
+    // 重新按住失败：重做时照样不记续播。
+    rec.log.clear();
+    rec.failOnce = 'a:rehold';
+    await feature.onLoadStop(
+      a,
+      ca,
+      Uri.parse('https://www.netflix.com/title/2'),
+    );
+    await settle();
+    await feature.onLoadStop(
+      a,
+      ca,
+      Uri.parse('https://www.netflix.com/title/2'),
+    );
+    await settle();
+    expect(rec.log, <String>['a:rehold', 'a:hide', 'a:rehold', 'a:hide']);
+
+    // 露出：照常解除（续播脚本只续按住前记下的，新文档里没有记录）。
+    rec.log.clear();
+    feature.onPlaybackCoverChanged(covered: false);
+    await settle();
+    expect(rec.log, <String>['a:show', 'a:release']);
+  });
+
+  test('续播脚本与交接按住分开：盖住按住会记录、露出会续播；交接的解除脚本不续播', () {
+    // 盖住：先记录此刻在播的，再走与交接共用的按住。
+    expect(
+      kWebBrowserCoverHoldMediaScript,
+      startsWith('(function(){var r=window.__fushiCoverResume'),
+    );
+    expect(
+      kWebBrowserCoverHoldMediaScript,
+      endsWith(kWebBrowserHoldMediaScript),
+    );
+    // 露出：先解除按住监听，再续播记下的。
+    expect(
+      kWebBrowserCoverReleaseMediaScript,
+      startsWith(kWebBrowserReleaseMediaScript),
+    );
+    expect(kWebBrowserCoverReleaseMediaScript, contains('.play()'));
+    // 交接（PlayInFushiFeature）那对脚本不碰续播记录。
+    expect(kWebBrowserHoldMediaScript, isNot(contains('__fushiCoverResume')));
+    expect(
+      kWebBrowserReleaseMediaScript,
+      isNot(contains('__fushiCoverResume')),
+    );
+    expect(kWebBrowserReleaseMediaScript, isNot(contains('.play()')));
   });
 
   test('WebView 建好但还没加载完：盖住时不去挂起它', () async {
@@ -163,10 +215,10 @@ void main() {
     await settle();
     expect(rec.log, isEmpty);
 
-    // 加载完才落地。
+    // 加载完才落地。盖住后才加载完的文档里在播的都是盖住期间开播的：只按住、不记续播。
     await feature.onLoadStop(a, ca, a.url);
     await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
+    expect(rec.log, <String>['a:rehold', 'a:hide']);
   });
 
   test('快速盖住 / 露出：按顺序落地，最后停在看得见', () async {
@@ -200,10 +252,10 @@ void main() {
     await settle();
     rec.log.clear();
 
-    // 下一次同步（例如页面加载完）重做整套隐藏。
+    // 下一次同步（例如页面加载完）重做整套隐藏（新文档：只按住、不记续播）。
     await feature.onLoadStop(a, ca, a.url);
     await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
+    expect(rec.log, <String>['a:rehold', 'a:hide']);
   });
 
   test('WebView 被回收（标签页还在）：撒手死控制器，之后盖住 / 露出不再碰它', () async {
@@ -218,11 +270,11 @@ void main() {
     await settle();
     expect(rec.log, isEmpty);
 
-    // 重建后的新 WebView 加载完照常管。
+    // 重建后的新 WebView 加载完照常管（盖住期间才加载完：只按住、不记续播）。
     final _FakeController ca2 = _FakeController('a2');
     feature.onPlaybackCoverChanged(covered: true);
     await load(a, ca2);
-    expect(rec.log, <String>['a2:hold', 'a2:hide']);
+    expect(rec.log, <String>['a2:rehold', 'a2:hide']);
   });
 
   test('关闭标签页：撒手', () async {

@@ -190,7 +190,10 @@ void main() {
         final _Rig rig = _Rig((http.Request r) async {
           expect(r.url.path, '/v1/catalog/jp/search');
           expect(r.url.queryParameters['term'], '夜に駆ける');
-          expect(r.url.queryParameters['types'], 'songs,albums,artists');
+          expect(
+            r.url.queryParameters['types'],
+            'songs,albums,artists,playlists,stations',
+          );
           expect(r.url.queryParameters['limit'], '25');
           expect(r.headers['Authorization'], 'Bearer tok1');
           return _json(<String, Object?>{
