@@ -16,7 +16,10 @@
 //   SUBLIST_PREFS=<json 文件>  启动前写入的 preferences 原始行（`{"design_system":"s:material"}`）；
 //   SUBLIST_PLAY=true          不暂停，边播边开关（用户的真实路径）；
 //   SUBLIST_WIDGET_TRACE=false 不开 widget 级 build/layout/paint 事件，只看引擎（含 raster 线程）；
-//   SUBLIST_TRACE_ALL=true     每一轮开关都录 timeline。
+//   SUBLIST_TRACE_ALL=true     每一轮开关都录 timeline；
+//   SUBLIST_WINDOW_MS=3000     每次按键后记帧 / 录 timeline 的窗口（默认 1500ms）。
+// 每轮汇总行带 slowRaster（raster>100ms 帧数）与 slowGaps（帧间隔>100ms 次数），
+// 开头打一行 `decode`（hwdec-current / pixelformat），核对是否走了用户的解码路径。
 import 'dart:async';
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:developer' show Timeline;
@@ -39,6 +42,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:media_kit/media_kit.dart' show NativePlayer, PlatformPlayer;
 import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:vm_service/vm_service.dart' as vm;
 
@@ -102,6 +106,17 @@ final int _kCycles =
       _knob('SUBLIST_CYCLES', const String.fromEnvironment('SUBLIST_CYCLES')),
     ) ??
     3;
+
+/// `SUBLIST_WINDOW_MS=3000`：每次按键后记帧的窗口（默认 1500）。用户真机日志里卡顿
+/// 落在开 / 关后 1–3 秒，1.5 秒窗口会截掉后半段。
+final int _kWindowMs =
+    int.tryParse(
+      _knob(
+        'SUBLIST_WINDOW_MS',
+        const String.fromEnvironment('SUBLIST_WINDOW_MS'),
+      ),
+    ) ??
+    1500;
 
 /// `SUBLIST_LAYERS=true`：关列表的轮次逐帧抓 layer 树（离屏层 / 纹理 / 平台视图）。
 final bool _kLayers = _flag(
@@ -235,11 +250,23 @@ class _FrameLog {
     final int maxRaster = f
         .map((FrameTiming t) => t.rasterDuration.inMicroseconds)
         .reduce((int a, int b) => a > b ? a : b);
+    // >100ms 的 raster 帧数与 >100ms 的帧间隔数（用户日志的 severe 量级）。
+    final int slowRaster = f
+        .where((FrameTiming t) => t.rasterDuration.inMicroseconds > 100000)
+        .length;
+    int slowGaps = 0;
+    int p = t0Micros;
+    for (final FrameTiming t in f) {
+      final int vs = t.timestampInMicroseconds(_vsync);
+      if (vs - p > 100000) slowGaps++;
+      p = vs;
+    }
     debugPrint(
       '$_tag $label frames=${f.length} '
       'span=${((lastVs - t0Micros) / 1000).toStringAsFixed(0)}ms '
       'maxGap=${(maxGap / 1000).toStringAsFixed(0)}ms '
-      'maxBuild=${maxBuild ~/ 1000}ms maxRaster=${maxRaster ~/ 1000}ms',
+      'maxBuild=${maxBuild ~/ 1000}ms maxRaster=${maxRaster ~/ 1000}ms '
+      'slowRaster=$slowRaster slowGaps=$slowGaps',
     );
     debugPrint('$_tag $label perFrame:$rows');
   }
@@ -510,6 +537,23 @@ void main() {
     if (!_kPlay) await video.controller.player.pause();
     await tester.pump(const Duration(seconds: 1));
 
+    // 解码路径（BUG-3888 用户条件是 h264 High10 → nvdec-copy + p010）：每轮核对。
+    final PlatformPlayer? platform = video.controller.player.platform;
+    if (platform is NativePlayer) {
+      final List<String> props = <String>[];
+      for (final String name in <String>[
+        'hwdec-current',
+        'video-params/pixelformat',
+        'video-params/hw-pixelformat',
+        'video-codec',
+        'width',
+        'height',
+      ]) {
+        props.add('$name=${await platform.getProperty(name)}');
+      }
+      debugPrint('$_tag decode ${props.join(' ')}');
+    }
+
     final FocusDriver driver = FocusDriver(tester);
     await driver.requestFocusInside(find.byType(Video));
     await tester.pump(const Duration(milliseconds: 200));
@@ -561,7 +605,7 @@ void main() {
         try {
           tl = await binding.traceTimeline(() async {
             await _pressL(tester);
-            await _wait(1500);
+            await _wait(_kWindowMs);
           }, streams: const <String>['Dart', 'Embedder', 'GC']);
         } finally {
           debugProfileBuildsEnabled = false;
@@ -570,7 +614,7 @@ void main() {
         }
       } else {
         await _pressL(tester);
-        await _wait(1500);
+        await _wait(_kWindowMs);
       }
       log.stop();
       layers.active = false;
