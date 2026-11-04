@@ -4036,6 +4036,7 @@
   "home_session_count": "$n جلسات",
   "home_srs_panel_done": "انتهى اليوم",
   "home_srs_panel_start": "مراجعة",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "اليوم",
   "home_updates_dismiss": "إخفاء",
   "home_yesterday": "أمس",

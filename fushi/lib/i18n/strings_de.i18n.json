@@ -4036,6 +4036,7 @@
   "home_session_count": "$n Sitzungen",
   "home_srs_panel_done": "Für heute fertig",
   "home_srs_panel_start": "Lernen",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "Heute",
   "home_updates_dismiss": "Ausblenden",
   "home_yesterday": "Gestern",

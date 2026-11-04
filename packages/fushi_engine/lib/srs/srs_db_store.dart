@@ -151,6 +151,44 @@ class SrsDeckSummary {
       : null;
 }
 
+/// 今天（[SrsDbStore.dayContext] 的日界）已做的复习：首页复习条的「今日」一行。口径与复习统计页
+/// 「今天」一节（`SrsStatsData.todayStats`，不按牌组筛选）相同：有效复习投影里的评分复习。
+class SrsTodayReviewSummary {
+  const SrsTodayReviewSummary({
+    required this.count,
+    required this.durationMs,
+    required this.again,
+  });
+
+  static const SrsTodayReviewSummary empty = SrsTodayReviewSummary(
+    count: 0,
+    durationMs: 0,
+    again: 0,
+  );
+
+  /// 评分复习次数。
+  final int count;
+
+  /// 作答用时之和（毫秒）。
+  final int durationMs;
+
+  /// 其中评「重来」的次数。
+  final int again;
+
+  /// 正确率（非「重来」的占比）；今天还没复习时为 null。
+  double? get correctRate => count == 0 ? null : (count - again) / count;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsTodayReviewSummary &&
+      other.count == count &&
+      other.durationMs == durationMs &&
+      other.again == again;
+
+  @override
+  int get hashCode => Object.hash(count, durationMs, again);
+}
+
 /// 复习页一张卡的全部信息。
 class SrsCardDetail {
   const SrsCardDetail({
@@ -3660,6 +3698,34 @@ class SrsDbStore implements SrsSync2Host {
 
     visit(null);
     return out;
+  }
+
+  /// 今天已做的复习（[SrsTodayReviewSummary]）：有效复习投影（`srs_stat_reviews`，被撤销的不在）里落在
+  /// 今天（[dayContext] 的日界，与牌组计数同一个「今天」）的评分复习，按 (profile, 时刻) 索引聚合一次。
+  Future<SrsTodayReviewSummary> todayReviewSummary() async {
+    final SrsDayContext day = await dayContext();
+    final int today = day.dayIndexOf(now().$1);
+    final $SrsStatReviewsTable t = db.srsStatReviews;
+    final Expression<int> n = countAll();
+    final Expression<int> ms = t.durationMs.sum();
+    final Expression<int> again = const CustomExpression<int>(
+      'SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END)',
+    );
+    final TypedResult row =
+        await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[n, ms, again])
+              ..where(
+                t.profileUid.equals(profileUid) &
+                    t.rating.isNotNull() &
+                    t.occurredAt.isBiggerOrEqualValue(day.dayStartMs(today)) &
+                    t.occurredAt.isSmallerThanValue(day.dayStartMs(today + 1)),
+              ))
+            .getSingle();
+    return SrsTodayReviewSummary(
+      count: row.read(n) ?? 0,
+      durationMs: row.read(ms) ?? 0,
+      again: row.read(again) ?? 0,
+    );
   }
 
   /// 单个牌组（含子树）的计数，与 [deckSummaries] 里同一牌组的那一行相同：

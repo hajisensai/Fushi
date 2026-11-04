@@ -4036,6 +4036,7 @@
   "home_session_count": "$n sessões",
   "home_srs_panel_done": "Concluído por hoje",
   "home_srs_panel_start": "Revisar",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "Hoje",
   "home_updates_dismiss": "Dispensar",
   "home_yesterday": "Ontem",

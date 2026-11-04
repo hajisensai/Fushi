@@ -4036,6 +4036,7 @@
   "home_session_count": "$n sesi",
   "home_srs_panel_done": "Selesai untuk hari ini",
   "home_srs_panel_start": "Ulas",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "Hari ini",
   "home_updates_dismiss": "Tutup",
   "home_yesterday": "Kemarin",

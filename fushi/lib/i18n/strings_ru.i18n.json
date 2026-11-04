@@ -4036,6 +4036,7 @@
   "home_session_count": "Сессий: $n",
   "home_srs_panel_done": "На сегодня всё",
   "home_srs_panel_start": "Повторить",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "Сегодня",
   "home_updates_dismiss": "Скрыть",
   "home_yesterday": "Вчера",

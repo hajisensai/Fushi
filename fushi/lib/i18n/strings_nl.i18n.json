@@ -4036,6 +4036,7 @@
   "home_session_count": "$n sessies",
   "home_srs_panel_done": "Klaar voor vandaag",
   "home_srs_panel_start": "Herhalen",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "Vandaag",
   "home_updates_dismiss": "Sluiten",
   "home_yesterday": "Gisteren",

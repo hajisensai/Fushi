@@ -4036,6 +4036,7 @@
   "home_session_count": "$n เซสชัน",
   "home_srs_panel_done": "วันนี้เสร็จแล้ว",
   "home_srs_panel_start": "ทบทวน",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "วันนี้",
   "home_updates_dismiss": "ปิด",
   "home_yesterday": "เมื่อวาน",

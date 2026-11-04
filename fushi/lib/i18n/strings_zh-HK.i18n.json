@@ -4036,6 +4036,7 @@
   "home_session_count": "$n 次",
   "home_srs_panel_done": "今日已完成",
   "home_srs_panel_start": "開始複習",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "今天",
   "home_updates_dismiss": "關閉",
   "home_yesterday": "昨天",

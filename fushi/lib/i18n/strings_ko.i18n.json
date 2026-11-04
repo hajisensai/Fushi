@@ -4036,6 +4036,7 @@
   "home_session_count": "$n 세션",
   "home_srs_panel_done": "오늘 완료",
   "home_srs_panel_start": "복습 시작",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "오늘",
   "home_updates_dismiss": "닫기",
   "home_yesterday": "어제",

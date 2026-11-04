@@ -4036,6 +4036,7 @@
   "home_session_count": "$n phiên",
   "home_srs_panel_done": "Đã xong hôm nay",
   "home_srs_panel_start": "Ôn tập",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "Hôm nay",
   "home_updates_dismiss": "Đóng",
   "home_yesterday": "Hôm qua",

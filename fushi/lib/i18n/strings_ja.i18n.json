@@ -4036,6 +4036,7 @@
   "home_session_count": "$n セッション",
   "home_srs_panel_done": "今日の分は完了",
   "home_srs_panel_start": "復習する",
+  "home_srs_panel_today": "Today ${count} reviewed · ${time}",
   "home_today": "今日",
   "home_updates_dismiss": "閉じる",
   "home_yesterday": "昨日",
