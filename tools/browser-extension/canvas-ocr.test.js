@@ -9,7 +9,8 @@
 //   2) 截取：首选 canvas 位图；被跨源污染（toDataURL 抛 SecurityError）或读回全透明时改走
 //      background 的 captureVisibleTab 截图再裁；
 //   3) 命中：截图像素字框 → 视口命中、从命中字起取词、例句 = 整块文字；
-//   4) 一页只识别一次（缓存），翻页类输入作废缓存；识别失败不留缓存；只认最后一次指针；
+//   4) 一页只识别一次（缓存），翻页类输入作废缓存；识别失败也缓存到作废为止、只提醒一次（不得
+//      每次悬停都重新截图 + POST）；只认最后一次指针；
 //   5) 接线：content.js 在取不到文本节点时真的走抓图取词，查词消息带上 OCR 的词，
 //      制卡例句是 OCR 的整块文字。
 const { test } = require('node:test');
@@ -163,7 +164,7 @@ test('取词上限按字素计', () => {
   assert.strictEqual(ocr.fushiCanvasOcrLookupOf(frame, hit, 3).term, '吾輩は');
 });
 
-// ── 4) 会话：缓存 / 作废 / 失败不留 / 只认最后一次 ─────────────────────────────
+// ── 4) 会话：缓存 / 作废 / 失败缓存 / 只认最后一次 ─────────────────────────────
 
 function session(opts) {
   const o = opts || {};
@@ -215,16 +216,33 @@ test('canvas 被跨源污染：改走 captureVisibleTab 截图（截前先收起
   assert.strictEqual(before(), 1);
 });
 
-test('app 没有可用的 OCR 引擎：报 error 且不留缓存，下一次悬停重新请求', async () => {
+test('app 没有可用的 OCR 引擎：报一次 error 并缓存到作废，悬停连发不重复请求；作废后重新探测', async () => {
   let calls = 0;
   const { s, sent } = session({ replies: { ocr: () => (++calls === 1
     ? { ok: true, data: { error: 'noEngine', blocks: [] } }
     : { ok: true, data: { width: 800, height: 600, blocks: ocrBlocks() } }) } });
   const r = await s.lookupAt(120, 120, 12);
-  assert.deepStrictEqual({ status: r.status, error: r.error }, { status: 'error', error: 'noEngine' });
+  assert.deepStrictEqual({ status: r.status, error: r.error, repeat: r.repeat },
+    { status: 'error', error: 'noEngine', repeat: false });
+  // 同一画面上按住 Shift 来回悬停：复用失败结果，不再截图 / POST，也不再提醒。
+  for (let i = 0; i < 5; i++) {
+    const again = await s.lookupAt(240, 120, 12);
+    assert.deepStrictEqual({ status: again.status, repeat: again.repeat }, { status: 'error', repeat: true });
+  }
+  assert.strictEqual(sent.filter((m) => m.type === 'ocrImage').length, 1, '失败结果必须缓存，否则每次悬停都打一次 app');
+  // 用户去 app 装好引擎回来（窗口重新获得焦点 → content.js 作废）：不刷新页面也能查。
+  s.invalidate();
   const r2 = await s.lookupAt(120, 120, 12);
   assert.strictEqual(r2.status, 'hit', '装好引擎后不刷新页面也该能查');
   assert.strictEqual(sent.filter((m) => m.type === 'ocrImage').length, 2);
+});
+
+test('截屏路失败同样缓存：不反复先收起弹窗再截图', async () => {
+  const cap = session({ tainted: true, replies: { capture: { ok: false, error: 'tab-not-visible' } } });
+  assert.strictEqual((await cap.s.lookupAt(120, 120, 12)).repeat, false);
+  assert.strictEqual((await cap.s.lookupAt(120, 120, 12)).repeat, true);
+  assert.strictEqual(cap.sent.filter((m) => m.type === 'canvasOcrCapture').length, 1);
+  assert.strictEqual(cap.before(), 1);
 });
 
 test('连接失败 / 截图失败如实回 error', async () => {
@@ -263,7 +281,9 @@ const ROOT = __dirname;
 function loadContentWorld(opts) {
   const o = opts || {};
   const sent = [];
+  const toasts = [];
   const docListeners = Object.create(null);
+  const winListeners = Object.create(null);
   const page = fakeCanvasEl({ left: 0, top: 0, width: 800, height: 600 }, { width: 800, height: 600 });
   const doc = fakeDoc([{ tagName: 'DIV' }, page], o);
   const selection = {
@@ -292,6 +312,7 @@ function loadContentWorld(opts) {
     head: { appendChild() {} },
     body: { appendChild() {}, style: {} },
     title: 'BookWalker',
+    visibilityState: 'visible',
     fullscreenElement: null,
     addEventListener: (t, fn) => { (docListeners[t] = docListeners[t] || []).push(fn); },
     getElementById: () => null,
@@ -312,7 +333,7 @@ function loadContentWorld(opts) {
       sendMessage: (msg, cb) => {
         if (!msg || msg.type !== 'dictMediaConfig') sent.push(msg);
         let reply = { ok: true, data: { result: 'success' } };
-        if (msg && msg.type === 'ocrImage') reply = { ok: true, data: { width: 800, height: 600, blocks: ocrBlocks() } };
+        if (msg && msg.type === 'ocrImage') reply = o.ocrReply || { ok: true, data: { width: 800, height: 600, blocks: ocrBlocks() } };
         if (msg && msg.type === 'canvasOcrCapture') reply = { ok: true, dataUrl: 'data:image/png;base64,AAAA' };
         // 查词回失败：只断言发出去的内容，不跑弹窗渲染（失败回执让在途闸放行下一次悬停）。
         if (msg && msg.type === 'lookup') reply = { ok: false, error: 'not-rendered-in-test' };
@@ -329,7 +350,7 @@ function loadContentWorld(opts) {
     set src(_v) { this.isScreenshot = true; this.naturalWidth = 1200; this.naturalHeight = 800; this.onload(); }
   };
   sandbox.window = {
-    addEventListener() {},
+    addEventListener: (t, fn) => { (winListeners[t] = winListeners[t] || []).push(fn); },
     postMessage() {},
     innerWidth: 1200,
     innerHeight: 800,
@@ -342,9 +363,15 @@ function loadContentWorld(opts) {
     'subtitle-providers.js', 'canvas-ocr.js', 'content.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
   }
+  sandbox.window.fushiToast = (m) => { toasts.push(m); };
   return {
     sent,
+    toasts,
     windowObj: sandbox.window,
+    fire: (where, type, ev) => {
+      const map = where === 'window' ? winListeners : docListeners;
+      for (const fn of map[type] || []) fn(ev || {});
+    },
     hover: (x, y) => {
       for (const fn of docListeners.mousemove || []) fn({ shiftKey: true, clientX: x, clientY: y, buttons: 0 });
     },
@@ -379,4 +406,60 @@ test('接线：同一画面上换字只识别一次；跨源污染的 canvas 走
     ['canvasOcrCapture', 'ocrImage']);
   assert.deepStrictEqual(w.sent.filter((m) => m && m.type === 'lookup').map((m) => m.term),
     ['猫である', '吾輩は猫である']);
+});
+
+// 事件目标替身：closest(sel) 命中扩展自己的界面（id 以 fushi- 开头 / 递归查词子层）时回自身。
+function evtTarget(ownUi) {
+  return { closest: (sel) => (ownUi && /fushi-|data-fushi-session-host/.test(sel) ? {} : null) };
+}
+function countType(w, t) { return w.sent.filter((m) => m && m.type === t).length; }
+
+test('接线：在扩展自己的弹窗里滚动 / 点按不作废识别缓存；页面上的点按 / 滚轮才作废', async () => {
+  const w = loadContentWorld();
+  w.hover(240, 120);
+  await settle();
+  assert.strictEqual(countType(w, 'ocrImage'), 1);
+  // 弹窗 ShadowRoot 里的 wheel / pointerdown 在 window / document 捕获阶段被重定向到 #fushi-popup-host。
+  w.fire('window', 'wheel', { target: evtTarget(true) });
+  w.fire('document', 'pointerdown', { target: evtTarget(true) });
+  w.hover(120, 120);
+  await settle();
+  assert.strictEqual(countType(w, 'ocrImage'), 1, '在弹窗里看词条不是翻页，不得重新截图识别');
+  w.fire('window', 'wheel', { target: evtTarget(false) });
+  w.hover(240, 120);
+  await settle();
+  assert.strictEqual(countType(w, 'ocrImage'), 2, '页面上的滚轮可能翻了页，必须重新识别');
+});
+
+test('接线：识别失败只提示一次；窗口重新获得焦点（去 app 装好引擎回来）后重新识别', async () => {
+  const w = loadContentWorld({ ocrReply: { ok: true, data: { error: 'noEngine', blocks: [] } } });
+  w.hover(240, 120);
+  await settle();
+  w.hover(120, 120);
+  await settle();
+  w.hover(240, 120);
+  await settle();
+  assert.strictEqual(countType(w, 'ocrImage'), 1, '同一画面上的失败不得每次悬停都重新请求');
+  assert.strictEqual(w.toasts.length, 1);
+  w.fire('window', 'focus', { target: w.windowObj });
+  w.hover(120, 120);
+  await settle();
+  assert.strictEqual(countType(w, 'ocrImage'), 2);
+});
+
+// ── 6) 权限：截屏兜底要 manifest 真给得起 ─────────────────────────────────────────
+// tabs.captureVisibleTab 只认 <all_urls> 或 activeTab（Chrome 文档原文："the extension must have
+// either the <all_urls> permission or the activeTab permission"）。activeTab 只在点工具栏图标 /
+// 右键菜单 / 快捷键时临时授予，Shift 悬停不会授予；http/https 通配也不等于 <all_urls>。
+// 测试里的 chrome.tabs 是替身，钉不住这一层，所以直接钉 manifest。
+test('权限：background 用 captureVisibleTab 时，两份 manifest 的 host_permissions 都含 <all_urls>', () => {
+  const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  assert.ok(bg.includes('captureVisibleTab'), '截屏兜底不在 background.js 了：同步更新本守卫');
+  for (const dir of [ROOT, path.join(ROOT, '..', '..', 'fushi', 'assets', 'browser_extension')]) {
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    const hosts = manifest.host_permissions || [];
+    const perms = manifest.permissions || [];
+    assert.ok(hosts.includes('<all_urls>') || perms.includes('<all_urls>'),
+      dir + '/manifest.json 缺 <all_urls>：captureVisibleTab 在 Shift 悬停时会被拒，跨源污染的 canvas 抓图取词不通');
+  }
 });

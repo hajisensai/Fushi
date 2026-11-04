@@ -12,8 +12,8 @@
 //      回每个字在截图里的位置；
 //   3. 命中指针下那个字，从它起取词交给既有查词弹窗，整块文字作例句。
 //
-// 一页只识别一次：结果按 canvas + 视口几何缓存，翻页类输入（点击、按键、滚轮、滚动、缩放）
-// 一律作废缓存，下一次悬停重新截图识别。只认最后一次指针位置：识别在途时连发的悬停只留最后一次。
+// 一页只识别一次：结果（含失败）按 canvas + 视口几何缓存，翻页类输入（点击、按键、滚轮、滚动、
+// 缩放）与窗口重新获得焦点 / 标签页重新可见一律作废缓存，下一次悬停重新截图识别。只认最后一次指针位置：识别在途时连发的悬停只留最后一次。
 
 // 识别图长边上限（像素）。超过等比缩小：OCR 的精度够用，请求体也不至于几十 MB。
 var FUSHI_CANVAS_OCR_MAX_LONG_EDGE = 2048;
@@ -264,7 +264,8 @@ function fushiCreateCanvasOcrSession(deps) {
   // 指针 (x, y) 下若是阅读器 canvas：识别（或复用缓存）并命中字。
   // 回 Promise<{ status: 'none' | 'stale' | 'miss' | 'error' | 'hit', ... }>：
   //   none = 指针下不是阅读器 canvas（调用方照旧无事可做）；stale = 有更新的指针位置，本次作废；
-  //   miss = 识别了但指针下没有字；error = 识别失败（{ error, resp? }）；hit = { canvas, lookup }。
+  //   miss = 识别了但指针下没有字；error = 识别失败（{ error, resp?, repeat }，repeat = 这次失败
+//   此前已经回报过）；hit = { canvas, lookup }。
   async function lookupAt(x, y, maxLen) {
     const canvas = fushiCanvasOcrTargetAt(deps.doc, x, y);
     if (!canvas) return { status: 'none' };
@@ -275,17 +276,24 @@ function fushiCreateCanvasOcrSession(deps) {
     if (!captureRect) return { status: 'none' };
     const key = fushiCanvasOcrKey(captureRect, canvas);
     if (!cache || cache.canvas !== canvas || cache.key !== key) {
-      const entry = { canvas, key, promise: null };
-      entry.promise = captureAndRecognize(canvas, captureRect, canvasRect).catch((e) => ({
+      const fresh = { canvas, key, promise: null, reported: false };
+      fresh.promise = captureAndRecognize(canvas, captureRect, canvasRect).catch((e) => ({
         error: 'exception', detail: String(e && e.message || e),
       }));
-      cache = entry;
-      // 失败的结果不留：下一次悬停重新识别（引擎装好 / app 回到前台后不必刷新页面）。
-      entry.promise.then((r) => { if (r && r.error && cache === entry) cache = null; });
+      cache = fresh;
     }
-    const result = await cache.promise;
+    // 失败的结果也留到作废为止：同一画面上按住 Shift 来回悬停不得每次都重新截图、POST、
+    // 让 app 重新解析引擎。作废时机与成功结果相同（翻页类输入），另加「窗口重新获得焦点 /
+    // 标签页重新可见」——用户去 app 里装好引擎 / 开好 API 再回来，就是这一刻（content.js 接线）。
+    const entry = cache;
+    const result = await entry.promise;
     if (mySeq !== seq) return { status: 'stale' };
-    if (result.error) return { status: 'error', error: result.error, resp: result.resp || null };
+    if (result.error) {
+      // 同一次失败只提醒一次：后续悬停拿到的是同一个缓存结果，repeat=true，调用方不再弹提示。
+      const repeat = entry.reported === true;
+      entry.reported = true;
+      return { status: 'error', error: result.error, resp: result.resp || null, repeat };
+    }
     const hit = fushiCanvasOcrCharAt(result.frame, x, y);
     if (!hit) return { status: 'miss' };
     return { status: 'hit', canvas, lookup: fushiCanvasOcrLookupOf(result.frame, hit, maxLen) };

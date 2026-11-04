@@ -2653,8 +2653,13 @@ function fushiCanvasOcrSession() {
     },
   });
   // 翻页类输入：canvas 上的画面可能已经换了，缓存的识别结果作废，下一次悬停重新识别。
-  // 只按住扫词修饰键（Shift 等）不算翻页。
-  const invalidate = () => { if (fushiCanvasOcr) fushiCanvasOcr.invalidate(); };
+  // 只按住扫词修饰键（Shift 等）不算翻页；落在扩展自己界面（查词弹窗 / 字幕覆盖层等，
+  // 弹窗 ShadowRoot 里的事件在这里已被重定向到宿主元素）上的滚动 / 点按也不算——那是在看词条，
+  // 页面没翻；否则下一次悬停走截屏路时会先把正在看的弹窗收起来。
+  const invalidate = (e) => {
+    if (fushiCanvasOcrOwnUiEvent(e)) return;
+    if (fushiCanvasOcr) fushiCanvasOcr.invalidate();
+  };
   document.addEventListener('pointerdown', invalidate, true);
   window.addEventListener('wheel', invalidate, { capture: true, passive: true });
   window.addEventListener('resize', invalidate, { passive: true });
@@ -2662,11 +2667,28 @@ function fushiCanvasOcrSession() {
   document.addEventListener('keydown', (e) => {
     const k = e && e.key;
     if (k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta') return;
-    invalidate();
+    invalidate(e);
   }, true);
+  // 失败结果会留在缓存里（同一画面不反复请求）：用户切去 app 装好引擎 / 开好 API、或切回这个
+  // 标签页时作废，回来后的第一次悬停重新识别。
+  window.addEventListener('focus', invalidate);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') invalidate(null);
+  });
   return fushiCanvasOcr;
 }
+// 事件是否落在扩展自己的页内界面上：id 以 fushi- 开头的（查词弹窗宿主、字幕覆盖层、播放器菜单……）
+// 与递归查词子层（data-fushi-session-host）。
+function fushiCanvasOcrOwnUiEvent(e) {
+  const t = e && e.target;
+  try {
+    return !!(t && typeof t.closest === 'function' && t.closest('[id^="fushi-"], [data-fushi-session-host]'));
+  } catch (_) {
+    return false;
+  }
+}
 function fushiReportCanvasOcrError(r) {
+  if (r.repeat) return; // 同一次失败（缓存结果）已经提示过
   if (r.error === 'request') { fushiShowConnectionFailure(r.resp); return; }
   const now = Date.now();
   if (now - fushiLastCanvasOcrHintAt < 8000) return; // 悬停连发时只提醒一次
