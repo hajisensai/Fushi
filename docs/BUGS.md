@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3608 条。点号进各自文件。
+> 共 3612 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4008](bugs/BUG-4008-ai-agent-remote-session-history.md) | 🚧 | 🚧 | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
+| [BUG-4007](bugs/BUG-4007-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |
+| [BUG-4006](bugs/BUG-4006-feedback-bottom-left-image-no-material.md) | 🚧 | 🚧 | 左下角图片不自动消失（反馈材料拉取失败，未定位） |
+| [BUG-4005](bugs/BUG-4005-video-volume-popover-md2-slider.md) | ✅ | ✅ | 视频音量浮层仍是 MD2 圆钮细轨、外框不分设计系统 |
 | [BUG-4004](bugs/BUG-4004-filled-field-label-clipped-desktop-density.md) | ✅ | ✅ | 带标题输入框 / 下拉的浮起标题贴住或骑出填充块上沿（文字显示不全） |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
