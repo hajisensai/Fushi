@@ -937,8 +937,10 @@ const CACHE_PENDING_CHUNK: usize = 5;
 ///
 /// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
 /// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
-const CHANNEL_TRANSPARENT: [&str; 48] = [
+const CHANNEL_TRANSPARENT: [&str; 50] = [
     "identity",
+    "device_info",
+    "device_hint",
     "channel_settle",
     "open_v1",
     "plan",
@@ -995,6 +997,7 @@ const CHANNEL_TRANSPARENT: [&str; 48] = [
 #[cfg_attr(not(test), allow(dead_code))]
 const CHANNEL_SETTLES: [&str; 23] = [
     "apply",
+    "retire",
     "dedup",
     "migrate",
     "replay_all",
@@ -1019,8 +1022,9 @@ const CHANNEL_SETTLES: [&str; 23] = [
     "backfill_tag_sources",
 ];
 
-const PROJECTING_OPS: [&str; 12] = [
+const PROJECTING_OPS: [&str; 13] = [
     "apply",
+    "retire",
     "ingest",
     "ingest_batch",
     "ingest_commit",
@@ -1234,6 +1238,20 @@ fn sync2_command(
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 设备可识别（store/sync2/devices.rs）：本机型号 / 版本 / 平台 / 昵称（给了哪个改哪个，没变不进写锁）；没有自报名字
+        // 的设备的补充名（互联 host 认出上传者）。
+        "device_info" => c.sync2_device_info(profile, req, i("now")?)?,
+        "device_hint" => c.sync2_device_hint(s("device")?, s("hint")?)?,
+        // 停用 / 取消停用一台设备，紧接着投一遍缓冲（因它卡住的操作不再等它），同一次调用里刷新缓存（[PROJECTING_OPS]）。
+        "retire" => {
+            let retire = req["retire"] != Value::Bool(false);
+            let mut v = c.sync2_retire(profile, s("device")?, retire, i("now")?)?;
+            let drained: Value = serde_json::from_str(&c.sync2_ingest(profile, &[], None, i("now")?)?).map_err(|e| e.to_string())?;
+            if let (Some(m), Value::Object(d)) = (v.as_object_mut(), drained) {
+                m.extend(d);
+            }
+            v
+        }
         // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4011）。
         "legacy_dots" => c.sync2_legacy_dots(profile)?,
         // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。

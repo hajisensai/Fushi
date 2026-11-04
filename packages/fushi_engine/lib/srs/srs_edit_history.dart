@@ -77,17 +77,21 @@ extension SrsEditHistory on SrsDbStore {
     ];
   }
 
-  /// 设备 ID → 设备名（各设备 head 里报的名字；没报过的不在表里）。
+  /// 设备 ID → 设备名（各设备 head 里报的名字；没报过、互联 host 认出了是哪个已配对对端的用对端名；都没有的不在表里）。
   Future<Map<String, String>> sync2DeviceNames() async {
     final SrsDbStore self = this;
     if (self is SrsRemoteForwarding) {
       return (self as SrsRemoteForwarding).remoteDeviceNames();
     }
     final Map<String, Object?> status = await sync2Status();
+    String nameOf(Map<Object?, Object?> d) {
+      final String name = ((d['name'] as String?) ?? '').trim();
+      return name.isNotEmpty ? name : ((d['hint'] as String?) ?? '').trim();
+    }
+
     return <String, String>{
       for (final Object? d in (status['devices'] as List?) ?? const <Object?>[])
-        if (d is Map && ((d['name'] as String?) ?? '').isNotEmpty)
-          d['device']! as String: d['name']! as String,
+        if (d is Map && nameOf(d).isNotEmpty) d['device']! as String: nameOf(d),
     };
   }
 }

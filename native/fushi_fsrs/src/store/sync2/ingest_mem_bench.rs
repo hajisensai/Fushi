@@ -1,4 +1,4 @@
-//! 大 profile 分批收段的逐批内存（默认不跑）：反馈 BUG-4004 的小米真机在 35 万条复习日志的 profile 上，收段
+//! 大 profile 分批收段的逐批内存（默认不跑）：反馈 BUG-4012 的小米真机在 35 万条复习日志的 profile 上，收段
 //! （`stage=downloading:ingest 1144/1230`，几十批）中 Scudo「internal map failure」原生 OOM。这里造同形数据：设备 A
 //! 写 `SRS_BENCH_CARDS` 张卡（缺省 35000，每卡一条笔记）× `SRS_BENCH_REVIEWS` 次复习（缺省 10），按 `SRS_BENCH_CHUNK`
 //! 张卡（缺省 300）一轮发件，切出上千个小段；新设备 B 走生产的分发器（ffi.rs `sync2_dispatch`）按会话收：
