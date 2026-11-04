@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-4009（反馈 Xr7RRZ3zjm「新明解 词头【鯉】标注渲染异常」、dyDC7zou8x「【漁る】出现
+/// BUG-4040（反馈 Xr7RRZ3zjm「新明解 词头【鯉】标注渲染异常」、dyDC7zou8x「【漁る】出现
 /// 奇怪符号」，两张截图都是 新明解国語辞典 第八版 的词头）。
 ///
 /// jitenbot 转出的新明解把表外字 / 表外音训标记写成

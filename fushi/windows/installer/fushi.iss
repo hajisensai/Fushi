@@ -281,7 +281,7 @@ Filename: "{app}\fushi.exe"; Description: "{cm:LaunchProgram,Fushi}"; Flags: now
 const
   FushiAppMutexName = 'FushiSingleInstanceMutex';
   LegacyAppMutexName = 'HibikiSingleInstanceMutex';
-  { BUG-4007：「正在替换安装目录」门。名字与 windows/runner/main.cpp 的
+  { BUG-4028：「正在替换安装目录」门。名字与 windows/runner/main.cpp 的
     kInstallInProgressMutex 逐字一致。 }
   FushiInstallGateMutexName = 'FushiInstallInProgressMutex';
   SyncMutexAccess = $00100000; { SYNCHRONIZE }
@@ -306,7 +306,7 @@ function CreateMutexW(lpMutexAttributes: Cardinal; bInitialOwner: Boolean;
   lpName: String): THandle;
   external 'CreateMutexW@kernel32.dll stdcall';
 
-{ BUG-4007：安装目录替换期间的「请勿启动」门。
+{ BUG-4028：安装目录替换期间的「请勿启动」门。
 
   现场（反馈 umcyzpaebn，23025→23080）：旧实例 10:31:30.44 退出、launcher 拉起安装器，
   约 0.5 s 后一个由 explorer.exe 拉起的新 fushi.exe 落在 InitializeSetup / PrepareToInstall
@@ -528,7 +528,7 @@ var
   NL: String;
 begin
   Result := '';
-  { BUG-4007：门必须先于清场建好——清场之后才启动的 fushi.exe 由门挡住。 }
+  { BUG-4028：门必须先于清场建好——清场之后才启动的 fushi.exe 由门挡住。 }
   OpenFushiInstallGate();
   { 逐个 TerminateProcess 后同步等进程对象回收（镜像文件锁随之释放），不需要再睡。 }
   KillProcessesUnderDir(ExpandConstant('{app}'));
@@ -804,7 +804,7 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
 
-  { BUG-4007：新文件已全部落地，放开启动门（[Run] 拉起新版在此之后）。 }
+  { BUG-4028：新文件已全部落地，放开启动门（[Run] 拉起新版在此之后）。 }
   CloseFushiInstallGate();
 
   WriteDataRootBootstrap();

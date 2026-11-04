@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 
 /// 阅读器返回阶梯：Esc（globalBack）与系统返回同一条——词典弹窗先关，其余一律退书；
-/// 歌词模式不是一级（系统返回 NJIIDAhIZL，Esc BUG-4005）。
+/// 歌词模式不是一级（系统返回 NJIIDAhIZL，Esc BUG-4026）。
 void main() {
   test('词典弹窗开着先关弹窗', () {
     expect(

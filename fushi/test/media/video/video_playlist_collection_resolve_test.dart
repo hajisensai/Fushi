@@ -1,4 +1,4 @@
-// BUG-4008（本地部分）：侧边栏「继续观看」等入口只传 bookUid 打开播放页，合集里的
+// BUG-4024（本地部分）：侧边栏「继续观看」等入口只传 bookUid 打开播放页，合集里的
 // 一集进播放页没有剧集列表。系列上下文改由共享路由入口 [openLocalVideoBook] 按视频库
 // 折叠归属自己解析（[resolveVideoPlaylistCollectionId]）。本文件锁两层：
 // 1. 解析器与视频库折叠映射同口径（真 drift 内存库）；

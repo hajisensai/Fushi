@@ -383,7 +383,7 @@ void main() {
       MangaDownloadJobStatus.running,
     );
 
-    // CBZ 字节进度（BUG-4004：只进内存、不写页列）→ 内联面板进度条 +
+    // CBZ 字节进度（BUG-4025：只进内存、不写页列）→ 内联面板进度条 +
     // 「下载中 512.0 KB/1.0 MB」文案（面板 + 当前卷 subtitle 两处一致），
     // 绝不显示成「第 524288 / 1048576 页」。
     s.downloaders[0].ctrl.add(

@@ -819,7 +819,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// 并按当前 document zoom 折回 layout px 后约束 `#entries-container`；不能直接写
   /// html/body width，否则 zoom != 1 时实占宽度会再次越过真实视口。
   ///
-  /// BUG-4011（反馈 SwFjAzjBqq，macOS 查词弹窗最右的「高级制卡」按钮与第三列词典被
+  /// BUG-4042（反馈 SwFjAzjBqq，macOS 查词弹窗最右的「高级制卡」按钮与第三列词典被
   /// 右缘裁掉）：Flutter 给的是平台视图**整宽**，而文档出现占位式竖向滚动条（macOS
   /// 「始终显示滚动条」/ 接鼠标时的 legacy 滚动条）时可排版宽度要再减掉 gutter。
   /// 旧算法把容器钉在整宽，内容比可见区宽出 `gutter − body 右内边距`，被视口裁掉。

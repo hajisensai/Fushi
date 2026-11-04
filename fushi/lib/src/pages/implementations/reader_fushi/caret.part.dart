@@ -622,7 +622,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
         // 两级都在**本页**消费，不再依赖「返回 ignored → 冒泡到最外层硬编码 Esc」
         // 那条隐形链路：那条链路让退书行为与设置页显示的键位对不上（设置页写
         // Ctrl+W，实际 Esc 也能退），也让改键改不动真正生效的那个键。
-        //   歌词模式下也一样直接退书回书架（BUG-4005：原先 Esc 先掀开歌词层回正文、
+        //   歌词模式下也一样直接退书回书架（BUG-4026：原先 Esc 先掀开歌词层回正文、
         //   再按一次才退，与系统返回 / 歌词层 × 不一致）；退书不关歌词层，这本书仍
         //   记着歌词模式。阶梯单点在 [resolveReaderBackStep]。
         switch (resolveReaderBackStep(dictionaryShown: isDictionaryShown)) {

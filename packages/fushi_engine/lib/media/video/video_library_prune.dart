@@ -10,7 +10,7 @@
 /// 走既有回收路径 [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 删除
 /// （级联清刮削资料 + 回收封面）。目前只有服务端 `LibraryScanner._pruneVideoRoot`
 /// （BUG-2809）调用；app 本地视频来源重扫有意保留「暂缺」文件的行（观看进度 /
-/// 用户资料），是否接入见 BUG-4004 的待拍板选项。
+/// 用户资料），是否接入见 BUG-4055 的待拍板选项。
 ///
 /// 边界（有意）：
 /// - 只在 [pruneMissingVideoRows] 的 `root` 路径范围内的行上动手；上传副本 / 下载
@@ -87,7 +87,7 @@ List<VideoBookRow> videoRowsWithinRoot(
 /// 集合；[exists] 可注入以便测试（默认 [videoMemberExistsSync]：原盘成员按盘上真实
 /// 文件判——DVD 标题是虚拟路径 `<盘根>/VIDEO_TS/TITLE_nn.dvdtitle`，裸
 /// `File(path).existsSync()` 对它恒为假，会把仍在盘上的整张 DVD 的标题行当成
-/// 「文件没了」删掉，BUG-4004）。
+/// 「文件没了」删掉，BUG-4055）。
 ///
 /// 网络流（[isNetworkOnlyVideoPath]）永不判失效——它们本来就没有本地文件。
 /// 即便 [foundPaths] 未命中，也要 [exists] 二次确认：枚举可能因权限或竞态漏项，

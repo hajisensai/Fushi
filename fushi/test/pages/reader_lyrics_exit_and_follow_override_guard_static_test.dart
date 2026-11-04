@@ -60,7 +60,7 @@ void main() {
       );
     });
 
-    test('globalBack 快捷键走同一阶梯，歌词模式下直接退书（BUG-4005）', () {
+    test('globalBack 快捷键走同一阶梯，歌词模式下直接退书（BUG-4026）', () {
       final String body = slice(
         read('lib/src/pages/implementations/reader_fushi/caret.part.dart'),
         'case ShortcutAction.globalBack:',

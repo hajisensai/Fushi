@@ -1765,7 +1765,7 @@ html[data-theme="dark"] .glossary-group {
     font-size: 1em !important;
 }
 
-/* BUG-4009（反馈 Xr7RRZ3zjm / dyDC7zou8x：新明解 第八版 词头【鯉】【漁る】上的表外字 /
+/* BUG-4040（反馈 Xr7RRZ3zjm / dyDC7zou8x：新明解 第八版 词头【鯉】【漁る】上的表外字 /
    表外音訓标记「︿」「︽」压在汉字上）—— 上一条只把 <rt> 本身的字号归一，没管 rt 的
    **后代**。jitenbot 转出的新明解把标记写成
    `<ruby>鯉<rt><span style="font-size: 2em">︿</span></rt></ruby>`（作者按原生 ruby

@@ -238,7 +238,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    // BUG-4006：新版宽屏原先只在左岛留了一个百分比，阅读速度 / 已读字数 / 本次
+    // BUG-4027：新版宽屏原先只在左岛留了一个百分比，阅读速度 / 已读字数 / 本次
     // 阅读时长全丢了（经典宽屏左栏、窄屏顶栏都有）。
     testWidgets('reading stats (speed · progress · session) above the seek '
         'line', (WidgetTester tester) async {

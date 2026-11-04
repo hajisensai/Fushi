@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
-/// BUG-4011（反馈 SwFjAzjBqq：macOS 查词弹窗最右的「高级制卡」按钮与第三列词典被右缘
+/// BUG-4042（反馈 SwFjAzjBqq：macOS 查词弹窗最右的「高级制卡」按钮与第三列词典被右缘
 /// 裁掉）。宿主把 `#entries-container` 钉在 Flutter 平台视图整宽，没减文档竖向滚动条的
 /// 占位 gutter（macOS「始终显示滚动条」/ 接鼠标时的 legacy 滚动条），内容比可见区宽出
 /// 一截被裁。Playwright WebKit 探针（15px classic 滚动条）实测：修前 scrollWidth 390 >

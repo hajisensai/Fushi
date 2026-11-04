@@ -127,7 +127,7 @@ void main() {
       expect(source, isNot(contains('document.documentElement.style.width')));
       expect(source, isNot(contains('document.body.style.width')));
       expect(source, contains('window.__fushiApplyPopupViewport'));
-      // BUG-4011：先减文档竖向滚动条 gutter（视口 px）再按 zoom 折回。
+      // BUG-4042：先减文档竖向滚动条 gutter（视口 px）再按 zoom 折回。
       expect(source, contains('(width - gutter) / z'));
       expect(source, contains('bodyStyle.paddingLeft'));
       expect(source, contains('bodyStyle.paddingRight'));

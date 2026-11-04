@@ -74,7 +74,7 @@ Map<String, int> applyVideoFolderCollectionPolicy({
 /// 与视频库折叠归属**同一判据**：原始主归属（成员行里最小的 collectionId，即
 /// `getPrimaryCollectionIdByEntry`）经 [applyVideoFolderCollectionPolicy] 修正，且合集行
 /// 必须还在。视频页继续观看 / 卡片按这张映射归组，所以从任何入口打开同一集都落到同一个
-/// 系列上下文（GBDddvjDsj / BUG-4008：侧边栏「继续观看」等入口此前不带合集 id，
+/// 系列上下文（GBDddvjDsj / BUG-4024：侧边栏「继续观看」等入口此前不带合集 id，
 /// 进播放页没有剧集列表）。
 Future<int?> resolveVideoPlaylistCollectionId({
   required VideoBookRepository repo,

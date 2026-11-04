@@ -4234,7 +4234,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                   if (didPop) return;
                   // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）与
                   // Esc 同一条阶梯：词典弹窗先关；歌词覆盖层**不**拦，歌词模式下直接
-                  // 退书回书架（NJIIDAhIZL / BUG-4005）。判定单点在
+                  // 退书回书架（NJIIDAhIZL / BUG-4026）。判定单点在
                   // [resolveReaderBackStep]；程序化退书（[_exitReaderBook]）带着
                   // [_exitBookRequested] 进来，整条阶梯跳过。
                   switch (resolveReaderBackStep(

@@ -117,7 +117,7 @@ void main() {
       expect(stale, isEmpty);
     });
 
-    // BUG-4004：默认存在判据必须是「这一条还在不在」（videoMemberExistsSync）。
+    // BUG-4055：默认存在判据必须是「这一条还在不在」（videoMemberExistsSync）。
     // DVD 标题是虚拟路径，磁盘上没有 TITLE_nn.dvdtitle 这个文件；裸 File.existsSync
     // 会把盘还在的整张 DVD 当成「文件没了」，app 来源重扫接入对账后每扫一次删一次。
     test('DVD 标题按盘上真实文件判：盘在 → 保留，盘没了 → 失效（默认判据）', () async {

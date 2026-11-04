@@ -58,7 +58,7 @@ constexpr wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
 // 守卫 test/platform/exit_watchdog_runner_wait_guard_test.dart 把两者钉在一起。
 constexpr DWORD kPreviousInstanceWaitMs = 20000;
 
-// BUG-4007：安装器替换安装目录期间持有的「请勿启动」门（fushi.iss 的
+// BUG-4028：安装器替换安装目录期间持有的「请勿启动」门（fushi.iss 的
 // FushiInstallGateMutexName，PrepareToInstall 清场之前建、ssPostInstall 放开）。名字两侧
 // 必须逐字一致，守卫 test/build/windows_installer_launch_gate_guard_test.dart 钉住。
 constexpr wchar_t kInstallInProgressMutex[] = L"FushiInstallInProgressMutex";
@@ -270,7 +270,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
   const bool dev_side_by_side = IsDevSideBySideMode();
   const bool test_runner = IsTestRunnerMode() || dev_side_by_side;
-  // BUG-4007：安装器正在替换安装目录 → 立即退出，不碰单实例互斥量、不建引擎。
+  // BUG-4028：安装器正在替换安装目录 → 立即退出，不碰单实例互斥量、不建引擎。
   if (!test_runner && InstallInProgress()) {
     ::OutputDebugStringW(L"Fushi: installer is replacing the app; exiting.\n");
     return EXIT_SUCCESS;
@@ -350,7 +350,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_SUCCESS;
   }
 
-  // BUG-4007：上面「首实例正在退出 → 等它放开互斥量」最长等 kPreviousInstanceWaitMs，
+  // BUG-4028：上面「首实例正在退出 → 等它放开互斥量」最长等 kPreviousInstanceWaitMs，
   // 应用内更新时等到的正是为安装让路而退出的旧实例——等完安装器多半已经开工。拿到
   // 单实例所有权后、建引擎之前再看一次门。
   if (!test_runner && InstallInProgress()) {

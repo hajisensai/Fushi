@@ -195,7 +195,7 @@ import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
 /// [playlistCollectionId] 非空 = 调用方已知的系列上下文，照用；null = 由本入口按视频库
 /// 折叠归属自己解析（[resolveVideoPlaylistCollectionId]，散片解析为 null 即单视频打开）。
 /// 系列上下文不再靠每个入口各自记得去查：侧边栏「继续观看」、统计页、发现页等入口此前
-/// 只传 bookUid，合集里的一集进播放页没有剧集列表 / 上下集 / 连播（BUG-4008）。
+/// 只传 bookUid，合集里的一集进播放页没有剧集列表 / 上下集 / 连播（BUG-4024）。
 /// 返回的 Future 在播放页关闭后完成（调用方据此刷新）。
 Future<void> openLocalVideoBook({
   required BuildContext context,

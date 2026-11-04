@@ -9,7 +9,7 @@
 ///   （各自滚动）+ 右栏释义 WebView（自己滚动）；窄 = 一条 Flutter 滚动：原生标题区 → 释义
 ///   WebView（高度跟内容走，页面上报）→ 原生页脚。内容高于 [kSrsDefsMaxInlineHeight] 时
 ///   平台视图只是内容里的一段窗口（纹理 / 内存上限），释义区仍占满内容高度、滚动只归外层，
-///   窗口跟着外层滚动换位置（[SrsDefsScrollWindow]，BUG-4007）。
+///   窗口跟着外层滚动换位置（[SrsDefsScrollWindow]，BUG-4038）。
 /// - 外观设置（字号 / 行距 / 配色 / 密度 / 区块显隐 / 字体库字体）原生同样生效。
 library;
 
@@ -249,7 +249,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   final ScrollController _scroll = ScrollController();
   double? _defsHeight;
 
-  /// 窄版式释义超过纹理上限时的窗口通道（BUG-4007，见 [SrsDefsScrollWindow]）。
+  /// 窄版式释义超过纹理上限时的窗口通道（BUG-4038，见 [SrsDefsScrollWindow]）。
   final SrsPageWindowLink _defsWindow = SrsPageWindowLink();
 
   /// 选区自带的焦点不进 Tab 遍历：焦点驱动（Tab → Enter）照旧落到卡面的可操作控件上。
@@ -1236,7 +1236,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Widget? defs = _definitions(context, wide: false);
     final double viewport = c.maxHeight.isFinite ? _viewport : 800;
     // 释义区在外层滚动里始终占满内容高度；超过纹理上限时平台视图只是其中一段窗口
-    // （[SrsDefsScrollWindow]），外层是唯一的滚动所有者（BUG-4007）。
+    // （[SrsDefsScrollWindow]），外层是唯一的滚动所有者（BUG-4038）。
     final double defsHeight = _defsHeight ?? viewport * 0.6;
     // 自上而下与宽版式左栏同序：词条 → 图片 / 视频（通栏）→ 例句 → 释义 → 元信息。
     // 原生文字分成「标题区」与「页脚」两块选区，释义 WebView 夹在中间、不在任何选区里

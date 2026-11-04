@@ -95,7 +95,7 @@ class SrsCardFace {
   final String cardId;
 
   /// 非 null 时宿主可把页面切成「窗口」态（[SrsPageWindowLink.apply]）：平台视图只有一段
-  /// 窗口高、页内纵向滚动位置由宿主钉死，滚动物理只归外层 Flutter（BUG-4007）。
+  /// 窗口高、页内纵向滚动位置由宿主钉死，滚动物理只归外层 Flutter（BUG-4038）。
   final SrsPageWindowLink? pageWindow;
   final bool showingAnswer;
 
@@ -229,7 +229,7 @@ class SrsCardFace {
   );
 }
 
-/// 宿主 → 卡面页面的「窗口」通道（BUG-4007）。
+/// 宿主 → 卡面页面的「窗口」通道（BUG-4038）。
 ///
 /// 混合渲染窄版式的释义 WebView 跟内容等高、由外层 Flutter 滚动；内容超过平台视图纹理
 /// 上限（`kSrsDefsMaxInlineHeight`）时平台视图只能是一段窗口。窗口态下：
@@ -2084,7 +2084,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     }
   }
 
-  // ---------------------------------------------------------------- 窗口态（BUG-4007）
+  // ---------------------------------------------------------------- 窗口态（BUG-4038）
 
   void _attachPageWindow(SrsPageWindowLink? link) {
     link?._apply = _applyPageWindow;

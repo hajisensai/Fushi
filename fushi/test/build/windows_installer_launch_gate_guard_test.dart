@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-4007 回归守卫：安装器替换安装目录期间，新启动的 fushi.exe 必须立即退出。
+/// BUG-4028 回归守卫：安装器替换安装目录期间，新启动的 fushi.exe 必须立即退出。
 ///
 /// 现场（反馈 umcyzpaebn）：旧实例为更新退出后，安装器的清场（`InitializeSetup` 关实例、
 /// `PrepareToInstall` 的 `KillProcessesUnderDir`）是**一次性快照**；之后一个由 explorer
