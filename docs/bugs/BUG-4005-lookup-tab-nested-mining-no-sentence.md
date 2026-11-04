@@ -9,7 +9,7 @@
   - `dictionary_popup_webview.dart`：新 `DictionaryTextSelected` typedef（第 4 参 `contextSentence`），`textSelected` 桥解析 `args[3]`；右键「查词」两条入口传空串。`DictionaryPopupLayer` 同 typedef 透传。
   - `dictionary_page_mixin.dart`：新 `NestedPopupPush` typedef（第 4 参 `contextSentence`），`pushNestedPopup(contextSentence:)` 交给 `beginTop`。
   - `dictionary_popup_controller.dart`：`DictionaryPopupEntry.contextSentence` / `DictionaryPopupHistoryPage.contextSentence`，生命周期与 `rubySpans` 完全同构（热槽复用替换、复位清空、原地跳转清空、后退恢复）。
-  - 用它的宿主只有「没有别的例句来源」的两个：`home_dictionary_page.dart` 覆写 `miningFieldsForLayer` 用 `withFallbackMiningSentence(fields, entry.contextSentence)`；`popup_dictionary_page.dart`（独立查词窗）嵌套层制卡 / 覆写同样补句。JS 已带非空句子时不覆盖。
+  - 用它的宿主只有「没有别的例句来源」的两个：`home_dictionary_page.dart` 覆写 `miningFieldsForLayer` 用 `withFallbackMiningSentence(fields, entry.contextSentence)`；`popup_dictionary_page.dart`（独立查词窗）嵌套层制卡 / 覆写同样补句。JS 已带非空句子时不覆盖。提交 `d398ab4b00`。
   - 其余宿主（阅读器 `base_source_page`、视频 / 远程 / 网页视频、texthooker、悬浮歌词、复习卡、游戏串流）只接受新参数、行为逐字不变：它们的嵌套层制卡例句仍取各自的「当前句」（`video_fushi_page.dart` 原注释「递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句」是既有产品语义）。是否在这些宿主里也改用释义句，见备注。
 - **[x] ② 已加自动化测试** —
   - `fushi/test/dictionary/popup_selection_context_sentence_test.js`（+ 同名 `.dart` wrapper，含三镜像字节一致）：fake DOM 里真执行 `selection.js`，断言 `textSelected` 第 4 参是被点处那一句（不含前后句）、跨 `<b>` 文本节点拼回整句、无段落祖先时为空串；修复前源码上红（已实测）。
