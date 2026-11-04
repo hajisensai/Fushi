@@ -137,7 +137,8 @@ class SrsSyncDevicesSection extends StatelessWidget {
         showIcon: true,
         subtitleMaxLines: 3,
         trailing: d.self
-            ? Tooltip(
+            ? FushiTooltip(
+                key: ValueKey<String>('srs_device_rename_${d.id}'),
                 message: t.srs_device_rename_tooltip,
                 child: const FushiIcon(FushiIcons.rename),
               )

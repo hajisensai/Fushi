@@ -83,8 +83,10 @@ class SrsValueDiff extends StatelessWidget {
       key: const ValueKey<String>('srs-conflict-diff'),
       padding: EdgeInsets.all(tokens.spacing.gap),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(tokens.spacing.gap),
+        // 差异块嵌在冲突卡（FushiCard）里：取「分组里再嵌一层」的面板色与卡内小件圆角，
+        // MD3 / Apple / 玻璃三套色阶由设计令牌分派，这里不自选色调。
+        color: tokens.surfaces.card,
+        borderRadius: tokens.radii.cardRadius,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
