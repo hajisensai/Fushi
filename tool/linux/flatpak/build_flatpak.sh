@@ -16,9 +16,15 @@ mkdir -p "$ROOT/build/linux-dist"
 docker build -q -t fushi-flatpak-build "$ROOT/tool/linux/flatpak" >/dev/null
 
 # Stage manifest + inputs into the work volume (bind mounts from Windows are slow).
+# The bundle's sha256 goes into the staged manifest: flatpak-builder keys its module
+# cache on the manifest, not on a local file's contents, so a rebuilt tarball with the
+# same name would otherwise silently reuse the previous app.
+SHA="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
 (cd "$ROOT/tool/linux/flatpak" && tar -cf - app.fushi.reader.yml app.fushi.reader.desktop ./*.patch) |
-  docker run --rm -i -v fushi-flatpak-work:/work fushi-flatpak-build \
-    bash -c 'mkdir -p /work/src && tar -xf - -C /work/src'
+  docker run --rm -i -v fushi-flatpak-work:/work -e SHA="$SHA" fushi-flatpak-build \
+    bash -euo pipefail -c 'rm -rf /work/src && mkdir -p /work/src && tar -xf - -C /work/src
+      sed -i -E "s|^( *)path: fushi-linux-x64\.tar\.gz$|&\n\1sha256: $SHA|" /work/src/app.fushi.reader.yml
+      grep -q "sha256: $SHA" /work/src/app.fushi.reader.yml'
 docker run --rm -i -v fushi-flatpak-work:/work fushi-flatpak-build \
   bash -c 'cat > /work/src/fushi-linux-x64.tar.gz' < "$TARBALL"
 
