@@ -937,7 +937,7 @@ const CACHE_PENDING_CHUNK: usize = 5;
 ///
 /// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
 /// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
-const CHANNEL_TRANSPARENT: [&str; 50] = [
+const CHANNEL_TRANSPARENT: &[&str] = &[
     "identity",
     "device_info",
     "device_hint",
@@ -995,7 +995,7 @@ const CHANNEL_TRANSPARENT: [&str; 50] = [
 /// 通道没做完时要先做完它的命令（改投影、读完整投影、在投影上记账的）。分发器只看 [CHANNEL_TRANSPARENT]（不在那张表
 /// 里的一律先做完）；这张表只为登记完整（见上）。
 #[cfg_attr(not(test), allow(dead_code))]
-const CHANNEL_SETTLES: [&str; 23] = [
+const CHANNEL_SETTLES: &[&str] = &[
     "apply",
     "retire",
     "dedup",
@@ -1022,7 +1022,7 @@ const CHANNEL_SETTLES: [&str; 23] = [
     "backfill_tag_sources",
 ];
 
-const PROJECTING_OPS: [&str; 13] = [
+const PROJECTING_OPS: &[&str] = &[
     "apply",
     "retire",
     "ingest",
