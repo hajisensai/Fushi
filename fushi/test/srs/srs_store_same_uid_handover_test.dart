@@ -25,42 +25,18 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
+import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
 
 /// 首次装载卡在 [gate] 上的配置仓库：一个配置（id 1），激活的就是它。
-class _GatedProfileRepository implements ProfileRepository {
+class _GatedProfileRepository extends InertProfileRepository {
   _GatedProfileRepository(this.gate);
 
   final Future<void> gate;
 
   @override
   Future<void> ensureDefaultProfile() => gate;
-
-  @override
-  Future<List<ProfileRow>> getAllProfiles() async => const <ProfileRow>[
-    ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
-  ];
-
-  @override
-  Future<int> getActiveProfileId() async => 1;
-
-  @override
-  Future<Map<String, int>> getAllMediaTypeBindings() async =>
-      const <String, int>{};
-
-  @override
-  Future<Map<String, int>> getAllLanguageBindings() async =>
-      const <String, int>{};
-
-  @override
-  Stream<void> watchProfilesChanged() => const Stream<void>.empty();
-
-  @override
-  Future<void> snapshotCurrentSettings(int profileId) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _AppModel extends AppModel {
