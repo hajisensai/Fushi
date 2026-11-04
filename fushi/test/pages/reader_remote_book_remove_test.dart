@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/hidden_remote_books.dart';
+import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';

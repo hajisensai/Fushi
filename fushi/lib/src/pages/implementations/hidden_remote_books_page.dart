@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/sync/hidden_remote_books.dart';
+import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart' show syncBackendLabel;
