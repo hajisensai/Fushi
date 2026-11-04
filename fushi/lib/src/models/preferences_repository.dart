@@ -24,7 +24,11 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kLibraryManualOrderPrefKeyPrefix;
+    show
+        kAiWebSearchPageFetchAllow,
+        kAiWebSearchPageFetchDeny,
+        kAiWebSearchPageFetchPref,
+        kLibraryManualOrderPrefKeyPrefix;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -290,6 +294,7 @@ class PreferencesRepository extends ChangeNotifier
       getPref('video_danmaku_config', defaultValue: '') as String,
     );
     await _repairOpenSubtitlesEnabledOnce();
+    await _migrateAiWebSearchKeyStorage();
     // 上面那次修复写会经 setPref 抬高持久化版本号，而缓存是**在它之前**读的。
     // 不把版本重读回来，loadFromDb 一结束进程内值就比 DB 少一个，
     // 「版本不同 = 别的进程改过」于是每次启动误报一次、白重载一次。
@@ -353,6 +358,18 @@ class PreferencesRepository extends ChangeNotifier
       }
     }
     await setPref(openSubtitlesEnabledRepairedKey, true);
+  }
+
+  /// 联网搜索配置里旧版明文 `apiKey` → 与 `ai_providers` 同一存法的 `apiKeyB64`。
+  /// 读侧本来就兼容旧形状（[WebSearchConfig.fromJson]），这里把存量值就地重写一次，
+  /// 不让明文 key 一直躺到用户下次改设置。已是新形状（或没配）时什么都不写。
+  Future<void> _migrateAiWebSearchKeyStorage() async {
+    final String? raw = getPref('ai_web_search', defaultValue: null) as String?;
+    if (!WebSearchConfig.needsStorageMigration(raw)) return;
+    await setPref(
+      'ai_web_search',
+      WebSearchConfig.tryParse(raw)?.encode() ?? '',
+    );
   }
 
   /// 把进程级代理读取器接到本仓库上。**绑定点必须是「偏好变得可读的那一刻」**，不是
@@ -3153,11 +3170,35 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// AI 通用联网搜索后端（SearXNG / Brave）；没配或坏 JSON → null。
-  @override
-  WebSearchConfig? get aiWebSearch => WebSearchConfig.tryParse(
+  /// 「设置 › AI › 联网搜索」里存的后端（SearXNG / Brave）；没配或坏 JSON → null。
+  /// 只给设置页读写用；AI 功能读生效值 [aiWebSearch]。
+  WebSearchConfig? get aiWebSearchConfig => WebSearchConfig.tryParse(
     getPref('ai_web_search', defaultValue: null) as String?,
   );
+
+  /// AI 功能实际用的联网搜索后端：存了配置**且**用户同意过「抓搜索结果网页交给 AI」
+  /// （[aiWebSearchPageFetchDecision] 为 [kAiWebSearchPageFetchAllow]）才生效。没答过 /
+  /// 拒绝 → null（只查 LRCLIB）。现在唯一的消费方（字幕歌词补齐）就是抓页给 AI，
+  /// 不抓页的搜索对它没有用处，所以同意闸门在整个后端上。
+  @override
+  WebSearchConfig? get aiWebSearch =>
+      aiWebSearchPageFetchDecision == kAiWebSearchPageFetchAllow
+      ? aiWebSearchConfig
+      : null;
+
+  /// 「抓前几页网页交给 AI」的一次性确认：`''` 没问过 / [kAiWebSearchPageFetchAllow] /
+  /// [kAiWebSearchPageFetchDeny]。首次确认见 `ai_web_search_consent.dart`，之后在
+  /// 「设置 › AI › 联网搜索」里改。
+  String get aiWebSearchPageFetchDecision =>
+      getPref(kAiWebSearchPageFetchPref, defaultValue: '') as String;
+
+  Future<void> setAiWebSearchPageFetchAllowed(bool allowed) async {
+    await setPref(
+      kAiWebSearchPageFetchPref,
+      allowed ? kAiWebSearchPageFetchAllow : kAiWebSearchPageFetchDeny,
+    );
+    notifyListeners();
+  }
 
   /// 写入联网搜索后端；null = 清空（写空串，读侧 [WebSearchConfig.tryParse] 视空串
   /// 为没配；偏好层没有带缓存与 LWW 戳的删键入口）。

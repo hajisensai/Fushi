@@ -65,6 +65,46 @@ void main() {
       );
       expect(WebSearchConfig.tryParse(s.encode()), s);
     });
+
+    test('key 存成 base64 apiKeyB64（与 ai_providers 同口径），不落明文', () {
+      const WebSearchConfig c = WebSearchConfig(
+        kind: WebSearchKind.brave,
+        apiKey: 'tok-秘密',
+      );
+      final Map<String, Object?> json = c.toJson();
+      expect(json.containsKey('apiKey'), isFalse);
+      expect(json['apiKeyB64'], base64Encode(utf8.encode('tok-秘密')));
+      expect(c.encode(), isNot(contains('tok-')));
+      expect(WebSearchConfig.needsStorageMigration(c.encode()), isFalse);
+    });
+
+    test('旧版明文 apiKey 照读，并标成待迁移；坏 base64 当没填', () {
+      const String legacy = '{"kind":"brave","apiKey":" old "}';
+      expect(WebSearchConfig.tryParse(legacy)!.apiKey, 'old');
+      expect(WebSearchConfig.needsStorageMigration(legacy), isTrue);
+      final String migrated = WebSearchConfig.tryParse(legacy)!.encode();
+      expect(WebSearchConfig.needsStorageMigration(migrated), isFalse);
+      expect(WebSearchConfig.tryParse(migrated)!.apiKey, 'old');
+      expect(
+        WebSearchConfig.tryParse(
+          '{"kind":"brave","apiKeyB64":"!!!not-base64"}',
+        )!.apiKey,
+        isNull,
+      );
+    });
+
+    test('fromFields：去空白、空串当没填、未知后端 -> null', () {
+      final WebSearchConfig? c = WebSearchConfig.fromFields(
+        kind: 'brave',
+        endpoint: ' ',
+        apiKey: ' tok ',
+      );
+      expect(
+        c,
+        const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'tok'),
+      );
+      expect(WebSearchConfig.fromFields(kind: 'google'), isNull);
+    });
   });
 
   group('结果解析', () {

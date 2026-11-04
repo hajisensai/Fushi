@@ -2,8 +2,11 @@
 ///
 /// 与「联网资料」（固定维基站）并列：这里配的是真正的搜索引擎，AI 功能（字幕
 /// 生成找主题曲 / 歌词等）由 app 自己去搜、去抓，与 AI 提供商有没有联网工具无关。
-/// 配置是一整份 [WebSearchConfig] JSON（偏好键 `ai_web_search`，含 Brave key，
-/// 设备本地 + 凭据），三个控件各改其中一个字段，读改写逻辑只在本文件。
+/// 配置是一整份 [WebSearchConfig] JSON（偏好键 `ai_web_search`，含 base64 的 Brave
+/// key，设备本地 + 凭据），三个控件各改其中一个字段，读改写逻辑只在本文件。
+///
+/// 「把抓到的网页交给 AI」开关是首次确认（`ai_web_search_consent.dart`）落下的那个
+/// 决定：第一次选后端时弹框问一次，之后在这里改；关着时联网搜索对 AI 功能不生效。
 ///
 /// 选项是声明式 item（后端分段 + 两个文本框），不手画控件：分段单选走
 /// `SettingsSegmentedItem`（渲染器内部用 `adaptiveSegmentedButton`，MD3 / Apple
@@ -11,6 +14,9 @@
 library;
 
 import 'package:fushi_engine/ai/web_search.dart';
+import 'package:fushi/src/ai/ai_web_search_consent.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kAiWebSearchPageFetchAllow;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -22,13 +28,13 @@ const String kAiWebSearchOff = '';
 
 /// 当前后端对应的分段取值（没配 = [kAiWebSearchOff]）。
 String aiWebSearchKindValue(PreferencesRepository prefs) =>
-    prefs.aiWebSearch?.kind.name ?? kAiWebSearchOff;
+    prefs.aiWebSearchConfig?.kind.name ?? kAiWebSearchOff;
 
 /// 切换后端：关闭 = 清空配置；切到另一后端时保留已填的地址 / key。
 Future<void> setAiWebSearchKind(PreferencesRepository prefs, String value) {
   final WebSearchKind? kind = WebSearchKind.fromName(value);
   if (kind == null) return prefs.setAiWebSearch(null);
-  final WebSearchConfig? old = prefs.aiWebSearch;
+  final WebSearchConfig? old = prefs.aiWebSearchConfig;
   return prefs.setAiWebSearch(
     WebSearchConfig(kind: kind, endpoint: old?.endpoint, apiKey: old?.apiKey),
   );
@@ -36,7 +42,7 @@ Future<void> setAiWebSearchKind(PreferencesRepository prefs, String value) {
 
 /// 改 SearXNG 地址（空白 = 清空）；没选后端时不动。
 Future<void> setAiWebSearchEndpoint(PreferencesRepository prefs, String value) {
-  final WebSearchConfig? old = prefs.aiWebSearch;
+  final WebSearchConfig? old = prefs.aiWebSearchConfig;
   if (old == null) return Future<void>.value();
   final String trimmed = value.trim();
   return prefs.setAiWebSearch(
@@ -50,7 +56,7 @@ Future<void> setAiWebSearchEndpoint(PreferencesRepository prefs, String value) {
 
 /// 改 Brave API key（空白 = 清空）；没选后端时不动。
 Future<void> setAiWebSearchApiKey(PreferencesRepository prefs, String value) {
-  final WebSearchConfig? old = prefs.aiWebSearch;
+  final WebSearchConfig? old = prefs.aiWebSearchConfig;
   if (old == null) return Future<void>.value();
   final String trimmed = value.trim();
   return prefs.setAiWebSearch(
@@ -78,8 +84,16 @@ List<SettingsItem> buildAiWebSearchItems() => <SettingsItem>[
     ],
     defaultValue: kAiWebSearchOff,
     selected: (SettingsContext c) => aiWebSearchKindValue(c.appModel.prefsRepo),
-    onChanged: (SettingsContext c, String value) =>
-        setAiWebSearchKind(c.appModel.prefsRepo, value),
+    onChanged: (SettingsContext c, String value) async {
+      await setAiWebSearchKind(c.appModel.prefsRepo, value);
+      // 第一次选上后端：当场问一次要不要把抓到的网页交给 AI。
+      if (value != kAiWebSearchOff && c.context.mounted) {
+        await ensureAiWebSearchPageFetchDecided(
+          c.context,
+          c.appModel.prefsRepo,
+        );
+      }
+    },
   ),
   SettingsTextItem(
     id: 'ai.web_search.searxng_endpoint',
@@ -88,9 +102,9 @@ List<SettingsItem> buildAiWebSearchItems() => <SettingsItem>[
     icon: FushiIcons.link,
     placeholder: 'https://searx.example.org',
     visible: (SettingsContext c) =>
-        c.appModel.prefsRepo.aiWebSearch?.kind == WebSearchKind.searxng,
+        c.appModel.prefsRepo.aiWebSearchConfig?.kind == WebSearchKind.searxng,
     value: (SettingsContext c) =>
-        c.appModel.prefsRepo.aiWebSearch?.endpoint ?? '',
+        c.appModel.prefsRepo.aiWebSearchConfig?.endpoint ?? '',
     onChanged: (SettingsContext c, String value) =>
         setAiWebSearchEndpoint(c.appModel.prefsRepo, value),
   ),
@@ -101,10 +115,26 @@ List<SettingsItem> buildAiWebSearchItems() => <SettingsItem>[
     icon: FushiIcons.lock,
     secret: true,
     visible: (SettingsContext c) =>
-        c.appModel.prefsRepo.aiWebSearch?.kind == WebSearchKind.brave,
+        c.appModel.prefsRepo.aiWebSearchConfig?.kind == WebSearchKind.brave,
     value: (SettingsContext c) =>
-        c.appModel.prefsRepo.aiWebSearch?.apiKey ?? '',
+        c.appModel.prefsRepo.aiWebSearchConfig?.apiKey ?? '',
     onChanged: (SettingsContext c, String value) =>
         setAiWebSearchApiKey(c.appModel.prefsRepo, value),
+  ),
+  SettingsSwitchItem(
+    id: 'ai.web_search.page_fetch',
+    title: t.ai_web_search_page_fetch,
+    subtitle: t.ai_web_search_page_fetch_hint,
+    icon: FushiIcons.ai,
+    // 授权类开关：只能用户自己拨，AI 助手的 settings.set 写不进去。
+    userOnly: true,
+    defaultValue: false,
+    visible: (SettingsContext c) =>
+        c.appModel.prefsRepo.aiWebSearchConfig != null,
+    value: (SettingsContext c) =>
+        c.appModel.prefsRepo.aiWebSearchPageFetchDecision ==
+        kAiWebSearchPageFetchAllow,
+    onChanged: (SettingsContext c, bool value) =>
+        c.appModel.prefsRepo.setAiWebSearchPageFetchAllowed(value),
   ),
 ];

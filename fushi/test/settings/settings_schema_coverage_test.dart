@@ -1740,6 +1740,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/subtitle/video_subtitle_web_search_setting_effect_test.dart + '
       'test/ai/ai_web_search_prefs_test.dart + '
       '../packages/fushi_engine/test/ai/web_search_test.dart',
+  // 「把抓到的网页交给 AI」（首次确认落下的决定）：没答过 / 关着时 AI 功能读到的联网
+  // 搜索是 null。生效测试同上：关着时管线只装 LRCLIB，打开后装上网页搜索。
+  'ai/Send fetched pages to AI':
+      'test/media/video/subtitle/video_subtitle_web_search_setting_effect_test.dart + '
+      'test/ai/ai_web_search_prefs_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /

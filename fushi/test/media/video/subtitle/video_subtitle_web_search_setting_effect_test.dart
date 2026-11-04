@@ -1,7 +1,9 @@
 // 「设置 › AI › 联网搜索」的生效测试：设置项（ai.web_search.kind 后端分段 + SearXNG
 // 地址 / Brave key）写进偏好后，下一次字幕生成给管线装的歌词查词后端里就有网页搜索
 // （WebSearchSubtitleLyricsFinder，用的就是设置里那份配置）；没配全 / 关掉只剩 LRCLIB；
-// 没开 AI 不装歌词补齐。schema 覆盖守卫的 kCoveredElsewhere['ai/Search backend'] 指向这里。
+// 没开 AI 不装歌词补齐；「把抓到的网页交给 AI」（ai.web_search.page_fetch）没答过 / 关着时
+// 也只剩 LRCLIB。schema 覆盖守卫的 kCoveredElsewhere['ai/Search backend'] 与
+// kCoveredElsewhere['ai/Send fetched pages to AI'] 指向这里。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -105,7 +107,25 @@ void main() {
   List<SubtitleLyricsFinder> backends(SubtitleLyricsFinder? finder) =>
       (finder! as CompositeSubtitleLyricsFinder).finders;
 
+  test('抓页确认没答过 / 不允许 → 配全了也只有 LRCLIB；允许后装上网页搜索', () async {
+    await setAiWebSearchKind(prefs, 'brave');
+    await setAiWebSearchApiKey(prefs, 'tok');
+    List<SubtitleLyricsFinder> used = backends(
+      (await runOnce(proofread: true)).finder,
+    );
+    expect(used.single, isA<LrclibSubtitleLyricsFinder>());
+
+    await prefs.setAiWebSearchPageFetchAllowed(false);
+    used = backends((await runOnce(proofread: true)).finder);
+    expect(used.single, isA<LrclibSubtitleLyricsFinder>());
+
+    await prefs.setAiWebSearchPageFetchAllowed(true);
+    used = backends((await runOnce(proofread: true)).finder);
+    expect(used.whereType<WebSearchSubtitleLyricsFinder>(), hasLength(1));
+  });
+
   test('选 SearXNG 并填地址 → 字幕生成装上网页搜索，用的是设置里的地址', () async {
+    await prefs.setAiWebSearchPageFetchAllowed(true);
     await setAiWebSearchKind(prefs, 'searxng');
     await setAiWebSearchEndpoint(prefs, 'https://searx.example.org');
 
@@ -121,6 +141,7 @@ void main() {
   });
 
   test('切到 Brave：没填 key 只剩 LRCLIB；填了 key 换成 Brave', () async {
+    await prefs.setAiWebSearchPageFetchAllowed(true);
     await setAiWebSearchKind(prefs, 'brave');
     expect(
       backends(
@@ -138,6 +159,7 @@ void main() {
   });
 
   test('关闭（默认）→ 只有 LRCLIB；没开 AI → 不装歌词补齐', () async {
+    await prefs.setAiWebSearchPageFetchAllowed(true);
     await setAiWebSearchKind(prefs, 'searxng');
     await setAiWebSearchEndpoint(prefs, 'https://searx.example.org');
     await setAiWebSearchKind(prefs, kAiWebSearchOff);

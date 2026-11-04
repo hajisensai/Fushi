@@ -66,8 +66,22 @@ enum WebSearchKind {
 class WebSearchConfig {
   const WebSearchConfig({required this.kind, this.endpoint, this.apiKey});
 
-  /// 偏好 / 配置文件里的 JSON（`{"kind":"searxng","endpoint":"…","apiKey":"…"}`）。
-  /// 坏 JSON / 未知后端 → null。
+  /// 从散字段建（服务端 yaml 等手写配置）：去首尾空白，空串当没填；未知后端 → null。
+  static WebSearchConfig? fromFields({
+    required Object? kind,
+    Object? endpoint,
+    Object? apiKey,
+  }) {
+    final WebSearchKind? k = WebSearchKind.fromName(kind);
+    if (k == null) return null;
+    return WebSearchConfig(
+      kind: k,
+      endpoint: _nonBlank(endpoint),
+      apiKey: _nonBlank(apiKey),
+    );
+  }
+
+  /// 偏好里的 JSON（`{"kind":"brave","apiKeyB64":"…"}`）。坏 JSON / 未知后端 → null。
   static WebSearchConfig? tryParse(String? raw) {
     if (raw == null || raw.trim().isEmpty) return null;
     final Object? decoded;
@@ -79,20 +93,27 @@ class WebSearchConfig {
     return decoded is Map ? fromJson(decoded.cast<String, Object?>()) : null;
   }
 
+  /// 读 [toJson] 的形状。API key 与 `ai_providers` 同一存法：`apiKeyB64`（base64）；
+  /// 没有它时读旧版明文 `apiKey`（本功能最早一版这样写），下次写回即迁成 base64
+  /// （[needsStorageMigration]）。
   static WebSearchConfig? fromJson(Map<String, Object?> json) {
-    final WebSearchKind? kind = WebSearchKind.fromName(json['kind']);
-    if (kind == null) return null;
-    final Object? endpoint = json['endpoint'];
-    final Object? apiKey = json['apiKey'];
-    return WebSearchConfig(
-      kind: kind,
-      endpoint: endpoint is String && endpoint.trim().isNotEmpty
-          ? endpoint.trim()
-          : null,
-      apiKey: apiKey is String && apiKey.trim().isNotEmpty
-          ? apiKey.trim()
-          : null,
+    final String? encoded = _nonBlank(json['apiKeyB64']);
+    return fromFields(
+      kind: json['kind'],
+      endpoint: json['endpoint'],
+      apiKey: encoded != null ? _unb64(encoded) : json['apiKey'],
     );
+  }
+
+  /// 偏好原串还是旧版明文 key 的形状（有 `apiKey`）→ 该按 [encode] 重写一遍。
+  static bool needsStorageMigration(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return false;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return decoded is Map && decoded.containsKey('apiKey');
+    } on FormatException {
+      return false;
+    }
   }
 
   final WebSearchKind kind;
@@ -119,10 +140,13 @@ class WebSearchConfig {
     return uri;
   }
 
+  /// API key 在 JSON 里 base64 存放，与 `AiProviderConfig.toJson` 的 `apiKeyB64` 同一
+  /// 口径：**遮蔽不是加密**，真正的纪律是隔离——`ai_web_search` 登记在
+  /// `kCredentialPreferenceKeys`、`PrefRedactionPolicy.sensitiveKeys` 与设备本地清单。
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.name,
     if (endpoint != null) 'endpoint': endpoint,
-    if (apiKey != null) 'apiKey': apiKey,
+    if (apiKey != null) 'apiKeyB64': base64Encode(utf8.encode(apiKey!)),
   };
 
   String encode() => jsonEncode(toJson());
@@ -136,6 +160,18 @@ class WebSearchConfig {
 
   @override
   int get hashCode => Object.hash(kind, endpoint, apiKey);
+}
+
+String? _nonBlank(Object? v) =>
+    v is String && v.trim().isNotEmpty ? v.trim() : null;
+
+/// base64 → 文本；坏值当没填（与 `ai_provider_config.dart` 的 `_unb64` 同口径）。
+String? _unb64(String raw) {
+  try {
+    return utf8.decode(base64Decode(raw));
+  } on FormatException {
+    return null;
+  }
 }
 
 /// 一条搜索结果。

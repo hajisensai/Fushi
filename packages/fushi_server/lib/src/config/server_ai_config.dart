@@ -16,7 +16,8 @@
 ///   reasoning_effort: "none"  # none / low / medium / high
 ///   allow_insecure_http: false
 ///   web_knowledge: true       # 联网资料（内置维基站）辅助识别作品 / 列系列
-///   web_search:               # 通用联网搜索（可选；不写 = 不联网搜索）
+///   web_search:               # 通用联网搜索（可选；不写 = 不联网搜索）。管理员亲手写进
+///                             # 配置即同意抓前 3 页网页正文交给 AI（app 侧是首次确认弹框）
 ///     kind: "searxng"         # searxng / brave
 ///     endpoint: "https://searx.example.org"  # searxng 实例根地址（实例需开 json 格式）
 ///     api_key: ""             # brave 的 X-Subscription-Token
@@ -113,11 +114,11 @@ class ServerAiConfig {
   /// `web_search:` 段 → 配置；不是 map / 未知 kind → null。
   static WebSearchConfig? _webSearch(Object? raw) {
     if (raw is! Map) return null;
-    return WebSearchConfig.fromJson(<String, Object?>{
-      'kind': _text(raw['kind']),
-      'endpoint': _text(raw['endpoint']),
-      'apiKey': _text(raw['api_key']),
-    });
+    return WebSearchConfig.fromFields(
+      kind: _text(raw['kind']),
+      endpoint: _text(raw['endpoint']),
+      apiKey: _text(raw['api_key']),
+    );
   }
 
   static String? _text(Object? v) {
