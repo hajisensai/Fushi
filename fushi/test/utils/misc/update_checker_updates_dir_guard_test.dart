@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-4080：更新清理会删掉 updates 目录里所有不是临时文件的条目，所以这个目录必须
+/// BUG-4104：更新清理会删掉 updates 目录里所有不是临时文件的条目，所以这个目录必须
 /// 只属于 Fushi。非 Windows 以前直接用系统临时根（Linux `/tmp`、未沙盒 macOS 的共享
 /// 临时目录），Steam Deck 上实测清理去删 `/tmp/sddm-auth-*`。
 void main() {

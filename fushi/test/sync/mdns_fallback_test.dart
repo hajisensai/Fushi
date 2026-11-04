@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/mdns_fallback.dart';
 
-/// BUG-4081: SteamOS ships Avahi disabled, so on Linux bonsoir cannot
+/// BUG-4105: SteamOS ships Avahi disabled, so on Linux bonsoir cannot
 /// initialise and LAN discovery / advertising both failed ("Scan failed").
 /// These pin the built-in mDNS fallback: wire format, responder, browser, and
 /// that LanDiscoveryService / LanBroadcastService switch to it.

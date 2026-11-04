@@ -46,7 +46,7 @@ void main() {
       expect(service.currentDevices, isEmpty);
     });
 
-    // BUG-4078：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
+    // BUG-4102：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
     // 没有 Avahi 守护进程（WSL / 精简安装）时 initialize 抛错，旧实现已把这台未初始化
     // 的 discovery 挂到 _discovery 上，之后 stop / dispose 就抛空检查异常（UncaughtZone）。
     test(
@@ -60,7 +60,7 @@ void main() {
             made.add(d);
             return d;
           },
-          // 默认值是 Platform.isLinux：不钉死的话 Linux CI 会走 BUG-4081 回退、
+          // 默认值是 Platform.isLinux：不钉死的话 Linux CI 会走 BUG-4105 回退、
           // 不抛错还去绑真实 UDP 5353。回退路径见下一条。
           mdnsFallbackEnabled: false,
         );
@@ -72,7 +72,7 @@ void main() {
       },
     );
 
-    // BUG-4081 回退路径：initialize 失败改走内置 mDNS 客户端（注入假 transport，
+    // BUG-4105 回退路径：initialize 失败改走内置 mDNS 客户端（注入假 transport，
     // 不碰真实 socket），未初始化的 Avahi browser 依旧不能被 stop。
     test(
       'initialize failure with the mDNS fallback browses without stopping it',

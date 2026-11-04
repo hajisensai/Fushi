@@ -85,7 +85,7 @@ class LanDiscoveryService {
 
   final BonsoirDiscovery Function(String type) _discoveryFactory;
 
-  /// BUG-4081: on Linux bonsoir is a D-Bus client of Avahi, which SteamOS
+  /// BUG-4105: on Linux bonsoir is a D-Bus client of Avahi, which SteamOS
   /// ships disabled (and WSL / minimal installs lack). When it cannot
   /// initialise there, browse with the built-in mDNS client instead.
   final Future<MdnsTransport> Function() _mdnsTransportFactory;
@@ -149,7 +149,7 @@ class LanDiscoveryService {
       _fallbackStarting != null ||
       _fallbackBrowser != null;
 
-  /// True while discovery runs on the built-in mDNS client (BUG-4081).
+  /// True while discovery runs on the built-in mDNS client (BUG-4105).
   @visibleForTesting
   bool get usingMdnsFallback => _fallbackBrowser != null;
 
@@ -179,7 +179,7 @@ class LanDiscoveryService {
       if (current) _initializing = null;
       if (!_mdnsFallbackEnabled) rethrow;
       if (!current || _disposed) return; // superseded / disposed meanwhile
-      // Avahi unusable (BUG-4081): expected on SteamOS, so logged, not shown.
+      // Avahi unusable (BUG-4105): expected on SteamOS, so logged, not shown.
       ErrorLogService.instance.log('LanDiscovery.avahiUnavailable', e, stack);
       await _startMdnsFallback();
       return;
@@ -400,7 +400,7 @@ class LanBroadcastService {
 
   final BonsoirBroadcast Function(BonsoirService service) _broadcastFactory;
 
-  /// BUG-4081: as for discovery, Linux without Avahi advertises through the
+  /// BUG-4105: as for discovery, Linux without Avahi advertises through the
   /// built-in mDNS responder instead.
   final Future<MdnsTransport> Function() _mdnsTransportFactory;
   final bool _mdnsFallbackEnabled;
@@ -421,7 +421,7 @@ class LanBroadcastService {
   BonsoirBroadcast? _broadcast;
   bool get isBroadcasting => _broadcast != null || _responder != null;
 
-  /// True while advertising through the built-in mDNS responder (BUG-4081).
+  /// True while advertising through the built-in mDNS responder (BUG-4105).
   @visibleForTesting
   bool get usingMdnsFallback => _responder != null;
 
