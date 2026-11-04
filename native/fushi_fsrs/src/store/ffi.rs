@@ -993,7 +993,7 @@ const CHANNEL_TRANSPARENT: [&str; 48] = [
 /// 通道没做完时要先做完它的命令（改投影、读完整投影、在投影上记账的）。分发器只看 [CHANNEL_TRANSPARENT]（不在那张表
 /// 里的一律先做完）；这张表只为登记完整（见上）。
 #[cfg_attr(not(test), allow(dead_code))]
-const CHANNEL_SETTLES: [&str; 22] = [
+const CHANNEL_SETTLES: [&str; 23] = [
     "apply",
     "dedup",
     "migrate",
