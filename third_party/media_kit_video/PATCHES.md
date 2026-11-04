@@ -949,3 +949,28 @@ a row until it stalled ("jumping far freezes"). With `seekOnDrag: false` a drag
 only moves the thumb and `onPointerUp` seeks once to the release point. Default
 `true` keeps upstream behaviour; Fushi sets `false` only when
 `VideoPlayerController.isWebBackend`.
+
+## BUG-3888: Flutter's raster thread no longer waits for libmpv's render lock
+
+`windows/angle_surface_manager.{h,cc}` (`Draw`, removed `Read`) and
+`windows/video_output.cc` (the GPU surface texture callback).
+
+Upstream copies libmpv's internal texture into the texture Flutter samples in
+`ANGLESurfaceManager::Read()`, called from the `GpuSurfaceTexture` callback —
+that is, on Flutter's **raster thread**, inside `LayerTree::Paint`. `Read()`
+waited (`INFINITE`) on the same mutex `Draw()` holds across the whole
+`mpv_render_context_render` plus `glFinish()`. Whenever a libmpv frame was slow
+(heavy scalers / user shaders, decoder threads holding the multithread-protected
+D3D11 device) Flutter's raster thread was stalled for the same time, and the
+late Flutter frames lengthened libmpv's next `glFinish()` in turn. Field log
+(Windows, RTX 5090, debug.23345): after toggling the push-aside subtitle list,
+bursts of 300–880 ms raster frames for 1–3 s; lab timelines show those frames as
+`LayerTree::Paint` self time with no child events.
+
+The copy now runs at the end of `Draw()`, on media_kit's render thread, right
+after `glFinish()` and still under the mutex; the texture callback only returns
+the descriptor. Flutter's raster thread never touches the mutex or media_kit's
+D3D11 device. `MarkTextureFrameAvailable` still fires after the copy, so Flutter
+never samples a frame older than the last finished one.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_raster_never_waits_guard_test.dart`.
