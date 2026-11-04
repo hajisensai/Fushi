@@ -768,17 +768,25 @@ void main() {
             ))!.tags,
         };
 
-    // 失焦：改完标签点到字段上（没按回车）。
+    // 标签框在字段列表末尾（列表懒构建）：先滚到它。
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey<String>('srs-browse-edit-tags')),
+      200,
+      // 字段编辑器里还有自己的滚动区：取最外层（列表本身）那个。
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('srs-browse-edit-fields')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pump();
+
+    // 失焦：改完标签不按回车，焦点离开输入框。
     await tester.enterText(tagsBox(), 'alpha beta');
     await tester.pump();
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(
-          const ValueKey<String>('srs-browse-field-MainDefinition'),
-        ),
-        matching: find.byType(EditableText),
-      ),
-    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
     await _settle(tester);
     final Map<String, List<String>> afterBlur = await tagsByNote();
     final String edited = afterBlur[a]!.isNotEmpty ? a : b;
