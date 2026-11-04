@@ -187,7 +187,18 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
       destructive: true,
     );
     if (!confirmed) return;
-    await _library.deleteSession(session.id);
+    if (!await _library.deleteSession(session.id)) {
+      FushiToast.show(msg: t.ai_agent_session_in_use);
+    }
+  }
+
+  /// 互联 host 替已配对设备跑的会话：标「来自 X」（BUG-4067）。
+  static String? _originOf(AiAgentSessionSummary session) {
+    if (session.originPeerId.isEmpty) return null;
+    final String? name = session.originDeviceName;
+    return name == null || name.isEmpty
+        ? t.ai_agent_session_from_paired_device
+        : t.ai_agent_session_from_device(device: name);
   }
 
   static String _titleOf(AiAgentSessionSummary session) =>
@@ -315,7 +326,12 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
               tokens.spacing.page,
               0,
             ),
-            child: Text(t.ai_agent_sessions_retention_hint, style: hintStyle),
+            child: Text(
+              _library.storedOn == null
+                  ? t.ai_agent_sessions_retention_hint
+                  : t.ai_agent_sessions_remote_hint(device: _library.storedOn!),
+              style: hintStyle,
+            ),
           ),
         ],
       ),
@@ -335,6 +351,7 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
         subtitle: Text(
           <String>[
             _timeOf(context, session.updatedAt),
+            ?_originOf(session),
             if (current) t.ai_agent_session_current,
           ].join(' · '),
         ),
