@@ -10,22 +10,44 @@
 /// * Brave Search API：`GET https://api.search.brave.com/res/v1/web/search?q=`，
 ///   `X-Subscription-Token` 头带 API key。
 ///
-/// 出站一律经 `createAppHttpIoClient()`（应用代理 + 连接超时）。抓结果页时只接受
-/// http / https、拒绝本机与内网地址（搜索结果是不可信输入，不能让它把请求引到局域网）。
+/// 出站一律经 `createAppHttpClient()`（应用代理 + 连接超时）。
+///
+/// 抓结果页的 SSRF 防护（搜索结果是不可信输入，不能让它把请求引到本机 / 局域网）：
+/// * 只接受 http / https；本机 / 内网的主机名与 IP 字面量直接拒（[isFetchableWebSearchUrl]）；
+/// * 域名先解析，解析出的**每个**地址都要是公网地址（[isPublicWebSearchAddress]，
+///   IPv4-mapped IPv6 还原成 IPv4 再判，`0.0.0.0` / `::` 一律拒）；
+/// * 重定向不交给 HTTP 栈自动跟：手动逐跳跟（最多 [kWebSearchMaxRedirects] 跳），每一跳都
+///   重新过上面两道；
+/// * 直连时按已校验的地址建连（[webSearchPinnedConnectionFactory]），解析与建连之间被
+///   DNS rebinding 换成内网地址也连不过去。走应用代理时 DNS 在代理那头解析，本机只能做
+///   解析前置校验。
+///
+/// SearXNG 实例地址是用户自己配的（常是局域网自建），搜索请求不受这套限制。
 library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show InternetAddress, InternetAddressType;
+import 'dart:io';
 
 import 'package:fushi_engine/ai/web_knowledge.dart' show webKnowledgeHtmlToText;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 /// 单个响应体（搜索 JSON / 结果页 HTML）的字节上限。
 const int kWebSearchMaxResponseBytes = 4 * 1024 * 1024;
+
+/// 抓结果页时最多跟几跳重定向。
+const int kWebSearchMaxRedirects = 5;
+
+/// 主机名 → 地址（生产用 [InternetAddress.lookup]；测试注入）。
+typedef WebSearchHostResolver =
+    Future<List<InternetAddress>> Function(String host);
+
+Future<List<InternetAddress>> _systemLookup(String host) =>
+    InternetAddress.lookup(host);
 
 /// 搜索后端。
 enum WebSearchKind {
@@ -152,22 +174,42 @@ class WebSearchPage {
 /// 通用搜索客户端。所有失败只记诊断日志、返回空，不抛：联网搜索是锦上添花，
 /// 不能让调用它的 AI 流程（字幕生成等）整体失败。
 class WebSearchClient {
+  /// [client] 发搜索请求；抓结果页用 [pageClient]，没给就用 [client]；两个都没给时
+  /// 另建一个按已校验地址建连的客户端（见库注释）。[resolveHost] 是抓页前校验主机名
+  /// 用的解析器。
   WebSearchClient({
     required this.config,
     http.Client? client,
+    http.Client? pageClient,
+    WebSearchHostResolver? resolveHost,
     this.requestTimeout = const Duration(seconds: 20),
   }) : _client = client ?? createAppHttpIoClient(),
-       _ownsClient = client == null;
+       _ownsClient = client == null,
+       _resolveHost = resolveHost ?? _systemLookup,
+       _pageClient =
+           pageClient ??
+           client ??
+           IOClient(
+             createAppHttpClient()
+               ..connectionFactory = webSearchPinnedConnectionFactory(
+                 resolveHost ?? _systemLookup,
+               ),
+           ),
+       _ownsPageClient = pageClient == null && client == null;
 
   final WebSearchConfig config;
   final http.Client _client;
   final bool _ownsClient;
+  final http.Client _pageClient;
+  final bool _ownsPageClient;
+  final WebSearchHostResolver _resolveHost;
   final Duration requestTimeout;
 
   bool get isEnabled => config.isUsable;
 
   void close() {
     if (_ownsClient) _client.close();
+    if (_ownsPageClient) _pageClient.close();
   }
 
   /// 搜 [query]，最多 [limit] 条。
@@ -204,19 +246,18 @@ class WebSearchClient {
     }
   }
 
-  /// 取 [url] 的正文（HTML 剥成文本，截到 [maxChars]）。不安全的地址 / 失败 → null。
+  /// 取 [url] 的正文（HTML 剥成文本，截到 [maxChars]）。不安全的地址（含重定向途经的
+  /// 任一跳）/ 失败 → null。
   Future<WebSearchPage?> fetchPage(
     Uri url, {
     String title = '',
     int maxChars = 20000,
   }) async {
-    if (!isFetchableWebSearchUrl(url)) return null;
     try {
-      final String body = await _get(
+      final String? body = await _fetchFollowingRedirects(
         url,
-        accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
-        followRedirects: true,
-      );
+      ).timeout(requestTimeout);
+      if (body == null) return null;
       final String text = webKnowledgeHtmlToText(body);
       return WebSearchPage(
         url: url,
@@ -227,6 +268,43 @@ class WebSearchClient {
       engineLog.logDiagnostic('webSearch.fetch', '$url failed: $e');
       return null;
     }
+  }
+
+  /// 手动跟重定向：每一跳先过 [isFetchableWebSearchTarget] 再发请求。哪一跳不安全 /
+  /// 跳数超限 → null（记诊断日志）。
+  Future<String?> _fetchFollowingRedirects(Uri url) async {
+    Uri current = url;
+    for (int hop = 0; hop <= kWebSearchMaxRedirects; hop++) {
+      if (!await isFetchableWebSearchTarget(current, resolve: _resolveHost)) {
+        engineLog.logDiagnostic(
+          'webSearch.fetch',
+          'refused non-public target $current (from $url)',
+        );
+        return null;
+      }
+      final http.StreamedResponse response = await _send(
+        _pageClient,
+        current,
+        accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
+      );
+      if (_isRedirectStatus(response.statusCode)) {
+        final String? location = response.headers['location'];
+        unawaited(response.stream.drain<void>().catchError((Object _) {}));
+        if (location == null || location.trim().isEmpty) {
+          throw StateError(
+            'HTTP ${response.statusCode} without Location for ${current.host}',
+          );
+        }
+        current = current.resolve(location.trim());
+        continue;
+      }
+      return _readBody(response, current);
+    }
+    engineLog.logDiagnostic(
+      'webSearch.fetch',
+      'too many redirects from $url (> $kWebSearchMaxRedirects)',
+    );
+    return null;
   }
 
   Uri _searxngUri(String q) {
@@ -248,22 +326,39 @@ class WebSearchClient {
     Uri uri, {
     required String accept,
     Map<String, String> headers = const <String, String>{},
-    bool followRedirects = false,
-  }) => _read(uri, accept, headers, followRedirects).timeout(requestTimeout);
+  }) async {
+    final http.StreamedResponse response = await _send(
+      _client,
+      uri,
+      accept: accept,
+      headers: headers,
+    ).timeout(requestTimeout);
+    return _readBody(response, uri).timeout(requestTimeout);
+  }
 
-  Future<String> _read(
-    Uri uri,
-    String accept,
-    Map<String, String> headers,
-    bool followRedirects,
-  ) async {
+  /// 发一个 GET，**不**自动跟重定向（抓页的重定向由 [_fetchFollowingRedirects] 逐跳校验）。
+  Future<http.StreamedResponse> _send(
+    http.Client client,
+    Uri uri, {
+    required String accept,
+    Map<String, String> headers = const <String, String>{},
+  }) {
     final http.Request request = http.Request('GET', uri)
-      ..followRedirects = followRedirects
-      ..maxRedirects = 5
+      ..followRedirects = false
       ..headers['User-Agent'] = fushiUserAgent('web-search')
       ..headers['Accept'] = accept
       ..headers.addAll(headers);
-    final http.StreamedResponse response = await _client.send(request);
+    return client.send(request);
+  }
+
+  static bool _isRedirectStatus(int status) =>
+      status == 301 ||
+      status == 302 ||
+      status == 303 ||
+      status == 307 ||
+      status == 308;
+
+  Future<String> _readBody(http.StreamedResponse response, Uri uri) async {
     if (response.statusCode != 200) {
       unawaited(response.stream.drain<void>().catchError((Object _) {}));
       throw StateError('HTTP ${response.statusCode} for ${uri.host}');
@@ -279,7 +374,8 @@ class WebSearchClient {
   }
 }
 
-/// 搜索结果页能不能抓：只要 http / https，拒绝 localhost 与内网 / 链路本地 IP 字面量。
+/// 搜索结果页能不能抓（只看 URL 本身，不解析域名）：只要 http / https，拒绝 localhost /
+/// `.local` / `.internal` 与非公网 IP 字面量（[isPublicWebSearchAddress]）。
 bool isFetchableWebSearchUrl(Uri url) {
   if (url.scheme != 'https' && url.scheme != 'http') return false;
   final String host = url.host.toLowerCase();
@@ -287,24 +383,93 @@ bool isFetchableWebSearchUrl(Uri url) {
     return false;
   }
   if (host.endsWith('.local') || host.endsWith('.internal')) return false;
-  final InternetAddress? ip = InternetAddress.tryParse(
-    host.startsWith('[') && host.endsWith(']')
-        ? host.substring(1, host.length - 1)
-        : host,
-  );
-  if (ip == null) return true;
-  if (ip.isLoopback || ip.isLinkLocal) return false;
-  final List<int> b = ip.rawAddress;
-  if (ip.type == InternetAddressType.IPv4) {
-    return !(b[0] == 10 ||
-        b[0] == 0 ||
+  final InternetAddress? ip = _ipLiteral(host);
+  return ip == null || isPublicWebSearchAddress(ip);
+}
+
+/// [isFetchableWebSearchUrl] 再加域名解析：解析出的每个地址都得是公网地址（解析失败 /
+/// 没有地址也拒）。抓页的每一跳都过它。
+Future<bool> isFetchableWebSearchTarget(
+  Uri url, {
+  required WebSearchHostResolver resolve,
+}) async {
+  if (!isFetchableWebSearchUrl(url)) return false;
+  if (_ipLiteral(url.host) != null) return true;
+  final List<InternetAddress> addresses;
+  try {
+    addresses = await resolve(url.host);
+  } on SocketException {
+    return false;
+  }
+  return addresses.isNotEmpty && addresses.every(isPublicWebSearchAddress);
+}
+
+InternetAddress? _ipLiteral(String host) => InternetAddress.tryParse(
+  host.startsWith('[') && host.endsWith(']')
+      ? host.substring(1, host.length - 1)
+      : host,
+);
+
+/// 地址是不是可以让不可信 URL 去连的公网单播地址。拒绝：未指定（`0.0.0.0/8`、`::`）、
+/// 回环、私网（10/8、172.16/12、192.168/16）、CGNAT 100.64/10、链路本地、组播 /
+/// 保留（≥ 224.0.0.0、`ff00::/8`）、IPv6 唯一本地 `fc00::/7`；IPv4-mapped IPv6
+/// （`::ffff:a.b.c.d`）按其中的 IPv4 判，`::/96` 其余形式（`::`、`::1`、已废弃的
+/// IPv4-compatible）一律拒。
+bool isPublicWebSearchAddress(InternetAddress address) {
+  final List<int> b = address.rawAddress;
+  if (address.type == InternetAddressType.IPv4) return _isPublicIpv4(b);
+  if (address.type != InternetAddressType.IPv6 || b.length != 16) return false;
+  final bool zeroPrefix = b.sublist(0, 10).every((int x) => x == 0);
+  if (zeroPrefix && b[10] == 0xff && b[11] == 0xff) {
+    return _isPublicIpv4(b.sublist(12));
+  }
+  if (zeroPrefix && b[10] == 0 && b[11] == 0) return false;
+  if (b[0] == 0xff) return false; // 组播
+  if (b[0] == 0xfe && (b[1] & 0xc0) == 0x80) return false; // fe80::/10
+  if ((b[0] & 0xfe) == 0xfc) return false; // fc00::/7
+  return true;
+}
+
+bool _isPublicIpv4(List<int> b) =>
+    !(b[0] == 0 ||
+        b[0] == 10 ||
+        b[0] == 127 ||
+        (b[0] == 169 && b[1] == 254) ||
         (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
         (b[0] == 192 && b[1] == 168) ||
-        (b[0] == 100 && b[1] >= 64 && b[1] <= 127));
-  }
-  // IPv6 唯一本地地址 fc00::/7。
-  return (b[0] & 0xfe) != 0xfc;
-}
+        (b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||
+        b[0] >= 224);
+
+/// 抓页客户端的建连函数：直连时自己解析主机名、要求全部地址是公网地址，再**按校验过
+/// 的地址**建连（https 用 [SecureSocket]，证书仍按原主机名校验），解析与建连之间被
+/// DNS rebinding 换地址也连不到内网。走代理（`proxyHost` 非 null）时连代理本身。
+Future<ConnectionTask<Socket>> Function(
+  Uri url,
+  String? proxyHost,
+  int? proxyPort,
+)
+webSearchPinnedConnectionFactory(WebSearchHostResolver resolve) =>
+    (Uri url, String? proxyHost, int? proxyPort) async {
+      if (proxyHost != null && proxyPort != null) {
+        return Socket.startConnect(proxyHost, proxyPort);
+      }
+      final InternetAddress? literal = _ipLiteral(url.host);
+      final List<InternetAddress> addresses = literal != null
+          ? <InternetAddress>[literal]
+          : await resolve(url.host);
+      if (!isFetchableWebSearchUrl(url) ||
+          addresses.isEmpty ||
+          !addresses.every(isPublicWebSearchAddress)) {
+        throw SocketException(
+          'web search: refused connection to non-public address',
+          address: addresses.isEmpty ? null : addresses.first,
+        );
+      }
+      final InternetAddress target = addresses.first;
+      return url.scheme == 'https'
+          ? SecureSocket.startConnect(target, url.port)
+          : Socket.startConnect(target, url.port);
+    };
 
 /// SearXNG `format=json` → 结果。坏 JSON 抛 [FormatException]。
 List<WebSearchHit> parseSearxngResults(String body) {

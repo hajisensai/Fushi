@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fushi_engine/ai/web_search.dart';
 import 'package:http/http.dart' as http;
@@ -133,11 +134,174 @@ void main() {
         'http://172.31.255.1/',
         'http://[::1]/',
         'http://[fc00::1]/',
+        // IPv4-mapped / 未指定 / 链路本地 / 云元数据 / 组播。
+        'http://[::ffff:127.0.0.1]/',
+        'http://[::ffff:10.0.0.1]/',
+        'http://[::ffff:192.168.0.1]/',
+        'http://[::]/',
+        'http://0.0.0.0/',
+        'http://169.254.169.254/',
+        'http://[fe80::1]/',
+        'http://224.0.0.1/',
+        'http://[ff02::1]/',
         'file:///etc/passwd',
         'ftp://example.com/',
       ]) {
         expect(isFetchableWebSearchUrl(Uri.parse(u)), false, reason: u);
       }
+    });
+
+    test('IPv4-mapped 的公网地址照常可抓', () {
+      expect(
+        isFetchableWebSearchUrl(Uri.parse('http://[::ffff:8.8.8.8]/')),
+        true,
+      );
+      expect(
+        isPublicWebSearchAddress(InternetAddress('2606:4700::1111')),
+        true,
+      );
+    });
+  });
+
+  group('WebSearchClient.fetchPage', () {
+    Future<List<InternetAddress>> resolveTo(String ip) async =>
+        <InternetAddress>[InternetAddress(ip)];
+
+    WebSearchClient fetcher(
+      List<Uri> seen,
+      http.Response Function(Uri url) respond, {
+      WebSearchHostResolver? resolveHost,
+    }) => WebSearchClient(
+      config: const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'k'),
+      client: MockClient((http.Request r) async {
+        expect(r.followRedirects, isFalse);
+        seen.add(r.url);
+        return respond(r.url);
+      }),
+      resolveHost: resolveHost ?? (String _) => resolveTo('93.184.216.34'),
+    );
+
+    test('302 跳到 127.0.0.1：拒绝，不请求跳转目标', () async {
+      final List<Uri> seen = <Uri>[];
+      final WebSearchClient c = fetcher(
+        seen,
+        (Uri u) => http.Response(
+          '',
+          302,
+          headers: <String, String>{'location': 'http://127.0.0.1:8080/admin'},
+        ),
+      );
+      expect(await c.fetchPage(Uri.parse('https://lyrics.example/a')), isNull);
+      expect(seen, <Uri>[Uri.parse('https://lyrics.example/a')]);
+    });
+
+    test('302 跳到 ::ffff:127.0.0.1 / 解析到内网的域名：都拒', () async {
+      final List<Uri> seen = <Uri>[];
+      final WebSearchClient c = fetcher(
+        seen,
+        (Uri u) => http.Response(
+          '',
+          301,
+          headers: <String, String>{
+            'location': u.host == 'lyrics.example'
+                ? 'http://[::ffff:127.0.0.1]/'
+                : '/x',
+          },
+        ),
+      );
+      expect(await c.fetchPage(Uri.parse('https://lyrics.example/a')), isNull);
+      expect(seen, hasLength(1));
+
+      final List<Uri> seen2 = <Uri>[];
+      final WebSearchClient rebind = fetcher(
+        seen2,
+        (Uri u) => http.Response('<p>secret</p>', 200),
+        resolveHost: (String host) => host == 'intranet.example'
+            ? resolveTo('10.0.0.5')
+            : resolveTo('93.184.216.34'),
+      );
+      expect(
+        await rebind.fetchPage(Uri.parse('https://intranet.example/')),
+        isNull,
+      );
+      expect(seen2, isEmpty);
+    });
+
+    test('跳到公网地址照常跟（相对 Location 按当前页解析），跳数有上限', () async {
+      final List<Uri> seen = <Uri>[];
+      final WebSearchClient c = fetcher(
+        seen,
+        (Uri u) => u.path == '/final'
+            ? http.Response.bytes(utf8.encode('<p>君の声が聞こえる</p>'), 200)
+            : http.Response(
+                '',
+                307,
+                headers: <String, String>{'location': '/final'},
+              ),
+      );
+      final WebSearchPage? page = await c.fetchPage(
+        Uri.parse('https://lyrics.example/start'),
+      );
+      expect(page, isNotNull);
+      expect(page!.text, contains('君の声が聞こえる'));
+      expect(seen.map((Uri u) => u.toString()), <String>[
+        'https://lyrics.example/start',
+        'https://lyrics.example/final',
+      ]);
+
+      final List<Uri> loop = <Uri>[];
+      final WebSearchClient looping = fetcher(
+        loop,
+        (Uri u) => http.Response(
+          '',
+          302,
+          headers: <String, String>{'location': '${u.path}x'},
+        ),
+      );
+      expect(
+        await looping.fetchPage(Uri.parse('https://lyrics.example/a')),
+        isNull,
+      );
+      expect(loop, hasLength(kWebSearchMaxRedirects + 1));
+    });
+
+    test('建连函数：解析出非公网地址就不建连（DNS rebinding）', () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      int hits = 0;
+      server.listen((HttpRequest r) {
+        hits++;
+        r.response
+          ..write('secret')
+          ..close();
+      });
+      addTearDown(() => server.close(force: true));
+      int lookups = 0;
+      // 第一次（抓页前校验）给公网地址，之后（建连时）换成回环。
+      Future<List<InternetAddress>> rebinding(String host) async =>
+          lookups++ == 0
+          ? <InternetAddress>[InternetAddress('93.184.216.34')]
+          : <InternetAddress>[InternetAddress.loopbackIPv4];
+
+      await expectLater(
+        webSearchPinnedConnectionFactory(
+          (String _) async => <InternetAddress>[InternetAddress.loopbackIPv4],
+        )(Uri.parse('http://rebind.example:${server.port}/'), null, null),
+        throwsA(isA<SocketException>()),
+      );
+
+      final WebSearchClient c = WebSearchClient(
+        config: const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'k'),
+        resolveHost: rebinding,
+      );
+      addTearDown(c.close);
+      expect(
+        await c.fetchPage(Uri.parse('http://rebind.example:${server.port}/')),
+        isNull,
+      );
+      expect(hits, 0);
     });
   });
 
