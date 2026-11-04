@@ -476,7 +476,7 @@ void main() {
 
   test('设置详情 / 窄屏设置页：页头背后的遮罩实色盖满让位高度', () {
     final String kit = File(
-      'lib/src/settings/settings_kit.dart',
+      'lib/src/settings/settings_kit_core.dart',
     ).readAsStringSync();
     expect(kit, contains('solidHeight: inset(),'));
     final String home = File(
