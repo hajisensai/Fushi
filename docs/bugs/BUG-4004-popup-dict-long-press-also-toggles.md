@@ -1,0 +1,6 @@
+## BUG-4004 · 查词弹窗长按词典标题选词典松开后又折叠该词典
+- **报告**：2026-11-03（应用内反馈 ZdghRxjVCm，Windows 3.3.0-debug.23025：「制卡时长按某个词典以让该词典出现在最前面时，长按松开后还同时会触发收起词典的效果；收起应只在单击时发生」）
+- **真实性**：✅ 真 bug（沿代码路径定位 + node 行为测试在旧源码上复现红）。根因 `fushi/assets/popup/popup.js` `createGlossarySection` 的词典分组 `<summary>` 长按监听（修复前 6446-6477 行）：长按 500ms 计时器触发选词典（`toggleSelection`），但 `<details>` 的开合是 `<summary>` 上 **click 的 activation behavior**，鼠标长按松开后浏览器照样派发 click → 同一次按下既「选词典」又「开合分组」。触屏路径由 touchend `preventDefault` 掐掉合成 click（且写成了隐式全局 `event?.preventDefault?.()`，不是事件参数），鼠标路径（mousedown/mouseup）没有任何一步认领这次 click。
+- **[x] ① 已修复** — 长按与单击是同一次按下的两种结局，改为二选一：指针长按计时器触发时置位 `longPressed`（`fireLongPress`），`<summary>` 新增 click 监听：本次按下已被长按消费就 `preventDefault`（取消开合）并复位，下一次单击照常开合；`toggleSelection` 本身不再置位，键盘 / 手柄长按入口 `__fushiDictLongPress`（无随后 click）不会误吞下一次真点击；touchend 改用事件参数。三镜像（`fushi/assets/popup/popup.js`、`fushi/assets/browser_extension/vendor/popup.js`、`tools/browser-extension/vendor/popup.js`）逐字节同步。提交见下方备注。
+- **[x] ② 已加自动化测试** — `fushi/test/dictionary/popup_dict_label_long_press_no_toggle_test.js`（+ 同名 `.dart` wrapper，node 真执行 popup.js 里提取的 `createGlossarySection`，按真实顺序派发 mousedown → 计时到点 → mouseup → click）：鼠标长按后 click 被取消；普通单击不受影响；长按后下一次单击复位；键盘长按不污染下一次点击；触屏长按 touchend 取消 / 触屏短按不取消。修复前源码上第 ① 条断言红（已实测）。
+- **备注**：`preventDefault` 能取消 `<details>` 开合是 DOM 规范语义（activation behavior 可取消），合成事件只验监听决策；未在真机复测。

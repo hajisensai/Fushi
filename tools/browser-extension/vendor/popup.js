@@ -6424,9 +6424,11 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     details.appendChild(summary);
 
     let longPressTimer = null;
+    // 本次指针按下是否已经被长按（选词典）消费。只由指针长按计时器置位——键盘 / 手柄
+    // 长按（__fushiDictLongPress）直接调 toggleSelection，没有随后的 click 要吞，
+    // 置位反而会把下一次真点击误吞（ZdghRxjVCm）。
     let longPressed = false;
     const toggleSelection = () => {
-        longPressed = true;
         const selected = selectedDictionaries[entryIdx];
         selected?.label.classList.remove('selected');
         if (selected?.name === dictName) {
@@ -6443,13 +6445,17 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
         toggle();
         return true;
     };
+    const fireLongPress = () => {
+        longPressed = true;
+        toggleSelection();
+    };
     summary.addEventListener('touchstart', (e) => {
         longPressed = false;
-        longPressTimer = setTimeout(toggleSelection, 500);
+        longPressTimer = setTimeout(fireLongPress, 500);
     }, { passive: true });
-    summary.addEventListener('touchend', () => {
+    summary.addEventListener('touchend', (e) => {
         clearTimeout(longPressTimer);
-        if (longPressed) event?.preventDefault?.();
+        if (longPressed) e?.preventDefault?.();
     });
     summary.addEventListener('touchmove', () => clearTimeout(longPressTimer));
     // BUG-2447：`<summary>` 是查词弹窗里唯一「鼠标点一下就会拿到 DOM 焦点」的元素——
@@ -6470,11 +6476,21 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     // 参与聚焦，中键/右键要原样留给弹窗输入桥的 `Mouse<n>` 转发判定。
     summary.addEventListener('mousedown', (e) => {
         longPressed = false;
-        longPressTimer = setTimeout(toggleSelection, 500);
+        longPressTimer = setTimeout(fireLongPress, 500);
         if (e && e.button === 0) e.preventDefault();
     });
     summary.addEventListener('mouseup', () => clearTimeout(longPressTimer));
     summary.addEventListener('mouseleave', () => clearTimeout(longPressTimer));
+    // ZdghRxjVCm：长按与单击是同一次按下的两种结局，只能二选一。`<details>` 的展开 /
+    // 折叠是 `<summary>` 上 click 的 activation behavior——鼠标长按松开后照样派发
+    // click（触屏由上面 touchend 的 preventDefault 掐掉合成 click，鼠标没有对应的
+    // 一步），于是长按选完词典又把它折叠了。这里在 click 上认领：本次按下已被长按
+    // 消费就取消默认动作（不开合），并复位，下一次单击照常开合。
+    summary.addEventListener('click', (e) => {
+        if (!longPressed) return;
+        longPressed = false;
+        e?.preventDefault?.();
+    });
     
     const dictWrapper = document.createElement('div');
     dictWrapper.setAttribute('data-dictionary', dictName);
