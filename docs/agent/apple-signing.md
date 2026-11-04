@@ -285,10 +285,14 @@ com.apple.security.cs.disable-library-validation
 2. **重新生成 App Store 描述文件**（勾了 capability 之后旧描述文件里没有 `aps-environment`）：
    Profiles → 原来那份 `IOS_APP_STORE` 描述文件 → Edit → Save → 下载，然后照「仓库 Secrets
    清单」重写 `IOS_PROVISIONING_PROFILE_BASE64`（`tool/apple_signing_secrets.sh`）。
-   `release-desktop.yml` 解出描述文件时发现它带 `aps-environment`，才往 `Release.xcconfig` 追加
-   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（值取描述文件里的，App Store 描述文件
-   是 `production`）；不带就照旧不接入——**描述文件没开 Push 却签进 aps-environment，codesign
-   会直接失败**，所以这一步不能写死在工程里。
+   `release-desktop.yml` 解出描述文件后对 `Runner.entitlements` 里的**每一项**逐个对照：
+   描述文件授予了才保留（`aps-environment` 的值取描述文件里的，App Store 描述文件是
+   `production`），没授予就在 runner 上把那一项删掉；至少剩一项才往 `Release.xcconfig` 追加
+   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`——**描述文件没授予的 entitlement 签进去，
+   codesign 会直接失败**，所以这一步不能写死在工程里。同一机制也管
+   `com.apple.developer.kernel.extended-virtual-addressing`（BUG-4013，App ID 勾
+   「Extended Virtual Addressing」后同样要重新生成描述文件；缺失时 CI 打 warning）。守卫：
+   `fushi/test/build/ios_entitlements_profile_gating_guard_test.dart`。
 3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
    （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key
    对团队下所有 App、sandbox 与 production 都有效，不像旧的 .p12 推送证书一年一换。
