@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(PLUGIN, "py_modules"))
 
 from fushi_lens.service import ConfigStore, LensService  # noqa: E402
 
-CONFIG = os.path.join(PLUGIN, ".dev", "pairing.json")
+CONFIG = os.environ.get("FUSHI_LENS_CONFIG") or os.path.join(PLUGIN, ".dev", "pairing.json")
 
 
 def main(argv: list) -> int:

@@ -27,6 +27,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
+# The host holds pairing requests open until its user approves the device, so
+# pairing calls wait as long as Fushi's own client does (fushi_pair_v2_client.dart).
+PAIRING_TIMEOUT_S = 65.0
+
 
 class HostError(Exception):
     """A request to the host failed; `reason` is machine-readable."""
@@ -102,17 +106,17 @@ class HostClient:
 
     # ── transport ─────────────────────────────────────────────────────
 
-    def _connection(self) -> Tuple[http.client.HTTPConnection, str]:
+    def _connection(self, timeout: float) -> Tuple[http.client.HTTPConnection, str]:
         parts = urlsplit(self.base_url)
         if parts.scheme == "http":
-            return http.client.HTTPConnection(parts.hostname, parts.port, timeout=self.timeout), ""
+            return http.client.HTTPConnection(parts.hostname, parts.port, timeout=timeout), ""
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         # Self-signed host certificate: chain validation is replaced by the
         # fingerprint check in `request` (pinning), exactly like the Dart client.
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         return (
-            http.client.HTTPSConnection(parts.hostname, parts.port, timeout=self.timeout, context=context),
+            http.client.HTTPSConnection(parts.hostname, parts.port, timeout=timeout, context=context),
             "https",
         )
 
@@ -124,8 +128,9 @@ class HostClient:
         headers: Optional[Dict[str, str]] = None,
         *,
         authenticated: bool = True,
+        timeout: Optional[float] = None,
     ) -> Response:
-        conn, scheme = self._connection()
+        conn, scheme = self._connection(timeout or self.timeout)
         try:
             try:
                 conn.connect()
@@ -156,13 +161,16 @@ class HostClient:
         finally:
             conn.close()
 
-    def post_json(self, path: str, payload: Any, *, authenticated: bool = True) -> Response:
+    def post_json(
+        self, path: str, payload: Any, *, authenticated: bool = True, timeout: Optional[float] = None
+    ) -> Response:
         return self.request(
             "POST",
             path,
             json.dumps(payload).encode("utf-8"),
             {"Content-Type": "application/json"},
             authenticated=authenticated,
+            timeout=timeout,
         )
 
     # ── pairing ───────────────────────────────────────────────────────
@@ -174,6 +182,7 @@ class HostClient:
             "/api/pair/v2",
             {"name": device_name, "clientNonce": client_nonce, "clientDeviceId": device_id},
             authenticated=False,
+            timeout=PAIRING_TIMEOUT_S,
         )
         if res.status != 200:
             raise HostError(_reason_of(res, {403: "unavailable", 429: "rate_limited"}.get(res.status, "error")))
@@ -194,7 +203,7 @@ class HostClient:
             if not pin:
                 raise HostError("pin")
             payload["pinProof"] = compute_pin_proof(pin, session["clientNonce"], session["hostNonce"])
-        res = self.post_json("/api/pair/v2/confirm", payload, authenticated=False)
+        res = self.post_json("/api/pair/v2/confirm", payload, authenticated=False, timeout=PAIRING_TIMEOUT_S)
         if res.status != 200:
             raise HostError(
                 _reason_of(res, {401: "pin", 403: "declined", 429: "rate_limited"}.get(res.status, "error"))

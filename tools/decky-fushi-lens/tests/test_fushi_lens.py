@@ -65,8 +65,8 @@ class FakeHost(host.HostClient):
         self.replies = replies
         self.calls = []
 
-    def request(self, method, path, body=None, headers=None, *, authenticated=True):
-        self.calls.append((method, path, body, dict(headers or {}), authenticated))
+    def request(self, method, path, body=None, headers=None, *, authenticated=True, timeout=None):
+        self.calls.append((method, path, body, dict(headers or {}), authenticated, timeout))
         status, payload = self.replies.get(path.split("?")[0], (404, {}))
         data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         return host.Response(status, {"content-type": "application/json"}, data)
@@ -80,6 +80,8 @@ class PairingTest(unittest.TestCase):
         payload = json.loads(client.calls[0][2])
         self.assertEqual(payload["pinProof"], host.compute_pin_proof("4321", "c", "h"))
         self.assertFalse(client.calls[0][4])
+        # The host holds confirm open until its user approves: wait like the Dart client.
+        self.assertEqual(client.calls[0][5], host.PAIRING_TIMEOUT_S)
 
         evil = FakeHost({"/api/pair/v2/confirm": (200, {"token": "t2", "hostFingerprint": "cc:dd"})})
         evil.token = None
