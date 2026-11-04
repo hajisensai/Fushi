@@ -177,7 +177,10 @@ class AnkiDeckRepositionRunner {
 
   /// 取 [deckName] 的新卡并算出计划；不写任何东西。
   ///
-  /// 取消抛 [AnkiRepositionCancelled]；后端不支持返回 null。
+  /// 取消抛 [AnkiRepositionCancelled]；后端类型不支持返回 null；后端类型支持但
+  /// 连着的那一端此刻没有重排能力（[BaseAnkiRepository.probeDeckReposition] 为
+  /// false，如新版 AnkiConnect 缺原生接口）抛 [AnkiRepositionUnsupportedException]
+  /// ——在读卡、算 rank 之前就挡掉，不白跑一整组词典查询。
   Future<AnkiRepositionPlan?> plan({
     required String deckName,
     required AnkiSettings settings,
@@ -189,6 +192,9 @@ class AnkiDeckRepositionRunner {
     onProgress?.call(
       const AnkiRepositionProgress(stage: AnkiRepositionStage.fetch),
     );
+    if (!await _repository.probeDeckReposition()) {
+      throw const AnkiRepositionUnsupportedException();
+    }
     final List<AnkiCardInfo> cards = await _repository.listNewCards(deckName);
     if (shouldCancel?.call() ?? false) throw const AnkiRepositionCancelled();
     // 按旧位置升序传入：同 rank 的卡保持用户原有次序。

@@ -1280,6 +1280,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   @override
   bool get supportsDeckReposition => true;
 
+  /// 问这台 AnkiConnect 有没有可用的原生 `scheduling.repositionNewCards`。
+  /// `api.describe` 带整份 schema（几百 KB），走长任务预算。
+  @override
+  Future<bool> probeDeckReposition() async {
+    final AnkiConnectService service = await _getLongTaskService();
+    return service.supportsNativeRepositionNewCards();
+  }
+
   @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
     // 整牌组规模：`cardsInfo` 每张卡都带渲染好的问答 HTML，实测一批 200 张就有
@@ -1312,13 +1320,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
     final AnkiConnectService service = await _getLongTaskService();
-    final List<AnkiConnectBatchResult> results = await service.setCardsDueMany(
-      updates,
-    );
+    // 写之前当场再确认一次能力：新版 AnkiConnect（26.10.11.0 起）的旧协议禁止写
+    // `due`，没有原生接口就一张都不写——绝不退回 `setSpecificValueOfCard`。
+    if (!await service.supportsNativeRepositionNewCards()) {
+      throw const AnkiRepositionUnsupportedException();
+    }
+    final List<AnkiConnectBatchResult> results = await service
+        .repositionNewCards(updates);
     final Map<int, String> failures = <int, String>{};
     int written = 0;
     for (int i = 0; i < results.length; i++) {
-      final String? failure = ankiSetSpecificValueFailure(results[i]);
+      final String? failure = results[i].error;
       if (failure != null) {
         failures[updates[i].cardId] = failure;
       } else {

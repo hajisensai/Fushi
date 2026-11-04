@@ -209,6 +209,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (widget.row == AnkiSectionRow.backupImport && Platform.isIOS) {
       unawaited(_loadAnkiBackupImportedCount());
     }
+    // 重排入口的门控要的是「连着的那一端此刻能不能重排」：新版 AnkiConnect 禁止
+    // 直接写 due，没有原生 scheduling.repositionNewCards 就不能重排。探测一次网络
+    // 往返，只在真要画这两行时发起。
+    if (widget.row == null ||
+        widget.row == AnkiSectionRow.reposition ||
+        widget.row == AnkiSectionRow.autoReposition) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(ankiViewModelProvider.notifier).probeDeckReposition();
+      });
+    }
     if (widget.row != null) return;
     if (widget.panel != null && widget.panel != AnkiSettingsPanel.maintenance) {
       return;
@@ -2312,20 +2323,23 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       AnkiNoteTypePickerRow(settings: settings, viewModel: vm);
 
   /// 「按词频重排新卡」入口。只有 AnkiConnect 有卡片级读写；其它后端把行
-  /// 置灰并说明原因，而不是隐藏——隐藏会让用户以为功能不存在。
+  /// 置灰并说明原因，而不是隐藏——隐藏会让用户以为功能不存在。连着的
+  /// AnkiConnect 没有原生重排接口时同样置灰，并说明要换哪种版本。
   Widget _buildDeckRepositionRow(
     AnkiViewModel vm, {
     List<AnkiDeck>? decks,
     int? initialDeckId,
   }) {
-    final bool supported = vm.supportsDeckReposition;
+    // watch：探测结论（AnkiUiState.deckRepositionAvailable）回来后重画这一行。
+    ref.watch(ankiViewModelProvider);
+    final bool supported = vm.canRepositionDeck;
     return AdaptiveSettingsRow(
       icon: FushiIcons.sort,
       showIcon: true,
       title: t.anki_reposition_title,
       subtitle: supported
           ? t.anki_reposition_hint
-          : t.anki_reposition_unsupported,
+          : _repositionUnavailableReason(vm),
       subtitleMaxLines: 3,
       onTap: supported
           ? () => _openDeckReposition(
@@ -2340,18 +2354,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 「制卡后自动重排」开关。与上面那行同样的支持判据：不支持的后端置灰而
   /// 不隐藏，否则用户会以为这功能不存在。
   Widget _buildAutoRepositionRow(AnkiSettings settings, AnkiViewModel vm) {
-    final bool supported = vm.supportsAutoReposition;
+    ref.watch(ankiViewModelProvider);
+    final bool supported = vm.canAutoReposition;
     return AdaptiveSettingsSwitchRow(
       icon: FushiIcons.sync,
       showIcon: true,
       title: t.anki_reposition_auto_title,
       subtitle: supported
           ? t.anki_reposition_auto_hint
-          : t.anki_reposition_unsupported,
+          : _repositionUnavailableReason(vm),
       value: supported && settings.autoRepositionEnabled,
       onChanged: supported ? (bool v) => vm.setAutoRepositionEnabled(v) : null,
     );
   }
+
+  /// 重排入口置灰时的原因：后端类型不支持，还是连着的 AnkiConnect 版本缺原生接口。
+  String _repositionUnavailableReason(AnkiViewModel vm) =>
+      vm.deckRepositionBlockedByBackend
+      ? t.anki_reposition_ankiconnect_unsupported
+      : t.anki_reposition_unsupported;
 
   Future<void> _openDeckReposition(
     AnkiViewModel vm, {
