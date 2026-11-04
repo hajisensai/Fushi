@@ -3149,8 +3149,9 @@ ThemeData buildFushiThemeData({
     // 2026-10：M3 2024 版滑块（16 粗轨道 + 竖条拇指 + 拇指两侧留缝 + 尾端停止
     // 点），与下面的 2024 版进度条同一代视觉；RangeSlider 吃同一份主题。墨水屏
     // 保留 2023 版细轨圆钮与原配色（缝与停止点在低分辨率面板上会糊成灰点）。
-    // 自带 SliderTheme 覆写 thumbShape / trackShape 的紧凑滑块（视频音量浮层、
-    // 有声书面板）照旧用它们自己的形状。
+    // 自带 SliderTheme 覆写 thumbShape / trackShape 的紧凑滑块（有声书面板）照旧
+    // 用它们自己的形状；视频音量浮层只按界面缩放改轨道粗细与把手高度，形状沿用
+    // 这份 2024 版（反馈 DYSX-jy-6K）。
     sliderTheme: eink
         ? SliderThemeData(
             thumbColor: cs.primary,

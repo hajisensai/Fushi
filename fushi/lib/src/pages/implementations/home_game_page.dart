@@ -29,7 +29,6 @@ import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/utils.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
@@ -382,9 +381,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
                       onTap: _toggleImport,
                       focusIdPrefix: 'game-library-view',
                     ),
-                  ),
-                  const SyncProgressBanner(
-                    key: ValueKey<String>('games-sync-progress'),
                   ),
                 ],
               ),

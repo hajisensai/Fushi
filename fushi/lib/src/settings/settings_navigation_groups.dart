@@ -52,6 +52,7 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.interconnect ||
   SettingsDestinationId.storage => SettingsNavigationGroupId.data,
   SettingsDestinationId.system ||
+  SettingsDestinationId.widgets ||
   SettingsDestinationId.readerQuickSettings ||
   SettingsDestinationId.videoQuickSettings ||
   SettingsDestinationId.appIcon ||

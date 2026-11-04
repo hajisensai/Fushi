@@ -7,13 +7,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
 
-use super::{canonical, edit_row, in_savepoint, load_op, sql, Local};
+use super::{Local, canonical, edit_row, in_savepoint, load_op, sql};
 use crate::store::SrsCore;
 use crate::sync2::id::{Id, Key};
-use crate::sync2::op::{self as op, Body, EditBody, EntKind, LogBody, Intent};
+use crate::sync2::op::{self as op, Body, EditBody, EntKind, Intent, LogBody};
 use crate::sync2::vv::{OpId, Vv};
 
 /// 恢复的目标：一个时刻，或一个还原点（打还原点那台设备当时已应用的全部操作 + 它自己到还原点为止的前缀）。
@@ -71,10 +71,20 @@ fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
             "SELECT device, seq, wall, kind, CASE WHEN wall > ?2 AND purged = 0 AND kind IN (?3, ?4) THEN payload END, sc, sc_at, pz              FROM sync2_ops WHERE profile_uid = srs_id(?1)",
         )
         .map_err(sql)?;
-    let mut rows = stmt.query(params![profile, t, i64::from(op::KIND_EDIT), i64::from(op::KIND_LOG)]).map_err(sql)?;
+    let mut rows = stmt
+        .query(params![
+            profile,
+            t,
+            i64::from(op::KIND_EDIT),
+            i64::from(op::KIND_LOG)
+        ])
+        .map_err(sql)?;
     while let Some(r) = rows.next().map_err(sql)? {
         let d: Vec<u8> = r.get(0).map_err(sql)?;
-        let id = OpId { device: Id(d.try_into().map_err(|_| "bad device".to_string())?), seq: r.get::<_, i64>(1).map_err(sql)? as u64 };
+        let id = OpId {
+            device: Id(d.try_into().map_err(|_| "bad device".to_string())?),
+            seq: r.get::<_, i64>(1).map_err(sql)? as u64,
+        };
         if r.get::<_, i64>(2).map_err(sql)? <= t {
             // 墙钟在设备内单调：≤ t 的是前缀，取最大 seq。
             if id.seq > vv.get(&id.device) {
@@ -82,12 +92,22 @@ fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
             }
             continue;
         }
-        let Some(payload) = r.get::<_, Option<Vec<u8>>>(4).map_err(sql)? else { continue };
+        let Some(payload) = r.get::<_, Option<Vec<u8>>>(4).map_err(sql)? else {
+            continue;
+        };
         let kind = r.get::<_, i64>(3).map_err(sql)? as u16;
-        let payload = super::snapshots::unpack_payload(conn, payload, r.get(5).map_err(sql)?, r.get(6).map_err(sql)?, r.get(7).map_err(sql)?)?;
+        let payload = super::snapshots::unpack_payload(
+            conn,
+            payload,
+            r.get(5).map_err(sql)?,
+            r.get(6).map_err(sql)?,
+            r.get(7).map_err(sql)?,
+        )?;
         let original = if kind == op::KIND_EDIT {
             match Body::decode(kind, &payload) {
-                Ok(Body::Edit(EditBody { legacy: Some(l), .. })) => hlc_physical(&l.hlc),
+                Ok(Body::Edit(EditBody {
+                    legacy: Some(l), ..
+                })) => hlc_physical(&l.hlc),
                 _ => None,
             }
         } else {
@@ -103,14 +123,21 @@ fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
     Ok(Cut { vv, stamped_before })
 }
 
-pub(crate) fn target_cut(conn: &Connection, profile: &str, target: &RestoreTarget) -> Result<Cut, String> {
+pub(crate) fn target_cut(
+    conn: &Connection,
+    profile: &str,
+    target: &RestoreTarget,
+) -> Result<Cut, String> {
     match target {
         RestoreTarget::At(t) => cut_at(conn, profile, *t),
         RestoreTarget::Checkpoint(id) => {
             let op = load_op(conn, profile, id)?.ok_or("checkpoint not found")?;
             let mut vv: Vv = (*op.deps).clone();
             vv.set(id.device, id.seq);
-            Ok(Cut { vv, stamped_before: HashSet::new() })
+            Ok(Cut {
+                vv,
+                stamped_before: HashSet::new(),
+            })
         }
     }
 }
@@ -126,7 +153,13 @@ pub(crate) struct Plan {
 }
 
 /// 求补偿操作。
-pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_reviews: bool, now: i64) -> Result<Plan, String> {
+pub(crate) fn plan(
+    conn: &Connection,
+    profile: &str,
+    target: &Cut,
+    retract_reviews: bool,
+    now: i64,
+) -> Result<Plan, String> {
     let mut p = Plan::default();
     // 此后被碰过的（实体, 键）。
     let mut touched: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
@@ -134,11 +167,22 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
     {
         let mut stmt = conn.prepare("SELECT kind, srs_idt(entity) AS entity, device, seq, what FROM sync2_ent_ops WHERE profile_uid = srs_id(?1)").map_err(sql)?;
         let rows = stmt
-            .query_map([profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?, r.get::<_, String>(4)?)))
+            .query_map([profile], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Vec<u8>>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            })
             .map_err(sql)?;
         for r in rows {
             let (k, e, d, s, w) = r.map_err(sql)?;
-            let id = OpId { device: Id(d.try_into().map_err(|_| "bad device".to_string())?), seq: s as u64 };
+            let id = OpId {
+                device: Id(d.try_into().map_err(|_| "bad device".to_string())?),
+                seq: s as u64,
+            };
             if target.contains(&id) {
                 continue;
             }
@@ -152,7 +196,11 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
                 continue;
             }
             // 迁移进来的整列表 `tags` 与 OR-Set 的标签操作是同一个集合。
-            let w = if k == "note" && w == "tags" { "#tag".to_owned() } else { w };
+            let w = if k == "note" && w == "tags" {
+                "#tag".to_owned()
+            } else {
+                w
+            };
             touched.entry((k, e)).or_default().insert(w);
         }
     }
@@ -168,9 +216,18 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
             .prepare("SELECT device, seq, payload, purged, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2")
             .map_err(sql)?;
         let rows = stmt
-            .query_map(params![profile, i64::from(crate::sync2::op::KIND_ENTITY)], |r| {
-                Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?))
-            })
+            .query_map(
+                params![profile, i64::from(crate::sync2::op::KIND_ENTITY)],
+                |r| {
+                    Ok((
+                        r.get::<_, Vec<u8>>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, Vec<u8>>(2)?,
+                        r.get::<_, i64>(3)?,
+                        r.get::<_, i64>(4)?,
+                    ))
+                },
+            )
             .map_err(sql)?;
         // (实体种类, 实体) → (任一条身份记录在截面里, 内置)。
         let mut idents: BTreeMap<(String, String), (bool, bool)> = BTreeMap::new();
@@ -218,17 +275,25 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
         if created_after.contains(&(kind.clone(), entity.clone())) {
             continue;
         }
-        let Some(k) = EntKind::parse(kind) else { continue };
+        let Some(k) = EntKind::parse(kind) else {
+            continue;
+        };
         for key in keys {
             if key == "#tag" {
                 let then = tags_at(conn, profile, entity, target)?;
                 let now_tags = super::semantics::current_tags(conn, profile, entity)?;
                 for t in then.iter().filter(|x| !now_tags.contains(x)) {
-                    p.bodies.push(Body::TagAdd { note: Key::of(entity), tag: t.clone() });
+                    p.bodies.push(Body::TagAdd {
+                        note: Key::of(entity),
+                        tag: t.clone(),
+                    });
                     p.tags += 1;
                 }
                 for t in now_tags.iter().filter(|x| !then.contains(x)) {
-                    p.bodies.push(Body::TagRemove { note: Key::of(entity), tag: t.clone() });
+                    p.bodies.push(Body::TagRemove {
+                        note: Key::of(entity),
+                        tag: t.clone(),
+                    });
                     p.tags += 1;
                 }
                 continue;
@@ -252,7 +317,9 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
     if retract_reviews {
         let mut undo: Vec<(String, String, Option<Key>)> = Vec::new();
         for id in later_logs {
-            let Some(op) = load_op(conn, profile, &id)? else { continue };
+            let Some(op) = load_op(conn, profile, &id)? else {
+                continue;
+            };
             if let Ok(Body::Log(l)) = op.body() {
                 if l.kind == "review" && l.rating.is_some() {
                     undo.push((l.id.text(), l.card.text(), l.note.clone()));
@@ -292,14 +359,28 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
 }
 
 /// 实体在 [target] 里有没有任何内容（字段修改、标签操作；不算日志 / 移卡索引 / 清除）。
-fn has_content_in(conn: &Connection, profile: &str, kind: &str, entity: &str, target: &Cut) -> Result<bool, String> {
+fn has_content_in(
+    conn: &Connection,
+    profile: &str,
+    kind: &str,
+    entity: &str,
+    target: &Cut,
+) -> Result<bool, String> {
     Ok(super::semantics::ops_of(conn, profile, kind, entity)?
         .iter()
         .any(|(id, w)| !matches!(w.as_str(), "#log" | "#move" | "#purge") && target.contains(id)))
 }
 
 fn edit_body(kind: EntKind, entity: &str, key: &str, v: Value) -> Body {
-    Body::Edit(EditBody { kind, entity: Key::of(entity), key: key.into(), value: canonical(&v), machine: false, ts: 0, legacy: None })
+    Body::Edit(EditBody {
+        kind,
+        entity: Key::of(entity),
+        key: key.into(),
+        value: canonical(&v),
+        machine: false,
+        ts: 0,
+        legacy: None,
+    })
 }
 
 /// 恢复要写回的值：[target] 那一刻这个寄存器的生效值。
@@ -310,7 +391,14 @@ fn edit_body(kind: EntKind, entity: &str, key: &str, v: Value) -> Body {
 ///   从血统继承到的值；血统里也没有就写 null。
 /// - 其余寄存器写 null：读路径把「生效值为 null」与「没有记录」视为同一状态（registers.rs `Entity::is_set`），
 ///   带子键的映射（笔记类型 `fieldDef/` `tmplDef/` `fieldDesc/`、笔记 `f/`）里这一项消失，内置笔记类型回到跟随代码的默认值。
-fn restored_value(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: &str, target: &Cut) -> Result<Value, String> {
+fn restored_value(
+    conn: &Connection,
+    profile: &str,
+    kind: EntKind,
+    entity: &str,
+    key: &str,
+    target: &Cut,
+) -> Result<Value, String> {
     if let Some(v) = value_at(conn, profile, kind, entity, key, Some(target))? {
         return Ok(v);
     }
@@ -326,9 +414,16 @@ const HISTORY_FROM: &str = "historyFrom/";
 
 /// [card] 在 [target] 时从血统继承到的 [key]：与 registers.rs `cards_group` 同一规则——血统按广度优先（自己在前，
 /// 前身按 ID 排，防环，最多 256 张），第一张对这个键有生效记录的前身的值。只在 [card] 自己那时没有记录时调用。
-fn card_inherited_at(conn: &Connection, profile: &str, card: &str, key: &str, target: &Cut) -> Result<Option<Value>, String> {
+fn card_inherited_at(
+    conn: &Connection,
+    profile: &str,
+    card: &str,
+    key: &str,
+    target: &Cut,
+) -> Result<Option<Value>, String> {
     let mut seen: Vec<String> = vec![card.to_owned()];
-    let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::from([card.to_owned()]);
+    let mut queue: std::collections::VecDeque<String> =
+        std::collections::VecDeque::from([card.to_owned()]);
     let mut visited = 0usize;
     while let Some(id) = queue.pop_front() {
         if visited >= 256 {
@@ -348,7 +443,9 @@ fn card_inherited_at(conn: &Connection, profile: &str, card: &str, key: &str, ta
         keys.dedup();
         let mut preds: Vec<String> = Vec::new();
         for k in keys {
-            if value_at(conn, profile, EntKind::Card, &id, &k, Some(target))? == Some(Value::Bool(true)) {
+            if value_at(conn, profile, EntKind::Card, &id, &k, Some(target))?
+                == Some(Value::Bool(true))
+            {
                 preds.push(k[HISTORY_FROM.len()..].to_owned());
             }
         }
@@ -369,7 +466,14 @@ fn card_inherited_at(conn: &Connection, profile: &str, card: &str, key: &str, ta
 /// 每条写入的落库行优先取投影里那一行（按 [edit_row] 的 ID 规则查 `srs_field_edits`，就是落库时它算出的那一行），已被
 /// 支配删掉的才现算——[edit_row] 对本机写入要求旧记录因果闭包，某台设备只覆盖了另一台迁移操作的一部分时要逐条扫那台
 /// 设备的迁移操作（用户库实测一条 1.7 秒），不能每个寄存器都重算一遍。
-fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: &str, target: Option<&Cut>) -> Result<Option<Value>, String> {
+fn value_at(
+    conn: &Connection,
+    profile: &str,
+    kind: EntKind,
+    entity: &str,
+    key: &str,
+    target: Option<&Cut>,
+) -> Result<Option<Value>, String> {
     let Some(target) = target else {
         let rows: Vec<String> = conn
             .prepare_cached(
@@ -383,7 +487,8 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
         if rows.is_empty() {
             return Ok(None);
         }
-        let items: Vec<crate::registers::StoredEdit<'_>> = rows.iter().map(|r| (r.as_str(), None, None)).collect();
+        let items: Vec<crate::registers::StoredEdit<'_>> =
+            rows.iter().map(|r| (r.as_str(), None, None)).collect();
         return crate::registers::register_value(&items, key).map(Some);
     };
     let mut rows: Vec<String> = Vec::new();
@@ -391,17 +496,26 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
         .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = ?4 ORDER BY device, seq")
         .map_err(sql)?;
     let ids: Vec<(Vec<u8>, i64)> = stmt
-        .query_map(params![profile, kind.wire(), entity, key], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_map(params![profile, kind.wire(), entity, key], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     for (d, s) in ids {
-        let id = OpId { device: Id(d.try_into().map_err(|_| "bad device".to_string())?), seq: s as u64 };
+        let id = OpId {
+            device: Id(d.try_into().map_err(|_| "bad device".to_string())?),
+            seq: s as u64,
+        };
         if !target.contains(&id) {
             continue;
         }
-        let Some(op) = load_op(conn, profile, &id)? else { continue };
-        let Ok(Body::Edit(e)) = op.body() else { continue };
+        let Some(op) = load_op(conn, profile, &id)? else {
+            continue;
+        };
+        let Ok(Body::Edit(e)) = op.body() else {
+            continue;
+        };
         // 落库行的 ID 与 [edit_row] 同一规则（旧记录用旧写入者 / 旧 seq，本机写入用设备 / seq）。
         let eid = match &e.legacy {
             Some(l) => crate::registers::edit_id(&l.writer, l.seq),
@@ -418,7 +532,8 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
             None => rows.push(canonical(&edit_row(conn, profile, &op, &e)?.1)),
         }
     }
-    let items: Vec<crate::registers::StoredEdit<'_>> = rows.iter().map(|r| (r.as_str(), None, None)).collect();
+    let items: Vec<crate::registers::StoredEdit<'_>> =
+        rows.iter().map(|r| (r.as_str(), None, None)).collect();
     // 依次落（全部当「到达」），留下没被支配的，再按读路径取胜者。
     let (landed, deleted) = crate::registers::land_stored(&items, 0)?;
     let mut live: BTreeSet<usize> = BTreeSet::new();
@@ -433,12 +548,20 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
     if live.is_empty() {
         return Ok(None);
     }
-    let live_rows: Vec<crate::registers::StoredEdit<'_>> = live.iter().map(|&i| (rows[i].as_str(), None, None)).collect();
+    let live_rows: Vec<crate::registers::StoredEdit<'_>> = live
+        .iter()
+        .map(|&i| (rows[i].as_str(), None, None))
+        .collect();
     crate::registers::register_value(&live_rows, key).map(Some)
 }
 
 /// 某笔记在 [target] 时的标签（OR-Set 按那时已有的添加 / 观察删除重算）。
-fn tags_at(conn: &Connection, profile: &str, note: &str, target: &Cut) -> Result<Vec<String>, String> {
+fn tags_at(
+    conn: &Connection,
+    profile: &str,
+    note: &str,
+    target: &Cut,
+) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = 'note' AND entity = srs_id(?2) AND what IN ('#tag', 'tags')")
         .map_err(sql)?;
@@ -449,7 +572,10 @@ fn tags_at(conn: &Connection, profile: &str, note: &str, target: &Cut) -> Result
         .map_err(sql)?;
     let mut ops = Vec::new();
     for (d, s) in ids {
-        let id = OpId { device: Id(d.try_into().map_err(|_| "bad device".to_string())?), seq: s as u64 };
+        let id = OpId {
+            device: Id(d.try_into().map_err(|_| "bad device".to_string())?),
+            seq: s as u64,
+        };
         if target.contains(&id) {
             if let Some(op) = load_op(conn, profile, &id)? {
                 ops.push(op);
@@ -488,7 +614,13 @@ fn tags_at(conn: &Connection, profile: &str, note: &str, target: &Cut) -> Result
 impl SrsCore {
     /// 预览恢复到 [to]：会改回多少字段、复活 / 删除多少实体、改多少标签、撤回多少次复习。只读（[plan] 只算补偿
     /// 操作、不落库）：走读连接的快照（[SrsCore::read_visible]）。
-    pub fn sync2_plan_restore(&self, profile: &str, to: &RestoreTarget, retract_reviews: bool, now: i64) -> Result<Value, String> {
+    pub fn sync2_plan_restore(
+        &self,
+        profile: &str,
+        to: &RestoreTarget,
+        retract_reviews: bool,
+        now: i64,
+    ) -> Result<Value, String> {
         self.read_visible(|c| {
             let target = target_cut(c, profile, to)?;
             let p = plan(c, profile, &target, retract_reviews, now)?;
@@ -497,7 +629,13 @@ impl SrsCore {
     }
 
     /// 恢复到 [to]（先打还原点，再追加补偿操作）。返回与 `sync2_apply_local` 同形的投影变化。
-    pub fn sync2_restore(&self, profile: &str, to: &RestoreTarget, retract_reviews: bool, now: i64) -> Result<Value, String> {
+    pub fn sync2_restore(
+        &self,
+        profile: &str,
+        to: &RestoreTarget,
+        retract_reviews: bool,
+        now: i64,
+    ) -> Result<Value, String> {
         let bodies = {
             let w = self.writer()?;
             in_savepoint(&w, |c| {
@@ -508,9 +646,14 @@ impl SrsCore {
         };
         let label = match to {
             RestoreTarget::At(t) => format!("before restore to {t}"),
-            RestoreTarget::Checkpoint(id) => format!("before restore to {}:{}", id.device.text(), id.seq),
+            RestoreTarget::Checkpoint(id) => {
+                format!("before restore to {}:{}", id.device.text(), id.seq)
+            }
         };
-        let mut all = vec![Body::Checkpoint { name: label, reason: "restore".into() }];
+        let mut all = vec![Body::Checkpoint {
+            name: label,
+            reason: "restore".into(),
+        }];
         all.extend(bodies);
         self.sync2_append(profile, now, all)
     }
@@ -523,7 +666,9 @@ impl SrsCore {
             .map_err(sql)?;
         let rows = stmt
             .query_map([profile], |x| {
-                let device = <[u8; 16]>::try_from(x.get::<_, Vec<u8>>(3)?).map(|a| Id(a).text()).unwrap_or_default();
+                let device = <[u8; 16]>::try_from(x.get::<_, Vec<u8>>(3)?)
+                    .map(|a| Id(a).text())
+                    .unwrap_or_default();
                 Ok(json!({
                     "at": x.get::<_, i64>(0)?,
                     "name": x.get::<_, String>(1)?,
@@ -550,7 +695,9 @@ impl SrsCore {
             if what == "#log" || what == "#move" {
                 continue;
             }
-            let Some(op) = load_op(&r, profile, &id)? else { continue };
+            let Some(op) = load_op(&r, profile, &id)? else {
+                continue;
+            };
             let device = id.device.text();
             let (wall, logical) = (op.hlc.wall, op.hlc.logical);
             let entry = match op.body().map_err(|e| e.to_string())? {
@@ -569,11 +716,15 @@ impl SrsCore {
                         "machine": e.machine,
                     })
                 }
-                Body::TagAdd { tag, .. } => json!({"key": "tags", "tagAdded": tag, "writer": device, "device": device, "seq": id.seq, "at": wall}),
+                Body::TagAdd { tag, .. } => {
+                    json!({"key": "tags", "tagAdded": tag, "writer": device, "device": device, "seq": id.seq, "at": wall})
+                }
                 Body::TagRemove { tag, .. } => {
                     json!({"key": "tags", "tagRemoved": tag, "writer": device, "device": device, "seq": id.seq, "at": wall})
                 }
-                Body::Purged => json!({"key": what, "purged": true, "writer": device, "device": device, "seq": id.seq, "at": wall}),
+                Body::Purged => {
+                    json!({"key": what, "purged": true, "writer": device, "device": device, "seq": id.seq, "at": wall})
+                }
                 _ => continue,
             };
             let at = entry["at"].as_i64().unwrap_or(wall);

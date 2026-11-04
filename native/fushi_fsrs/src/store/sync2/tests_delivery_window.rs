@@ -2,9 +2,9 @@
 //! 等依赖的操作在 `sync2_pending` 里堆积时，收段会话在内存里只留每台设备 [DELIVERY_WINDOW] 条队列项，不再开会话就
 //! 整表读进来；`pending` 计数与表一致；放行之后的投影与一次收完逐字节相同。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{deck_entity, edit, projection, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, deck_entity, edit, projection};
 use super::transport::{CommitBudget, DELIVERY_WINDOW};
 
 const T0: i64 = 1_700_000_000_000;

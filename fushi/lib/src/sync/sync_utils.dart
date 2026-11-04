@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:fushi/src/sync/sync_file_ref.dart'
+    show SyncFileRef, SyncFileTrio;
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_engine/sync/sync_asset_store.dart'
     show SyncTransferProgress;
@@ -89,6 +90,24 @@ SyncFileRef? findSyncFileByPrefix(List<SyncFileRef> files, String prefix) {
   }
   return best;
 }
+
+/// 由一次书文件夹列举得到的文件（不含文件夹）装配 [SyncFileTrio]——各后端
+/// `listSyncFiles` 与快照 `trioFor` 的唯一装配点，三件套一律走 canonical matcher
+/// [findSyncFileByPrefix]（HBK-AUDIT-085）。
+///
+/// [complete] = [files] 是该文件夹的**完整**清单（没有被分页截断）；只有这时才把
+/// 文件名清单交出去（[SyncFileTrio.fileNames]），否则交 null 让调用方自己再列。
+SyncFileTrio syncFileTrioFromFiles(
+  List<SyncFileRef> files, {
+  bool complete = true,
+}) => SyncFileTrio(
+  progress: findSyncFileByPrefix(files, 'progress_'),
+  statistics: findSyncFileByPrefix(files, 'statistics_'),
+  audioBook: findSyncFileByPrefix(files, 'audioBook_'),
+  fileNames: complete
+      ? <String>{for (final SyncFileRef f in files) f.name}
+      : null,
+);
 
 int? _syncFileTimestamp(String fileName) {
   final List<String> parts = fileName.split('_');

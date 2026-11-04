@@ -3,9 +3,9 @@
 //! 收尾前被打断（会话丢掉 / 重开库）后，下一次收尾接着把剩下的重放完。
 
 use proptest::prelude::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{deck_entity, edit, review, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, deck_entity, edit, review};
 use super::transport::CommitBudget;
 
 const T0: i64 = 1_700_000_000_000;
@@ -17,13 +17,21 @@ fn logs(d: &Device) -> Vec<Vec<String>> {
 
 fn heads(b: &Bucket) -> Vec<Vec<u8>> {
     b.0.iter()
-        .filter(|(k, _)| k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some())
+        .filter(|(k, _)| {
+            k.rsplit('/')
+                .next()
+                .and_then(crate::sync2::segment::parse_head_file_name)
+                .is_some()
+        })
         .map(|(_, v)| v.clone())
         .collect()
 }
 
 fn segs(b: &Bucket) -> Vec<Vec<u8>> {
-    b.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect()
+    b.0.iter()
+        .filter(|(k, _)| k.contains("/seg-"))
+        .map(|(_, v)| v.clone())
+        .collect()
 }
 
 /// 三台设备在随机时刻复习几张共用的卡，两波（第二波含早于第一波的离线补交），每波后各自同步一次。
@@ -31,7 +39,10 @@ fn world(reviews: &[(usize, usize, i64, i64)]) -> Bucket {
     let deck = super::config::default_deck_id(P);
     let devs: Vec<Device> = (0..3).map(|i| Device::new(&format!("rp{i}"))).collect();
     let mut bucket = Bucket::default();
-    devs[0].apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("D"))]);
+    devs[0].apply(
+        T0,
+        vec![deck_entity(&deck), edit("deck", &deck, "name", json!("D"))],
+    );
     devs[0].sync(&mut bucket, "loc", T0);
     for d in &devs[1..] {
         d.sync(&mut bucket, "loc", T0);
@@ -39,17 +50,29 @@ fn world(reviews: &[(usize, usize, i64, i64)]) -> Bucket {
     let half = reviews.len() / 2;
     for (wave, part) in [&reviews[..half], &reviews[half..]].into_iter().enumerate() {
         for (i, d) in devs.iter().enumerate() {
-            let mut mine: Vec<&(usize, usize, i64, i64)> = part.iter().filter(|r| r.0 == i).collect();
+            let mut mine: Vec<&(usize, usize, i64, i64)> =
+                part.iter().filter(|r| r.0 == i).collect();
             mine.sort_by_key(|r| r.2);
             for (k, (_, card, at, rating)) in mine.into_iter().enumerate() {
                 let at = T0 + at;
-                let rtype = if k == 0 && wave == 0 { "learn" } else { "review" };
+                let rtype = if k == 0 && wave == 0 {
+                    "learn"
+                } else {
+                    "review"
+                };
                 let id = format!("w{wave}d{i}k{k}c{card}");
-                d.apply(T0 + 40 * DAY + (wave as i64) * DAY, vec![review(&id, &format!("C{card}"), at, *rating, rtype)]);
+                d.apply(
+                    T0 + 40 * DAY + (wave as i64) * DAY,
+                    vec![review(&id, &format!("C{card}"), at, *rating, rtype)],
+                );
             }
         }
         for (i, d) in devs.iter().enumerate() {
-            d.sync(&mut bucket, "loc", T0 + 41 * DAY + (wave as i64) * DAY + i as i64);
+            d.sync(
+                &mut bucket,
+                "loc",
+                T0 + 41 * DAY + (wave as i64) * DAY + i as i64,
+            );
         }
     }
     bucket
@@ -63,20 +86,44 @@ fn join_sliced(bucket: &Bucket, batch: usize, slice: usize, replay: usize) -> De
     d.core.sync2_plan(P, &heads(bucket)).unwrap();
     d.core.sync2_ingest_begin(P).unwrap();
     for chunk in segs(bucket).chunks(batch.max(1)) {
-        d.core.sync2_ingest_prepare(P, chunk.to_vec(), None).unwrap();
+        d.core
+            .sync2_ingest_prepare(P, chunk.to_vec(), None)
+            .unwrap();
         loop {
-            let r: Value = serde_json::from_str(&d.core.sync2_ingest_commit(P, now, CommitBudget::ops(slice)).unwrap()).unwrap();
-            assert_eq!(r["replayed"], json!([]), "slices only record the touched cards: {r}");
+            let r: Value = serde_json::from_str(
+                &d.core
+                    .sync2_ingest_commit(P, now, CommitBudget::ops(slice))
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                r["replayed"],
+                json!([]),
+                "slices only record the touched cards: {r}"
+            );
             if r["more"] != json!(true) {
                 break;
             }
         }
     }
-    let mut r: Value = serde_json::from_str(&d.core.sync2_ingest_finish_within(P, now, CommitBudget::ops(replay)).unwrap()).unwrap();
+    let mut r: Value = serde_json::from_str(
+        &d.core
+            .sync2_ingest_finish_within(P, now, CommitBudget::ops(replay))
+            .unwrap(),
+    )
+    .unwrap();
     while r["more"] == json!(true) {
-        r = serde_json::from_str(&d.core.sync2_replay_pending(P, CommitBudget::ops(replay)).unwrap()).unwrap();
+        r = serde_json::from_str(
+            &d.core
+                .sync2_replay_pending(P, CommitBudget::ops(replay))
+                .unwrap(),
+        )
+        .unwrap();
     }
-    assert_eq!(d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0], "0");
+    assert_eq!(
+        d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0],
+        "0"
+    );
     d
 }
 
@@ -142,18 +189,33 @@ fn interrupted_session_resumes(sequential: bool) {
         core.sync2_ingest_begin(P).unwrap();
         core.sync2_ingest_prepare(P, segs(&bucket), None).unwrap();
         loop {
-            let r: Value = serde_json::from_str(&core.sync2_ingest_commit(P, now, CommitBudget::ops(3)).unwrap()).unwrap();
+            let r: Value = serde_json::from_str(
+                &core
+                    .sync2_ingest_commit(P, now, CommitBudget::ops(3))
+                    .unwrap(),
+            )
+            .unwrap();
             if r["more"] != json!(true) {
                 break;
             }
         }
         // 「被杀」：不收尾。
     }
-    let d = Device { core: crate::store::SrsCore::open(&path).unwrap(), _dir: dir };
+    let d = Device {
+        core: crate::store::SrsCore::open(&path).unwrap(),
+        _dir: dir,
+    };
     if sequential {
-        assert_ne!(d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0], "0");
+        assert_ne!(
+            d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0],
+            "0"
+        );
     } else {
-        assert_eq!(d.rows("SELECT COUNT(*) FROM sync2_boot")[1][0], "1", "the channel stopped while appending");
+        assert_eq!(
+            d.rows("SELECT COUNT(*) FROM sync2_boot")[1][0],
+            "1",
+            "the channel stopped while appending"
+        );
     }
     let plan = d.core.sync2_plan(P, &heads(&bucket)).unwrap();
     assert_eq!(plan["fetch"], json!([]), "{plan}");
@@ -161,10 +223,20 @@ fn interrupted_session_resumes(sequential: bool) {
     d.core.sync2_ingest_begin(P).unwrap();
     let r: Value = serde_json::from_str(&d.core.sync2_ingest_finish(P, now).unwrap()).unwrap();
     assert_eq!(r["more"], json!(false), "{r}");
-    assert_eq!(d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0], "0");
+    assert_eq!(
+        d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0],
+        "0"
+    );
     // 待刷新缓存（`sync2_cache_pending`）由分发器收尾时按缓存配置刷（tests_cache_pending.rs）；这条直接调内核的路径
     // 不刷，`plan` 照样为它报 `finishPending`。清掉它之后，重放这一侧已经没有要收的尾。
-    d.core.writer().unwrap().execute("DELETE FROM sync2_cache_pending", []).unwrap();
-    assert_eq!(d.core.sync2_plan(P, &heads(&bucket)).unwrap()["finishPending"], json!(false));
+    d.core
+        .writer()
+        .unwrap()
+        .execute("DELETE FROM sync2_cache_pending", [])
+        .unwrap();
+    assert_eq!(
+        d.core.sync2_plan(P, &heads(&bucket)).unwrap()["finishPending"],
+        json!(false)
+    );
     assert_eq!(logs(&d), logs(&one));
 }

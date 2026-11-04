@@ -29,12 +29,14 @@ class _FakeWebDavServer {
   static const String subEpBody = 'PK-season1-ep1-epub-bytes';
   static const String srtBody = '1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n';
 
-  static Future<_FakeWebDavServer> start() async {
+  static Future<_FakeWebDavServer> start({bool ipv6 = false}) async {
     final HttpServer srv = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
+      ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4,
       0,
     );
-    final String origin = 'http://127.0.0.1:${srv.port}';
+    final String origin = ipv6
+        ? 'http://[::1]:${srv.port}'
+        : 'http://127.0.0.1:${srv.port}';
     final _FakeWebDavServer fake = _FakeWebDavServer(srv, origin);
     fake._listen();
     return fake;
@@ -246,5 +248,43 @@ void main() {
     );
     final String expected = 'Basic ${base64Encode(utf8.encode('reader:pw'))}';
     expect(fakeServer.authHeaders.first, expected);
+  });
+
+  // 崩溃分诊 n1i0ET11Ea：IPv6 地址的 WebDAV 端点。旧实现用 `Uri.host`（无方括号）
+  // 手拼 baseUrl 与 PROPFIND 相对 href 的绝对 URL，得到 `http://::1:<port>/…`，
+  // 下一次 Uri.parse 抛 `FormatException: Invalid port`，递归列目录第一层就失败。
+  test('IPv6 端点：递归列目录与下载都用带方括号的 URL', () async {
+    final _FakeWebDavServer v6 = await _FakeWebDavServer.start(ipv6: true);
+    final NetworkSourceFileSystem v6fs = NetworkSourceFileSystem(
+      NetworkSourceConfig(
+        transport: 'webdav',
+        host: '::1',
+        port: v6.server.port,
+        username: 'reader',
+        password: 'pw',
+      ),
+    );
+    addTearDown(() async {
+      await v6fs.close();
+      await v6.stop();
+    });
+
+    final List<SourceFileEntry> entries = await v6fs.listFiles(
+      '${v6.origin}/dav/books',
+      recursive: true,
+    );
+    final Map<String, SourceFileEntry> byName = <String, SourceFileEntry>{
+      for (final SourceFileEntry e in entries) e.name: e,
+    };
+    expect(byName.keys.toSet(), <String>{
+      'novel.epub',
+      'novel.srt',
+      'ep1.epub',
+    });
+    expect(byName['ep1.epub']!.path, '${v6.origin}/dav/books/season1/ep1.epub');
+    expect(
+      await v6fs.readText(byName['novel.srt']!.path),
+      _FakeWebDavServer.srtBody,
+    );
   });
 }

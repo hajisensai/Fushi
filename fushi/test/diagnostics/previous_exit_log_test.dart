@@ -178,6 +178,117 @@ void main() {
     );
   });
 
+  // 崩溃分诊 e1_jaKAeiF：realme 后台管理 `o-stop(40)` 在 app 进入后台的瞬间杀进程
+  // （ApplicationExitInfo importance=400），会话标记还停在 `inactive`，旧判定只看标记 →
+  // 「停在前台时没了，疑似闪退」→ 弹闪退报告。同一 pid 的平台记录必须压过标记推断。
+  group('Android：同一 pid 的死时重要性压过会话标记的前后台推断', () {
+    const MethodChannel channel = MethodChannel('test/process_exit_importance');
+
+    Future<PreviousExitVerdict?> verdictFor({
+      required String lifecycle,
+      required List<Map<String, Object?>> reasons,
+    }) async {
+      File('${tmp.path}/session_marker.json').writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pid': 19104,
+          'startedAt': 1000,
+          'version': '3.3.0-debug.23025',
+          'lifecycle': lifecycle,
+          'lifecycleAt': 4000,
+          'clean': false,
+          'initialised': true,
+        }),
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (MethodCall call) async => <String, Object?>{
+              'sdk': 34,
+              'reasons': reasons,
+            },
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final List<ExitReportEntry> entries = await PreviousExitLog.collect(
+        appDir: tmp,
+        version: '3.3.0-debug.23025',
+        isAndroid: true,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+        androidChannel: channel,
+        nowMs: 9000,
+      );
+      return classifyPreviousExit(
+        entries,
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+    }
+
+    Map<String, Object?> record({
+      required int pid,
+      required int importance,
+      int timestamp = 5000,
+      String reason = 'OTHER',
+    }) => <String, Object?>{
+      'reason': reason,
+      'status': 0,
+      'description': '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+      'importance': importance,
+      'pssKb': 0,
+      'rssKb': 1194136,
+      'timestamp': timestamp,
+      'processName': 'app.fushi.reader',
+      'pid': pid,
+    };
+
+    test('importance=400（后台）→ 按后台回收，不弹闪退报告', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'inactive',
+        reasons: <Map<String, Object?>>[record(pid: 19104, importance: 400)],
+      );
+      expect(v, isNotNull);
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.worthReporting, isFalse);
+      expect(v.summary, contains('androidImportanceAtDeath=400'));
+    });
+
+    test('importance=100（前台）→ 仍是疑似闪退', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'inactive',
+        reasons: <Map<String, Object?>>[record(pid: 19104, importance: 100)],
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('别的 pid / 早于本会话启动的同号记录不算数，回落到标记推断', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'launching',
+        reasons: <Map<String, Object?>>[
+          record(pid: 777, importance: 400),
+          record(pid: 19104, importance: 400, timestamp: 500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('后台时原生崩溃照样上报（平台崩溃原因优先）', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'inactive',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 400, reason: 'CRASH_NATIVE'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.nativeCrash);
+      expect(v.worthReporting, isTrue);
+    });
+  });
+
   test('Windows：读出崩溃摘要行并清空文件', () async {
     final Directory dumps = Directory('${tmp.path}\\Fushi\\crashdumps')
       ..createSync(recursive: true);

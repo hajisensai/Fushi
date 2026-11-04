@@ -10,13 +10,13 @@
 use std::path::{Path, PathBuf};
 
 use rusqlite::params;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::mem_bench::{measure, Mem};
+use super::mem_bench::{Mem, measure};
 use super::tests::tempdir;
 use crate::store::SrsCore;
 use crate::sync2::id::Id;
-use crate::sync2::segment::{self, Head, CHAIN_ZERO};
+use crate::sync2::segment::{self, CHAIN_ZERO, Head};
 use crate::sync2::vv::{OpId, Vv};
 
 const CUT_BYTES: usize = 12 << 20;
@@ -38,7 +38,10 @@ fn mib(n: u64) -> f64 {
 }
 
 fn show(what: &str, m: &Mem) {
-    println!("DEDUP_MEASURE {what}: rust_peak={:.1}MiB sqlite_peak={:.1}MiB kept={:.1}/{:.1}MiB {}ms", m.rust_peak, m.sqlite_peak, m.rust_kept, m.sqlite_kept, m.ms);
+    println!(
+        "DEDUP_MEASURE {what}: rust_peak={:.1}MiB sqlite_peak={:.1}MiB kept={:.1}/{:.1}MiB {}ms",
+        m.rust_peak, m.sqlite_peak, m.rust_kept, m.sqlite_kept, m.ms
+    );
 }
 
 /// 位置上的全部 head 与段（按库里每台设备的操作重新打包，见文件头），以及每台设备的段字节数。
@@ -60,7 +63,10 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
         let (mut bytes, mut skeletons) = (0u64, 0u64);
         let mut ops = Vec::new();
         let mut raw = 0usize;
-        let mut flush = |ops: &mut Vec<crate::sync2::op::Op>, prev: &mut segment::Chain, list: &mut Vec<(u64, u64, String)>, bytes: &mut u64| {
+        let mut flush = |ops: &mut Vec<crate::sync2::op::Op>,
+                         prev: &mut segment::Chain,
+                         list: &mut Vec<(u64, u64, String)>,
+                         bytes: &mut u64| {
             if ops.is_empty() {
                 return;
             }
@@ -72,7 +78,9 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
             ops.clear();
         };
         for seq in 1..=max as u64 {
-            let Some(o) = super::load_op(&w, profile, &OpId { device, seq }).unwrap() else { panic!("hole at {}:{seq}", device.text()) };
+            let Some(o) = super::load_op(&w, profile, &OpId { device, seq }).unwrap() else {
+                panic!("hole at {}:{seq}", device.text())
+            };
             skeletons += u64::from(o.purged);
             raw += o.payload.len() + 64;
             ops.push(o);
@@ -96,6 +104,7 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
             digest: String::new(),
             at_ms: 0,
             name: String::new(),
+            ext: None,
         };
         heads.push(head.encode(&local.key));
         sizes.push((device.text(), bytes, skeletons));
@@ -121,8 +130,20 @@ fn fresh_ingest(dir: &Path, profile: &str, heads: &[Vec<u8>], segs: &[Vec<u8>]) 
         let mut batch: Vec<Vec<u8>> = Vec::new();
         let mut size = 0;
         let mut send = |batch: &mut Vec<Vec<u8>>| {
-            cmd(&core, profile, json!({"op": "ingest_prepare"}), std::mem::take(batch));
-            while cmd(&core, profile, json!({"op": "ingest_commit", "now": 1}), vec![])["more"] == json!(true) {}
+            cmd(
+                &core,
+                profile,
+                json!({"op": "ingest_prepare"}),
+                std::mem::take(batch),
+            );
+            while cmd(
+                &core,
+                profile,
+                json!({"op": "ingest_commit", "now": 1}),
+                vec![],
+            )["more"]
+                == json!(true)
+            {}
         };
         for s in segs {
             size += s.len();
@@ -135,12 +156,25 @@ fn fresh_ingest(dir: &Path, profile: &str, heads: &[Vec<u8>], segs: &[Vec<u8>]) 
         if !batch.is_empty() {
             send(&mut batch);
         }
-        let mut r = cmd(&core, profile, json!({"op": "ingest_finish", "now": 1}), vec![]);
+        let mut r = cmd(
+            &core,
+            profile,
+            json!({"op": "ingest_finish", "now": 1}),
+            vec![],
+        );
         while r["more"] == json!(true) {
-            r = cmd(&core, profile, json!({"op": "replay_pending", "now": 1}), vec![]);
+            r = cmd(
+                &core,
+                profile,
+                json!({"op": "replay_pending", "now": 1}),
+                vec![],
+            );
         }
     });
-    let d = core.sync2_digest(profile).unwrap()["digest"].as_str().unwrap().to_owned();
+    let d = core.sync2_digest(profile).unwrap()["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     drop(core);
     for ext in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(dir.join(format!("fresh.db{ext}")));
@@ -155,16 +189,35 @@ fn dedup_measure_real_db() {
     let dir = tempdir::new("dedup-measure");
     let path = copy_db(&src, &dir.0);
     let core = SrsCore::open(&path).unwrap();
-    let profile: String = core.writer().unwrap().query_row("SELECT srs_idt(profile_uid) FROM sync2_self", [], |r| r.get(0)).unwrap();
-    let job = core.writer().unwrap().query_row("SELECT COUNT(*) FROM sync2_dedup", [], |r| r.get::<_, i64>(0)).unwrap();
+    let profile: String = core
+        .writer()
+        .unwrap()
+        .query_row("SELECT srs_idt(profile_uid) FROM sync2_self", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let job = core
+        .writer()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM sync2_dedup", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
     println!("DEDUP_MEASURE profile {profile}: job rows after v24 upgrade = {job}");
 
     let (heads, segs, sizes) = world(&core, &profile);
     let total: u64 = sizes.iter().map(|s| s.1).sum();
     for (d, b, k) in &sizes {
-        println!("DEDUP_MEASURE before {d}: {:.1} MiB, {k} skeletons", mib(*b));
+        println!(
+            "DEDUP_MEASURE before {d}: {:.1} MiB, {k} skeletons",
+            mib(*b)
+        );
     }
-    println!("DEDUP_MEASURE before: new device downloads {:.1} MiB in {} segments", mib(total), segs.len());
+    println!(
+        "DEDUP_MEASURE before: new device downloads {:.1} MiB in {} segments",
+        mib(total),
+        segs.len()
+    );
     let skip_fresh = std::env::var("SRS_DEDUP_SKIP_FRESH").is_ok();
     let before = (!skip_fresh).then(|| fresh_ingest(&dir.0, &profile, &heads, &segs));
     if let Some((_, m)) = &before {
@@ -174,12 +227,14 @@ fn dedup_measure_real_db() {
 
     let mut steps = 0;
     let mut emitted = 0;
-    let (_, m) = measure(|| loop {
-        let r = core.sync2_dedup(&profile, 1).unwrap();
-        steps += 1;
-        emitted += r["emitted"].as_u64().unwrap_or(0);
-        if r["done"] == json!(true) {
-            break;
+    let (_, m) = measure(|| {
+        loop {
+            let r = core.sync2_dedup(&profile, 1).unwrap();
+            steps += 1;
+            emitted += r["emitted"].as_u64().unwrap_or(0);
+            if r["done"] == json!(true) {
+                break;
+            }
         }
     });
     show(&format!("dedup job ({steps} steps, {emitted} pairs)"), &m);
@@ -193,22 +248,39 @@ fn dedup_measure_real_db() {
     {
         println!("DEDUP_MEASURE duplicate skeletons kind {k}: {n}");
     }
-    let rows: i64 = w.query_row("SELECT COUNT(*) FROM srs_field_edits", params![], |r| r.get(0)).unwrap();
-    let held: i64 = w.query_row("SELECT COUNT(*) FROM sync2_held", params![], |r| r.get(0)).unwrap();
+    let rows: i64 = w
+        .query_row("SELECT COUNT(*) FROM srs_field_edits", params![], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let held: i64 = w
+        .query_row("SELECT COUNT(*) FROM sync2_held", params![], |r| r.get(0))
+        .unwrap();
     println!("DEDUP_MEASURE after: srs_field_edits rows = {rows}, held deletes = {held}");
     drop(w);
-    let author = core.sync2_digest(&profile).unwrap()["digest"].as_str().unwrap().to_owned();
+    let author = core.sync2_digest(&profile).unwrap()["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     let (heads, segs, sizes) = world(&core, &profile);
     let after: u64 = sizes.iter().map(|s| s.1).sum();
     for (d, b, k) in &sizes {
         println!("DEDUP_MEASURE after {d}: {:.1} MiB, {k} skeletons", mib(*b));
     }
-    println!("DEDUP_MEASURE after: new device downloads {:.1} MiB in {} segments ({:+.1} MiB)", mib(after), segs.len(), mib(after) - mib(total));
+    println!(
+        "DEDUP_MEASURE after: new device downloads {:.1} MiB in {} segments ({:+.1} MiB)",
+        mib(after),
+        segs.len(),
+        mib(after) - mib(total)
+    );
     if !skip_fresh {
         let (d, m) = fresh_ingest(&dir.0, &profile, &heads, &segs);
         show("fresh ingest after", &m);
-        println!("DEDUP_MEASURE digest: author {author}, new device {d}, equal = {}", author == d);
+        println!(
+            "DEDUP_MEASURE digest: author {author}, new device {d}, equal = {}",
+            author == d
+        );
         if let Some((b, _)) = before {
             println!("DEDUP_MEASURE digest before dedup (new device): {b}");
         }

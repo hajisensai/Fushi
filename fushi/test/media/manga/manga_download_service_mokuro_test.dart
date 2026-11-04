@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/download/manga_download_progress_label.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -195,21 +196,62 @@ void main() {
     downloads.dispose();
   });
 
-  test('进度映射：CBZ 阶段记字节、导入阶段记页', () async {
+  test('进度映射：CBZ 阶段字节只进内存（页列不动），导入阶段页才落表', () async {
     final MangaDownloadService downloads = build();
     await downloads.enqueueMokuroVolume(seriesName: _series, volumeName: _vol1);
+    // 旧版本把字节写进页列留下的脏行：开跑必须先清零，不能带着它显示成页数。
+    await db.updateMangaDownloadJobProgress(
+      jobIdOf(_vol1),
+      pagesDone: 4718782,
+      pagesTotal: 31302239,
+      updatedAt: 0,
+    );
+    int signals = 0;
+    final StreamSubscription<void> watch = downloads.watchJobs().listen(
+      (_) => signals++,
+    );
     await downloads.start();
     final _FakeDownloader d1 = await downloaderAt(0);
+    await until(() async => (await row(_vol1)).pagesTotal == 0);
 
+    final int before = signals;
     d1.ctrl.add(
       const MokuroMoeVolumeDownloadEvent(
         stage: MokuroMoeDownloadStage.downloadingCbz,
-        receivedBytes: 512 * 1024,
-        totalBytes: 1024 * 1024,
+        receivedBytes: 4718782,
+        totalBytes: 31302239,
       ),
     );
-    await until(() async => (await row(_vol1)).pagesDone == 524288);
-    expect((await row(_vol1)).pagesTotal, 1048576);
+    await until(
+      () async =>
+          downloads.progressOf(await row(_vol1)) is MangaDownloadByteProgress,
+      reason: 'CBZ 阶段应给字节进度',
+    );
+    final MangaDownloadJobRow downloading = await row(_vol1);
+    expect(downloading.pagesDone, 0, reason: '字节不得写进页列');
+    expect(downloading.pagesTotal, 0, reason: '字节不得写进页列');
+    final MangaDownloadByteProgress bytes =
+        downloads.progressOf(downloading) as MangaDownloadByteProgress;
+    expect(bytes.received, 4718782);
+    expect(bytes.total, 31302239);
+    expect(bytes.fraction, closeTo(4718782 / 31302239, 1e-9));
+    expect(signals, greaterThan(before), reason: '字节进度变化要经 watchJobs 通知 UI');
+    final String label = mangaDownloadProgressLabel(bytes)!;
+    expect(label, contains('MB'));
+    expect(label, isNot(contains('4718782')));
+
+    // 总量未知的 CBZ：仍是字节进度、比值不定。
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.downloadingCbz,
+        receivedBytes: 99,
+      ),
+    );
+    await until(() async {
+      final MangaDownloadProgress p = downloads.progressOf(await row(_vol1));
+      return p is MangaDownloadByteProgress && p.received == 99;
+    });
+    expect(downloads.progressOf(await row(_vol1)).fraction, isNull);
 
     d1.ctrl.add(
       const MokuroMoeVolumeDownloadEvent(
@@ -220,20 +262,12 @@ void main() {
     );
     await until(() async => (await row(_vol1)).pagesDone == 3);
     expect((await row(_vol1)).pagesTotal, 10);
+    final MangaDownloadProgress importing = downloads.progressOf(
+      await row(_vol1),
+    );
+    expect(importing, isA<MangaDownloadPageProgress>());
+    expect(mangaDownloadProgressLabel(importing), contains('3'));
 
-    // 没有可比进度的阶段（extracting / 总量未知的 CBZ）不动列。
-    d1.ctrl.add(
-      const MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.extracting,
-        receivedBytes: 99,
-      ),
-    );
-    d1.ctrl.add(
-      const MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.downloadingCbz,
-        receivedBytes: 99,
-      ),
-    );
     await d1.finish(
       const MokuroMoeVolumeDownloadEvent(
         stage: MokuroMoeDownloadStage.done,
@@ -245,6 +279,8 @@ void main() {
     expect(done.status, MangaDownloadJobStatus.done);
     expect(done.pagesDone, 3);
     expect(done.pagesTotal, 10);
+    expect(downloads.progressOf(done), isA<MangaDownloadPageProgress>());
+    await watch.cancel();
     downloads.dispose();
   });
 

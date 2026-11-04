@@ -11,9 +11,9 @@
 //! - 排序：UUID 的 BLOB 字节序与它的小写十六进制文本字典序一致；非 UUID 的文本 ID 与 BLOB 混排时 SQLite 把 TEXT
 //!   排在 BLOB 前面——确定性路径都按 ID 精确匹配或按 (device, seq) 排，不依赖混排顺序。
 
+use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, Value, ValueRef};
-use rusqlite::Connection;
 
 /// ID 列的声明类型。
 pub(crate) const DECLTYPE: &str = "UUIDTEXT";
@@ -92,16 +92,24 @@ pub(crate) fn col(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<String> {
 
 /// 给 Dart 的结果里哪几列是 ID 列（声明类型 [DECLTYPE]；表达式列没有声明类型，SQL 里自己套 `srs_idt`）。
 pub(crate) fn id_columns(stmt: &rusqlite::Statement<'_>) -> Vec<bool> {
-    stmt.columns().iter().map(|c| c.decl_type() == Some(DECLTYPE)).collect()
+    stmt.columns()
+        .iter()
+        .map(|c| c.decl_type() == Some(DECLTYPE))
+        .collect()
 }
 
 /// 结果第 [i] 列的值交给 Dart 前：ID 列的 16 字节 BLOB 还原成 ID 文本（Dart 看到的格式与 v17 之前相同）。
 pub(crate) fn outward(id_cols: &[bool], i: usize, v: ValueRef<'_>) -> Option<String> {
     match v {
-        ValueRef::Blob(b) if b.len() == 16 && id_cols[i] => Some(unpack(b.try_into().expect("16 bytes"))),
+        ValueRef::Blob(b) if b.len() == 16 && id_cols[i] => {
+            Some(unpack(b.try_into().expect("16 bytes")))
+        }
         #[cfg(feature = "id_audit")]
         ValueRef::Blob(b) if b.len() == 16 => {
-            audit::HITS.lock().unwrap_or_else(|e| e.into_inner()).push(format!("ID blob returned to Dart in column {i}"));
+            audit::HITS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(format!("ID blob returned to Dart in column {i}"));
             None
         }
         _ => None,
@@ -111,7 +119,9 @@ pub(crate) fn outward(id_cols: &[bool], i: usize, v: ValueRef<'_>) -> Option<Str
 /// `srs_id(x)`：ID 文本 → 存储值（BLOB / NULL 原样）；`srs_idt(x)`：存储值 → ID 文本。SQL 里拼 ID、Dart 原生 SQL
 /// 绑定 ID、从 JSON 里取出 ID 再和列比较时用。确定性、无副作用（SQLite 把常量参数的调用提到循环外）。
 pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
-    let flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
+    let flags = FunctionFlags::SQLITE_UTF8
+        | FunctionFlags::SQLITE_DETERMINISTIC
+        | FunctionFlags::SQLITE_INNOCUOUS;
     conn.create_scalar_function("srs_id", 1, flags, |ctx| {
         Ok(match ctx.get_raw(0) {
             ValueRef::Text(t) => match std::str::from_utf8(t).ok().and_then(pack) {
@@ -123,7 +133,9 @@ pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
     })?;
     conn.create_scalar_function("srs_idt", 1, flags, |ctx| {
         Ok(match ctx.get_raw(0) {
-            ValueRef::Blob(b) if b.len() == 16 => Value::Text(unpack(b.try_into().expect("16 bytes"))),
+            ValueRef::Blob(b) if b.len() == 16 => {
+                Value::Text(unpack(b.try_into().expect("16 bytes")))
+            }
             v => Value::from(v),
         })
     })?;
@@ -155,17 +167,26 @@ pub(crate) mod audit {
     }
 
     fn allowed(sql: &str) -> bool {
-        sql.contains("json_extract") || sql.contains("srs_meta") || sql.contains("srs_id(") || sql.contains("-- ids:text")
+        sql.contains("json_extract")
+            || sql.contains("srs_meta")
+            || sql.contains("srs_id(")
+            || sql.contains("-- ids:text")
     }
 
     /// 有漏编码的绑定就失败（测试里关库时调；只取走本进程到此为止记下的那些）。
     pub(crate) fn check() {
         let hits = std::mem::take(&mut *HITS.lock().unwrap_or_else(|e| e.into_inner()));
         if !hits.is_empty() && !std::thread::panicking() {
-            panic!("ID bound as text ({}):
-{}", hits.len(), hits.iter().take(5).cloned().collect::<Vec<_>>().join("
+            panic!(
+                "ID bound as text ({}):
+{}",
+                hits.len(),
+                hits.iter().take(5).cloned().collect::<Vec<_>>().join(
+                    "
 ---
-"));
+"
+                )
+            );
         }
     }
 
@@ -179,7 +200,9 @@ pub(crate) mod audit {
         let mut out = Vec::new();
         for (table, cols) in super::COLUMNS {
             for col in *cols {
-                let q = format!("SELECT srs_idt({col}) FROM {table} WHERE typeof({col}) = 'text' AND typeof(srs_id({col})) = 'blob' LIMIT 1");
+                let q = format!(
+                    "SELECT srs_idt({col}) FROM {table} WHERE typeof({col}) = 'text' AND typeof(srs_id({col})) = 'blob' LIMIT 1"
+                );
                 if let Ok(v) = c.query_row(&q, [], |r| r.get::<_, String>(0)) {
                     out.push(format!("{table}.{col} stores text UUID {v}"));
                 }
@@ -230,26 +253,55 @@ mod tests {
         let c = Connection::open_in_memory().unwrap();
         register(&c).unwrap();
         let u = "01928c3e-0000-7000-8000-0000000a5e01";
-        c.execute_batch("CREATE TABLE srs_local_state (profile_uid UUIDTEXT NOT NULL, json TEXT NOT NULL)").unwrap();
-        c.execute("INSERT INTO srs_local_state VALUES (srs_id(?1), '{}')", [u]).unwrap();
+        c.execute_batch(
+            "CREATE TABLE srs_local_state (profile_uid UUIDTEXT NOT NULL, json TEXT NOT NULL)",
+        )
+        .unwrap();
+        c.execute("INSERT INTO srs_local_state VALUES (srs_id(?1), '{}')", [u])
+            .unwrap();
         assert!(audit::stored_text(&c).is_empty());
-        c.execute("INSERT INTO srs_local_state VALUES (?1, '{}')", [u]).unwrap();
-        assert_eq!(audit::stored_text(&c), vec![format!("srs_local_state.profile_uid stores text UUID {u}")]);
-        assert!(audit::quoted(&format!("SELECT 1 FROM t WHERE profile_uid = '{u}'")));
-        assert!(!audit::quoted(&format!("SELECT 1 FROM t WHERE profile_uid = srs_id('{u}')")));
-        assert!(!audit::quoted("SELECT 1 FROM t WHERE profile_uid = x'01928c3e000070008000000000a5e01'"));
+        c.execute("INSERT INTO srs_local_state VALUES (?1, '{}')", [u])
+            .unwrap();
+        assert_eq!(
+            audit::stored_text(&c),
+            vec![format!("srs_local_state.profile_uid stores text UUID {u}")]
+        );
+        assert!(audit::quoted(&format!(
+            "SELECT 1 FROM t WHERE profile_uid = '{u}'"
+        )));
+        assert!(!audit::quoted(&format!(
+            "SELECT 1 FROM t WHERE profile_uid = srs_id('{u}')"
+        )));
+        assert!(!audit::quoted(
+            "SELECT 1 FROM t WHERE profile_uid = x'01928c3e000070008000000000a5e01'"
+        ));
     }
 
     #[test]
     fn round_trips_uuids_and_leaves_other_text_alone() {
-        for s in ["01928c3e-0000-7000-8000-0000000a5e01", "ffffffff-ffff-ffff-ffff-ffffffffffff", "00000000-0000-0000-0000-000000000000"] {
+        for s in [
+            "01928c3e-0000-7000-8000-0000000a5e01",
+            "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            "00000000-0000-0000-0000-000000000000",
+        ] {
             assert_eq!(unpack(&pack(s).unwrap()), s);
         }
-        for s in ["", "deck-default", "01928C3E-0000-7000-8000-0000000A5E01", "01928c3e00007000800000000a5e01aa", "sync2:tags:x", "01928c3e-0000-7000-8000-0000000a5e0g"] {
+        for s in [
+            "",
+            "deck-default",
+            "01928C3E-0000-7000-8000-0000000A5E01",
+            "01928c3e00007000800000000a5e01aa",
+            "sync2:tags:x",
+            "01928c3e-0000-7000-8000-0000000a5e0g",
+        ] {
             assert!(pack(s).is_none(), "{s}");
         }
         // 字节序 = 文本字典序。
-        let mut a = ["9f000000-0000-0000-0000-000000000000", "0a000000-0000-0000-0000-000000000001", "0a000000-0000-0000-0000-000000000000"];
+        let mut a = [
+            "9f000000-0000-0000-0000-000000000000",
+            "0a000000-0000-0000-0000-000000000001",
+            "0a000000-0000-0000-0000-000000000000",
+        ];
         let mut b: Vec<[u8; 16]> = a.iter().map(|s| pack(s).unwrap()).collect();
         a.sort();
         b.sort();
@@ -259,12 +311,28 @@ mod tests {
 
 /// 存 ID 的列（表 → 列）。同一个域（profile、实体）在所有表里一律同一编码，联表比较才成立。
 pub(crate) const COLUMNS: &[(&str, &[&str])] = &[
-    ("srs_cards_cache", &["id", "profile_uid", "note_id", "template_id", "deck_id", "last_log_id"]),
+    (
+        "srs_cards_cache",
+        &[
+            "id",
+            "profile_uid",
+            "note_id",
+            "template_id",
+            "deck_id",
+            "last_log_id",
+        ],
+    ),
     ("srs_entities", &["id", "profile_uid"]),
     ("srs_event_local", &["event_id", "profile_uid"]),
-    ("srs_field_edits", &["id", "profile_uid", "entity_id", "writer_id"]),
+    (
+        "srs_field_edits",
+        &["id", "profile_uid", "entity_id", "writer_id"],
+    ),
     ("srs_local_state", &["profile_uid"]),
-    ("srs_notes_cache", &["id", "profile_uid", "note_type_id", "deck_id"]),
+    (
+        "srs_notes_cache",
+        &["id", "profile_uid", "note_type_id", "deck_id"],
+    ),
     ("srs_review_logs", &["id", "profile_uid", "card_id"]),
     ("srs_sent_batches", &["profile_uid", "writer_id"]),
     ("srs_stat_reviews", &["log_id", "profile_uid", "card_id"]),
@@ -290,7 +358,10 @@ pub(crate) const COLUMNS: &[(&str, &[&str])] = &[
     ("sync2_legacy", &["profile_uid"]),
     ("sync2_location_heads", &["profile_uid"]),
     ("sync2_locations", &["profile_uid"]),
-    ("sync2_log_meta", &["log_id", "profile_uid", "card_id", "note_id"]),
+    (
+        "sync2_log_meta",
+        &["log_id", "profile_uid", "card_id", "note_id"],
+    ),
     ("sync2_media", &["profile_uid"]),
     ("sync2_media_at", &["profile_uid"]),
     ("sync2_media_local", &["profile_uid"]),
@@ -321,29 +392,54 @@ fn sql_err(e: rusqlite::Error) -> String {
 /// 残留的文本 UUID（可重放）；表上的索引与触发器原样重建。升级阶梯在开头（之后的旧步骤用新代码读写）和结尾（中途
 /// 建出来的表）各调一次。
 pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
-    let decl = regex::Regex::new(r#"(?i)^(\s*"?)([A-Za-z_][A-Za-z0-9_]*)("?\s+)TEXT\b"#).expect("regex");
-    c.execute_batch("PRAGMA legacy_alter_table = ON;").map_err(sql_err)?;
+    let decl =
+        regex::Regex::new(r#"(?i)^(\s*"?)([A-Za-z_][A-Za-z0-9_]*)("?\s+)TEXT\b"#).expect("regex");
+    c.execute_batch("PRAGMA legacy_alter_table = ON;")
+        .map_err(sql_err)?;
     for (table, cols) in COLUMNS {
         let Some(sql) = c
-            .query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1", [table], |r| r.get::<_, String>(0))
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [table],
+                |r| r.get::<_, String>(0),
+            )
             .ok()
         else {
             continue;
         };
         let shaped: Vec<(String, String)> = {
-            let mut s = c.prepare(&format!("SELECT name, type FROM pragma_table_info('{table}')")).map_err(sql_err)?;
-            let rows = s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(sql_err)?;
+            let mut s = c
+                .prepare(&format!(
+                    "SELECT name, type FROM pragma_table_info('{table}')"
+                ))
+                .map_err(sql_err)?;
+            let rows = s
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .map_err(sql_err)?;
             rows.collect::<Result<_, _>>().map_err(sql_err)?
         };
-        let present: Vec<&str> = cols.iter().copied().filter(|c| shaped.iter().any(|(n, _)| n == c)).collect();
+        let present: Vec<&str> = cols
+            .iter()
+            .copied()
+            .filter(|c| shaped.iter().any(|(n, _)| n == c))
+            .collect();
         if present.is_empty() {
             continue;
         }
-        let reshaped = present.iter().all(|c| shaped.iter().any(|(n, t)| n == c && t.eq_ignore_ascii_case(DECLTYPE)));
+        let reshaped = present.iter().all(|c| {
+            shaped
+                .iter()
+                .any(|(n, t)| n == c && t.eq_ignore_ascii_case(DECLTYPE))
+        });
         if reshaped {
             for col in &present {
-                c.execute(&format!("UPDATE {table} SET {col} = srs_id({col}) WHERE typeof({col}) = 'text'"), [])
-                    .map_err(sql_err)?;
+                c.execute(
+                    &format!(
+                        "UPDATE {table} SET {col} = srs_id({col}) WHERE typeof({col}) = 'text'"
+                    ),
+                    [],
+                )
+                .map_err(sql_err)?;
             }
             continue;
         }
@@ -368,9 +464,9 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
         let parts: Vec<String> = parts
             .into_iter()
             .map(|p| match decl.captures(&p) {
-                Some(m) if present.iter().any(|c| c.eq_ignore_ascii_case(&m[2])) => {
-                    decl.replace(&p, format!("${{1}}${{2}}${{3}}{DECLTYPE}").as_str()).into_owned()
-                }
+                Some(m) if present.iter().any(|c| c.eq_ignore_ascii_case(&m[2])) => decl
+                    .replace(&p, format!("${{1}}${{2}}${{3}}{DECLTYPE}").as_str())
+                    .into_owned(),
                 _ => p,
             })
             .collect();
@@ -381,10 +477,19 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
         let names: Vec<&str> = shaped.iter().map(|(n, _)| n.as_str()).collect();
         let select: Vec<String> = names
             .iter()
-            .map(|n| if present.contains(n) { format!("srs_id({n})") } else { (*n).to_owned() })
+            .map(|n| {
+                if present.contains(n) {
+                    format!("srs_id({n})")
+                } else {
+                    (*n).to_owned()
+                }
+            })
             .collect();
         let (ins_cols, sel_cols) = if rowid {
-            (format!("rowid, {}", names.join(", ")), format!("rowid, {}", select.join(", ")))
+            (
+                format!("rowid, {}", names.join(", ")),
+                format!("rowid, {}", select.join(", ")),
+            )
         } else {
             (names.join(", "), select.join(", "))
         };
@@ -392,7 +497,9 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
             let mut s = c
                 .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = ?1 AND type IN ('index', 'trigger') AND sql IS NOT NULL")
                 .map_err(sql_err)?;
-            let rows = s.query_map([table], |r| r.get::<_, String>(0)).map_err(sql_err)?;
+            let rows = s
+                .query_map([table], |r| r.get::<_, String>(0))
+                .map_err(sql_err)?;
             rows.collect::<Result<_, _>>().map_err(sql_err)?
         };
         c.execute_batch(&format!(
@@ -401,9 +508,11 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
         ))
         .map_err(|e| format!("{table}: {e}"))?;
         for x in extras {
-            c.execute_batch(&x).map_err(|e| format!("{table}: {e} in {x}"))?;
+            c.execute_batch(&x)
+                .map_err(|e| format!("{table}: {e} in {x}"))?;
         }
     }
-    c.execute_batch("PRAGMA legacy_alter_table = OFF;").map_err(sql_err)?;
+    c.execute_batch("PRAGMA legacy_alter_table = OFF;")
+        .map_err(sql_err)?;
     Ok(())
 }

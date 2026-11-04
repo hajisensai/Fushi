@@ -1,0 +1,6 @@
+## BUG-4020 · 视频外挂字幕（调轴后）字幕字数统计恒为 0
+- **报告**：2026-11-03（用户反馈 #9rdFBLEnVg：「视频有挂字幕（非视频内嵌字幕）的时候，也出现无法统计字数的情况」，Windows，3.0.0+19763）
+- **真实性**：✅ 真 bug（沿代码路径定位，未在真机复现原始会话）。字幕字数唯一入账点是 `VideoWatchTracker._onSourceChanged` / `_accumulatePending`。修复前 `fushi/lib/src/media/video/video_watch_tracker.dart:340` 取的是**视频时间轴**位置 `s.positionMs`，`:356` / `:400` 却拿它去夹 cue 的**字幕时间轴**起止窗（`_clampToPendingCue`）。播放器求当前 cue 用的是 `位置 - 调轴`（`video_player_controller.dart` `effectiveSubtitlePositionMs`），所以只要主字幕调过轴且偏移 ≥ 句长（外挂字幕的常态；内嵌字幕基本不调轴），进句时位置已在窗外、夹完恒等于窗端点，推进量恒 0，停留门永远不过，一句都不计。同一处 `:424` 覆盖快照比对 `_coverageAtAttach.covers(start, end)` 也把字幕轴时刻当视频轴比，会误判「已看过」。另一处同源缺陷：`:142` / `:351` / `:424` 按 cue **下标**去重，中途换字幕源（默认轨 → 外挂文件 / 换轨）后旧表下标挡住新表同号的另一句。
+- **[x] ① 已修复** — `VideoPlaybackSource` 新增 `subtitleDelayMs`（`fushi/lib/src/media/video/video_playback_source.dart`；`VideoPlayerController` 返回 `_delayMs`，网页桥 `RemoteVideoPlaybackSource` 恒 0）。tracker 进句 / 推进一律在字幕轴上量（`位置 - subtitleDelayMs`），进句时记下调轴，覆盖比对把 cue 窗换回视频轴；会话去重键从下标改成句子本身（字幕轴起止 + 文本）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_watch_tracker_test.dart`：调轴 ±3000ms 按生产通知节奏仍计字、换字幕源后新表同号句照常计、覆盖比对按调轴换回视频轴（共 4 例，旧实现下均为 0 / 误判）。
+- **备注**：反馈版本较旧（3.0.0），截图 / 日志未读（附件不在导出里），「外挂字幕 = 调轴」是按代码路径推定的触发条件；若用户的外挂字幕未调轴仍计不上，需要附件日志再查。未在真机复测。

@@ -1,0 +1,6 @@
+## BUG-4014 · srs-sync2-device-names
+- **报告**：2026-11-04（用户：同步 / 冲突界面里设备只显示 `01a173ca` 这种 ID，认不出是哪台，冲突不知道选哪边；某台设备不用了，因它缺段卡住的操作一直等它）
+- **真实性**：✅ 真 bug。head 只带内核 ID，没有型号 / 版本（`native/fushi_fsrs/src/sync2/segment.rs:721` 之前 Head 无扩展字段），UI 只能 `srsShortDevice` 截 8 位；因果投递只认 `op.deps.le(&vv)`（`native/fushi_fsrs/src/store/sync2/transport.rs:828` 原处），缺段设备的分量永远凑不齐，没有任何「不再等它」的出口。
+- **[x] ① 已修复** — head 加独立签名的 `ext`（型号 / App major.minor / 平台，`segment.rs:721`、`:780`；旧读者主签名照过、不升 minReader）；本机身份由 app 自报（`fushi/lib/src/srs/srs_device_identity.dart`），收 head 时记账（`native/fushi_fsrs/src/store/sync2/devices.rs:106`）；互联 host 认作者自己的段补对端名（`fushi_sync_server.dart` `onClientUpload` → `srs_app_runtime.dart`）；停用设备 `sync2_retire`（`devices.rs:307`），投递改 `deps_ready`（`devices.rs:135`、`transport.rs:828`），不删数据、可恢复、设备回来自动取消停用；同步页「设备」列表（`srs_sync_devices_section.dart:75`），冲突中心显示设备名 / 修改时间 / 差异 / 推荐理由 / 同类一并处理（`srs_conflicts_page.dart:90`、`:635`）。
+- **[x] ② 已加自动化测试** — Rust `native/fushi_fsrs/src/store/sync2/tests_devices.rs`（名称版本到达对端、旧 head 无名 + 补名、停用放行卡住的操作 / 恢复 / 回来自动取消且 digest 一致）、`segment.rs` `head_ext_is_separately_signed_and_old_readers_still_verify`；Dart `fushi/test/srs/srs_device_names_test.dart`（MD3 + Apple：设备列表停用确认与恢复、冲突中心设备名 / 推荐 / 同类一并处理）、`fushi/test/srs/srs_device_identity_test.dart`。
+- **备注**：残留——停用设备仍计入 ack 下限（挡 GC）；停用设备自己缺段的 pending 仍留着；iPhone 机型表要随新机型补。

@@ -25,10 +25,12 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
+import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
@@ -872,18 +874,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   }
 
   Widget _buildStatus(BuildContext context) {
-    final List<Map<String, Object?>> devices =
-        <Map<String, Object?>>[
-          for (final Object? d
-              in (_status['devices'] as List<Object?>?) ?? const [])
-            (d! as Map).cast<String, Object?>(),
-        ]..sort((Map<String, Object?> a, Map<String, Object?> b) {
-          if (a['self'] == true) return -1;
-          if (b['self'] == true) return 1;
-          return ((b['seenAt'] as num?) ?? 0).compareTo(
-            (a['seenAt'] as num?) ?? 0,
-          );
-        });
     final int unpublished = (_status['unpublished'] as num?)?.toInt() ?? 0;
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
@@ -919,59 +909,93 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                   icon: FushiIcons.schedule,
                   showIcon: true,
                 ),
-              for (final Map<String, Object?> d in devices)
-                _deviceRow(context, d, syncing: syncing != null),
             ],
           ),
     );
   }
 
-  Widget _deviceRow(
-    BuildContext context,
-    Map<String, Object?> d, {
-    required bool syncing,
-  }) {
-    final String id = d['device'] as String? ?? '';
-    final String name = (d['name'] as String?)?.trim() ?? '';
-    final bool self = d['self'] == true;
-    final int behind = (d['behind'] as num?)?.toInt() ?? 0;
-    final int? seenAt = (d['seenAt'] as num?)?.toInt();
-    final bool mismatch = d['digestMismatch'] == true;
-    final bool frozen = d['frozen'] == true;
-    final String? warning = d['warning'] as String?;
-    final String title = self
-        ? t.srs_timeline_this_device
-        : (name.isEmpty ? srsShortDevice(id) : name);
-    final List<String> meta = <String>[
-      if (!self && seenAt != null)
-        t.srs_timeline_seen(
-          time: srsTimeLabel(
-            context,
-            DateTime.fromMillisecondsSinceEpoch(seenAt),
-          ),
-        ),
-      if (behind > 0)
-        syncing
-            ? t.srs_timeline_receiving(n: behind)
-            : t.srs_timeline_behind(n: behind),
-      if (frozen) t.srs_timeline_frozen,
-      if (mismatch) t.srs_timeline_digest_mismatch,
-      if (warning != null && warning.isNotEmpty) t.srs_timeline_device_warning,
-    ];
-    return AdaptiveSettingsRow(
-      key: ValueKey<String>('srs_timeline_device_$id'),
-      title: title,
-      subtitle: meta.isEmpty ? srsShortDevice(id) : meta.join(' · '),
-      icon: mismatch || (warning?.isNotEmpty ?? false)
-          ? FushiIcons.warning
-          : (self
-                ? (Platform.isWindows || Platform.isMacOS || Platform.isLinux
-                      ? FushiIcons.laptop
-                      : FushiIcons.phone)
-                : FushiIcons.devices),
-      showIcon: true,
-      subtitleMaxLines: 3,
+  List<SrsDeviceView> get _devices => srsDeviceViewsOf(_status);
+
+  Widget _buildDevices(BuildContext context) =>
+      ValueListenableBuilder<SrsSyncProgress?>(
+        valueListenable: srsSyncProgress,
+        builder: (BuildContext context, SrsSyncProgress? syncing, _) =>
+            SrsSyncDevicesSection(
+              devices: _devices,
+              syncing: syncing != null,
+              enabled: !_busy,
+              onRename: (SrsDeviceView d) =>
+                  srsRunLogged('SrsHistory.renameDevice', _renameSelf),
+              onRetire: (SrsDeviceView d) =>
+                  srsRunLogged('SrsHistory.retireDevice', () => _retire(d)),
+              onUnretire: (SrsDeviceView d) =>
+                  srsRunLogged('SrsHistory.unretireDevice', () => _unretire(d)),
+            ),
+      );
+
+  String _deviceName(SrsDeviceView d) =>
+      d.displayName(formatTime: (DateTime x) => srsTimeLabel(context, x));
+
+  /// 改本机昵称（只替换名称部分；留空回到型号）。随下一次写 head 发布。
+  Future<void> _renameSelf() async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final Map<String, Object?> info =
+        (_status['selfInfo'] as Map?)?.cast<String, Object?>() ??
+        const <String, Object?>{};
+    final String model = (info['model'] as String?) ?? '';
+    final String? nick = await showFushiTextInputDialog(
+      context: context,
+      title: t.srs_device_rename_title,
+      message: t.srs_device_rename_message(
+        model: model.isEmpty ? t.srs_device_unnamed : model,
+      ),
+      initialValue: (info['nick'] as String?) ?? '',
+      icon: FushiIcons.rename,
+      allowEmpty: true,
     );
+    if (nick == null) return;
+    await _run('renameDevice', () async {
+      await store.sync2DeviceInfo(nick: nick);
+      // 名字随 head 发布：跑一轮让别的设备尽快看到。
+      unawaited(ref.read(srsAppRuntimeProvider)?.sync.syncNow());
+    }, failure: t.srs_action_failed);
+  }
+
+  /// 「这台设备不用了」：确认框说明后果（卡住的修改立即应用、它没同步出来的不会出现、不删数据、可恢复）。
+  Future<void> _retire(SrsDeviceView d) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final String name = _deviceName(d);
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_device_retire_confirm_title(device: name),
+      message: t.srs_device_retire_confirm_body(device: name, n: d.blocking),
+      confirmLabel: t.srs_device_retire_action,
+      icon: FushiIcons.block,
+    );
+    if (!ok) return;
+    await _run('retireDevice', () async {
+      await store.sync2Retire(d.id, retire: true);
+      bumpSrsRevision(ref);
+      FushiToast.show(
+        msg: t.srs_device_retired_toast(device: name),
+        severity: ToastSeverity.success,
+      );
+    }, failure: t.srs_action_failed);
+  }
+
+  Future<void> _unretire(SrsDeviceView d) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final String name = _deviceName(d);
+    await _run('unretireDevice', () async {
+      await store.sync2Retire(d.id, retire: false);
+      FushiToast.show(
+        msg: t.srs_device_unretired_toast(device: name),
+        severity: ToastSeverity.success,
+      );
+    }, failure: t.srs_action_failed);
   }
 
   Widget _buildBody(BuildContext context) {
@@ -990,6 +1014,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         ),
       ),
       if (_status['enabled'] == true) _buildStatus(context),
+      if (_status['enabled'] == true && _devices.isNotEmpty)
+        _buildDevices(context),
       _buildLocations(context),
       AdaptiveSettingsSection(
         title: t.srs_timeline_section,

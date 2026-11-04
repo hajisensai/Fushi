@@ -574,14 +574,10 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     if (existing != null) {
       return existing;
     }
-    final Uri u = Uri.parse(anyUrl);
-    final bool defaultPort =
-        (u.scheme == 'https' && (!u.hasPort || u.port == 443)) ||
-        (u.scheme == 'http' && (!u.hasPort || u.port == 80));
-    final String portSuffix = defaultPort ? '' : ':${u.port}';
-    final String origin = '${u.scheme}://${u.host}$portSuffix';
+    // Uri.origin 保留 IPv6 字面量的方括号、省略默认端口；手拼 `u.host` 会丢方括号，
+    // IPv6 NAS 地址拼出的 baseUrl 再被解析时端口位错乱。
     return _dav = WebDavOps(
-      baseUrl: origin,
+      baseUrl: Uri.parse(anyUrl).origin,
       username: config.username,
       password: config.password ?? '',
     );

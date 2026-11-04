@@ -62,6 +62,7 @@ class DictionaryPopupHistoryPage {
     required this.allLoaded,
     required this.scrollTop,
     this.rubySpans = const <FushiRubySpan>[],
+    this.contextSentence = '',
   });
 
   final String searchTerm;
@@ -70,6 +71,9 @@ class DictionaryPopupHistoryPage {
 
   /// 该页 [searchTerm] 上来源自带的振假名（见 [DictionaryPopupEntry.rubySpans]）。
   final List<FushiRubySpan> rubySpans;
+
+  /// 该页 [searchTerm] 出自的那一句（见 [DictionaryPopupEntry.contextSentence]）。
+  final String contextSentence;
 
   /// 离开该页时弹窗内容的 `scrollTop`（CSS px，WebView 局部）；回来时恢复。
   final double scrollTop;
@@ -86,6 +90,7 @@ class DictionaryPopupEntry {
     this.isWarmSlot = false,
     this.allLoaded = false,
     this.rubySpans = const <FushiRubySpan>[],
+    this.contextSentence = '',
     GlobalKey<DictionaryPopupWebViewState>? webViewKey,
   }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupWebViewState>();
 
@@ -99,6 +104,14 @@ class DictionaryPopupEntry {
   /// （PR #2671 审查）。与 [searchTerm] 同生同灭：换词（热槽复用 / 原地跳转 / 后退
   /// 前进 / 热槽复位）时一并替换。
   List<FushiRubySpan> rubySpans;
+
+  /// [searchTerm] 出自的那一句：点释义正文里的词发起本层查词时，selection.js 在被点处
+  /// 取出的整句（`textSelected` 第 4 参，反馈 TnKWBi4C-9）。没有书 / 视频「当前句」的
+  /// 宿主（查词页 / 独立查词窗）制卡时拿它补 `{sentence}`——与 Yomitan 在弹窗释义里
+  /// 扫词同口径。与 [rubySpans] 同生同灭：只属于「这个词出自那一句」，换词（热槽复用 /
+  /// 原地跳转 / 后退前进 / 热槽复位）时一并替换；原地跳到的词（词头 / 链接 / 汉字）不
+  /// 出自任何句子，为空。
+  String contextSentence;
 
   /// 该层是否被绘制/可交互。常驻热槽在两次查词之间 `visible=false` 隐身，
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
@@ -482,6 +495,7 @@ class DictionaryPopupController extends ChangeNotifier {
     e
       ..searchTerm = ''
       ..rubySpans = const <FushiRubySpan>[]
+      ..contextSentence = ''
       ..selectionRect = Rect.zero
       ..result = kPopupSearchingPlaceholderResult
       ..visible = false
@@ -535,6 +549,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required bool visible,
     DictionarySearchResult? initialResult,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) {
     onLookupStarted?.call();
     final bool warmHit =
@@ -561,6 +576,7 @@ class DictionaryPopupController extends ChangeNotifier {
       e = _entries.first
         ..searchTerm = term
         ..rubySpans = rubySpans
+        ..contextSentence = contextSentence
         ..selectionRect = rect
         ..result = initialResult
         ..allLoaded = false
@@ -582,6 +598,7 @@ class DictionaryPopupController extends ChangeNotifier {
         result: initialResult,
         visible: visible,
         rubySpans: rubySpans,
+        contextSentence: contextSentence,
         webViewKey: _takeRealmKey(),
       )..isSearching = true;
       _entries.add(e);
@@ -606,6 +623,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required int parentIndex,
     required bool visible,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) {
     onLookupStarted?.call();
     truncateTo(parentIndex + 1);
@@ -614,6 +632,7 @@ class DictionaryPopupController extends ChangeNotifier {
       selectionRect: rect,
       visible: visible,
       rubySpans: rubySpans,
+      contextSentence: contextSentence,
       webViewKey: _takeRealmKey(),
     )..isSearching = true;
     _entries.add(e);
@@ -695,6 +714,7 @@ class DictionaryPopupController extends ChangeNotifier {
       allLoaded: e.allLoaded,
       scrollTop: scrollTop,
       rubySpans: e.rubySpans,
+      contextSentence: e.contextSentence,
     );
   }
 
@@ -706,6 +726,7 @@ class DictionaryPopupController extends ChangeNotifier {
     e
       ..searchTerm = page.searchTerm
       ..rubySpans = page.rubySpans
+      ..contextSentence = page.contextSentence
       ..result = page.result
       ..allLoaded = page.allLoaded
       ..isSearching = false

@@ -93,6 +93,14 @@ function makeTreeWalker(root, filter) {
       if (next) this.currentNode = next;
       return next;
     },
+    // 真 TreeWalker 语义：没有前一个时返回 null、currentNode 不动（selection.js 的
+    // getSentence 向前扩句用它）。
+    previousNode() {
+      const from = out.indexOf(this.currentNode);
+      const prev = from > 0 ? out[from - 1] : null;
+      if (prev) this.currentNode = prev;
+      return prev;
+    },
   };
 }
 

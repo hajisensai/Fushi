@@ -9,6 +9,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -46,6 +47,30 @@ class SrsMetaLine extends StatelessWidget {
   /// 把已用 [separator] 拼好的本地化串（如 i18n 摘要）拆回各段。
   static List<String> split(String joined) => joined.split(separator);
 
+  /// 全角收尾标点（「（Fushi 3.3）」的「）」等）字形自带右侧留白，后面再接 [separator] 的前导空格
+  /// 会显得中点左边空了两格：这种段后只接「· 」。
+  static const String _fullWidthClosers = '）】」』〉》〕';
+
+  /// [segment] 后面接的分隔符。
+  static String separatorAfter(String segment) =>
+      segment.isNotEmpty &&
+          _fullWidthClosers.contains(segment[segment.length - 1])
+      ? '· '
+      : separator;
+
+  /// 跳过空段、按 [separatorAfter] 拼成一行文本（不需要按段折行的地方用）。
+  static String join(Iterable<String> segments) {
+    final StringBuffer out = StringBuffer();
+    String last = '';
+    for (final String s in segments) {
+      if (s.isEmpty) continue;
+      if (out.isNotEmpty) out.write(separatorAfter(last));
+      out.write(s);
+      last = s;
+    }
+    return out.toString();
+  }
+
   final List<String> segments;
 
   @override
@@ -58,7 +83,9 @@ class SrsMetaLine extends StatelessWidget {
       children: <Widget>[
         for (int i = 0; i < parts.length; i++)
           Text(
-            i == parts.length - 1 ? parts[i] : '${parts[i]}$separator',
+            i == parts.length - 1
+                ? parts[i]
+                : '${parts[i]}${separatorAfter(parts[i])}',
             maxLines: 1,
             softWrap: false,
             overflow: TextOverflow.ellipsis,
@@ -585,3 +612,45 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.termField => t.srs_note_types_term_field,
   _ => key,
 };
+
+/// 评分按钮的语义色调。
+enum SrsRatingTone { again, hard, good, easy }
+
+/// 评分配色的唯一定义：复习页评分按钮、「已评」回执与首次评分说明的色块共用，
+/// 保证说明里的色块与底下的按钮一眼对上。
+///
+/// MD3 = M3E 色调按钮（重来 errorContainer、困难 neutral 容器、良好 primary 实心、
+/// 简单 tertiaryContainer）；Apple = 系统实色胶囊（良好 = 强调色底，其余 = 语义色
+/// 16% 底 + 语义色字，同 iOS `.bordered` 着色）。
+({Color background, Color foreground}) srsRatingColors(
+  SrsRatingTone tone,
+  ColorScheme cs, {
+  required bool apple,
+}) {
+  if (apple) {
+    final Color accent = switch (tone) {
+      SrsRatingTone.again => cs.error,
+      SrsRatingTone.hard => cs.onSurfaceVariant,
+      SrsRatingTone.good => cs.primary,
+      SrsRatingTone.easy => cs.tertiary,
+    };
+    return tone == SrsRatingTone.good
+        ? (background: cs.primary, foreground: cs.onPrimary)
+        : (background: accent.withValues(alpha: 0.16), foreground: accent);
+  }
+  return switch (tone) {
+    SrsRatingTone.again => (
+      background: cs.containerOf(FushiTone.error),
+      foreground: cs.onContainerOf(FushiTone.error),
+    ),
+    SrsRatingTone.hard => (
+      background: cs.containerOf(FushiTone.neutral),
+      foreground: cs.onContainerOf(FushiTone.neutral),
+    ),
+    SrsRatingTone.good => (background: cs.primary, foreground: cs.onPrimary),
+    SrsRatingTone.easy => (
+      background: cs.containerOf(FushiTone.tertiary),
+      foreground: cs.onContainerOf(FushiTone.tertiary),
+    ),
+  };
+}

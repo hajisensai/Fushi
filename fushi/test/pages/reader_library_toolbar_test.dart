@@ -4,11 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
-import 'package:fushi/src/sync/sync_auto_trigger.dart';
-import 'package:fushi/src/sync/sync_progress.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
-    show FushiLinearProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -69,46 +64,5 @@ void main() {
     expect(chosen, ShelfSortMode.title);
     expect(find.byIcon(FushiIcons.settingsGear), findsNothing);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('compact sync strip preserves progress and collapses when idle', (
-    WidgetTester tester,
-  ) async {
-    addTearDown(() {
-      syncInProgress.value = false;
-      syncProgress.value = null;
-    });
-    syncInProgress.value = true;
-    syncProgress.value = const SyncProgress(
-      phase: SyncPhase.dictionaries,
-      itemIndex: 0,
-      itemTotal: 2,
-      title: 'Dictionary',
-    );
-    await tester.pumpWidget(host(const SyncProgressBanner(compact: true)));
-    final double compactHeight = tester
-        .getSize(find.byType(SyncProgressBanner))
-        .height;
-    expect(find.textContaining('Dictionary'), findsOneWidget);
-    expect(
-      tester
-          // 进度条走共享 FushiLinearProgressIndicator（表达式进度）；钉它的 value。
-          .widget<FushiLinearProgressIndicator>(
-            find.byType(FushiLinearProgressIndicator),
-          )
-          .value,
-      0.5,
-    );
-    await tester.pumpWidget(host(const SyncProgressBanner()));
-    // M3E 横幅（815c0d1f2b5）的尺寸变化走 AnimatedSize 弹簧，同一 State 从紧凑
-    // 换到常规时要等尺寸动画走完再量。
-    await tester.pump(const Duration(seconds: 1));
-    expect(
-      tester.getSize(find.byType(SyncProgressBanner)).height,
-      greaterThan(compactHeight),
-    );
-    syncInProgress.value = false;
-    await tester.pump();
-    expect(tester.getSize(find.byType(SyncProgressBanner)).height, 0);
   });
 }

@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::dom::{AttrKey, AttrMap, Dom, NodeId, NodeKind, Ns};
-use super::tokenizer::{ascii_lower, Doctype, StartTag, State, Token, Tokenizer};
+use super::tokenizer::{Doctype, StartTag, State, Token, Tokenizer, ascii_lower};
 use super::{ParseFailure, Res};
 use crate::parse::dart_lower::dart_lower_str;
 

@@ -1,0 +1,4 @@
+## BUG-4034 · Anki 卡组按词频重排失败（AnkiConnect 拒绝全部写入：有编辑器开着）
+- **报告**：2026-11-02（应用内反馈 `Feedback: 1GGIryUaSD`，Windows 3.0.0+19763：「anki card reorder by frequency is not working」，附截图）
+- **真实性**：❌ 未复现（不是 Fushi 缺陷）。截图未取到；反馈附带的错误日志原文：`AnkiAutoReposition[Vocab] AnkiConnect rejected 438 of 438 position writes; first reason: Close the affected editor before this API write, even if its content is saved.`（同一分钟另一轮 437/437 同因）。拒绝来自用户 Anki 端的 AnkiConnect：每条 `setSpecificValueOfCard` 在 `result` 里回 `[false, "<msg>"]`（`packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart` `setCardsDueMany` / `ankiSetSpecificValueFailure`），原因是 Anki 端开着受影响笔记的编辑器（添加 / 浏览 / 编辑窗口）。Fushi 侧的自动重排（`fushi/lib/src/anki/anki_auto_reposition.dart` `AnkiAutoRepositionWriteFailures`）如实汇总并上报了 AnkiConnect 给的原因；Fushi 不会自动打开 Anki 编辑器（`openNoteInAnki` / `guiBrowse` 只由用户点击触发）。本机 AnkiConnect（旧版）源码里没有这条文案，是用户那边较新的 AnkiConnect 版本加的写保护，无法在本机复现。
+- **备注**：用户侧处理：关掉 Anki 里的添加 / 浏览 / 编辑窗口后重试。未改代码。

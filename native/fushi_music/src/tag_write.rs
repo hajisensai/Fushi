@@ -31,7 +31,10 @@ pub const FIELDS: &[(&str, Option<ItemKey>)] = &[
     ("catalog_no", Some(ItemKey::CatalogNumber)),
     ("mb_recording_id", Some(ItemKey::MusicBrainzRecordingId)),
     ("mb_release_id", Some(ItemKey::MusicBrainzReleaseId)),
-    ("mb_release_group_id", Some(ItemKey::MusicBrainzReleaseGroupId)),
+    (
+        "mb_release_group_id",
+        Some(ItemKey::MusicBrainzReleaseGroupId),
+    ),
     ("mb_work_id", Some(ItemKey::MusicBrainzWorkId)),
     ("mb_artist_id", Some(ItemKey::MusicBrainzArtistId)),
 ];
@@ -217,12 +220,14 @@ fn write_id3v2_ufid(path: &Path, recording_id: Option<&str>) -> Result<(), TagWr
     let Some(tag) = mpeg.id3v2_mut() else {
         return Err(TagWriteError::WriteFailed("no ID3v2 tag".into()));
     };
-    tag.retain(|f| {
-        !matches!(f, Frame::UniqueFileIdentifier(u) if u.owner == MUSICBRAINZ_UFID_OWNER)
-    });
+    tag.retain(
+        |f| !matches!(f, Frame::UniqueFileIdentifier(u) if u.owner == MUSICBRAINZ_UFID_OWNER),
+    );
     if let Some(id) = recording_id {
         if !id.is_ascii() {
-            return Err(TagWriteError::BadInput("mb_recording_id must be ASCII".into()));
+            return Err(TagWriteError::BadInput(
+                "mb_recording_id must be ASCII".into(),
+            ));
         }
         tag.insert(Frame::UniqueFileIdentifier(UniqueFileIdentifierFrame::new(
             MUSICBRAINZ_UFID_OWNER.to_owned(),
@@ -294,7 +299,10 @@ mod tests {
             // 删除：空串。
             write_fields(&path, &[("catalog_no".to_owned(), String::new())]).unwrap();
             let back = read_fields(&path).unwrap();
-            assert!(!back.iter().any(|(k, _)| k == "catalog_no"), "{src}: {back:?}");
+            assert!(
+                !back.iter().any(|(k, _)| k == "catalog_no"),
+                "{src}: {back:?}"
+            );
             // 音频属性不变（track_uid 依赖它们）。
             let before = crate::tags::read_file_meta(&fixture(src)).unwrap();
             let after = crate::tags::read_file_meta(&path).unwrap();

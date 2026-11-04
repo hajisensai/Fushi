@@ -188,7 +188,8 @@ Future<SrsStatsBundle> loadSrsStats(
     }
   }
 
-  // RWKV-Instant 排队的复习卡：可提取度用 RWKV 此刻的回忆率（排队用的就是它）。RWKV 用不了时
+  // RWKV-Instant 排队的复习卡：可提取度用 RWKV 此刻的回忆率（排队按今天结束时的回忆率数到期，今天答过的
+  // 卡按此刻的；统计显示的是此刻）。RWKV 用不了时
   // 这些牌组照旧按存下的到期日排队，统计也照旧（FSRS 的可提取度、按到期日计）。
   final Map<String, bool> byRecallDeck = <String, bool>{};
   bool byRecallCard(int i) =>

@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{edit, projection, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, edit, projection};
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EditBody, EntKind, LegacyStamp, Op};
@@ -21,8 +21,14 @@ fn count(d: &Device, sql: &str) -> i64 {
 /// 投影行与 `sync2_legacy` 里还带合成写入者的条数。
 fn synthetic_in_ctx(d: &Device) -> (i64, i64) {
     (
-        count(d, "SELECT COUNT(*) FROM srs_field_edits WHERE instr(json_extract(json, '$.ctx'), '\"sync2:') > 0"),
-        count(d, "SELECT COUNT(*) FROM sync2_legacy WHERE instr(ctx, '\"sync2:') > 0"),
+        count(
+            d,
+            "SELECT COUNT(*) FROM srs_field_edits WHERE instr(json_extract(json, '$.ctx'), '\"sync2:') > 0",
+        ),
+        count(
+            d,
+            "SELECT COUNT(*) FROM sync2_legacy WHERE instr(ctx, '\"sync2:') > 0",
+        ),
     )
 }
 
@@ -31,7 +37,9 @@ fn stamped(x: Value) -> Value {
 }
 
 fn apply_stamped(d: &Device, now: i64, events: Vec<Value>) {
-    d.core.sync2_apply_local(P, now, &Value::Array(events).to_string()).unwrap();
+    d.core
+        .sync2_apply_local(P, now, &Value::Array(events).to_string())
+        .unwrap();
 }
 
 /// 每个实体的寄存器裁决（registers.rs `registers_report`），按 (种类, 实体) 排好。
@@ -48,7 +56,8 @@ fn verdicts(d: &Device) -> Vec<(String, String, Value)> {
             group.push(rows[i][2].clone());
             i += 1;
         }
-        let items: Vec<crate::registers::StoredEdit<'_>> = group.iter().map(|j| (j.as_str(), None, None)).collect();
+        let items: Vec<crate::registers::StoredEdit<'_>> =
+            group.iter().map(|j| (j.as_str(), None, None)).collect();
         out.push((k, e, crate::registers::registers_report(&items).unwrap()));
     }
     out
@@ -88,18 +97,23 @@ fn stamped_and_local_edits_never_carry_synthetic_writers() {
         &a,
         T0,
         vec![
-            stamped(json!({"id": "x", "p": P, "k": "note", "e": "N1", "f": "tags", "w": "sync2:tags:N1", "s": 1,
-                "ctx": {"vv": {}}, "v": ["t1"], "hlc": format!("{T0}:0:old"), "ts": "wall"})),
-            stamped(json!({"id": "x", "p": P, "k": "note", "e": "N1", "f": "f/x", "w": "old", "s": 3,
+            stamped(
+                json!({"id": "x", "p": P, "k": "note", "e": "N1", "f": "tags", "w": "sync2:tags:N1", "s": 1,
+                "ctx": {"vv": {}}, "v": ["t1"], "hlc": format!("{T0}:0:old"), "ts": "wall"}),
+            ),
+            stamped(
+                json!({"id": "x", "p": P, "k": "note", "e": "N1", "f": "f/x", "w": "old", "s": 3,
                 "ctx": {"vv": {"old": 2, "sync2:tags:N2": 1}, "cloud": {"sync2:tags:N3": [1]}}, "v": "o",
-                "hlc": format!("{T0}:1:old"), "ts": "wall"})),
+                "hlc": format!("{T0}:1:old"), "ts": "wall"}),
+            ),
         ],
     );
     a.apply(T0 + 10, vec![edit("note", "N1", "f/y", json!("v"))]);
     assert_eq!(synthetic_in_ctx(&a), (0, 0));
     // 真实旧写入者的闭包照旧进本机新修改的 ctx。
     let ctx: Value = serde_json::from_str(
-        &a.rows("SELECT json_extract(json, '$.ctx') FROM srs_field_edits WHERE field_key = 'f/y'")[1][0],
+        &a.rows("SELECT json_extract(json, '$.ctx') FROM srs_field_edits WHERE field_key = 'f/y'")
+            [1][0],
     )
     .unwrap();
     assert_eq!(ctx["vv"]["old"], json!(3), "{ctx}");
@@ -110,7 +124,8 @@ fn stamped_and_local_edits_never_carry_synthetic_writers() {
     assert_eq!(a.ops_containing(&["sync2:tags:N3"]), 0);
     // 对照：合成标签行自己的写入者名还在，搜索看得见它。
     assert!(a.ops_containing(&["sync2:tags:N1"]) > 0);
-    let tags = a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'tags'");
+    let tags =
+        a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'tags'");
     assert_eq!(tags[1][0], "[\"t1\"]");
 }
 
@@ -123,7 +138,11 @@ fn pre_fix_ops_with_synthetic_writers_project_without_them() {
     let device = Id::random();
     let op = Op {
         id: OpId { device, seq: 7 },
-        hlc: Hlc { wall: T0, logical: 0, device },
+        hlc: Hlc {
+            wall: T0,
+            logical: 0,
+            device,
+        },
         deps: Arc::new(Vv::default()),
         kind: crate::sync2::op::KIND_EDIT,
         schema: 1,
@@ -154,7 +173,11 @@ fn pre_fix_ops_with_synthetic_writers_project_without_them() {
     let synth = body("sync2:tags:N1", r#"{"vv":{"sync2:tags:N4":1}}"#);
     super::note_legacy(&conn, P, &device, 8, synth.legacy.as_ref().unwrap()).unwrap();
     let stored: String = conn
-        .query_row("SELECT ctx FROM sync2_legacy WHERE device = ?1", [device.0.to_vec()], |r| r.get(0))
+        .query_row(
+            "SELECT ctx FROM sync2_legacy WHERE device = ?1",
+            [device.0.to_vec()],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(stored, r#"{"vv":{"old":3}}"#);
 }
@@ -167,20 +190,55 @@ fn v19_strip_keeps_every_verdict_and_matches_a_fresh_projection() {
     let (a, b) = (Device::new("mig-a"), Device::new("mig-b"));
     let mut bucket = Bucket::default();
     // 并发改同一字段（冲突 + 可见败者）、删除与编辑并发、标签（合成行）、牌组字段。
-    a.apply(T0, vec![edit("note", "N1", "f/x", json!("a1")), edit("note", "N2", "f/x", json!("keep"))]);
-    a.apply(T0 + 1, vec![edit("note", "N1", "tags", json!(["t1", "t2"])), edit("deck", "D1", "collapsed", json!(true))]);
+    a.apply(
+        T0,
+        vec![
+            edit("note", "N1", "f/x", json!("a1")),
+            edit("note", "N2", "f/x", json!("keep")),
+        ],
+    );
+    a.apply(
+        T0 + 1,
+        vec![
+            edit("note", "N1", "tags", json!(["t1", "t2"])),
+            edit("deck", "D1", "collapsed", json!(true)),
+        ],
+    );
     a.sync(&mut bucket, "loc", T0 + 2);
     b.sync(&mut bucket, "loc", T0 + 3);
-    a.apply(T0 + 4, vec![edit("note", "N1", "f/x", json!("a2")), edit("note", "N2", "deleted", json!(T0 + 4))]);
-    b.apply(T0 + 5, vec![edit("note", "N1", "f/x", json!("b1")), edit("note", "N2", "f/x", json!("b-edit"))]);
+    a.apply(
+        T0 + 4,
+        vec![
+            edit("note", "N1", "f/x", json!("a2")),
+            edit("note", "N2", "deleted", json!(T0 + 4)),
+        ],
+    );
+    b.apply(
+        T0 + 5,
+        vec![
+            edit("note", "N1", "f/x", json!("b1")),
+            edit("note", "N2", "f/x", json!("b-edit")),
+        ],
+    );
     b.apply(T0 + 6, vec![edit("note", "N1", "tags", json!(["t3"]))]);
     for i in 0..3 {
         a.sync(&mut bucket, "loc", T0 + 10 + i * 2);
         b.sync(&mut bucket, "loc", T0 + 11 + i * 2);
     }
-    assert_eq!(projection(&a), projection(&b), "converged before the injection");
+    assert_eq!(
+        projection(&a),
+        projection(&b),
+        "converged before the injection"
+    );
     let clean = verdicts(&a);
-    assert!(clean.iter().any(|(_, _, v)| v["regs"].as_array().unwrap().iter().any(|r| r[2] == json!(true))), "{clean:?}");
+    assert!(
+        clean.iter().any(|(_, _, v)| v["regs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r[2] == json!(true))),
+        "{clean:?}"
+    );
 
     inject_synthetic_ctx(&a, &["N1", "N2", "N3"]);
     a.core
@@ -192,17 +250,33 @@ fn v19_strip_keeps_every_verdict_and_matches_a_fresh_projection() {
         )
         .unwrap();
     assert!(synthetic_in_ctx(&a).0 > 0);
-    assert_ne!(a.digest(), b.digest(), "the bloated projection hashes differently");
-    assert_eq!(verdicts(&a), clean, "synthetic dots in ctx never decided anything");
+    assert_ne!(
+        a.digest(),
+        b.digest(),
+        "the bloated projection hashes differently"
+    );
+    assert_eq!(
+        verdicts(&a),
+        clean,
+        "synthetic dots in ctx never decided anything"
+    );
 
     let (n_legacy, n_rows) = super::strip_synthetic_writers(&a.core.writer().unwrap()).unwrap();
     assert_eq!(n_legacy, 1);
     assert!(n_rows > 0);
     assert_eq!(synthetic_in_ctx(&a), (0, 0));
     assert_eq!(verdicts(&a), clean);
-    assert_eq!(projection(&a), projection(&b), "stripped rows equal the fresh projection byte for byte");
+    assert_eq!(
+        projection(&a),
+        projection(&b),
+        "stripped rows equal the fresh projection byte for byte"
+    );
     assert_eq!(a.digest(), b.digest());
-    assert_eq!(super::strip_synthetic_writers(&a.core.writer().unwrap()).unwrap(), (0, 0), "replayable");
+    assert_eq!(
+        super::strip_synthetic_writers(&a.core.writer().unwrap()).unwrap(),
+        (0, 0),
+        "replayable"
+    );
 
     let legacy = a.rows("SELECT ctx FROM sync2_legacy WHERE device = X'00'");
     assert_eq!(legacy[1][0], r#"{"vv":{"old":3}}"#);
@@ -213,7 +287,9 @@ fn v19_strip_keeps_every_verdict_and_matches_a_fresh_projection() {
 #[test]
 #[ignore]
 fn real_db_v19_strip_report() {
-    let Ok(path) = std::env::var("FUSHI_SRS_REAL_DB") else { return };
+    let Ok(path) = std::env::var("FUSHI_SRS_REAL_DB") else {
+        return;
+    };
     let path = std::path::PathBuf::from(path);
     fn raw(path: &std::path::Path) -> rusqlite::Connection {
         let c = rusqlite::Connection::open(path).unwrap();
@@ -223,7 +299,9 @@ fn real_db_v19_strip_report() {
         c
     }
     fn one(c: &rusqlite::Connection, sql: &str) -> String {
-        c.query_row(sql, [], |r| r.get::<_, rusqlite::types::Value>(0)).map(|v| format!("{v:?}")).unwrap()
+        c.query_row(sql, [], |r| r.get::<_, rusqlite::types::Value>(0))
+            .map(|v| format!("{v:?}"))
+            .unwrap()
     }
     // 每个实体的裁决摘要（BLAKE3(report)），按 (种类, 实体) 顺序流式算，内存只留哈希。
     fn verdict_hashes(c: &rusqlite::Connection) -> Vec<(String, [u8; 32])> {
@@ -234,16 +312,24 @@ fn real_db_v19_strip_report() {
         let mut out = Vec::new();
         let mut cur: Option<String> = None;
         let mut group: Vec<String> = Vec::new();
-        let flush = |cur: &Option<String>, group: &mut Vec<String>, out: &mut Vec<(String, [u8; 32])>| {
-            if let Some(k) = cur {
-                let items: Vec<crate::registers::StoredEdit<'_>> = group.iter().map(|j| (j.as_str(), None, None)).collect();
-                let rep = crate::registers::registers_report(&items).unwrap().to_string();
-                out.push((k.clone(), *blake3::hash(rep.as_bytes()).as_bytes()));
-            }
-            group.clear();
-        };
+        let flush =
+            |cur: &Option<String>, group: &mut Vec<String>, out: &mut Vec<(String, [u8; 32])>| {
+                if let Some(k) = cur {
+                    let items: Vec<crate::registers::StoredEdit<'_>> =
+                        group.iter().map(|j| (j.as_str(), None, None)).collect();
+                    let rep = crate::registers::registers_report(&items)
+                        .unwrap()
+                        .to_string();
+                    out.push((k.clone(), *blake3::hash(rep.as_bytes()).as_bytes()));
+                }
+                group.clear();
+            };
         while let Some(r) = q.next().unwrap() {
-            let k = format!("{}/{}", r.get::<_, String>(0).unwrap(), r.get::<_, String>(1).unwrap());
+            let k = format!(
+                "{}/{}",
+                r.get::<_, String>(0).unwrap(),
+                r.get::<_, String>(1).unwrap()
+            );
             if cur.as_deref() != Some(k.as_str()) {
                 flush(&cur, &mut group, &mut out);
                 cur = Some(k);
@@ -257,9 +343,18 @@ fn real_db_v19_strip_report() {
         eprintln!(
             "[{tag}] schema={} big(>500k) rows/bytes={} / {} | ctx-with-sync2 rows={} | legacy ctx bytes={} | all edits jslim bytes={} | file pages={} free={}",
             one(c, "SELECT value FROM srs_meta WHERE key = 'schema'"),
-            one(c, "SELECT COUNT(*) FROM srs_field_edits WHERE length(jslim) > 500000"),
-            one(c, "SELECT COALESCE(SUM(length(jslim)), 0) FROM srs_field_edits WHERE length(jslim) > 500000"),
-            one(c, "SELECT COUNT(*) FROM srs_field_edits WHERE instr(jslim, '\"sync2:') > 0"),
+            one(
+                c,
+                "SELECT COUNT(*) FROM srs_field_edits WHERE length(jslim) > 500000"
+            ),
+            one(
+                c,
+                "SELECT COALESCE(SUM(length(jslim)), 0) FROM srs_field_edits WHERE length(jslim) > 500000"
+            ),
+            one(
+                c,
+                "SELECT COUNT(*) FROM srs_field_edits WHERE instr(jslim, '\"sync2:') > 0"
+            ),
             one(c, "SELECT group_concat(length(ctx)) FROM sync2_legacy"),
             one(c, "SELECT SUM(length(jslim)) FROM srs_field_edits"),
             one(c, "PRAGMA page_count"),
@@ -269,7 +364,13 @@ fn real_db_v19_strip_report() {
     let (before, profile) = {
         let c = raw(&path);
         stats(&c, "before");
-        let p: String = c.query_row("SELECT srs_idt(profile_uid) FROM sync2_self LIMIT 1", [], |r| r.get(0)).unwrap();
+        let p: String = c
+            .query_row(
+                "SELECT srs_idt(profile_uid) FROM sync2_self LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         let t = std::time::Instant::now();
         let v = verdict_hashes(&c);
         eprintln!("[before] {} entities judged in {:?}", v.len(), t.elapsed());
@@ -284,28 +385,46 @@ fn real_db_v19_strip_report() {
     let after = verdict_hashes(&c);
     assert_eq!(before.len(), after.len());
     let diff = before.iter().zip(&after).filter(|(a, b)| a != b).count();
-    eprintln!("[compare] entities={} differing verdicts={diff}", before.len());
+    eprintln!(
+        "[compare] entities={} differing verdicts={diff}",
+        before.len()
+    );
     assert_eq!(diff, 0);
     // 增量桶表与全表扫描一致（UPDATE 触发器把改写的行先减后加）。
-    assert_eq!(super::digest::root(&c, &profile).unwrap(), super::digest::root_by_scan(&c, &profile).unwrap());
+    assert_eq!(
+        super::digest::root(&c, &profile).unwrap(),
+        super::digest::root_by_scan(&c, &profile).unwrap()
+    );
     eprintln!("[digest] incremental root == full scan root");
     drop(c);
     // 新写一条（牌组折叠，布尔值）：看它的 ctx 多大。
     let core = crate::store::SrsCore::open(&path).unwrap();
     let deck: String = {
         let c = raw(&path);
-        c.query_row("SELECT srs_idt(id) FROM srs_entities WHERE kind = 'deck' LIMIT 1", [], |r| r.get(0)).unwrap()
+        c.query_row(
+            "SELECT srs_idt(id) FROM srs_entities WHERE kind = 'deck' LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
     };
     let ev = json!([{"e": {"t": "edit", "x": {"id": "x", "p": profile, "k": "deck", "e": deck, "f": "collapsed", "w": "dart", "s": 1,
         "ctx": {"vv": {}}, "v": true, "hlc": "0:0:dart", "ts": "wall"}}}]);
     let t = std::time::Instant::now();
-    core.sync2_apply_local(&profile, 4_102_444_800_000, &ev.to_string()).unwrap();
+    core.sync2_apply_local(&profile, 4_102_444_800_000, &ev.to_string())
+        .unwrap();
     eprintln!("[new write] apply {:?}", t.elapsed());
     drop(core);
     let c = raw(&path);
     eprintln!(
         "[new write] jslim bytes={} ctx={}",
-        one(&c, "SELECT length(jslim) FROM srs_field_edits WHERE field_key = 'collapsed' ORDER BY rowid DESC LIMIT 1"),
-        one(&c, "SELECT json_extract(json, '$.ctx') FROM srs_field_edits WHERE field_key = 'collapsed' ORDER BY rowid DESC LIMIT 1"),
+        one(
+            &c,
+            "SELECT length(jslim) FROM srs_field_edits WHERE field_key = 'collapsed' ORDER BY rowid DESC LIMIT 1"
+        ),
+        one(
+            &c,
+            "SELECT json_extract(json, '$.ctx') FROM srs_field_edits WHERE field_key = 'collapsed' ORDER BY rowid DESC LIMIT 1"
+        ),
     );
 }

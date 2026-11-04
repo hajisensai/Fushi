@@ -158,7 +158,6 @@ import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/jellyfin_library_scope.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinVideoClient;
@@ -192,23 +191,30 @@ import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
 /// 在路由层中和全局缩放（video_render_fixes_guard 守卫的接线）。
-/// [playlistCollectionId] 非空 = 作为合集一集打开（剧集面板/上下集/连播），
-/// null = 散卡单视频。返回的 Future 在播放页关闭后完成（调用方据此刷新）。
+/// [playlistCollectionId] 非空 = 调用方已知的系列上下文，照用；null = 由本入口按视频库
+/// 折叠归属自己解析（[resolveVideoPlaylistCollectionId]，散片解析为 null 即单视频打开）。
+/// 系列上下文不再靠每个入口各自记得去查：侧边栏「继续观看」、统计页、发现页等入口此前
+/// 只传 bookUid，合集里的一集进播放页没有剧集列表 / 上下集 / 连播（BUG-4024）。
+/// 返回的 Future 在播放页关闭后完成（调用方据此刷新）。
 Future<void> openLocalVideoBook({
   required BuildContext context,
   required VideoBookRepository repo,
   required String bookUid,
   int? playlistCollectionId,
   bool openBlurayMenu = false,
-}) {
-  return Navigator.push(
+}) async {
+  final int? collectionId =
+      playlistCollectionId ??
+      await resolveVideoPlaylistCollectionId(repo: repo, bookUid: bookUid);
+  if (!context.mounted) return;
+  await Navigator.push(
     context,
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => VideoFushiPage.neutralized(
         bookUid: bookUid,
         repo: repo,
-        playlistCollectionId: playlistCollectionId,
+        playlistCollectionId: collectionId,
         openBlurayMenu: openBlurayMenu,
       ),
     ),
@@ -4932,7 +4938,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ///
   /// 这些作品刮不出资料**没有任何其他可见症状**——封面照样有（抽帧兜底的那张），
   /// 卡片照样进库，用户只会觉得「封面怎么是视频截图」而不知道有个确认队列在等他
-  /// （BUG-2201）。数量为 0 时零高度，与相邻的 [SyncProgressBanner] 一致。
+  /// （BUG-2201）。数量为 0 时零高度。
   ///
   /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]），出现 / 收起都带尺寸 +
   /// 淡入淡出过渡。
@@ -5140,8 +5146,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                       ),
                     ],
                   ],
-                  // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-                  const SyncProgressBanner(),
                   VideoOnlineServicesBanner(
                     preferences: ref.read(appProvider).prefsRepo,
                     onRegister: () async {
