@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -10,8 +12,11 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/test_platform_services.dart';
 
 /// 反馈 kEFPY4cuKZ：作品级配置（book / 语言 / 媒体类型绑定）只在这部作品的会话里生效
 /// ——阅读样式、有声书悬浮字幕样式、查词词典——不再切换 App 的全局配置；离开作品后全局
@@ -221,6 +226,88 @@ void main() {
     expect(WorkProfileScope.isWorkScopedPrefKey('active_profile_id'), isFalse);
   });
 
+  // 审查 blocker：替对端 / 浏览器扩展 / Yomitan API 查词（[FushiRemoteLookupService]）
+  // 不带 language 的旧请求曾经走公开的 AppModel.searchDictionary，把本机作品会话的
+  // 绑定配置词典漏给了对端；带 language 的同类请求却按全局词典——同一个对端两套词典。
+  test('本机作品会话只影响本机查词；替对端查词（带不带 language）都按全局词典', () async {
+    final PreferencesRepository prefsRepo = PreferencesRepository(db);
+    await prefsRepo.loadFromDb();
+    final DictionaryRepository dictRepo = DictionaryRepository(db);
+    await dictRepo.loadFromDb();
+    addTearDown(dictRepo.dispose);
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_work_scope_lookup_',
+    );
+    addTearDown(() {
+      try {
+        tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireLocalAudioForTesting(
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
+      ..wireDatabaseForTesting(db, dictionaryRepository: dictRepo);
+
+    await openBook('book-bound');
+    final String? namespace = scope.lookupView?.lookupCacheNamespace;
+    expect(namespace, isNotNull, reason: '绑定作品装上了会话');
+
+    // 两套词典集合各自的缓存结果：全局键不带前缀，绑定配置的键带它的命名空间前缀。
+    const String term = '猫';
+    const int maxTerms = 10;
+    final String globalKey = buildSearchCacheKey(
+      term: term,
+      maxTerms: maxTerms,
+      maxResults: maxTerms,
+    );
+    DictionarySearchResult resultOf(String meaning) => DictionarySearchResult(
+      searchTerm: term,
+      entries: <DictionaryEntry>[DictionaryEntry(word: term, meaning: meaning)],
+    );
+    dictRepo.cacheSearchResult(globalKey, resultOf('global'));
+    dictRepo.cacheSearchResult('$namespace$globalKey', resultOf('bound'));
+
+    final DictionarySearchResult local = await app.searchDictionary(
+      searchTerm: term,
+      searchWithWildcards: false,
+      overrideMaximumTerms: maxTerms,
+      allowRemoteLookup: false,
+    );
+    expect(local.entries.single.meaning, 'bound', reason: '本机查词按作品会话的词典');
+
+    final FushiRemoteLookupService remote = app.createRemoteLookupService();
+    final DictionarySearchResult? legacy = await remote.searchDictionary(
+      term: term,
+      wildcards: false,
+      maximumTerms: maxTerms,
+    );
+    expect(
+      legacy?.entries.single.meaning,
+      'global',
+      reason: '不带 language 的对端 / 扩展 / Yomitan API 请求不得拿到本机作品会话的词典',
+    );
+    final DictionarySearchResult? withLanguage =
+        await (remote as FushiRemoteLanguageLookupService)
+            .searchDictionaryInLanguage(
+              term: term,
+              wildcards: false,
+              maximumTerms: maxTerms,
+              language: JapaneseLanguage.instance.languageCode,
+            );
+    expect(withLanguage?.entries.single.meaning, 'global');
+
+    vm.leaveWorkSession(reader);
+    final DictionarySearchResult afterLeave = await app.searchDictionary(
+      searchTerm: term,
+      searchWithWildcards: false,
+      overrideMaximumTerms: maxTerms,
+      allowRemoteLookup: false,
+    );
+    expect(afterLeave.entries.single.meaning, 'global', reason: '离开作品后回到全局');
+  });
+
   // 源码守卫。Tests run with CWD = `fushi/`.
   test('作品入口不再切换 App 的激活配置；本机查词按作品会话过滤词典', () {
     final String vmSrc = File(
@@ -245,6 +332,15 @@ void main() {
           .length,
       2,
       reason: 'searchDictionary / searchDictionaryWithRuby 都要按作品会话的词典查',
+    );
+    final int remoteStart = appModel.indexOf(
+      'class _AppModelRemoteLookupService',
+    );
+    expect(remoteStart, greaterThan(0));
+    expect(
+      appModel.substring(remoteStart).contains('_appModel.searchDictionary('),
+      isFalse,
+      reason: '替对端查词不得经本机查词入口（会叠上本机作品会话）',
     );
 
     for (final String path in <String>[

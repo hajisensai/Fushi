@@ -8896,7 +8896,9 @@ class AppModel with ChangeNotifier {
     useCache: useCache,
     allowRemoteLookup: allowRemoteLookup,
     // 反馈 kEFPY4cuKZ：本机查词在打开的作品带着作品级配置时按那份配置的词典过滤。
-    // 替对端 / 浏览器扩展查词不走这个入口，不受本机作品会话影响。
+    // 这是**本机**查词入口。替对端 / 浏览器扩展 / Yomitan API 查词的
+    // [_AppModelRemoteLookupService] 一律直接调 [_searchDictionaryInLanguage]（按请求方
+    // 所选配置的视图或 live 设置），不经这里，所以本机作品会话不会漏给它们。
     profileView: WorkProfileScope.instance.lookupView,
   );
 
@@ -13194,29 +13196,21 @@ class _AppModelRemoteLookupService
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
     // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
     // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
-    // 不带语言的旧请求仍走公开的 [AppModel.searchDictionary]（行为与此前逐字相同）。
-    // 按配置视图查（反馈 biLEesNqWb）一律走 [_searchDictionaryInLanguage]：公开的
-    // searchDictionary 只认 App 当前生效的设置。
-    final ProfileSettingsView? view = _view;
-    final DictionarySearchResult source =
-        language == null && rubySpans.isEmpty && view == null
-        ? await _appModel.searchDictionary(
-            searchTerm: term,
-            searchWithWildcards: wildcards,
-            overrideMaximumTerms: maximumTerms,
-            useCache: true,
-            allowRemoteLookup: false,
-          )
-        : await _appModel._searchDictionaryInLanguage(
-            searchTerm: term,
-            searchWithWildcards: wildcards,
-            overrideMaximumTerms: maximumTerms,
-            useCache: true,
-            allowRemoteLookup: false,
-            lookupLanguage: language,
-            rubySpans: rubySpans,
-            profileView: view,
-          );
+    // 一律走 [_searchDictionaryInLanguage]，不走公开的 [AppModel.searchDictionary]：后者
+    // 是本机查词入口，会叠上本机打开作品的作品级配置（[WorkProfileScope.lookupView]，
+    // 反馈 kEFPY4cuKZ）。替对端查词只按请求方所选配置的视图（反馈 biLEesNqWb）查，
+    // 没选配置（[_view] 为 null）就按 App 的 live 设置——带不带 language 都是同一套词典。
+    final DictionarySearchResult source = await _appModel
+        ._searchDictionaryInLanguage(
+          searchTerm: term,
+          searchWithWildcards: wildcards,
+          overrideMaximumTerms: maximumTerms,
+          useCache: true,
+          allowRemoteLookup: false,
+          lookupLanguage: language,
+          rubySpans: rubySpans,
+          profileView: _view,
+        );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
     // 但不能把本地历史/页面滚动位置的对象别名暴露给远端 record/full-result 调用方。
