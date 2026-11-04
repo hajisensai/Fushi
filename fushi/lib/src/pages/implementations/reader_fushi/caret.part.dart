@@ -828,6 +828,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
 
   /// Fully leave cursor mode — hide the ring on whichever surface holds it.
   void _exitCaret() {
+    final bool leftLyrics = _caretSurface == CaretSurface.lyrics;
     switch (_caretSurface) {
       case CaretSurface.none:
         return;
@@ -859,6 +860,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
       _caretSurface = CaretSurface.none;
       _caret.popupState = null;
     });
+    // 焦点环在歌词上时滑动窗口锚在焦点环的视口；退出 = 回到跟随，按播放句重推一次
+    // （播放句已不在窗口里时以它为锚重开窗口）。
+    if (leftLyrics) _resyncLyricsOverlayToAudio();
   }
 
   /// Whether [action] is a cursor MOVEMENT that may fire on keyboard auto-repeat

@@ -76,6 +76,7 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
     show AudiobookSpeedSlider;
+import 'package:fushi/src/media/audiobook/lyrics_cue_window_slide.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lookup_resume_hold.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
@@ -2459,6 +2460,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _lyricsEntryCueIndex = 0;
   int _lyricsCueIndexOffset = 0;
   bool _lyricsCueWindowUsesAllBookCues = false;
+  // 歌词文档 JS 侧的手动浏览态（`onLyricsBrowse` 回报，每份文档从 false 起）。与
+  // 「跟随音频」开关一起决定滑动窗口的锚点：跟随中锚播放句，浏览中锚视口中线句。
+  bool _lyricsJsBrowsing = false;
   List<AudioCue> _lyricsCueList = const [];
 
   // ── 歌词覆盖层（2026-10-04，对齐 Niratan）──────────────────────────────
