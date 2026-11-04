@@ -84,11 +84,31 @@ void main() {
       isNot(contains('materialFab:')),
       reason: '外壳不再把页面 FAB 塞进悬浮底栏，底栏那颗始终是「查词」',
     );
-    expect(src, contains('FloatingActionButton.small('));
     expect(
       src,
       contains('materialNavBarFabExtent('),
-      reason: '小环钮的中线按底栏 FAB 的实际边长对齐',
+      reason: '叠放的入口中线按底栏 FAB 的实际边长对齐',
+    );
+  });
+
+  test('后台任务入口走设计系统 FushiFab，不画裸 FloatingActionButton', () {
+    final String src = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final int start = src.indexOf('Widget _buildBackgroundTasksFab() {');
+    expect(start, isNonNegative, reason: '入口构建方法不能改名丢失');
+    final int end = src.indexOf('\n  }\n', start);
+    final String body = src.substring(start, end);
+    expect(body, contains('FushiFab('));
+    expect(
+      body,
+      isNot(contains('FloatingActionButton')),
+      reason: '裸 FAB 拿不到 M3E 尺寸档 / 按压形变，Apple 下也不是原生玻璃圆钮',
+    );
+    expect(
+      body,
+      contains('fushiFabMetrics(FushiFabSize.regular)'),
+      reason: '叠放对齐用的边长必须取 FushiFab 自己的尺寸档，不另写死数字',
     );
   });
 }

@@ -2240,8 +2240,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     _inMobileLayout = true;
-    // MD3 画成悬浮底栏 FAB 正上方的小环钮（[_buildBackgroundTasksFab]）；Apple
-    // 进外壳大标题行（[_appleBackgroundTasksAction]），可见 tab 没有那一行时仍画
+    // MD3 在悬浮底栏 FAB 正上方叠一颗 [FushiFab]（[_buildBackgroundTasksFab]）；
+    // Apple 进外壳大标题行（[_appleBackgroundTasksAction]），可见 tab 没有那一行时仍画
     // FAB（同桌面，见 [_backgroundTasksHostedByChrome]）。
     _shellFabHostedByBar = _backgroundTasksHostedByChrome();
     final List<HomeTab> tabs = _activeTabs();
@@ -3879,36 +3879,42 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 「后台任务」入口的 FAB 形态（外壳的栏没承载时）。
   ///
-  /// - MD3 手机：悬浮底栏右侧那颗「查词」FAB 正上方叠一颗 40dp 小环钮，中线与
-  ///   底栏 FAB 对齐；底栏反转时跟着 FAB 翻到起始侧。body 是 `extendBody`，
-  ///   MediaQuery 底部 padding 已含底栏高度，所以从它往上留一段间距即可。
-  /// - 其余（桌面、Apple 无标题行的 tab）：右下标准 FAB。
+  /// 按钮本体一律是设计系统的 [FushiFab]（MD3 走 M3E 尺寸档与按压形变，Apple
+  /// 走强调色玻璃圆钮）。M3 Expressive 已废弃 Small FAB，[FushiFabSize] 没有
+  /// 小号档，所以手机上叠放的这颗也是标准 FAB。
+  ///
+  /// - MD3 手机：悬浮底栏右侧那颗「查词」FAB 正上方再叠一颗，中线与底栏 FAB
+  ///   对齐；底栏反转时跟着 FAB 翻到起始侧。body 是 `extendBody`，MediaQuery
+  ///   底部 padding 已含底栏高度，所以从它往上留一段间距即可。
+  /// - 其余（桌面、Apple 无标题行的 tab）：右下 FAB。
   Widget _buildBackgroundTasksFab() {
     final bool stacked = _inMobileLayout && !isGlassDesign(context);
     final Widget fab = ListenableBuilder(
       listenable: _backgroundTasksListenable,
       builder: (BuildContext context, _) {
         final List<BackgroundTask> tasks = _backgroundTasks();
-        final Widget glyph = stacked
-            ? BackgroundTasksGlyph(tasks: tasks, size: 34, iconSize: 18)
-            : BackgroundTasksGlyph(tasks: tasks, size: 46, iconSize: 22);
-        const Key key = ValueKey<String>('video-source-background-task-panel');
-        final String tooltip = _backgroundTasksTooltipText(tasks);
-        void open() => unawaited(_openBackgroundTasks());
-        return FushiGlassFab(
-          child: stacked
-              ? FloatingActionButton.small(
-                  key: key,
-                  tooltip: tooltip,
-                  onPressed: open,
-                  child: glyph,
-                )
-              : FloatingActionButton(
-                  key: key,
-                  tooltip: tooltip,
-                  onPressed: open,
-                  child: glyph,
-                ),
+        // 进度环贴着按钮内沿画：边长取 [FushiFab] 在当前设计系统下的实际边长
+        // 再各让 5dp（MD3 56 → 46；Apple 移动 50 → 40、桌面 44 → 34）。
+        final ({double size, double iconSize}) ring = isGlassDesign(context)
+            ? fushiAppleCompact(context)
+                  ? (size: 34, iconSize: 18)
+                  : (size: 40, iconSize: 22)
+            : (
+                size: fushiFabMetrics(FushiFabSize.regular).extent - 10,
+                iconSize: 22,
+              );
+        return FushiFab(
+          key: const ValueKey<String>('video-source-background-task-panel'),
+          // 首页还有底栏的「查词」FAB：不参与路由 Hero，免得同一路由里两颗
+          // FAB 共用默认 heroTag。
+          heroTag: null,
+          tooltip: _backgroundTasksTooltipText(tasks),
+          onPressed: () => unawaited(_openBackgroundTasks()),
+          icon: BackgroundTasksGlyph(
+            tasks: tasks,
+            size: ring.size,
+            iconSize: ring.iconSize,
+          ),
         );
       },
     );
@@ -3929,13 +3935,15 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               );
             }
-            const double smallFabExtent = 40;
-            final double fabExtent = materialNavBarFabExtent(
+            final double fabExtent = fushiFabMetrics(
+              FushiFabSize.regular,
+            ).extent;
+            final double navFabExtent = materialNavBarFabExtent(
               context,
               showLabels: appModel.navBarLabelsVisible,
             );
             final double sideInset =
-                kAdaptiveNavFloatingMargin + (fabExtent - smallFabExtent) / 2;
+                kAdaptiveNavFloatingMargin + (navFabExtent - fabExtent) / 2;
             final bool leading = appModel.reverseNavigationBar;
             return Align(
               alignment: leading
