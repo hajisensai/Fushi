@@ -134,7 +134,9 @@ void main() {
       video,
       isOwnOutput: (String path) => p.equals(path, own),
     );
-    File(p.join(tmp.path, 'ep08.en.srt')).writeAsStringSync('$_enSrt\n');
+    File(
+      p.join(tmp.path, 'ep08.en.srt'),
+    ).writeAsStringSync('${_srt(truth.map((double t) => t + 4), _en)}\n');
     final String key2 = await collector.sourceKey(
       video,
       isOwnOutput: (String path) => p.equals(path, own),
