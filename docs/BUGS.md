@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3607 条。点号进各自文件。
+> 共 3610 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4006](bugs/BUG-4006-android-online-anime-black-video.md) | 🚧 | 🚧 | Android 在线动画源视频全部黑屏（只有播放器界面） |
+| [BUG-4005](bugs/BUG-4005-scrape-locale-empty-follows-ui-not-original.md) | 🚧 | 🚧 | 刮削资料语言留空时跟随界面语言而非作品原语言 |
+| [BUG-4004](bugs/BUG-4004-app-video-scan-never-prunes-deleted-files.md) | 🚧 | 🚧 | app 本地视频来源重扫从不回收已删除文件，删掉的视频留在待确认刮削队列 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
