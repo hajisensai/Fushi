@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/cover_provider_epoch.dart';
 
 /// 预烘焙的高斯模糊图：效果等同 `ImageFiltered(blur(sigma)) + Image(fit)`，
 /// 但模糊只在图片 / 尺寸变化时算**一次**，之后每帧只画一张小纹理。
@@ -115,6 +116,10 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
   ImageStreamListener? _listener;
   ui.Image? _source;
 
+  /// [_source] 解码到达时 [widget.image] 的 [CoverProviderEpoch]：用它烘焙出的
+  /// 结果只在代际号未变时进缓存（期间被驱逐 = 换了图，旧源图不能扩散到别的卡）。
+  int _sourceEpoch = 0;
+
   _BakeKey? _bakedKey;
   ui.Image? _baked;
 
@@ -139,6 +144,12 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
     );
     if (_stream?.key == next.key) return;
     _detach();
+    // 换了图源：旧解码不能再拿来按新 provider 的 key 烘焙（会把旧图写进新 key 的
+    // 缓存）。已上屏的 [_baked] 留着，新图烘好再换，不闪白。
+    _source?.dispose();
+    _source = null;
+    _pendingKey = null;
+    final ImageProvider provider = widget.image;
     _stream = next;
     _listener = ImageStreamListener(
       (ImageInfo info, bool _) {
@@ -149,6 +160,7 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
         setState(() {
           _source?.dispose();
           _source = info.image.clone();
+          _sourceEpoch = CoverProviderEpoch.of(provider);
         });
         info.dispose();
       },
@@ -206,10 +218,12 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
     final ui.Image? source = _source;
     if (source == null) return; // 解码回调里 setState 会再走一遍这里。
     _pendingKey = key;
+    final int epoch = _sourceEpoch;
     unawaited(
       _bake(key, source).then((ui.Image image) {
-        // 即使本卡已卸载（快速滑动时常见）结果也进缓存，下次挂载直接用。
-        final ui.Image own = _BakedBlurCache.store(key, image);
+        // 即使本卡已卸载（快速滑动时常见）结果也进缓存，下次挂载直接用；源图在
+        // 期间被驱逐过（[epoch] 过期）则只给本卡用，不进缓存。
+        final ui.Image own = _BakedBlurCache.store(key, image, epoch: epoch);
         if (!mounted || _pendingKey != key) {
           own.dispose();
           return;
@@ -271,9 +285,12 @@ abstract final class _BakedBlurCache {
     return image.clone();
   }
 
-  /// 收下 [image] 的所有权并返回一份调用方持有的句柄。
-  static ui.Image store(_BakeKey key, ui.Image image) {
+  /// 收下 [image] 的所有权并返回一份调用方持有的句柄。[epoch] 是烘焙所用源图
+  /// 解码到达时的 [CoverProviderEpoch.of]；与当前代际号不符（期间被驱逐过）的结果
+  /// 不进缓存，原样交还调用方。
+  static ui.Image store(_BakeKey key, ui.Image image, {required int epoch}) {
     if (key.bytes > maxBytes ~/ 2) return image;
+    if (CoverProviderEpoch.of(key.provider) != epoch) return image;
     final ui.Image? previous = _images.remove(key);
     if (previous != null) {
       _bytes -= key.bytes;
@@ -290,6 +307,7 @@ abstract final class _BakedBlurCache {
   }
 
   static void evict(ImageProvider provider) {
+    CoverProviderEpoch.bump(provider);
     final List<_BakeKey> stale = <_BakeKey>[
       for (final _BakeKey key in _images.keys)
         if (key.provider == provider) key,
@@ -309,7 +327,8 @@ abstract final class _BakedBlurCache {
   }
 }
 
-/// 换图（同路径覆盖写）后丢掉 [provider] 的全部烘焙结果。
+/// 换图（同路径覆盖写）后丢掉 [provider] 的全部烘焙结果，并让正在飞的烘焙不再
+/// 回填缓存（见 [CoverProviderEpoch]）。
 void evictPrebakedBlur(ImageProvider provider) =>
     _BakedBlurCache.evict(provider);
 

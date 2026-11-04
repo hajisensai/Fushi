@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
+import 'package:fushi/src/utils/cover_provider_epoch.dart';
 
 /// 库页网格是懒建的：卡片滚出视口卸载、滚回来重挂。重挂时不得重做「图本身的
 /// 属性」那几件事——宽高比判定（否则先画一帧 cover 再跳 contain，整排布局跳变）、
@@ -17,6 +18,7 @@ void main() {
   setUp(() {
     CoverProbeMemo.clear();
     clearPrebakedBlurCache();
+    CoverProviderEpoch.clear();
   });
 
   Future<Uint8List> pngBytes(int width, int height) async {
@@ -165,7 +167,12 @@ void main() {
 
   test('CoverProbeMemo：同一 provider 解出不同尺寸（换了图）时旧主色作废', () {
     final MemoryImage provider = MemoryImage(Uint8List(4));
-    CoverProbeMemo.rememberSeed(provider, 16 / 9, const Color(0xFF112233));
+    CoverProbeMemo.rememberSeed(
+      provider,
+      16 / 9,
+      const Color(0xFF112233),
+      epoch: CoverProviderEpoch.of(provider),
+    );
     expect(CoverProbeMemo.seedOf(provider, 16 / 9).known, isTrue);
     CoverProbeMemo.rememberAspect(provider, 4 / 3);
     expect(CoverProbeMemo.aspectOf(provider), 4 / 3);

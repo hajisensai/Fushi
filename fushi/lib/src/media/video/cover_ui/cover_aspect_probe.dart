@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
+import 'package:fushi/src/utils/cover_provider_epoch.dart';
 
 /// 一张封面的探测结论：固有宽高比 + 垫底主色（[seedAspect] 非空 = 已按该宽高比
 /// 采过色，[seed] 为 null 表示「采过、不需要底色」）。
@@ -24,7 +25,9 @@ class _CoverProbeEntry {
 /// 里。宽高比与主色是图本身的属性，算一次就够。
 ///
 /// 失效：换封面（同路径覆盖写）由 [evictLocalCoverCache] 连同 ImageCache 一起清；
-/// 万一漏清，解码回调拿到的真实宽高比与记忆不符时也会就地纠正并重新采色。
+/// 驱逐时正在飞的采色按 [CoverProviderEpoch] 作废，不会在驱逐后把旧图主色写回。
+/// 万一漏清，只有**宽高比变了**的新图会在解码回调里就地纠正并重新采色；同宽高比
+/// 换图（2:3 海报换 2:3 海报）漏清就会一直用旧底色，所以换图路径必须走驱逐。
 abstract final class CoverProbeMemo {
   /// 条目上限：每条只有两个数，几百张封面的库也就几十 KB。
   static const int capacity = 2048;
@@ -72,14 +75,25 @@ abstract final class CoverProbeMemo {
   static void rememberAspect(ImageProvider provider, double aspect) =>
       _entryFor(provider, aspect);
 
-  static void rememberSeed(ImageProvider provider, double aspect, Color? seed) {
+  /// 记下按 [aspect] 采到的主色。[epoch] 是开始采样（拿到源图）时的
+  /// [CoverProviderEpoch.of]：期间被驱逐过（换了图）就丢弃，不回填旧图的结果。
+  static void rememberSeed(
+    ImageProvider provider,
+    double aspect,
+    Color? seed, {
+    required int epoch,
+  }) {
+    if (CoverProviderEpoch.of(provider) != epoch) return;
     _entryFor(provider, aspect)
       ..seedAspect = aspect
       ..seed = seed;
   }
 
-  /// 换图后丢掉该 provider 的记忆。
-  static void evict(ImageProvider provider) => _entries.remove(provider);
+  /// 换图后丢掉该 provider 的记忆，并让正在飞的采色作废（见 [CoverProviderEpoch]）。
+  static void evict(ImageProvider provider) {
+    CoverProviderEpoch.bump(provider);
+    _entries.remove(provider);
+  }
 
   @visibleForTesting
   static void clear() => _entries.clear();
@@ -219,7 +233,13 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
       }
       // 主色采样要读像素（异步），而 info.dispose() 之后底层 image 就不能再用了。
       // clone 拿一份自己的句柄，采样完在 [_sampleBackdrop] 里各自释放。
-      _sampleBackdrop(info.image.clone(), _sampleGeneration, provider, aspect);
+      _sampleBackdrop(
+        info.image.clone(),
+        _sampleGeneration,
+        provider,
+        aspect,
+        CoverProviderEpoch.of(provider),
+      );
     }
     info.dispose();
     if (!mounted || _aspect == aspect) return;
@@ -230,16 +250,18 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   }
 
   /// 异步取垫底底色。[generation] 用来丢弃过期结果：采样期间 widget 可能已经换图。
-  /// 结果按 [provider] 记进 [CoverProbeMemo]（即使本卡已卸载，下次挂载也用得上）。
+  /// 结果按 [provider] 记进 [CoverProbeMemo]（即使本卡已卸载，下次挂载也用得上）；
+  /// [epoch] 是拿到这张源图时 provider 的代际号，采样期间被驱逐过就不写 memo。
   Future<void> _sampleBackdrop(
     ui.Image image,
     int generation,
     ImageProvider provider,
     double aspect,
+    int epoch,
   ) async {
     try {
       final CoverBackdropSeed? seed = await sampleCoverBackdropSeed(image);
-      CoverProbeMemo.rememberSeed(provider, aspect, seed?.color);
+      CoverProbeMemo.rememberSeed(provider, aspect, seed?.color, epoch: epoch);
       if (!mounted || generation != _sampleGeneration) return;
       final Color? color = seed?.color;
       if (_backdropSeed == color) return;
