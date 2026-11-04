@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "Fonetik çevriyazılar",
   "handlebar_pitch_accent_categories": "Perde kategorileri",
   "handlebar_pitch_accent_positions": "Perde konumları",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "Açılır pencere seçim metni",
   "handlebar_reading": "Okuma",
   "handlebar_selected_glossary": "Seçili sözlük",

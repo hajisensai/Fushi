@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "Transcrições fonéticas",
   "handlebar_pitch_accent_categories": "Categorias de acento",
   "handlebar_pitch_accent_positions": "Posições de acento",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "Texto de seleção do popup",
   "handlebar_reading": "Leitura",
   "handlebar_selected_glossary": "Glossário selecionado",

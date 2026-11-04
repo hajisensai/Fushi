@@ -65,7 +65,7 @@
 | [BUG-4052](bugs/BUG-4052-browser-ext-seek-hold-speed-shortcuts.md) | ✅ | ✅ | 浏览器扩展缺按秒快退快进与按住临时倍速快捷键，设置说明写死旧键 |
 | [BUG-4051](bugs/BUG-4051-browser-floating-player-btn-touch.md) | ✅ | ✅ | 安卓应用内浏览器看油管时找不到换字幕的 Fushi 播放器按钮 |
 | [BUG-4050](bugs/BUG-4050-mac-reader-click-lookup-dead-until-reopen.md) | 🚧 | 🚧 | macOS 阅读器点词不查词、退出重进恢复 |
-| [BUG-4049](bugs/BUG-4049-popup-selection-text-plain.md) | 🚧 | 🚧 | 制卡字段 popup-selection-text 拍平成纯文本 |
+| [BUG-4049](bugs/BUG-4049-popup-selection-text-plain.md) | ✅ | ✅ | 制卡字段 popup-selection-text 拍平成纯文本 |
 | [BUG-4048](bugs/BUG-4048-lookup-tab-nested-mining-no-sentence.md) | ✅ | ✅ | 查词页释义里点词叠出的浮层制卡例句恒空 |
 | [BUG-4047](bugs/BUG-4047-popup-dict-long-press-also-toggles.md) | ✅ | ✅ | 查词弹窗长按词典标题选词典松开后又折叠该词典 |
 | [BUG-4046](bugs/BUG-4046-gal-attached-mining-hides-surfaces.md) | ✅ | ✅ | 游戏制卡期间查词卡消失、点不了别的词、hook 文本不更新；制卡后主界面打不开 |

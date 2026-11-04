@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "発音表記",
   "handlebar_pitch_accent_categories": "ピッチ種類",
   "handlebar_pitch_accent_positions": "ピッチ位置",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "ポップアップ選択テキスト",
   "handlebar_reading": "読み",
   "handlebar_selected_glossary": "選択した用語集",

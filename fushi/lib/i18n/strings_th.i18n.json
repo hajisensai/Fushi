@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "การถอดเสียง",
   "handlebar_pitch_accent_categories": "หมวดสำเนียง",
   "handlebar_pitch_accent_positions": "ตำแหน่งสำเนียง",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "ข้อความที่เลือกในป๊อปอัป",
   "handlebar_reading": "การอ่าน",
   "handlebar_selected_glossary": "อภิธานที่เลือก",

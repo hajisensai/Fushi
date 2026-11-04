@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "Fonetische transcripties",
   "handlebar_pitch_accent_categories": "Toonhoogtecategorieën",
   "handlebar_pitch_accent_positions": "Toonhoogteposities",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "Popup-selectietekst",
   "handlebar_reading": "Lezing",
   "handlebar_selected_glossary": "Geselecteerde woordenlijst",

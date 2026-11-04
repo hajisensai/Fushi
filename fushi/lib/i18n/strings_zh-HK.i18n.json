@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "音標",
   "handlebar_pitch_accent_categories": "音高類型",
   "handlebar_pitch_accent_positions": "音高位置",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "彈窗選中文字",
   "handlebar_reading": "讀音",
   "handlebar_selected_glossary": "已選釋義",

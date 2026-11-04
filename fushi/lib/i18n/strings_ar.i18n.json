@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "النسخ الصوتي",
   "handlebar_pitch_accent_categories": "فئات النبرة",
   "handlebar_pitch_accent_positions": "مواضع النبرة",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "نص التحديد المنبثق",
   "handlebar_reading": "القراءة",
   "handlebar_selected_glossary": "المعنى المحدد",

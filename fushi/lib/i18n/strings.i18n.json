@@ -3995,6 +3995,7 @@
   "handlebar_phonetic_transcriptions": "Phonetic transcriptions",
   "handlebar_pitch_accent_categories": "Pitch categories",
   "handlebar_pitch_accent_positions": "Pitch positions",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "Popup selection text",
   "handlebar_reading": "Reading",
   "handlebar_selected_glossary": "Selected glossary",
