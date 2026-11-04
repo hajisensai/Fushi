@@ -1676,19 +1676,33 @@ mod tests {
         };
         let mut ops = std::collections::BTreeSet::new();
         for start in ["pub(crate) fn sync2_dispatch(", "fn sync2_command("] {
-            for line in body(start).lines() {
+            let lines: Vec<&str> = body(start).lines().collect();
+            let mut next = 0;
+            while next < lines.len() {
+                let line = lines[next];
+                next += 1;
                 // 顶层匹配臂：8 个空格缩进、以命令名字面量开头（`"a" | "b" [if ...] =>`）；分发器里的命令名比较同样收进来。
                 // 分发器里改投影命令的 `match op`（12 个空格缩进：`ingest_commit` / `rebuild_caches` 等在那里直接处理）也算。
                 let top = line.strip_prefix("        \"").is_some() && !line.starts_with("         ");
                 let projecting = start.starts_with("pub(crate) fn sync2_dispatch(")
                     && line.strip_prefix("            \"").is_some()
                     && !line.starts_with("             ");
-                let arm = (top || projecting) && line.contains("=>");
+                // rustfmt 把放不下一行的 `"a" | "b" | ...` 折成同缩进的 `| "c" ... =>` 续行：拼回一整条臂头再解析。
+                let mut joined = line.to_owned();
+                if top || projecting {
+                    let cont = if top { "        | \"" } else { "            | \"" };
+                    while !joined.contains("=>") && next < lines.len() && lines[next].starts_with(cont) {
+                        joined.push(' ');
+                        joined.push_str(lines[next]);
+                        next += 1;
+                    }
+                }
+                let arm = (top || projecting) && joined.contains("=>");
                 let compared = line.contains("op == \"");
                 if !(arm || compared) {
                     continue;
                 }
-                let head = if arm { line.split("=>").next().unwrap() } else { line };
+                let head = if arm { joined.split("=>").next().unwrap() } else { line };
                 for (i, part) in head.split('"').enumerate() {
                     if i % 2 == 1 && !part.is_empty() && part.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_' || ch.is_ascii_digit()) {
                         ops.insert(part.to_owned());
