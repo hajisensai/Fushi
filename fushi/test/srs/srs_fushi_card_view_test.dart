@@ -604,6 +604,80 @@ void main() {
     expect(plain.indent, 0);
   });
 
+  group('正面例句目标词强调（与模板 .fc-front-sentence b 一致，BUG VbJo0Y7S0A）', () {
+    List<SrsInline> boldOf(WidgetTester tester, String key) => tester
+        .widget<SrsRubyText>(find.byKey(ValueKey<String>(key)))
+        .segments
+        .where((SrsInline x) => x.bold)
+        .toList();
+
+    Map<String, String> card(String flag, Map<String, String> extra) =>
+        _fields(<String, String>{
+          'IsSentenceCard': '',
+          'IsWordAndSentenceCard': '',
+          flag: 'x',
+          'MainDefinition': '',
+          'Glossary': '',
+          'LookupSelection': '',
+          'DefinitionMedia': '',
+          ...extra,
+        });
+
+    testWidgets('例句卡：字段里的 <b> 加粗并上目标色，注音去掉', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        fields: card('IsSentenceCard', <String, String>{
+          'Term': 'キャッチ',
+          'Sentence': '空中[くうちゅう]でアタシが<b>キャッチ</b>。',
+        }),
+      );
+      const String key = 'srs-fushi-front-sentence';
+      final SrsRubyText text = tester.widget<SrsRubyText>(
+        find.byKey(const ValueKey<String>(key)),
+      );
+      expect(text.emphasis, isNotNull);
+      expect(boldOf(tester, key).map((SrsInline x) => x.text).join(), 'キャッチ');
+      expect(text.segments.every((SrsInline x) => x.ruby == null), isTrue);
+      expect(text.segments.map((SrsInline x) => x.text).join(), '空中でアタシがキャッチ。');
+    });
+
+    testWidgets('单词 + 例句卡：例句没 <b> 时按词条重新定位并强调', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        fields: card('IsWordAndSentenceCard', <String, String>{
+          'Term': 'キャッチ',
+          'Sentence': '飛んだらアタシがキャッチ。',
+        }),
+      );
+      expect(
+        boldOf(
+          tester,
+          'srs-fushi-front-sentence',
+        ).map((SrsInline x) => x.text).join(),
+        'キャッチ',
+      );
+    });
+
+    testWidgets('听音卡：目标词照旧挖空，不露出', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        fields: card('IsAudioCard', <String, String>{
+          'Term': 'キャッチ',
+          'Sentence': 'アタシが<b>キャッチ</b>。',
+        }),
+      );
+      final SrsRubyText text = tester.widget<SrsRubyText>(
+        find.byKey(const ValueKey<String>('srs-fushi-front-masked')),
+      );
+      final String shown = text.segments.map((SrsInline x) => x.text).join();
+      expect(shown, isNot(contains('キャッチ')));
+      expect(shown, contains('［…］'));
+    });
+  });
+
   testWidgets('正面例句：默认居中；选左对齐后左对齐并占满栏宽', (WidgetTester tester) async {
     final Map<String, String> sentenceCard = _fields(<String, String>{
       'IsSentenceCard': 'x',

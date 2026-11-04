@@ -590,7 +590,6 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         min *
         s.appearance.effectiveFrontTextScale *
         (context ? 0.74 : 1);
-    final String plain = srsKanaFree(widget.fields['Sentence'] ?? '');
     final TextStyle style = s.text(
       s.tokens.frontSentenceMin,
       scale: scale,
@@ -603,13 +602,16 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       key: ValueKey<String>(
         masked ? 'srs-fushi-front-masked' : 'srs-fushi-front-sentence',
       ),
-      segments: <SrsInline>[
-        SrsInline(
-          masked ? srsMaskBold(widget.fields['Sentence'] ?? '') : plain,
-        ),
-      ],
+      // 正面例句与模板 `{{kanji:Sentence}}` 同义：去掉注音、保留目标词强调（模板
+      // `.fc-front-sentence b` / `.fc-front-context b` 加粗 + 目标色）。听音卡挖掉目标词。
+      segments: masked
+          ? <SrsInline>[SrsInline(srsMaskBold(widget.fields['Sentence'] ?? ''))]
+          : <SrsInline>[
+              for (final SrsInline x in _sentenceSegments()) x.withoutRuby(),
+            ],
       style: style,
       rubyStyle: style,
+      emphasis: s.scheme.primary,
       textAlign: centered ? TextAlign.center : TextAlign.start,
       indent: s.indentOf(style, s.appearance.sentenceIndent),
       // 挖空的听力卡不取词（挖掉的正是答案）。
@@ -855,13 +857,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  Widget? _sentence(_SrsCardStyle s) {
+  /// 例句的显示段（正面 / 背面共用一处）：目标词强调（#9）——显示的那份没带 `<b>` 时按
+  /// 字段标记 / 词条写法重新定位。
+  List<SrsInline> _sentenceSegments() {
     final Map<String, String> f = widget.fields;
-    if (!_plan.shows(FushiCardBlock.sentence)) return null;
-    final bool showRuby = _sentenceRuby;
-    final String raw = f['Sentence']!;
-    // 目标词强调（#9）：显示的那份没带 `<b>` 时按字段标记 / 词条写法重新定位。
-    final List<SrsInline> segs = srsEmphasizeSentenceTarget(
+    final String raw = f['Sentence'] ?? '';
+    return srsEmphasizeSentenceTarget(
       srsParseInline(srsClozeToBold(raw)),
       marked: srsMarkedTargets(raw),
       terms: <String>[
@@ -871,6 +872,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         srsPlainText(f['TermReading'] ?? ''),
       ],
     );
+  }
+
+  Widget? _sentence(_SrsCardStyle s) {
+    final Map<String, String> f = widget.fields;
+    if (!_plan.shows(FushiCardBlock.sentence)) return null;
+    final bool showRuby = _sentenceRuby;
+    final List<SrsInline> segs = _sentenceSegments();
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
     // 例句发音键：片段自带例句声音时它控制片段（画面上从头播、有声），否则播例句音频
     // （画面上的动图 / 静音片段从头陪播），两者不再各出一路声音（#7 / #10）。
