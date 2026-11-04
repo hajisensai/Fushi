@@ -127,12 +127,8 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 尚未解析显「自动」占位。
   String? get _qualityCurrentLabel {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
-    if (server != null) {
-      final int index = server.qualityPresetIndex;
-      return index < 0 || index >= server.qualityPresets.length
-          ? t.video_quality_auto
-          : server.qualityPresets[index].label;
-    }
+    if (server != null)
+      return _mediaServerQualityLabel(server, server.qualityPresetIndex);
     final List<RemoteVideoStreamVariant> variants = _streamVariants;
     if (variants.isNotEmpty) {
       final int index = _streamVariantsClient!.streamVariantIndex;
@@ -356,7 +352,7 @@ extension _VideoQuality on _VideoFushiPageState {
     _stopAdaptiveQuality();
     final InterconnectSyncBackend? client = _adaptiveQualityClient;
     if (client == null) return;
-    if (client.qualityPresetIndex >= 0) return;
+    if (client.qualityPresetIndex != kRemoteVideoQualityAuto) return;
     // 按 host 链路重算（换 peer / 从公网回到局域网都要重新起步），不是无脑 ??=。
     client.ensureAdaptiveQualityStart();
     _adaptiveQuality.reset();
@@ -381,8 +377,8 @@ extension _VideoQuality on _VideoFushiPageState {
       _stopAdaptiveQuality();
       return;
     }
-    // 用户在播放途中显式选了档 → 自动接管结束。
-    if (client.qualityPresetIndex >= 0) {
+    // 用户在播放途中显式选了档（含「原画」）→ 自动接管结束。
+    if (client.qualityPresetIndex != kRemoteVideoQualityAuto) {
       _stopAdaptiveQuality();
       return;
     }
@@ -436,11 +432,13 @@ extension _VideoQuality on _VideoFushiPageState {
       // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
       // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
       // 变成未捕获的 zone error。
-      final List<MediaServerQualityPreset> presets = client.qualityPresets;
-      final String label =
-          decision.targetIndex < 0 || decision.targetIndex >= presets.length
-          ? t.video_quality_auto
-          : presets[decision.targetIndex].label;
+      // 自适应的 -1 是「原画直传」，不是「自动」（自动是策略，这里报的是取值）。
+      final String label = _mediaServerQualityLabel(
+        client,
+        decision.targetIndex < 0
+            ? kRemoteVideoQualityOriginal
+            : decision.targetIndex,
+      );
       _showOsd(
         decision.reason == AdaptiveQualityReason.stall
             ? t.video_quality_auto_lowered(label: label)
@@ -470,7 +468,10 @@ extension _VideoQuality on _VideoFushiPageState {
   Future<void> _switchMediaServerQuality(int index) async {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server == null || index >= server.qualityPresets.length) return;
-    final int target = index < 0 ? -1 : index;
+    final int target =
+        index == kRemoteVideoQualityOriginal && server.offersOriginalQuality
+        ? kRemoteVideoQualityOriginal
+        : (index < 0 ? kRemoteVideoQualityAuto : index);
     if (target == server.qualityPresetIndex) {
       _hideVideoSidePanel();
       return;
@@ -483,7 +484,7 @@ extension _VideoQuality on _VideoFushiPageState {
     // 用户显式选档 = 自动接管结束；选回「自动」则把自适应的当前取值清掉，让它从
     // 起点判据重新开始，而不是接着上次自动降到的那一档跑。
     if (server is InterconnectSyncBackend) {
-      if (target >= 0) {
+      if (target != kRemoteVideoQualityAuto) {
         _stopAdaptiveQuality();
       } else {
         server.adaptiveQualityIndex = null;
@@ -502,11 +503,28 @@ extension _VideoQuality on _VideoFushiPageState {
       initialPositionMsOverride: posMs,
     );
     if (!mounted) return;
+    _showOsd(
+      t.video_quality_switched(label: _mediaServerQualityLabel(server, target)),
+      icon: Icons.high_quality,
+    );
+  }
+
+  /// 服务端画质档 [index] 的显示名：自动 / 原画 / 档位文案（越界按自动）。
+  String _mediaServerQualityLabel(RemoteVideoQualityLimit server, int index) {
+    if (index == kRemoteVideoQualityOriginal && server.offersOriginalQuality) {
+      return t.video_quality_original;
+    }
     final List<MediaServerQualityPreset> presets = server.qualityPresets;
-    final String label = target < 0 || target >= presets.length
+    return index < 0 || index >= presets.length
         ? t.video_quality_auto
-        : presets[target].label;
-    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+        : presets[index].label;
+  }
+
+  /// 「原画」行的副标题：源文件码率（知道时）。
+  String? get _originalQualitySubtitle {
+    final Object? client = _effectiveRemoteClient;
+    if (client is! InterconnectSyncBackend) return null;
+    return formatBitrate(client.sourceBitrate);
   }
 
   /// 切到视频源扩展的第 [index] 条线路：选择记进 client（钉到当前集），再按当前集
@@ -662,8 +680,18 @@ extension _VideoQuality on _VideoFushiPageState {
             icon: Icons.auto_awesome,
             label: t.video_quality_auto,
             index: -1,
-            selected: server.qualityPresetIndex < 0,
+            selected: server.qualityPresetIndex == kRemoteVideoQualityAuto,
           ),
+          if (server.offersOriginalQuality)
+            _buildMediaServerQualityTile(
+              selectedFg,
+              icon: Icons.hd_outlined,
+              label: t.video_quality_original,
+              subtitle: _originalQualitySubtitle,
+              index: kRemoteVideoQualityOriginal,
+              selected:
+                  server.qualityPresetIndex == kRemoteVideoQualityOriginal,
+            ),
           for (int i = 0; i < presets.length; i++)
             _buildMediaServerQualityTile(
               selectedFg,
@@ -830,12 +858,14 @@ extension _VideoQuality on _VideoFushiPageState {
     required String label,
     required int index,
     required bool selected,
+    String? subtitle,
   }) {
     return FushiListTileControl(
       key: ValueKey<String>('video-quality-media-server-$index'),
       dense: true,
       leading: FushiIcon(icon),
       title: Text(label),
+      subtitle: subtitle == null ? null : Text(subtitle),
       selected: selected,
       selectedColor: selectedFg,
       trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,

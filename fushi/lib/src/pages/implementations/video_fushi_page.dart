@@ -20,6 +20,8 @@ import 'package:fushi/src/media/video/disc/disc_session_remote.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
+import 'package:fushi/src/media/video/video_specs_display.dart'
+    show formatBitrate;
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'dart:convert' show jsonEncode, utf8;
@@ -4842,7 +4844,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (subtitleResolved) {
         // 已由持久化选择解析：跳过默认字幕分支。
       } else if (hasPreresolvedCues) {
-        cues = (client as UrlStreamVideoClient).preresolvedCues;
+        cues = client.preresolvedCues;
         // TODO-1302：登记 YouTube 字幕轨。预解析 cue 直接注入 overlay，但既不是 host
         // 外挂字幕（不写 _remoteSubtitlePath）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks
         // 空），故远端字幕菜单原来渲染不出它、_currentSubtitleSource 留 null 让「关闭」被

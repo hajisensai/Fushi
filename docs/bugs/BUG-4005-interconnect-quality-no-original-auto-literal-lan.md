@@ -1,0 +1,13 @@
+## BUG-4005 · 互联播放缺「原画」档，「自动」按地址字面量判局域网，在家也看不到原片
+- **报告**：2026-11-02（用户：应用内反馈 uaBRMzK_WM，开发者自报，Android OnePlus CPH2747，3.3.0-debug.23080）——「缺少高画质选项，我觉得内网甚至可以看 BD 满码率」，追评「应该支持原画」。截图：互联播放的画质面板只有「自动」+ `1080p · 8 Mbps` … `360p · 0.6 Mbps` 五档。
+- **真实性**：✅ 真 bug（结构性缺陷，沿代码路径确认）。三处叠加：
+  1. **没有原画档**：`fushi/lib/src/sync/remote_video_client.dart` `RemoteVideoQualityLimit.qualityPresetIndex` 只有「-1 = 自动 / 0..4 = 转码档」两种语义，`fushi/lib/src/pages/implementations/video_fushi/quality.part.dart` 面板只画「自动」+ 档位（修前 :660-674），`_switchMediaServerQuality` 把任何负数抹成 -1（修前 :473）。用户无法显式要求原文件直传。
+  2. **「自动」起点只看地址字面量**：`fushi/lib/src/sync/interconnect_video_quality.dart` `resolveInterconnectAutoPreset` → `isPrivateNetworkHost`（:66-78 起）只认 RFC1918 / 回环 / ULA / `.local` 字面量。反馈日志里这台 host 的候选地址是 DDNS 域名 `…xn--3btta.cn`、公网 IPv6 `2408:…` 与 `192.168.1.30`——经域名或公网 IPv6 连回家的局域网连接字面上都不是私网，`interconnect_sync_backend.dart` `remoteVideoStreamUrls`（修前 :2671-2681）一律按公网压到 720p · 2 Mbps。
+  3. **自适应永远回不到原画**：`fushi/lib/src/sync/interconnect_adaptive_quality.dart:40` `kAdaptiveMaxIndex = 0`，升档上限 8 Mbps；且起点按「host 基址」作用域缓存（修前 `ensureAdaptiveQualityStart` :2611），换成更高码率的片子也沿用旧档。
+- **[x] ① 已修复** — 按「链路带宽对源码率」决定能否直通原片：
+  - host `/streamurl` 新增 `sourceBitrate`（`packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart` `_sourceBitrateOf`：体积 × 8 ÷ 时长，`averageBitrateBps` 在 `packages/fushi_engine/lib/media/video/live_transcode.dart`；仅本机能转码时报，蓝光标题不报；按路径+大小+mtime 缓存，ffprobe 每文件一次）。老 client 忽略该字段，老 host 不发 → client 按「源码率未知」处理。
+  - client「自动」对每个新源（`<基址>#<id>#<集>`）起播时：字面量局域网 → 原画不测；否则先签原画直传票，对它发有界 Range（≤ 8 MiB / 首字节起 1.5 s）测吞吐（`_probeLinkBitsPerSecond`，样本 3 分钟内复用），再由纯函数 `resolveInterconnectAutoStartIndex` 定起点：带宽 ≥ 源码率 × 1.5 → 原画（直接用这张票，不多一次往返）；否则取档位码率 × 1.5 ≤ 带宽的最高档；没测成 / 源码率未知 → 旧保守起点（不猜原画）。同一源内的自适应换档沿用已定的档。
+  - 新增显式「原画」档：`kRemoteVideoQualityOriginal = -2` + `RemoteVideoQualityLimit.offersOriginalQuality`（互联 true；Jellyfin/Emby false，它们的「自动」本就不限码率直播放）；面板在「自动」下列「原画」行（副标题为源码率），选它永不转码、自适应不接管；OSD 在自适应升到原画时报「原画」而不是「自动」。新 i18n `video_quality_original`。
+  - 未改：`kAdaptiveMaxIndex` 升档上限仍不回原画（起点已能给原画；播放中因卡顿降下来后不自动回原画是既有的防抖取舍）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_auto_quality_link_test.dart`（真 FushiSyncServer + 真 InterconnectSyncBackend：非私网地址但链路够 → 原画直传；源码率超链路 → 转码档；同源换档不重新起步、换集重新起步；显式原画；字面量局域网；host 转不了码）；`fushi/test/sync/fushi_sync_server_transcode_test.dart`（`sourceBitrate` 下发 / 不下发 / `averageBitrateBps`）；`fushi/test/sync/interconnect_video_quality_client_test.dart`（起点判据各分支、探测样本折算、原画哨兵）；`fushi/test/pages/video_interconnect_original_quality_guard_test.dart`（面板「原画」行、选档 / 自适应判据接线源码守卫）。
+- **备注**：未在真机复测（家里经域名 / IPv6 连 host 看原盘）。「流媒体画质也能原画最好」：Jellyfin / Emby 的「自动」已是 120 Mbps 不限码率、能直播放就直播放，未另加「原画」行；若要显式「原画」需另定产品取舍（与「自动」几乎同义）。链路探测在起播前多花 ≤ 1.5 s（仅非字面量局域网、且样本过期时）。
