@@ -63,6 +63,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_rating_guide.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_edit_bar.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
@@ -2712,6 +2713,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final Widget rating = _buildRatingRow(context);
     final bool inlineEdit = ref.watch(srsReviewInlineEditProvider);
     final SrsCardDetail? detail = _detail;
+    // 第一次复习：评分按钮上方说明四颗按钮各在什么时候点（点「知道了」后不再出现）。
+    final bool guide = ref.watch(srsRatingGuideVisibleProvider);
     return FushiAnimatedSize(
       key: const ValueKey<String>('srs-answer-bar'),
       duration: fushiMotionDuration(context, FushiMotion.short),
@@ -2729,6 +2732,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   ? null
                   : () => unawaited(_reviewFieldAi()),
               onEditNote: () => unawaited(_editNote(detail)),
+            ),
+            SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
+          ],
+          if (guide) ...<Widget>[
+            SrsRatingGuide(
+              twoButtons: ref.watch(srsReviewHideHardEasyProvider),
             ),
             SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
           ],
