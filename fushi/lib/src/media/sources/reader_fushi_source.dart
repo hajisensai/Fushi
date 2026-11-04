@@ -2104,7 +2104,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(key: 'lyrics_panel_mirrored', value: v));
   }
 
-  /// MD3 歌词模式播放控件布局（`lyrics_controls_style`，默认新版）。只影响 Flutter
+  /// 歌词模式播放控件布局（`lyrics_controls_style`，默认新版；MD3 / Apple 都读）。只影响 Flutter
   /// 覆盖层，写完经 [onChromeReloadLive] 重建一次。
   LyricsControlsStyle get lyricsControlsStyle => LyricsControlsStyle.fromWire(
     readerSettings?.lyricsControlsStyle ??

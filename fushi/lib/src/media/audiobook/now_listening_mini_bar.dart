@@ -11,6 +11,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart' show MediaSessionOwner;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -144,17 +146,19 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
             onPressed: () => _toggleFloatingLyric(appModel),
           ),
         if (expressive)
-          // M3E：播放键是迷你胶囊里唯一的实心主色圆钮（与浮动工具栏的 FAB
-          // 同一强调层级），播放中弹簧变形成方圆角——形状即状态。
+          // M3E：播放键是迷你胶囊里唯一的实心主色钮（与浮动工具栏的 FAB
+          // 同一强调层级），外形是统一的主播放键多边形（[fushiPlayButtonBorder]）。
           FushiIconButtonControl.filled(
             icon: FushiIcon(
               playing
                   ? FushiIcons.filled(FushiIcons.pause)
                   : FushiIcons.filled(FushiIcons.play),
             ),
-            shape: playing
-                ? ButtonShapeVariant.square
-                : ButtonShapeVariant.round,
+            style: ButtonStyle(
+              shape: WidgetStatePropertyAll<OutlinedBorder>(
+                fushiPlayButtonBorder(),
+              ),
+            ),
             tooltip: t.floating_lyric_play_pause,
             onPressed: () => controller.togglePlayPause(),
           )

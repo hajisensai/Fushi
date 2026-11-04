@@ -288,7 +288,7 @@ class ReaderSettings {
   Future<void> setLyricsPanelMirrored(bool v) =>
       _set<bool>('lyrics_panel_mirrored', v);
 
-  /// MD3 歌词模式播放控件布局（`LyricsControlsStyle.wire`）：`modern` = 新版
+  /// 歌词模式播放控件布局（`LyricsControlsStyle.wire`，MD3 / Apple 都读）：`modern` = 新版
   /// （默认，2026-10-31 用户拍板）/ `classic` = 经典布局。
   String get lyricsControlsStyle =>
       _get<String>('lyrics_controls_style', 'modern');

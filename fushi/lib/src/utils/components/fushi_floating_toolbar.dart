@@ -41,6 +41,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder, fushiPlayButtonRotation;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -1938,6 +1940,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
 /// primaryContainer；[morphing] 时在圆（[rounded] = false）与圆角方之间按弹簧
 /// 变形——播放键：播放态 = 圆角方（「正在进行」），暂停态 = 圆。Apple = 圆形
 /// 强调色按钮，不变形（iOS 没有形状变形语汇）。
+///
+/// [playButton] = 主播放 / 暂停键：MD3 外形换成统一的播放键多边形
+/// （[fushiPlayButtonBorder]），播放态（[rounded] = true）转半瓣代替圆 ↔ 圆角方
+/// 形变；Apple 不受影响。
 class FushiToolbarFab extends StatefulWidget {
   const FushiToolbarFab({
     super.key,
@@ -1948,6 +1954,7 @@ class FushiToolbarFab extends StatefulWidget {
     this.morphing = false,
     this.size = 56,
     this.semanticsId,
+    this.playButton = false,
   });
 
   final IconData icon;
@@ -1960,6 +1967,9 @@ class FushiToolbarFab extends StatefulWidget {
   final bool morphing;
   final double size;
   final String? semanticsId;
+
+  /// true = 主播放键（见类注释）；需配合 [morphing]，[rounded] 表示「播放中」。
+  final bool playButton;
 
   @override
   State<FushiToolbarFab> createState() => _FushiToolbarFabState();
@@ -2062,24 +2072,29 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
       builder: (BuildContext context, Widget? child) {
         // 0 = 圆角方（16），1 = 圆（pill）。Apple 恒圆。
         final double pill = glass ? 1 : _shape.value.clamp(0.0, 1.0);
-        final OutlinedBorder shape = FushiMorphBorder(
-          radius: 16,
-          startPill: pill,
-          endPill: pill,
-        );
+        // 播放键：多边形外形，播放态（_shape → 0）转半瓣；字形反向转回。
+        final double angle = widget.playButton
+            ? fushiPlayButtonRotation(1 - _shape.value)
+            : 0;
+        final OutlinedBorder shape = widget.playButton
+            ? fushiPlayButtonBorder()
+            : FushiMorphBorder(radius: 16, startPill: pill, endPill: pill);
         return SizedBox.square(
           dimension: widget.size,
-          child: DecoratedBox(
-            decoration: fushiFloatingPillDecoration(
-              context,
-              color: bg,
-              shape: shape,
-            ),
-            child: Material(
-              type: MaterialType.transparency,
-              shape: shape,
-              clipBehavior: Clip.antiAlias,
-              child: child,
+          child: Transform.rotate(
+            angle: angle,
+            child: DecoratedBox(
+              decoration: fushiFloatingPillDecoration(
+                context,
+                color: bg,
+                shape: shape,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                shape: shape,
+                clipBehavior: Clip.antiAlias,
+                child: Transform.rotate(angle: -angle, child: child),
+              ),
             ),
           ),
         );
