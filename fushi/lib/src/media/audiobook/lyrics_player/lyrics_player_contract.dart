@@ -251,11 +251,17 @@ class LyricsMenuAnchor {
     required this.rect,
     required this.context,
     this.collapsedItems = const <LyricsControlItem>[],
+    this.relativeSeekOnScreen = false,
   });
 
   /// 新版宽屏右岛因宽度不够收进「⋯」的按钮（按显示顺序）；页面把它们排在菜单
   /// 最前面。经典布局与窄屏恒为空。
   final List<LyricsControlItem> collapsedItems;
+
+  /// 按下 ⋯ 时，这套布局此刻在屏上是否摆着 ±10 秒键。是则页面菜单不再列
+  /// 「后退 / 前进 10 秒」（同一动作出现两次，反馈 MnVAGO_nry）；经典 Apple 布局、
+  /// 新版窄屏收起的迷你条等没有 ±10 键的形态为 false，菜单照列，触屏仍有入口。
+  final bool relativeSeekOnScreen;
 
   /// 按钮的全局矩形。
   final Rect rect;

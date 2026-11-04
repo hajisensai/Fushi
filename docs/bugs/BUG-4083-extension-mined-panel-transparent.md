@@ -1,0 +1,6 @@
+## BUG-4083 · 浏览器扩展「卡片已在 Anki 中」面板底板透明，字叠字
+- **报告**：2026-11-04（用户：应用内反馈 _3tWQR6J2G，浏览器扩展；原诉求重复卡选项已由 BUG-3955 实现，本次是面板透明）
+- **真实性**：✅ 真 bug（沿代码路径坐实；未在真浏览器里复现）。扩展把弹窗放在 shadow root 里，主题变量（`--md-*` / `--background-color` / `--text-color`，`fushi/assets/browser_extension/content.js` fushiRender setProperty）与 `data-theme` 都落在 shadow 内的 `#entries-container` 上（content.css 把 html / body 重根到它）；而 `fushi/assets/popup/popup.js` 的 `showMinedCardActionPanel` 把遮罩挂到 `__fushiOverlayParent()` = shadow root 本身（修复前 `:3075`），面板是容器的兄弟、继承不到任何主题变量，`.mined-action-panel { background: var(--md-surface-container-high, var(--background-color)) }` 两层都落空成透明，`:where(#entries-container).fushi-m3e .mined-action-panel` 也匹配不上。
+- **[x] ① 已修复** — popup.js（两份镜像 `fushi/assets/popup/popup.js` / `fushi/assets/browser_extension/vendor/popup.js` 同步）新增 `__fushiThemedOverlayParent()`：扩展里返回 shadow root 内的 `#entries-container`，app 内仍是 body；面板挂进去，与 app 内挂 body 同一语义（容器 overflow / zoom 已被 content.js 中和，fixed 包含块不变）。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/popup_asset_behavior_test.js` `testExtensionMinedPanelMountsInsideThemedContainer`：扩展形态（`__fushiRoot` = shadow，内含 `#entries-container`）点已制卡 ✓，断言面板挂在容器里、不在 shadow 根下，动作后面板关闭。修复前该用例红（node 退出码 1），修复后绿。
+- **备注**：未在真实浏览器 DevTools 复测（本轮不做）。其它经 `__fushiOverlayParent()` 挂到 shadow 根的浮层在扩展里同样继承不到主题变量，未在本次处理。

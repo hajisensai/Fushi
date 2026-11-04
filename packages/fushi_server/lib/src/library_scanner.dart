@@ -198,8 +198,8 @@ class LibraryScanner {
       CollectionShelfDomain.manga,
       CollectionShelfDomain.video,
     ]) {
-      // 本轮新入库的 + 上次**跑完**的自动整理之后入库、还没处理到的（被每日额度 /
-      // 失败截断的那批不丢，下一轮扫描接着整理）。从没跑完过时只看本轮新的——打开
+      // 本轮新入库的 + 上次**跑完**的自动整理之后入库、还没处理到的（被失败 /
+      // 取消截断的那批不丢，下一轮扫描接着整理）。从没跑完过时只看本轮新的——打开
       // 开关不会把整个库发给 AI。
       final int? last = await service.lastCompletedAutoRunStartedAt(domain);
       final Set<String> keys = <String>{

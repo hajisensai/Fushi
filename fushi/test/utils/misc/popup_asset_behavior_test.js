@@ -2716,6 +2716,58 @@ async function testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate() {
   assert.equal(mineButton.disabled, false, 'the button is never left disabled');
 }
 
+// 反馈 _3tWQR6J2G：浏览器扩展里「卡片已在 Anki 中」面板底板透明，下面词条的字与面板上
+// 的字叠在一起。扩展的主题变量与 data-theme 落在 shadow root 内的 #entries-container 上，
+// 面板挂在 shadow root 本身时继承不到，background 的 var() 落空成透明。面板必须挂进容器。
+async function testExtensionMinedPanelMountsInsideThemedContainer() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 9001, preview: '刀 — 既存カード' }],
+    calls,
+  });
+  const shadow = context.document.createElement('div');
+  const container = context.document.createElement('div');
+  container.id = 'entries-container';
+  shadow.appendChild(container);
+  shadow.getElementById = (id) => (id === 'entries-container' ? container : null);
+  context.window.__fushiRoot = shadow;
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+
+  const isBackdrop = (node) => !!node.classList?.contains('mined-action-backdrop');
+  const backdrop = container.children.find(isBackdrop);
+  assert.ok(backdrop,
+    'the mined-card panel must mount inside #entries-container so it inherits the popup theme');
+  assert.equal(shadow.children.filter(isBackdrop).length, 0,
+    'never as a bare shadow-root child (no theme variables there → transparent panel)');
+
+  const findButton = (node, label) => {
+    if (node.tagName === 'BUTTON' && node.textContent === label) return node;
+    for (const child of node.children ?? []) {
+      const found = findButton(child, label);
+      if (found) return found;
+    }
+    return null;
+  };
+  const add = findButton(backdrop, '新增为重复卡');
+  assert.ok(add, 'panel button not found');
+  add.onclick();
+  await click;
+  await flush();
+  assert.equal(calls.mineEntry.length, 1);
+  assert.equal(container.children.filter(isBackdrop).length, 0, 'the panel closes');
+}
+
+testExtensionMinedPanelMountsInsideThemedContainer().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
 async function testAppExternalPanelOverwriteUsesUpdateEntry() {
   const context = loadPopup();
   context.window.allowDupes = false;

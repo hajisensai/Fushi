@@ -2613,6 +2613,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_selected_glossary;
     case '{popup-selection-text}':
       return t.handlebar_popup_selection_text;
+    case '{popup-selection-html}':
+      return t.handlebar_popup_selection_html;
     case '{sentence}':
       return t.handlebar_sentence;
     case '{cue-sentence}':
