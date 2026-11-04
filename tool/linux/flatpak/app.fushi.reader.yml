@@ -16,8 +16,10 @@ finish-args:
   - --socket=pulseaudio
   # GPU + gamepads (/dev/input).
   - --device=all
-  # Books, dictionaries and media live anywhere in the user's home.
+  # Books, dictionaries and media live anywhere in the user's home, or on an SD
+  # card / USB drive (SteamOS mounts them under /run/media).
   - --filesystem=home
+  - --filesystem=/run/media
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.Notifications
   # Keep the screen awake while reading / playing (screen_wakelock.dart).
@@ -150,6 +152,17 @@ modules:
         path: wpewebkit-cmake4-quote-linked-into.patch
       - type: patch
         path: wpewebkit-gcc15-scroll-momentum-ice.patch
+
+  # file_picker's Linux backend shells out to zenity / kdialog / qarma; the GNOME
+  # runtime has none, so every "choose file / folder" button failed in the sandbox.
+  - name: zenity
+    buildsystem: meson
+    config-opts:
+      - -Dmanpage=false
+    sources:
+      - type: archive
+        url: https://download.gnome.org/sources/zenity/4.2/zenity-4.2.2.tar.xz
+        sha256: 019186a996096ef4fc356e21577b5673f5baa3a29ac8e3d608b753371c18018d
 
   - name: fushi
     buildsystem: simple
