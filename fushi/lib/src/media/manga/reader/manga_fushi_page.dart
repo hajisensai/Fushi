@@ -89,7 +89,11 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarFab, FushiToolbarItem;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope, FushiTitleBarColors, fushiTitleBarColorsOn;
+    show
+        FushiTitleBarColorScope,
+        FushiTitleBarColors,
+        FushiTitleBarRevealScope,
+        fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
@@ -6698,7 +6702,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return WindowFullscreenHost(
       child: FushiTitleBarColorScope(
         colors: _desktopTitleBarColors(context),
-        child: page,
+        // 顶栏（固定 / 悬浮唤出）画着时沉浸标题行跟着浮出：唤出工具栏即可拖窗口 /
+        // 点窗口按钮（BUG-4115，与视频页控制条、EPUB 阅读器同一套）；栏收起时
+        // 标题行照旧隐去，页图顶端照常点。判据与顶栏的 [MangaChromeReveal] 同源。
+        child: FushiTitleBarRevealScope(
+          revealed: mangaChromeBarPainted(
+            floating: _chromeFloating,
+            chromeVisible: _chromeVisible,
+            transientVisible: _chrome.transientVisible,
+            contentReady: _chromeActionsEnabled,
+          ),
+          child: page,
+        ),
       ),
     );
   }

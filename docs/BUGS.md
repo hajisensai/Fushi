@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3714 条。点号进各自文件。
+> 共 3715 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4115](bugs/BUG-4115-immersive-media-pages-window-not-draggable.md) | ✅ | ✅ | Windows 音乐歌词页 / 有声书歌词模式 / 小说阅读器里拖不动窗口 |
 | [BUG-4114](bugs/BUG-4114-webview-windows-frame-pacing.md) | ✅ | ✅ | Windows WebView 纹理桥取帧相位抖动，歌词换句 / 滚轮看着掉帧 |
 | [BUG-4113](bugs/BUG-4113-work-profile-session-partial-scope.md) | ✅ | ✅ | 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置 |
 | [BUG-4112](bugs/BUG-4112-apple-widget-parity-lost-in-merge.md) | ✅ | ✅ | apple-widget-parity-lost-in-merge |
