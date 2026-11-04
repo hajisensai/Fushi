@@ -33,6 +33,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
+import 'package:fushi/src/media/video/video_shader_manager.dart'
+    show applyShadersToPlayer;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
@@ -117,6 +119,28 @@ final int _kWindowMs =
       ),
     ) ??
     1500;
+
+/// `SUBLIST_SHADERS=a.glsl;b.glsl`：开播后下发的着色器链（绝对路径，`;` 分隔）。
+final String _kShaders = _knob(
+  'SUBLIST_SHADERS',
+  const String.fromEnvironment('SUBLIST_SHADERS'),
+);
+
+/// `SUBLIST_MPV_PROPS=scale=ewa_lanczossharp;cscale=...`：开播后设置的 mpv 属性。
+final String _kMpvProps = _knob(
+  'SUBLIST_MPV_PROPS',
+  const String.fromEnvironment('SUBLIST_MPV_PROPS'),
+);
+
+/// `SUBLIST_TRACE_STREAMS=Embedder`：录哪些 timeline 流（默认 Dart,Embedder,GC）。只录
+/// Embedder 时环形缓冲能装下整段 3 秒窗口（三条流一起只装得下约 1.6 秒）。
+final List<String> _kTraceStreams = _knob(
+  'SUBLIST_TRACE_STREAMS',
+  const String.fromEnvironment(
+    'SUBLIST_TRACE_STREAMS',
+    defaultValue: 'Dart,Embedder,GC',
+  ),
+).split(',');
 
 /// `SUBLIST_SHAM=true`：空白对照——走完全相同的计时 / 记帧流程，但不按 `L`、不断言
 /// 列表可见性，量「不开关时」同一窗口里的尖峰基线。
@@ -547,6 +571,21 @@ void main() {
     // 解码路径（BUG-3888 用户条件是 h264 High10 → nvdec-copy + p010）：每轮核对。
     final PlatformPlayer? platform = video.controller.player.platform;
     if (platform is NativePlayer) {
+      // 复现用户的渲染负载：同一套 mpv 属性 + 着色器链（用户日志里是 Anime4K 全套）。
+      if (_kMpvProps.isNotEmpty) {
+        for (final String kv in _kMpvProps.split(';')) {
+          final int eq = kv.indexOf('=');
+          if (eq <= 0) continue;
+          await platform.setProperty(kv.substring(0, eq), kv.substring(eq + 1));
+        }
+      }
+      if (_kShaders.isNotEmpty) {
+        await applyShadersToPlayer(
+          video.controller.player,
+          _kShaders.split(';').where((String s) => s.isNotEmpty).toList(),
+        );
+        await tester.pump(const Duration(seconds: 2));
+      }
       final List<String> props = <String>[];
       for (final String name in <String>[
         'hwdec-current',
@@ -555,6 +594,8 @@ void main() {
         'video-codec',
         'width',
         'height',
+        'glsl-shaders',
+        'scale',
       ]) {
         props.add('$name=${await platform.getProperty(name)}');
       }
@@ -614,7 +655,7 @@ void main() {
           tl = await binding.traceTimeline(() async {
             if (!_kSham) await _pressL(tester);
             await _wait(_kWindowMs);
-          }, streams: const <String>['Dart', 'Embedder', 'GC']);
+          }, streams: _kTraceStreams);
         } finally {
           debugProfileBuildsEnabled = false;
           debugProfileLayoutsEnabled = false;
