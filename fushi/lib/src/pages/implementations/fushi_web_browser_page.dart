@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_address_bar.dart';
@@ -832,6 +833,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     super.didChangeDependencies();
     final ModalRoute<Object?>? route = ModalRoute.of(context);
     _studyCoverWatch.attach(route);
+    _playbackCoverWatch.attach(route);
     if (route is PageRoute<Object?> && !identical(route, _observedRoute)) {
       _routeObserver
         ..unsubscribe(this)
@@ -846,6 +848,17 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       if (!mounted) return;
       for (final WebBrowserFeature f in _features) {
         f.onStudyCoverChanged(covered: _studyCoverWatch.covered);
+      }
+    },
+  );
+
+  /// 浏览页被播放页（视频页 / 播放页）盖住 / 露出：转告各功能（页面可见性据此让下面的
+  /// 网页别跟着播，BUG-4084）。回调可能在 build 期间同步触发，只转告、不 setState。
+  late final PlaybackCoverWatch _playbackCoverWatch = PlaybackCoverWatch(
+    onChanged: () {
+      if (!mounted) return;
+      for (final WebBrowserFeature f in _features) {
+        f.onPlaybackCoverChanged(covered: _playbackCoverWatch.covered);
       }
     },
   );
@@ -867,6 +880,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void dispose() {
     if (_observedRoute != null) _routeObserver.unsubscribe(this);
     _studyCoverWatch.dispose();
+    _playbackCoverWatch.dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));

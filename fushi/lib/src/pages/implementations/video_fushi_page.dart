@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart'
     show ensureDvdTitleInLibrary;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
@@ -2805,6 +2806,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _providerContainer = ProviderScope.containerOf(context, listen: false);
+    _playbackRouteMark.attach(ModalRoute.of(context));
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;
@@ -6767,6 +6769,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     action();
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
   @override
   void dispose() {
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
@@ -6774,6 +6779,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    _playbackRouteMark.dispose();
     _themeSongTracker.dispose();
     _themeSongChapters.dispose();
     sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);

@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4084](bugs/BUG-4084-web-browser-hidden-tab-autoplay.md) | ✅ | ✅ | 浏览页被视频页盖住时网页预告片仍自动播放 |
 | [BUG-4081](bugs/BUG-4081-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
 | [BUG-4078](bugs/BUG-4078-ass-style-transfer-japanese-italic.md) | ✅ | ✅ | 参考英语ASS生成的日语ASS整行变斜体 |
 | [BUG-4078](bugs/BUG-4078-tv-job-single-movie-file-organize-fails.md) | ✅ | ✅ | 剧集身份的下载任务下到单文件剧场版，整理报 unable to determine episode number |

@@ -46,6 +46,10 @@ abstract class WebBrowserFeature {
   /// / 重新露出（false）。对话框、菜单、底部抽屉不算。
   void onPageCoveredChanged({required bool covered}) {}
 
+  /// 浏览页被**播放页**（视频页 / 播放页，见 `PlaybackRouteMarks`）盖住 / 露出。比
+  /// [onPageCoveredChanged] 窄：盖上设置页、标签网格之类的整页路由不算（BUG-4084）。
+  void onPlaybackCoverChanged({required bool covered}) {}
+
   /// 学习计时口径的「被盖住」：浏览页之上压着任何未豁免的模态路由（整页、对话框、
   /// 侧板、菜单都算，见 `studyCoverTracker`，BUG-3994）。比 [onPageCoveredChanged]
   /// 宽：那条只认整页路由，给手机遥控登记之类「页面还在不在」的语义用。
@@ -53,6 +57,10 @@ abstract class WebBrowserFeature {
 
   /// 标签页关闭（WebView 即将销毁）。
   void onTabClosed(WebBrowserTab tab) {}
+
+  /// [tab] 的 WebView 被销毁、标签页还在（活 WebView 上限回收、视图重建）：
+  /// [onWebViewCreated] 拿到的控制器从此作废，下次显示时会建新的。
+  void onWebViewDisposed(WebBrowserTab tab) {}
 
   /// 给当前标签页提供的动作；浏览页按 [WebBrowserAction.placement] 摆进工具栏或
   /// 「⋯」菜单。只在动作对 [tab] 当前页面有意义时返回（例如「用 Fushi 播放」只在
