@@ -208,7 +208,20 @@ enum MusicPluginCapability {
   lyricsSearch('lyricsSearch'),
 
   /// 歌词来源：按候选的不透明 `ref` 取词。
-  lyricsFetch('lyricsFetch');
+  lyricsFetch('lyricsFetch'),
+
+  /// 编辑登录账号的歌单：新建 / 加歌 / 删歌 / 删除歌单。
+  /// 需同时声明 `login` / `account` 与 `playlist`。
+  playlistEdit('playlistEdit'),
+
+  /// 电台：个人电台或以某首为种子的连续推荐，以及「不再推荐」。需同时声明 `stream`。
+  radio('radio'),
+
+  /// 相似艺人。需同时声明 `artist`。
+  artistSimilar('artistSimilar'),
+
+  /// 收藏 / 取消收藏歌单、专辑，关注 / 取消关注艺人。需同时声明 `login` / `account`。
+  collect('collect');
 
   const MusicPluginCapability(this.wire);
 
@@ -374,6 +387,7 @@ class MusicPluginAlbum {
     this.releaseDate,
     this.company,
     this.description,
+    this.collected,
   });
 
   static MusicPluginAlbum? fromJson(Object? raw) {
@@ -391,6 +405,7 @@ class MusicPluginAlbum {
       releaseDate: _date(j['releaseDate']),
       company: _text(j['company'], MusicPluginTextLimits.short),
       description: _text(j['description'], MusicPluginTextLimits.description),
+      collected: _bool(j['collected']),
     );
   }
 
@@ -415,6 +430,9 @@ class MusicPluginAlbum {
   /// 专辑简介（全文，已截断到 [MusicPluginTextLimits.description]）。
   final String? description;
 
+  /// 当前登录账号是否已收藏这张专辑；未登录或插件不知道时为 null。
+  final bool? collected;
+
   String get artistText => joinArtistNames(artists);
 
   /// 换封面（其余字段原样）：宿主按网络授权清洗封面用。
@@ -428,6 +446,7 @@ class MusicPluginAlbum {
     releaseDate: releaseDate,
     company: company,
     description: description,
+    collected: collected,
   );
 }
 
@@ -490,6 +509,7 @@ class MusicPluginArtist {
     this.description,
     this.intro = const <MusicPluginIntroSection>[],
     this.stats = const MusicPluginArtistStats(),
+    this.collected,
   });
 
   static MusicPluginArtist? fromJson(Object? raw) {
@@ -509,6 +529,7 @@ class MusicPluginArtist {
       description: _text(j['description'], MusicPluginTextLimits.description),
       intro: MusicPluginIntroSection.listFrom(j['intro']),
       stats: MusicPluginArtistStats.fromJson(j['stats']),
+      collected: _bool(j['collected']),
     );
   }
 
@@ -531,6 +552,9 @@ class MusicPluginArtist {
   final List<MusicPluginIntroSection> intro;
   final MusicPluginArtistStats stats;
 
+  /// 当前登录账号是否已关注这位艺人；未登录或插件不知道时为 null。
+  final bool? collected;
+
   bool get hasDetails => description != null || intro.isNotEmpty;
 
   MusicPluginArtist withCover(String? cover) => MusicPluginArtist(
@@ -541,6 +565,7 @@ class MusicPluginArtist {
     description: description,
     intro: intro,
     stats: stats,
+    collected: collected,
   );
 }
 
@@ -555,6 +580,8 @@ class MusicPluginPlaylist {
     this.previewTracks = const <MusicPluginTrack>[],
     this.playCount,
     this.tags = const <String>[],
+    this.editable = false,
+    this.collected,
   });
 
   /// 歌单卡上直接展示的预览曲目上限（docs/specs/2026-10-28-music-plugins.md §4）。
@@ -579,6 +606,8 @@ class MusicPluginPlaylist {
         MusicPluginTextLimits.maxTags,
         MusicPluginTextLimits.tag,
       ),
+      editable: _bool(j['editable']) ?? false,
+      collected: _bool(j['collected']),
     );
   }
 
@@ -627,6 +656,13 @@ class MusicPluginPlaylist {
   /// 标签，最多 [MusicPluginTextLimits.maxTags] 条。
   final List<String> tags;
 
+  /// 当前登录账号能往这个歌单里加 / 删歌（自己建的歌单；「我喜欢的音乐」这类特殊歌单为 false）。
+  /// 插件没给时为 false。
+  final bool editable;
+
+  /// 当前登录账号是否已收藏这个歌单；未登录或插件不知道时为 null。
+  final bool? collected;
+
   MusicPluginPlaylist withCover(String? cover) => MusicPluginPlaylist(
     id: id,
     title: title,
@@ -637,7 +673,46 @@ class MusicPluginPlaylist {
     previewTracks: previewTracks,
     playCount: playCount,
     tags: tags,
+    editable: editable,
+    collected: collected,
   );
+}
+
+/// 电台的一批曲目（`radio` 的 `op: 'next'`）。[tracks] 为空表示电台没有更多。
+class MusicPluginRadioBatch {
+  const MusicPluginRadioBatch({required this.tracks, this.title});
+
+  /// 一批最多取的曲目数。
+  static const int maxTracks = 100;
+
+  /// `{ tracks: [Track], title?: string }` → 一批；形状不对（不是对象或缺 tracks 数组）返回
+  /// null。坏曲目丢弃，截断到 [maxTracks]。
+  static MusicPluginRadioBatch? fromJson(Object? raw) {
+    if (raw is! Map<Object?, Object?>) return null;
+    final Object? tracks = raw['tracks'];
+    if (tracks is! List<Object?>) return null;
+    return MusicPluginRadioBatch(
+      title: _text(raw['title'], MusicPluginTextLimits.short),
+      tracks: MusicPluginTrack.listFrom(tracks).take(maxTracks).toList(),
+    );
+  }
+
+  /// 电台名（如「私人 FM」）；插件没给为 null。
+  final String? title;
+
+  /// 接下来的一批曲目，最多 [maxTracks] 首，坏项已丢弃。
+  final List<MusicPluginTrack> tracks;
+}
+
+/// `collect` 能收藏 / 关注的对象种类。
+enum MusicPluginCollectType {
+  playlist('playlist'),
+  album('album'),
+  artist('artist');
+
+  const MusicPluginCollectType(this.wire);
+
+  final String wire;
 }
 
 /// 一支 MV（`artistMvs` 列表项）。

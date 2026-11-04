@@ -27,6 +27,7 @@ class JellyfinMusicClient implements MusicServerBrowser {
 
   static const String _albumFields = 'ChildCount,ProductionYear,AlbumArtist';
   static const String _trackFields = 'MediaStreams,MediaSources,Container';
+  static const String _playlistFields = 'ChildCount,Overview';
 
   String get _userPath => '/Users/${config.userId}';
 
@@ -65,19 +66,21 @@ class JellyfinMusicClient implements MusicServerBrowser {
         });
     final List<Map<String, Object?>> rows = jellyfinItemsOf(json);
     final int? total = jellyfinTotalOf(json);
-    final int next = offset + rows.length;
     return MusicServerPage<MusicServerAlbum>(
       items: <MusicServerAlbum>[
         for (final Map<String, Object?> r in rows) ?parseJellyfinMusicAlbum(r),
       ],
-      // 翻页认服务器行数（解析失败丢掉的行不影响偏移）。总数缺失时满页即还有。
-      nextOffset: rows.isEmpty
-          ? null
-          : (total != null
-                ? (next < total ? next : null)
-                : (rows.length >= limit ? next : null)),
+      nextOffset: _nextOffset(offset, limit, rows.length, total),
       total: total,
     );
+  }
+
+  /// 翻页认服务器行数（解析失败 / 过滤丢掉的行不影响偏移）。总数缺失时满页即还有。
+  static int? _nextOffset(int offset, int limit, int rowCount, int? total) {
+    if (rowCount == 0) return null;
+    final int next = offset + rowCount;
+    if (total != null) return next < total ? next : null;
+    return rowCount >= limit ? next : null;
   }
 
   @override
@@ -129,6 +132,48 @@ class JellyfinMusicClient implements MusicServerBrowser {
   }
 
   @override
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  }) async {
+    final Object? json = await _api.getDecodedJson(
+      '$_userPath/Items',
+      <String, String>{
+        'IncludeItemTypes': 'Playlist',
+        // 只要音频歌单；不认这个参数的兼容层由解析侧按 MediaType 再滤一次。
+        'MediaTypes': 'Audio',
+        'Recursive': 'true',
+        'SortBy': 'SortName',
+        'SortOrder': 'Ascending',
+        'StartIndex': '$offset',
+        'Limit': '$limit',
+        'Fields': _playlistFields,
+        'EnableImageTypes': 'Primary',
+      },
+    );
+    final List<Map<String, Object?>> rows = jellyfinItemsOf(json);
+    final int? total = jellyfinTotalOf(json);
+    return MusicServerPage<MusicServerPlaylist>(
+      items: <MusicServerPlaylist>[
+        for (final Map<String, Object?> r in rows)
+          ?parseJellyfinMusicPlaylist(r),
+      ],
+      nextOffset: _nextOffset(offset, limit, rows.length, total),
+      total: total,
+    );
+  }
+
+  @override
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId) async {
+    // `/Playlists/{id}/Items` 按歌单自身顺序返回（不传 SortBy，Jellyfin / Emby 都如此）。
+    final Object? json = await _api.getDecodedJson(
+      '/Playlists/${Uri.encodeComponent(playlistId)}/Items',
+      <String, String>{'UserId': config.userId, 'Fields': _trackFields},
+    );
+    return parseJellyfinPlaylistTracks(json);
+  }
+
+  @override
   Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {
     final String q = query.trim();
     if (q.isEmpty) return const MusicServerSearchResult();
@@ -153,6 +198,10 @@ class JellyfinMusicClient implements MusicServerBrowser {
       'Audio',
       _trackFields,
     );
+    final List<Map<String, Object?>> playlists = await items(
+      'Playlist',
+      _playlistFields,
+    );
     final List<Map<String, Object?>> artists = jellyfinItemsOf(
       await _api.getDecodedJson('/Artists', <String, String>{
         'SearchTerm': q,
@@ -172,6 +221,10 @@ class JellyfinMusicClient implements MusicServerBrowser {
       tracks: <MusicServerTrack>[
         for (final Map<String, Object?> r in tracks)
           ?parseJellyfinMusicTrack(r),
+      ],
+      playlists: <MusicServerPlaylist>[
+        for (final Map<String, Object?> r in playlists)
+          ?parseJellyfinMusicPlaylist(r),
       ],
     );
   }

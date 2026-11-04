@@ -40,6 +40,8 @@ declare namespace Fushi {
     releaseDate?: string; // 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD'
     company?: string;
     description?: string;
+    /** The logged-in account has saved this album. Omit when logged out / unknown. */
+    collected?: boolean;
   }
 
   interface Artist {
@@ -51,6 +53,8 @@ declare namespace Fushi {
     description?: string;
     intro?: { title?: string; text: string }[];
     stats?: { trackCount?: number; albumCount?: number; mvCount?: number; fanCount?: number };
+    /** The logged-in account follows this artist. Omit when logged out / unknown. */
+    collected?: boolean;
   }
 
   interface Playlist {
@@ -64,6 +68,10 @@ declare namespace Fushi {
     tags?: string[];
     /** Text-only preview on the card (e.g. top 3 of a chart). First 3 used; coverUrl ignored. */
     previewTracks?: Track[];
+    /** The logged-in account can add / remove tracks (its own playlists; false for special ones like "liked songs"). Default false. */
+    editable?: boolean;
+    /** The logged-in account has saved (subscribed to) this playlist. Omit when logged out / unknown. */
+    collected?: boolean;
   }
 
   interface Mv {
@@ -217,6 +225,21 @@ declare namespace Fushi {
     library(args: { page: number; pageSize: number }): Awaitable<Page<Playlist>>;
     like(args: { op: 'list' }): Awaitable<{ ids: string[]; playlist?: Playlist } | null>;
     like(args: { op: 'set'; id: string; liked: boolean }): Awaitable<null>;
+    /** Edit the account's playlists (needs login/account + playlist). Throw an Error (shown to the user) on failure / logged out. */
+    playlistEdit(args: { op: 'create'; name: string; description?: string; trackIds?: string[] }): Awaitable<{ playlist: Playlist }>;
+    playlistEdit(args: { op: 'add' | 'remove'; playlistId: string; trackIds: string[] }): Awaitable<null>;
+    playlistEdit(args: { op: 'delete'; playlistId: string }): Awaitable<null>;
+    /**
+     * Radio (needs stream). No seedTrackId = personal radio; with it = radio seeded by that track.
+     * Each call returns the next batch (first 100 used); empty tracks = no more. `count` is a hint.
+     */
+    radio(args: { op: 'next'; seedTrackId?: string; count?: number }): Awaitable<{ tracks: Track[]; title?: string }>;
+    /** "Don't recommend this again". */
+    radio(args: { op: 'trash'; id: string }): Awaitable<null>;
+    /** Similar artists (needs artist); first 50 used. */
+    artistSimilar(args: { id: string }): Awaitable<{ items: Artist[] }>;
+    /** Save / unsave a playlist or album, follow / unfollow an artist (needs login/account). */
+    collect(args: { op: 'set'; type: 'playlist' | 'album' | 'artist'; id: string; on: boolean }): Awaitable<null>;
     account(args: {}): Awaitable<Account>;
     login(args: LoginArgs): Awaitable<{ methods: LoginMethod[] } | Challenge | null>;
   }
