@@ -273,18 +273,27 @@ abstract interface class SrsExclusiveOuter {
   Future<T> run<T>(Future<T> Function() body);
 }
 
+/// 副本被 [SrsDbStore.retire] 作废之后，排着的与以后再来的写入抛它。[store] 是被作废的那份副本：在跑的同步 / 维护
+/// 据此认出「我用的副本被换掉了」（与写失败重读也失败的作废区分开，那种仍是普通 [StateError]）。
+class SrsStoreRetiredError extends StateError {
+  SrsStoreRetiredError(this.store, super.message);
+
+  final SrsDbStore store;
+}
+
 class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
     required this.db,
     required this.core,
     required this.profileUid,
     required this.deviceId,
-    required this.engine,
+    required FsrsEngine? engine,
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
     this.styles,
     SrsExclusiveOuter? exclusiveOuter,
-  }) : _trusted = trustedClock,
+  }) : _engine = engine,
+       _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour,
        _exclusiveOuter = exclusiveOuter;
 
@@ -371,7 +380,8 @@ class SrsDbStore implements SrsSync2Host {
   final String deviceId;
 
   /// 排程内核；null = 原生库不可用（只能浏览 / 编辑，不能复习）。
-  final FsrsEngine? engine;
+  FsrsEngine? get engine => _engine;
+  FsrsEngine? _engine;
 
   /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantInput]）。它没准备好时
   /// RWKV 牌组的复习卡一张都不出（[SrsStudyState.rwkvPending]），**不**退回按 FSRS-7 存下的到期日排队。
@@ -381,7 +391,18 @@ class SrsDbStore implements SrsSync2Host {
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
   final SrsStyleStore? styles;
   final SrsTrustedClock _trusted;
-  final int Function() _fallbackRollover;
+  int Function() _fallbackRollover;
+
+  /// 同一个 profile 重新激活时就地换上打开参数（[engine]、统计日界回退），不另开副本：同一个 uid 只该有一份活
+  /// 副本，交接会作废在跑的同步 / 维护（srs_profile_stores.dart `activate`）。连接、uid、设备 ID 不在此列——
+  /// 它们变了就不是同一份副本。
+  void rebind({
+    required FsrsEngine? engine,
+    required int Function() fallbackRolloverHour,
+  }) {
+    _engine = engine;
+    _fallbackRollover = fallbackRolloverHour;
+  }
 
   late SrsEditWriter _writer;
   late HlcClock _clock;
@@ -529,17 +550,31 @@ class SrsDbStore implements SrsSync2Host {
   /// 还排着的、以后再来的写入一律明确失败（[_unusable]），不会把行写回一个已删的 uid。[body] 失败也作废。
   ///
   /// [reason]：作废原因（写进之后写入的报错）；缺省是「profile 被删除」。
-  Future<T> retire<T>(Future<T> Function() body, {String? reason}) =>
-      runExclusive(() async {
-        try {
-          return await body();
-        } finally {
-          _unusable ??= StateError(
-            'SRS store is unusable: '
-            '${reason ?? 'profile $profileUid was deleted'}',
-          );
-        }
-      });
+  ///
+  /// 一调用就置上 [isWindingDown]（排队等独占区之前）：在跑的同步 / 维护在下一个检查点收手，不再排新的写入。
+  /// 最后一段独占区里先放掉本副本开着的收段会话（内核 `ingest_end`），再跑 [body]：之后同一 uid 的新副本才开得了
+  /// 自己的会话，本副本那一轮 finally 里的 [sync2IngestEnd] 也不必（不能）再进独占区。
+  Future<T> retire<T>(Future<T> Function() body, {String? reason}) {
+    _retireRequested = true;
+    return runExclusive(() async {
+      try {
+        await _releaseIngestSession();
+        return await body();
+      } finally {
+        _unusable ??= SrsStoreRetiredError(
+          this,
+          'SRS store is unusable: '
+          '${reason ?? 'profile $profileUid was deleted'}',
+        );
+      }
+    });
+  }
+
+  /// [retire] 已被调用（可能还排在在途写入后面）。
+  bool _retireRequested = false;
+
+  /// 在跑的长任务（同步一轮、样式去重、媒体回收）该在下一个检查点收手：副本已作废，或作废已发起。
+  bool get isWindingDown => _retireRequested || _unusable != null;
 
   /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间把这条连接的 WAL 自动 checkpoint 阈值调到
   /// [_bulkWalAutocheckpointPages]，结束后 checkpoint 一次再恢复原值。
@@ -1239,14 +1274,38 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> r = await _sync2(const <String, Object?>{
       'op': 'ingest_begin',
     });
+    _ingestOpen = true;
     // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
     // 事务前要先把它按片做完（[_transactionOrReload]）。
     if (r['channel'] == true) _channelLive = true;
   });
 
+  /// 本副本开着内核收段会话（[sync2IngestBegin] 之后、[sync2IngestEnd] / [retire] 放掉之前）。
+  bool _ingestOpen = false;
+
+  /// 测试：[_ingestOpen]。
+  @visibleForTesting
+  bool get debugIngestOpen => _ingestOpen;
+
+  /// 放掉收段会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了会话：这里无事可做，不再进独占区
+  /// （进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
   @override
-  Future<void> sync2IngestEnd() =>
-      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_end'}));
+  Future<void> sync2IngestEnd() async {
+    if (!_ingestOpen) return;
+    try {
+      await runExclusive(_releaseIngestSession);
+    } on SrsStoreRetiredError catch (e) {
+      // 排队期间被作废：会话由 [retire] 放掉了（[_ingestOpen] 已清）。别的原因（会话仍开着）照常抛。
+      if (!identical(e.store, this) || _ingestOpen) rethrow;
+    }
+  }
+
+  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。
+  Future<void> _releaseIngestSession() async {
+    if (!_ingestOpen) return;
+    await _sync2(const <String, Object?>{'op': 'ingest_end'});
+    _ingestOpen = false;
+  }
 
   /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
   /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，

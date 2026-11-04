@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3608 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4004](bugs/BUG-4004-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
 > 共 3609 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

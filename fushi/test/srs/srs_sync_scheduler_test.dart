@@ -1362,7 +1362,9 @@ void main() {
       cloud.gate.complete();
       await s.settle();
       expect(srsMigrationProgress.value, isNull);
-      expect(seen.last.done, n);
+      // 最后一次有活可干的迁移把全部文件做完。旧文件删在哪一次迁移里取决于迁移请的发布轮与下一次迁移谁先到（两个
+      // 独立的后台任务）：发布轮先落地时第二次迁移就删光了，之后排着的那一次是空跑（只报起点 0/0），结果相同。
+      expect(seen.where((SrsSyncProgress v) => v.total > 0).last.done, n);
       expect(
         crumbs.listSync().where(
           (FileSystemEntity e) =>
