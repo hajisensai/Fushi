@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_adblock/web_content_rule_list.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-4013：iOS 虚拟地址空间耗尽闪退（浏览器那一项）。
 ///
 /// 上游 flutter_inappwebview_ios / _macos 1.1.2 每建一个 WebView（以及每次 `setSettings`）都把
@@ -96,9 +98,8 @@ void main() {
         final String helper = read(
           '$classes/InAppWebView/FushiContentRuleLists.swift',
         );
-        final List<String> uses = helper
+        final List<String> uses = maskComments(helper)
             .split('\n')
-            .where((String line) => !line.trimLeft().startsWith('//'))
             .where(
               (String line) =>
                   line.contains('WKContentRuleListStore.default()'),
@@ -126,10 +127,9 @@ void main() {
           'InAppWebView.swift',
           'FlutterWebViewController.swift',
         ]) {
-          final List<String> code = read('$classes/InAppWebView/$file')
-              .split('\n')
-              .where((String line) => !line.trimLeft().startsWith('//'))
-              .toList();
+          final List<String> code = maskComments(
+            read('$classes/InAppWebView/$file'),
+          ).split('\n');
           final String joined = code.join('\n');
           expect(
             joined,
