@@ -12,7 +12,6 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
-import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 

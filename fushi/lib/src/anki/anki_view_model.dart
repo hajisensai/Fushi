@@ -800,7 +800,7 @@ Future<SrsMiner?> _readSrsMiner(Ref ref) async {
     final WorkProfileSession? session = WorkProfileScope.instance.active;
     if (session != null) {
       final AppModel app = ref.read(appProvider);
-      return ref
+      return await ref
           .read(srsProfileStoresProvider)
           .minerFor(
             profileUid: await app.database.profileUidOf(session.profileId),

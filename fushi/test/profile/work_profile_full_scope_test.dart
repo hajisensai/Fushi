@@ -407,7 +407,7 @@ void main() {
     ).readAsStringSync();
     expect(
       vmSrc.contains(
-        "ref.watch(platformServicesProvider).createAnkiRepository()",
+        'ref.watch(platformServicesProvider).createAnkiRepository()',
       ),
       isTrue,
       reason: '快照 / 应用配置的仓库必须读 live Anki 设置，不能叠作品会话',
