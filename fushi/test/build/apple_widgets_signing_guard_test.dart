@@ -17,6 +17,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
@@ -121,14 +123,12 @@ void main() {
       reason: '直接对带注释的原文替换 + grep，注释里的 \$( 会误判',
     );
 
-    // 两份要展开的 entitlements：去掉注释后，唯一的构建变量只能是脚本会替换的那个。
+    // 两份要展开的 entitlements：注释等长掩码后，唯一的构建变量只能是脚本会替换的那个。
     for (final String path in const <String>[
       'macos/FushiWidgets/FushiWidgets.entitlements',
       'macos/Runner/Release.entitlements',
     ]) {
-      final String values = _read(
-        path,
-      ).replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+      final String values = maskHtmlComments(_read(path));
       final Iterable<String> vars = RegExp(
         r'\$\([^)]*\)',
       ).allMatches(values).map((RegExpMatch m) => m.group(0)!);
