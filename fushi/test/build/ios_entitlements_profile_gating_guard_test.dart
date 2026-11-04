@@ -10,6 +10,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   const String extendedVa =
       'com.apple.developer.kernel.extended-virtual-addressing';
@@ -38,7 +40,7 @@ void main() {
   List<String> entitlementKeys() => RegExp(r'<key>([^<]+)</key>')
       .allMatches(
         // 注释里提到的 key 不算。
-        entitlements.replaceAll(RegExp(r'<!--[\s\S]*?-->'), ''),
+        maskHtmlComments(entitlements),
       )
       .map((RegExpMatch m) => m.group(1)!)
       .toList();
@@ -112,9 +114,7 @@ void main() {
       'ios/FushiWidgets/FushiWidgets.entitlements',
     ).readAsStringSync().replaceAll('\r\n', '\n');
     final List<String> keys = RegExp(r'<key>([^<]+)</key>')
-        .allMatches(
-          widgetsEntitlements.replaceAll(RegExp(r'<!--[\s\S]*?-->'), ''),
-        )
+        .allMatches(maskHtmlComments(widgetsEntitlements))
         .map((RegExpMatch m) => m.group(1)!)
         .toList();
     expect(keys, isNotEmpty);
