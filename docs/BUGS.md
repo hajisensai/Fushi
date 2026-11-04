@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4102](bugs/BUG-4102-ankiconnect-reposition-due-rejected.md) | ✅ | ✅ | AnkiConnect 下「按词频重排新卡」被拒——新版 AnkiConnect 禁写 due |
 | [BUG-4102](bugs/BUG-4102-short-clip-sidecar-dropped.md) | ✅ | ✅ | 短片（识别稿少于 30 行）的外挂字幕在自动字幕生成里整条被丢 |
 | [BUG-4102](bugs/BUG-4102-player-cover-resume-tabs.md) | ✅ | ✅ | 播放页退出后浏览器标签页不续播；有声书 / 音乐播放页盖住浏览器不按住网页 |
 | [BUG-4102](bugs/BUG-4102-epub-utf8-mojibake-windows.md) | ✅ | ✅ | Windows 中文系统上 EPUB 正文 UTF-8 弯引号显示成「鈥檛」：WebView2 拦截响应丢了 charset |

@@ -2117,8 +2117,8 @@ class AnkiCardInfo {
       v is int ? v : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
 }
 
-/// 给一张**新卡**写入新的队列位置（AnkiConnect `setSpecificValueOfCard`
-/// 的 `due` 键）。
+/// 给一张**新卡**写入新的队列位置（AnkiConnect 走原生
+/// `scheduling.repositionNewCards`；Fushi 复习写卡上的位置排序键）。
 class AnkiCardDueUpdate {
   const AnkiCardDueUpdate({required this.cardId, required this.due});
 
@@ -2149,4 +2149,19 @@ class AnkiCardDueWriteResult {
   final Map<int, String> failures;
 
   bool get hasFailures => failures.isNotEmpty;
+}
+
+/// 后端**此刻**不能重排新卡（后端类型本身支持，但运行时能力缺失）。
+///
+/// 现在只有一种成因：连着的 AnkiConnect 没有可用的原生
+/// `scheduling.repositionNewCards`（见 `AnkiConnectService.supportsNativeRepositionNewCards`）。
+/// 抛出时**一张卡都没写**——不会退回去逐卡写 `due`。UI 据此给出「需要支持该接口的
+/// AnkiConnect 版本」的提示，而不是笼统的「重排失败」。
+class AnkiRepositionUnsupportedException implements Exception {
+  const AnkiRepositionUnsupportedException();
+
+  @override
+  String toString() =>
+      'AnkiRepositionUnsupportedException: this AnkiConnect version cannot '
+      'reposition new cards (no native scheduling.repositionNewCards)';
 }
