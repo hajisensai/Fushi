@@ -603,11 +603,15 @@ class ShelfContactShadow extends StatelessWidget {
             widthFactor: widthFactor,
             child: DecoratedBox(
               decoration: BoxDecoration(
+                // RadialGradient 的半径按盒子短边算：16dp 高的扁盒里只剩正中一颗
+                // 16dp 圆点（BUG：库页封面底下的「黑点」）。横向拉伸成铺满盒宽
+                // 的椭圆，才是一团贴着封面底边的阴影。
                 gradient: RadialGradient(
                   colors: <Color>[
                     Colors.black.withValues(alpha: dark ? 0.7 : 0.26),
                     Colors.black.withValues(alpha: 0),
                   ],
+                  transform: const _StretchToEllipse(),
                 ),
               ),
             ),
@@ -615,6 +619,21 @@ class ShelfContactShadow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 把以短边为直径的圆形径向渐变绕中心横向拉伸，铺满整个盒子成椭圆。
+class _StretchToEllipse extends GradientTransform {
+  const _StretchToEllipse();
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    if (bounds.height <= 0 || bounds.width <= bounds.height) return null;
+    final double sx = bounds.width / bounds.height;
+    final double cx = bounds.center.dx;
+    return Matrix4.identity()
+      ..setEntry(0, 0, sx)
+      ..setEntry(0, 3, cx - sx * cx);
   }
 }
 

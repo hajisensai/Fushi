@@ -16,7 +16,10 @@
 //   SUBLIST_PREFS=<json 文件>  启动前写入的 preferences 原始行（`{"design_system":"s:material"}`）；
 //   SUBLIST_PLAY=true          不暂停，边播边开关（用户的真实路径）；
 //   SUBLIST_WIDGET_TRACE=false 不开 widget 级 build/layout/paint 事件，只看引擎（含 raster 线程）；
-//   SUBLIST_TRACE_ALL=true     每一轮开关都录 timeline。
+//   SUBLIST_TRACE_ALL=true     每一轮开关都录 timeline；
+//   SUBLIST_WINDOW_MS=3000     每次按键后记帧 / 录 timeline 的窗口（默认 1500ms）。
+// 每轮汇总行带 slowRaster（raster>100ms 帧数）与 slowGaps（帧间隔>100ms 次数），
+// 开头打一行 `decode`（hwdec-current / pixelformat），核对是否走了用户的解码路径。
 import 'dart:async';
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:developer' show Timeline;
@@ -30,6 +33,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
+import 'package:fushi/src/media/video/video_shader_manager.dart'
+    show applyShadersToPlayer;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
@@ -39,6 +44,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:media_kit/media_kit.dart' show NativePlayer, PlatformPlayer;
 import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:vm_service/vm_service.dart' as vm;
 
@@ -102,6 +108,46 @@ final int _kCycles =
       _knob('SUBLIST_CYCLES', const String.fromEnvironment('SUBLIST_CYCLES')),
     ) ??
     3;
+
+/// `SUBLIST_WINDOW_MS=3000`：每次按键后记帧的窗口（默认 1500）。用户真机日志里卡顿
+/// 落在开 / 关后 1–3 秒，1.5 秒窗口会截掉后半段。
+final int _kWindowMs =
+    int.tryParse(
+      _knob(
+        'SUBLIST_WINDOW_MS',
+        const String.fromEnvironment('SUBLIST_WINDOW_MS'),
+      ),
+    ) ??
+    1500;
+
+/// `SUBLIST_SHADERS=a.glsl;b.glsl`：开播后下发的着色器链（绝对路径，`;` 分隔）。
+final String _kShaders = _knob(
+  'SUBLIST_SHADERS',
+  const String.fromEnvironment('SUBLIST_SHADERS'),
+);
+
+/// `SUBLIST_MPV_PROPS=scale=ewa_lanczossharp;cscale=...`：开播后设置的 mpv 属性。
+final String _kMpvProps = _knob(
+  'SUBLIST_MPV_PROPS',
+  const String.fromEnvironment('SUBLIST_MPV_PROPS'),
+);
+
+/// `SUBLIST_TRACE_STREAMS=Embedder`：录哪些 timeline 流（默认 Dart,Embedder,GC）。只录
+/// Embedder 时环形缓冲能装下整段 3 秒窗口（三条流一起只装得下约 1.6 秒）。
+final List<String> _kTraceStreams = _knob(
+  'SUBLIST_TRACE_STREAMS',
+  const String.fromEnvironment(
+    'SUBLIST_TRACE_STREAMS',
+    defaultValue: 'Dart,Embedder,GC',
+  ),
+).split(',');
+
+/// `SUBLIST_SHAM=true`：空白对照——走完全相同的计时 / 记帧流程，但不按 `L`、不断言
+/// 列表可见性，量「不开关时」同一窗口里的尖峰基线。
+final bool _kSham = _flag(
+  'SUBLIST_SHAM',
+  const bool.fromEnvironment('SUBLIST_SHAM'),
+);
 
 /// `SUBLIST_LAYERS=true`：关列表的轮次逐帧抓 layer 树（离屏层 / 纹理 / 平台视图）。
 final bool _kLayers = _flag(
@@ -235,11 +281,23 @@ class _FrameLog {
     final int maxRaster = f
         .map((FrameTiming t) => t.rasterDuration.inMicroseconds)
         .reduce((int a, int b) => a > b ? a : b);
+    // >100ms 的 raster 帧数与 >100ms 的帧间隔数（用户日志的 severe 量级）。
+    final int slowRaster = f
+        .where((FrameTiming t) => t.rasterDuration.inMicroseconds > 100000)
+        .length;
+    int slowGaps = 0;
+    int p = t0Micros;
+    for (final FrameTiming t in f) {
+      final int vs = t.timestampInMicroseconds(_vsync);
+      if (vs - p > 100000) slowGaps++;
+      p = vs;
+    }
     debugPrint(
       '$_tag $label frames=${f.length} '
       'span=${((lastVs - t0Micros) / 1000).toStringAsFixed(0)}ms '
       'maxGap=${(maxGap / 1000).toStringAsFixed(0)}ms '
-      'maxBuild=${maxBuild ~/ 1000}ms maxRaster=${maxRaster ~/ 1000}ms',
+      'maxBuild=${maxBuild ~/ 1000}ms maxRaster=${maxRaster ~/ 1000}ms '
+      'slowRaster=$slowRaster slowGaps=$slowGaps',
     );
     debugPrint('$_tag $label perFrame:$rows');
   }
@@ -510,6 +568,40 @@ void main() {
     if (!_kPlay) await video.controller.player.pause();
     await tester.pump(const Duration(seconds: 1));
 
+    // 解码路径（BUG-3888 用户条件是 h264 High10 → nvdec-copy + p010）：每轮核对。
+    final PlatformPlayer? platform = video.controller.player.platform;
+    if (platform is NativePlayer) {
+      // 复现用户的渲染负载：同一套 mpv 属性 + 着色器链（用户日志里是 Anime4K 全套）。
+      if (_kMpvProps.isNotEmpty) {
+        for (final String kv in _kMpvProps.split(';')) {
+          final int eq = kv.indexOf('=');
+          if (eq <= 0) continue;
+          await platform.setProperty(kv.substring(0, eq), kv.substring(eq + 1));
+        }
+      }
+      if (_kShaders.isNotEmpty) {
+        await applyShadersToPlayer(
+          video.controller.player,
+          _kShaders.split(';').where((String s) => s.isNotEmpty).toList(),
+        );
+        await tester.pump(const Duration(seconds: 2));
+      }
+      final List<String> props = <String>[];
+      for (final String name in <String>[
+        'hwdec-current',
+        'video-params/pixelformat',
+        'video-params/hw-pixelformat',
+        'video-codec',
+        'width',
+        'height',
+        'glsl-shaders',
+        'scale',
+      ]) {
+        props.add('$name=${await platform.getProperty(name)}');
+      }
+      debugPrint('$_tag decode ${props.join(' ')}');
+    }
+
     final FocusDriver driver = FocusDriver(tester);
     await driver.requestFocusInside(find.byType(Video));
     await tester.pump(const Duration(milliseconds: 200));
@@ -528,7 +620,8 @@ void main() {
       '${tester.view.physicalSize.height.round()} nativeDpr=$nativeDpr '
       'dpr=${tester.view.devicePixelRatio} '
       'probeVideo=${_kProbeVideo.isNotEmpty} play=$_kPlay '
-      'seedPrefs=${_seedPrefs().length} widgetTrace=$_kWidgetTrace',
+      'seedPrefs=${_seedPrefs().length} widgetTrace=$_kWidgetTrace '
+      'sham=$_kSham windowMs=$_kWindowMs',
     );
 
     Future<void> toggle(
@@ -560,21 +653,23 @@ void main() {
         debugProfilePaintsEnabled = _kWidgetTrace;
         try {
           tl = await binding.traceTimeline(() async {
-            await _pressL(tester);
-            await _wait(1500);
-          }, streams: const <String>['Dart', 'Embedder', 'GC']);
+            if (!_kSham) await _pressL(tester);
+            await _wait(_kWindowMs);
+          }, streams: _kTraceStreams);
         } finally {
           debugProfileBuildsEnabled = false;
           debugProfileLayoutsEnabled = false;
           debugProfilePaintsEnabled = false;
         }
       } else {
-        await _pressL(tester);
-        await _wait(1500);
+        if (!_kSham) await _pressL(tester);
+        await _wait(_kWindowMs);
       }
       log.stop();
       layers.active = false;
-      expect(_panelMounted(), expectOpen, reason: '$label 后列表可见性');
+      if (!_kSham) {
+        expect(_panelMounted(), expectOpen, reason: '$label 后列表可见性');
+      }
       log.report(label, t0);
       if (recordLayers && before != null) {
         _reportLayers(label, t0, before, beforeOwners, layers);
@@ -594,6 +689,7 @@ void main() {
       await toggle('close#$i', expectOpen: false, trace: _kTraceAll);
     }
 
+    if (_kSham) return;
     // 3. 关闭动画中段抓一帧真像素：看被收缩的那一列画的是什么（真时钟，不用假时间泵）。
     await _pressL(tester);
     await _wait(1000);

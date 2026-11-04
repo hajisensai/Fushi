@@ -399,7 +399,9 @@ void VideoOutput::Resize(int64_t required_width, int64_t required_height) {
             kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle, [&](auto, auto) {
               std::lock_guard<std::mutex> lock(textures_mutex_);
               if (texture_id_) {
-                surface_manager_->Read();
+                // FUSHI FORK (BUG-3888): no |surface_manager_->Read()| here —
+                // |Draw| already published the frame; this runs on Flutter's
+                // raster thread and must not wait on libmpv's render lock.
                 return textures_.at(texture_id_).get();
               } else {
                 return (FlutterDesktopGpuSurfaceDescriptor*)nullptr;
