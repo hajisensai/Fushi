@@ -96,6 +96,7 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
             digest: String::new(),
             at_ms: 0,
             name: String::new(),
+            ext: None,
         };
         heads.push(head.encode(&local.key));
         sizes.push((device.text(), bytes, skeletons));

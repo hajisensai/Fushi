@@ -46,6 +46,30 @@ class SrsMetaLine extends StatelessWidget {
   /// 把已用 [separator] 拼好的本地化串（如 i18n 摘要）拆回各段。
   static List<String> split(String joined) => joined.split(separator);
 
+  /// 全角收尾标点（「（Fushi 3.3）」的「）」等）字形自带右侧留白，后面再接 [separator] 的前导空格
+  /// 会显得中点左边空了两格：这种段后只接「· 」。
+  static const String _fullWidthClosers = '）】」』〉》〕';
+
+  /// [segment] 后面接的分隔符。
+  static String separatorAfter(String segment) =>
+      segment.isNotEmpty &&
+          _fullWidthClosers.contains(segment[segment.length - 1])
+      ? '· '
+      : separator;
+
+  /// 跳过空段、按 [separatorAfter] 拼成一行文本（不需要按段折行的地方用）。
+  static String join(Iterable<String> segments) {
+    final StringBuffer out = StringBuffer();
+    String last = '';
+    for (final String s in segments) {
+      if (s.isEmpty) continue;
+      if (out.isNotEmpty) out.write(separatorAfter(last));
+      out.write(s);
+      last = s;
+    }
+    return out.toString();
+  }
+
   final List<String> segments;
 
   @override
@@ -58,7 +82,9 @@ class SrsMetaLine extends StatelessWidget {
       children: <Widget>[
         for (int i = 0; i < parts.length; i++)
           Text(
-            i == parts.length - 1 ? parts[i] : '${parts[i]}$separator',
+            i == parts.length - 1
+                ? parts[i]
+                : '${parts[i]}${separatorAfter(parts[i])}',
             maxLines: 1,
             softWrap: false,
             overflow: TextOverflow.ellipsis,

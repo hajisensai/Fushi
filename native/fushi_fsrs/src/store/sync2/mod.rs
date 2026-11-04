@@ -13,6 +13,7 @@ pub(crate) mod channel;
 pub mod config;
 pub(crate) mod dedup;
 pub mod digest;
+pub(crate) mod devices;
 pub mod media;
 pub(crate) mod mvr;
 pub mod relay;
@@ -1887,6 +1888,8 @@ mod bootstrap_probe;
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_delivery_window;
+#[cfg(test)]
+mod tests_devices;
 #[cfg(test)]
 mod tests_migrate_dedup;
 #[cfg(test)]
