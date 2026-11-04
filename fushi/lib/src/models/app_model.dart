@@ -333,6 +333,13 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart'
+    show appleMusicTokenSource;
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show AppleMusicCatalogClient;
+import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
+    show AppleMusicPersonalClient;
 import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart'
     show createAppleMusicBridge;
 import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dart'
@@ -1794,6 +1801,9 @@ class AppModel with ChangeNotifier {
         setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
       );
   AppleMusicAccount? _appleMusicAccount;
+
+  /// 播放器「喜欢」用的 Apple Music 评分客户端（懒建，跨账号复用：token 每次现取）。
+  AppleMusicPersonalClient? _appleMusicRatingsClient;
   late final AnkiIntegration ankiIntegration = AnkiIntegration();
 
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
@@ -1926,6 +1936,23 @@ class AppModel with ChangeNotifier {
                   ErrorLogService.instance.log('MusicPluginFavorites', e, st),
             )
           : null,
+      // Apple Music 整曲的「喜欢」= Apple Music 评分（要已连接账号）；iOS 上同样可用。
+      appleMusicFavorites: AppleMusicFavorites(
+        available: () =>
+            isPreferencesReady &&
+            prefsRepo.musicAppleMusicEnabled &&
+            appleMusicAccount.canPlayFullTracks,
+        client: () => _appleMusicRatingsClient ??= AppleMusicPersonalClient(
+          credentials: appleMusicAccount.userCredentials,
+          catalog: AppleMusicCatalogClient(
+            tokens: appleMusicTokenSource,
+            fullTracks: true,
+          ),
+        ),
+        accountChanges: appleMusicAccount,
+        onError: (Object e, StackTrace st) =>
+            ErrorLogService.instance.log('AppleMusicFavorites', e, st),
+      ),
     );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,

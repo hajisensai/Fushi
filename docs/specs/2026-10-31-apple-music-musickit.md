@@ -1,6 +1,6 @@
 # Apple Music 官方集成（MusicKit 播放后端）
 
-状态（2026-11-02）：P1 / P1b 已合入；**P2 / P3 / P4 已实现**（原生 MusicKit 桥、网页桥、登录 / 订阅、整曲播放后端、资料库来源、设置页，见 §6 与 §10）；Windows 网页桥未登录链路（configure / 试听出声 / 暂停 / 登录弹窗）与 macOS 原生桥通道已真 app 验证；订阅账号登录后的整曲播放、系统授权框与 iOS 真机待做（§10.3）。
+状态（2026-11-05）：**P5 完整功能已实现**（歌单 / 主页 / 榜单 / 流派 / 电台 / 评分 / 资料库写操作，见 §11）；P1 / P1b 已合入；**P2 / P3 / P4 已实现**（原生 MusicKit 桥、网页桥、登录 / 订阅、整曲播放后端、资料库来源、设置页，见 §6 与 §10）；Windows 网页桥未登录链路（configure / 试听出声 / 暂停 / 登录弹窗）与 macOS 原生桥通道已真 app 验证；订阅账号登录后的整曲播放、系统授权框与 iOS 真机待做（§10.3）。
 
 ## 0. 一句话
 
@@ -141,7 +141,8 @@ AppleMusicBridge (Dart 接口：授权 / 订阅状态 / 播放控制 / 事件流
 
 - 离线下载、缓存音频、录制输出、卡片音频片段。
 - Apple 私有接口（逐字 TTML 歌词 `syllable-lyrics`、amp-api 等）：不碰，歌词只用现有公开 provider。
-- 电台、MusicKit for Android SDK、Linux。
+- MusicKit for Android SDK、Linux。（电台已在 P5 做：MusicKit 自管队列，§11）
+- 公开 API 做不到的：删歌单 / 改歌单名 / 从歌单删歌、音乐视频（DRM）播放、Apple 歌词。
 - 均衡器 / 交叉淡入 / 独占 / ReplayGain / bit-perfect 对 Apple Music 曲目不生效（§3.3 能力标志置灰）。
 
 ## 6. 阶段
@@ -241,4 +242,31 @@ Apple 平台按全局规则在 `ssh mac` 上验（iPhone 真机 + macOS 14+）�
 - 有 Apple Music 订阅的 Apple ID 在 Windows / Android 登录后整曲（非 30 秒）播放、`previewOnly` 判订阅是否准确。
 - iOS 真机 / macOS 14+：系统授权框、整曲播放、进度、自然播完判定，以及 `ApplicationMusicPlayer` 与 audio_service 的
   Now Playing / 远程命令谁覆盖谁（§3.4；本轮保留 audio_service 为会话所有者）。
-- 未做：「喜欢」（ratings API）同步、资料库混排进本地曲库（§4 v1 不做）、歌词按 ISRC 检索。
+- 未做：资料库混排进本地曲库（§4 v1 不做）、歌词按 ISRC 检索。（「喜欢」已在 P5 接 ratings API）
+
+## 11. P5 完整功能（2026-11-05）
+
+只用公开 Apple Music API（developer token + Music-User-Token），不碰 amp-api。
+
+- **歌单（所有服务器）**：`MusicServerBrowser.listPlaylists` / `playlistTracks` + `MusicServerPlaylist`
+  （Jellyfin / OpenSubsonic / Apple catalog（榜单歌单）/ Apple 资料库）；服务器页「歌单」分区、
+  `MusicServerPlaylistPage`（播放来源 `serverPlaylist`），统一搜索并入歌单结果。
+- **catalog**（`apple_music_catalog_client.dart`）：榜单（歌曲 / 专辑 / 歌单，可按流派）、流派、艺人视图
+  （热门歌曲 / 相似艺人 / 精选歌单）、直播电台、以歌曲 / 艺人 / 专辑 / 歌单起电台、`searchAll`（含歌单 /
+  电台）与搜索建议。
+- **个人数据**（`apple_music_personal_client.dart`，需整曲权限）：为你推荐、最近播放（容器 / 歌曲 / 电台）、
+  重度轮播、个人电台、评分（喜欢 / 减少推荐，PUT/DELETE `/v1/me/ratings/*`）、加入资料库。
+- **资料库写操作**（`apple_music_library_client.dart`）：新建歌单（可带初始曲目）、往歌单加歌、资料库歌曲列表、
+  最近加入；资料库曲目经 `playParams.catalogId` 换算 catalog id。
+- **电台播放**：`fushi-apple-music://station/<id>`，MusicKit 自管队列（引擎 external queue）：
+  `MusicBackendNowPlayingChanged` 就地替换当前项、按开始播记播放事件；电台时上一首 / 随机 / 循环置灰，
+  没有时长时进度条不可拖。
+- **喜欢**：`AppleMusicFavorites`（ratings API）接进 `MusicSession`，与插件喜欢同一个歌词页按钮（iOS 也可用）。
+- **界面**（`music_apple_music_pages.dart`）：catalog 来源第一个分区是「主页」；艺人页；资料库「歌曲」分区；
+  曲目 / 专辑 / 歌单「更多」菜单。菜单与选歌单 / 新建歌单流程抽到 `music_track_actions.dart`，与在线插件共用
+  （插件侧新增 `playlistEdit` / `radio` / `artistSimilar` / `collect` 能力，见
+  `docs/specs/2026-10-28-music-plugins.md` §4）。
+- **顺带修**：切歌时上一首的播放事件 `listenedMs` 恒为 0（引擎先清零位置再通知开播），改为引擎在清零前存下
+  已开播那首的位置（`MusicPlayerEngine.listenedBeforeStart`），会话据此结算。
+
+待验：有订阅的 Apple ID 下的推荐 / 评分 / 建歌单 / 电台真机链路；Swift 电台分支的 iOS / macOS 真机播放。

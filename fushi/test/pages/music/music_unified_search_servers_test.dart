@@ -56,6 +56,18 @@ class _FakeServer implements MusicServerBrowser {
       const <MusicServerAlbum>[];
 
   @override
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  }) async => const MusicServerPage<MusicServerPlaylist>(
+    items: <MusicServerPlaylist>[],
+  );
+
+  @override
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId) async =>
+      const <MusicServerTrack>[];
+
+  @override
   Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {
     searchCalls++;
     final Error? e = error;

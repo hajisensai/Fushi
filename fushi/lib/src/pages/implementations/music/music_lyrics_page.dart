@@ -1361,7 +1361,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     clock: MusicEngineClock(_engine),
     clockListenable: _engine,
     isPlaying: _engine.isPlaying,
-    onSeek: (Duration d) => unawaited(_engine.seek(d)),
+    // 电台（MusicKit 管队列）没有时长时不能拖。
+    onSeek: _engine.canSeek ? (Duration d) => unawaited(_engine.seek(d)) : null,
     strokeWidth: 4,
     barHeight: 20,
     debugLabel: 'music-lyrics-seek',
@@ -1419,7 +1420,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiIconButtonControl(
             iconSize: icon,
             tooltip: t.shortcut_action_music_previous_track,
-            onPressed: () => unawaited(engine.skipPrevious()),
+            onPressed: engine.canSkipPrevious
+                ? () => unawaited(engine.skipPrevious())
+                : null,
             icon: const FushiIcon(FushiIcons.skipPrevious),
           ),
         ),

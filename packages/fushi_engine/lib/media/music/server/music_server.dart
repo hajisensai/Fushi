@@ -80,6 +80,35 @@ class MusicServerArtist {
   final String? coverRef;
 }
 
+/// 一个歌单（服务器上的用户歌单 / Apple Music 编辑歌单与资料库歌单）。
+class MusicServerPlaylist {
+  const MusicServerPlaylist({
+    required this.id,
+    required this.title,
+    this.description,
+    this.curator,
+    this.trackCount,
+    this.durationMs,
+    this.coverRef,
+    this.editable = false,
+  });
+
+  final String id;
+  final String title;
+
+  /// 简介（纯文本；服务器给的是富文本时由实现剥成纯文本）。
+  final String? description;
+
+  /// 歌单作者 / 编辑（Apple Music 的 curator、服务器上的 owner）。
+  final String? curator;
+  final int? trackCount;
+  final int? durationMs;
+  final String? coverRef;
+
+  /// 当前账号能往里加歌（Apple Music 资料库里自己建的歌单）。
+  final bool editable;
+}
+
 /// 一首曲目（服务器报的源属性：信号路径面板与格式徽章用）。
 class MusicServerTrack {
   const MusicServerTrack({
@@ -167,13 +196,16 @@ class MusicServerSearchResult {
     this.albums = const <MusicServerAlbum>[],
     this.artists = const <MusicServerArtist>[],
     this.tracks = const <MusicServerTrack>[],
+    this.playlists = const <MusicServerPlaylist>[],
   });
 
   final List<MusicServerAlbum> albums;
   final List<MusicServerArtist> artists;
   final List<MusicServerTrack> tracks;
+  final List<MusicServerPlaylist> playlists;
 
-  bool get isEmpty => albums.isEmpty && artists.isEmpty && tracks.isEmpty;
+  bool get isEmpty =>
+      albums.isEmpty && artists.isEmpty && tracks.isEmpty && playlists.isEmpty;
 }
 
 /// 一条播放流。
@@ -216,6 +248,16 @@ abstract interface class MusicServerBrowser {
   Future<List<MusicServerArtist>> listArtists();
 
   Future<List<MusicServerAlbum>> artistAlbums(String artistId);
+
+  /// 歌单（服务器：当前账号能看到的歌单；Apple Music catalog：该地区的热门歌单榜；
+  /// Apple Music 资料库：用户资料库里的歌单）。
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  });
+
+  /// 一个歌单的曲目（歌单自身顺序；放不了的曲目不列出）。
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId);
 
   /// 搜专辑 / 艺人 / 曲目。空白查询不发请求。
   Future<MusicServerSearchResult> search(String query, {int limit = 30});

@@ -6,7 +6,9 @@
 /// - [AppleMusicWebBridge]：隐藏 WebView 加载 Worker 托管的 MusicKit JS 页（Windows、Android）。
 /// Linux 没有能解 DRM 的播放器（WPE 无 Widevine），[createAppleMusicBridge] 回 null，只剩浏览 + 试听。
 ///
-/// 播放一次只给 MusicKit 一首（Fushi 的队列是唯一真相，方案 §3.3）。
+/// 播放一次只给 MusicKit 一首（Fushi 的队列是唯一真相，方案 §3.3）。例外是电台
+/// （[AppleMusicBridge.playStation]）：Apple 不公开电台曲目列表，只能让 MusicKit 自管电台队列、
+/// 自己换歌，每换一首由桥发 [AppleMusicNowPlaying]。
 library;
 
 import 'dart:async';
@@ -131,6 +133,48 @@ final class AppleMusicEnded extends AppleMusicPlayerEvent {
   final String? songId;
 }
 
+/// 电台（[AppleMusicBridge.playStation]）里现在出声的这一首：MusicKit 换歌时（含开始放电台的
+/// 第一首、[AppleMusicBridge.skipToNext]）发。直播电台（Apple Music 1 等）可能没有 [songId] /
+/// [durationMs]，只有节目标题。单曲播放（[AppleMusicBridge.play]）时桥不发。
+final class AppleMusicNowPlaying extends AppleMusicPlayerEvent {
+  const AppleMusicNowPlaying({
+    this.songId,
+    this.title,
+    this.artist,
+    this.album,
+    this.artworkUrl,
+    this.durationMs,
+  });
+
+  /// catalog 曲目 id（是歌曲时）；直播节目等为 null。
+  final String? songId;
+  final String? title;
+  final String? artist;
+  final String? album;
+
+  /// 封面：artwork 模板（`…/{w}x{h}bb.jpg`）或已定尺寸的地址（原生给定尺寸地址）。
+  final String? artworkUrl;
+
+  /// 这首的时长；直播为 null。
+  final int? durationMs;
+
+  /// 从桥的事件 map 读（原生与网页同形：`songId` / `title` / `artist` / `album` /
+  /// `artworkUrl` / `durationMs`）。
+  static AppleMusicNowPlaying fromMap(Map<Object?, Object?> m) {
+    String? str(Object? v) => v is String && v.isNotEmpty ? v : null;
+    final Object? d = m['durationMs'];
+    final int? dur = d is num ? d.round() : null;
+    return AppleMusicNowPlaying(
+      songId: str(m['songId']),
+      title: str(m['title']),
+      artist: str(m['artist']),
+      album: str(m['album']),
+      artworkUrl: str(m['artworkUrl']),
+      durationMs: dur != null && dur > 0 ? dur : null,
+    );
+  }
+}
+
 /// 播放出错（取不到曲目 / DRM / 订阅失效 …）。
 final class AppleMusicPlaybackError extends AppleMusicPlayerEvent {
   const AppleMusicPlaybackError(this.message, {this.songId});
@@ -185,6 +229,14 @@ abstract interface class AppleMusicBridge {
 
   /// 放一首 catalog 曲目（替换掉 MusicKit 里原有的那首）。
   Future<void> play(String songId, {int startMs = 0, bool autoplay = true});
+
+  /// 放一个 catalog 电台（替换掉 MusicKit 里原有的队列）：电台队列由 MusicKit 自管、自己换歌，
+  /// 每换一首发 [AppleMusicNowPlaying]；电台自然不会「播完」（[AppleMusicEnded] 只在电台真的
+  /// 结束、队列空了时发）。打不开抛 [AppleMusicBridgeException]。
+  Future<void> playStation(String stationId, {bool autoplay = true});
+
+  /// 让 MusicKit 的队列跳到下一首（电台里换歌）。单曲队列里没有下一首，桥按自身行为处理。
+  Future<void> skipToNext();
 
   Future<void> pause();
   Future<void> resume();

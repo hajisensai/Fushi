@@ -268,6 +268,32 @@ class MusicPlayerEngine extends ChangeNotifier {
   bool _shuffled = false;
   bool _playing = false;
   Duration _position = Duration.zero;
+
+  /// 已通知「开始播」（[onTrackStarted]）的那一首在位置清零前播到了哪；[_announced] 表示
+  /// 当前 [_position] 属于一首已通知开播的曲目。播放事件结算读 [listenedBeforeStart]。
+  bool _announced = false;
+  Duration? _listenedBeforeStart;
+
+  /// 位置清零（换曲 / 停止 / 重开）：清零前先存下已开播那首播到哪。
+  void _zeroPosition() {
+    if (_announced) {
+      _listenedBeforeStart = _position;
+      _announced = false;
+    }
+    _position = Duration.zero;
+  }
+
+  /// 通知开始播 [item]：之后的位置都记在它名下。
+  void _announceStarted(MusicPlayItem item) {
+    _announced = true;
+    onTrackStarted?.call(item);
+    // 只在这一次回调里有效：下一次开播前必有一次清零重新存。
+    _listenedBeforeStart = null;
+  }
+
+  /// 上一首已开播曲目在被换掉（位置清零）前播到的位置；[onTrackStarted] 回调里同步读，
+  /// 结算上一首的播放事件（此时 [position] 已经是新曲的 0）。没有上一首时为 null。
+  Duration? get listenedBeforeStart => _listenedBeforeStart;
   Duration? _duration;
   String? _lastError;
   bool _stopAfterCurrent = false;
@@ -295,6 +321,20 @@ class MusicPlayerEngine extends ChangeNotifier {
   MusicBackendOutputFallback? _lastOutputFallback;
   MusicAbLoop? _abLoop;
 
+  /// 后端自管队列的那一项（[MusicBackendCapabilities.externalQueue]，如 Apple Music 电台）
+  /// 原样留在这里：队列里的那一格已被 [MusicBackendNowPlayingChanged] 换成正在放的那首，
+  /// 能力判定与重开都按原项（电台）来。[_externalRootIndex] 是它在 [_queue] 里的位置。
+  /// 换到别的项 / 重开 / 停止时把原项放回队列再清掉（[_restoreExternalRoot]）。
+  MusicPlayItem? _externalRoot;
+  int _externalRootIndex = -1;
+
+  /// 自管队列的项刚打开、后端还没报在放哪首：第一条 [MusicBackendNowPlayingChanged] 时才
+  /// 调 [onTrackStarted]（不给电台本身记一条空播放）。
+  bool _externalStartPending = false;
+
+  /// 打开自管队列的项期间（[_resolving]）后端已报的在放曲目：打开成功后再套用。
+  MusicPlayItem? _pendingExternalNowPlaying;
+
   /// 输出自动退回（独占 → 共享 / 指定设备 → 默认）时调用：界面弹明确提示。
   void Function(MusicBackendOutputFallback fallback)? onOutputFallback;
 
@@ -318,9 +358,11 @@ class MusicPlayerEngine extends ChangeNotifier {
   MusicPlayItem? get current =>
       _index >= 0 && _index < _queue.length ? _queue[_index] : null;
 
-  /// 预排给后端的下一首：单曲循环是当前曲；列表循环到队尾时接回队首。
+  /// 预排给后端的下一首：单曲循环是当前曲；列表循环到队尾时接回队首。当前项由后端自管
+  /// 队列时没有（后端自己换歌，Fushi 不预排）。
   MusicPlayItem? get next {
     if (_index < 0 || _index >= _queue.length) return null;
+    if (externalQueue) return null;
     if (_repeat == MusicRepeatMode.one) return _queue[_index];
     if (_index + 1 < _queue.length) return _queue[_index + 1];
     return _repeat == MusicRepeatMode.all ? _queue.first : null;
@@ -330,6 +372,8 @@ class MusicPlayerEngine extends ChangeNotifier {
   MusicRepeatMode get repeatMode => _repeat;
 
   /// 切循环模式：不打断当前曲，只更新预排给后端的下一首。
+  ///
+  /// 当前项由后端自管队列时只记下模式（[next] 恒为空，换回普通队列后才生效）。
   Future<void> setRepeatMode(MusicRepeatMode mode) async {
     if (mode == _repeat) return;
     _repeat = mode;
@@ -369,12 +413,36 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 当前曲目所属后端能做什么（界面按它隐藏信号路径 / A-B 循环入口）；没有当前曲目时
   /// 按默认链路算。
   MusicBackendCapabilities get capabilities {
-    final MusicPlayItem? item = current;
+    final MusicPlayItem? item = _capabilityItem;
     final MusicBackendCapabilities Function(MusicPlayItem)? of =
         _capabilitiesOf;
     if (item == null || of == null) return MusicBackendCapabilities.full;
     return of(item);
   }
+
+  /// 判能力用的项：自管队列时是原项（电台），否则是当前曲。
+  MusicPlayItem? get _capabilityItem {
+    final MusicPlayItem? root = _externalRoot;
+    if (root != null && _externalRootIndex == _index) return root;
+    return current;
+  }
+
+  /// 当前项由后端自管队列（[MusicBackendCapabilities.externalQueue]）：「下一首」交给后端，
+  /// 「上一首」/ 随机 / 循环不适用。界面按它隐藏对应按钮。
+  bool get externalQueue => capabilities.externalQueue;
+
+  /// 自管队列的原项（如电台本身）；不是自管队列时为 null。界面要显示「正在收听的电台」用。
+  MusicPlayItem? get externalQueueSource =>
+      externalQueue ? _capabilityItem : null;
+
+  /// 「上一首」可用（自管队列时不可用）。
+  bool get canSkipPrevious => current != null && !externalQueue;
+
+  /// 随机 / 循环对当前项有意义（自管队列时没有）。
+  bool get canShuffleOrRepeat => !externalQueue;
+
+  /// 能在当前曲内拖动：自管队列且不知道时长（直播电台）时不能。
+  bool get canSeek => current != null && !(externalQueue && _duration == null);
 
   /// 开 / 改 AB 循环；[loop] 为 null（或区间为空）= 关。没在播时只记状态不下发。
   /// 当前曲目的后端做不了循环（[MusicBackendCapabilities.abLoop]）时开不起来。
@@ -493,13 +561,15 @@ class MusicPlayerEngine extends ChangeNotifier {
     required bool play,
     bool userInitiated = true,
   }) async {
+    _restoreExternalRoot();
     final MusicPlayItem? item = current;
     if (item == null) return;
     final int gen = ++_openGen;
     if (userInitiated) _consecutiveUnavailable = 0;
+    final bool external = capabilities.externalQueue;
     final MusicOutputBackend backend = _ensureBackend();
     _dropAbLoopForTrackChange();
-    _position = Duration.zero;
+    _zeroPosition();
     _duration = item.durationMs == null
         ? null
         : Duration(milliseconds: item.durationMs!);
@@ -508,6 +578,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     _needsReopen = false;
     _pauseAfterOpen = false;
     _resolving = true;
+    _pendingExternalNowPlaying = null;
     notifyListeners();
     if (play) onWillPlay?.call();
     try {
@@ -536,14 +607,25 @@ class MusicPlayerEngine extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final MusicPlayItem? pendingNowPlaying = _pendingExternalNowPlaying;
+    _pendingExternalNowPlaying = null;
     if (play) {
-      onTrackStarted?.call(item);
+      if (external) {
+        // 后端还没报（或在打开期间才报了）在放哪首：第一条 NowPlayingChanged 时再记「开始播」。
+        _externalStartPending = true;
+      } else {
+        _announceStarted(item);
+      }
       if (_pauseAfterOpen) {
         await backend.pause();
         if (gen != _openGen) return;
       } else {
         _playing = true;
       }
+    }
+    if (external && pendingNowPlaying != null) {
+      _onExternalNowPlaying(pendingNowPlaying, announce: play);
+      return;
     }
     notifyListeners();
   }
@@ -616,6 +698,8 @@ class MusicPlayerEngine extends ChangeNotifier {
   Future<void> seek(Duration position) async {
     final MusicOutputBackend? backend = _backend;
     if (backend == null || current == null) return;
+    // 直播电台没有时间轴。
+    if (!canSeek) return;
     final Duration clamped = position < Duration.zero
         ? Duration.zero
         : (_duration != null && position > _duration! ? _duration! : position);
@@ -664,7 +748,19 @@ class MusicPlayerEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 下一首。当前项由后端自管队列时交给后端换歌（Fushi 队列不动）；那一项已失败 / 已结束
+  /// 时按播放重开它。
   Future<void> skipNext() async {
+    if (externalQueue) {
+      if (_resolving) return;
+      if (_ended || _needsReopen) {
+        await _openCurrent(play: true);
+        return;
+      }
+      final MusicOutputBackend? backend = _backend;
+      if (backend is MusicExternalQueueBackend) await backend.skipToNext();
+      return;
+    }
     if (_index + 1 >= _queue.length) {
       // 列表 / 单曲循环下，队尾「下一首」接回队首（单曲循环只管自然播完）。
       if (_repeat == MusicRepeatMode.off || _queue.isEmpty) return;
@@ -676,8 +772,9 @@ class MusicPlayerEngine extends ChangeNotifier {
     await _openCurrent(play: true);
   }
 
+  /// 上一首 / 回到本曲开头。当前项由后端自管队列时无操作（后端不给回退）。
   Future<void> skipPrevious() async {
-    if (current == null) return;
+    if (current == null || externalQueue) return;
     if (!musicPreviousGoesBack(_position) || _index == 0) {
       await seek(Duration.zero);
       return;
@@ -693,9 +790,30 @@ class MusicPlayerEngine extends ChangeNotifier {
     await _openCurrent(play: true);
   }
 
+  /// 往队尾追加 [items]（电台式续播，见 `MusicQueueFeedRunner`）。当前是最后一首时更新预排的
+  /// 下一首；最后一首已经放完停下（[_ended]）时直接接着放追加的第一首。自管队列 / 空队列
+  /// 时无操作。
+  Future<void> appendToQueue(List<MusicPlayItem> items) async {
+    if (items.isEmpty || _queue.isEmpty || externalQueue) return;
+    final bool wasLast = _index == _queue.length - 1;
+    _queue = <MusicPlayItem>[..._queue, ...items];
+    _original = <MusicPlayItem>[..._original, ...items];
+    if (wasLast && _ended && !_playing) {
+      _index++;
+      await _openCurrent(play: true);
+      return;
+    }
+    notifyListeners();
+    final MusicOutputBackend? backend = _backend;
+    if (wasLast && backend != null) await _sendNext(backend);
+  }
+
   /// 开 / 关随机：保持当前曲目不变、不中断，只重排它之后的队列并更新预排的下一首。
+  ///
+  /// 当前项由后端自管队列时无操作（Fushi 队列里它只占一格，打乱没有意义，也会把就地换过的
+  /// 那一格挪走）。
   Future<void> setShuffle(bool shuffle) async {
-    if (shuffle == _shuffled) return;
+    if (shuffle == _shuffled || externalQueue) return;
     final MusicPlayItem? playing = current;
     _shuffled = shuffle;
     if (playing == null) {
@@ -733,9 +851,13 @@ class MusicPlayerEngine extends ChangeNotifier {
     _queue = const <MusicPlayItem>[];
     _original = const <MusicPlayItem>[];
     _index = -1;
+    _externalRoot = null;
+    _externalRootIndex = -1;
+    _externalStartPending = false;
+    _pendingExternalNowPlaying = null;
     _source = null;
     _playing = false;
-    _position = Duration.zero;
+    _zeroPosition();
     _duration = null;
     _stopAfterCurrent = false;
     _sleepTimer?.cancel();
@@ -767,6 +889,11 @@ class MusicPlayerEngine extends ChangeNotifier {
     // 打开期间（取流中）后端报的位置 / 播放态 / 推进 / 播完都属于被换掉的旧曲。
     if (_resolving && event is! MusicBackendOutputFallback) {
       if (event is MusicBackendFailed) _onFailedEvent(event);
+      // 自管队列的后端在打开时就报出了在放哪首（是新开的这一项的：后端按代次滤掉了旧的）：
+      // 打开成功后再套用。
+      if (event is MusicBackendNowPlayingChanged) {
+        _pendingExternalNowPlaying = event.item;
+      }
       return;
     }
     switch (event) {
@@ -800,14 +927,16 @@ class MusicPlayerEngine extends ChangeNotifier {
         _dropAbLoopForTrackChange();
         _needsReopen = false;
         _lastError = null;
-        _position = Duration.zero;
+        _zeroPosition();
         _duration = item?.durationMs == null
             ? null
             : Duration(milliseconds: item!.durationMs!);
-        if (item != null) onTrackStarted?.call(item);
+        if (item != null) _announceStarted(item);
         notifyListeners();
         final MusicOutputBackend? backend = _backend;
         if (backend != null) unawaited(_sendNext(backend));
+      case MusicBackendNowPlayingChanged(:final MusicPlayItem item):
+        _onExternalNowPlaying(item);
       case MusicBackendCompleted():
         // 后端播完即卸载文件、交还设备（独占不再占着）；再按播放由 [play] 重开。
         _playing = false;
@@ -819,7 +948,7 @@ class MusicPlayerEngine extends ChangeNotifier {
           if (_index + 1 < _queue.length) {
             _index++;
             final MusicPlayItem? item = current;
-            _position = Duration.zero;
+            _zeroPosition();
             _duration = item?.durationMs == null
                 ? null
                 : Duration(milliseconds: item!.durationMs!);
@@ -833,6 +962,54 @@ class MusicPlayerEngine extends ChangeNotifier {
       case MusicBackendFailed():
         _onFailedEvent(event);
     }
+  }
+
+  /// 自管队列的后端换了歌：就地替换当前项（index 不动），刷新位置 / 时长；身份变了（或这是
+  /// 打开后的第一首）按开始播新曲通知（[announce] 为假 = 只排好没出声，不通知）。当前项
+  /// 不是自管队列的：过期事件，丢弃。
+  void _onExternalNowPlaying(MusicPlayItem item, {bool announce = true}) {
+    final MusicPlayItem? cur = current;
+    if (cur == null || !externalQueue) return;
+    if (_externalRoot == null || _externalRootIndex != _index) {
+      _externalRoot = cur;
+      _externalRootIndex = _index;
+    }
+    final bool changed = item.trackUid != cur.trackUid;
+    _replaceSlot(_index, cur, item);
+    final bool start = announce && (changed || _externalStartPending);
+    _externalStartPending = false;
+    if (changed) {
+      _dropAbLoopForTrackChange();
+      _zeroPosition();
+    }
+    _needsReopen = false;
+    _lastError = null;
+    _duration = item.durationMs == null
+        ? null
+        : Duration(milliseconds: item.durationMs!);
+    if (start) _announceStarted(item);
+    notifyListeners();
+  }
+
+  /// 把 [_queue] 第 [i] 格从 [from] 换成 [to]，[_original] 里同一项一并换（关随机还原时不丢）。
+  void _replaceSlot(int i, MusicPlayItem from, MusicPlayItem to) {
+    _queue = List<MusicPlayItem>.of(_queue)..[i] = to;
+    final int o = _original.indexWhere(
+      (MusicPlayItem x) => x.trackUid == from.trackUid,
+    );
+    if (o >= 0) _original = List<MusicPlayItem>.of(_original)..[o] = to;
+  }
+
+  /// 自管队列的那一格换回原项（电台），清掉记录。
+  void _restoreExternalRoot() {
+    final MusicPlayItem? root = _externalRoot;
+    final int i = _externalRootIndex;
+    _externalRoot = null;
+    _externalRootIndex = -1;
+    _externalStartPending = false;
+    if (root == null || i < 0 || i >= _queue.length) return;
+    final MusicPlayItem slot = _queue[i];
+    if (slot.trackUid != root.trackUid) _replaceSlot(i, slot, root);
   }
 
   /// 后端异步报的失败（打开之后才发现：流地址打不开、预排的下一首取不到流 …），按曲目对位：
@@ -855,7 +1032,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     if (!_resolving && uid == next?.trackUid) {
       _index++;
       _dropAbLoopForTrackChange();
-      _position = Duration.zero;
+      _zeroPosition();
       final MusicPlayItem? item = current;
       _duration = item?.durationMs == null
           ? null
