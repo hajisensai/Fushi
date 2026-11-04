@@ -9821,8 +9821,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// MD3 Expressive 底栏播放键：主色实心「宽」胶囊（M3E 宽按钮 = 1.3 倍高），
-  /// 暂停态圆、播放态弹成圆角方形。点击路径与 Apple 分支相同（续命控制条 +
+  /// MD3 Expressive 底栏播放键：主色实心的统一主播放键多边形（12 瓣饼干，
+  /// 播放态转半瓣）；底栏槽位仍按 M3E 宽按钮占 1.3 倍高的宽度。点击路径与 Apple 分支相同（续命控制条 +
   /// `controller.playOrPause`）；按 [controller] 重建以跟随播放态。
   Widget _m3ePlayPauseButton(
     VideoPlayerController controller, {

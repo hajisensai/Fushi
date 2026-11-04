@@ -76,6 +76,8 @@ describe('MusicKit 托管页', () => {
     expect(r.res.headers.get('Content-Type')).toContain('text/html');
     const csp = r.res.headers.get('Content-Security-Policy');
     expect(csp).toBe(MUSICKIT_PAGE_CSP);
+    // Apple 授权弹窗按 referrer 认 opener；no-referrer 会让登录 token 回不来（FK0EFFDLIS）。
+    expect(r.res.headers.get('Referrer-Policy')).toBe('strict-origin');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain("'unsafe-inline' 'self'");
     expect(csp).toMatch(/script-src 'self' https:\/\/js-cdn\.music\.apple\.com(;|$)/);

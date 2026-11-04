@@ -2508,7 +2508,7 @@ class _FakeRwkv implements SrsRwkvScheduling {
   @override
   Future<List<double>?> instantRetrievability(
     List<SrsRwkvCandidate> cards, {
-    required int nowMs,
+    required int atMs,
   }) async => ready ? List<double>.filled(cards.length, 0) : null;
 
   @override

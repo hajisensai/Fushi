@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use super::tests::{deck_entity, edit, Bucket, Device, P};
 use crate::sync2::id::Id;
+use crate::sync2::segment;
 
 const T0: i64 = 1_700_000_000_000;
 
@@ -37,7 +38,7 @@ fn device_name_and_version_reach_other_devices() {
     assert_eq!(row["model"], "iPhone 17");
     assert_eq!(row["app"], "3.3");
     assert_eq!(row["platform"], "ios");
-    assert_eq!(row["protocol"], 2);
+    assert_eq!(row["protocol"], segment::PROTOCOL);
     assert_eq!(row["state"], "ok");
     // 昵称只替换名称部分；型号照旧在扩展里。
     a.core.sync2_device_info(P, &json!({"nick": "Wight 的手机"}), T0 + 2).unwrap();

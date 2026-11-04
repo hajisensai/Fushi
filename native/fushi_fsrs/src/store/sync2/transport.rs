@@ -192,7 +192,7 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
             .map_err(sql)?;
             for (loc, uploaded) in &locations {
                 if *uploaded >= *a {
-                    conn.prepare_cached("INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) VALUES (srs_id(?1), ?2, ?3)")
+                    conn.prepare_cached(super::schema::REWRITE_GAP_SQL)
                         .map_err(sql)?
                         .execute(params![local.profile, loc, *a as i64])
                         .map_err(sql)?;
@@ -1789,6 +1789,9 @@ pub enum HeadWrite {
     /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head；[obsolete] 是此刻仍待删的文件（上一轮
     /// 删到一半失败、还没 `obsolete_ack` 的那些照样给出）。
     Unchanged { path: String, obsolete: Vec<String> },
+    /// 没写：head 要引用的段里还有没传到这个位置的（发件确认之后段被合并改切，见 [SrsCore::sync2_head_if_changed]）。
+    /// 与发件确认时的「改切」同一处理：这一轮不写 head，下一轮从水位按当前切法补传。
+    Recut,
 }
 
 /// 一批发件的字节预算（按段打包后的体积估计累计；一批至少一段，所以单段超预算时自成一批）。
@@ -1817,6 +1820,20 @@ pub struct OutboxBatch {
     pub more: bool,
 }
 
+/// 去掉 [location] 上已经不是任何当前切段起点的重传登记：它们的区间被再次合并进了别的段，合并时已按水位给新段登记
+/// 重传（[compact_segments]）或在水位之上照常发件。不清掉的话这种登记永远等不到确认，head 永远写不出
+/// （[SrsCore::sync2_head_if_changed] 有重传未完就不写）。
+fn prune_stale_rewrites(c: &Connection, local: &Local, location: &str) -> Result<(), String> {
+    c.prepare_cached(
+        "DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first NOT IN \
+         (SELECT first FROM sync2_segments WHERE profile_uid = srs_id(?1) AND device = ?3)",
+    )
+    .map_err(sql)?
+    .execute(params![local.profile, location, local.device.0.to_vec()])
+    .map_err(sql)?;
+    Ok(())
+}
+
 /// [location] 上已确认上传到的水位：本机 seq ≤ 它的段都已在该位置上（head 写出时、或每批确认时前进）。
 fn uploaded_of(c: &Connection, profile: &str, location: &str) -> Result<u64, String> {
     Ok(c.query_row(
@@ -1843,12 +1860,33 @@ impl SrsCore {
         max_bytes: u64,
         max_segments: usize,
     ) -> Result<OutboxBatch, String> {
+        self.sync2_outbox_to(profile, location, key, max_bytes, max_segments, false)
+    }
+
+    /// [Self::sync2_outbox]，[archive] = 归档位置（只写不删）：副本收敛（dedup.rs）换成骨架的段不在这里同名重写——归档
+    /// 留着当初传上去的原文。彻底清除的重写照做（清除就是要连归档里的内容一起清掉）。
+    pub fn sync2_outbox_to(
+        &self,
+        profile: &str,
+        location: &str,
+        key: Option<[u8; 32]>,
+        max_bytes: u64,
+        max_segments: usize,
+        archive: bool,
+    ) -> Result<OutboxBatch, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             cut_segments(c, &local)?;
             compact_segments(c, &local)?;
             cut_segments(c, &local)?;
+            prune_stale_rewrites(c, &local, location)?;
+            if archive {
+                c.prepare_cached("DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND restamp = 2")
+                    .map_err(sql)?
+                    .execute(params![profile, location])
+                    .map_err(sql)?;
+            }
             let cuts = segments_of(c, &local)?;
             let uploaded = uploaded_of(c, profile, location)?;
             let ck = key.map(CollectionKey);
@@ -1887,6 +1925,31 @@ impl SrsCore {
                 batch.upto = batch.upto.max(last);
             }
             Ok(batch)
+        })
+    }
+
+    /// 作者自检：[present] = 这一轮列 [location] 上 `devices/<本机>/` 得到的文件名。水位以下（head 已经或将要引用）
+    /// 的本机段不在里面的，登记成「要重传」，这一轮发件照当前切法补传（同名、同内容；读者照常验签验链）。位置上的段
+    /// 被误删、上传静默丢失、或旧版本写 head 时引用了从没传上去的合并段（见 [Self::sync2_head_if_changed]），都由作者
+    /// 在下一轮自己补上，不靠读者无限期「下一轮再来」。列目录最终一致时可能多传几个已在的段，同名覆盖无害。返回登记数。
+    pub fn sync2_audit_own(&self, profile: &str, location: &str, present: &BTreeSet<String>) -> Result<usize, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let Some(local) = Local::load(c, profile)? else { return Ok(0) };
+            let uploaded = uploaded_of(c, profile, location)?;
+            let mut n = 0;
+            for (a, b, _) in segments_of(c, &local)?.into_iter().filter(|s| s.1 <= uploaded) {
+                let tag = segment::chain_tag(&chain_at(c, profile, &local.device, b)?.ok_or("missing chain")?);
+                if present.contains(&segment::segment_file_name(a, b, &tag)) {
+                    continue;
+                }
+                n += c
+                    .prepare_cached(super::schema::REWRITE_GAP_SQL)
+                    .map_err(sql)?
+                    .execute(params![profile, location, a as i64])
+                    .map_err(sql)?;
+            }
+            Ok(n)
         })
     }
 
@@ -1932,6 +1995,7 @@ impl SrsCore {
         match self.sync2_head_if_changed(profile, location, upto, now, None)? {
             HeadWrite::Written { path, bytes, gen, obsolete } => Ok((path, bytes, gen, obsolete)),
             HeadWrite::Unchanged { .. } => Err("sync2_head: unexpected unchanged".to_owned()),
+            HeadWrite::Recut => Err("sync2_head: recut".to_owned()),
         }
     }
 
@@ -1960,6 +2024,26 @@ impl SrsCore {
                 cuts.push((a, b, tag));
             }
             let seq = cuts.last().map_or(0, |x| x.1);
+            // head 只能引用这个位置上已经有的段（读者只认 head 列出的段，§6.1）。这一轮最后一次发件确认之后，别的位置的
+            // 发件跑了小段合并（[compact_segments]）：上面的切法已经是合并后的，合并出的段登记在「要重传」里、还没传到
+            // 这里。以前照写 head 并顺手清掉重传登记——head 引用一个从没上传的段，被换下的旧小段过了宽限期又被删，位置上
+            // 留下谁都补不上的缺口（BUG：设备 01a173ca 的 seg-647566-647731 / seg-647989，读者的待应用永久卡住）。现在
+            // 不写 head，交回「改切」，下一轮发件按当前切法补传后再写。
+            // 按 [upto] 而不是按 head 的 seq 判：合并出的段跨过水位时它被上面的过滤排除，head 的 seq 会倒退到合并区间之前，
+            // 那段已经在位置上的操作从 head 里消失——同样要等补传之后再写。
+            // 只看缺段（`restamp = 0`）：彻底清除 / 骨架化的同名改写不挡——位置上的旧文件就是同名、同链值的合法段
+            // （store/sync2/schema.rs `migrate_v23`）。
+            prune_stale_rewrites(c, &local, location)?;
+            let rewrites_pending: bool = c
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3 AND restamp = 0)",
+                    params![profile, location, upto as i64],
+                    |r| r.get(0),
+                )
+                .map_err(sql)?;
+            if rewrites_pending {
+                return Ok(HeadWrite::Recut);
+            }
             let chain = chain_at(c, profile, &local.device, seq)?.ok_or("missing chain")?;
             let mut ack = applied_vv(c, profile)?;
             ack.set(local.device, 0);
@@ -1992,15 +2076,7 @@ impl SrsCore {
                 h.content_sig()
             };
             let sig_key = format!("sync2_head_sig/{profile}/{location}");
-            // 清除改写过的段还等着这次 head 收账（下面删 sync2_rewrites）：照写，否则发件每轮都重传它们。
-            let rewrites_pending: bool = c
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3)",
-                    params![profile, location, seq as i64],
-                    |r| r.get(0),
-                )
-                .map_err(sql)?;
-            if let (Some(max_age), false) = (skip_unchanged_ms, rewrites_pending) {
+            if let Some(max_age) = skip_unchanged_ms {
                 let last: Option<String> = c
                     .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&sig_key], |r| r.get(0))
                     .optional()
@@ -2041,11 +2117,6 @@ impl SrsCore {
             )
             .map_err(sql)?;
             local.save(c)?;
-            c.execute(
-                "DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3",
-                params![profile, location, seq as i64],
-            )
-            .map_err(sql)?;
             c.execute(
                 "INSERT INTO sync2_locations (profile_uid, location, uploaded, head_gen, last_ok) VALUES (srs_id(?1), ?2, ?3, ?4, ?5) \
                  ON CONFLICT(profile_uid, location) DO UPDATE SET uploaded = MAX(uploaded, excluded.uploaded), \

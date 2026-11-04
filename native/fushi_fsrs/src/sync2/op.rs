@@ -27,6 +27,11 @@ pub const KIND_DECK_ALIAS: u16 = 9;
 pub const KIND_LEGACY_UNKNOWN: u16 = 10;
 pub const KIND_TAG_ORDER: u16 = 11;
 pub const KIND_MEDIA_AT: u16 = 12;
+/// 作者声明自己的若干条旧操作是别的设备同一事实的副本（[Body::Dedup]）。
+pub const KIND_DEDUP: u16 = 13;
+
+/// 一条 [Body::Dedup] 最多带多少对（存量重复流有几十万对时按此切成多条，单条载荷有界）。
+pub const DEDUP_MAX_PAIRS: usize = 20_000;
 
 /// [Body::MediaAt] 的标志位：这批名字此刻**在**该位置（否则 = 确认不在）。
 pub const MEDIA_AT_PRESENT: u8 = 1;
@@ -54,7 +59,8 @@ pub struct Op {
     pub deps: Arc<Vv>,
     pub kind: u16,
     pub schema: u16,
-    /// 载荷原字节；[Op::purged] 时是原载荷的 BLAKE3（32 字节）。
+    /// 载荷原字节；[Op::purged] 时是原载荷的 BLAKE3（32 字节），作者认定为副本的骨架（[Op::duplicate]）在哈希之后
+    /// 再带「是谁的副本」（[Body::Duplicate]）。
     pub payload: Arc<[u8]>,
     /// 内容已被「彻底清除」（设计 §10.5）：只剩骨架（信封 + 原载荷哈希），链值不变。
     pub purged: bool,
@@ -64,7 +70,7 @@ impl Op {
     /// 原载荷的 BLAKE3（哈希链按它算，所以清除载荷不影响链与签名的可验证性）。
     pub fn payload_hash(&self) -> [u8; 32] {
         if self.purged {
-            self.payload[..].try_into().unwrap_or([0; 32])
+            self.payload.get(..32).and_then(|h| h.try_into().ok()).unwrap_or([0; 32])
         } else {
             *blake3::hash(&self.payload).as_bytes()
         }
@@ -76,6 +82,32 @@ impl Op {
             return self.clone();
         }
         Op { payload: self.payload_hash().to_vec().into(), purged: true, ..self.clone() }
+    }
+
+    /// 作者认定是 [of] 的副本之后的骨架（[Body::Dedup]）：原载荷哈希（链值不变）+ [of] + 旧修改记录的旧戳
+    /// （[LegacyStamp]：旧修改记录闭包按它算，见 store/sync2/mod.rs `note_legacy`——各设备不论收的是原文还是骨架，闭包都相同）。
+    /// 已是骨架的原样返回。
+    pub fn duplicate(&self, of: OpId) -> DResult<Op> {
+        if self.purged {
+            return Ok(self.clone());
+        }
+        let legacy = match Body::decode(self.kind, &self.payload)? {
+            Body::Edit(EditBody { legacy, .. }) => legacy,
+            _ => None,
+        };
+        let mut w = Writer::new();
+        w.raw(&self.payload_hash());
+        w.u8(1);
+        of.device.write(&mut w);
+        w.uv(of.seq);
+        match &legacy {
+            None => w.u8(0),
+            Some(l) => {
+                w.u8(1);
+                l.write(&mut w);
+            }
+        }
+        Ok(Op { payload: w.into_vec().into(), purged: true, ..self.clone() })
     }
 
     /// 信封（不含载荷）的规范编码：链值 = blake3(前一环 || 信封 || 载荷哈希)。
@@ -108,7 +140,7 @@ impl Op {
 
     pub fn body(&self) -> DResult<Body> {
         if self.purged {
-            return Ok(Body::Purged);
+            return skeleton_body(&self.payload);
         }
         Body::decode(self.kind, &self.payload)
     }
@@ -140,9 +172,7 @@ impl Op {
         let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
         let purged = r.bool()?;
         let payload: Arc<[u8]> = r.bytes()?.into();
-        if purged && payload.len() != 32 {
-            return Err(DecodeError("purged op without payload hash"));
-        }
+        check_skeleton(purged, &payload)?;
         Ok(Op { id: OpId { device, seq }, hlc, deps: Arc::new(deps), kind, schema, payload, purged })
     }
 
@@ -151,6 +181,36 @@ impl Op {
         self.write(&mut w);
         w.into_vec()
     }
+}
+
+/// 骨架的载荷：32 字节原载荷哈希（彻底清除），或哈希 + 副本说明（[Op::duplicate]）。
+pub(crate) fn skeleton_body(payload: &[u8]) -> DResult<Body> {
+    if payload.len() == 32 {
+        return Ok(Body::Purged);
+    }
+    let mut r = Reader::new(payload.get(32..).ok_or(DecodeError("purged op without payload hash"))?);
+    if r.u8()? != 1 {
+        return Err(DecodeError("duplicate skeleton version"));
+    }
+    let device = Id::read(&mut r)?;
+    let seq = r.uv()?;
+    let legacy = match r.u8()? {
+        0 => None,
+        1 => Some(LegacyStamp::read(&mut r)?),
+        _ => return Err(DecodeError("duplicate legacy tag")),
+    };
+    Ok(Body::Duplicate { of: OpId { device, seq }, legacy })
+}
+
+/// 骨架（`purged`）的载荷要么是 32 字节哈希，要么是哈希 + 能解开的副本说明；解不开的整条拒收。
+pub(crate) fn check_skeleton(purged: bool, payload: &[u8]) -> DResult<()> {
+    if !purged {
+        return Ok(());
+    }
+    if payload.len() < 32 {
+        return Err(DecodeError("purged op without payload hash"));
+    }
+    skeleton_body(payload).map(|_| ())
 }
 
 /// 实体种类（持久化名冻结，与 Dart `SrsEntityKind.wire` 一一对应）。
@@ -313,10 +373,17 @@ pub enum Body {
     DeckAlias { from: Key, to: Key },
     /// 旧协议里本机不认识的事件，原样保存（JSON 原文）。
     LegacyUnknown { json: String },
+    /// 作者声明：自己的这些旧操作（seq）各是另一台设备那条操作（[OpId]）的副本——同一份迁移数据被两台设备
+    /// 各自包成了操作（存量重复流）。作者只对逐条核对过的配对发（store/sync2/dedup.rs）：日志 / 身份记录载荷
+    /// 逐字节相同；旧修改记录除旧写入者改名外全同。读者把作者的那条当副本：投影里多出来的并存修改记录行删掉、
+    /// 删除扣留的索引只认原件、本地载荷换成骨架。按作者 seq 升序。
+    Dedup { pairs: Vec<(u64, OpId)> },
     /// 本版本不认识的种类：原样保存、原样转发、不应用。
     Unknown,
     /// 载荷已被彻底清除，只剩骨架。
     Purged,
+    /// 作者认定的副本骨架（[Op::duplicate]）：原件是 [of]；旧修改记录带着旧戳 [legacy]（闭包照算）。
+    Duplicate { of: OpId, legacy: Option<LegacyStamp> },
 }
 
 impl Body {
@@ -334,7 +401,8 @@ impl Body {
             Body::MediaAt { .. } => KIND_MEDIA_AT,
             Body::DeckAlias { .. } => KIND_DECK_ALIAS,
             Body::LegacyUnknown { .. } => KIND_LEGACY_UNKNOWN,
-            Body::Unknown | Body::Purged => u16::MAX,
+            Body::Dedup { .. } => KIND_DEDUP,
+            Body::Unknown | Body::Purged | Body::Duplicate { .. } => u16::MAX,
         }
     }
 
@@ -398,7 +466,25 @@ impl Body {
                 to.write(&mut w);
             }
             Body::LegacyUnknown { json } => w.str(json),
-            Body::Unknown | Body::Purged => {}
+            Body::Dedup { pairs } => {
+                // 原件设备表 + (作者 seq 增量, 设备下标, 原件 seq)。
+                let mut devices: Vec<Id> = pairs.iter().map(|(_, o)| o.device).collect();
+                devices.sort();
+                devices.dedup();
+                w.uv(devices.len() as u64);
+                for d in &devices {
+                    d.write(&mut w);
+                }
+                w.uv(pairs.len() as u64);
+                let mut prev = 0u64;
+                for (own, of) in pairs {
+                    w.uv(own - prev);
+                    prev = *own;
+                    w.uv(devices.binary_search(&of.device).unwrap_or(0) as u64);
+                    w.uv(of.seq);
+                }
+            }
+            Body::Unknown | Body::Purged | Body::Duplicate { .. } => {}
         }
         w.into_vec()
     }
@@ -462,6 +548,28 @@ impl Body {
             }
             KIND_DECK_ALIAS => Body::DeckAlias { from: Key::read(r)?, to: Key::read(r)? },
             KIND_LEGACY_UNKNOWN => Body::LegacyUnknown { json: r.str()?.to_owned() },
+            KIND_DEDUP => {
+                let nd = r.uv()?;
+                if nd > 1 << 16 {
+                    return Err(DecodeError("too many dedup devices"));
+                }
+                let mut devices = Vec::with_capacity(nd as usize);
+                for _ in 0..nd {
+                    devices.push(Id::read(r)?);
+                }
+                let n = r.uv()?;
+                if n > DEDUP_MAX_PAIRS as u64 {
+                    return Err(DecodeError("too many dedup pairs"));
+                }
+                let mut pairs = Vec::with_capacity(n as usize);
+                let mut own = 0u64;
+                for _ in 0..n {
+                    own = own.checked_add(r.uv()?).ok_or(DecodeError("dedup seq"))?;
+                    let d = *devices.get(r.uv()? as usize).ok_or(DecodeError("dedup device"))?;
+                    pairs.push((own, OpId { device: d, seq: r.uv()? }));
+                }
+                Body::Dedup { pairs }
+            }
             _ => Body::Unknown,
         })
     }

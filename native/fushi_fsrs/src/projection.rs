@@ -63,7 +63,7 @@ pub enum MemAlg {
 }
 
 impl MemAlg {
-    fn of(raw: Option<&RawValue>) -> Self {
+    pub(crate) fn of(raw: Option<&RawValue>) -> Self {
         let Some(raw) = raw else { return MemAlg::Absent };
         match serde_json::from_str::<String>(raw.get()) {
             Ok(s) => match s.as_str() {
@@ -154,13 +154,21 @@ impl EffLog {
 /// 一份历史的有效日志（排序后），供投影用。
 pub fn effective_logs(parsed: &[Parsed<'_>]) -> Vec<EffLog> {
     let logs: Vec<Log<'_>> = parsed.iter().map(|p| p.0.clone()).collect();
-    let sel = crate::history::select(&logs);
+    effective_by(&logs, |i, clamped| {
+        let (log, res, extra) = &parsed[i];
+        EffLog::of(log, res, extra, clamped)
+    })
+}
+
+/// 按选取规则（[crate::history::select]）挑出 [logs] 里的有效日志、按排序键排好；[eff] 由第 i 条与「排序键被钳位」
+/// 造出那条的 [EffLog]（调用方各自持有日志的其余字段：解析结果 [Parsed]，或整 profile 扫描时的紧凑形态）。
+pub fn effective_by(logs: &[Log<'_>], mut eff: impl FnMut(usize, bool) -> EffLog) -> Vec<EffLog> {
+    let sel = crate::history::select(logs);
     let mut out = Vec::with_capacity(sel.order.len());
     for (k, &i) in sel.order.iter().enumerate() {
         let s = sel.status[k];
         if s & crate::history::STATUS_EFFECTIVE != 0 {
-            let (log, res, extra) = &parsed[i];
-            out.push(EffLog::of(log, res, extra, s & crate::history::STATUS_CLAMPED != 0));
+            out.push(eff(i, s & crate::history::STATUS_CLAMPED != 0));
         }
     }
     out
