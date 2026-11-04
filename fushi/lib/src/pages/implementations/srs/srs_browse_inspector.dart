@@ -451,7 +451,24 @@ class _EditTabState extends State<_EditTab> {
   late final TextEditingController _tags = TextEditingController(
     text: widget.detail.note.tags.join(' '),
   );
+
+  /// 标签最近一次落库（或载入）的值：与字段同一套生命周期（失焦 / 回车 / 关掉时落库，外部重读时没在改才同步）。
+  late List<String> _savedTags = _normalTags(widget.detail.note.tags);
   bool _justSaved = false;
+
+  bool get _tagsDirty => !_sameTags(srsParseTags(_tags.text), _savedTags);
+
+  /// 笔记上的标签按输入框的解析规则规整（去重同 [srsParseTags]），比较才与输入框同口径。
+  static List<String> _normalTags(List<String> tags) =>
+      srsParseTags(tags.join(' '));
+
+  static bool _sameTags(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
   void initState() {
@@ -476,6 +493,12 @@ class _EditTabState extends State<_EditTab> {
         m.reset(v);
       }
     }
+    // 标签同理：外部改了、这边没有未保存的改动时换成新值。
+    final List<String> tags = _normalTags(widget.detail.note.tags);
+    if (!_sameTags(tags, _savedTags) && !_tagsDirty) {
+      _savedTags = tags;
+      _tags.text = tags.join(' ');
+    }
   }
 
   @override
@@ -488,6 +511,8 @@ class _EditTabState extends State<_EditTab> {
           .firstOrNull;
       if (f != null) unawaited(_save(f));
     }
+    // [_saveTags] 在第一个 await 之前就读完了输入框，随后释放控制器不影响落库。
+    if (_tagsDirty) unawaited(_saveTags());
     for (final SrsFieldModel m in _models.values) {
       m.dispose();
     }
@@ -518,12 +543,18 @@ class _EditTabState extends State<_EditTab> {
 
   Future<void> _saveTags() async {
     final List<String> after = srsParseTags(_tags.text);
-    await widget.onSaveTags(
-      widget.detail.note.id,
-      widget.detail.note.tags,
-      after,
-    );
-    if (mounted) setState(() => _justSaved = true);
+    final List<String> before = _savedTags;
+    if (_sameTags(after, before)) return;
+    _savedTags = after;
+    try {
+      await widget.onSaveTags(widget.detail.note.id, before, after);
+      if (mounted) setState(() => _justSaved = true);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.inlineTags', e, stack);
+      // 没写进去：仍算未保存，下次失焦 / 回车再写。
+      if (_sameTags(_savedTags, after)) _savedTags = before;
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    }
   }
 
   @override
@@ -541,12 +572,19 @@ class _EditTabState extends State<_EditTab> {
           if (i == fields.length) {
             return Padding(
               padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: FushiTextField(
-                key: const ValueKey<String>('srs-browse-edit-tags'),
-                controller: _tags,
-                labelText: t.srs_browse_edit_tags,
-                hintText: t.srs_note_tags_hint,
-                onSubmitted: (_) => unawaited(_saveTags()),
+              child: Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onFocusChange: (bool focused) {
+                  if (!focused) unawaited(_saveTags());
+                },
+                child: FushiTextField(
+                  key: const ValueKey<String>('srs-browse-edit-tags'),
+                  controller: _tags,
+                  labelText: t.srs_browse_edit_tags,
+                  hintText: t.srs_note_tags_hint,
+                  onSubmitted: (_) => unawaited(_saveTags()),
+                ),
               ),
             );
           }
@@ -868,9 +906,9 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
         ),
       Text(
         t.srs_browse_history_added(
-          date: MaterialLocalizations.of(context).formatShortDate(
-            DateTime.fromMillisecondsSinceEpoch(row.addedAt),
-          ),
+          date: MaterialLocalizations.of(
+            context,
+          ).formatShortDate(DateTime.fromMillisecondsSinceEpoch(row.addedAt)),
         ),
         style: context.fushiType.bodySmall.copyWith(color: muted),
       ),

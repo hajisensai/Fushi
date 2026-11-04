@@ -372,17 +372,26 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           ),
         for (int i = 0; i < _savedViews.length; i++)
           ('saved-$i', _savedViews[i].query),
-        ('health-empty', 'is:emptyfield'),
-        if (fushi != null) ('health-audio', srsBrowseMissingAudioQuery(fushi)),
         ('health-hard', 'prop:lapses>=4'),
         ('health-dupes', 'is:dupe'),
+      ];
+      // 「一键修复」按笔记删 / 补音频（[_fixProblems] 用笔记模式查询）：这两项固定数笔记，确认框里的数字
+      // 与实际动到的笔记同口径，不随列表的卡片 / 笔记模式变。
+      final List<(String, String)> noteQueries = <(String, String)>[
+        ('health-empty', kSrsBrowseHealthEmptyQuery),
+        if (fushi != null) ('health-audio', srsBrowseMissingAudioQuery(fushi)),
       ];
       final List<int> counts = await session.counts(<String>[
         for (final (String, String) q in queries) q.$2,
       ], mode: _mode);
+      final List<int> noteCounts = await session.counts(<String>[
+        for (final (String, String) q in noteQueries) q.$2,
+      ], mode: SrsBrowseMode.notes);
       if (!mounted || key != _countsKey) return;
       final Map<String, int> byId = <String, int>{
         for (int i = 0; i < queries.length; i++) queries[i].$1: counts[i],
+        for (int i = 0; i < noteQueries.length; i++)
+          noteQueries[i].$1: noteCounts[i],
       };
       setState(() {
         _viewCounts = byId;
@@ -786,15 +795,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     ];
   }
 
-  String _readSavedViewsPref() {
-    try {
-      return ref.read(appProvider).srsBrowseSavedViews;
-    } catch (e, stack) {
-      // 测试 / 无偏好仓库的宿主：当作没有保存的视图。
-      ErrorLogService.instance.log('SrsBrowse.savedViews.read', e, stack);
-      return '';
-    }
-  }
+  String _readSavedViewsPref() => ref.read(appProvider).srsBrowseSavedViews;
 
   Future<void> _writeSavedViews(List<SrsBrowseSavedView> views) async {
     setState(() => _savedViews = views);
@@ -921,19 +922,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         if (!a.contains(x)) x,
     ];
     if (add.isEmpty && remove.isEmpty) return;
-    try {
-      final SrsBatchOutcome out = await srsBatchEditTags(
-        store,
-        <String>[noteId],
-        add: add,
-        remove: remove,
-      );
-      if (out.revert != null) _undo.add(_UndoEntry(out.revert!));
-      await _afterWrite(rerender: false);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsBrowse.inlineTags', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
-    }
+    // 失败抛给检查器（与 [_saveField] 同一约定）：由它记日志、提示，并把标签留作未保存。
+    final SrsBatchOutcome out = await srsBatchEditTags(
+      store,
+      <String>[noteId],
+      add: add,
+      remove: remove,
+    );
+    if (out.revert != null) _undo.add(_UndoEntry(out.revert!));
+    await _afterWrite(rerender: false);
   }
 
   /// 写入后：通知别的页面、重读写过的行。[rerender]：检查器的卡面 / 历史跟着重读（原地编辑时编辑页签自己
@@ -975,7 +972,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     try {
       if (empty > 0) {
         final SrsBrowseResult r = await session.query(
-          query: 'is:emptyfield',
+          query: kSrsBrowseHealthEmptyQuery,
           mode: SrsBrowseMode.notes,
         );
         final SrsBrowseTargets targets = await r.targets(await r.ids());

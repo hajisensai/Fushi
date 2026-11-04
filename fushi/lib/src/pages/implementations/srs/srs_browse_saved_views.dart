@@ -90,6 +90,9 @@ String srsBrowseQuickViewQuery(
 /// `note:"名字"`（转义与 [srsFieldContainsQuery] 同一规则：名字按字面量匹配）。
 String srsBrowseNoteTypeTerm(String name) => 'note:"${srsBrowseLiteral(name)}"';
 
+/// 「主字段为空」的条件（健康条的分项计数与一键修复删除的目标：两处同一条件、同按笔记数）。
+const String kSrsBrowseHealthEmptyQuery = 'is:emptyfield';
+
 /// 「Fushi 卡片缺音频」的条件（健康条的分项计数与一键修复的目标）。
 String srsBrowseMissingAudioQuery(String fushiNoteTypeName) =>
     '-has:audio ${srsBrowseNoteTypeTerm(fushiNoteTypeName)}';

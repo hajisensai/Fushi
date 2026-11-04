@@ -23,7 +23,13 @@ import 'package:fushi_engine/srs/srs_browse_ops.dart'
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart'
-    show FushiFsrs, SrsNoteView, kFushiFsrsLibEnv;
+    show
+        FushiFsrs,
+        SrsEntityKind,
+        SrsFieldKeys,
+        SrsNoteView,
+        SrsTemplateDef,
+        kFushiFsrsLibEnv;
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
@@ -666,6 +672,131 @@ void main() {
       undone!.field(srsLapisFieldId(kSrsTestProfile, 'MainDefinition')),
       'to eat',
     );
+    await _unmount(tester);
+  });
+
+  testWidgets('健康条一键修复：确认框的数字 = 实际删掉的笔记数（多卡笔记按笔记数），撤销整步恢复', (
+    WidgetTester tester,
+  ) async {
+    _expectNativeSearch();
+    final SrsDbStore store = await _openStore(tester);
+    // Lapis 加两个只用释义字段的模板：主字段为空的笔记照样生成 2 张卡——卡片模式数出来不是 1。
+    final String def = srsLapisFieldId(kSrsTestProfile, 'MainDefinition');
+    await tester.runAsync(
+      () => store.editFields(
+        SrsEntityKind.noteType,
+        store.lapisNoteTypeId,
+        <String, Object?>{
+          for (final int i in <int>[1, 2])
+            SrsFieldKeys.templateDef('browse-def-$i'): SrsTemplateDef(
+              id: 'browse-def-$i',
+              name: 'Def $i',
+              ord: 10 + i,
+              front: '{{fld:$def}}',
+              back: '{{fld:$def}}',
+            ).toValue(),
+        },
+      ),
+    );
+    final String keep = await _add(tester, store, '食べる', 'to eat');
+    final String empty = await _add(tester, store, '<br>', 'blank front');
+    expect(
+      (await _cards(
+        tester,
+        store,
+      )).where((SrsCardCacheRow c) => c.noteId == empty).length,
+      greaterThanOrEqualTo(2),
+      reason: 'precondition: the empty-front note has several cards',
+    );
+    await _pump(tester, store: store, size: const Size(1300, 900));
+
+    final Finder fix = find.byKey(
+      const ValueKey<String>('srs-browse-health-problems-fix'),
+    );
+    expect(fix, findsOneWidget);
+    await tester.tap(fix);
+    await _settle(tester, rounds: 4);
+    expect(
+      find.text(t.srs_browse_health_fix_confirm(e: 1, a: 0)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(t.srs_browse_health_fix).last);
+    await _settle(tester);
+    expect(
+      <String>[
+        for (final SrsNoteCacheRow n in (await tester.runAsync(
+          store.listNotes,
+        ))!)
+          n.id,
+      ],
+      <String>[keep],
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+    );
+    await _settle(tester);
+    expect(
+      <String>{
+        for (final SrsNoteCacheRow n in (await tester.runAsync(
+          store.listNotes,
+        ))!)
+          n.id,
+      },
+      <String>{keep, empty},
+    );
+    await _unmount(tester);
+  });
+
+  testWidgets('宽屏检查器：标签与字段同一套保存（失焦落库、换卡前落库）', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    final String a = await _add(tester, store, '食べる', 'to eat');
+    final String b = await _add(tester, store, '飲む', 'to drink');
+    await _pump(tester, store: store, size: const Size(1300, 900));
+    await tester.tap(find.byKey(const ValueKey<String>('srs-browse-tab-edit')));
+    await _settle(tester, rounds: 6);
+
+    Finder tagsBox() => find.descendant(
+      of: find.byKey(const ValueKey<String>('srs-browse-edit-tags')),
+      matching: find.byType(EditableText),
+    );
+    Future<Map<String, List<String>>> tagsByNote() async =>
+        <String, List<String>>{
+          for (final String id in <String>[a, b])
+            id: (await tester.runAsync<SrsNoteView?>(
+              () => store.note(id),
+            ))!.tags,
+        };
+
+    // 失焦：改完标签点到字段上（没按回车）。
+    await tester.enterText(tagsBox(), 'alpha beta');
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('srs-browse-field-MainDefinition'),
+        ),
+        matching: find.byType(EditableText),
+      ),
+    );
+    await _settle(tester);
+    final Map<String, List<String>> afterBlur = await tagsByNote();
+    final String edited = afterBlur[a]!.isNotEmpty ? a : b;
+    final String other = edited == a ? b : a;
+    expect(afterBlur[edited], unorderedEquals(<String>['alpha', 'beta']));
+    expect(afterBlur[other], isEmpty);
+
+    // 换卡：改完标签直接点另一行，检查器换笔记前落库。
+    await tester.enterText(tagsBox(), 'alpha beta gamma');
+    await tester.pump();
+    await tester.tap(_row(other == a ? '食べる' : '飲む'));
+    await _settle(tester);
+    final Map<String, List<String>> afterSwitch = await tagsByNote();
+    expect(
+      afterSwitch[edited],
+      unorderedEquals(<String>['alpha', 'beta', 'gamma']),
+    );
+    expect(afterSwitch[other], isEmpty);
     await _unmount(tester);
   });
 }
