@@ -58,7 +58,9 @@ void main() {
       final String continuousBranch = _between(
         paginate,
         'if (_settings?.isContinuousMode == true)',
-        '\n    final dynamic result = await _controller!.evaluateJavascript(',
+        // 卷页（253b8ff3cd）后分页分支的 evaluateJavascript 搬进了 _paginateStep，
+        // 连续分支到卷页闸门为止。
+        '\n    if (_pageCurlEnabled) {',
       );
 
       expect(

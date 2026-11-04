@@ -81,8 +81,13 @@ class FushiHoverLift extends StatefulWidget {
           ?.lifted ??
       false;
 
-  /// 最近一层 [FushiHoverLift] 的指针位置（卡片内归一化到 -1..1，中心为 0）；
-  /// 不在倾斜态时为 null。notifier 本身恒定，取它不建立依赖、不触发重建。
+  /// 最近一层 [FushiHoverLift] 的指针位置（**全局坐标**）；不在倾斜态时为 null。
+  /// notifier 本身恒定，取它不建立依赖、不触发重建。
+  ///
+  /// 发全局坐标而不是「卡片内 -1..1」：倾斜 / 高光画在封面上，封面只是卡里的
+  /// 一块（取色并列卡、继续主卡的封面只占起始侧一小段）。按整卡归一化时，指针
+  /// 停在封面右缘仍落在整卡左半边，封面就朝左偏——方向与指针相反。归一化交给
+  /// 消费者按**自己的**盒子做（[fushiTiltPointerIn]）。
   static ValueListenable<Offset?>? tiltOf(BuildContext context) =>
       context.getInheritedWidgetOfExactType<_FushiHoverLiftScope>()?.tilt;
 }
@@ -137,6 +142,10 @@ const double kFushiHoverLiftScale = 1.05;
 /// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
 const double kFushiAppleHoverLiftScale = 1.03;
 
+/// 默认倍数放大后每侧多出的比例（尺寸 × 它 = 单侧溢出）。行 / 视口给悬停放大
+/// 留余量时一律按**卡片实际尺寸**乘它，取两套设计系统里较大的倍数。
+const double kFushiHoverLiftOverflow = (kFushiHoverLiftScale - 1) / 2;
+
 /// 悬停动画时长（游戏库既有实现的落地值）。
 const Duration kFushiHoverLiftDuration = Duration(milliseconds: 120);
 
@@ -177,7 +186,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   late final AnimationController _lift;
   late final CurvedAnimation _curved;
 
-  /// 3D 倾斜视差的指针位置（-1..1）。鼠标：悬停抬升期间跟随指针；触屏：按住
+  /// 3D 倾斜视差的指针位置（全局坐标）。鼠标：悬停抬升期间跟随指针；触屏：按住
   /// 期间跟随手指（触屏没有 hover）。滚动、退出、抬起都落回 null。
   final ValueNotifier<Offset?> _tilt = ValueNotifier<Offset?>(null);
   Offset? _pointer;
@@ -225,31 +234,23 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     _tilt.value = on ? _pointer : null;
   }
 
-  /// 把卡片内的局部坐标归一化到 -1..1。
-  void _trackPointer(Offset local) {
-    final RenderObject? box = context.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return;
-    final Size size = box.size;
-    if (size.isEmpty) return;
-    _pointer = Offset(
-      (local.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
-      (local.dy / size.height * 2 - 1).clamp(-1.0, 1.0),
-    );
+  void _trackPointer(Offset global) {
+    _pointer = global;
     _syncTilt();
   }
 
   void _onPointerDown(PointerDownEvent e) {
     if (e.kind == PointerDeviceKind.mouse) return;
     _touching = true;
-    _trackPointer(e.localPosition);
+    _trackPointer(e.position);
   }
 
   void _onPointerMove(PointerMoveEvent e) {
     if (e.kind == PointerDeviceKind.mouse) {
-      _trackPointer(e.localPosition);
+      _trackPointer(e.position);
       return;
     }
-    if (_touching) _trackPointer(e.localPosition);
+    if (_touching) _trackPointer(e.position);
   }
 
   void _onPointerEnd(PointerEvent e) {
@@ -382,10 +383,10 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
 
   Widget _wrapHover(Widget child) => MouseRegion(
     onEnter: (PointerEnterEvent e) {
-      _trackPointer(e.localPosition);
+      _trackPointer(e.position);
       _setHover(true);
     },
-    onHover: (PointerHoverEvent e) => _trackPointer(e.localPosition),
+    onHover: (PointerHoverEvent e) => _trackPointer(e.position),
     onExit: (_) {
       _pointer = null;
       _setHover(false);
@@ -398,6 +399,25 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       onPointerCancel: _onPointerEnd,
       child: child,
     ),
+  );
+}
+
+/// 把 [FushiHoverLift.tiltOf] 发出的全局指针位置归一化到 [context] 自己的盒子里
+/// （-1..1，中心为 0，盒外夹到边上）；还没布局或指针为 null 时返回 null。
+///
+/// [context] 的渲染对象坐标系不含它自己施加给子树的变换（[FushiTilt] 的旋转），
+/// 但含祖先的全部变换（[FushiHoverLift] 的放大、外层的倾斜），所以放大中的卡、
+/// 嵌套的倾斜层都能换算对。
+Offset? fushiTiltPointerIn(BuildContext context, Offset? global) {
+  if (global == null) return null;
+  final RenderObject? box = context.findRenderObject();
+  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+  final Size size = box.size;
+  if (size.isEmpty) return null;
+  final Offset local = box.globalToLocal(global);
+  return Offset(
+    (local.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
+    (local.dy / size.height * 2 - 1).clamp(-1.0, 1.0),
   );
 }
 
@@ -429,9 +449,13 @@ class FushiTilt extends StatelessWidget {
     return ValueListenableBuilder<Offset?>(
       valueListenable: tilt,
       child: child,
-      builder: (BuildContext context, Offset? p, Widget? child) =>
+      // 按 [FushiTilt] 自己的盒子归一化（builder 的 context 首个渲染对象就是下面
+      // 那层 Transform，它的坐标系不含自身旋转）。
+      builder: (BuildContext context, Offset? global, Widget? child) =>
           TweenAnimationBuilder<Offset>(
-            tween: Tween<Offset>(end: p ?? Offset.zero),
+            tween: Tween<Offset>(
+              end: fushiTiltPointerIn(context, global) ?? Offset.zero,
+            ),
             duration: kFushiTiltFollowDuration,
             curve: FushiSpringCurve.effects,
             child: child,
@@ -464,33 +488,36 @@ class FushiTiltGlare extends StatelessWidget {
     return IgnorePointer(
       child: ValueListenableBuilder<Offset?>(
         valueListenable: tilt,
-        builder: (BuildContext context, Offset? p, Widget? _) =>
-            TweenAnimationBuilder<Offset>(
-              tween: Tween<Offset>(end: p ?? Offset.zero),
-              duration: kFushiTiltFollowDuration,
-              curve: FushiSpringCurve.effects,
-              builder: (BuildContext context, Offset v, Widget? _) =>
-                  AnimatedOpacity(
-                    opacity: p == null ? 0 : 1,
-                    duration: kFushiTiltFollowDuration,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment(v.dx, v.dy),
-                          radius: 1.1,
-                          colors: <Color>[
-                            Colors.white.withValues(
-                              alpha:
-                                  (dark ? 0.16 : 0.22) +
-                                  0.06 * v.distance.clamp(0.0, 1.0),
-                            ),
-                            Colors.white.withValues(alpha: 0),
-                          ],
-                        ),
+        builder: (BuildContext context, Offset? global, Widget? _) {
+          // 高光按自己（封面裁切区）的盒子定位，不按整张卡。
+          final Offset? p = fushiTiltPointerIn(context, global);
+          return TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(end: p ?? Offset.zero),
+            duration: kFushiTiltFollowDuration,
+            curve: FushiSpringCurve.effects,
+            builder: (BuildContext context, Offset v, Widget? _) =>
+                AnimatedOpacity(
+                  opacity: p == null ? 0 : 1,
+                  duration: kFushiTiltFollowDuration,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment(v.dx, v.dy),
+                        radius: 1.1,
+                        colors: <Color>[
+                          Colors.white.withValues(
+                            alpha:
+                                (dark ? 0.16 : 0.22) +
+                                0.06 * v.distance.clamp(0.0, 1.0),
+                          ),
+                          Colors.white.withValues(alpha: 0),
+                        ],
                       ),
                     ),
                   ),
-            ),
+                ),
+          );
+        },
       ),
     );
   }

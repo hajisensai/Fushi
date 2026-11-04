@@ -1268,15 +1268,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
   /// 据此重建 chrome，设置一改图标与刻度立刻跟上。
-  late final JumpHistoryPrefsListenable _jumpHistoryPrefs =
-      JumpHistoryPrefsListenable.fromRepository(appModelNoUpdate.prefsRepo)
-        ..addListener(_markMangaJumpHistoryDirty);
+  ///
+  /// 首次用到才建；[dispose] 只释放建过的那份。用 `late final` 时，没走到顶栏就
+  /// 退出的页面（如加载失败的错误态）会在 dispose 里**首次**求值，在已停用的
+  /// element 上读 AppModel（同 video_fushi_page 的修法）。
+  JumpHistoryPrefsListenable get _jumpHistoryPrefs =>
+      _jumpHistoryPrefsOrNull ??= JumpHistoryPrefsListenable.fromRepository(
+        appModelNoUpdate.prefsRepo,
+      )..addListener(_markMangaJumpHistoryDirty);
+  JumpHistoryPrefsListenable? _jumpHistoryPrefsOrNull;
 
   /// 顶栏跳转图标的自动隐藏计时（时长取 [_jumpHistoryPrefs]；到时只藏图标，
-  /// 历史 / 面板 / 刻度照旧）。到点通知时重建 chrome。
-  late final JumpHistoryAutoHide _jumpHistoryAutoHide = JumpHistoryAutoHide(
-    prefs: _jumpHistoryPrefs,
-  )..addListener(_markMangaJumpHistoryDirty);
+  /// 历史 / 面板 / 刻度照旧）。到点通知时重建 chrome。同样首次用到才建。
+  JumpHistoryAutoHide get _jumpHistoryAutoHide =>
+      _jumpHistoryAutoHideOrNull ??= JumpHistoryAutoHide(
+        prefs: _jumpHistoryPrefs,
+      )..addListener(_markMangaJumpHistoryDirty);
+  JumpHistoryAutoHide? _jumpHistoryAutoHideOrNull;
 
   /// 跳转历史 / 图标显隐变了：重建 chrome（setState 只能在 State 成员里调，扩展
   /// [_MangaJumpBack] 经此）。
@@ -1732,8 +1740,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_downloadWatch?.cancel());
     _downloadWatch = null;
     _dictionaryTurnDismissTimer?.cancel();
-    _jumpHistoryAutoHide.dispose();
-    _jumpHistoryPrefs.dispose();
+    _jumpHistoryAutoHideOrNull?.dispose();
+    _jumpHistoryPrefsOrNull?.dispose();
     // BUG-2449：这里只是不再观察；整卷 OCR 任务归注册表所有，退出页面照跑。
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;

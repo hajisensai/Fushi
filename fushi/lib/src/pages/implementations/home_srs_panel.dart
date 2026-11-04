@@ -161,8 +161,6 @@ class HomeSrsPanel extends ConsumerWidget {
             learnCount: data.todayLearn,
             reviewCount: data.todayReview,
             reviewPending: data.rwkvPending,
-            fsrsDue: data.todayFsrsDue,
-            rwkvDailyReviews: data.rwkvDailyReviews,
             dense: true,
           ),
           if (target != null)

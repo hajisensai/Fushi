@@ -2527,14 +2527,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
   /// 并进顶栏按钮与刻度的重建源，设置一改立刻生效（全屏路由同样跟随）。
-  late final JumpHistoryPrefsListenable _videoJumpPrefs =
+  ///
+  /// 首次用到才建（读 `appModel.prefsRepo`，initState 时 AppModel 可能还没初始化，
+  /// 见 initState 注释）。[dispose] 只释放建过的那份：用 `late final` 时，没走到
+  /// 顶栏就退出的页面（如书不存在的错误态）会在 dispose 里**首次**求值、经
+  /// `ref.read` 在已停用的 element 上找祖先而抛错。
+  JumpHistoryPrefsListenable get _videoJumpPrefs => _videoJumpPrefsOrNull ??=
       JumpHistoryPrefsListenable.fromRepository(appModel.prefsRepo);
+  JumpHistoryPrefsListenable? _videoJumpPrefsOrNull;
 
   /// 顶栏「跳转记录」图标的自动隐藏计时（时长取 [_videoJumpPrefs]，默认 0 = 不
-  /// 隐藏；只藏图标，记录 / 面板 / 刻度保留，下次跳转再出现）。
-  late final JumpHistoryAutoHide _videoJumpAutoHide = JumpHistoryAutoHide(
-    prefs: _videoJumpPrefs,
-  );
+  /// 隐藏；只藏图标，记录 / 面板 / 刻度保留，下次跳转再出现）。同样首次用到才建。
+  JumpHistoryAutoHide get _videoJumpAutoHide =>
+      _videoJumpAutoHideOrNull ??= JumpHistoryAutoHide(prefs: _videoJumpPrefs);
+  JumpHistoryAutoHide? _videoJumpAutoHideOrNull;
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
   ///
@@ -6816,8 +6822,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _restartHideTimerSignal.dispose();
     _controlsHeld.dispose();
     _videoControlsVisible.dispose();
-    _videoJumpAutoHide.dispose();
-    _videoJumpPrefs.dispose();
+    _videoJumpAutoHideOrNull?.dispose();
+    _videoJumpPrefsOrNull?.dispose();
     _videoJumpHistoryRevision.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();

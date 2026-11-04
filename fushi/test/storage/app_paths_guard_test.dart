@@ -140,13 +140,28 @@ void main() {
         isTrue,
         reason: 'audiobook_storage 必须有包内单一 documents 解析点 _documentsRoot',
       );
-      // _documentsRoot 是唯一真正调用 path_provider 的地方：三个持久目录方法都改读
-      // `await _documentsRoot()`，包内对 getApplicationDocumentsDirectory() 的实际
-      // 调用表达式只剩 _documentsRoot 自身一处（注释里提到名字不算调用）。
+      // 单一解析点：_documentsRoot 只定义一次，包内取 documents 根的方法（持久目录、
+      // 暂存目录……）一律 `await _documentsRoot()`，不各自解析平台目录。不钉调用方
+      // 个数——新增经它取根的方法是合规用法（#2815 加了 stagingDir）。
       expect(
-        '_documentsRoot()'.allMatches(src).length,
-        equals(4),
-        reason: '_documentsRoot 定义 1 次 + 三个持久目录方法各调用 1 次 = 4',
+        RegExp(
+          r'Future<Directory>\s+_documentsRoot\(\)',
+        ).allMatches(src).length,
+        equals(1),
+        reason: '_documentsRoot 必须是唯一一处定义',
+      );
+      expect(
+        RegExp(
+          r'^\s*[^/\s].*getApplicationDocumentsDirectory\(\)',
+          multiLine: true,
+        ).hasMatch(src),
+        isFalse,
+        reason: '包内方法不得绕过 _documentsRoot 直接解析平台 documents 目录',
+      );
+      expect(
+        'await _documentsRoot()'.allMatches(src).length,
+        greaterThanOrEqualTo(3),
+        reason: '三个持久目录方法都经 _documentsRoot 取根',
       );
       // TODO-1236：_documentsRoot 改为 resolver 注入优先；无头服务端拆分后
       // audiobook_storage.dart 是纯 Dart，**不再直连 path_provider**——平台兜底

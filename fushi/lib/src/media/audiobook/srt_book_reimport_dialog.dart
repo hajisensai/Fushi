@@ -245,7 +245,7 @@ class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
               ],
               if (_pickerActive) ...<Widget>[
                 SizedBox(height: tokens.spacing.card),
-                const LinearProgressIndicator(),
+                const FushiLinearProgressIndicator(),
               ],
               if (importing) ...<Widget>[
                 SizedBox(height: tokens.spacing.card),

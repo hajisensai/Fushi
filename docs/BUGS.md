@@ -39,6 +39,8 @@
 |---|:--:|:--:|---|
 | [BUG-4005](bugs/BUG-4005-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
 | [BUG-4004](bugs/BUG-4004-lyrics-window-blank-tail.md) | ✅ | ✅ | 歌词模式自动播放一段后后面的文字空白、拨过去整页刷新 |
+| [BUG-4005](bugs/BUG-4005-srs-sync2-alias-dedup.md) | ✅ | ✅ | srs-sync2-alias-dedup |
+| [BUG-4004](bugs/BUG-4004-srs-sync2-head-references-unuploaded-segment.md) | ✅ | ✅ | 复习同步 head 引用了位置上没有的段，读者待应用永久卡住 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |

@@ -32,6 +32,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:material_ui/material_ui.dart' show Easing;
 
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -736,9 +737,12 @@ class PageCurlController extends ChangeNotifier {
             0.0,
             1.0,
           );
-    // 点按 / 按键：从静止起步，两头缓；松手接力：手指已带着速度，直接减速收尾。
+    // M3 缓动 token（三次贝塞尔，不过冲——落点越界会把卷页顶点推出页外、抬升弧
+    // 变负）。点按 / 按键从静止起步：standard 两头缓。松手接力时手指已带着速度：
+    // standardDecelerate 起点速度最大、直接减速收尾。不用弹簧 token：静止起步的
+    // 临界阻尼弹簧起点速度为 0，接力时页面会先顿住再加速。
     final double eased =
-        (_settleFromRest ? Curves.easeInOutCubic : Curves.easeOutCubic)
+        (_settleFromRest ? Easing.standard : Easing.standardDecelerate)
             .transform(t);
     final Offset p = Offset.lerp(_settleFrom, _settleTo, eased)!;
     // 翻过去的途中略微抬高，卷出弧线而不是平推。

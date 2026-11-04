@@ -2260,6 +2260,16 @@ class ReaderFushiSource extends ReaderMediaSource {
         key: '${p}_animate',
         defaultValue: d.animate,
       ),
+      underlineForm: HighlightUnderlineForm.fromWire(
+        getPreference<String>(
+          key: '${p}_underline_form',
+          defaultValue: d.underlineForm.wireName,
+        ),
+      ),
+      underlineOffset: getPreference<double>(
+        key: '${p}_underline_offset',
+        defaultValue: d.underlineOffset,
+      ),
     );
   }
 
@@ -2303,6 +2313,18 @@ class ReaderFushiSource extends ReaderMediaSource {
       }
       if (next.animate != prev.animate) {
         await setPreference<bool>(key: '${p}_animate', value: next.animate);
+      }
+      if (next.underlineForm != prev.underlineForm) {
+        await setPreference<String>(
+          key: '${p}_underline_form',
+          value: next.underlineForm.wireName,
+        );
+      }
+      if (next.underlineOffset != prev.underlineOffset) {
+        await setPreference<double>(
+          key: '${p}_underline_offset',
+          value: next.underlineOffset,
+        );
       }
     }
     onSettingsChangedLive?.call();
