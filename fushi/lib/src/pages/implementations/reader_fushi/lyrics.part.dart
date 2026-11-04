@@ -611,6 +611,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       clock: _ReaderLyricsClock(this),
       // 跳转记录的 ↶ / ↷：覆盖层顶栏右侧最前（覆盖层本身就是常驻 chrome）。
       jumpActions: _jumpHistoryToolbarItems(),
+      // 同一份跳转记录在全书音频时间轴上的刻度（与迷你播放条 / 有声书面板同源）。
+      jumpMarks: _audioJumpMarks(),
       // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       statsTimerPaused: _studyClockManualPause,
@@ -668,6 +670,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onSwapSides: () => unawaited(_toggleLyricsSides()),
       onCompactControlsExpandedChanged: (bool expanded) =>
           unawaited(_setLyricsControlsExpanded(expanded)),
+      // 进度跳转：阅读器导航面板同一段「按字数跳转」（歌词模式落到那句音频）。
+      onPositionJump: () => unawaited(_openLyricsPositionJump()),
+      // 跳转记录面板（与顶栏 ↶ / ↷ 长按同一个）；还没有记录时键置灰。
+      onOpenJumpHistory: _jumpHistory.isEmpty
+          ? null
+          : () => unawaited(_openJumpHistoryPanel()),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -722,6 +730,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         speed: ctrl.speed,
         onChanged: (double speed) => unawaited(ctrl.setSpeed(speed)),
       ),
+    );
+  }
+
+  /// 「进度跳转」键：打开导航面板并直达「按字数跳转」所在的搜索页（不另写一份
+  /// 跳转 UI）。落地走 [_jumpToGlobalCharOffset]——歌词模式下换成音频定位。
+  Future<void> _openLyricsPositionJump() async {
+    await _openReaderPanel(
+      _kReaderPanelNavigation,
+      navLanding: _ReaderNavLanding.positionJump,
     );
   }
 
@@ -806,6 +823,21 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           label: label,
           onPressed: () => unawaited(_toggleLyricsSides()),
         );
+      case LyricsControlItem.positionJump:
+        return ReaderHeaderAction(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_openLyricsPositionJump()),
+        );
+      case LyricsControlItem.jumpHistory:
+        // 还没有跳转记录：菜单项照常列出、置灰。
+        return ReaderHeaderAction(
+          icon: icon,
+          label: label,
+          onPressed: _jumpHistory.isEmpty
+              ? null
+              : () => unawaited(_openJumpHistoryPanel()),
+        );
     }
   }
 
@@ -885,11 +917,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
                 .lyricsControlLayoutFor(compact: !wide)
                 .itemsIn(LyricsControlSlot.overflow))
           ?_lyricsControlMenuAction(item, ctrl, menuAnchor, wide: wide),
+      // 「跳转记录」是布局里的一颗歌词按钮（[LyricsControlItem.jumpHistory]，出厂
+      // 在「更多」），不再另外追加，免得 ⋯ 里出现两条。
       for (final ReaderControlItem item in lyricsOverlayMenuItems(
         relativeSeekOnScreen: menuAnchor.relativeSeekOnScreen,
       ))
         if (_shouldRenderReaderControl(item)) _readerControlAction(item),
-      ..._jumpHistoryMenuActions(),
     ];
     if (actions.isEmpty || !mounted || !menuContext.mounted) return;
     final RenderBox overlay =

@@ -1,8 +1,8 @@
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_modern_shared.dart'
+    show lyricsSessionText;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -13,8 +13,8 @@ import 'package:material_ui/material_ui.dart';
 /// 歌词模式 Apple 设计系统的新版播放控件（与 MD3 新版同一布局 / 交互，视觉换成
 /// Apple 的件）：
 ///  * 宽屏：关闭键在底部右侧动作岛，正文横向占满，放不下的动作按优先级收进 ⋯，
-///    播放中底栏空闲自动隐藏、只认底边带子唤出；
-///  * 窄屏：可收起的迷你条 / 展开卡；
+///    底栏常驻（播放中闲置再久也不收起），读数一行在进度线上方；
+///  * 窄屏：可收起的迷你条 / 展开卡，读数在页眉；
 ///  * 偏好 `lyrics_controls_style` 在 Apple 下也生效，经典布局仍可切回。
 class _Clock implements LyricsPlayerClock {
   @override
@@ -33,6 +33,31 @@ ThemeData _appleTheme() => buildFushiThemeData(
   glass: FushiGlassMaterial.frosted,
   glassDesign: true,
 ).copyWith(platform: TargetPlatform.windows);
+
+/// 读数一行（阅读速度 · 进度 · 时间）真的看得见：在窗口里、有尺寸、没被缩成一条线，
+/// 祖先里没有透明度为 0 的层。
+void _expectStatsVisible(WidgetTester tester, Finder stat) {
+  expect(stat, findsOneWidget);
+  final Rect rect = tester.getRect(stat);
+  final Rect window = Offset.zero & tester.view.physicalSize;
+  expect(
+    window.contains(rect.topLeft) && window.contains(rect.bottomRight),
+    isTrue,
+    reason: '$rect 不在窗口 $window 内',
+  );
+  expect(rect.height, greaterThan(8));
+  expect(rect.width, greaterThan(40));
+  for (final Opacity o in tester.widgetList<Opacity>(
+    find.ancestor(of: stat, matching: find.byType(Opacity)),
+  )) {
+    expect(o.opacity, greaterThan(0));
+  }
+  for (final AnimatedOpacity o in tester.widgetList<AnimatedOpacity>(
+    find.ancestor(of: stat, matching: find.byType(AnimatedOpacity)),
+  )) {
+    expect(o.opacity, greaterThan(0));
+  }
+}
 
 void main() {
   late List<Object> calls;
@@ -161,86 +186,28 @@ void main() {
       }
     });
 
-    double chromeOpacity(WidgetTester tester) => tester
-        .widget<AnimatedOpacity>(
-          find
-              .ancestor(
-                of: find.text('book'),
-                matching: find.byType(AnimatedOpacity),
-              )
-              .first,
-        )
-        .opacity;
-
-    Future<void> idleUntilHidden(WidgetTester tester) async {
-      await tester.pump(kLyricsChromeIdleHideDelay);
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
-    }
-
-    testWidgets('playing: bottom chrome auto-hides and lyrics extend; only '
-        'the bottom edge band or Tab brings it back', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('playing: bottom chrome stays however long it idles; '
+        'lyrics rect never changes', (WidgetTester tester) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
       final Rect shown = tester.getRect(key('lyrics_view_probe'));
-      expect(chromeOpacity(tester), 1);
-
-      await idleUntilHidden(tester);
-      expect(chromeOpacity(tester), 0);
-      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
-      expect(hidden.top, shown.top);
-      expect(hidden.bottom, closeTo(900 - 24, 0.5));
-      expect(key('lyrics_modern_immersive_progress'), findsOneWidget);
-      // 隐藏时看不见的钮不吃点击。
-      await tester.tap(key('lyrics_close_button'), warnIfMissed: false);
-      await tester.pump();
-      expect(calls, isNot(contains('exit')));
-      expect(chromeOpacity(tester), 0);
-
-      // 正文上移动 / 点击不唤出、歌词矩形不变。
-      final TestGesture mouse = await tester.createGesture(
-        kind: PointerDeviceKind.mouse,
-      );
-      await mouse.addPointer(location: const Offset(800, 300));
-      await mouse.moveTo(const Offset(820, 320));
-      await tester.pump();
-      await tester.tapAt(const Offset(820, 320));
-      await tester.pump();
-      expect(chromeOpacity(tester), 0);
-      expect(tester.getRect(key('lyrics_view_probe')), hidden);
-
-      // 移到底边带子 → 唤出，歌词矩形复位。
-      await mouse.moveTo(const Offset(800, 890));
-      await tester.pump();
-      expect(chromeOpacity(tester), 1);
+      final Rect close = tester.getRect(key('lyrics_close_button'));
+      await tester.pump(const Duration(seconds: 30));
+      await tester.pump(const Duration(seconds: 1));
       expect(tester.getRect(key('lyrics_view_probe')), shown);
-
-      // 回到正文上，空闲后照常隐藏；Tab 唤出。
-      await mouse.moveTo(const Offset(800, 300));
-      await idleUntilHidden(tester);
-      expect(chromeOpacity(tester), 0);
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pump();
-      expect(chromeOpacity(tester), 1);
-      await mouse.removePointer();
+      expect(tester.getRect(key('lyrics_close_button')), close);
+      // 反馈 njN2KIQS_j：读数（速度 · 进度 · 时间）在进度线上方一直看得见。
+      _expectStatsVisible(tester, key('lyrics_modern_stats_line'));
+      expect(
+        tester.getRect(key('lyrics_modern_stats_line')).top,
+        greaterThanOrEqualTo(shown.bottom),
+      );
+      await tester.tap(key('lyrics_close_button'));
+      expect(calls.last, 'exit');
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('paused: bottom chrome never auto-hides', (
-      WidgetTester tester,
-    ) async {
-      await pumpAt(tester, const Size(1600, 900), app());
-      final Rect shown = tester.getRect(key('lyrics_view_probe'));
-      await tester.pump(kLyricsChromeIdleHideDelay * 3);
-      expect(chromeOpacity(tester), 1);
-      expect(tester.getRect(key('lyrics_view_probe')), shown);
-    });
-
     testWidgets('classic style still switches back to the Apple two-column '
-        'layout (corner close, side swap), and never auto-hides', (
-      WidgetTester tester,
-    ) async {
+        'layout (corner close, side swap)', (WidgetTester tester) async {
       await pumpAt(
         tester,
         const Size(1600, 900),
@@ -251,7 +218,7 @@ void main() {
       final Rect close = tester.getRect(key('lyrics_close_button'));
       expect(close.center.dy, lessThan(900 * 0.2));
       final Rect lyrics = tester.getRect(key('lyrics_view_probe'));
-      await tester.pump(kLyricsChromeIdleHideDelay * 3);
+      await tester.pump(const Duration(seconds: 10));
       expect(tester.getRect(key('lyrics_view_probe')), lyrics);
       expect(tester.takeException(), isNull);
     });
@@ -305,6 +272,17 @@ void main() {
       await tester.drag(key('lyrics_modern_card'), const Offset(0, 80));
       expect(calls, contains('expanded:false'));
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('reading stats (speed · progress · time) show in the header '
+        '(collapsed and expanded)', (WidgetTester tester) async {
+      final Finder stats = find.textContaining(
+        lyricsSessionText(LyricsPlayerStats.empty),
+      );
+      await pumpAt(tester, const Size(390, 844), app());
+      _expectStatsVisible(tester, stats);
+      await pumpAt(tester, const Size(390, 844), app(expanded: true));
+      _expectStatsVisible(tester, stats);
     });
 
     testWidgets('360 wide mini bar and expanded card do not overflow', (

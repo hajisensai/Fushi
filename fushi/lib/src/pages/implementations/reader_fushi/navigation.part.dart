@@ -814,6 +814,53 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     await _navigateToChapter(index, manual: true);
   }
 
+  /// 歌词模式的「进度跳转」（按字数 / 百分比，导航面板同一段 UI）。歌词文档是全书
+  /// cue 的连续列表，没有正文视口可滚——与 [_jumpToChapterInLyricsMode] 同一语义：
+  /// 把音频定位到目标字数所在的那句（[_audioCueNearCharOffset]；对齐家族没有章内
+  /// 字符区间时退到该章首句），跳转记录由音频侧经 `jumpSource` 记。该章一句 cue
+  /// 都没有 → 歌词里不存在这一处，退出歌词模式后按正文字数跳转。
+  Future<void> _jumpToGlobalCharOffsetInLyricsMode(
+    int globalOffset, {
+    required JumpSource source,
+  }) async {
+    final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
+      _chapterCumulativeChars,
+      _chapterCharCounts,
+      globalOffset,
+    );
+    final int chapterLen =
+        target.chapter >= 0 && target.chapter < _chapterCharCounts.length
+        ? _chapterCharCounts[target.chapter]
+        : 0;
+    final int inChapter = (target.progress * chapterLen).round();
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final AudioCue? cue =
+        _audioCueNearCharOffset(target.chapter, inChapter) ??
+        _firstCueOfSection(target.chapter);
+    if (ctrl != null && cue != null) {
+      await ctrl.skipToCue(cue, jumpSource: source);
+      return;
+    }
+    await _toggleLyricsMode();
+    if (!mounted || _lyricsMode) return;
+    await _jumpToGlobalCharOffset(globalOffset, source: source);
+  }
+
+  /// 章 [section] 里离章内**学习单位**偏移 [studyOffset]（阅读进度字数口径）最近的
+  /// 句子 cue。cue 片段是音频 matchable 坐标，逐句经 [_studyRangeForAudioFragment]
+  /// 换成学习区间再比（单点在 [audioCueNearStudyOffset]）。只认带章内字符区间的
+  /// `fushi-cue://` 家族（[SubtitleRematchCodec]），其余家族返回 null。
+  AudioCue? _audioCueNearCharOffset(int section, int studyOffset) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    return audioCueNearStudyOffset(
+      ctrl.sentenceAudioCuesForSection(section),
+      section: section,
+      studyOffset: studyOffset,
+      studyRangeOf: _studyRangeForAudioFragment,
+    );
+  }
+
   /// 某章在全书 cue 里的首句；该章没有 cue → null。三种 cue 家族各走各的精确
   /// 反查，**不做文本模糊匹配**（`_chapterIndexForText` 每次都要解析全书章节
   /// HTML，线性扫 cue 扫不起；定位错章比退回正文更糟）：
@@ -1790,6 +1837,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     JumpSource source = JumpSource.positionJump,
   }) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
+    if (_lyricsMode) {
+      await _jumpToGlobalCharOffsetInLyricsMode(globalOffset, source: source);
+      return;
+    }
     await _recordTextJumpDeparture(source: source);
 
     // 进度条拖动是跳转不是阅读：不播种（旧标量水位要在此播种）。跨章走

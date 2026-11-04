@@ -33,6 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3701 条。点号进各自文件。
 > 共 3713 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
@@ -132,6 +133,7 @@
 | [BUG-4022](bugs/BUG-4022-video-autoplay-drops-immersive-and-series-volume.md) | ✅ | ✅ | 自动连播（本地换集）退出沉浸锁定，音量不跟随系列 |
 | [BUG-4021](bugs/BUG-4021-video-immersive-long-press-speed.md) | ✅ | ✅ | 沉浸锁定时长按画面仍会临时加速，不跟随沉浸模式档位 |
 | [BUG-4020](bugs/BUG-4020-video-external-subtitle-chars-zero.md) | ✅ | ✅ | 视频外挂字幕（调轴后）字幕字数统计恒为 0 |
+| [BUG-4016](bugs/BUG-4016-lyrics-modern-stats-hidden.md) | ✅ | ✅ | 歌词模式新版底栏自动收起，阅读速度/进度/时间读数随之消失 |
 | [BUG-4014](bugs/BUG-4014-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
 | [BUG-4013](bugs/BUG-4013-ios-virtual-address-exhaustion.md) | ✅ | ✅ | iOS 同步 / 播歌 / 浏览器搜索时闪退（进程虚拟地址空间耗尽） |
 | [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |

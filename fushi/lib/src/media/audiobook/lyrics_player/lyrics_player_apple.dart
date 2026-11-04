@@ -17,9 +17,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart'
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiFloatingToolbarColors, FushiToolbarItem, FushiTopBarOverflowFit;
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
-    show FushiJumpHistoryActions;
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
-    show FushiMotion, fushiMotionDuration;
+    show FushiJumpHistoryActions, FushiJumpProgressMarks;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart'
     show FushiTextStyleFigures, FushiTypography, FushiTypographyContext;
@@ -254,7 +252,11 @@ class _PlayerPanel extends StatelessWidget {
         gap,
         SizedBox(
           height: kLyricsShellAppleScrubberHeight,
-          child: _LyricsScrubber(clock: data.clock, onSeek: callbacks.onSeek),
+          child: _LyricsScrubber(
+            clock: data.clock,
+            onSeek: callbacks.onSeek,
+            jumpMarks: data.jumpMarks,
+          ),
         ),
         gap,
         _TransportRow(
@@ -671,6 +673,7 @@ class _NarrowChrome extends StatelessWidget {
                     child: _LyricsScrubber(
                       clock: data.clock,
                       onSeek: callbacks.onSeek,
+                      jumpMarks: data.jumpMarks,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -1011,11 +1014,14 @@ class _LyricsIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ValueChanged<LyricsMenuAnchor>? withRect = onPressedWithRect;
+    // 没有动作（如还没有跳转记录的「跳转记录」键）：照常摆出、置灰。
+    final bool enabled = withRect != null || onPressed != null;
+    final Color base = color ?? Colors.white.withValues(alpha: 0.88);
     final Widget glyph = Icon(
       icon,
       key: iconKey,
       size: iconSize,
-      color: color ?? Colors.white.withValues(alpha: 0.88),
+      color: enabled ? base : base.withValues(alpha: base.a * 0.4),
       shadows: <Shadow>[
         Shadow(
           color: Colors.black.withValues(alpha: 0.28),
@@ -1235,6 +1241,29 @@ List<Widget> _appleControlButtons(
           tooltip: t.lyrics_layout_swap_sides,
           onPressed: onSwap,
         );
+      case LyricsControlItem.positionJump:
+        final VoidCallback? onJump = callbacks.onPositionJump;
+        if (onJump == null) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_position_jump_button'),
+          icon: CupertinoIcons.location,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.lyrics_control_item_position_jump,
+          onPressed: onJump,
+        );
+      case LyricsControlItem.jumpHistory:
+        // 没有跳转记录时置灰，不消失（布局里摆了它就该看得见）。
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_jump_history_button'),
+          icon: CupertinoIcons.clock,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.media_jump_history_title,
+          onPressed: callbacks.onOpenJumpHistory,
+        );
     }
   }
 
@@ -1401,6 +1430,7 @@ class _LyricsScrubber extends StatefulWidget {
     required this.onSeek,
     this.showTimes = true,
     this.trackHeight = 14,
+    this.jumpMarks,
   });
 
   final LyricsPlayerClock clock;
@@ -1411,6 +1441,10 @@ class _LyricsScrubber extends StatefulWidget {
 
   /// 轨道命中带高度（线画在中间）。
   final double trackHeight;
+
+  /// 跳转记录的落点刻度（[FushiJumpProgressMarks]，与视频进度条同款），画在
+  /// 整条轨道上、只看不点；null / 两边都空 = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
 
   @override
   State<_LyricsScrubber> createState() => _LyricsScrubberState();
@@ -1577,7 +1611,7 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
                           : Duration.zero,
                       curve: Curves.easeInOut,
                       builder: (BuildContext context, double a, Widget? child) {
-                        return CustomPaint(
+                        final Widget track = CustomPaint(
                           size: Size(width, widget.trackHeight),
                           painter: _TrackPainter(
                             fraction: fraction,
@@ -1585,6 +1619,24 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
                             fillAlpha: lerpDouble(0.72, 0.94, a)!,
                             focusColor: _focused ? focusColor : null,
                           ),
+                        );
+                        final ({List<double> back, List<double> forward})?
+                        marks = widget.jumpMarks;
+                        if (marks == null ||
+                            (marks.back.isEmpty && marks.forward.isEmpty)) {
+                          return track;
+                        }
+                        return Stack(
+                          children: <Widget>[
+                            track,
+                            Positioned.fill(
+                              child: FushiJumpProgressMarks(
+                                back: marks.back,
+                                forward: marks.forward,
+                                tickHeight: math.min(widget.trackHeight, 15),
+                              ),
+                            ),
+                          ],
                         );
                       },
                     ),

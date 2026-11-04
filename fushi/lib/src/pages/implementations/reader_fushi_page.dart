@@ -145,6 +145,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
+import 'package:fushi/src/reader/lyrics_position_jump.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';

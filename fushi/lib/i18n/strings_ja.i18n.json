@@ -4698,6 +4698,7 @@
   "lyrics_artist": "アーティスト",
   "lyrics_blur": "歌詞をぼかす",
   "lyrics_blur_hint": "リスニングに集中するため現在の行をぼかします。ホバーまたはタップで表示",
+  "lyrics_control_item_position_jump": "Jump to position",
   "lyrics_control_item_study_timer": "Study timer",
   "lyrics_control_layout": "Button layout",
   "lyrics_control_layout_hint": "Drag buttons to the top, the player toolbar or the ⋯ menu, or remove them from the lyrics page. Changes apply right away; removed buttons still work through keyboard shortcuts.",
