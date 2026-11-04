@@ -11,6 +11,12 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 const Key videoVolumePopoverFrameKey = ValueKey<String>(
   'video-volume-popover-frame',
 );
+const Key videoSpeedPopoverFrameKey = ValueKey<String>(
+  'video-speed-popover-frame',
+);
+const Key videoSpeedPopoverReadoutKey = ValueKey<String>(
+  'video-speed-popover-readout',
+);
 const Key videoVolumePopoverSliderKey = ValueKey<String>(
   'video-volume-popover-slider',
 );
@@ -35,6 +41,13 @@ const Key videoBrightnessHudProgressKey = ValueKey<String>(
 /// - 墨水屏 / 没给中性色：实底档 surfaceContainerHighest。
 ///
 /// [frameKey] 挂在外框上，宽 = [width]（真实渲染测试量它，而不是全屏 barrier）。
+///
+/// 外框同时**向内容提供与自身底色匹配的主题**：Apple 玻璃恒深色，内容包进
+/// [FushiAppleDarkTier]（浅色 app 里也是深色档，设计系统组件自动取白字 / 深色档
+/// 强调色）；MD3E / 墨水屏把 [colorScheme] 设为内容的主题配色。内容不自己读页面
+/// 主题、不写死颜色，读数 / 图标一律取 [foregroundOf] / [accentOf]（在外框**内**
+/// 的 context 上调用）——此前倍速读数写死页面 `onSurface`，Apple 浅色主题下黑字压
+/// 深色玻璃看不清。
 class VideoControlPopoverFrame extends StatelessWidget {
   const VideoControlPopoverFrame({
     super.key,
@@ -53,6 +66,18 @@ class VideoControlPopoverFrame extends StatelessWidget {
   final Key? frameKey;
   final Widget child;
 
+  /// 浮层内文字（读数 / 百分比）的前景：Apple 取深色档 label，MD3E / 墨水屏取
+  /// 外框配色的 onSurface。[context] 必须在外框内部。
+  static Color foregroundOf(BuildContext context) => videoAppleChrome(context)
+      ? appleColorsOf(context).label
+      : Theme.of(context).colorScheme.onSurface;
+
+  /// 浮层内图标的颜色：Apple 与前景同一 label（AVKit 播放控件不上强调色），
+  /// MD3E / 墨水屏取外框配色的 primary。[context] 必须在外框内部。
+  static Color accentOf(BuildContext context) => videoAppleChrome(context)
+      ? appleColorsOf(context).label
+      : Theme.of(context).colorScheme.primary;
+
   @override
   Widget build(BuildContext context) {
     if (videoAppleChrome(context)) {
@@ -62,7 +87,7 @@ class VideoControlPopoverFrame extends StatelessWidget {
         child: VideoGlassHud(
           padding: padding,
           radius: FushiRadii.menuValue,
-          child: child,
+          child: FushiAppleDarkTier(child: child),
         ),
       );
     }
@@ -92,7 +117,13 @@ class VideoControlPopoverFrame extends StatelessWidget {
         ),
         child: ConstrainedBox(
           constraints: BoxConstraints.tightFor(width: width),
-          child: Padding(padding: padding, child: child),
+          child: Padding(
+            padding: padding,
+            child: Theme(
+              data: Theme.of(context).copyWith(colorScheme: colorScheme),
+              child: child,
+            ),
+          ),
         ),
       ),
     );
@@ -149,10 +180,7 @@ class VideoVolumePopoverCard extends StatelessWidget {
     final double max = math.max(100.0, maximum);
     final double clamped = value.clamp(0.0, max).toDouble();
     final double controlHeight = 40 * scale;
-    final bool apple = videoAppleChrome(context);
     final bool eink = isEinkTheme(context);
-    final Color foreground = apple ? Colors.white : colorScheme.onSurface;
-    final Color iconColor = apple ? Colors.white : colorScheme.primary;
     final SliderThemeData base = SliderTheme.of(context);
     final SliderThemeData sliderTheme = eink
         ? base.copyWith(
@@ -179,51 +207,148 @@ class VideoVolumePopoverCard extends StatelessWidget {
       padding: EdgeInsets.all(8 * scale),
       colorScheme: colorScheme,
       m3eSurfaceColor: m3eSurfaceColor,
-      child: SizedBox(
-        height: controlHeight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiTooltip(
-              message: tooltip,
-              child: FushiIconButtonControl(
-                icon: FushiIcon(icon),
-                iconSize: 20 * scale,
-                color: iconColor,
-                padding: EdgeInsets.zero,
-                constraints: BoxConstraints.tightFor(
-                  width: controlHeight,
-                  height: controlHeight,
+      // 前景在外框内取（外框按设计系统提供匹配底色的主题）。
+      child: Builder(
+        builder: (BuildContext inner) => SizedBox(
+          height: controlHeight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiTooltip(
+                message: tooltip,
+                child: FushiIconButtonControl(
+                  icon: FushiIcon(icon),
+                  iconSize: 20 * scale,
+                  color: VideoControlPopoverFrame.accentOf(inner),
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints.tightFor(
+                    width: controlHeight,
+                    height: controlHeight,
+                  ),
+                  onPressed: onToggleMute,
                 ),
-                onPressed: onToggleMute,
               ),
-            ),
-            SizedBox(width: 4 * scale),
-            Expanded(
-              child: SizedBox(
-                height: controlHeight,
-                child: SliderTheme(
-                  data: sliderTheme,
-                  child: FushiSlider(
-                    key: sliderKey,
-                    value: clamped,
-                    min: 0,
-                    max: max,
-                    onChanged: onChanged,
+              SizedBox(width: 4 * scale),
+              Expanded(
+                child: SizedBox(
+                  height: controlHeight,
+                  child: SliderTheme(
+                    data: sliderTheme,
+                    child: FushiSlider(
+                      key: sliderKey,
+                      value: clamped,
+                      min: 0,
+                      max: max,
+                      onChanged: onChanged,
+                    ),
                   ),
                 ),
               ),
-            ),
-            SizedBox(width: 6 * scale),
-            Text(
-              '${clamped.round()}%',
-              style: TextStyle(
-                color: foreground,
-                fontSize: 12 * scale,
-                fontWeight: FontWeight.w600,
-                // 百分比随拖动逐帧变化：等宽数字。
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              SizedBox(width: 6 * scale),
+              Text(
+                '${clamped.round()}%',
+                style: TextStyle(
+                  color: VideoControlPopoverFrame.foregroundOf(inner),
+                  fontSize: 12 * scale,
+                  fontWeight: FontWeight.w600,
+                  // 百分比随拖动逐帧变化：等宽数字。
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 倍速轻浮层：图标 + 当前倍速读数 + 1.0x 复位 + 0.5x–2.0x 滑条。
+///
+/// 外框与音量浮层同一个 [VideoControlPopoverFrame]；读数 / 图标颜色在外框内取
+/// [VideoControlPopoverFrame.foregroundOf] / [VideoControlPopoverFrame.accentOf]，
+/// 文字按钮与滑条读外框提供的主题。吸附到预设档由调用方在 [onChanged] 里做。
+class VideoSpeedPopoverCard extends StatelessWidget {
+  const VideoSpeedPopoverCard({
+    super.key,
+    required this.width,
+    required this.speed,
+    required this.uiScale,
+    required this.colorScheme,
+    required this.icon,
+    required this.onReset,
+    required this.onChanged,
+    this.divisions,
+    this.m3eSurfaceColor,
+    this.frameKey = videoSpeedPopoverFrameKey,
+  });
+
+  final double width;
+
+  /// 当前播放倍速（读数原值；滑条夹到 0.5–2.0）。
+  final double speed;
+  final double uiScale;
+  final ColorScheme colorScheme;
+
+  /// 滑条分段数（预设档数 - 1）；null = 连续。
+  final int? divisions;
+
+  /// MD3E 浮层底色（见 [VideoControlPopoverFrame.m3eSurfaceColor]）。
+  final Color? m3eSurfaceColor;
+
+  /// 读数前的倍速图标（调用方给，与底栏倍速键同一字形）。
+  final IconData icon;
+  final VoidCallback onReset;
+  final ValueChanged<double> onChanged;
+  final Key frameKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final double scale = math.max(0.1, uiScale);
+    final double sliderValue = speed.clamp(0.5, 2.0).toDouble();
+    final String readout = '${speed.toStringAsFixed(1)}x';
+    return VideoControlPopoverFrame(
+      frameKey: frameKey,
+      width: width,
+      padding: EdgeInsets.all(10 * scale),
+      colorScheme: colorScheme,
+      m3eSurfaceColor: m3eSurfaceColor,
+      child: Builder(
+        builder: (BuildContext inner) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiIcon(
+                  icon,
+                  color: VideoControlPopoverFrame.accentOf(inner),
+                  size: 20 * scale,
+                ),
+                SizedBox(width: 8 * scale),
+                Expanded(
+                  child: Text(
+                    readout,
+                    key: videoSpeedPopoverReadoutKey,
+                    style: TextStyle(
+                      color: VideoControlPopoverFrame.foregroundOf(inner),
+                      fontSize: 14 * scale,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                FushiTextButton(onPressed: onReset, child: const Text('1.0x')),
+              ],
+            ),
+            FushiSlider(
+              value: sliderValue,
+              min: 0.5,
+              max: 2.0,
+              divisions: divisions,
+              label: readout,
+              onChanged: onChanged,
             ),
           ],
         ),

@@ -5,6 +5,7 @@ import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 // 反馈 DYSX-jy-6K「音量控制仍为 MD2 样式，未跟随新界面设计」：视频音量浮层的
@@ -107,4 +108,164 @@ void main() {
     final Text percent = tester.widget<Text>(find.text('42%'));
     expect(percent.style?.color, Colors.white);
   });
+
+  // 审查 major：倍速浮层读数写死页面 cs.onSurface，Apple 浅色主题下黑字压在恒
+  // 深色的玻璃 HUD 上看不清。外框现在向内容提供匹配底色的主题与前景。
+  testWidgets('Apple light theme: speed + volume popovers use the dark-tier '
+      'foreground on the always-dark glass HUD', (WidgetTester tester) async {
+    final ThemeData theme = _theme(apple: true, brightness: Brightness.light);
+    // 前提：页面浅色主题的 onSurface 近黑——正是旧实现写死的颜色。
+    expect(_contrast(theme.colorScheme.onSurface, _kGlassDark), lessThan(2));
+
+    await _pumpPopovers(tester, theme);
+    expect(
+      find.descendant(
+        of: find.byKey(videoSpeedPopoverFrameKey),
+        matching: find.byType(VideoGlassHud),
+      ),
+      findsOneWidget,
+    );
+
+    final Text readout = tester.widget<Text>(
+      find.byKey(videoSpeedPopoverReadoutKey),
+    );
+    final Text percent = tester.widget<Text>(find.text('42%'));
+    for (final Text text in <Text>[readout, percent]) {
+      expect(text.style?.color, const Color(0xFFFFFFFF));
+      expect(
+        _contrast(text.style!.color!, _kGlassDark),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
+    final FushiIcon speedIcon = tester.widget<FushiIcon>(
+      find.descendant(
+        of: find.byKey(videoSpeedPopoverFrameKey),
+        matching: find.byType(FushiIcon),
+      ),
+    );
+    expect(speedIcon.color, const Color(0xFFFFFFFF));
+
+    // 文字按钮 / 滑条读外框提供的深色档主题，而不是页面浅色主题。
+    final ThemeData inner = Theme.of(tester.element(find.text('1.0x')));
+    expect(inner.colorScheme.brightness, Brightness.dark);
+    expect(
+      VideoControlPopoverFrame.foregroundOf(
+        tester.element(find.byKey(videoSpeedPopoverReadoutKey)),
+      ),
+      const Color(0xFFFFFFFF),
+    );
+  });
+
+  for (final Brightness brightness in Brightness.values) {
+    testWidgets('MD3E ${brightness.name}: speed + volume popovers read the '
+        'frame color scheme', (WidgetTester tester) async {
+      final ThemeData theme = _theme(apple: false, brightness: brightness);
+      await _pumpPopovers(tester, theme);
+      expect(find.byType(VideoGlassHud), findsNothing);
+      expect(find.byType(FushiAppleDarkTier), findsNothing);
+
+      final Text readout = tester.widget<Text>(
+        find.byKey(videoSpeedPopoverReadoutKey),
+      );
+      final Text percent = tester.widget<Text>(find.text('42%'));
+      expect(readout.style?.color, _kPopoverScheme.onSurface);
+      expect(percent.style?.color, _kPopoverScheme.onSurface);
+      final FushiIcon speedIcon = tester.widget<FushiIcon>(
+        find.descendant(
+          of: find.byKey(videoSpeedPopoverFrameKey),
+          matching: find.byType(FushiIcon),
+        ),
+      );
+      expect(speedIcon.color, _kPopoverScheme.primary);
+      // 文字按钮 / 滑条读调用方给外框的配色（M3E 中性方案），不读页面主题。
+      final ThemeData inner = Theme.of(tester.element(find.text('1.0x')));
+      expect(inner.colorScheme, _kPopoverScheme);
+      final DecoratedBox frame = tester.widget<DecoratedBox>(
+        find.byKey(videoSpeedPopoverFrameKey),
+      );
+      expect((frame.decoration as BoxDecoration).color, _kM3eSurface);
+    });
+  }
+}
+
+/// 视频玻璃 HUD 的底色量级（恒深色，近黑）——只用于对比度断言。
+const Color _kGlassDark = Color(0xFF1C1C1E);
+
+/// 调用方传给外框的配色（与页面主题不同，用来证明内容读的是外框配色）。
+final ColorScheme _kPopoverScheme = ColorScheme.fromSeed(
+  seedColor: Colors.deepOrange,
+  brightness: Brightness.dark,
+);
+
+ThemeData _theme({required bool apple, required Brightness brightness}) {
+  return buildFushiThemeData(
+    scheme: ColorScheme.fromSeed(
+      seedColor: Colors.teal,
+      brightness: brightness,
+    ),
+    textTheme: brightness == Brightness.dark
+        ? Typography.material2021().white
+        : Typography.material2021().black,
+    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glassDesign: apple,
+  );
+}
+
+Future<void> _pumpPopovers(WidgetTester tester, ThemeData theme) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: theme,
+      home: FushiGlassScope(
+        child: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (BuildContext context) {
+                final ColorScheme cs = videoAppleChrome(context)
+                    ? Theme.of(context).colorScheme
+                    : _kPopoverScheme;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    VideoSpeedPopoverCard(
+                      width: 240,
+                      speed: 1.5,
+                      uiScale: 1,
+                      colorScheme: cs,
+                      m3eSurfaceColor: _kM3eSurface,
+                      icon: Icons.speed,
+                      divisions: 6,
+                      onReset: () {},
+                      onChanged: (_) {},
+                    ),
+                    const SizedBox(height: 8),
+                    VideoVolumePopoverCard(
+                      width: 240,
+                      value: 42,
+                      uiScale: 1,
+                      colorScheme: cs,
+                      m3eSurfaceColor: _kM3eSurface,
+                      icon: Icons.volume_up,
+                      tooltip: 'Mute',
+                      onToggleMute: () {},
+                      onChanged: (_) {},
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
+
+/// WCAG 对比度。
+double _contrast(Color a, Color b) {
+  final double la = a.computeLuminance();
+  final double lb = b.computeLuminance();
+  final double hi = la > lb ? la : lb;
+  final double lo = la > lb ? lb : la;
+  return (hi + 0.05) / (lo + 0.05);
 }
