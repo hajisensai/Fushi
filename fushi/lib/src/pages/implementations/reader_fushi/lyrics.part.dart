@@ -1288,8 +1288,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   ) {
     _endLyricsIllustrationStay();
     ctrl.triggerImagePause();
-    // 「图片暂停」关着（0 秒）/ 阅读器不可见时控制器不停：卡照样弹出，不停留。
+    // 「图片暂停」关着（0 秒）/ 阅读器不可见时控制器不停：卡照样弹出、不停留，
+    // 由状态机的展示时长计时自动收起（kLyricsIllustrationCardAutoClose）。
     if (!ctrl.isImagePaused) return;
+    // 停留接管卡的收起：停留结束（[_onLyricsIllustrationStayChanged]）再收。
+    illustrations.holdCardOpen();
     _lyricsIllustrationStay = (ctrl: ctrl, ill: illustrations);
     ctrl.addListener(_onLyricsIllustrationStayChanged);
     illustrations.addListener(_onLyricsIllustrationStayChanged);
