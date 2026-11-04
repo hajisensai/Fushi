@@ -920,6 +920,7 @@ keep-open=yes
       // 全是网络缓存族属性。
       expect(m.keys.toSet(), <String>{
         'cache',
+        'cache-on-disk',
         'cache-secs',
         'demuxer-max-bytes',
         'demuxer-max-back-bytes',
