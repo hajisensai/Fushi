@@ -119,6 +119,32 @@ Future<void> _settle(WidgetTester tester, {int rounds = 16}) async {
   }
 }
 
+/// 复习页的排队 / 读卡 / 渲染是真异步（原生库 + 内存库），完成要多少墙钟取决于机器负载：固定轮数的
+/// [_settle]（约 80 ms 墙钟）在并发跑满的测试机上可能连第一次排队都没等完，页面还在初始加载（既无「等 RWKV」
+/// 也无卡面），断言就落在半路。这里先走一遍 [_settle]，再按轮推进直到页面到达 [reached] 描述的状态，最多等
+/// [timeout] 墙钟；到不了就原样交给后面的断言报红（不放宽断言，只是不在加载半路下结论）。
+Future<void> _settleUntil(
+  WidgetTester tester,
+  bool Function() reached, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
+  final Stopwatch clock = Stopwatch()..start();
+  await _settle(tester);
+  while (!reached() && clock.elapsed < timeout) {
+    await _settle(tester, rounds: 1);
+  }
+}
+
+bool _pendingShown() => find
+    .byKey(const ValueKey<String>('srs-review-rwkv-pending'))
+    .evaluate()
+    .isNotEmpty;
+
+bool _retryShown() => find
+    .byKey(const ValueKey<String>('srs-review-rwkv-retry'))
+    .evaluate()
+    .isNotEmpty;
+
 /// 默认牌组（算法缺省 RWKV）里 [n] 张已毕业的复习卡，时钟拨到第二天（避开同日重复守卫）。
 Future<(FushiDatabase, SrsDbStore)> _storeWithReviewCards(int n) async {
   final SrsTestClock clock = SrsTestClock();
@@ -217,6 +243,7 @@ void main() {
     addTearDown(() => tester.runAsync(rwkv.close));
 
     final (_, List<String> faces) = await pumpReview(tester, store, rwkv);
+    await _settleUntil(tester, () => faces.isNotEmpty && !_pendingShown());
 
     expect(rwkv.ready, isTrue);
     expect(
@@ -224,7 +251,7 @@ void main() {
       findsNothing,
       reason: '就绪事件已经来过，页面不能再等一个不会来的事件',
     );
-    expect(faces, isNotEmpty, reason: 'RWKV 牌组的复习卡按此刻的 R 出了');
+    expect(faces, isNotEmpty, reason: 'RWKV 牌组的复习卡按 RWKV 的回忆率出了');
     expect(rwkv.scoringCalls, greaterThanOrEqualTo(2));
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -252,6 +279,7 @@ void main() {
     addTearDown(() => tester.runAsync(rwkv.close));
 
     final (_, List<String> faces) = await pumpReview(tester, store, rwkv);
+    await _settleUntil(tester, _retryShown);
 
     expect(rwkv.status.phase, SrsRwkvPhase.failed);
     expect(
@@ -266,7 +294,7 @@ void main() {
     expect(faces, isEmpty);
 
     await tester.tap(retry);
-    await _settle(tester);
+    await _settleUntil(tester, () => faces.isNotEmpty && !_pendingShown());
     expect(
       find.byKey(const ValueKey<String>('srs-review-rwkv-pending')),
       findsNothing,
