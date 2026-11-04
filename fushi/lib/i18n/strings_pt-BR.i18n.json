@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "Nenhum dos seus mapeamentos de campos corresponde ao tipo de nota selecionado, então o Anki recusou o cartão. Abra Configurações do Anki para remapear os campos, ou use 'Criar baralho Lapis'.",
   "anki_error_first_field_empty": "O primeiro campo do tipo de nota selecionado está vazio, e o Anki recusa uma nota assim. Mapeie um campo para ele em Configurações do Anki.",
   "anki_error_http": "Não foi possível exportar para o Anki: ocorreu um erro HTTP ao contatar o AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Não foi possível criar o cartão porque nenhum dispositivo pareado pôde ser alcançado. Verifique se o Fushi está aberto no dispositivo pareado ou desative \"Minerar para dispositivo pareado\" em Configurações do Anki para criar cartões localmente.",
   "anki_error_permission_denied": "O AnkiDroid não concedeu permissão de acesso aos cartões. Aprove a solicitação de permissão que acabou de aparecer e toque no botão novamente para exportar.",
   "anki_error_permission_permanently_denied": "O acesso aos cartões do AnkiDroid foi negado permanentemente, então o sistema não mostra mais a caixa de permissão. Abra as configurações do app, conceda a permissão do AnkiDroid e tente novamente.",

@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "Ninguno de sus mapeos de campos coincide con el tipo de nota seleccionado, por lo que Anki rechazó la tarjeta. Abra Configuración de Anki para volver a mapear los campos, o use 'Crear mazo Lapis'.",
   "anki_error_first_field_empty": "El primer campo del tipo de nota seleccionado está vacío y Anki no acepta una nota así. Mapee un campo a él en Configuración de Anki.",
   "anki_error_http": "No se pudo exportar a Anki: ocurrió un error HTTP al contactar con AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "No se pudo crear la tarjeta porque no se pudo alcanzar ningún dispositivo emparejado. Asegúrese de que Fushi esté en ejecución en el dispositivo emparejado o desactive «Enviar al dispositivo emparejado» en Configuración de Anki para crear tarjetas localmente.",
   "anki_error_permission_denied": "AnkiDroid no ha concedido permiso de acceso a tarjetas. Apruebe el diálogo de permisos que acaba de aparecer, luego toque el botón de nuevo para exportar.",
   "anki_error_permission_permanently_denied": "El acceso de AnkiDroid a las tarjetas se denegó de forma permanente, por lo que el sistema ya no muestra el cuadro de permisos. Abre los ajustes de la app, concede el permiso de AnkiDroid e inténtalo de nuevo.",

@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "لا يطابق أي من تعيينات الحقول لديك نوع الملاحظة المحدد، لذلك رفض Anki البطاقة. افتح إعدادات Anki لإعادة تعيين الحقول، أو استخدم 'إنشاء مجموعة Lapis'.",
   "anki_error_first_field_empty": "الحقل الأول من نوع الملاحظة المحدد فارغ، وAnki يرفض ملاحظة كهذه. عيّن له حقلاً في إعدادات Anki.",
   "anki_error_http": "تعذّر التصدير إلى Anki: حدث خطأ HTTP أثناء الاتصال بـ AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "تعذّر إنشاء البطاقة لعدم إمكانية الوصول إلى أي جهاز مقترن. تأكد من تشغيل Fushi على الجهاز المقترن، أو أوقف «إرسال إلى الجهاز المقترن» في إعدادات Anki لإنشاء البطاقات محليًا.",
   "anki_error_permission_denied": "لم يمنح AnkiDroid إذن الوصول إلى البطاقات. وافق على مربع إذن النظام الذي ظهر للتو، ثم اضغط الزر مرة أخرى للتصدير.",
   "anki_error_permission_permanently_denied": "تم رفض وصول AnkiDroid إلى البطاقات بشكل دائم، لذا لم يعد النظام يعرض مربع حوار الإذن. افتح إعدادات التطبيق وامنح إذن AnkiDroid ثم حاول مرة أخرى.",

@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "Geen van je veldtoewijzingen past bij het geselecteerde notitietype, dus Anki heeft de kaart geweigerd. Open Anki-instellingen om de velden opnieuw toe te wijzen, of gebruik 'Lapis-deck maken'.",
   "anki_error_first_field_empty": "Het eerste veld van het geselecteerde notitietype is leeg, en Anki weigert zo'n notitie. Wijs er een veld aan toe bij Anki-instellingen.",
   "anki_error_http": "Kon niet exporteren naar Anki: er is een HTTP-fout opgetreden tijdens het contact met AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Kon de kaart niet aanmaken omdat geen gekoppeld apparaat bereikbaar was. Zorg dat Fushi op het gekoppelde apparaat draait, of schakel 'Kaarten naar gekoppeld apparaat sturen' uit in de Anki-instellingen om kaarten lokaal aan te maken.",
   "anki_error_permission_denied": "AnkiDroid heeft geen toestemming voor kaarttoegang verleend. Keur het systeemtoestemmingsvenster goed dat zojuist verscheen en tik dan opnieuw op de knop om te exporteren.",
   "anki_error_permission_permanently_denied": "Toegang van AnkiDroid tot kaarten is permanent geweigerd, waardoor het systeem het toestemmingsvenster niet meer toont. Open de app-instellingen, geef de AnkiDroid-toestemming en probeer het opnieuw.",

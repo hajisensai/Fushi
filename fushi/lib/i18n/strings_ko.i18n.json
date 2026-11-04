@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "필드 매핑 중 어느 것도 선택한 노트 유형과 맞지 않아 Anki가 카드를 거부했습니다. Anki 설정을 열어 필드를 다시 매핑하거나 'Lapis 덱 만들기'를 사용하세요.",
   "anki_error_first_field_empty": "선택한 노트 유형의 첫 번째 필드가 비어 있어 Anki가 이런 노트를 받지 않습니다. Anki 설정에서 필드를 매핑하세요.",
   "anki_error_http": "Anki로 내보낼 수 없습니다: AnkiConnect에 연결하는 중 HTTP 오류가 발생했습니다.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "연결할 수 있는 페어링된 기기가 없어 카드를 만들지 못했습니다. 페어링된 기기에서 Fushi가 실행 중인지 확인하거나, 이 기기에서 카드를 만들려면 Anki 설정에서 「페어링된 기기로 채굴」을 끄세요.",
   "anki_error_permission_denied": "AnkiDroid에 카드 접근 권한이 부여되지 않았습니다. 방금 나타난 시스템 권한 대화 상자를 승인한 후 버튼을 다시 탭하여 내보내세요.",
   "anki_error_permission_permanently_denied": "AnkiDroid 카드 접근 권한이 영구적으로 거부되어 시스템이 더 이상 권한 대화상자를 표시하지 않습니다. 앱 설정을 열어 AnkiDroid 권한을 허용한 다음 다시 시도하세요.",

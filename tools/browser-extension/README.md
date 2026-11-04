@@ -481,7 +481,7 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 
 | 键 | 动作 |
 |---|---|
-| ← / → | 上一句 / 下一句字幕（仅当前视频有字幕轨时接管） |
+| ← / → | 上一句 / 下一句字幕（仅 Fushi 字幕正在出画时接管；没开 Fushi 字幕或 Shift+H 隐藏了字幕时放回站点原生左右键） |
 | ↑ | 回当前句句首重播 |
 | Shift+S | 打开浏览器原生字幕侧边栏（当前视频有 Fushi 字幕轨时） |
 | Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Fushi 字幕轨） |
@@ -493,7 +493,8 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 Esc 取消、与别的动作撞键时拒绝并提示）。改过的键存 `videoShortcutKeys = {动作: 'Ctrl+Shift+KeyJ'}`
 （修饰键规范顺序 + 布局无关的 `KeyboardEvent.code`），只存改过的、改回默认即删项；视频页按
 storage.onChanged 热更新，不必刷新。判定仍是纯函数。站点输入框/可编辑区一律放行；无轨时需要
-字幕轨的动作（上一句 / 下一句 / 重播 / 侧边栏 / 偏移 / 复制）均放行给站点原生行为。
+字幕轨的动作（上一句 / 下一句 / 重播 / 侧边栏 / 偏移 / 复制）均放行给站点原生行为；上一句 / 下一句
+还要求 Fushi 字幕正在出画（`fushiSubtitleStudyState().showing` 且未被 Shift+H 隐藏），否则同样放行。
 
 `Shift+H` 的「隐藏」用 `visibility:hidden` 而非 `display:none`：扩展的取词、逐句制卡、caret
 兜底命中都要读字幕节点的 textContent / 几何，`display:none` 会把它们摘出布局，隐藏字幕就

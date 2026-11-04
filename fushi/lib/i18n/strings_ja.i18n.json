@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "フィールドマッピングのいずれも選択中のノートタイプと一致しないため、Anki がカードを拒否しました。Anki 設定でフィールドをマッピングし直すか、「Lapis デッキを作成」をお使いください。",
   "anki_error_first_field_empty": "選択中のノートタイプの最初のフィールドが空のため、Anki はこのノートを受け付けません。Anki 設定でフィールドを割り当ててください。",
   "anki_error_http": "Anki に書き出せません：AnkiConnect への接続中に HTTP エラーが発生しました。",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "接続できるペアリング済みデバイスがないため、カードを作成できませんでした。ペアリング済みデバイスで Fushi が実行中か確認するか、この端末でカードを作成するには Anki 設定で「ペアリングデバイスに制カード」をオフにしてください。",
   "anki_error_permission_denied": "AnkiDroid がカードアクセス権限を許可していません。表示されたシステム権限ダイアログを承認してから、もう一度エクスポートボタンをタップしてください。",
   "anki_error_permission_permanently_denied": "AnkiDroid のカードアクセスが完全に拒否されたため、システムの許可ダイアログは表示されません。アプリ設定で AnkiDroid の権限を許可してから、もう一度お試しください。",

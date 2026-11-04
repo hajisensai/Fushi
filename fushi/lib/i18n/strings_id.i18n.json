@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "Tidak ada pemetaan bidang Anda yang cocok dengan tipe catatan yang dipilih, sehingga Anki menolak kartu ini. Buka Pengaturan Anki untuk memetakan ulang bidang, atau gunakan 'Buat dek Lapis'.",
   "anki_error_first_field_empty": "Bidang pertama dari tipe catatan yang dipilih kosong, dan Anki menolak catatan seperti itu. Petakan sebuah bidang ke sana di Pengaturan Anki.",
   "anki_error_http": "Tidak dapat mengekspor ke Anki: terjadi kesalahan HTTP saat menghubungi AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Tidak dapat membuat kartu karena tidak ada perangkat berpasangan yang bisa dijangkau. Pastikan Fushi berjalan di perangkat berpasangan, atau nonaktifkan Kirim kartu ke perangkat berpasangan di Pengaturan Anki untuk membuat kartu secara lokal.",
   "anki_error_permission_denied": "AnkiDroid belum memberikan izin akses kartu. Setujui dialog izin sistem yang baru muncul, lalu ketuk tombol lagi untuk mengekspor.",
   "anki_error_permission_permanently_denied": "Akses kartu AnkiDroid ditolak secara permanen, sehingga sistem tidak lagi menampilkan dialog izin. Buka pengaturan aplikasi dan berikan izin AnkiDroid, lalu coba lagi.",

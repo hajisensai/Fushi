@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "Keine deiner Feldzuordnungen passt zum ausgewählten Notiztyp, deshalb hat Anki die Karte abgelehnt. Öffne die Anki-Einstellungen, um die Felder neu zuzuordnen, oder verwende „Lapis-Stapel erstellen“.",
   "anki_error_first_field_empty": "Das erste Feld des ausgewählten Notiztyps ist leer, und Anki lehnt eine solche Notiz ab. Ordne ihm in den Anki-Einstellungen ein Feld zu.",
   "anki_error_http": "Export zu Anki fehlgeschlagen: beim Verbinden mit AnkiConnect ist ein HTTP-Fehler aufgetreten.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Die Karte konnte nicht erstellt werden, da kein gekoppeltes Gerät erreichbar war. Stellen Sie sicher, dass Fushi auf dem gekoppelten Gerät läuft, oder deaktivieren Sie „An gekoppeltes Gerät senden“ in den Anki-Einstellungen, um Karten lokal zu erstellen.",
   "anki_error_permission_denied": "AnkiDroid hat keine Kartenzugriffsberechtigung erteilt. Genehmige den angezeigten Berechtigungsdialog und tippe dann erneut auf die Schaltfläche zum Exportieren.",
   "anki_error_permission_permanently_denied": "Der AnkiDroid-Kartenzugriff wurde dauerhaft verweigert, daher zeigt das System den Berechtigungsdialog nicht mehr an. Öffne die App-Einstellungen, erteile die AnkiDroid-Berechtigung und versuche es erneut.",

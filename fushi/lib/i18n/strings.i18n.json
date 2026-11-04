@@ -582,6 +582,7 @@
   "anki_error_field_mapping_mismatch": "None of your field mappings match the selected note type, so Anki rejected the card. Open Anki settings to re-map the fields, or use 'Create Lapis deck'.",
   "anki_error_first_field_empty": "The first field of the selected note type is empty, and Anki refuses such a note. Map a field to it in Anki settings.",
   "anki_error_http": "Could not export to Anki: an HTTP error occurred while contacting AnkiConnect.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Couldn't create the card because the Fushi Interconnect server could not be reached. Make sure Fushi is running there, or turn off Mine to Fushi Interconnect server in Anki settings to create cards locally.",
   "anki_error_permission_denied": "AnkiDroid hasn't granted card access permission. Approve the system permission dialog that just appeared, then tap the button again to export.",
   "anki_error_permission_permanently_denied": "AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.",
