@@ -44,7 +44,7 @@ namespace flutter_inappwebview_plugin
     size_t height;
   } Size;
 
-  // BUG-4079：取帧线程与栅格线程之间的交接箱（桥与取帧线程共同持有）。
+  // BUG-4102：取帧线程与栅格线程之间的交接箱（桥与取帧线程共同持有）。
   //
   // 取帧线程在帧到达时把 WGC 帧里的有效内容拷进 [staged]（插件设备上的私有纹理，
   // 不共享、不进引擎），然后立刻释放 WGC 帧，帧池缓冲当场还给 DWM；栅格线程的纹理
@@ -189,7 +189,7 @@ namespace flutter_inappwebview_plugin
     void InvalidatePumpCallback(
       const std::shared_ptr<WgcFramePoolLifetime>& lifetime = nullptr);
     virtual void StopInternal();
-    // BUG-4079：默认 WGC 捕获不订阅 FrameArrived，取帧在每个帧池自己的取帧线程上
+    // BUG-4102：默认 WGC 捕获不订阅 FrameArrived，取帧在每个帧池自己的取帧线程上
     // 按合成器时钟拉。所有丢弃 / 替换帧池的路径都先失效平台线程上报状态、停并 join
     // 取帧线程，再 Close session / pool，最后退役 lifetime。
     void RetireFramePoolLocked(const char* reason);

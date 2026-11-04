@@ -116,7 +116,7 @@ verified at runtime on this machine.
 - Tests: `test/texture_capacity_test.dart` (policy), source guard
   `fushi/test/build/webview_texture_capacity_guard_test.dart`.
 
-## WGC frames pulled on a compositor-clocked worker thread (BUG-4079, 2026-11-05)
+## WGC frames pulled on a compositor-clocked worker thread (BUG-4102, 2026-11-05)
 
 - `texture_bridge.cc`: frames used to be pulled by a `DispatcherQueueTimer` on
   the platform thread (merged with the Dart UI thread), with a single-buffer

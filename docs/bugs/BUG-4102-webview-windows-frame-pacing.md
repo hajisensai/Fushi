@@ -1,4 +1,4 @@
-## BUG-4079 · Windows WebView 纹理桥取帧相位抖动，歌词换句 / 滚轮看着掉帧
+## BUG-4102 · Windows WebView 纹理桥取帧相位抖动，歌词换句 / 滚轮看着掉帧
 - **报告**：2026-11-04（用户：Windows 歌词模式换句滚动、滚轮滚动看着帧率低，怀疑 Impeller）
 - **真实性**：✅ 真 bug，不是 Impeller，也不是页内掉帧。实测（同一套探针，下表）页内 rAF 稳定 60 Hz、WGC 实际交帧 ~57 帧/秒，但 Flutter 栅格回调只拿到 ~47 帧/秒、相邻两次取新帧间隔 p95 33.8 ms（每秒 ~10 次 >20 ms）。丢的是「WGC 帧 → Flutter 纹理」交接这一段：
   - `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:501`（旧 `StartPumpLocked`）+ `:784`（旧 `PumpFrameLocked`）：取帧挂在**平台线程的 `DispatcherQueueTimer`** 上（`:31` 请求 8.33 ms），平台线程与 Dart UI 线程合并（`flutter_windows_engine.cc` 默认 merged），tick 的相位与 DWM 帧无关、还随 Dart 负载漂移；`frame_available_()`（`:858`）落点在 Flutter 下一个 vsync 之前还是之后是随机的，于是一部分 Flutter 帧里两张 WGC 帧挤在一起（前一张被覆盖、丢掉），另一部分帧里没有新帧（重复上一张）——画面每秒约 10 次 33 ms 的顿挫。

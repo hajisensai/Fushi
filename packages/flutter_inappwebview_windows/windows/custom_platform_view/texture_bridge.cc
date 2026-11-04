@@ -23,7 +23,7 @@
 
 #pragma comment(lib, "dwmapi.lib")
 
-// BUG-4079：WGC 默认把交帧节流在约 60 Hz（144 Hz 屏上实测恒为 20.83 ms = 每 3 个
+// BUG-4102：WGC 默认把交帧节流在约 60 Hz（144 Hz 屏上实测恒为 20.83 ms = 每 3 个
 // 刷新周期一帧，48 帧/秒），页面自己 144 帧/秒也只能拿到 48。Windows 11 24H2
 // 起会话多了 MinUpdateInterval 可以解除节流。本仓编译用的 SDK 10.0.22621 还没有
 // 这个接口，按系统 Windows.Graphics.winmd 里的 IID 与方法顺序手写 ABI 声明
@@ -41,7 +41,7 @@ public:
 
 namespace flutter_inappwebview_plugin
 {
-  // BUG-4079：帧池至少 2 个缓冲。取帧线程每个合成器节拍都把帧取走、拷完立刻还回，
+  // BUG-4102：帧池至少 2 个缓冲。取帧线程每个合成器节拍都把帧取走、拷完立刻还回，
   // 第二个缓冲留给 DWM 在我们拷贝的那一小段时间里继续写下一帧——单缓冲时任何一次
   // 取帧晚到都让 DWM 无处可写、这一帧直接丢掉（旧实现取帧挂在 UI 线程定时器上，
   // Dart 一忙就晚）。
@@ -79,7 +79,7 @@ namespace flutter_inappwebview_plugin
     bool late_noop_logged = false;
   };
 
-  // BUG-4079：一个帧池的取帧线程要用到的全部东西。线程只持有这一份（共享指针），
+  // BUG-4102：一个帧池的取帧线程要用到的全部东西。线程只持有这一份（共享指针），
   // 从不碰 TextureBridge 本身；桥在关帧池之前先置停止信号并 join，所以线程绝不会
   // 和 Close / 析构并发。
   struct WgcFrameWorkerShared {
@@ -144,7 +144,7 @@ namespace flutter_inappwebview_plugin
 
   namespace
   {
-    // BUG-4079：取帧线程的节拍。首选合成器时钟（DCompositionWaitForCompositorClock，
+    // BUG-4102：取帧线程的节拍。首选合成器时钟（DCompositionWaitForCompositorClock，
     // Windows 11 起有），它在 DWM 每一帧开始时返回，可以和停止事件一起等、可超时；
     // 没有这个导出（Windows 10）时退回高精度可等待定时器，周期取 DWM 刷新间隔。
     typedef DWORD(WINAPI* WaitForCompositorClockFn)(UINT, const HANDLE*, DWORD);
@@ -735,7 +735,7 @@ namespace flutter_inappwebview_plugin
     lifetime->dispatcher_queue =
       graphics_context_->GetDispatcherQueueForCurrentThread();
 
-    // BUG-4079：free-threaded 帧池——取帧在本帧池自己的取帧线程上，不经 UI 线程。
+    // BUG-4102：free-threaded 帧池——取帧在本帧池自己的取帧线程上，不经 UI 线程。
     // 不订阅 FrameArrived（BUG-209：迟到事件回调 UAF），取帧线程按合成器时钟拉。
     lifetime->frame_pool = graphics_context_->CreateFreeThreadedCaptureFramePool(
       graphics_context_->device(),
@@ -761,7 +761,7 @@ namespace flutter_inappwebview_plugin
       return false;
     }
 
-    // BUG-4079：解除 WGC 的约 60 Hz 交帧节流（见文件头 IFushiGraphicsCaptureSession5）。
+    // BUG-4102：解除 WGC 的约 60 Hz 交帧节流（见文件头 IFushiGraphicsCaptureSession5）。
     // 1 ms = 不额外节流，交帧上限回到 DWM 合成频率（144 Hz 屏 144 帧/秒）；内容
     // 不变时 DWM 本来就不出帧，取帧线程每个节拍只是一次空的 TryGetNextFrame。
     // 24H2 之前的系统没有这个接口：QueryInterface 失败即保持系统默认节流，记一行
