@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3608 条。点号进各自文件。
+> 共 3614 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -47,6 +47,11 @@
 |---|:--:|:--:|---|
 | [BUG-4005](bugs/BUG-4005-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
 | [BUG-4004](bugs/BUG-4004-lyrics-window-blank-tail.md) | ✅ | ✅ | 歌词模式自动播放一段后后面的文字空白、拨过去整页刷新 |
+| [BUG-4010](bugs/BUG-4010-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
+| [BUG-4009](bugs/BUG-4009-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
+| [BUG-4008](bugs/BUG-4008-page-curl-back-bleed-and-manga-letterbox.md) | ✅ | ✅ | page-curl-back-bleed-and-manga-letterbox |
+| [BUG-4007](bugs/BUG-4007-lyrics-window-blank-tail.md) | ✅ | ✅ | 歌词模式自动播放一段后后面的文字空白、拨过去整页刷新 |
+| [BUG-4006](bugs/BUG-4006-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
 | [BUG-4005](bugs/BUG-4005-srs-sync2-alias-dedup.md) | ✅ | ✅ | srs-sync2-alias-dedup |
 | [BUG-4004](bugs/BUG-4004-srs-sync2-head-references-unuploaded-segment.md) | ✅ | ✅ | 复习同步 head 引用了位置上没有的段，读者待应用永久卡住 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
