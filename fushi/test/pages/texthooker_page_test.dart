@@ -179,7 +179,10 @@ void main() {
       await tester.pump();
       expect(find.text(t.texthooker_empty_external_body), findsOneWidget);
       expect(find.text(t.game_capture_empty_body), findsNothing);
-      expect(find.byKey(const ValueKey<String>('game-empty-launch')), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-launch')),
+        findsNothing,
+      );
     });
 
     testWidgets('Windows still shows hook controls', (

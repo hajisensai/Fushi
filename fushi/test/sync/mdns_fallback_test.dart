@@ -92,10 +92,7 @@ void main() {
       expect(m.isResponse, isTrue);
       final List<MdnsRecord> r = m.allRecords.toList();
       expect((r[0] as MdnsPtrRecord).target, instance);
-      expect(
-        (r[0] as MdnsPtrRecord).target.labels.first,
-        'Fushi · Test.Deck',
-      );
+      expect((r[0] as MdnsPtrRecord).target.labels.first, 'Fushi · Test.Deck');
       expect((r[1] as MdnsSrvRecord).port, 38765);
       expect((r[1] as MdnsSrvRecord).target, host);
       expect((r[2] as MdnsTxtRecord).attributes, <String, String>{

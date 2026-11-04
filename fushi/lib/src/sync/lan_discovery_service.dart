@@ -387,7 +387,8 @@ class LanBroadcastService {
     required this.deviceId,
     required this.port,
     this.tlsEnabled = false,
-    @visibleForTesting BonsoirBroadcast Function(BonsoirService service)? broadcastFactory,
+    @visibleForTesting
+    BonsoirBroadcast Function(BonsoirService service)? broadcastFactory,
     @visibleForTesting Future<MdnsTransport> Function()? mdnsTransportFactory,
     @visibleForTesting bool? mdnsFallbackEnabled,
   }) : _broadcastFactory = broadcastFactory ?? _defaultBroadcast,
@@ -479,7 +480,10 @@ class LanBroadcastService {
   /// `steamdeck.local`).
   @visibleForTesting
   static String mdnsHostLabel(String deviceId) {
-    final String safe = deviceId.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
+    final String safe = deviceId.toLowerCase().replaceAll(
+      RegExp('[^a-z0-9]'),
+      '',
+    );
     return 'fushi-${safe.length > 12 ? safe.substring(0, 12) : safe}';
   }
 

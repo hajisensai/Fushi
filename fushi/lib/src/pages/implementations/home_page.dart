@@ -4086,11 +4086,12 @@ class _HomePageState extends BasePageState<HomePage>
             // 台词）；手机端维持纯串流库。
             ? (appModelNoUpdate.gamesOffersExternalTexthooker
                   ? GameStreamClientPage(
-                      streamBuilder: (BuildContext context, Widget navigation) =>
-                          GameStreamLibraryPage(
-                            services: _gameStreamLibraryServices,
-                            navigation: navigation,
-                          ),
+                      streamBuilder:
+                          (BuildContext context, Widget navigation) =>
+                              GameStreamLibraryPage(
+                                services: _gameStreamLibraryServices,
+                                navigation: navigation,
+                              ),
                     )
                   : GameStreamLibraryPage(services: _gameStreamLibraryServices))
             : const HomeGamePage(),
