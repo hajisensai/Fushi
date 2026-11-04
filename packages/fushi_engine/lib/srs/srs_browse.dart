@@ -77,6 +77,9 @@ enum SrsBrowseSortColumn {
 
   /// 笔记类型名。
   noteType,
+
+  /// 出处键（[SrsBrowseRow.sourceKey]；没有出处的排最后）：表格按出处分组用。
+  source,
 }
 
 /// 排序设置。
@@ -154,6 +157,7 @@ class SrsBrowseRow {
     required this.modifiedAt,
     required this.lastReviewAt,
     required this.fieldPreview,
+    required this.fieldPreviewNames,
     required this.imageRef,
     required this.audioRef,
     required this.sourceKey,
@@ -213,6 +217,9 @@ class SrsBrowseRow {
   /// 排序字段（第一个字段）之外、按字段顺序的前两个非空字段的纯文本（去 HTML 与 `[sound:…]`、trim，各截到
   /// 120 个字符）；不足两个就少给。
   final List<String> fieldPreview;
+
+  /// [fieldPreview] 每一项来自的字段名（同长度、同顺序）：表格原地改这两列时按名字写回。
+  final List<String> fieldPreviewNames;
 
   /// 笔记字段里（按字段顺序）第一个 `<img src>` / `[sound:…]` 的媒体文件名；没有 null。
   final String? imageRef;
@@ -276,6 +283,7 @@ class SrsBrowseSourceGroup {
     required this.due,
     required this.preview,
     required this.latestAddedAt,
+    required this.deckIds,
   });
 
   /// 出处键（[SrsBrowseRow.sourceKey]）；null = 没有出处的那一组（总在最后）。
@@ -298,6 +306,9 @@ class SrsBrowseSourceGroup {
 
   /// 组里笔记添加时刻的最大值（毫秒）；组按它降序排。
   final int latestAddedAt;
+
+  /// 组里各行的卡所在的牌组 id（去重，首次出现的顺序）：「只复习这一作」据此定复习的牌组范围。
+  final List<String> deckIds;
 
   /// [data] 解析成的出处（解析不了 / 没有 null）。
   SrsSourceRef? get source => _decodeSource(data);
@@ -685,6 +696,9 @@ class SrsBrowseSession {
             fieldPreview: <String>[
               for (final Object? f in t[8]! as List<Object?>) f! as String,
             ],
+            fieldPreviewNames: <String>[
+              for (final Object? f in t[14]! as List<Object?>) f! as String,
+            ],
             imageRef: t[9] as String?,
             audioRef: t[10] as String?,
             sourceKey: t[11] as String?,
@@ -714,6 +728,10 @@ class SrsBrowseSession {
               for (final Object? i in m['preview']! as List<Object?>) i! as int,
             ],
             latestAddedAt: m['latestAddedAt']! as int,
+            deckIds: <String>[
+              for (final Object? d in m['decks']! as List<Object?>)
+                d! as String,
+            ],
           );
         }(),
     ];

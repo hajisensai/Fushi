@@ -49,6 +49,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
     show srsLoadErrorDetail;
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
@@ -200,6 +201,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   void initState() {
     super.initState();
     _savedViews = decodeSrsBrowseSavedViews(_readSavedViewsPref());
+    _columns = decodeSrsBrowseColumns(
+      ref.read(appProvider).srsBrowseTableColumns,
+    );
     unawaited(_refresh());
   }
 
@@ -711,7 +715,12 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           () => showSrsBrowseColumnsSheet(context, current: _columns),
         );
     if (picked == null || picked.isEmpty || !mounted) return;
-    setState(() => _columns = picked);
+    setState(
+      () => _columns = decodeSrsBrowseColumns(encodeSrsBrowseColumns(picked)),
+    );
+    await ref
+        .read(appProvider)
+        .setSrsBrowseTableColumns(encodeSrsBrowseColumns(_columns));
   }
 
   Future<void> _pickGroup() async {
@@ -728,6 +737,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
               label: switch (g) {
                 SrsBrowseTableGroup.none => t.srs_browse_table_group_none,
                 SrsBrowseTableGroup.deck => t.srs_browse_table_group_deck,
+                SrsBrowseTableGroup.source => t.srs_browse_table_group_source,
                 SrsBrowseTableGroup.added => t.srs_browse_table_group_added,
               },
             ),
@@ -889,18 +899,101 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     await _afterWrite(rerender: false);
   }
 
-  /// 表格「正面」列：改排序字段（笔记类型的第一个字段）。
-  Future<void> _saveFront(SrsBrowseRow row, String value) async {
-    final SrsNoteTypeView? type = _noteTypes
-        .where((SrsNoteTypeView n) => n.name == row.noteTypeName)
-        .firstOrNull;
-    if (type == null || type.fields.isEmpty) return;
+  /// 行所属的笔记类型（按名字；类型已不在 null）。
+  SrsNoteTypeView? _typeOf(SrsBrowseRow row) => _noteTypes
+      .where((SrsNoteTypeView n) => n.name == row.noteTypeName)
+      .firstOrNull;
+
+  /// 表格里一格对应的字段（正面 = 排序字段即第一个字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
+  SrsFieldDef? _cellField(SrsBrowseRow row, SrsBrowseTableColumn column) {
+    final SrsNoteTypeView? type = _typeOf(row);
+    if (type == null || type.fields.isEmpty) return null;
+    if (column == SrsBrowseTableColumn.front) return type.fields.first;
+    final String? name = srsBrowsePreviewFieldName(row, column);
+    if (name == null) return null;
+    return type.fields.where((SrsFieldDef f) => f.name == name).firstOrNull;
+  }
+
+  /// 表格原地改的初值：字段取笔记里的原值（摘要去了 HTML、截过长度，拿它写回会丢内容），标签空格连接。
+  Future<String?> _loadCell(
+    SrsBrowseRow row,
+    SrsBrowseTableColumn column,
+  ) async {
+    if (column == SrsBrowseTableColumn.tags) return row.tags.join(' ');
+    final SrsFieldDef? field = _cellField(row, column);
+    if (field == null) return null;
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null) return null;
+    final SrsNoteView? note = await store.note(row.noteId);
+    return note?.field(field.id);
+  }
+
+  /// 表格原地改一格：字段走 [_saveField]、标签走 [_saveTags]（都是条件写 + 进撤销栈）。
+  Future<void> _saveCell(
+    SrsBrowseRow row,
+    SrsBrowseTableColumn column,
+    String value,
+  ) async {
     try {
-      await _saveField(row.noteId, type.fields.first.name, value);
+      if (column == SrsBrowseTableColumn.tags) {
+        await _saveTags(row.noteId, row.tags, parseSrsBrowseTagsCell(value));
+        return;
+      }
+      final SrsFieldDef? field = _cellField(row, column);
+      if (field == null) return;
+      await _saveField(row.noteId, field.name, value);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.cellEdit', e, stack);
       FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
     }
+  }
+
+  /// 出处视图「只复习这一作」：在这部作品的卡所在牌组的最近公共祖先上开一轮自定义学习，只出这部作品今天到期的
+  /// 复习卡与学习卡（内核 study.rs `CustomStudy` 的 `source`，按笔记缓存行的出处键查；不建筛选牌组、不挪卡）。
+  /// 卡分在几个顶层牌组里时让用户挑一个。
+  Future<void> _reviewSource(SrsBrowseSourceGroup group) async {
+    final String? key = group.key;
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (key == null || store == null || !mounted) return;
+    final SrsDeckTree tree = await store.deckTree();
+    if (!mounted) return;
+    String? deckId = srsCommonDeckAncestor(tree, group.deckIds);
+    if (deckId == null) {
+      final List<String> roots = srsTopLevelDecks(tree, group.deckIds);
+      if (roots.isEmpty) return;
+      deckId = await _focusOwnership.guardOverlay(
+        () => showFushiChoiceDialog<String>(
+          context: context,
+          title: t.srs_browse_source_review_pick,
+          icon: FushiIcons.playCircle,
+          options: <FushiChoiceOption<String>>[
+            for (final String id in roots)
+              FushiChoiceOption<String>(value: id, label: tree.fullName(id)),
+          ],
+        ),
+      );
+      if (deckId == null || !mounted) return;
+    }
+    final SrsCustomStudy custom = SrsCustomStudy(
+      mode: SrsCustomStudyMode.filter,
+      sinceMs: store.now().$1,
+      limit: SrsCustomStudy.maxCards,
+      states: const <SrsCustomStudyState>{
+        SrsCustomStudyState.due,
+        SrsCustomStudyState.learning,
+      },
+      source: key,
+    );
+    final String id = deckId;
+    await srsPushPage<void>(
+      context,
+      (_) => SrsReviewPage(
+        deckId: id,
+        deckName: tree.fullName(id),
+        custom: custom,
+      ),
+    );
+    if (mounted) await _afterWrite();
   }
 
   /// 检查器里改标签：拆成加 / 删两步（一个撤销步，两段 revert 倒序执行）。
@@ -2192,7 +2285,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         },
         onRowTap: (String id, int i) => _onRowTap(id, i, wide: true),
         onRowSecondaryTap: _onRowSecondaryTap,
-        onSaveFront: _saveFront,
+        loadCell: _loadCell,
+        onSaveCell: _saveCell,
         header: controls,
       ),
       _SrsBrowseLayout.sources => SrsBrowseSourcesView(
@@ -2201,6 +2295,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         idOf: result.idOf,
         selected: _selected,
         onOnlySource: (String? key) => _applyView(srsSourceQuery(key)),
+        onReviewSource: (SrsBrowseSourceGroup g) =>
+            srsRunLogged('SrsBrowse.reviewSource', () => _reviewSource(g)),
         onOpen: (String id, int i) => _onRowTap(id, i, wide: wide),
         header: controls,
       ),

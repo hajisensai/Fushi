@@ -276,6 +276,12 @@ void main() {
       expect(exprs(rows), <String>['食べる', '飲む', '走る', '食べる']);
       final SrsBrowseRow ra = rows[0];
       expect(ra.fieldPreview, contains('to eat'));
+      expect(ra.fieldPreviewNames, hasLength(ra.fieldPreview.length));
+      expect(
+        ra.fieldPreviewNames[ra.fieldPreview.indexOf('to eat')],
+        'MainDefinition',
+        reason: '摘要带着来源字段名（表格原地改按它写回）',
+      );
       expect(ra.imageRef, 'taberu.png');
       expect(ra.audioRef, 'taberu.mp3');
       expect(ra.sourceKey, 'book:bk');
@@ -329,6 +335,19 @@ void main() {
       );
       expect(byR.first.cardId, ra.cardId, reason: '没有保持率的排最后');
 
+      // 按出处排（表格按出处分组）：同一作品挨着，没有出处的在最后。
+      final List<SrsBrowseRow> bySource = await rowsOf(
+        b,
+        sort: const SrsBrowseSort(
+          column: SrsBrowseSortColumn.source,
+          ascending: true,
+        ),
+      );
+      expect(
+        <String?>[for (final SrsBrowseRow r in bySource) r.sourceKey],
+        <String?>['book:bk', 'book:bk', null, null],
+      );
+
       final List<SrsBrowseSourceGroup> groups = await res.sources();
       expect(
         <String?>[for (final SrsBrowseSourceGroup g in groups) g.key],
@@ -342,6 +361,7 @@ void main() {
       expect(groups[1].count, 2);
       expect(groups[1].preview, <int>[2, 3]);
       expect(groups[1].data, isNull);
+      expect(groups[0].deckIds, <String>[ra.deckId]);
     });
 
     test('排序：排序字段 / 指定字段 / 到期 / 复习次数 / 修改时间，升降序', () async {

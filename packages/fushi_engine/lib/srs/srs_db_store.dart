@@ -544,7 +544,10 @@ class SrsDbStore implements SrsSync2Host {
   /// `game` / `music`，层级 `<分类>::<作品名>` 给作品名；caches.rs `source_from_tags`，反馈 AhIskigAq3）。
   /// 老行只补 source_kind / source_title 两列（caches.rs `backfill_tag_sources`，按缓存行自己的 tags_json），
   /// 不算缓存写入，不进变更日志。
-  static const int _kCacheRevision = 9;
+  /// 10（srs.db schema v25）：srs_notes_cache.source_key（出处寄存器的分组键，与浏览页出处视图同一个键；自定义学习
+  /// 按作品出卡直接按它的索引查，见 store/study.rs `CustomStudy`）。老行这一列是 NULL，升级时内核只补这一列
+  /// （caches.rs `backfill_source_keys`），不算缓存写入，不进变更日志。
+  static const int _kCacheRevision = 10;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
@@ -2548,6 +2551,10 @@ class SrsDbStore implements SrsSync2Host {
       // 整行重算已按新规则写好出处；这一步补的只是出处列仍为空、标签认得出的老行。
       if (_cacheRevision < 9) {
         await _sync2(const <String, Object?>{'op': 'backfill_tag_sources'});
+      }
+      // srs.db v25 加的出处分组键列（按作品出卡用）：整行重算已写好；这一步只补仍为 NULL 的老行。
+      if (_cacheRevision < 10) {
+        await _sync2(const <String, Object?>{'op': 'backfill_source_keys'});
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();

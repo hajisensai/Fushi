@@ -1,10 +1,12 @@
 /// 浏览页的另外两种视图与宽屏健康条（spec §3 / §4 / §5）：
 ///
-/// - 表格（只在宽屏）：列可选可排序（[showSrsBrowseColumnsSheet]），点表头按该列排序（有对应排序列的才可点），
-///   双击「正面」/ 字段列原地改（Enter / Tab 存并跳到下一行同一格，Esc 取消；写入走浏览页的改字段，进撤销栈），
-///   按牌组 / 添加日期分组（分组即按该键排序，表头行插在键变化处）。
-/// - 出处：按作品分组（[SrsBrowseResult.sources] 一条命令算完），组头「今天到期 x / 共 y」+「只看这一作」，
-///   组里前几张卡带配图缩略图与原声播放。
+/// - 表格（只在宽屏）：列可选可排序（[showSrsBrowseColumnsSheet]；选了哪些列、什么顺序存 profile 偏好
+///   `srs_browse_table_columns`，[encodeSrsBrowseColumns]），点表头按该列排序（有对应排序列的才可点），
+///   双击「正面」/ 两个字段摘要列 / 标签列原地改（编辑框拿笔记里的原值，不拿摘要；Enter 存并跳到下一行同一格，
+///   Tab 存并跳到下一个能改的格，Esc 取消；写入走浏览页的改字段 / 改标签，进撤销栈），按牌组 / 出处 / 添加日期
+///   分组（分组即按该键排序，表头行插在键变化处）。
+/// - 出处：按作品分组（[SrsBrowseResult.sources] 一条命令算完），组头「今天到期 x / 共 y」+「只看这一作」
+///   +「只复习这一作」（浏览页开一轮只出这部作品到期卡的自定义学习），组里前几张卡带配图缩略图与原声播放。
 /// - 健康条：问题卡（主字段为空 / Fushi 卡片缺音频）、难卡、疑似重复的计数，点一下换成对应条件；
 ///   「修复」由浏览页确认后执行（可撤销）。
 library;
@@ -15,6 +17,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsDeckTree;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
@@ -64,7 +67,28 @@ const List<SrsBrowseTableColumn> kSrsBrowseDefaultColumns =
     ];
 
 /// 表格分组。分组 = 先按该键排序，再在键变化处插组头。
-enum SrsBrowseTableGroup { none, deck, added }
+enum SrsBrowseTableGroup { none, deck, source, added }
+
+/// 选列偏好（`srs_browse_table_columns`）的编码：列名按显示顺序用逗号连起来。
+String encodeSrsBrowseColumns(List<SrsBrowseTableColumn> columns) =>
+    columns.map((SrsBrowseTableColumn c) => c.name).join(',');
+
+/// 选列偏好解码：不认识的列名（旧版本 / 手改）跳过、重复的只留第一个；「正面」总在（缺了补在最前）；
+/// 空串或一列都认不出 = 默认列。
+List<SrsBrowseTableColumn> decodeSrsBrowseColumns(String raw) {
+  final List<SrsBrowseTableColumn> out = <SrsBrowseTableColumn>[];
+  for (final String name in raw.split(',')) {
+    final SrsBrowseTableColumn? c = SrsBrowseTableColumn.values
+        .where((SrsBrowseTableColumn x) => x.name == name.trim())
+        .firstOrNull;
+    if (c != null && !out.contains(c)) out.add(c);
+  }
+  if (out.isEmpty) return kSrsBrowseDefaultColumns;
+  if (!out.contains(SrsBrowseTableColumn.front)) {
+    out.insert(0, SrsBrowseTableColumn.front);
+  }
+  return List<SrsBrowseTableColumn>.unmodifiable(out);
+}
 
 /// 列名。
 String srsBrowseColumnLabel(SrsBrowseTableColumn c) => switch (c) {
@@ -102,9 +126,37 @@ SrsBrowseSortColumn? srsBrowseColumnSort(SrsBrowseTableColumn c) => switch (c) {
   _ => null,
 };
 
-/// 能原地改的列（正面 = 排序字段，字段 1 / 2 = [SrsBrowseRow.fieldPreview] 那两个字段）。
-bool srsBrowseColumnEditable(SrsBrowseTableColumn c) =>
-    c == SrsBrowseTableColumn.front;
+/// 能原地改的列（正面 = 排序字段，字段 1 / 2 = [SrsBrowseRow.fieldPreview] 那两个字段，标签）。
+bool srsBrowseColumnEditable(SrsBrowseTableColumn c) => switch (c) {
+  SrsBrowseTableColumn.front ||
+  SrsBrowseTableColumn.field1 ||
+  SrsBrowseTableColumn.field2 ||
+  SrsBrowseTableColumn.tags => true,
+  _ => false,
+};
+
+/// 这一行的这一格能不能原地改：字段摘要列只有这一行真有那条摘要时才能改（摘要取的是非空字段，没有就不知道
+/// 改哪个字段）。
+bool srsBrowseCellEditable(SrsBrowseRow r, SrsBrowseTableColumn c) =>
+    switch (c) {
+      SrsBrowseTableColumn.field1 => r.fieldPreviewNames.isNotEmpty,
+      SrsBrowseTableColumn.field2 => r.fieldPreviewNames.length > 1,
+      _ => srsBrowseColumnEditable(c),
+    };
+
+/// 字段摘要列对应的字段名（[SrsBrowseRow.fieldPreviewNames]）；不是字段摘要列或这一行没有那条摘要 null。
+String? srsBrowsePreviewFieldName(SrsBrowseRow r, SrsBrowseTableColumn c) =>
+    switch (c) {
+      SrsBrowseTableColumn.field1 => r.fieldPreviewNames.elementAtOrNull(0),
+      SrsBrowseTableColumn.field2 => r.fieldPreviewNames.elementAtOrNull(1),
+      _ => null,
+    };
+
+/// 标签格的输入 → 标签列表（空白分隔，去重，保持顺序）。
+List<String> parseSrsBrowseTagsCell(String raw) => <String>{
+  for (final String tag in raw.split(RegExp(r'\s+')))
+    if (tag.isNotEmpty) tag,
+}.toList();
 
 /// 列宽（flex）。
 int _flexOf(SrsBrowseTableColumn c) => switch (c) {
@@ -151,7 +203,7 @@ String srsBrowseCellText(
     r.sourceKey == null ? '' : srsBrowseSourceTitle(r.source, r.sourceKind),
 };
 
-/// 分组键（同键的连续行归一组）。
+/// 分组键（同键的连续行归一组）。出处按出处键分（同名的两部作品不并组），组头显示 [srsBrowseGroupLabel]。
 String srsBrowseGroupKey(
   BuildContext context,
   SrsBrowseRow r,
@@ -159,7 +211,21 @@ String srsBrowseGroupKey(
 ) => switch (g) {
   SrsBrowseTableGroup.none => '',
   SrsBrowseTableGroup.deck => r.deckName,
+  SrsBrowseTableGroup.source => r.sourceKey ?? '',
   SrsBrowseTableGroup.added => _date(context, r.addedAt),
+};
+
+/// 组头的文字。
+String srsBrowseGroupLabel(
+  BuildContext context,
+  SrsBrowseRow r,
+  SrsBrowseTableGroup g,
+) => switch (g) {
+  SrsBrowseTableGroup.source =>
+    r.sourceKey == null
+        ? t.srs_browse_source_none
+        : srsBrowseSourceTitle(r.source, r.sourceKind),
+  _ => srsBrowseGroupKey(context, r, g),
 };
 
 /// 分组对应的排序（分组生效时浏览页用它代替用户的排序）。
@@ -167,6 +233,10 @@ SrsBrowseSort? srsBrowseGroupSort(SrsBrowseTableGroup g) => switch (g) {
   SrsBrowseTableGroup.none => null,
   SrsBrowseTableGroup.deck => const SrsBrowseSort(
     column: SrsBrowseSortColumn.deck,
+  ),
+  SrsBrowseTableGroup.source => const SrsBrowseSort(
+    column: SrsBrowseSortColumn.source,
+    ascending: true,
   ),
   SrsBrowseTableGroup.added => const SrsBrowseSort(
     column: SrsBrowseSortColumn.created,
@@ -282,7 +352,8 @@ class SrsBrowseTable extends StatefulWidget {
     required this.onSort,
     required this.onRowTap,
     required this.onRowSecondaryTap,
-    required this.onSaveFront,
+    required this.loadCell,
+    required this.onSaveCell,
     this.header,
   });
 
@@ -300,8 +371,17 @@ class SrsBrowseTable extends StatefulWidget {
   final void Function(String id, int index) onRowTap;
   final void Function(String id, int index) onRowSecondaryTap;
 
-  /// 改排序字段（「正面」列）；写入由浏览页做（条件写 + 进撤销栈）。
-  final Future<void> Function(SrsBrowseRow row, String value) onSaveFront;
+  /// 原地改一格时编辑框的初值（笔记里的原值，不是摘要）；null = 这一格改不了（笔记类型 / 字段已不在）。
+  final Future<String?> Function(SrsBrowseRow row, SrsBrowseTableColumn column)
+  loadCell;
+
+  /// 存一格（只在值变了时调用）；写入由浏览页做（条件写 + 进撤销栈）。
+  final Future<void> Function(
+    SrsBrowseRow row,
+    SrsBrowseTableColumn column,
+    String value,
+  )
+  onSaveCell;
 
   /// 表格上方（搜索栏等，跟着一起滚）。
   final Widget? header;
@@ -311,8 +391,14 @@ class SrsBrowseTable extends StatefulWidget {
 }
 
 class _SrsBrowseTableState extends State<SrsBrowseTable> {
-  /// 正在原地改的那一格（行号；只有「正面」列能改）。
-  int? _editing;
+  /// 正在原地改的那一格（行号 + 列）。
+  ({int index, SrsBrowseTableColumn column})? _editing;
+
+  /// 编辑框打开时的初值（没改就不写）。
+  String _initial = '';
+
+  /// 最近一次开编辑框的序号：取初值是异步的，换了格的旧请求作废。
+  int _editSeq = 0;
   final TextEditingController _cell = TextEditingController();
   final FocusNode _cellFocus = FocusNode(debugLabel: 'srs-browse-cell');
 
@@ -323,43 +409,95 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
     super.dispose();
   }
 
-  void _startEdit(int index, SrsBrowseRow row) {
+  Future<void> _startEdit(
+    int index,
+    SrsBrowseRow row,
+    SrsBrowseTableColumn column,
+  ) async {
+    final int seq = ++_editSeq;
+    final String? value = await widget.loadCell(row, column);
+    if (!mounted || seq != _editSeq) return;
+    if (value == null) {
+      setState(() => _editing = null);
+      return;
+    }
     setState(() {
-      _editing = index;
-      _cell.text = row.sortText;
+      _editing = (index: index, column: column);
+      _initial = value;
+      _cell.text = value;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _cellFocus.requestFocus();
     });
   }
 
-  Future<void> _commit({required bool next}) async {
-    final int? index = _editing;
-    if (index == null) return;
-    final SrsBrowseRow? row = widget.rowAt(index);
+  void _cancel() {
+    _editSeq++;
+    setState(() => _editing = null);
+  }
+
+  /// 存当前格，再按 [nextCell]（Tab：同一行下一个能改的格，行尾接下一行）或下一行同一格（Enter）接着改。
+  Future<void> _commit({required bool nextCell}) async {
+    final ({int index, SrsBrowseTableColumn column})? at = _editing;
+    if (at == null) return;
+    final SrsBrowseRow? row = widget.rowAt(at.index);
     final String value = _cell.text;
-    if (row != null && value != row.sortText) {
-      await widget.onSaveFront(row, value);
+    _editSeq++;
+    if (row != null && value != _initial) {
+      await widget.onSaveCell(row, at.column, value);
     }
     if (!mounted) return;
-    final SrsBrowseRow? following = next && index + 1 < widget.length
-        ? widget.rowAt(index + 1)
-        : null;
-    if (following != null) {
-      _startEdit(index + 1, following);
-    } else {
+    final ({int index, SrsBrowseRow row, SrsBrowseTableColumn column})? next =
+        nextCell
+        ? _nextCell(at.index, at.column)
+        : _nextRow(at.index, at.column);
+    if (next == null) {
       setState(() => _editing = null);
+      return;
     }
+    await _startEdit(next.index, next.row, next.column);
+  }
+
+  ({int index, SrsBrowseRow row, SrsBrowseTableColumn column})? _nextRow(
+    int index,
+    SrsBrowseTableColumn column,
+  ) {
+    if (index + 1 >= widget.length) return null;
+    final SrsBrowseRow? row = widget.rowAt(index + 1);
+    if (row == null || !srsBrowseCellEditable(row, column)) return null;
+    return (index: index + 1, row: row, column: column);
+  }
+
+  ({int index, SrsBrowseRow row, SrsBrowseTableColumn column})? _nextCell(
+    int index,
+    SrsBrowseTableColumn column,
+  ) {
+    final List<SrsBrowseTableColumn> cols = widget.columns;
+    int i = index;
+    int k = cols.indexOf(column) + 1;
+    // 最多看到下一行行尾（再往后的行可能还没取到）。
+    while (i <= index + 1 && i < widget.length) {
+      final SrsBrowseRow? row = widget.rowAt(i);
+      if (row == null) return null;
+      for (; k < cols.length; k++) {
+        if (srsBrowseCellEditable(row, cols[k])) {
+          return (index: i, row: row, column: cols[k]);
+        }
+      }
+      i++;
+      k = 0;
+    }
+    return null;
   }
 
   KeyEventResult _onCellKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
-      setState(() => _editing = null);
+      _cancel();
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.tab) {
-      unawaited(_commit(next: true));
+      unawaited(_commit(nextCell: true));
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -448,15 +586,17 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
           for (final SrsBrowseTableColumn c in widget.columns)
             Expanded(
               flex: _flexOf(c),
-              child: _editing == index && srsBrowseColumnEditable(c)
+              child: _editing?.index == index && _editing?.column == c
                   ? Focus(
                       onKeyEvent: _onCellKey,
                       child: FushiTextField(
                         key: const ValueKey<String>('srs-browse-cell-editor'),
                         controller: _cell,
                         focusNode: _cellFocus,
-                        hintText: t.srs_browse_cell_hint,
-                        onSubmitted: (_) => unawaited(_commit(next: true)),
+                        hintText: c == SrsBrowseTableColumn.tags
+                            ? t.srs_browse_cell_tags_hint
+                            : t.srs_browse_cell_hint,
+                        onSubmitted: (_) => unawaited(_commit(nextCell: false)),
                       ),
                     )
                   : _cellView(context, r, c, index, muted),
@@ -513,11 +653,12 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
           ? context.fushiType.bodyMedium.copyWith(fontWeight: FontWeight.w600)
           : context.fushiType.bodySmall.copyWith(color: muted),
     );
-    if (!srsBrowseColumnEditable(c)) return text;
+    if (!srsBrowseCellEditable(r, c)) return text;
     return GestureDetector(
       key: ValueKey<String>('srs-browse-cell-$index-${c.name}'),
-      onDoubleTap: () => _startEdit(index, r),
-      child: text,
+      behavior: HitTestBehavior.opaque,
+      onDoubleTap: () => unawaited(_startEdit(index, r, c)),
+      child: Align(alignment: AlignmentDirectional.centerStart, child: text),
     );
   }
 
@@ -572,7 +713,10 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
                   4,
                 ),
                 child: Text(
-                  key.isEmpty ? '—' : key,
+                  switch (srsBrowseGroupLabel(context, r, widget.group)) {
+                    '' => '—',
+                    final String label => label,
+                  },
                   key: ValueKey<String>('srs-browse-group-$index'),
                   style: context.fushiType.titleSmall,
                 ),
@@ -588,6 +732,42 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
 
 // ================================================================ 出处
 
+/// 从 [deckId] 往上到顶层的牌组链（含自己）；牌组已不在树里 = 空。
+List<String> _deckChain(SrsDeckTree tree, String deckId) {
+  final List<String> out = <String>[];
+  for (String? d = deckId; d != null && tree[d] != null; d = tree.parentOf(d)) {
+    if (out.contains(d)) break;
+    out.add(d);
+  }
+  return out;
+}
+
+/// [deckIds] 的最近公共祖先（含它们自己：都在同一个牌组就是那个牌组）；分在不同顶层牌组里 / 一个都不在树里
+/// null。「只复习这一作」在它上面开自定义学习（会话按子树出卡）。
+String? srsCommonDeckAncestor(SrsDeckTree tree, List<String> deckIds) {
+  List<String>? common;
+  for (final String id in deckIds) {
+    final List<String> chain = _deckChain(tree, id);
+    if (chain.isEmpty) continue;
+    common = common == null
+        ? chain
+        : <String>[
+            for (final String d in common)
+              if (chain.contains(d)) d,
+          ];
+    if (common.isEmpty) return null;
+  }
+  return common?.first;
+}
+
+/// [deckIds] 各自所在的顶层牌组（去重，首次出现的顺序）。
+List<String> srsTopLevelDecks(SrsDeckTree tree, List<String> deckIds) =>
+    <String>{
+      for (final String id in deckIds)
+        if (_deckChain(tree, id) case final List<String> c when c.isNotEmpty)
+          c.last,
+    }.toList();
+
 /// 出处视图：按作品分组。
 class SrsBrowseSourcesView extends ConsumerStatefulWidget {
   const SrsBrowseSourcesView({
@@ -597,6 +777,7 @@ class SrsBrowseSourcesView extends ConsumerStatefulWidget {
     required this.idOf,
     required this.selected,
     required this.onOnlySource,
+    required this.onReviewSource,
     required this.onOpen,
     this.header,
   });
@@ -608,6 +789,9 @@ class SrsBrowseSourcesView extends ConsumerStatefulWidget {
 
   /// 「只看这一作」：把查询换成该出处（[srsSourceQuery]）。
   final void Function(String? sourceKey) onOnlySource;
+
+  /// 「只复习这一作」：开一轮只出这部作品到期卡的自定义学习（只给有出处、今天有到期的组）。
+  final void Function(SrsBrowseSourceGroup group) onReviewSource;
 
   /// 点组里的一张卡（行号）。
   final void Function(String id, int index) onOpen;
@@ -767,6 +951,13 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
                   ],
                 ),
               ),
+            ],
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: 4,
+            children: <Widget>[
               FushiTextButton(
                 key: ValueKey<String>(
                   'srs-browse-source-only-${g.key ?? 'none'}',
@@ -774,6 +965,12 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
                 onPressed: () => widget.onOnlySource(g.key),
                 child: Text(t.srs_browse_source_only),
               ),
+              if (g.key != null)
+                FushiFilledButton.tonal(
+                  key: ValueKey<String>('srs-browse-source-review-${g.key}'),
+                  onPressed: g.due > 0 ? () => widget.onReviewSource(g) : null,
+                  child: Text(t.srs_browse_source_review),
+                ),
             ],
           ),
           for (int k = 0; k < rows.length; k++)

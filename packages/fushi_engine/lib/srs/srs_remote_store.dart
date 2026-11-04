@@ -269,6 +269,7 @@ abstract final class SrsRemoteWire {
             for (final SrsCustomStudyState s in c.states) s.wire,
           ],
           'tags': c.tags,
+          if (c.source != null) 'source': c.source,
         };
 
   static SrsCustomStudy? customStudyFrom(Object? json) {
@@ -290,6 +291,7 @@ abstract final class SrsRemoteWire {
         for (final Object? t in (m['tags'] as List<Object?>?) ?? const [])
           t! as String,
       ],
+      source: m['source'] as String?,
     );
   }
 

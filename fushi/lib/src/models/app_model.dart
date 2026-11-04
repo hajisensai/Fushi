@@ -10463,6 +10463,11 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsBrowseSavedViews(String json) =>
       prefsRepo.setSrsBrowseSavedViews(json);
 
+  // 复习卡片浏览器表格选的列（透传 prefsRepo）。可空读：prefs 未装配 = 默认列。
+  String get srsBrowseTableColumns => _prefsRepo?.srsBrowseTableColumns ?? '';
+  Future<void> setSrsBrowseTableColumns(String columns) =>
+      prefsRepo.setSrsBrowseTableColumns(columns);
+
   // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
   // 词频聚合不是卡面自己的设置，跟随查词的「词频聚合」叠上去（见
   // SrsCardAppearance.aggregateFrequency）。
