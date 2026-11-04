@@ -148,9 +148,12 @@ void main() {
       final int follows = sync.indexOf('final bool follows =');
       expect(follows, isNonNegative);
       expect(sync, contains('_lyricsCueWindowUsesAllBookCues && follows'));
-      expect(sync, contains('window.__lyricsSetCue(-1,false)'));
+      // BUG-4007 R2：摘高亮的同时照样下发播放态（见 lyrics_play_state_sync_test）。
+      const String clear =
+          'overlaySyncScript(playing: playing, clearCue: true)';
+      expect(sync, contains(clear));
       expect(
-        sync.indexOf('window.__lyricsSetCue(-1,false)'),
+        sync.indexOf(clear),
         lessThan(sync.lastIndexOf('unawaited(_loadLyricsPage())')),
       );
 

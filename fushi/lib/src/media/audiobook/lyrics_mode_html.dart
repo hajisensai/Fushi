@@ -118,6 +118,63 @@ class LyricsModeHtml {
         '${jsonEncode(t.vars)}, ${jsonEncode(t.bodyClasses)});';
   }
 
+  /// Dart → JS 一次歌词层同步的脚本（当前行 / 播放态 / 扫过进度）。
+  ///
+  /// 播放态（`__lyricsSetPlaying`）是 Dart 向 JS 同步播放 / 暂停的唯一入口：JS 的
+  /// `ly-paused` 类与「浏览 4 秒后回到跟随」计时都只按它起停，所以**每次同步都无条件
+  /// 下发**，不依赖当前句是否落在已载窗口里（BUG-4007 R2：手动浏览中播放句被卸出
+  /// 窗口时旧码只摘高亮就返回，JS 的播放态与真实播放态脱节——按播放后卡在浏览态、
+  /// 暂停后 4 秒视口仍被拽回播放句）。
+  ///
+  /// [cue] 为 null 时不给当前行：[clearCue] 为 true 摘掉旧高亮（播放句不在窗口里），
+  /// 为 false 保留原高亮（cue 间隙 / 尚未匹配）。扫过进度只在有当前行时下发。
+  static String overlaySyncScript({
+    required bool playing,
+    ({
+      int index,
+      bool scroll,
+      bool forceReveal,
+      double fraction,
+      double ratePerSec,
+      int sentAtMs,
+    })?
+    cue,
+    bool clearCue = false,
+  }) {
+    final StringBuffer js = StringBuffer();
+    if (cue != null) {
+      js.write(
+        'if(window.__lyricsSetCue)'
+        'window.__lyricsSetCue(${cue.index}, ${cue.scroll});',
+      );
+      // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的 `index===_currentIdx`
+      // 早退会吞掉这次回中 → 打开跟随画面不动。forceReveal 下再显式
+      // __lyricsScrollToCue 强制把当前句居中，绕过早退。
+      if (cue.forceReveal) {
+        js.write(
+          'if(window.__lyricsScrollToCue)'
+          'window.__lyricsScrollToCue(${cue.index});',
+        );
+      }
+    } else if (clearCue) {
+      js.write('if(window.__lyricsSetCue)window.__lyricsSetCue(-1,false);');
+    }
+    js.write(
+      'if(window.__lyricsSetPlaying)window.__lyricsSetPlaying($playing);',
+    );
+    if (cue != null) {
+      // BUG-3777 R2：带上算出 fraction 的墙钟时刻，JS 执行晚了按速率自己补上延迟。
+      js.write(
+        'if(window.__lyricsSetProgress)'
+        'window.__lyricsSetProgress(${cue.index},'
+        '${cue.fraction.toStringAsFixed(4)},'
+        '${cue.ratePerSec.toStringAsFixed(5)},'
+        '${cue.sentAtMs});',
+      );
+    }
+    return js.toString();
+  }
+
   static String _css(Color c) {
     final int r = (c.r * 255.0).round().clamp(0, 255);
     final int g = (c.g * 255.0).round().clamp(0, 255);

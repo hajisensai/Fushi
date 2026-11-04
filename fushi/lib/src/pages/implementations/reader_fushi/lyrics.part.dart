@@ -1038,9 +1038,19 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     } else {
       sourceIdx = controller.currentCueIdx;
     }
+    // 播放态与当前行解耦：下面每条不重载的出口都经 LyricsModeHtml.overlaySyncScript
+    // 下发它（BUG-4007 R2），JS 的暂停样式与「浏览 4 秒回到跟随」计时才不会脱节。
+    final bool playing = controller.isPlaying;
     // BUG-767: sourceIdx < 0 = 当前 cue 暂不可解析（cue 间隙 / 尚未匹配）。此时保位
     // 不跳、绝不重载（旧码在此重开歌词页 → 无限重载、高亮恒回第一句）。
-    if (sourceIdx < 0) return;
+    if (sourceIdx < 0) {
+      _evalLyrics(
+        lyrics,
+        LyricsModeHtml.overlaySyncScript(playing: playing),
+        'setCue',
+      );
+      return;
+    }
     // forceReveal = 显式回到当前句（跟随开关 snap / 字幕搜索跳转）：JS 的
     // __lyricsScrollToCue 会结束手动浏览态，窗口锚点同步回到播放句。
     if (forceReveal) _lyricsJsBrowsing = false;
@@ -1063,9 +1073,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       if (!follows) {
         // 手动浏览中播放句不在窗口里：只摘掉旧高亮，不重载（重载会把视口拽走）。
         // 回到跟随时（onLyricsBrowse(false) / forceReveal）再以播放句为锚重开。
+        // 播放态照样下发：继续播放时 JS 起 4 秒回中计时、暂停时停掉它。
         _evalLyrics(
           lyrics,
-          'if(window.__lyricsSetCue)window.__lyricsSetCue(-1,false);',
+          LyricsModeHtml.overlaySyncScript(playing: playing, clearCue: true),
           'setCue',
         );
         return;
@@ -1077,7 +1088,6 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     // followAudio OFF → scroll=false：只换当前行高亮、不自动滚（用户可自由滚动
     // 歌词）。forceReveal（切「跟随音频」ON 触发的 snap 回中）也放行滚动。
     final bool scroll = controller.followAudio.value || forceReveal;
-    final bool playing = controller.isPlaying;
     final AudioCue cue = _lyricsCueList[idx];
     _observeLyricsIllustrations(cue, controller.globalPosition);
     final int rawDurMs = cue.endMs - cue.startMs;
@@ -1090,19 +1100,17 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final double ratePerSec = playing ? controller.speed * 1000 / durMs : 0;
     _evalLyrics(
       lyrics,
-      'if(window.__lyricsSetCue)'
-          'window.__lyricsSetCue($idx, $scroll);'
-          // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的
-          // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
-          // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
-          '${forceReveal ? 'if(window.__lyricsScrollToCue)'
-                    'window.__lyricsScrollToCue($idx);' : ''}'
-          'if(window.__lyricsSetPlaying)window.__lyricsSetPlaying($playing);'
-          // BUG-3777 R2：带上算出 fraction 的墙钟时刻，JS 执行晚了按速率自己补上延迟。
-          'if(window.__lyricsSetProgress)'
-          'window.__lyricsSetProgress($idx,${fraction.toStringAsFixed(4)},'
-          '${ratePerSec.toStringAsFixed(5)},'
-          '${DateTime.now().millisecondsSinceEpoch});',
+      LyricsModeHtml.overlaySyncScript(
+        playing: playing,
+        cue: (
+          index: idx,
+          scroll: scroll,
+          forceReveal: forceReveal,
+          fraction: fraction,
+          ratePerSec: ratePerSec,
+          sentAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ),
       'setCue',
     );
   }
