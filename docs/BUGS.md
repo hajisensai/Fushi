@@ -33,10 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3609 条。点号进各自文件。
+> 共 3615 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4011](bugs/BUG-4011-android-startup-scudo-oom-loop-pre-23152.md) | ✅ | ✅ | Android 启动约 6 s 内 Scudo OOM 中止并反复重启（23152 之前的版本） |
+| [BUG-4010](bugs/BUG-4010-desktop-unexpected-exit-no-evidence.md) | 🚧 | 🚧 | 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS） |
+| [BUG-4009](bugs/BUG-4009-mobile-srs-sync-memory-exhaustion.md) | 🚧 | 🚧 | iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory） |
+| [BUG-4008](bugs/BUG-4008-windows-update-handoff-false-crash-pre-22838.md) | ✅ | ✅ | Windows 应用内更新交接被误报「停在前台时没了」（22838 之前的版本） |
+| [BUG-4007](bugs/BUG-4007-windows-uia-hittest-av.md) | 🚧 | 🚧 | Windows flutter_windows.dll+0x133cb 访问冲突：UIA HitTestSync 打到失步的 AX 节点 |
+| [BUG-4006](bugs/BUG-4006-android-audioservice-headless-main-false-startup-crash.md) | 🚧 | 🚧 | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
 | [BUG-4005](bugs/BUG-4005-android-exit-importance-overrides-marker.md) | ✅ | ✅ | Android 后台被厂商杀进程仍被判「停在前台时没了」弹闪退报告 |
 | [BUG-4004](bugs/BUG-4004-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
