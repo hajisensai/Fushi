@@ -29,7 +29,7 @@ void main() {
   /// 落盘的原始 JSON（绕过偏好缓存直接读库）。
   Future<Map<String, Object?>> storedJson() async {
     final String raw = (await db.getAllPrefs())['ai_web_search']!;
-    return (jsonDecode(PrefCodec.decode(raw, '') as String) as Map)
+    return (jsonDecode(PrefCodec.decode<String>(raw, '')) as Map)
         .cast<String, Object?>();
   }
 
