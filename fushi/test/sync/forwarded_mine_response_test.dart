@@ -83,6 +83,21 @@ void main() {
       expect(resp.containsKey('detail'), isFalse);
     });
 
+    test('失败带主机侧分类码（反馈 E52FUMdbR6）', () async {
+      final _FakeMining m = _FakeMining()
+        ..result = const RemoteMineResult(
+          result: 'error',
+          message: 'refused',
+          errorCode: 'ANKI_CONNECTION_REFUSED',
+        );
+      final Map<String, dynamic> resp = await buildForwardedMineResponse(
+        <String, dynamic>{'rawPayloadJson': '{"expression":"猫"}'},
+        mining: m,
+      );
+      expect(resp['result'], 'error');
+      expect(resp['errorCode'], 'ANKI_CONNECTION_REFUSED');
+    });
+
     test('rawPayloadJson 缺失 → FormatException（调用方转 400）', () {
       expect(
         () => buildForwardedMineResponse(<String, dynamic>{
