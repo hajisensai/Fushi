@@ -14,6 +14,7 @@ import 'package:fushi_engine/profile/profile_document.dart'
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:fushi_engine/ai/web_knowledge.dart'
     show
         WebKnowledgeSite,
@@ -3149,6 +3150,19 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
     await setPref(kAiVideoDownloadSubtitleLanguagePref, value);
+    notifyListeners();
+  }
+
+  /// AI 通用联网搜索后端（SearXNG / Brave）；没配或坏 JSON → null。
+  @override
+  WebSearchConfig? get aiWebSearch => WebSearchConfig.tryParse(
+    getPref('ai_web_search', defaultValue: null) as String?,
+  );
+
+  /// 写入联网搜索后端；null = 清空（写空串，读侧 [WebSearchConfig.tryParse] 视空串
+  /// 为没配；偏好层没有带缓存与 LWW 戳的删键入口）。
+  Future<void> setAiWebSearch(WebSearchConfig? config) async {
+    await setPref('ai_web_search', config?.encode() ?? '');
     notifyListeners();
   }
 

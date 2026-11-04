@@ -98,6 +98,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // String（JSON）：AI 通用联网搜索后端 `{kind: searxng|brave, endpoint, apiKey}`
+  // （`WebSearchConfig`）。含 Brave API key 明文 → 凭据 + 设备本地。
+  'ai_web_search',
   // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
   kAnkiSettingsPrefKey,
   'app_locale',
@@ -1056,6 +1059,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // 联网搜索配置 JSON 里的 Brave API key。
+  'ai_web_search',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

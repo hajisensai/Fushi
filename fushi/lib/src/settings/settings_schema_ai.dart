@@ -12,6 +12,7 @@ import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
+import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -96,6 +97,16 @@ SettingsDestination buildAiDestination() {
                 : const <Widget>[],
           ),
         ],
+      ),
+      // 联网搜索：真正的搜索引擎（SearXNG / Brave），与上面固定资料站并列。
+      SettingsSection(
+        id: 'ai.web_search',
+        title: t.ai_web_search_section,
+        footer: t.ai_web_search_section_hint,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.web_search', c),
+        items: buildAiWebSearchItems(),
       ),
       SettingsSection(
         id: 'ai.video_download',

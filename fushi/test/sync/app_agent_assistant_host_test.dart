@@ -28,6 +28,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -45,6 +46,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 final AiProviderConfig _provider = AiProviderConfig(
