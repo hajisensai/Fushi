@@ -8,5 +8,6 @@
   - 设置：扩展 `options.html` / `options.js` 加三行键帽 + 两个下拉；App 内浏览器设置 `settings_schema_web_browser_extension.dart` 的 `kWebBrowserVideoShortcuts` 与两个 `_choice` 同步。
   - 文案：三条说明在 17 种语言改成「对应快捷键（见「快捷键」）」/「无需按住查词键」，新增 5 个键 17 种语言齐全。
   - 「按本体有更新视频新功能时同步到插件」是流程诉求，不在代码里。
+  - 提交 `a10335ad8e`。
 - **[x] ② 已加自动化测试** — `tools/browser-extension/video-shortcuts.test.js`：判定（Shift+←/→ 无轨也接管、E 在输入框放行、独立开关）、`seekSeconds` / `holdRate` / `seekTarget`、runtime 快退快进经 `fushiSubtitleSeekBy` 且秒数热更新、执行端缺席时改 currentTime 并夹边界、按住 E → 3x / 重复被吞 / 松开恢复原速（1.25x）/ 失焦与 hidden 恢复 / 关开关放行、options 下拉取值 = JS 取值表、说明文案不再写死 Shift+S / Shift+H（en.js + 16 json + options.html）；Dart `test/pages/web_browser_settings_page_test.dart` 钉 App 侧键名 / 取值表 / 缺省 = 扩展源码，`test/build/browser_extension_dict_media_mirror_guard_test.dart` 加三个开关 id。
 - **备注**：未在真实浏览器 / 应用内浏览器上手动按键复测；默认 E 会在有 `<video>` 的页面（非输入框）被接管，不想要可在「快捷键」里关掉或改键。

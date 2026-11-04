@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3609 条。点号进各自文件。
+> 共 3610 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4006](bugs/BUG-4006-browser-ext-arrows-hijacked-without-subtitles.md) | 🚧 | 🚧 | 浏览器扩展字幕没开时左右键仍被上一句下一句接管 |
 | [BUG-4005](bugs/BUG-4005-browser-ext-seek-hold-speed-shortcuts.md) | ✅ | ✅ | 浏览器扩展缺按秒快退快进与按住临时倍速快捷键，设置说明写死旧键 |
 | [BUG-4004](bugs/BUG-4004-browser-floating-player-btn-touch.md) | ✅ | ✅ | 安卓应用内浏览器看油管时找不到换字幕的 Fushi 播放器按钮 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
