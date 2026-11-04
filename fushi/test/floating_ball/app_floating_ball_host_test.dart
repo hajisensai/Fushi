@@ -1899,6 +1899,41 @@ void main() {
           expect(call.miningHandler, isNotNull);
         });
 
+        testWidgets('反馈 Eemf0HOZhj：识别分段耗时与点中的那行原文记进诊断日志', (
+          WidgetTester tester,
+        ) async {
+          await startOcr(tester);
+          final ErrorLogEntry timing = ErrorLogService
+              .instance
+              .diagnosticEntries
+              .lastWhere(
+                (ErrorLogEntry e) =>
+                    e.source == 'floating_ball.screen_ocr_timing',
+              );
+          expect(
+            timing.error,
+            allOf(
+              matches(RegExp(r'capture=\d+ms recognize=\d+ms')),
+              contains('image=1920x1080'),
+              contains('png=3B'),
+              contains('lines=1'),
+            ),
+          );
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 350.0,
+            'y': 220.0,
+          });
+          final ErrorLogEntry tap = ErrorLogService.instance.diagnosticEntries
+              .lastWhere(
+                (ErrorLogEntry e) => e.source == 'floating_ball.screen_ocr_tap',
+              );
+          expect(
+            tap.error,
+            'point=(350,220) line=[100,200,500,250] vertical=false '
+            'charIndex=2 text="吾輩は猫"',
+          );
+        });
+
         testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {
           await startOcr(tester);
           target.log.clear();
