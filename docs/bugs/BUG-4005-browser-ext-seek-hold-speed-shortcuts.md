@@ -1,0 +1,13 @@
+## BUG-4005 · 浏览器扩展缺按秒快退快进与按住临时倍速快捷键，设置说明写死旧键
+- **报告**：2026-11-02（应用内反馈 dQjjzl7XWj，Windows，app 3.3.0-debug.23025；附图未随反馈落到本地，按正文核对）
+- **真实性**：✅ 属实（功能缺口 + 文案遗留，非崩溃类）。
+  - 缺动作：`tools/browser-extension/video-shortcuts.js` 修复前的 `DEFAULT_COMBOS`（32–45 行）只有上一句 / 下一句 / 重播 / 侧边栏 / 隐藏 / 偏移 / 复制 / 收藏 / 变速 12 个动作，**没有按秒快退 / 快进**，也没有「按住临时倍速」。←/→ 默认给了上一句 / 下一句（有轨即接管），站点原生的按秒快进被占后扩展里没有任何替代键；App 视频页两者都有独立动作（`fushi/lib/src/shortcuts/shortcut_defaults.dart` `videoSeekBackward` / `videoSeekForward` / `videoHoldSpeed`）。
+  - 写死旧键：设置说明 `opt_nfSubList_desc`（「… 或 Shift+S 打开字幕列表」）与 `opt_subtitleHidden_desc`（「<kbd>Shift</kbd>+<kbd>H</kbd> 切换」）在 17 种语言里都写死了默认键（修复前 `locales/en.js:127` / `:146`、`options.html` 回退文案同），是快捷键可自定义（`videoShortcutKeys`）之前的遗留——用户改键后说明就是错的；`opt_subtitleOverlayAutoLookup_desc` 的「无需 Shift」同样写死了可改的查词键（`scanModifier`）。
+- **[x] ① 已修复** —
+  - `video-shortcuts.js`：新增 `seek-back`（默认 Shift+←）/ `seek-forward`（Shift+→）/ `hold-speed`（E，与 App 同键；不用 Shift 组合是因为 Shift 是悬停查词缺省修饰键）三个动作，各有独立开关（`videoShortcutSeekBack/SeekForward/HoldSpeed`）、可改键，都**不需要字幕轨**；秒数 `videoSeekSeconds`（1/2/3/5/10/15/30，缺省 5）与倍率 `videoHoldSpeedRate`（1.5/2/2.5/3/4，缺省 2）取值表只在这里定义一次（`SEEK_SECONDS_*` / `HOLD_RATE_*`），设置热更新。快退 / 快进经 `subtitle-panel.js` 新增的 `fushiSubtitleSeekBy`（复用 `seekTo`，Netflix 走官方 `player.seek` 避开 M7375，目标夹 `[0, 时长]`）；按住倍速记住按下前原速，同一物理键 keyup 恢复，按住期间的自动重复吞掉不漏给站点，失焦 / 切走标签页（收不到 keyup）也恢复。
+  - 设置：扩展 `options.html` / `options.js` 加三行键帽 + 两个下拉；App 内浏览器设置 `settings_schema_web_browser_extension.dart` 的 `kWebBrowserVideoShortcuts` 与两个 `_choice` 同步。
+  - 文案：三条说明在 17 种语言改成「对应快捷键（见「快捷键」）」/「无需按住查词键」，新增 5 个键 17 种语言齐全。
+  - 「按本体有更新视频新功能时同步到插件」是流程诉求，不在代码里。
+  - 提交 `a10335ad8e`。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/video-shortcuts.test.js`：判定（Shift+←/→ 无轨也接管、E 在输入框放行、独立开关）、`seekSeconds` / `holdRate` / `seekTarget`、runtime 快退快进经 `fushiSubtitleSeekBy` 且秒数热更新、执行端缺席时改 currentTime 并夹边界、按住 E → 3x / 重复被吞 / 松开恢复原速（1.25x）/ 失焦与 hidden 恢复 / 关开关放行、options 下拉取值 = JS 取值表、说明文案不再写死 Shift+S / Shift+H（en.js + 16 json + options.html）；Dart `test/pages/web_browser_settings_page_test.dart` 钉 App 侧键名 / 取值表 / 缺省 = 扩展源码，`test/build/browser_extension_dict_media_mirror_guard_test.dart` 加三个开关 id。
+- **备注**：未在真实浏览器 / 应用内浏览器上手动按键复测；默认 E 会在有 `<video>` 的页面（非输入框）被接管，不想要可在「快捷键」里关掉或改键。
