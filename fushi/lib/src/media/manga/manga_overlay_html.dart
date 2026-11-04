@@ -1571,6 +1571,7 @@ String _mangaGestureJs({
     if(!(Math.abs(ZOOM-fromZoom)>PINCH_NOOP))return;
     if(ZOOM!==1&&Math.abs(ZOOM-1)<=ZOOM_SNAP+1e-9)_animateZoomTo(1,x,y);
   }
+  document.addEventListener('pointerdown',_cancelDoubleTapZoom,{passive:true});
   // 右键菜单在场时（Dart 置 window.__fushiMangaMenuOpen），点到 WebView 的鼠标
   // 按下回报 Dart 关菜单：macOS 上平台视图拿走点击，菜单的遮罩收不到。
   document.addEventListener('pointerdown',function(e){
@@ -1579,7 +1580,6 @@ String _mangaGestureJs({
     var b=_bridge();
     if(b)b.callHandler('onMangaDismissMenu');
   },{capture:true,passive:true});
-  document.addEventListener('pointerdown',_cancelDoubleTapZoom,{passive:true});
   window.__mangaSetZoom = function(percent){
     // 以视口顶部为锚：scrollY 是视觉坐标（随 ZOOM 线性伸缩），换算过之后
     // 「设置里改缩放」不再把 webtoon 跳到别的页。

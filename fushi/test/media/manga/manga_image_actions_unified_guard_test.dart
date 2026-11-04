@@ -41,10 +41,11 @@ void main() {
       'Future<void> _showReaderContextMenu(String payloadJson)',
       'Widget build(BuildContext context)',
     );
+    // 只认调用形态，不认缩进：外层嵌套一变 `dart format` 就换缩进。
     expect(
       menu,
-      contains(
-        'imageActionsFor(\n              defaultTargetPlatformForImageSave(),',
+      matches(
+        RegExp(r'imageActionsFor\(\s*defaultTargetPlatformForImageSave\(\),'),
       ),
       reason: '图片项按平台列，与长按面板同一判据',
     );
