@@ -898,6 +898,14 @@ pub(crate) fn sync2_dispatch(
         })?;
         return Ok(json!({"filled": n}));
     }
+    // 补出处分组键列（srs.db v25 / Dart 缓存修订号 10；只改笔记缓存的这一列，不算缓存写入，不要缓存配置）。
+    if op == "backfill_source_keys" {
+        let w = c.writer()?;
+        let n = crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::caches::backfill_source_keys(conn, profile)
+        })?;
+        return Ok(json!({"filled": n}));
+    }
     if PROJECTING_OPS.contains(&op)
         || op == "refresh_caches"
         || op == "rebuild_caches"
@@ -1139,6 +1147,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "restore",
     "backfill_dupe_norms",
     "backfill_tag_sources",
+    "backfill_source_keys",
 ];
 
 const PROJECTING_OPS: &[&str] = &[

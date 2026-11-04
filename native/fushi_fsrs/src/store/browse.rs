@@ -225,7 +225,7 @@ fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
 /// （书 `bookKey`、漫画 `mangaKey`、视频 / 有声书 / 音乐 `mediaKey`、在线小说 `sourceId` + 0x1f + `novelUrl`、在线视频
 /// `sourceId` + 0x1f + `animeUrl`、游戏 `gameId`、网页 `url`），取不到退回 `title`，再没有就只有 `<kind>`。章节、页码、
 /// 时间、偏移不进键。不是带字符串 kind 的对象 = 没有出处（Dart `SrsSourceRef.fromJson`）。返回 (键, kind)。
-fn source_key(v: &Value) -> Option<(String, String)> {
+pub(crate) fn source_key(v: &Value) -> Option<(String, String)> {
     let kind = v.get("kind")?.as_str()?;
     let s = |k: &str| v.get(k).and_then(Value::as_str).filter(|x| !x.is_empty());
     let pair = |a: &str, b: &str| Some(format!("{}\u{1f}{}", s(a)?, s(b)?));
@@ -1065,6 +1065,8 @@ enum Column {
     Lapses,
     Deck,
     NoteType,
+    /// 出处键（[source_key]；没有出处的排最后）：表格按出处分组用。
+    Source,
 }
 
 impl Column {
@@ -1082,6 +1084,7 @@ impl Column {
             "lapses" => Column::Lapses,
             "deck" => Column::Deck,
             "noteType" => Column::NoteType,
+            "source" => Column::Source,
             _ => return Err(format!("browse: unknown sort column {s}")),
         })
     }
@@ -1647,6 +1650,9 @@ impl Session {
                 }
             }
         }
+        if column == Column::Source {
+            self.ensure_sources(c, profile)?;
+        }
         let hits = match self.hits(c, profile, &ctx, node, full, want)? {
             Ok(h) => h,
             Err(e) => return Ok(search_error(e)),
@@ -1976,6 +1982,11 @@ impl Session {
             Column::Lapses => Key::Num(cards().map(|c| c.lapses).sum::<i64>() as f64),
             Column::Deck => Key::Str(dart_lower(&ctx.deck(&p.deck).0)),
             Column::NoteType => Key::Str(dart_lower(&ctx.types[&note.ty].name)),
+            Column::Source => note
+                .source
+                .as_ref()
+                .and_then(source_key)
+                .map_or(Key::None, |k| Key::Str(k.0)),
         }
     }
 
@@ -1991,7 +2002,7 @@ impl Session {
     }
 
     /// 结果的一段行（`from..to`）：字符串列走 JSON（`[卡 id, 笔记 id, 排序字段, 牌组名, 笔记类型名, 牌组 id, 模板名, 标签,
-    /// 字段摘要, 图片, 音频, 出处键, 出处 kind, 出处 JSON]`），整数列每行 11 个 i64（小端）放进 `rows.i64`：`[队列 (0 新 /
+    /// 字段摘要, 图片, 音频, 出处键, 出处 kind, 出处 JSON, 字段摘要各自的字段名]`），整数列每行 11 个 i64（小端）放进 `rows.i64`：`[队列 (0 新 /
     /// 1 学习 / 2 复习 / 3 重学；-1 = 卡已不在), 到期天数 (i64::MIN = 没有), 旗标, 位 (1 暂停 / 2 搁置 / 4 待裁决), 该行
     /// 卡数, 复习次数, 遗忘次数, 间隔 (新卡 i64::MIN), 添加时刻, 修改时刻, 上次复习时刻 (i64::MIN = 没有)]`，小数列每行
     /// 2 个 f64 放进 `rows.f64`：`[难度, 保持率]`（NaN = 没有）。行的数据取会话里**此刻**的值（结果之后的写入已重读
@@ -2036,7 +2047,8 @@ impl Session {
                     null,
                     null,
                     null,
-                    null
+                    null,
+                    []
                 ]));
                 for v in [-1i64, DUE_NONE, 0, 0, 0, 0, 0, DUE_NONE, 0, 0, DUE_NONE] {
                     ints.extend_from_slice(&v.to_le_bytes());
@@ -2050,13 +2062,14 @@ impl Session {
             let detail = self.detail.get(&n.id);
             let digest = |id: &str| detail.and_then(|d| d.fields.get(id));
             let fields: &[(String, String)] = ty.map_or(&[], |t| t.fields.as_slice());
-            let preview: Vec<&str> = fields
+            // 摘要与它来自的字段名（表格原地改这两列时按名字写回）。
+            let (preview, preview_fields): (Vec<&str>, Vec<&str>) = fields
                 .iter()
                 .skip(1)
-                .filter_map(|(id, _)| digest(id).map(|f| f.preview.as_str()))
-                .filter(|t| !t.is_empty())
+                .filter_map(|(id, name)| digest(id).map(|f| (f.preview.as_str(), name.as_str())))
+                .filter(|(t, _)| !t.is_empty())
                 .take(2)
-                .collect();
+                .unzip();
             let image = fields
                 .iter()
                 .find_map(|(id, _)| digest(id).and_then(|f| f.image.as_deref()));
@@ -2080,6 +2093,7 @@ impl Session {
                 key.as_ref().map(|k| &k.0),
                 key.as_ref().map(|k| &k.1),
                 key.as_ref().and(source).map(Value::to_string),
+                preview_fields,
             ]));
             let bits = i64::from(c.suspended)
                 | (i64::from(r.ctx.is_buried(c)) << 1)
@@ -2118,7 +2132,8 @@ impl Session {
         Ok(json!({"s": strings}))
     }
 
-    /// `browse_sources`：结果按出处键分组（出处视图）。组 `{key, kind, data, count, due, preview, latestAddedAt}`：`data`
+    /// `browse_sources`：结果按出处键分组（出处视图）。组 `{key, kind, data, count, due, preview, latestAddedAt, decks}`：
+    /// `decks` = 组里各行的卡所在的牌组 id（去重，首次出现的顺序；「只复习这一作」据此定复习的牌组范围）；`data`
     /// 是组里最近添加那条笔记的出处 JSON，`due` = 有卡今天到期的行数，`preview` = 组内按结果顺序的前 8 个行号；按
     /// `latestAddedAt` 降序（同值按键），没有出处的一组（`key` = null）放最后。
     fn sources(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
@@ -2132,6 +2147,7 @@ impl Session {
             due: usize,
             preview: Vec<usize>,
             latest: i64,
+            decks: Vec<&'a str>,
         }
         let mut order: Vec<Option<String>> = Vec::new();
         let mut groups: HashMap<Option<String>, Group<'_>> = HashMap::new();
@@ -2154,9 +2170,17 @@ impl Session {
                     due: 0,
                     preview: Vec::new(),
                     latest: i64::MIN,
+                    decks: Vec::new(),
                 }
             });
             g.count += 1;
+            for &slot in &row.cards {
+                if let Some(card) = self.cards[slot as usize].as_ref() {
+                    if !g.decks.contains(&card.deck.as_str()) {
+                        g.decks.push(card.deck.as_str());
+                    }
+                }
+            }
             if row.cards.iter().any(|&slot| {
                 self.cards[slot as usize]
                     .as_ref()
@@ -2193,6 +2217,7 @@ impl Session {
                     "due": g.due,
                     "preview": g.preview,
                     "latestAddedAt": g.latest,
+                    "decks": g.decks,
                 })
             })
             .collect();
@@ -3395,6 +3420,11 @@ mod tests {
             "chapter / position are not part of the key"
         );
         assert_eq!(rows.s[b][8], json!([]));
+        assert_eq!(
+            rows.s[b][14],
+            json!([]),
+            "no preview, no preview field names"
+        );
         assert_eq!(rows.s[b][9], Value::Null);
         assert_eq!(rows.int(b, 7), i64::MIN, "new card: no interval");
         assert_eq!(rows.int(b, 10), i64::MIN);
@@ -3409,6 +3439,9 @@ mod tests {
             (&Value::Null, &Value::Null, &Value::Null)
         );
         assert_eq!(rows.s[rows.by_note(N5)][8], json!(["back side"]));
+        // 摘要各自来自哪个字段（表格原地改字段摘要列按名字写回）。
+        assert_eq!(rows.s[rows.by_note(N5)][14], json!(["Back"]));
+        assert_eq!(rows.s[a][14], json!(["Back"]));
 
         // 写入后行详情按笔记失效：改了 N4 的背面，下一次取行就看得到。
         write(
@@ -3610,6 +3643,9 @@ mod tests {
         assert_eq!(notes, vec![&json!(N1), &json!(N2)]);
         assert_eq!(g[0]["latestAddedAt"], json!(1));
         assert!(g[0]["data"].as_str().unwrap().contains("bk1"));
+        // 组里各行的卡所在的牌组（去重）：「只复习这一作」据此定牌组范围。
+        assert_eq!(g[0]["decks"], json!([deck]));
+        assert_eq!(g[2]["decks"], json!([deck]));
         // 空结果 = 空表。
         let q = call(
             &d,
@@ -3623,6 +3659,23 @@ mod tests {
         )["groups"]
             .clone();
         assert_eq!(g, json!([]));
+    }
+
+    /// 排序列 `source`（表格按出处分组）：按出处键排，同一作品的行挨着，没有出处的不论升降序都在最后；第一次用到时
+    /// 才装出处寄存器。
+    #[test]
+    fn source_sort_groups_rows_by_work_and_puts_unsourced_last() {
+        let (d, _, deck) = rich_library();
+        for asc in [true, false] {
+            let (_, rows) = query_rows(&d, &deck, json!({"sort": {"col": "source", "asc": asc}}));
+            let keys: Vec<Value> = rows.s.iter().map(|r| r[11].clone()).collect();
+            let mut want = vec![json!("book:bk1"), json!("book:bk1"), json!("manga:m1")];
+            if !asc {
+                want.reverse();
+            }
+            want.extend([Value::Null, Value::Null]);
+            assert_eq!(keys, want, "asc = {asc}");
+        }
     }
 
     /// 出处键：各 kind 的作品身份字段，取不到退回 title，再没有就只有 kind；不是带 kind 的对象 = 没有出处。

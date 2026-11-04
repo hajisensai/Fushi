@@ -627,10 +627,11 @@ pub(crate) const MAX_EXTENSION: i64 = 9999;
 /// 无状态：「这次会话里答过的卡」= 子树里 [since] 之后有作答日志的卡；会话结束什么都不用清。
 ///
 /// 请求 `"custom": {"since": 会话开始时刻, "mode": "forgotten" | "ahead" | "filter", "days"?: n, "limit"?: n,
-/// "states"?: ["new" | "learning" | "review" | "due"], "tags"?: [标签]}`：
+/// "states"?: ["new" | "learning" | "review" | "due"], "tags"?: [标签], "source"?: 出处键}`：
 /// - forgotten：最近 [days] 天（含今天）里评过「重来」的卡；
 /// - ahead：[days] 天内到期（今天之后）的复习卡，按到期先后；
-/// - filter：按卡片状态（空 = 不限）与笔记标签（空 = 不限；不分大小写，`a` 也匹配层级标签 `a::b`）。
+/// - filter：按卡片状态（空 = 不限）、笔记标签（空 = 不限；不分大小写，`a` 也匹配层级标签 `a::b`）与出处（浏览页
+///   出处视图「只复习这一作」：笔记缓存行 `source_key` 整值相等，srs.db v25；与 `src:"<键>"` 同一个键）。
 ///
 /// 出卡：会话里答过、现在到期的学习卡 → 还没答过的候选（最多 [limit] 张，按会话里已答的卡数扣）→ 20 分钟内到期
 /// 的会话学习卡。结果另带 `"custom": {"left": 剩余候选, "learn": 会话学习卡}`。
@@ -641,6 +642,8 @@ struct CustomStudy {
     limit: i64,
     states: Vec<String>,
     tags: Vec<String>,
+    /// 只出这个出处（作品）的卡；None = 不限。
+    source: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -670,7 +673,13 @@ impl CustomStudy {
                 .map(str::to_owned)
                 .collect()
         };
+        let source = match v.get("source") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(k)) if !k.is_empty() => Some(k.clone()),
+            Some(x) => return Err(format!("study: bad custom source {x}")),
+        };
         Ok(CustomStudy {
+            source,
             since: v
                 .get("since")
                 .and_then(Value::as_i64)
@@ -823,6 +832,14 @@ impl CustomPicker<'_> {
                         args.push(Sql::Text(t.clone()));
                         args.push(Sql::Text(format!("{escaped}::%")));
                     }
+                }
+                if let Some(key) = &self.cu.source {
+                    parts.push(
+                        "note_id IN (SELECT n.id FROM srs_notes_cache n WHERE n.profile_uid = srs_id(?) AND n.deleted_at IS NULL AND n.source_key = ?)"
+                            .to_owned(),
+                    );
+                    args.push(Sql::Text(self.profile.to_owned()));
+                    args.push(Sql::Text(key.clone()));
                 }
                 let cond = if parts.is_empty() {
                     "1".to_owned()
@@ -2457,6 +2474,36 @@ mod tests {
             (r["next"].clone(), r["after"].clone()),
             (json!("n1"), Value::Null)
         );
+        // 按出处（只复习这一作，会话从此刻开始）：笔记缓存行的出处键整值相等，可与状态叠加；别的作品、没有出处的笔记不出。
+        exec(
+            &core,
+            "UPDATE srs_notes_cache SET source_key = 'book:b1' WHERE id = srs_id('n3')",
+            vec![],
+        );
+        exec(
+            &core,
+            "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, source_key) VALUES (srs_id('r3'), srs_id(?1), 'T', 'g4', 1, 'book:b1'), (srs_id('r2'), srs_id(?1), 'T', 'g5', 1, 'book:b2')",
+            vec![Sql::Text(P.into())],
+        );
+        let r = custom(json!({"since": now, "mode": "filter", "source": "book:b1", "limit": 10}));
+        assert_eq!(
+            (
+                r["next"].clone(),
+                r["after"].clone(),
+                r["custom"]["left"].clone()
+            ),
+            (json!("r3"), json!("n3"), json!(2))
+        );
+        let r = custom(
+            json!({"since": now, "mode": "filter", "source": "book:b1", "states": ["review"]}),
+        );
+        assert_eq!(
+            (r["next"].clone(), r["after"].clone()),
+            (json!("r3"), Value::Null)
+        );
+        let r = custom(json!({"since": now, "mode": "filter", "source": "book:none"}));
+        assert_eq!(r["next"], Value::Null);
+        assert!(core.study(P, &json!({"now": now, "utcOff": 0, "rollover": 4, "deck": "R", "custom": {"since": 0, "mode": "filter", "source": ""}})).is_err());
         // 会话开始前的作答不算会话里答过。
         let r = custom(json!({"since": now, "mode": "ahead", "days": 3}));
         assert_eq!(r["next"], json!("r2"));
