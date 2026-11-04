@@ -293,9 +293,10 @@ class AppleMusicWebBridge implements AppleMusicBridge {
       },
       onPermissionRequest: (InAppWebViewController _, PermissionRequest r) =>
           appleMusicPermissionResponse(r),
-      // 隐藏 WebView 不该开窗（登录走可见的登录页）；拒掉，别让弹窗把桥页面顶掉。
-      onCreateWindow: (InAppWebViewController _, CreateWindowAction a) async =>
-          true,
+      // 隐藏 WebView 不该开窗（登录走可见的登录页）；拒掉，别让弹窗把桥页面顶掉。返回 false =
+      // 不接管（插件丢掉这个窗口请求）；先前写成 true 是「已接管」却没人建窗，请求悬空。
+      onCreateWindow: (InAppWebViewController _, CreateWindowAction _) async =>
+          false,
       onLoadStop: (InAppWebViewController c, WebUri? url) async {
         if (loaded.isCompleted) return;
         final Object? ok = await c.evaluateJavascript(
