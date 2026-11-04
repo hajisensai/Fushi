@@ -76,6 +76,41 @@ static EGLConfig video_output_choose_flutter_like_config(EGLDisplay display) {
   return config;
 }
 
+// Under X11, GDK's own GLX context can still be current on the GTK thread.
+// libglvnd binds a thread to one window-system API at a time, so eglMakeCurrent
+// then fails with EGL_BAD_ACCESS. Release the GLX context around our EGL work
+// and make it current again afterwards.
+typedef struct {
+  Display* display;
+  GLXDrawable draw;
+  GLXDrawable read;
+  GLXContext context;
+} VideoOutputSavedGlxContext;
+
+static VideoOutputSavedGlxContext video_output_release_glx_context() {
+  VideoOutputSavedGlxContext saved = {NULL, None, None, NULL};
+  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+    return saved;
+  }
+  saved.context = glXGetCurrentContext();
+  if (saved.context == NULL) {
+    return saved;
+  }
+  saved.display = glXGetCurrentDisplay();
+  saved.draw = glXGetCurrentDrawable();
+  saved.read = glXGetCurrentReadDrawable();
+  glXMakeContextCurrent(saved.display, None, None, NULL);
+  return saved;
+}
+
+static void video_output_restore_glx_context(
+    const VideoOutputSavedGlxContext* saved) {
+  if (saved->context != NULL) {
+    glXMakeContextCurrent(saved->display, saved->draw, saved->read,
+                          saved->context);
+  }
+}
+
 void video_output_restore_egl_context(EGLDisplay own_display,
                                       EGLDisplay previous_display,
                                       EGLSurface previous_draw,
@@ -104,6 +139,7 @@ static void video_output_dispose(GObject* object) {
     fl_texture_registrar_unregister_texture(self->texture_registrar,
                                             FL_TEXTURE(self->texture_gl));
     
+    VideoOutputSavedGlxContext saved_glx = video_output_release_glx_context();
     // Save Flutter's current context before cleanup
     EGLDisplay current_display = eglGetCurrentDisplay();
     EGLContext flutter_context = eglGetCurrentContext();
@@ -131,7 +167,8 @@ static void video_output_dispose(GObject* object) {
       eglDestroyContext(self->egl_display, self->egl_context);
       self->egl_context = EGL_NO_CONTEXT;
     }
-    
+    video_output_restore_glx_context(&saved_glx);
+
     g_object_unref(self->texture_gl);
   }
   // S/W
@@ -195,6 +232,7 @@ VideoOutput* video_output_new(FlTextureRegistrar* texture_registrar,
   // mpv_set_option_string(self->handle, "video-timing-offset", "0");
   gboolean hardware_acceleration_supported = FALSE;
   if (self->configuration.enable_hardware_acceleration) {
+    VideoOutputSavedGlxContext saved_glx = video_output_release_glx_context();
     // Whatever is current on this (GTK) thread; restored afterwards. On X11
     // nothing is current here, see video_output_resolve_flutter_egl_display.
     EGLDisplay flutter_display = eglGetCurrentDisplay();
@@ -322,6 +360,7 @@ VideoOutput* video_output_new(FlTextureRegistrar* texture_registrar,
     } else {
       g_printerr("media_kit: VideoOutput: Could not resolve Flutter's EGL display.\n");
     }
+    video_output_restore_glx_context(&saved_glx);
   }
 #ifdef MPV_RENDER_API_TYPE_SW
   if (!hardware_acceleration_supported) {

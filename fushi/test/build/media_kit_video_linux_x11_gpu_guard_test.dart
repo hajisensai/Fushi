@@ -51,6 +51,23 @@ void main() {
     expect(videoOutput, contains('video_output_choose_flutter_like_config'));
   });
 
+  test('GDK GLX context released around mpv EGL work (glvnd)', () {
+    // libglvnd rejects eglMakeCurrent with EGL_BAD_ACCESS while a GLX context
+    // owns the thread; seen on the Deck as "Failed to make isolated EGL
+    // context current. Error: 0x3002".
+    expect(videoOutput, contains('glXMakeContextCurrent(saved.display, None'));
+    expect(
+      'video_output_release_glx_context();'.allMatches(videoOutput).length,
+      2,
+    );
+    expect(
+      'video_output_restore_glx_context(&saved_glx);'
+          .allMatches(videoOutput)
+          .length,
+      2,
+    );
+  });
+
   test('mpv context released when no context was current before', () {
     expect(
       videoOutput,
