@@ -25,7 +25,7 @@
 #include "fushidicts/importer.hpp"
 #include "fushidicts/query.hpp"
 #include "memory/memory.hpp"
-#include "zip_fixture.hpp"
+#include "import_fixture.hpp"
 
 namespace {
 
@@ -91,17 +91,12 @@ int main() {
       {"index.json", "{\"title\":\"WindowDict\",\"format\":3,\"revision\":\"t\"}"},
       {"term_bank_1.json", term_bank()},
   };
-  const std::string zip_path = fushi_test::write_zip("blob_window", files);
-  if (zip_path.empty()) {
-    fail("could not write fixture zip");
+  std::string error;
+  const std::string dict_dir = fushi_test::import_fixture_dict("blob_window", files, out_dir, error);
+  if (dict_dir.empty()) {
+    fail(error);
     return 1;
   }
-  const ImportResult r = dictionary_importer::import(zip_path, out_dir);
-  if (!r.success) {
-    fail("import: " + (r.errors.empty() ? std::string("(no error)") : r.errors.front()));
-    return 1;
-  }
-  const std::string dict_dir = out_dir + "/" + r.title;
 
   memory::set_blob_mode_for_test(memory::blob_mode::whole);
   std::vector<std::vector<std::string>> expected;

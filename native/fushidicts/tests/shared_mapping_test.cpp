@@ -27,7 +27,7 @@
 #include "fushidicts/importer.hpp"
 #include "fushidicts/query.hpp"
 #include "memory/memory.hpp"
-#include "zip_fixture.hpp"
+#include "import_fixture.hpp"
 
 namespace {
 
@@ -48,25 +48,21 @@ std::string term_bank() {
 }  // namespace
 
 int main() {
+  const std::string kTitle = "SharedDict";  // index.json title = imported dict name
   const std::string out_dir = fushi_test::temp_dir() + "/fushi_shared_mapping_out";
   const std::string png = std::string("\x89PNG\r\n\x1a\n", 8) + std::string("SHARED", 6);
 
   std::vector<fushi_test::ZipFile> files = {
-      {"index.json", "{\"title\":\"SharedDict\",\"format\":3,\"revision\":\"t\"}"},
+      {"index.json", "{\"title\":\"" + kTitle + "\",\"format\":3,\"revision\":\"t\"}"},
       {"term_bank_1.json", term_bank()},
       {"img/sun.png", png},
   };
-  const std::string zip_path = fushi_test::write_zip("shared_mapping", files);
-  if (zip_path.empty()) {
-    fail("could not write fixture zip");
+  std::string error;
+  const std::string dict_dir = fushi_test::import_fixture_dict("shared_mapping", files, out_dir, error);
+  if (dict_dir.empty()) {
+    fail(error);
     return 1;
   }
-  const ImportResult r = dictionary_importer::import(zip_path, out_dir);
-  if (!r.success) {
-    fail("import: " + (r.errors.empty() ? std::string("(no error)") : r.errors.front()));
-    return 1;
-  }
-  const std::string dict_dir = out_dir + "/" + r.title;
   const size_t base = memory::live_shared_mappings();
 
   auto q1 = std::make_unique<DictionaryQuery>();
@@ -93,7 +89,7 @@ int main() {
   if (q2->query("\xE6\x97\xA5").empty()) {
     fail("surviving engine lost its dictionary after the other was destroyed");
   }
-  std::vector<char> hit = q2->get_media_file(r.title, "img/sun.png");
+  std::vector<char> hit = q2->get_media_file(kTitle, "img/sun.png");
   if (std::string(hit.begin(), hit.end()) != png) {
     fail("media read via positional reader returned wrong bytes");
   }
@@ -105,7 +101,7 @@ int main() {
   {
     std::ofstream(media, std::ios::binary | std::ios::trunc) << "different-size-payload";
   }
-  if (!q2->get_media_file(r.title, "img/sun.png").empty()) {
+  if (!q2->get_media_file(kTitle, "img/sun.png").empty()) {
     fail("replaced media.bin (size mismatch) should read as a miss");
   }
   std::error_code ec;
@@ -113,7 +109,7 @@ int main() {
   if (ec) {
     fail("media.bin could not be removed while an engine is loaded (still mapped/open?): " + ec.message());
   }
-  if (!q2->get_media_file(r.title, "img/sun.png").empty()) {
+  if (!q2->get_media_file(kTitle, "img/sun.png").empty()) {
     fail("missing media.bin should read as a miss");
   }
 

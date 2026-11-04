@@ -67,6 +67,14 @@ class blob_file {
   static constexpr size_t kWindowStepBytes = size_t{1} << 20;
   static constexpr size_t kWindowBytes = 2 * kWindowStepBytes;
   static constexpr size_t kWindowCacheBytes = size_t{96} << 20;
+  // Hard ceiling on a windowed view served from the heap. Every length that
+  // reaches view() comes from disk (glossary / meanings u32 sizes, offset-table
+  // counts) and is only clamped to the end of the file, so without a ceiling a
+  // corrupt size asks for up to the rest of blobs.bin -- inside ~3 GB of address
+  // space std::bad_alloc then crosses the FFI and aborts. 64 MB matches the
+  // decompressed-glossary limit (query.cpp kMaxGlossarySize): a compressed
+  // payload larger than that is rejected after decompression anyway.
+  static constexpr size_t kMaxHeapViewBytes = size_t{64} << 20;
 
   blob_file() = default;
   ~blob_file();
@@ -130,6 +138,9 @@ void set_blob_mode_for_test(blob_mode mode);
 // Overrides the LRU address-space budget (default kWindowCacheBytes); 0 restores
 // the default. Lets tests force constant eviction while spans are pinned.
 void set_blob_window_cache_bytes_for_test(size_t bytes);
+// Overrides blob_file::kMaxHeapViewBytes; 0 restores the default. Lets tests
+// cross the ceiling with a small fixture.
+void set_blob_heap_view_cap_for_test(size_t bytes);
 
 // Distinct windows currently held by the LRU (test-only observability).
 size_t cached_blob_windows();

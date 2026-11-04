@@ -356,6 +356,7 @@ namespace {
 
 std::atomic<int> g_blob_mode{static_cast<int>(blob_mode::automatic)};
 std::atomic<size_t> g_window_cache_bytes{0};  // 0 = blob_file::kWindowCacheBytes
+std::atomic<size_t> g_heap_view_cap{0};       // 0 = blob_file::kMaxHeapViewBytes
 
 bool use_windowed_blobs() {
   switch (static_cast<blob_mode>(g_blob_mode.load(std::memory_order_relaxed))) {
@@ -429,6 +430,8 @@ void set_blob_mode_for_test(blob_mode mode) { g_blob_mode.store(static_cast<int>
 
 void set_blob_window_cache_bytes_for_test(size_t bytes) { g_window_cache_bytes.store(bytes); }
 
+void set_blob_heap_view_cap_for_test(size_t bytes) { g_heap_view_cap.store(bytes); }
+
 size_t cached_blob_windows() {
   window_lru& l = lru();
   std::lock_guard lock(l.mu);
@@ -450,7 +453,12 @@ blob_file::~blob_file() {
 
 blob_span blob_file::view_windowed(uint64_t offset, size_t n) const {
   if (n > kWindowStepBytes) {
-    // Longer than a window guarantees: read it into an owned buffer.
+    // Longer than a window guarantees: read it into an owned buffer -- bounded,
+    // since n is a disk-supplied length (see kMaxHeapViewBytes).
+    const size_t override_cap = g_heap_view_cap.load(std::memory_order_relaxed);
+    if (n > (override_cap == 0 ? kMaxHeapViewBytes : override_cap)) {
+      return {};
+    }
     auto buf = std::make_shared<std::vector<uint8_t>>(n);
     if (!read_handle_at(handle_, offset, buf->data(), n)) {
       return {};
@@ -526,6 +534,14 @@ offset_list read_offset_list(const blob_file& blobs, uint64_t at) {
   if (table_bytes > blobs.size() - table_at) {
     out.count = 0;
     return out;
+  }
+  // 32-bit: a blobs.bin over 4 GB can hold a table longer than size_t can
+  // express; the cast below would truncate it into a short, wrong span.
+  if constexpr (sizeof(size_t) < sizeof(uint64_t)) {
+    if (table_bytes > SIZE_MAX) {
+      out.count = 0;
+      return out;
+    }
   }
   out.span = blobs.view(table_at, static_cast<size_t>(table_bytes));
   return out;
