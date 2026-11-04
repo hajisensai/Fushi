@@ -3980,6 +3980,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习卡片浏览器的保存视图（JSON 数组，见 SrsBrowseSavedView）。空串 = 没有。
+  String get srsBrowseSavedViews =>
+      getPref('srs_browse_saved_views', defaultValue: '') as String;
+
+  Future<void> setSrsBrowseSavedViews(String json) async {
+    await setPref('srs_browse_saved_views', json);
+    notifyListeners();
+  }
+
+  // 复习卡片浏览器表格的列（列名按显示顺序逗号连接，见 encodeSrsBrowseColumns）。空串 = 默认列。
+  String get srsBrowseTableColumns =>
+      getPref('srs_browse_table_columns', defaultValue: '') as String;
+
+  Future<void> setSrsBrowseTableColumns(String columns) async {
+    await setPref('srs_browse_table_columns', columns);
+    notifyListeners();
+  }
+
   // 复习卡面外观（JSON，见 SrsCardAppearance）。空串 = 模板默认外观。
   String get srsCardAppearance =>
       getPref('srs_card_appearance', defaultValue: '') as String;
