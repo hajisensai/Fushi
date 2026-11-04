@@ -168,7 +168,7 @@ void main() {
       'ep09.ja.srt',
     ]);
 
-    // 识别稿不够 kMinReferenceCues 行：对不了时间轴，一条外挂都不收。
+    // 识别稿相对外挂轨太稀疏（5 行 vs 整集）：对不了时间轴，一条外挂都不收。
     final List<SubtitleEvidenceTrack> short = await collector.load(
       SubtitleEvidenceLoadRequest(
         videoPath: video,
@@ -178,5 +178,46 @@ void main() {
       ),
     );
     expect(short, isEmpty);
+  });
+
+  test('短片（识别稿少于 30 行）：时间轴对得上的外挂轨照收并按识别稿改写时间', () async {
+    // 90 秒短片，开口间隔 3–6 秒：二十来句。
+    final math.Random r = math.Random(41);
+    final List<double> truth = <double>[];
+    for (double t = 2; t < 88; t += 3 + r.nextDouble() * 3) {
+      truth.add(t);
+    }
+    expect(truth.length, lessThan(30));
+    final String video = p.join(tmp.path, 'clip.mkv');
+    File(video).writeAsBytesSync(<int>[0, 1, 2, 3]);
+    // 外挂字幕整体晚 2 秒（给别的压制版做的）。
+    File(
+      p.join(tmp.path, 'clip.ja.srt'),
+    ).writeAsStringSync(_srt(truth.map((double t) => t + 2), _ja));
+    // 别的短片的字幕：不收。
+    final math.Random o = math.Random(77);
+    final List<double> other = <double>[];
+    for (double t = 3; t < 88; t += 3 + o.nextDouble() * 3) {
+      other.add(t);
+    }
+    File(p.join(tmp.path, 'clip.jpn.srt')).writeAsStringSync(_srt(other, _ja));
+    const SubtitleEvidenceCollector collector = SubtitleEvidenceCollector();
+
+    final List<SubtitleEvidenceTrack> tracks = await collector.load(
+      SubtitleEvidenceLoadRequest(
+        videoPath: video,
+        drafts: _drafts(truth),
+        isOwnOutput: (String _) => false,
+        targetLanguage: 'ja',
+      ),
+    );
+    expect(tracks.map((SubtitleEvidenceTrack t) => t.label), <String>[
+      'clip.ja.srt',
+    ]);
+    expect(
+      tracks.single.cues.first.startMs,
+      closeTo(truth.first * 1000, 100),
+      reason: '收进来的外挂轨按识别稿改写到了本片的时间轴',
+    );
   });
 }
