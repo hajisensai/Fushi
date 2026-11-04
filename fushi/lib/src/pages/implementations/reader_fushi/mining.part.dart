@@ -266,11 +266,13 @@ extension _ReaderMining on _ReaderFushiPageState {
           ? BaseAnkiRepository.sanitizeTitleTag(displayDocumentTitle)
           : null,
       collectionTag: collectionTag,
-      // 「制卡所在字符数」标签（`chars_12345`）：这张卡是在全书第几个学习字处制的。
-      // 与书名/合集名标签同构——真值源（章内锚 + 每章累计前缀）在本页 state 里，
-      // fushi_anki 拿不到，故在这里算好字面量注入。开关关闭或锚点取不到时为 null。
-      charPositionTag: appModel.autoAddCharPositionToTags
-          ? BaseAnkiRepository.formatCharPositionTag(snapshotCharPosition)
+      // 制卡位置（反馈 MhQHXQI-sB：写进 MiscInfo，不再打 `chars_12345` 标签）：这张卡
+      // 是在全书第几个学习字处制的。真值源（章内锚 + 每章累计前缀）在本页 state 里、
+      // 文案要跟界面语言，fushi_anki 都拿不到，故在这里格式化好注入；落哪个字段由
+      // AnkiNoteComposer.charPositionTargetField 判。开关关闭或锚点取不到时为 null。
+      charPositionText:
+          appModel.autoAddCharPositionToTags && snapshotCharPosition != null
+          ? t.anki_char_position_misc_info_value(position: snapshotCharPosition)
           : null,
     );
 
@@ -289,9 +291,9 @@ extension _ReaderMining on _ReaderFushiPageState {
   ///    时句锚为空，退到「读到这一页」的粒度。
   ///
   /// 两级都不可用（JS 拿不到 caret、章字数还没算完、章号越界）→ [absoluteCharOffsetOf]
-  /// 返回 -1 → 这里返回 `null`，[BaseAnkiRepository.buildNoteTags] 不追加标签。
-  /// **绝不退化成 0**：那会把一整批卡片假标成「书首第 0 字」，比没有标签更坏——用户按
-  /// 标签排序时看不出这些数字是编的。
+  /// 返回 -1 → 这里返回 `null`，MiscInfo 里不写位置。
+  /// **绝不退化成 0**：那会把一整批卡片假标成「书首第 0 字」，比不写更坏——用户看不出
+  /// 这些数字是编的。
   int? _miningCharPosition() {
     final ({int offset, int length})? sentenceRange =
         _cachedSentenceRange ??

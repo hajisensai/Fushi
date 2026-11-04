@@ -242,6 +242,49 @@ void main() {
     expect(find.text('other'), findsNothing);
   });
 
+  testWidgets('Ctrl+F on a task card focuses the task search field '
+      '(feedback zOC-x2RB4w)', (WidgetTester tester) async {
+    _viewport(tester, const Size(1000, 900));
+    final FocusNode cardFocus = FocusNode(debugLabel: 'task-card');
+    addTearDown(cardFocus.dispose);
+    final DownloadTaskEntry base = _task('alpha');
+    final DownloadTaskEntry focusable = DownloadTaskEntry(
+      id: base.id,
+      title: base.title,
+      kind: base.kind,
+      status: base.status,
+      builder: (BuildContext context) =>
+          Focus(focusNode: cardFocus, child: base.builder(context)),
+    );
+    await tester.pumpWidget(_host(<DownloadTaskEntry>[focusable]));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('download-task-search')),
+      'alp',
+    );
+    await tester.pumpAndSettle();
+    cardFocus.requestFocus();
+    await tester.pump();
+    final EditableText field = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('download-task-search')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(field.focusNode.hasFocus, isFalse);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(field.focusNode.hasFocus, isTrue);
+    expect(
+      field.controller.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 3),
+    );
+  });
+
   testWidgets('collapsed collection still shows overall progress', (
     WidgetTester tester,
   ) async {

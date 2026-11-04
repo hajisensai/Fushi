@@ -11,6 +11,7 @@ final class VideoRemoteSessionCore {
     this.historyLimit = 128,
     this.requestLimit = 128,
     this.onLeaseExpired,
+    this.onOwnerChanged,
   }) : assert(historyLimit > 0),
        assert(requestLimit > 0),
        assert(leaseDuration > Duration.zero),
@@ -21,6 +22,10 @@ final class VideoRemoteSessionCore {
   final int historyLimit;
   final int requestLimit;
   final Future<void> Function(String peerId)? onLeaseExpired;
+
+  /// [owner] changed between "no controller" and "a controller" (acquired,
+  /// released or lease expired). Not called by [dispose].
+  final void Function()? onOwnerChanged;
   String? _owner;
   DateTime? _expires;
   Timer? _leaseTimer;
@@ -51,7 +56,8 @@ final class VideoRemoteSessionCore {
     if (_owner != null && _owner != peerId) {
       throw const VideoRemoteException(409, 'controller_busy');
     }
-    if (_owner == null) {
+    final bool gained = _owner == null;
+    if (gained) {
       _leaseGeneration++;
     }
     _owner = peerId;
@@ -60,6 +66,9 @@ final class VideoRemoteSessionCore {
     _leaseTimer = Timer(leaseDuration, () {
       unawaited(_expireIfNeeded());
     });
+    if (gained) {
+      onOwnerChanged?.call();
+    }
   }
 
   Future<void> assertOwner(String peerId) async {
@@ -83,6 +92,7 @@ final class VideoRemoteSessionCore {
     _leaseGeneration++;
     _expires = null;
     _leaseTimer?.cancel();
+    onOwnerChanged?.call();
     final Future<void> cleanup = Future<void>.sync(() async {
       await onLeaseExpired?.call(expired);
       publish('controllerDisconnected', <String, Object?>{});
@@ -103,6 +113,7 @@ final class VideoRemoteSessionCore {
     _leaseGeneration++;
     _expires = null;
     _leaseTimer?.cancel();
+    onOwnerChanged?.call();
     publish('controllerDisconnected', <String, Object?>{});
   }
 

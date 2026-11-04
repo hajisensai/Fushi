@@ -17,6 +17,7 @@ class SubtitleDraftCue {
     this.speaker,
     this.alternatives = const <String>[],
     this.tokenTiming,
+    this.origin,
   });
 
   factory SubtitleDraftCue.fromJson(Map<String, Object?> json) {
@@ -32,6 +33,7 @@ class SubtitleDraftCue {
           if (a is String) a,
       ],
       tokenTiming: timing is Map ? _timingFromJson(timing) : null,
+      origin: json['origin'] as String?,
     );
   }
 
@@ -49,6 +51,10 @@ class SubtitleDraftCue {
   /// 文本，偏移相对 [startMs]）；校对改过文字后只能当切点参考。
   final AsrCueTokenTiming? tokenTiming;
 
+  /// 不是识别出来的行时记来源：缺口补齐插入的证据行是证据轨标签，歌词补齐替换的
+  /// 行是 `lyrics:<来源>`。null = 识别稿。
+  final String? origin;
+
   SubtitleDraftCue copyWith({
     int? startMs,
     int? endMs,
@@ -56,6 +62,7 @@ class SubtitleDraftCue {
     String? speaker,
     List<String>? alternatives,
     AsrCueTokenTiming? tokenTiming,
+    String? origin,
   }) => SubtitleDraftCue(
     startMs: startMs ?? this.startMs,
     endMs: endMs ?? this.endMs,
@@ -63,6 +70,7 @@ class SubtitleDraftCue {
     speaker: speaker ?? this.speaker,
     alternatives: alternatives ?? this.alternatives,
     tokenTiming: tokenTiming ?? this.tokenTiming,
+    origin: origin ?? this.origin,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -71,6 +79,7 @@ class SubtitleDraftCue {
     'text': text,
     if (speaker != null) 'speaker': speaker,
     if (alternatives.isNotEmpty) 'alternatives': alternatives,
+    if (origin != null) 'origin': origin,
     if (tokenTiming != null)
       'tokenTiming': <String, Object?>{
         'tokens': tokenTiming!.tokens,

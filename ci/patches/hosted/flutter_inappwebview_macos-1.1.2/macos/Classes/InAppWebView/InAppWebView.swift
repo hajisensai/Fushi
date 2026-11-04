@@ -24,6 +24,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
     var inAppBrowserDelegate: InAppBrowserDelegate?
     var channelDelegate: WebViewChannelDelegate?
     var settings: InAppWebViewSettings?
+    /// Fushi patch (BUG-4013): identifier of the shared content rule list
+    /// attached to this WebView (see FushiContentRuleLists.swift).
+    var fushiContentRuleListIdentifier: String?
     var findInteractionController: FindInteractionController?
     var webMessageChannels: [String:WebMessageChannel] = [:]
     var webMessageListeners: [WebMessageListener] = []
@@ -718,21 +721,28 @@ public class InAppWebView: WKWebView, WKUIDelegate,
             }
         }
         
-        if #available(macOS 10.13, *), newSettingsMap["contentBlockers"] != nil {
+        // Fushi patch (BUG-4013): a reference to the shared rule list is only
+        // (re)attached when it changed; no re-parse / re-compile per setSettings.
+        if #available(macOS 10.13, *), newSettingsMap["contentBlockers"] != nil,
+           !applyFushiContentRuleList(newSettings.contentBlockers, completion: {}) {
             configuration.userContentController.removeAllContentRuleLists()
             let contentBlockers = newSettings.contentBlockers
-            if contentBlockers.count > 0 {
+            // Fushi patch (BUG-4013): no force-unwrap of the IUO default store
+            // or of the compiled list; a nil either way means no blockers.
+            if contentBlockers.count > 0, let store = FushiContentRuleLists.defaultStore() {
                 do {
                     let jsonData = try JSONSerialization.data(withJSONObject: contentBlockers, options: [])
                     let blockRules = String(data: jsonData, encoding: .utf8)
-                    WKContentRuleListStore.default().compileContentRuleList(
+                    store.compileContentRuleList(
                         forIdentifier: "ContentBlockingRules",
                         encodedContentRuleList: blockRules) { (contentRuleList, error) in
                             if let error = error {
                                 print(error.localizedDescription)
                                 return
                             }
-                            self.configuration.userContentController.add(contentRuleList!)
+                            if let contentRuleList = contentRuleList {
+                                self.configuration.userContentController.add(contentRuleList)
+                            }
                     }
                 } catch {
                     print(error.localizedDescription)

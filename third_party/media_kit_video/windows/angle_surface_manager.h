@@ -48,9 +48,10 @@ class ANGLESurfaceManager {
 
   void SetSize(int32_t width, int32_t height);
 
+  // Renders one libmpv frame and publishes it into the shared texture
+  // (|handle()|) before releasing |mutex_|. FUSHI FORK (BUG-3888): there is no
+  // |Read()| any more — Flutter's raster thread must never wait for libmpv.
   void Draw(std::function<void()> callback);
-
-  void Read();
 
   void MakeCurrent(bool value);
 

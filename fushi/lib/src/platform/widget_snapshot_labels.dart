@@ -97,6 +97,12 @@ WidgetSnapshotLabels buildWidgetLabels() {
     'onDeckNoServers': t.widget_label_on_deck_no_servers,
     'onDeckEmpty': t.widget_label_on_deck_empty,
     'onDeckOff': t.widget_label_on_deck_off,
+    // Apple 小组件
+    'continueEmpty': t.widget_label_continue_empty,
+    'streakDays': t.widget_label_streak_days,
+    'lookupHint': t.widget_label_lookup_hint,
+    'lookupCamera': t.widget_label_lookup_camera,
+    'lookupClipboard': t.widget_label_lookup_clipboard,
   });
 }
 

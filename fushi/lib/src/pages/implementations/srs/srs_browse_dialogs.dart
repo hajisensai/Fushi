@@ -1,4 +1,4 @@
-/// 浏览页的对话框与小件：搜索帮助、排序选择、批量菜单、行状态文字。
+/// 浏览页的对话框与小件：搜索帮助、排序选择、批量菜单、行状态文字、旗标选择。
 library;
 
 import 'package:fushi_engine/srs/srs_browse.dart';
@@ -58,10 +58,12 @@ String srsBrowseSortLabel(SrsBrowseSort sort) => switch (sort.column) {
   SrsBrowseSortColumn.modified => t.srs_browse_sort_modified,
   SrsBrowseSortColumn.interval => t.srs_browse_sort_interval,
   SrsBrowseSortColumn.difficulty => t.srs_browse_sort_difficulty,
+  SrsBrowseSortColumn.retention => t.srs_browse_sort_retention,
   SrsBrowseSortColumn.reps => t.srs_browse_sort_reps,
   SrsBrowseSortColumn.lapses => t.srs_browse_sort_lapses,
   SrsBrowseSortColumn.deck => t.srs_key_deck,
   SrsBrowseSortColumn.noteType => t.srs_note_type,
+  SrsBrowseSortColumn.source => t.srs_browse_view_sources,
 };
 
 /// 选排序列；选「指定字段」时接着选字段。返回 null = 取消。方向沿用 [current]。
@@ -154,7 +156,13 @@ List<(String, String)> srsBrowseSearchHelpRows() => <(String, String)>[
     'prop:ivl>=10   prop:due<=1   prop:lapses>3   prop:d>0.8',
     t.srs_browse_help_prop,
   ),
+  ('prop:r<0.7   prop:r>=0.9', t.srs_browse_help_retention),
   ('added:7   edited:7', t.srs_browse_help_days),
+  ('rated:1   rated:7:1', t.srs_browse_help_rated),
+  ('has:audio   -has:image', t.srs_browse_help_has),
+  ('is:emptyfield', t.srs_browse_help_emptyfield),
+  ('is:dupe', t.srs_browse_help_dupe),
+  ('src:none   src:book   src:video', t.srs_browse_help_src),
   ('a b   a or b   -a   (a or b) c', t.srs_browse_help_logic),
   ('"a b"', t.srs_browse_help_quote),
 ];

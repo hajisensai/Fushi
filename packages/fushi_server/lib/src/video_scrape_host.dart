@@ -45,8 +45,11 @@ class ServerVideoScrape {
         VideoSourceScrapeGlobalConfig.fromPreferences(
           prefs,
           resolvedTmdbApiKey: resolveServerTmdbApiKey(snapshot, prefs),
-          // 无头服务端没有界面语言，资料语言来自 `metadata_locale` 配置项。
+          // 无头服务端没有界面语言，资料语言来自 `metadata_locale` 配置项——
+          // 那是管理员显式配的语言，偏好留空时也按它刮，不跟随作品原语言
+          // （BUG-4056 只改 app 的「留空」语义）。
           uiLocaleTag: snapshot.metadataLocale,
+          emptyLocaleFollowsWorkOriginal: false,
         );
     this.scrapeConfig = scrapeConfig;
     final VideoSourceScrapeCoordinator coordinator = coordinatorFactory != null

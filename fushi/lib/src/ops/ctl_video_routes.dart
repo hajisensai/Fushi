@@ -13,8 +13,12 @@ import 'package:fushi_engine/media/external_provider.dart'
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart'
     show preferredNyaaSearchQueries;
+import 'package:fushi_engine/media/torrent/video_release_language.dart'
+    show releaseHasBurnedInSubtitles, releaseIsDubOnly;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
     show VideoResourceCandidate, VideoResourceSearchRequest;
+import 'package:fushi_engine/media/video/acquisition/video_work_content_language.dart'
+    show resolveVideoWorkContentLanguage;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi_engine/media/video/download/video_discovery_selection.dart'
@@ -104,6 +108,46 @@ final CtlVideoCandidateCache<VideoDiscoveryItem> _discoveredWorks =
 /// 入队时要的正是搜索那一刻的身份（资源搜索页提交时同样带当时的 media）。
 final CtlVideoCandidateCache<_ResourceEntry> _discoveredResources =
     CtlVideoCandidateCache<_ResourceEntry>('vr');
+
+/// AI 资源搜索里一条候选的学习适用性（反馈 nvXct9coD5）。
+typedef VideoResourceLearningFit = ({
+  VideoResourceCandidate resource,
+
+  /// 标题明写字幕烧进画面（硬字幕 / 内嵌），且烧的不是作品自己的语言。
+  bool burnedInSubtitles,
+
+  /// 标题明写只有配音（没写保留原音轨）。
+  bool dubOnly,
+});
+
+/// 给 AI 的资源列表按学习适用性标注并排序：硬字幕 / 只有配音的发布排到最后（组内保持
+/// 索引原顺序），不剔除——用户明说要也能选。判据与资源选择页「只要原语言」过滤同一对
+/// 函数（[releaseHasBurnedInSubtitles] / [releaseIsDubOnly]，BUG-3066），[workLanguage]
+/// 是作品原语言码，判不出时传 null（按外语作品判）。
+///
+/// 此前路由只回标题 / 体积 / 做种数，全靠模型读标题自己判断，「简日内嵌」这种硬字幕
+/// 资源被当成同等候选推荐给学习者。
+List<VideoResourceLearningFit> rankVideoResourcesForLearning(
+  List<VideoResourceCandidate> items, {
+  String? workLanguage,
+}) {
+  final List<VideoResourceLearningFit> fits = <VideoResourceLearningFit>[
+    for (final VideoResourceCandidate r in items)
+      (
+        resource: r,
+        burnedInSubtitles: releaseHasBurnedInSubtitles(
+          r.title,
+          workLanguage: workLanguage,
+        ),
+        dubOnly: releaseIsDubOnly(r.title, workLanguage: workLanguage),
+      ),
+  ];
+  bool unfit(VideoResourceLearningFit f) => f.burnedInSubtitles || f.dubOnly;
+  return <VideoResourceLearningFit>[
+    ...fits.where((VideoResourceLearningFit f) => !unfit(f)),
+    ...fits.where(unfit),
+  ];
+}
 
 typedef _ResourceEntry = ({
   VideoMediaReference media,
@@ -670,18 +714,25 @@ class _VideoCtl {
         appModel.videoResourceRegistry ??
         (throw const CtlFailure.rejected('资源索引还没就绪（浏览 › 下载 里配置下载后端）'));
     VideoDiscoveryItem item = found;
-    if (!item.reference.hasLatinTitle) {
-      final VideoDiscoveryService service = _openDiscovery();
-      try {
-        final VideoMetadataWork? work = await service.loadDetails(item);
+    // 详情同时给出作品原语言（判硬字幕 / 配音用，与资源搜索页同一个
+    // resolveVideoWorkContentLanguage），所以不论有没有拉丁标题都取一次。
+    VideoMetadataWork? work;
+    final VideoDiscoveryService service = _openDiscovery();
+    try {
+      work = await service.loadDetails(item);
+      if (!item.reference.hasLatinTitle) {
         item = item.withReference(item.reference.withWorkLatinTitles(work));
-      } on Object {
-        // 补齐失败照原条目搜（资源搜索页同一姿态）。
-      } finally {
-        service.close();
       }
+    } on Object {
+      // 补齐失败照原条目搜（资源搜索页同一姿态）；语言退回按标题文字判。
+    } finally {
+      service.close();
     }
     final VideoMediaReference media = item.reference;
+    final String? workLanguage = resolveVideoWorkContentLanguage(
+      work,
+      media,
+    ).code;
     final String query =
         call.optString('q') ??
         preferredNyaaSearchQueries(
@@ -694,8 +745,17 @@ class _VideoCtl {
       'workId': id,
       'title': media.title,
       'query': query,
+      'workLanguage': workLanguage,
       'resources': <Map<String, Object?>>[
-        for (final VideoResourceCandidate r in result.items)
+        for (final (
+              resource: VideoResourceCandidate r,
+              :bool burnedInSubtitles,
+              :bool dubOnly,
+            )
+            in rankVideoResourcesForLearning(
+              result.items,
+              workLanguage: workLanguage,
+            ))
           <String, Object?>{
             'id': _discoveredResources.put((
               media: media,
@@ -710,6 +770,8 @@ class _VideoCtl {
             'group': r.releaseGroup,
             'trusted': r.trusted,
             'published': r.publishedAt?.toIso8601String(),
+            'burnedInSubtitles': burnedInSubtitles,
+            'dubOnly': dubOnly,
           },
       ],
       'failures': _failuresJson(result.failures),

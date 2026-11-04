@@ -789,18 +789,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
       if (!installed || !mounted) return;
       final GalHookSessionController session =
           widget.sessionController ?? GalHookSessionController.instance;
-      // TODO-2936：应用语言级 / 「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
-      // 语言取该游戏卡上用户指定的 `galgames.language`——hook 文本没有任何语言声明
-      // 可读，这是唯一来源；没指定就是 null，语言级整级跳过。**不能**像上面的词头
-      // 语言那样回落全局默认：那会把所有未标注游戏一起路由到同一个 Profile。
-      unawaited(
-        ref
-            .read(profileViewModelProvider.notifier)
-            .autoApplyBinding(
-              languageTag: game.language,
-              mediaType: ProfileMediaKind.game,
-              restoreFallback: true,
-            ),
+      // 反馈 kEFPY4cuKZ：先取好配置视图模型——会话在启动 / 附着之后才进入，那时页面可能已卸载。
+      final ProfileViewModel profileVm = ref.read(
+        profileViewModelProvider.notifier,
       );
       final GalHookLaunchResult result = await session.launchGame(
         game.exePath,
@@ -813,6 +804,16 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
         ),
         // BUG-2047：内容语言是转区 auto 判定的人工真值，entry 本来就在手上。
         contentLanguage: game.language,
+      );
+      // 反馈 kEFPY4cuKZ：游戏会话期间作品级配置（查词词典）按绑定生效（语言级 / 「游戏」
+      // 媒体类型），不切 App 的激活配置；会话结束（游戏退出 / 停止捕获）即撤层。
+      unawaited(
+        profileVm.enterWorkSession(
+          owner: session,
+          languageTag: game.language,
+          mediaType: ProfileMediaKind.game,
+          endWhen: (listenable: session, ended: () => !session.state.isActive),
+        ),
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和

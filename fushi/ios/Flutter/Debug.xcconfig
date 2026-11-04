@@ -10,3 +10,10 @@
 // APNs 环境（Runner/Runner.entitlements 的 aps-environment）。只在接入了那份 entitlements
 // 时才起作用，默认不接入，见那个文件的注释。
 FUSHI_APS_ENVIRONMENT = development
+
+// 主屏小组件 / Live Activity 与主 app 共用的 App Group（Runner/Runner.entitlements、
+// FushiWidgets/FushiWidgets.entitlements、两边 Info.plist 的 FushiAppGroup）。
+FUSHI_APP_GROUP = group.app.fushi.reader
+// 模拟器不按描述文件核对 entitlements，可以无条件接入（小组件要 App Group 才读得到快照）；
+// 真机只由 CI 按描述文件实际带了哪些 entitlement 接入，见 Runner.entitlements 的注释。
+CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*] = Runner/Runner.entitlements

@@ -1209,6 +1209,20 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         ),
       );
 
+  /// 删掉 [profileId] 快照里的一行设置（[category] + [key]）。
+  Future<int> deleteProfileSetting(
+    int profileId,
+    String category,
+    String key,
+  ) =>
+      (delete(profileSettings)..where(
+            (t) =>
+                t.profileId.equals(profileId) &
+                t.category.equals(category) &
+                t.key.equals(key),
+          ))
+          .go();
+
   Future<void> replaceProfileSettings(
     int profileId,
     List<ProfileSettingsCompanion> settings,

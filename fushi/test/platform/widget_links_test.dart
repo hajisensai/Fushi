@@ -57,6 +57,17 @@ void main() {
       expect(WidgetLink.tryParse('fushi://widget/continue'), isNull);
     });
 
+    test('camera and clipboard lookup (Apple widgets / Control Center)', () {
+      expect(
+        WidgetLink.tryParse('fushi://widget/camera_lookup'),
+        isA<WidgetCameraLookupLink>(),
+      );
+      expect(
+        WidgetLink.tryParse('fushi://widget/CLIPBOARD_LOOKUP'),
+        isA<WidgetClipboardLookupLink>(),
+      );
+    });
+
     test('srs, stats and open', () {
       expect(WidgetLink.tryParse('fushi://widget/srs'), isA<WidgetSrsLink>());
       expect(
@@ -320,6 +331,8 @@ void main() {
     late int musicPlayerOpens;
     late int downloadsOpens;
     late List<WidgetServerLink> serverOpens;
+    late int cameraOpens;
+    late int clipboardOpens;
     late bool itemExists;
     late bool srsHasWork;
     late ExternalMediaNavigation media;
@@ -335,6 +348,8 @@ void main() {
       musicPlayerOpens = 0;
       downloadsOpens = 0;
       serverOpens = <WidgetServerLink>[];
+      cameraOpens = 0;
+      clipboardOpens = 0;
       itemExists = true;
       srsHasWork = true;
     });
@@ -383,10 +398,43 @@ void main() {
         },
         isContinueItemOpen: isContinueItemOpen,
         media: media,
+        openCameraLookup: () => cameraOpens++,
+        openClipboardLookup: () => clipboardOpens++,
       ).whenComplete(() => done = true);
       await tester.pumpAndSettle();
       expect(done, isTrue, reason: 'runWidgetLink must finish, not hang');
     }
+
+    testWidgets('camera / clipboard lookup land on the dictionary tab', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      await run(tester, const WidgetCameraLookupLink());
+      await run(tester, const WidgetClipboardLookupLink());
+      expect(selectedTabs, <HomeTab>[
+        HomeTab.dictionaries,
+        HomeTab.dictionaries,
+      ]);
+      expect(cameraOpens, 1);
+      expect(clipboardOpens, 1);
+    });
+
+    testWidgets('camera / clipboard lookup do nothing with lookup off', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      const ModuleVisibility noLookup = ModuleVisibility(<ModuleId>{
+        ModuleId.books,
+      });
+      await run(tester, const WidgetCameraLookupLink(), visibility: noLookup);
+      await run(
+        tester,
+        const WidgetClipboardLookupLink(),
+        visibility: noLookup,
+      );
+      expect(selectedTabs, isEmpty);
+      expect(cameraOpens + clipboardOpens, 0);
+    });
 
     testWidgets('open does nothing', (WidgetTester tester) async {
       await pumpHome(tester);

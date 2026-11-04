@@ -256,15 +256,6 @@ HomeTab homeTabForVisualIndex({
   return tabs[logicalIndex];
 }
 
-/// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
-/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
-/// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
-/// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
-/// 非 macOS 平台不读写它，纯 no-op。
-final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
-  HomeTab.home,
-);
-
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
 /// 根侧栏共用，保证三处标签/图标一致。MD3 侧栏另读 [AdaptiveNavItem.railShape]
 /// （各模块的专属形状）与 [peek]（悬停速览卡，只有 HomePage 的 rail 传）。
@@ -988,8 +979,27 @@ class _HomePageState extends BasePageState<HomePage>
     _revealDictionary(carryingPendingLookup: true, focus: focus);
   }
 
+  /// 本页所在路由：登记成主导航外壳，路由层页面背景跟着当前 tab 换模块背景
+  /// （反馈 DYI1IOZxSM，见 [setFushiPageRouteModuleShell]）。
+  Route<Object?>? _backdropShellRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Route<Object?>? route = ModalRoute.of(context);
+    if (route == _backdropShellRoute) return;
+    if (_backdropShellRoute case final Route<Object?> previous) {
+      setFushiPageRouteModuleShell(previous, false);
+    }
+    _backdropShellRoute = route;
+    if (route != null) setFushiPageRouteModuleShell(route, true);
+  }
+
   @override
   void dispose() {
+    if (_backdropShellRoute case final Route<Object?> route) {
+      setFushiPageRouteModuleShell(route, false);
+    }
     externalBrowseRequest.removeListener(_onExternalBrowseRequest);
     _webMineBackground?.dispose();
     _appleChrome.dispose();

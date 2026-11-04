@@ -1,6 +1,6 @@
 /// 浏览页的卡片预览：正面 / 背面用复习页同一个卡面视图（[srsCardFaceBuilderProvider]）渲染，
 /// 带上一张 / 下一张 / 编辑。宽屏嵌在列表右侧（[SrsBrowsePreview]），窄屏单独压一页
-/// （[SrsBrowsePreviewPage]）。
+/// （浏览页检查器 / 详情页里同一个组件）。
 ///
 /// 键盘（预览页焦点作用域内）：Enter / 空格 = 翻面（与复习页同一个约定：空格只在卡面视图里
 /// 有「翻面」含义，全局的裸空格中和挂在根上、本页更近先消费）；← / → = 上一张 / 下一张。
@@ -9,28 +9,22 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show CardSourceLink;
-import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
-import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
-import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 预览区收到的动作（键盘 / 键盘桥 / 按钮统一走这里）。
 enum SrsPreviewCommand { flip, previous, next, undo, escape }
@@ -88,6 +82,7 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
   SrsCardDetail? _detail;
   SrsRenderedCard? _rendered;
   bool _loading = true;
+  Object? _error;
   int _loadSeq = 0;
   SrsCardLookupController? _ownLookup;
 
@@ -127,18 +122,31 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
     }
   }
 
+  /// 载入一张卡。换卡期间旧卡面留在原位（上面压一条进度条），不把卡面换成加载视图：卡面是平台视图，
+  /// 从树上摘下再挂回去就是销毁重建 WebView（首帧前整块空白）。出错显示错误态，不永远转圈。
   Future<void> _load() async {
     final int seq = ++_loadSeq;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
-    final SrsCardDetail? detail = await store.cardDetail(widget.cardId);
-    final SrsRenderedCard? rendered = await store.renderCard(widget.cardId);
-    if (!mounted || seq != _loadSeq) return;
-    setState(() {
-      _detail = detail;
-      _rendered = rendered;
-      _loading = false;
-    });
+    if (!_loading) setState(() => _loading = true);
+    try {
+      final SrsDbStore? store = await readSrsStore(ref);
+      if (store == null) throw StateError('srs store unavailable');
+      final SrsCardDetail? detail = await store.cardDetail(widget.cardId);
+      final SrsRenderedCard? rendered = await store.renderCard(widget.cardId);
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _detail = detail;
+        _rendered = rendered;
+        _error = null;
+        _loading = false;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowsePreview.load', e, stack);
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -146,17 +154,9 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsCardDetail? detail = _detail;
     final SrsRenderedCard? rendered = _rendered;
-    final Widget face;
-    if (_loading) {
-      face = const FushiLoadingView();
-    } else if (detail == null || rendered == null) {
-      face = Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.searchOff,
-          message: t.srs_browse_empty,
-        ),
-      );
-    } else {
+    final bool hasFace = detail != null && rendered != null;
+    Widget? face;
+    if (detail != null && rendered != null) {
       final String language = ref.read(appProvider).defaultContentLanguage;
       final SrsCardFace cardFace = SrsCardFace(
         cardId: detail.card.id,
@@ -186,6 +186,29 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
             )
           : ref.watch(srsCardFaceBuilderProvider)(context, cardFace);
     }
+    // 压在卡面上的一层：首次载入转圈 / 出错 / 没有这张卡。卡面始终是 Stack 第 0 格（结构恒定）。
+    final Widget? overlay;
+    if (_error != null) {
+      overlay = Center(
+        child: FushiPlaceholderMessage(
+          key: const ValueKey<String>('srs-browse-preview-error'),
+          icon: FushiIcons.error,
+          tone: FushiPlaceholderTone.error,
+          message: t.error_load_failed,
+        ),
+      );
+    } else if (!hasFace) {
+      overlay = _loading
+          ? const FushiLoadingView()
+          : Center(
+              child: FushiPlaceholderMessage(
+                icon: FushiIcons.searchOff,
+                message: t.srs_browse_empty,
+              ),
+            );
+    } else {
+      overlay = null;
+    }
     final String caption = <String>[
       if (widget.position != null) widget.position!,
       if (detail != null && detail.deckName.isNotEmpty) detail.deckName,
@@ -195,28 +218,24 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
       key: const ValueKey<String>('srs-browse-preview-surface'),
       padding: EdgeInsets.zero,
       pressScale: false,
-      child: AnimatedSwitcher(
-        duration: fushiMotionDuration(context, FushiMotion.short),
-        switchInCurve: FushiMotion.enter,
-        switchOutCurve: FushiMotion.exit,
-        // 卡面查词：与复习页同一套（点词 / 悬停 → 弹窗，弹窗里继续嵌套查）。
-        child: SrsCardLookupHost(
-          controller: _lookup,
-          onClosed: widget.onLookupClosed,
-          child: KeyedSubtree(key: ValueKey<bool>(_loading), child: face),
+      // 卡面查词：与复习页同一套（点词 / 悬停 → 弹窗，弹窗里继续嵌套查）。
+      child: SrsCardLookupHost(
+        controller: _lookup,
+        onClosed: widget.onLookupClosed,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            face ?? const SizedBox.shrink(),
+            if (_loading && hasFace)
+              const Align(
+                alignment: Alignment.topCenter,
+                child: IgnorePointer(child: LinearProgressIndicator()),
+              ),
+            ?overlay,
+          ],
         ),
       ),
     );
-    final Widget? captionText = caption.isEmpty
-        ? null
-        : Text(
-            caption,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.fushiType.labelLarge.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          );
     final Widget prev = FushiIconButton(
       key: const ValueKey<String>('srs-preview-prev'),
       icon: FushiIcons.chevronLeft,
@@ -253,25 +272,36 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
     return LayoutBuilder(
       key: const ValueKey<String>('srs-browse-preview'),
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (srsIsShortLandscape(constraints)) {
-          // 横屏矮区域：按钮竖排在卡面右侧，把高度全留给卡面。
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: tokens.spacing.gap * 1.5,
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (captionText != null)
-                      Padding(
-                        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-                        child: captionText,
+        // 横屏矮区域：按钮竖排在卡面右侧，把高度全留给卡面。只换按钮区：卡面所在子树的形状不随横竖
+        // 切换（同一个 Flex 的同一格），平台视图不重挂。
+        final bool rail = srsIsShortLandscape(constraints);
+        return Flex(
+          direction: rail ? Axis.horizontal : Axis.vertical,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: tokens.spacing.gap * 1.5,
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: caption.isEmpty ? 0 : tokens.spacing.gap,
+                    ),
+                    child: Text(
+                      caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.fushiType.labelLarge.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                    Expanded(child: surface),
-                  ],
-                ),
+                    ),
+                  ),
+                  Expanded(child: surface),
+                ],
               ),
+            ),
+            if (rail)
               SizedBox(
                 key: const ValueKey<String>('srs-browse-preview-rail'),
                 width: 136,
@@ -288,205 +318,20 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
                     flip,
                   ],
                 ),
+              )
+            else
+              Row(
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  prev,
+                  Expanded(child: flip),
+                  next,
+                  edit,
+                ],
               ),
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (captionText != null)
-              Padding(
-                padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-                child: captionText,
-              ),
-            Expanded(child: surface),
-            SizedBox(height: tokens.spacing.gap * 1.5),
-            Row(
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                prev,
-                Expanded(child: flip),
-                next,
-                edit,
-              ],
-            ),
           ],
         );
       },
-    );
-  }
-}
-
-/// 窄屏的预览页：在浏览结果 [result] 的行之间左右切换（行按页向原生会话取）。返回时浏览页刷新（编辑会写库；
-/// 没写就直接复用同一份结果）。
-class SrsBrowsePreviewPage extends ConsumerStatefulWidget {
-  const SrsBrowsePreviewPage({
-    super.key,
-    required this.result,
-    required this.initialIndex,
-  });
-
-  final SrsBrowseResult result;
-  final int initialIndex;
-
-  @override
-  ConsumerState<SrsBrowsePreviewPage> createState() =>
-      _SrsBrowsePreviewPageState();
-}
-
-class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
-  final FocusNode _focusNode = FocusNode(debugLabel: 'srs-browse-preview');
-  late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
-    node: _focusNode,
-    canOwn: (FocusReclaimCause cause) =>
-        mounted && (ModalRoute.of(context)?.isCurrent ?? false),
-  );
-  late int _index = widget.initialIndex.clamp(0, widget.result.length - 1);
-  final SrsCardLookupController _lookupCtl = SrsCardLookupController();
-  bool _showAnswer = false;
-  int _revision = 0;
-
-  @override
-  void dispose() {
-    _lookupCtl.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _go(int delta) {
-    final int next = _index + delta;
-    if (next < 0 || next >= widget.result.length) return;
-    setState(() {
-      _index = next;
-      _showAnswer = false;
-    });
-    if (widget.result.rowAt(next) == null) {
-      srsRunLogged('SrsBrowsePreview.rows', () async {
-        await widget.result.ensure(next, next + 1);
-        if (mounted) setState(() {});
-      });
-    }
-  }
-
-  void _command(SrsPreviewCommand c) {
-    switch (c) {
-      case SrsPreviewCommand.flip:
-        setState(() => _showAnswer = !_showAnswer);
-      case SrsPreviewCommand.previous:
-        _go(-1);
-      case SrsPreviewCommand.next:
-        _go(1);
-      case SrsPreviewCommand.undo:
-        break;
-      case SrsPreviewCommand.escape:
-        unawaited(Navigator.of(context).maybePop());
-    }
-  }
-
-  Future<void> _edit() async {
-    final SrsBrowseRow? row = widget.result.rowAt(_index);
-    if (row == null) return;
-    final String noteId = row.noteId;
-    await _focusOwnership.guardOverlay(
-      () =>
-          srsPushPage<void>(context, (_) => SrsNoteEditorPage(noteId: noteId)),
-    );
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    setState(() => _revision++);
-  }
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    final KeyEventResult? lookup = _lookupCtl.guardKey(event);
-    if (lookup != null) return lookup;
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed ||
-        HardwareKeyboard.instance.isAltPressed) {
-      return KeyEventResult.ignored;
-    }
-    final LogicalKeyboardKey key = event.logicalKey;
-    final SrsPreviewCommand? c = switch (key) {
-      LogicalKeyboardKey.space ||
-      LogicalKeyboardKey.enter ||
-      LogicalKeyboardKey.numpadEnter ||
-      LogicalKeyboardKey.gameButtonA => SrsPreviewCommand.flip,
-      LogicalKeyboardKey.arrowLeft => SrsPreviewCommand.previous,
-      LogicalKeyboardKey.arrowRight => SrsPreviewCommand.next,
-      _ => null,
-    };
-    if (c == null) return KeyEventResult.ignored;
-    _command(c);
-    return KeyEventResult.handled;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool apple = isGlassDesign(context);
-    final SrsBrowseRow? item = widget.result.rowAt(_index);
-    final String title = item == null || item.sortText.isEmpty
-        ? t.srs_browse_preview
-        : item.sortText;
-    final NavigatorState? navigator = Navigator.maybeOf(context);
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _onKey,
-      child: FushiPageScaffold(
-        title: title,
-        header: apple
-            ? null
-            : Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                ),
-                child: FushiFloatingTopBar(
-                  title: title,
-                  subtitle: '${_index + 1} / ${widget.result.length}',
-                  leading: <FushiToolbarItem>[
-                    if (navigator != null && navigator.canPop())
-                      FushiToolbarItem(
-                        icon: FushiIcons.back,
-                        label: MaterialLocalizations.of(
-                          context,
-                        ).backButtonTooltip,
-                        onPressed: () => unawaited(navigator.maybePop()),
-                      ),
-                  ],
-                ),
-              ),
-        body: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.gap,
-            ),
-            child: item == null
-                ? const FushiLoadingView()
-                : SrsBrowsePreview(
-                    cardId: item.cardId,
-                    revision: _revision,
-                    showAnswer: _showAnswer,
-                    position: '${_index + 1} / ${widget.result.length}',
-                    hasPrevious: _index > 0,
-                    hasNext: _index < widget.result.length - 1,
-                    onCommand: _command,
-                    onEdit: () => srsRunLogged('SrsBrowsePreview.edit', _edit),
-                    lookup: _lookupCtl,
-                    onLookupClosed: () => _focusOwnership.reclaim(
-                      FocusReclaimCause.overlayClosed,
-                    ),
-                  ),
-          ),
-        ),
-      ),
     );
   }
 }

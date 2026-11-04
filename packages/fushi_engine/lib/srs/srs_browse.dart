@@ -5,6 +5,7 @@
 /// findNotes / findCards / 查重用同一个会话（[srsBrowseContext]）。
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
@@ -29,6 +30,12 @@ String srsFieldContainsQuery(String field, String text) {
 /// （`*` `_`）、反斜杠与引号转义成字面量；层级分隔符 `::` 在引号内照原样保留。
 String srsDeckQuery(String deckFullName) =>
     'deck:"${deckFullName.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
+
+/// 「只看这个出处」的查询：[sourceKey] 为 null（没有出处的那一组）是 `src:none`，否则 `src:"键"`（引号、反斜杠、
+/// 通配符转义成字面量；内核按键整值相等比较）。键见 [SrsBrowseRow.sourceKey]。
+String srsSourceQuery(String? sourceKey) => sourceKey == null
+    ? 'src:none'
+    : 'src:"${sourceKey.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
 
 /// 列表模式：一行一张卡 / 一行一条笔记。
 enum SrsBrowseMode { cards, notes }
@@ -56,6 +63,9 @@ enum SrsBrowseSortColumn {
   /// FSRS 难度。
   difficulty,
 
+  /// 保持率（此刻的 FSRS 可提取度，[SrsBrowseRow.retention]；没有的排最后）。笔记模式取该笔记各卡的平均。
+  retention,
+
   /// 复习次数。
   reps,
 
@@ -67,6 +77,9 @@ enum SrsBrowseSortColumn {
 
   /// 笔记类型名。
   noteType,
+
+  /// 出处键（[SrsBrowseRow.sourceKey]；没有出处的排最后）：表格按出处分组用。
+  source,
 }
 
 /// 排序设置。
@@ -137,6 +150,19 @@ class SrsBrowseRow {
     required this.tags,
     required this.reps,
     required this.lapses,
+    required this.intervalDays,
+    required this.difficulty,
+    required this.retention,
+    required this.addedAt,
+    required this.modifiedAt,
+    required this.lastReviewAt,
+    required this.fieldPreview,
+    required this.fieldPreviewNames,
+    required this.imageRef,
+    required this.audioRef,
+    required this.sourceKey,
+    required this.sourceKind,
+    required this.sourceData,
   });
 
   final String cardId;
@@ -169,6 +195,49 @@ class SrsBrowseRow {
   final int reps;
   final int lapses;
 
+  /// 主卡当前间隔（天）；新卡 null（学习中的卡为 0）。
+  final int? intervalDays;
+
+  /// 主卡的 FSRS 难度（内核口径 1..10；显示成百分比用 `(d - 1) / 9`）；没有记忆状态 null。
+  final double? difficulty;
+
+  /// 主卡此刻的可提取度（0..1）：FSRS 遗忘曲线（卡所在牌组排程配置的记忆算法与参数）× 距上次复习的天数。
+  /// 新卡、没有稳定度或没有上次复习时刻 null。按 RWKV 回忆率排队的复习卡也给 FSRS 的值。
+  final double? retention;
+
+  /// 笔记添加时刻（毫秒）。
+  final int addedAt;
+
+  /// 笔记内容最后改动时刻（毫秒；各寄存器生效记录的最大物理时刻，不早于 [addedAt]，不含作答）。
+  final int modifiedAt;
+
+  /// 主卡上次复习时刻（毫秒）；没复习过 null。
+  final int? lastReviewAt;
+
+  /// 排序字段（第一个字段）之外、按字段顺序的前两个非空字段的纯文本（去 HTML 与 `[sound:…]`、trim，各截到
+  /// 120 个字符）；不足两个就少给。
+  final List<String> fieldPreview;
+
+  /// [fieldPreview] 每一项来自的字段名（同长度、同顺序）：表格原地改这两列时按名字写回。
+  final List<String> fieldPreviewNames;
+
+  /// 笔记字段里（按字段顺序）第一个 `<img src>` / `[sound:…]` 的媒体文件名；没有 null。
+  final String? imageRef;
+  final String? audioRef;
+
+  /// 出处分组键：`<kind>:<作品身份>`（不含章节 / 位置），身份取不到时退回 `<kind>`（规则见
+  /// docs/specs/2026-11-04-srs-browser-redesign.md §2.1）；没有出处 null。「只看这一作」用 [srsSourceQuery]。
+  final String? sourceKey;
+
+  /// 出处种类（`SrsSourceKind` 的值）；没有出处 null。
+  final String? sourceKind;
+
+  /// 出处原始 JSON（`SrsSourceRef.toJson()` 的形状：`{kind, ...data}`）；没有出处 null。用 [source] 解析。
+  final String? sourceData;
+
+  /// [sourceData] 解析成的出处（解析不了 null）。
+  SrsSourceRef? get source => _decodeSource(sourceData);
+
   bool get isNew => queue == SrsQueue.newCard;
   bool get gone => queue == null;
 }
@@ -193,6 +262,56 @@ class SrsBrowseTargets {
   final Set<String> deckIds;
 
   bool get isEmpty => cardIds.isEmpty && noteIds.isEmpty;
+}
+
+SrsSourceRef? _decodeSource(String? raw) {
+  if (raw == null) return null;
+  try {
+    return SrsSourceRef.fromJson(jsonDecode(raw));
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 出处视图的一组（[SrsBrowseResult.sources]）：结果里出处键相同的行。
+class SrsBrowseSourceGroup {
+  const SrsBrowseSourceGroup({
+    required this.key,
+    required this.kind,
+    required this.data,
+    required this.count,
+    required this.due,
+    required this.preview,
+    required this.latestAddedAt,
+    required this.deckIds,
+  });
+
+  /// 出处键（[SrsBrowseRow.sourceKey]）；null = 没有出处的那一组（总在最后）。
+  final String? key;
+
+  /// 出处种类；没有出处的组 null。
+  final String? kind;
+
+  /// 组里最近添加的那条笔记的出处原始 JSON（取标题 / 封面用；同一作品各卡的章节 / 位置不同，这里只是代表）。
+  final String? data;
+
+  /// 组里的行数（卡片模式 = 卡数，笔记模式 = 笔记数）。
+  final int count;
+
+  /// 组里今天到期的行数（该行有一张卡到期就算，口径同 `is:due`）。
+  final int due;
+
+  /// 组里前几行（≤ 8）在结果里的行号（升序，可直接 [SrsBrowseResult.rows] / [SrsBrowseResult.rowAt]）。
+  final List<int> preview;
+
+  /// 组里笔记添加时刻的最大值（毫秒）；组按它降序排。
+  final int latestAddedAt;
+
+  /// 组里各行的卡所在的牌组 id（去重，首次出现的顺序）：「只复习这一作」据此定复习的牌组范围。
+  final List<String> deckIds;
+
+  /// [data] 解析成的出处（解析不了 / 没有 null）。
+  SrsSourceRef? get source => _decodeSource(data);
 }
 
 /// 浏览结果一次取的行数。
@@ -271,6 +390,10 @@ class SrsBrowseResult {
   /// [rowIds] 那几行的批量操作目标（按列表顺序展开）。
   Future<SrsBrowseTargets> targets(Iterable<String> rowIds) =>
       _session._targets(gen, rowIds.toList());
+
+  /// 按出处分组（出处视图）：一条命令算完整份结果。组按 [SrsBrowseSourceGroup.latestAddedAt] 降序，没有出处的
+  /// 一组（`key == null`）放最后；空结果是空表。
+  Future<List<SrsBrowseSourceGroup>> sources() => _session._sources(gen);
 }
 
 /// 结果已被原生会话换掉（又查询过一次、或会话重建了）：重新查询。
@@ -339,7 +462,38 @@ Future<Map<String, Object?>> srsBrowseContext(
       tree.effectiveDeckNameOf(missing, fallback: store.defaultDeckId),
       recall(missing),
     ],
+    ...srsBrowseModels(tree, store.defaultDeckId),
     if (instant != null) 'instant': instant.toList(),
+  };
+}
+
+/// 保持率（`retention` 列 / `prop:r`）用的 FSRS 模型：`models` = `[[记忆算法, 参数]…]`（去重；参数空 = 内核用该
+/// 算法的默认参数），`deckModels` = 牌组 id → 下标，不在里面的牌组用 `fallbackModel`（归默认牌组，同排程配置）。
+/// 不进语料结构：参数变了不重建语料。
+Map<String, Object?> srsBrowseModels(SrsDeckTree tree, String defaultDeckId) {
+  final List<Object?> models = <Object?>[];
+  final Map<String, int> index = <String, int>{};
+  int modelOf(String deckId) {
+    final String id = tree.effectiveDeckOf(deckId, fallback: defaultDeckId);
+    final SrsSchedulingConfig config = tree[id] == null
+        ? const SrsSchedulingConfig()
+        : tree.schedulingConfig(id);
+    final SrsAlgorithm alg = config.algorithm.memoryAlgorithm;
+    final List<double> params = config.params.length == alg.paramCount
+        ? config.params
+        : const <double>[];
+    return index.putIfAbsent('${alg.wire}|${params.join(',')}', () {
+      models.add(<Object?>[alg.wire, params]);
+      return models.length - 1;
+    });
+  }
+
+  return <String, Object?>{
+    'deckModels': <String, Object?>{
+      for (final SrsDeckView d in tree.decks) d.id: modelOf(d.id),
+    },
+    'fallbackModel': modelOf('\u0000'),
+    'models': models,
   };
 }
 
@@ -417,6 +571,35 @@ class SrsBrowseSession {
     );
   }
 
+  /// 一次算几条查询各自的命中数（快捷视图 / 积木面板的「将筛出 N 张」）：与 [query] 同口径（同一会话、同一
+  /// 上下文），[mode] 为笔记模式时数笔记。解析不了 / 不支持的查询、求值报语法错误的那一条给 -1，不影响其它；
+  /// 内核不可用照样抛。不留查询结果（不挤掉 [query] 的结果）。
+  Future<List<int>> counts(
+    List<String> queries, {
+    SrsBrowseMode mode = SrsBrowseMode.cards,
+  }) async {
+    if (queries.isEmpty) return const <int>[];
+    final List<Object?> nodes = <Object?>[];
+    for (final String q in queries) {
+      try {
+        final SrsSearchNode node = parseAnkiSearch(q);
+        nodes.add(node is SrsSearchAll ? null : srsSearchNodeJson(node));
+      } on SrsSearchUnsupported catch (e) {
+        if (e.kind == SrsSearchErrorKind.unavailable) rethrow;
+        nodes.add(false);
+      }
+    }
+    final Map<String, Object?> r = (await _command(<String, Object?>{
+      'op': 'browse_counts',
+      ...await srsBrowseContext(store),
+      'nodes': nodes,
+      'mode': mode.name,
+    })).map;
+    return <int>[
+      for (final Object? c in r['counts']! as List<Object?>) c! as int,
+    ];
+  }
+
   /// 注销本页面对原生会话的持有；没有别的持有者（AnkiConnect、别的页面）时会话随之释放（字段文本可达几百 MB），
   /// 之后再 [query] 会重新建。库已经关了（页面 dispose 时发出的
   /// 关闭排在关库之后）就什么都不用做：会话住在内核里，随内核一起释放了。
@@ -456,17 +639,31 @@ class SrsBrowseSession {
       'to': to,
     });
     final List<Object?> s = r.map['s']! as List<Object?>;
-    final Uint8List bytes = r.files
-        .firstWhere(((String, Uint8List) f) => f.$1 == 'rows.i64')
-        .$2;
-    final ByteData ints = ByteData.sublistView(bytes);
-    const int width = 7;
+    Uint8List file(String name) =>
+        r.files.firstWhere(((String, Uint8List) f) => f.$1 == name).$2;
+    final ByteData ints = ByteData.sublistView(file('rows.i64'));
+    final ByteData floats = ByteData.sublistView(file('rows.f64'));
+    const int width = 11;
+    const int fwidth = 2;
     const int none = -0x8000000000000000;
     return <SrsBrowseRow>[
       for (int i = 0; i < s.length; i++)
         () {
           final List<Object?> t = s[i]! as List<Object?>;
           int at(int k) => ints.getInt64((i * width + k) * 8, Endian.little);
+          int? opt(int k) {
+            final int v = at(k);
+            return v == none ? null : v;
+          }
+
+          double? real(int k) {
+            final double v = floats.getFloat64(
+              (i * fwidth + k) * 8,
+              Endian.little,
+            );
+            return v.isNaN ? null : v;
+          }
+
           final int q = at(0);
           final int due = at(1);
           final int bits = at(3);
@@ -490,6 +687,51 @@ class SrsBrowseSession {
             ],
             reps: at(5),
             lapses: at(6),
+            intervalDays: opt(7),
+            addedAt: at(8),
+            modifiedAt: at(9),
+            lastReviewAt: opt(10),
+            difficulty: real(0),
+            retention: real(1),
+            fieldPreview: <String>[
+              for (final Object? f in t[8]! as List<Object?>) f! as String,
+            ],
+            fieldPreviewNames: <String>[
+              for (final Object? f in t[14]! as List<Object?>) f! as String,
+            ],
+            imageRef: t[9] as String?,
+            audioRef: t[10] as String?,
+            sourceKey: t[11] as String?,
+            sourceKind: t[12] as String?,
+            sourceData: t[13] as String?,
+          );
+        }(),
+    ];
+  }
+
+  Future<List<SrsBrowseSourceGroup>> _sources(int gen) async {
+    final Map<String, Object?> r = (await _command(<String, Object?>{
+      'op': 'browse_sources',
+      'gen': gen,
+    })).map;
+    return <SrsBrowseSourceGroup>[
+      for (final Object? g in r['groups']! as List<Object?>)
+        () {
+          final Map<String, Object?> m = (g! as Map).cast<String, Object?>();
+          return SrsBrowseSourceGroup(
+            key: m['key'] as String?,
+            kind: m['kind'] as String?,
+            data: m['data'] as String?,
+            count: m['count']! as int,
+            due: m['due']! as int,
+            preview: <int>[
+              for (final Object? i in m['preview']! as List<Object?>) i! as int,
+            ],
+            latestAddedAt: m['latestAddedAt']! as int,
+            deckIds: <String>[
+              for (final Object? d in m['decks']! as List<Object?>)
+                d! as String,
+            ],
           );
         }(),
     ];

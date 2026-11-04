@@ -594,7 +594,7 @@ void main() {
       await h.ok('addNote', <String, Object?>{'note': yomitanNote('猫')});
       for (final String q in <String>[
         'prop:ease>2',
-        'rated:1',
+        'resched:1',
         'is:buried-sibling',
       ]) {
         final Map<String, Object?> r = await h.call(
