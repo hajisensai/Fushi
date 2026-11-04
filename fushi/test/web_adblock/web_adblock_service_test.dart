@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
+import 'package:fushi/src/web_adblock/web_content_rule_list.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
 const String _list = '''
@@ -36,10 +37,12 @@ void main() {
     List<Uri> fetched, {
     WebAdblockNetworkMode? mode,
     bool disposeOnTearDown = true,
+    ContentRuleListInstaller? contentRuleLists,
   }) {
     final WebAdblockService s = WebAdblockService(
       dataDir: () => tmp,
       mode: mode ?? WebAdblockNetworkMode.perRequest,
+      contentRuleLists: contentRuleLists ?? _RecordingRuleLists(),
       fetcher: (Uri url, {String? etag, String? lastModified}) async {
         fetched.add(url);
         return AdblockFetchResponse(
@@ -128,17 +131,126 @@ void main() {
     },
   );
 
-  test('content-blocker platforms get filtered WebKit rules', () async {
-    final WebAdblockService s = service(
-      <Uri>[],
-      mode: WebAdblockNetworkMode.contentBlockers,
-    );
+  test(
+    'content-blocker platforms: one rule set goes to native exactly once',
+    () async {
+      final _RecordingRuleLists native = _RecordingRuleLists();
+      final WebAdblockService s = service(
+        <Uri>[],
+        mode: WebAdblockNetworkMode.contentBlockers,
+        contentRuleLists: native,
+      );
+      _selectOnly(tmp, 'easylist');
+      await s.ensureLoaded();
+
+      final String? id = s.contentRuleListIdentifier;
+      expect(id, isNotNull);
+      expect(id, startsWith(kContentRuleListIdentifierPrefix));
+      expect(native.activated, <String>[id!]);
+      expect(native.compiled.keys, <String>[id], reason: '未命中才编译一次');
+      // 原生拿到的是 Rust 导出的 WebKit 规则 JSON 原文，identifier 就是它的内容哈希。
+      final Uint8List json = native.compiled[id]!;
+      expect(contentRuleListIdentifierOf(json), id);
+      final List<Object?> rules =
+          jsonDecode(utf8.decode(json)) as List<Object?>;
+      expect(rules, isNotEmpty);
+      for (final Object? r in rules) {
+        final Object? type =
+            ((r! as Map<String, Object?>)['action']!
+                as Map<String, Object?>)['type'];
+        expect(type, anyOf('block', 'ignore-previous-rules'));
+      }
+
+      // 再同步（含强制联网，列表内容没变）：同一规则集不再下发。
+      await s.ensureLoaded();
+      expect(await s.updateNow(), isTrue);
+      expect(native.activated, <String>[id]);
+      expect(native.compiled, hasLength(1));
+
+      // WebView 只带引用。
+      final WebAdblockWiring w = applyAdblockTo(
+        InAppWebViewSettings(),
+        policy: s,
+        mode: WebAdblockNetworkMode.contentBlockers,
+      );
+      expect(
+        contentRuleListReferencedIdentifier(w.settings.contentBlockers),
+        id,
+      );
+    },
+  );
+
+  test(
+    'next launch reuses the persisted rule list without recompiling',
+    () async {
+      _selectOnly(tmp, 'easylist');
+      final _RecordingRuleLists firstNative = _RecordingRuleLists();
+      final WebAdblockService first = service(
+        <Uri>[],
+        mode: WebAdblockNetworkMode.contentBlockers,
+        contentRuleLists: firstNative,
+        disposeOnTearDown: false,
+      );
+      await first.ensureLoaded();
+      final String id = first.contentRuleListIdentifier!;
+      first.dispose();
+
+      // 原生 store 已有这份（WKContentRuleListStore 跨启动持久化）。
+      final _RecordingRuleLists secondNative = _RecordingRuleLists(
+        stored: <String>{id},
+      );
+      final WebAdblockService second = service(
+        <Uri>[],
+        mode: WebAdblockNetworkMode.contentBlockers,
+        contentRuleLists: secondNative,
+      );
+      await second.ensureLoaded();
+      expect(second.contentRuleListIdentifier, id, reason: '内容寻址：同内容同 id');
+      expect(secondNative.activated, <String>[id]);
+      expect(secondNative.compiled, isEmpty);
+    },
+  );
+
+  test('per-request platforms never touch the native rule list', () async {
+    final _RecordingRuleLists native = _RecordingRuleLists();
+    final WebAdblockService s = service(<Uri>[], contentRuleLists: native);
     _selectOnly(tmp, 'easylist');
     await s.ensureLoaded();
-    expect(s.contentBlockingRules, isNotEmpty);
-    for (final Map<String, Object?> r in s.contentBlockingRules) {
-      final Object? type = (r['action']! as Map<String, Object?>)['type'];
-      expect(type, anyOf('block', 'ignore-previous-rules'));
-    }
+    expect(s.contentRuleListIdentifier, isNull);
+    expect(native.activated, isEmpty);
+    expect(native.compiled, isEmpty);
   });
+
+  test('empty WebKit rule table yields no identifier', () {
+    expect(contentRuleListIdentifierOf(utf8.encode(' [ ]\n')), isNull);
+    expect(
+      contentRuleListIdentifierOf(utf8.encode('[{}]')),
+      startsWith(kContentRuleListIdentifierPrefix),
+    );
+    expect(
+      contentRuleListIdentifierOf(utf8.encode('[{}]')),
+      contentRuleListIdentifierOf(utf8.encode('[{}]')),
+    );
+  });
+}
+
+/// 记录原生规则表调用的假实现；[stored] 是原生 store 里已有的 identifier。
+class _RecordingRuleLists implements ContentRuleListInstaller {
+  _RecordingRuleLists({Set<String>? stored}) : stored = stored ?? <String>{};
+
+  final Set<String> stored;
+  final List<String> activated = <String>[];
+  final Map<String, Uint8List> compiled = <String, Uint8List>{};
+
+  @override
+  Future<bool> activate(String identifier) async {
+    activated.add(identifier);
+    return stored.contains(identifier);
+  }
+
+  @override
+  Future<void> compile(String identifier, Uint8List json) async {
+    compiled[identifier] = json;
+    stored.add(identifier);
+  }
 }

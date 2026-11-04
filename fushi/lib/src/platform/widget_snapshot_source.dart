@@ -68,7 +68,7 @@ import 'package:fushi/src/media/media_source.dart';
 /// 快照里每个封面最多探测的候选数 = 书架上限，封面文件探测只对入选的几条做。
 const int _kCoverProbeLimit = kWidgetShelfLimit;
 
-/// 从 app 状态收集 Android 桌面小组件快照，并在数据变化时推给 [publisher]。
+/// 从 app 状态收集桌面小组件快照（Android / iOS / macOS 同一份），并在数据变化时推给 [publisher]。
 ///
 /// 数据口径尽量与首页 dashboard 一致（同一批 provider / 同一批纯函数）：
 /// - 书 / 漫画「继续」：`fushiBooksProvider` + [isDashboardContinueBook]，

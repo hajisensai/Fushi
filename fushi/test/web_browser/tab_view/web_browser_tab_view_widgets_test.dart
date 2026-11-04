@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -40,7 +41,13 @@ class _RecordingFeature extends WebBrowserFeature {
 
   @override
   void onTabClosed(WebBrowserTab tab) => events.add('${tab.id}:closed');
+
+  @override
+  void onWebViewDisposed(WebBrowserTab tab) =>
+      events.add('${tab.id}:webview-disposed');
 }
+
+class _FakeController extends Fake implements InAppWebViewController {}
 
 class _Host implements WebBrowserTabHost {
   _Host(this.features);
@@ -201,6 +208,48 @@ void main() {
         ),
       );
       expect(feature.events, isEmpty);
+    });
+
+    testWidgets('视图回收（标签页还在）：有控制器时通知插件 WebView 已销毁，标签页摘掉控制器', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingFeature feature = _RecordingFeature();
+      final _Host host = _Host(<WebBrowserFeature>[feature])..activeId = 'a';
+      final WebBrowserTab a = WebBrowserTab(
+        id: 'a',
+        url: Uri.parse('https://a.test/'),
+      );
+      await tester.pumpWidget(
+        _wrap(
+          WebBrowserTabView(
+            key: const ValueKey<String>('a'),
+            tab: a,
+            host: host,
+          ),
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+        ),
+      );
+      await tester.pump();
+      final WebBrowserTabViewState state = tester.state(
+        find.byKey(const ValueKey<String>('a')),
+      );
+      state.debugAttachController(_FakeController());
+      expect(a.controller, isNotNull);
+
+      // 活 WebView 上限回收：视图离树，标签页本身没关。
+      await tester.pumpWidget(
+        _wrap(
+          const SizedBox.shrink(),
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(feature.events, <String>['a:webview-disposed']);
+      expect(a.controller, isNull);
     });
   });
 

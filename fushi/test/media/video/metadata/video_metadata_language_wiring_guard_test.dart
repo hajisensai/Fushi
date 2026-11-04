@@ -51,10 +51,10 @@ void main() {
       );
       expect(
         coordinator,
-        contains('languageOrder: VideoMetadataLanguages(_locale)'),
+        contains('languageOrder: VideoMetadataLanguages(_localeOf(metadata))'),
         reason:
-            '选择端必须显式传本趟 locale 推导出的语言序，'
-            '否则请求回来的图会被另一套语言序重新排一遍',
+            '选择端必须显式传本趟有效 locale（跟随原语言时为作品原语言，BUG-4056）'
+            '推导出的语言序，否则请求回来的图会被另一套语言序重新排一遍',
       );
 
       final String merge = _codeOnly(
@@ -90,15 +90,15 @@ void main() {
       );
     });
 
-    test('设置页的默认值与占位不得写死中文，空值语义是「跟随界面语言」', () {
+    test('设置页的默认值与占位不得写死中文，空值语义是「按作品原语言」（BUG-4056）', () {
       final String settings = _codeOnly(
         'lib/src/settings/settings_schema_video.dart',
       );
       expect(settings, isNot(contains('zh-CN')));
       expect(
         settings,
-        contains('t.video_source_scrape_locale_follow_ui'),
-        reason: '占位文案必须说明空值 = 跟随界面语言',
+        contains('t.video_source_scrape_locale_follow_original'),
+        reason: '占位文案必须说明空值 = 按作品原语言',
       );
       expect(
         settings,

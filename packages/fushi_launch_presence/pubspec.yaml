@@ -1,0 +1,30 @@
+name: fushi_launch_presence
+resolution: workspace
+description: >-
+  Tells Dart whether this Flutter engine was launched with a UI (BUG-4072).
+  Android: a FlutterPlugin + ActivityAware registered on EVERY engine through
+  GeneratedPluginRegistrant, including the headless engine audio_service starts
+  from AudioService.onCreate (system media resumption / media buttons / car
+  browsing) which never passes through MainActivity.configureFlutterEngine.
+  iOS: the same channel is answered from AppDelegate (single implicit engine).
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+  flutter: ">=3.47.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: app.fushi.launchpresence
+        pluginClass: LaunchPresencePlugin
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

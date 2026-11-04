@@ -136,6 +136,7 @@ class HeadlessHost {
       const <String, MangaOcrServiceImpl>{};
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
+  ServerAgentHistoryPruner? _agentHistoryPruner;
   ServerAnkiLanding? _anki;
   ServerVideoScrape? _videoScrape;
 
@@ -291,6 +292,12 @@ class HeadlessHost {
     );
     await downloads.start();
     _downloads = downloads;
+
+    // AI 助手存档（远端会话 + 操作记录）按保留期清：服务端常驻，起来清一次、之后定时清。
+    final ServerAgentHistoryPruner agentHistoryPruner =
+        ServerAgentHistoryPruner(db);
+    _agentHistoryPruner = agentHistoryPruner;
+    await agentHistoryPruner.start();
 
     // 词典引擎：原生库随包（bin/../lib/libfushidicts_ffi.so）或 FUSHI_DICTS_LIB 指定；
     // 加载不了只留痕，服务端照常起，词典退回纯存储中转。
@@ -591,6 +598,8 @@ class HeadlessHost {
   /// 停下载管线（含订阅检查，等在途的一轮落地）再关刮削：正常停机与启动半途失败
   /// 共用。
   Future<void> _stopPipelines() async {
+    _agentHistoryPruner?.stop();
+    _agentHistoryPruner = null;
     final ServerDownloadHost? downloads = _downloads;
     _downloads = null;
     await downloads?.stop();

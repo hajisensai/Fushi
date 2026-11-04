@@ -1,22 +1,20 @@
 // applyAdblockTo 接线 helper 的测试。判定本身在 Rust（见 web_adblock_service_test 与 Rust 单测）；
 // 这里用记录调用的假策略钉接线自己的职责：平台模式、哪些请求交给策略（顶层导航 / 非 http 不交）、
 // 来源与类型怎么推断、页面原有拦截器先跑、cosmetic 两个 JS handler 把 Rust 的 JSON 原样回给 JS、
-// contentBlockers 的插件对象映射。
+// contentBlockers 平台只放一条指向共享规则表的引用（BUG-4013）。
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
+import 'package:fushi/src/web_adblock/web_content_rule_list.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
 class _FakePolicy implements WebAdblockPolicy {
-  _FakePolicy({
-    this.active = true,
-    this.rules = const <Map<String, Object?>>[],
-  });
+  _FakePolicy({this.active = true, this.ruleList});
 
   bool active;
-  final List<Map<String, Object?>> rules;
+  final String? ruleList;
   final List<({String url, String? source, Uri? page, AdblockRequestType type})>
   checks =
       <({String url, String? source, Uri? page, AdblockRequestType type})>[];
@@ -53,7 +51,7 @@ class _FakePolicy implements WebAdblockPolicy {
   }
 
   @override
-  List<Map<String, Object?>> get contentBlockingRules => rules;
+  String? get contentRuleListIdentifier => ruleList;
 }
 
 WebResourceRequest _req(
@@ -206,61 +204,59 @@ void main() {
 
   group('content-blocker platforms', () {
     // 插件的 ContentBlockerActionType 按 defaultTargetPlatform 生成原生值（静态 final，
-    // 首次访问时固化）：flutter_test 默认 android 没有 IGNORE_PREVIOUS_RULES，按真实取用
-    // 这条路径的平台（iOS）跑。
+    // 首次访问时固化）：按真实取用这条路径的平台（iOS）跑。
     setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.iOS);
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    // Rust 核心（adblock::content_blocking::export）筛选后的形状。
-    final List<Map<String, Object?>> rules = <Map<String, Object?>>[
-      <String, Object?>{
-        'trigger': <String, Object?>{'url-filter': 'ads\\.example\\.com'},
-        'action': <String, Object?>{'type': 'block'},
-      },
-      <String, Object?>{
-        'trigger': <String, Object?>{
-          'url-filter': 'img\\.test',
-          'resource-type': <String>['image'],
-          'load-type': <String>['third-party'],
-        },
-        'action': <String, Object?>{'type': 'block'},
-      },
-      <String, Object?>{
-        'trigger': <String, Object?>{'url-filter': 'ok\\.test'},
-        'action': <String, Object?>{'type': 'ignore-previous-rules'},
-      },
-    ];
+    const String ruleList = 'fushi-adblock-0123abcd';
 
-    test('maps the Rust-filtered rules one to one', () {
+    test('carries exactly one reference to the shared rule list', () {
       final WebAdblockWiring w = applyAdblockTo(
         InAppWebViewSettings(),
-        policy: _FakePolicy(rules: rules),
+        policy: _FakePolicy(ruleList: ruleList),
         mode: WebAdblockNetworkMode.contentBlockers,
       );
       expect(w.settings.useShouldInterceptRequest, isNot(isTrue));
       expect(w.shouldInterceptRequest, isNull);
       final List<ContentBlocker> cbs = w.settings.contentBlockers!;
-      expect(cbs, hasLength(3));
-      expect(cbs[0].trigger.urlFilter, 'ads\\.example\\.com');
-      expect(cbs[1].trigger.resourceType, <ContentBlockerTriggerResourceType>[
-        ContentBlockerTriggerResourceType.IMAGE,
-      ]);
-      expect(cbs[1].trigger.loadType, <ContentBlockerTriggerLoadType>[
-        ContentBlockerTriggerLoadType.THIRD_PARTY,
-      ]);
+      expect(cbs, hasLength(1), reason: '不再逐条下发规则（BUG-4013）');
       expect(
-        cbs.last.action.type,
-        ContentBlockerActionType.IGNORE_PREVIOUS_RULES,
+        cbs.single.trigger.urlFilter,
+        '$kContentRuleListReferencePrefix$ruleList',
+      );
+      expect(contentRuleListReferencedIdentifier(cbs), ruleList);
+      // 原生按 toMap 后的 trigger.url-filter 识别引用。
+      final Map<String, Map<String, dynamic>> wire = cbs.single.toMap();
+      expect(
+        wire['trigger']!['url-filter'],
+        '$kContentRuleListReferencePrefix$ruleList',
       );
     });
 
-    test('inactive policy adds no content blockers', () {
+    test('reference survives settings.copy() (setSettings re-sends it)', () {
       final WebAdblockWiring w = applyAdblockTo(
         InAppWebViewSettings(),
-        policy: _FakePolicy(active: false, rules: rules),
+        policy: _FakePolicy(ruleList: ruleList),
         mode: WebAdblockNetworkMode.contentBlockers,
       );
-      expect(w.settings.contentBlockers ?? const <ContentBlocker>[], isEmpty);
+      expect(
+        contentRuleListReferencedIdentifier(w.settings.copy().contentBlockers),
+        ruleList,
+      );
+    });
+
+    test('inactive policy or no rule list adds no content blockers', () {
+      for (final _FakePolicy p in <_FakePolicy>[
+        _FakePolicy(active: false, ruleList: ruleList),
+        _FakePolicy(),
+      ]) {
+        final WebAdblockWiring w = applyAdblockTo(
+          InAppWebViewSettings(),
+          policy: p,
+          mode: WebAdblockNetworkMode.contentBlockers,
+        );
+        expect(w.settings.contentBlockers ?? const <ContentBlocker>[], isEmpty);
+      }
     });
   });
 

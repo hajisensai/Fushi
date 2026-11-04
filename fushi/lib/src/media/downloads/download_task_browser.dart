@@ -25,6 +25,8 @@ import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_task_clear_completed_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart'
+    show FushiSearchFocusKeys;
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
@@ -810,6 +812,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           fieldKey: const ValueKey<String>('download-task-search'),
           controller: _search,
           focusNode: _searchFocus,
+          escapeBehavior: FushiSearchEscapeBehavior.clearThenUnfocus,
           hintText: t.download_task_search_hint,
           onQueryChanged: (_) => setState(() {}),
           onSubmitted: (_) => setState(() {}),
@@ -1133,47 +1136,53 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       ],
     );
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool wide =
-            constraints.maxWidth >= kDownloadBrowserWideBreakpoint;
-        final Widget main = wide
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(child: withFab(scroller(withControls: false))),
-                  // 右侧窗格：汇总 hero + 状态分段 + 搜索 + 工具，独立滚动。
-                  SizedBox(
-                    width: 360,
-                    child: SingleChildScrollView(
-                      key: const ValueKey<String>('download-task-side-pane'),
-                      // 主列表才是分区的主滚动视图（顶栏收起 / 回顶跟它走）；侧窗格
-                      // 若也继承 PrimaryScrollController，宽屏下一个控制器挂两个
-                      // position，Scrollbar 断言。
-                      primary: false,
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        chromeInset + tokens.spacing.gap,
-                        page,
-                        page + listBottomInset,
+    // Ctrl+F（librarySearch）聚焦任务搜索框：浏览页 / 下载面板外面没有
+    // FushiHeaderSearchKeys，不在这里接就没人处理（反馈 zOC-x2RB4w）。
+    return FushiSearchFocusKeys(
+      focusNode: _searchFocus,
+      controller: _search,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool wide =
+              constraints.maxWidth >= kDownloadBrowserWideBreakpoint;
+          final Widget main = wide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: withFab(scroller(withControls: false))),
+                    // 右侧窗格：汇总 hero + 状态分段 + 搜索 + 工具，独立滚动。
+                    SizedBox(
+                      width: 360,
+                      child: SingleChildScrollView(
+                        key: const ValueKey<String>('download-task-side-pane'),
+                        // 主列表才是分区的主滚动视图（顶栏收起 / 回顶跟它走）；侧窗格
+                        // 若也继承 PrimaryScrollController，宽屏下一个控制器挂两个
+                        // position，Scrollbar 断言。
+                        primary: false,
+                        padding: EdgeInsets.fromLTRB(
+                          0,
+                          chromeInset + tokens.spacing.gap,
+                          page,
+                          page + listBottomInset,
+                        ),
+                        child: _buildControls(visible, rendered),
                       ),
-                      child: _buildControls(visible, rendered),
                     ),
-                  ),
-                ],
-              )
-            : withFab(scroller(withControls: true));
-        return Column(
-          children: <Widget>[
-            Expanded(child: main),
-            if (_selectionMode)
-              Padding(
-                padding: EdgeInsets.only(bottom: bottomInset),
-                child: _buildBatchBar(rendered),
-              ),
-          ],
-        );
-      },
+                  ],
+                )
+              : withFab(scroller(withControls: true));
+          return Column(
+            children: <Widget>[
+              Expanded(child: main),
+              if (_selectionMode)
+                Padding(
+                  padding: EdgeInsets.only(bottom: bottomInset),
+                  child: _buildBatchBar(rendered),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

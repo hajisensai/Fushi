@@ -1090,19 +1090,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         state.boundWindow?.hwnd == picked.hwnd) {
       return;
     }
-    // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与附着并行）。
-    // 这条入口附着的是用户挑的任意外部窗口，不对应任何游戏库条目，拿不到内容语言
-    // ——**故意不传** languageTag（而不是拿全局默认凑一个值），语言级整级跳过。
-    // 附着的窗口不是一个「打开的条目」：只应用命中的绑定，无绑定时不回退。
-    unawaited(
-      ref
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            mediaType: ProfileMediaKind.game,
-            restoreFallback: false,
-          ),
+    // 反馈 kEFPY4cuKZ：先取好配置视图模型——会话在启动 / 附着之后才进入，那时页面可能已卸载。
+    final ProfileViewModel profileVm = ref.read(
+      profileViewModelProvider.notifier,
     );
     await _session.startAttachedCapture(picked);
+    // 反馈 kEFPY4cuKZ：游戏会话期间作品级配置（查词词典）按绑定生效（语言级 / 「游戏」
+    // 媒体类型），不切 App 的激活配置；会话结束（游戏退出 / 停止捕获）即撤层。
+    unawaited(
+      profileVm.enterWorkSession(
+        owner: _session,
+        mediaType: ProfileMediaKind.game,
+        endWhen: (listenable: _session, ended: () => !_session.state.isActive),
+      ),
+    );
   }
 
   /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、
@@ -1148,17 +1149,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _appModel.galgameRepo.games,
         executable,
       );
-      // TODO-2936：应用语言级 / 「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
-      // 语言跟着上面按 exe 路径回查到的库条目走；库里没有这个 exe（临时选的文件）
-      // → null → 语言级整级跳过，与回查不到启动参数时同一条退路。
-      unawaited(
-        ref
-            .read(profileViewModelProvider.notifier)
-            .autoApplyBinding(
-              languageTag: known?.language,
-              mediaType: ProfileMediaKind.game,
-              restoreFallback: true,
-            ),
+      // 反馈 kEFPY4cuKZ：先取好配置视图模型——会话在启动 / 附着之后才进入，那时页面可能已卸载。
+      final ProfileViewModel profileVm = ref.read(
+        profileViewModelProvider.notifier,
       );
       final GalHookLaunchResult result = await _session.launchGame(
         executable,
@@ -1172,6 +1165,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
         // BUG-2047：内容语言是转区 auto 判定的人工真值；库里没有 → null = 只靠自动证据。
         contentLanguage: known?.language,
+      );
+      // 反馈 kEFPY4cuKZ：游戏会话期间作品级配置（查词词典）按绑定生效（语言级 / 「游戏」
+      // 媒体类型），不切 App 的激活配置；会话结束（游戏退出 / 停止捕获）即撤层。
+      unawaited(
+        profileVm.enterWorkSession(
+          owner: _session,
+          languageTag: known?.language,
+          mediaType: ProfileMediaKind.game,
+          endWhen: (
+            listenable: _session,
+            ended: () => !_session.state.isActive,
+          ),
+        ),
       );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`

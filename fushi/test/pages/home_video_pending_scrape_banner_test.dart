@@ -46,6 +46,10 @@ class _IdleRunner implements VideoSourceScrapeRunner {
   }) async => SourceScrapeReport(sourceIds: <int>[source.id]);
 }
 
+/// 这些用例的视频路径都是虚构的（`D:/A/...`）：存在性判据一律当「在」，
+/// BUG-4055 的「文件都不在就不进清单」在 video_library_scrape_sweep_test.dart 里测。
+Future<bool> _allMembersPresent(String _) async => true;
+
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -130,6 +134,7 @@ void main() {
   makePort() {
     final VideoLibraryScrapeSweep sweep = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       isEnabled: () => false,
     );
@@ -405,6 +410,7 @@ void main() {
     );
     final VideoLibraryScrapeSweep sweep = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       isEnabled: () => false,
     );

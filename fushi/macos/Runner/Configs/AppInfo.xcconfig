@@ -18,3 +18,8 @@ PRODUCT_COPYRIGHT = Copyright © 2026 Fushi. All rights reserved.
 FUSHIDICTS_SOURCE_DIR = $(PROJECT_DIR)/../../native/fushidicts
 FUSHIDICTS_BUILD_DIR = $(PROJECT_DIR)/Flutter/ephemeral/fushidicts/$(CONFIGURATION)
 FUSHIDICTS_DYLIB_NAME = libfushidicts_ffi.dylib
+
+// 主屏 / 通知中心小组件与主 app 共用的 App Group（macOS 组名要带 Team ID 前缀；本地 /
+// ad-hoc 构建前缀为空）。CI 的 Developer ID 重签按 APPLE_TEAM_ID 展开，见
+// tool/apple/macos_widgets_sign.sh。运行时以签进去的值为准（FushiAppGroup.identifier）。
+FUSHI_APP_GROUP = $(TeamIdentifierPrefix)app.fushi.reader

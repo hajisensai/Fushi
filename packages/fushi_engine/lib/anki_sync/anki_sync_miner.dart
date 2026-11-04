@@ -159,7 +159,6 @@ class AnkiSyncMiner with AnkiNoteComposer {
           nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
           titleTag: context.bookTitleTag,
           collectionTag: context.collectionTag,
-          charPositionTag: context.charPositionTag,
         ),
         media: media,
         allowDuplicate: allowDuplicate,

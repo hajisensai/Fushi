@@ -45,6 +45,13 @@ class _FakePrefs implements VideoSubtitleGeneratePrefs {
   @override
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value) async =>
       segmenter = value;
+
+  /// 「开始」前问联网搜索抓页确认的次数。
+  int webSearchAsks = 0;
+
+  @override
+  Future<void> ensureWebSearchPageFetchDecided(BuildContext context) async =>
+      webSearchAsks++;
 }
 
 /// 模型没下好、而另一处（之前那次弹层 / 设置页）正在下（kZZmXQBv7E）。
@@ -245,6 +252,36 @@ void main() {
       findsOneWidget,
     );
     expect(startPressed(tester), isNotNull);
+  });
+
+  testWidgets('开 AI 时「开始」先过联网搜索抓页确认', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider();
+    final _FakePrefs ai = _FakePrefs(proofread: true, consented: true);
+    await pumpSheet(tester, buildService(), ai);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+    );
+    // 任务跑起来后进度条一直在动，不能 pumpAndSettle。
+    await tester.pump();
+    expect(ai.webSearchAsks, 1);
+  });
+
+  testWidgets('不开 AI：「开始」不问联网搜索抓页确认', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakePrefs plain = _FakePrefs();
+    await pumpSheet(tester, buildService(), plain);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+    );
+    await tester.pump();
+    expect(plain.webSearchAsks, 0);
   });
 
   testWidgets('首次开启 AI 校对先说明会发送什么：取消则不开，同意才开并记下', (WidgetTester tester) async {

@@ -9,6 +9,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_address_bar.dart';
@@ -211,8 +213,14 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
-  /// 直接进浏览页（空地址 = 只恢复上次的标签页，见 [FushiWebBrowserPage.initialUrl]）。
+  /// 进浏览页：地址栏有内容时与回车同一套判据打开它（[_openAddress]），
+  /// 空地址才只恢复上次的标签页（见 [FushiWebBrowserPage.initialUrl]）。
   Future<void> _enterBrowser() async {
+    final String input = _address.text.trim();
+    if (input.isNotEmpty) {
+      _openAddress(input);
+      return;
+    }
     _addressFocus.unfocus();
     await Navigator.of(context).push<void>(fushiWebBrowserRoute(context, ''));
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
@@ -374,6 +382,29 @@ class _FushiWebBrowserHomePageState
       onClear: _address.clear,
       onChanged: (String _) {},
       onSubmitted: _openAddress,
+      // 「进入浏览器」是地址栏的尾部动作（iCf7dQzT-t）：有内容时打开它，空时
+      // 只恢复上次的标签页（[_enterBrowser]）。MD3 是 tonal 圆钮（与词典页
+      // 搜索栏尾部钮同形），Apple / 墨水屏不铺底。
+      trailing: <Widget>[_buildEnterButton(context)],
+    );
+  }
+
+  Widget _buildEnterButton(BuildContext context) {
+    final bool plain = isGlassDesign(context) || isEinkTheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return FushiPressScale(
+      child: FushiIconButton(
+        key: const ValueKey<String>('web-browser-enter'),
+        icon: FushiIcons.tab,
+        tooltip: t.web_browser_enter,
+        backgroundColor: plain ? null : cs.secondaryContainer,
+        enabledColor: plain ? null : cs.onSecondaryContainer,
+        constraints: plain
+            ? null
+            : const BoxConstraints.tightFor(width: 40, height: 40),
+        padTouchTarget: true,
+        onTap: () => unawaited(_enterBrowser()),
+      ),
     );
   }
 
@@ -392,21 +423,6 @@ class _FushiWebBrowserHomePageState
         SliverPadding(
           padding: EdgeInsets.fromLTRB(page, top + tokens.spacing.gap, page, 0),
           sliver: SliverToBoxAdapter(child: _buildAddressBar(context)),
-        ),
-        // 不输地址也能进浏览页：恢复上次的标签页，没有就开新标签页。
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 0),
-          sliver: SliverToBoxAdapter(
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('web-browser-enter'),
-                onPressed: () => unawaited(_enterBrowser()),
-                icon: const FushiIcon(FushiIcons.tab),
-                label: Text(t.web_browser_enter),
-              ),
-            ),
-          ),
         ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
@@ -818,6 +834,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     super.didChangeDependencies();
     final ModalRoute<Object?>? route = ModalRoute.of(context);
     _studyCoverWatch.attach(route);
+    _playbackCoverWatch.attach(route);
     if (route is PageRoute<Object?> && !identical(route, _observedRoute)) {
       _routeObserver
         ..unsubscribe(this)
@@ -832,6 +849,17 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       if (!mounted) return;
       for (final WebBrowserFeature f in _features) {
         f.onStudyCoverChanged(covered: _studyCoverWatch.covered);
+      }
+    },
+  );
+
+  /// 浏览页被播放页（视频页 / 播放页）盖住 / 露出：转告各功能（页面可见性据此让下面的
+  /// 网页别跟着播，BUG-4084）。回调可能在 build 期间同步触发，只转告、不 setState。
+  late final PlaybackCoverWatch _playbackCoverWatch = PlaybackCoverWatch(
+    onChanged: () {
+      if (!mounted) return;
+      for (final WebBrowserFeature f in _features) {
+        f.onPlaybackCoverChanged(covered: _playbackCoverWatch.covered);
       }
     },
   );
@@ -853,6 +881,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void dispose() {
     if (_observedRoute != null) _routeObserver.unsubscribe(this);
     _studyCoverWatch.dispose();
+    _playbackCoverWatch.dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));

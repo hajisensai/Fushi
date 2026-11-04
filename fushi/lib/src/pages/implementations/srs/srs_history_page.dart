@@ -528,7 +528,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     if (s?.error != null && kdf != null) {
       final String? pass = await showAppDialog<String>(
         context: context,
-        builder: (_) => const _PassphraseDialog(confirm: false),
+        builder: (_) => const SrsPassphraseDialog(confirm: false),
       );
       if (pass == null || !mounted) return;
       await _run('unlock', () async {
@@ -559,7 +559,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     }
     final String? pass = await showAppDialog<String>(
       context: context,
-      builder: (_) => const _PassphraseDialog(confirm: true),
+      builder: (_) => const SrsPassphraseDialog(confirm: true),
     );
     if (pass == null || !mounted) return;
     await _run('encrypt', () async {
@@ -1261,16 +1261,16 @@ class _FolderPurposesDialogState extends State<_FolderPurposesDialog> {
 }
 
 /// 输入口令（[confirm] = 新开加密：输两遍、提示口令丢失的后果）。返回 null = 取消。
-class _PassphraseDialog extends StatefulWidget {
-  const _PassphraseDialog({required this.confirm});
+class SrsPassphraseDialog extends StatefulWidget {
+  const SrsPassphraseDialog({required this.confirm, super.key});
 
   final bool confirm;
 
   @override
-  State<_PassphraseDialog> createState() => _PassphraseDialogState();
+  State<SrsPassphraseDialog> createState() => _SrsPassphraseDialogState();
 }
 
-class _PassphraseDialogState extends State<_PassphraseDialog> {
+class _SrsPassphraseDialogState extends State<SrsPassphraseDialog> {
   final TextEditingController _a = TextEditingController();
   final TextEditingController _b = TextEditingController();
   String? _error;
@@ -1299,6 +1299,10 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiAlertDialog(
+      // 说明很长 + 两个口令框：手机上键盘弹出后可用高度只剩一半，不可滚的内容
+      // 区被压缩溢出、下面的输入框被裁掉（反馈 TfvowyuJ15）。标题与内容一起滚，
+      // 聚焦的输入框由 EditableText 滚进视野；动作固定在底部。
+      scrollable: true,
       icon: const FushiDialogHeroIcon(icon: FushiIcons.lock),
       title: Text(
         widget.confirm

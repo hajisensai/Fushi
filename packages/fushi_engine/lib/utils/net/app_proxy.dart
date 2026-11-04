@@ -123,30 +123,52 @@ void _installManualProxyCredentials(
   final Set<String> attempted = <String>{};
   client.authenticateProxy =
       (String host, int port, String scheme, String? realm) async {
-        if (_resolveProxyDecision(legacyUserProxy).mode != kProxyModeManual) {
-          return false;
-        }
         // 只支持 Basic。塞 Basic 凭据去应付 Digest challenge，findCredentials 永远
         // 匹配不到，同样进无限环。
         if (scheme.toLowerCase() != 'basic') return false;
-        final String username = appUserProxyUsernameReader();
-        if (username.isEmpty) return false;
-        final String? endpoint = normalizeUserProxyHostPort(
-          _resolveProxyDecision(legacyUserProxy).proxy,
-        );
-        if (endpoint == null ||
-            endpoint.toLowerCase() != '$host:$port'.toLowerCase()) {
-          return false;
-        }
+        final ({String username, String password})? credentials =
+            appManualProxyBasicCredentials(
+              host,
+              port,
+              legacyUserProxy: legacyUserProxy,
+            );
+        if (credentials == null) return false;
         if (!attempted.add('$host:$port|$scheme|${realm ?? ''}')) return false;
         client.addProxyCredentials(
           host,
           port,
           realm ?? '',
-          HttpClientBasicCredentials(username, appUserProxyPasswordReader()),
+          HttpClientBasicCredentials(
+            credentials.username,
+            credentials.password,
+          ),
         );
         return true;
       };
+}
+
+/// 手填代理的 Basic 凭据：此刻是手动模式、填了用户名、且 [host]:[port] 正是手填的那个
+/// 代理时返回；否则 null（自动 / 直连模式、没填用户名、问的是别的代理）。
+///
+/// [HttpClient] 经 `authenticateProxy` 用它；自己发 `CONNECT` 建隧道的调用方（联网搜索
+/// 抓页按已校验地址建连，`web_search.dart`）也用它，凭据判据只有这一份。
+({String username, String password})? appManualProxyBasicCredentials(
+  String host,
+  int port, {
+  String? legacyUserProxy,
+}) {
+  final ({String mode, String proxy}) decision = _resolveProxyDecision(
+    legacyUserProxy,
+  );
+  if (decision.mode != kProxyModeManual) return null;
+  final String username = appUserProxyUsernameReader();
+  if (username.isEmpty) return null;
+  final String? endpoint = normalizeUserProxyHostPort(decision.proxy);
+  if (endpoint == null ||
+      endpoint.toLowerCase() != '$host:$port'.toLowerCase()) {
+    return null;
+  }
+  return (username: username, password: appUserProxyPasswordReader());
 }
 
 /// **纯函数（TODO-871/862）**：把用户手填的「自定义更新代理」原始串归一成

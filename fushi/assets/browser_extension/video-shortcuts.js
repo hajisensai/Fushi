@@ -99,6 +99,11 @@
     'prev-cue': 1, 'next-cue': 1, 'replay-cue': 1, 'toggle-panel': 1,
     'offset-minus': 1, 'offset-plus': 1, 'offset-reset': 1, 'copy-cue': 1, 'favorite-cue': 1,
   };
+  // 上一句 / 下一句（默认 ←/→）还要「Fushi 字幕正在出画」才接管（BUG-4053）：「有轨」几乎恒真
+  // （YouTube / Netflix 桥会把所有轨整轨预取进 fushiEpisodeCues，与用户开没开字幕无关），
+  // 只看它会让有字幕的视频上 ←/→ 恒被占、站点自己的按秒快进失效。ctx.cueShowing =
+  // 面板 fushiSubtitleStudyState().showing 且用户没按 Shift+H 隐藏字幕（隐藏 = 关闭，用户拍板）。
+  var NEEDS_SHOWING = { 'prev-cue': 1, 'next-cue': 1 };
   // 不能单独当快捷键的键：修饰键本身。
   var MODIFIER_CODES = {
     ControlLeft: 1, ControlRight: 1, ShiftLeft: 1, ShiftRight: 1, AltLeft: 1, AltRight: 1,
@@ -185,8 +190,9 @@
   }
 
   // 纯函数按键判定。ev = {key, code, ctrl, shift, alt, editable}；
-  // ctx = {enabled, hasVideo, hasTrack, bindings?, combos?}。hasVideo = 有受 Fushi 控制的目标视频
-  // （运行时 controlledVideo() 非空，不是「DOM 里有 <video>」）；bindings 缺某动作时按 bindingDefault。
+  // ctx = {enabled, hasVideo, hasTrack, cueShowing, bindings?, combos?}。hasVideo = 有受 Fushi 控制的目标视频
+  // （运行时 controlledVideo() 非空，不是「DOM 里有 <video>」）；cueShowing 见 NEEDS_SHOWING；
+  // bindings 缺某动作时按 bindingDefault。
   // 返回 {action} 或 null（null = 不接管，放行给站点）。
   function decide(ev, ctx) {
     if (!ev || !ctx || !ctx.enabled || ev.editable || !ctx.hasVideo) return null;
@@ -200,6 +206,7 @@
         ? ctx.bindings[action] : bindingDefault(action, true);
       if (!on) return null;
       if (NEEDS_TRACK[action] && !ctx.hasTrack) return null;
+      if (NEEDS_SHOWING[action] && !ctx.cueShowing) return null;
       return { action: action };
     }
     return null;
@@ -330,6 +337,24 @@
     return false;
   }
 
+  // Fushi 字幕此刻是否在给用户出字（NEEDS_SHOWING 的判据，BUG-4053）。两个状态各有唯一持有者：
+  //   showing = subtitle-panel.js 的 fushiSubtitleStudyState（字幕能力总门 + 活动轨有 cue，
+  //             与学习统计同一个状态源）；面板脚本缺席 = 没有 Fushi 字幕。
+  //   隐藏    = content.js 的 fushiSubtitleManuallyHidden（Shift+H，原生与自绘一起藏）；
+  //             content.js 缺席 = 不可能被隐藏。
+  function cueShowingForVideo() {
+    var state = null;
+    try {
+      if (typeof window.fushiSubtitleStudyState === 'function') state = window.fushiSubtitleStudyState();
+    } catch (_) { state = null; }
+    if (!state || state.showing !== true) return false;
+    try {
+      if (typeof window.fushiSubtitleManuallyHidden === 'function' &&
+          window.fushiSubtitleManuallyHidden() === true) return false;
+    } catch (_) {}
+    return true;
+  }
+
   // 受 Fushi 控制的目标视频（video-target.js controlledVideo，manifest 里排在本文件之前）。
   // **不回落**到 document.querySelector('video')：那正是「页面上随便有个 <video> 就抢键」的根因。
   // 契约缺席 = 没有目标，快捷键一律放行。
@@ -437,6 +462,7 @@
         enabled: true,
         hasVideo: !!target,
         hasTrack: tracked,
+        cueShowing: cueShowingForVideo(),
         bindings: bindings,
         combos: combos,
       });

@@ -188,9 +188,11 @@ void main() {
     // 垫底，改用各库页共用的 [FushiContinueCardRow]（封面种子色出卡面色），所以
     // 游戏库页与并列卡组件已没有模糊、不再要求 PrebakedBlurImage；但它们仍是每卡
     // 一份的滚动列表，谁把模糊加回来都不得用渲染期 ImageFiltered。
+    // 页面背景（自定义图片 + 模糊档）垫在每一页底下，渲染期模糊 = 每帧整屏卷积。
     const List<String> blurred = <String>[
       'lib/src/media/video/cover_ui/portrait_cover_image.dart',
       'lib/src/media/video/cover_ui/landscape_cover_image.dart',
+      'lib/src/utils/components/page_backdrop_layer.dart',
     ];
     const List<String> blurFree = <String>[
       'lib/src/pages/implementations/games_library_page.dart',

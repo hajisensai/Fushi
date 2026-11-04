@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/components/cache_image_provider.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -141,7 +142,10 @@ abstract class MediaSource {
     // nothing is lost by reloading from the authoritative DB state.
     _preferences.clear();
     final prefix = dbSourcePrefKey(uniqueKey, '');
-    final all = await db.getAllPrefs();
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，本来源的作品级键取会话覆盖层。
+    final all = WorkProfileScope.instance.effectivePrefs(
+      await db.getAllPrefs(),
+    );
     for (final entry in all.entries) {
       if (entry.key.startsWith(prefix)) {
         final shortKey = entry.key.substring(prefix.length);
@@ -194,6 +198,11 @@ abstract class MediaSource {
   /// Set the preference [value] for a certain parameter [key] for this source.
   Future<void> setPreference<T>({required String key, required T value}) async {
     _preferences[key] = value;
+    final String dbKey = _dbPrefKey(key);
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, PrefCodec.encode(value));
+      return;
+    }
     final db = _sharedDb;
     if (db != null) {
       try {
@@ -208,6 +217,11 @@ abstract class MediaSource {
   /// Delete the preference for a certain parameter [key] for this source.
   Future<void> deletePreference({required String key}) async {
     _preferences.remove(key);
+    final String dbKey = _dbPrefKey(key);
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, null);
+      return;
+    }
     final db = _sharedDb;
     if (db != null) {
       try {

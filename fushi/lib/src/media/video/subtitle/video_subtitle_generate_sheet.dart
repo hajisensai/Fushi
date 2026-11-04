@@ -22,6 +22,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_p
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/ai/ai_web_search_consent.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_glossary_page.dart';
@@ -61,6 +62,10 @@ abstract interface class VideoSubtitleGeneratePrefs {
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value);
 
   MossBackendPreference get mossBackend;
+
+  /// 开 AI 生成前：配了联网搜索后端却没答过「抓前 3 页交给 AI」时问一次
+  /// （`ai_web_search_consent.dart`）。
+  Future<void> ensureWebSearchPageFetchDecided(BuildContext context);
 }
 
 class PrefsRepoVideoSubtitleGeneratePrefs
@@ -92,6 +97,10 @@ class PrefsRepoVideoSubtitleGeneratePrefs
 
   @override
   MossBackendPreference get mossBackend => prefs.videoSubtitleMossBackend;
+
+  @override
+  Future<void> ensureWebSearchPageFetchDecided(BuildContext context) =>
+      ensureAiWebSearchPageFetchDecided(context, prefs);
 }
 
 /// AI 失败短码 → 文案（管线自己的 `reply_incomplete` 在通用映射里没有）。
@@ -106,6 +115,7 @@ String videoSubtitleStageLabel(VideoSubtitleStage stage) => switch (stage) {
   VideoSubtitleStage.glossary => t.video_subtitle_ai_stage_glossary,
   VideoSubtitleStage.proofread => t.video_subtitle_ai_stage_proofread,
   VideoSubtitleStage.consistency => t.video_subtitle_ai_stage_consistency,
+  VideoSubtitleStage.lyrics => t.video_subtitle_ai_stage_lyrics,
   VideoSubtitleStage.songCheck ||
   VideoSubtitleStage.split => t.video_subtitle_ai_stage_split,
   VideoSubtitleStage.export => t.video_subtitle_ai_stage_export,
@@ -473,8 +483,13 @@ class _VideoSubtitleGenerateSheetState
     if (mounted && _proofread) unawaited(_refreshEstimate());
   }
 
-  void _start() {
+  Future<void> _start() async {
     setState(() => _startError = null);
+    // 开 AI 才会跑歌词补齐（联网搜索抓页交给 AI）：配了后端还没答过就先问一次。
+    if (_proofread) {
+      await widget.prefs.ensureWebSearchPageFetchDecided(context);
+      if (!mounted) return;
+    }
     try {
       final AppVideoSubtitleJob job = _service.start(
         _target,
@@ -835,14 +850,15 @@ class _VideoSubtitleGenerateSheetState
     VideoSubtitleStage.glossary,
     VideoSubtitleStage.proofread,
     VideoSubtitleStage.consistency,
+    VideoSubtitleStage.lyrics,
     VideoSubtitleStage.split,
     VideoSubtitleStage.export,
   ];
 
-  /// 歌曲判定算在拆分里。
+  /// 歌曲判定算在补歌词里（紧挨着，且都只在开 AI 时出现）。
   static int _stageRank(VideoSubtitleStage s) =>
       s == VideoSubtitleStage.songCheck
-      ? VideoSubtitleStage.split.index
+      ? VideoSubtitleStage.lyrics.index
       : s.index;
 
   Widget _jobCard(BuildContext context, AppVideoSubtitleJob job) {
@@ -877,7 +893,8 @@ class _VideoSubtitleGenerateSheetState
               if (aiStages ||
                   (stage != VideoSubtitleStage.glossary &&
                       stage != VideoSubtitleStage.proofread &&
-                      stage != VideoSubtitleStage.consistency))
+                      stage != VideoSubtitleStage.consistency &&
+                      stage != VideoSubtitleStage.lyrics))
                 _stageRow(stage, current),
             FushiLinearProgressIndicator(value: progress?.fraction),
           ],

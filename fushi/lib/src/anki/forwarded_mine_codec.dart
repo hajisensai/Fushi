@@ -104,7 +104,7 @@ class ForwardedMinePayloadBuilder {
       sourceUrl: context.sourceUrl,
       bookTitleTag: context.bookTitleTag,
       collectionTag: context.collectionTag,
-      charPositionTag: context.charPositionTag,
+      charPositionText: context.charPositionText,
       clipStartMs: context.clipStartMs,
       clipEndMs: context.clipEndMs,
       coverBytes: coverBytes,

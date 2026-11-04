@@ -21,6 +21,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart'
     show FushiSearchBar;
 
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiFloatingTopBar;
+import 'package:fushi/src/pages/implementations/music/music_cover.dart'
+    show MusicCover;
+
 import '../helpers/test_platform_services.dart';
 
 MusicTracksCompanion _track(
@@ -303,6 +308,31 @@ void main() {
     expect(find.text(t.music_disc_label(n: 2)), findsOneWidget);
     expect(find.text('FLAC 24/96'), findsOneWidget);
     expect(find.text(t.music_hi_res_badge), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('专辑页 MD3：封面不被悬浮顶栏盖住（反馈 yglXWr9DTq）', (WidgetTester tester) async {
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(db);
+    final MusicAlbumRow album = snap.albums.single;
+    await _pump(
+      tester,
+      app,
+      MusicAlbumPage(album: album, tracks: snap.tracksOfAlbum(album.albumUid)),
+    );
+    final Rect bar = tester.getRect(find.byType(FushiFloatingTopBar));
+    final Rect cover = tester.getRect(find.byType(MusicCover).first);
+    expect(bar.height, greaterThan(0));
+    expect(
+      cover.top,
+      greaterThanOrEqualTo(bar.bottom),
+      reason: '首项封面必须排在页头底边之下',
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });

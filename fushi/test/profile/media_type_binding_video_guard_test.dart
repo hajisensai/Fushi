@@ -74,13 +74,13 @@ void main() {
 
     // Guard against dead UI: opening a video must resolve the video binding.
     // (TODO-2936: the resolve+compare+switch tail is converged into
-    // ProfileViewModel.autoApplyBinding; the page delegates to it.)
+    // ProfileViewModel.enterWorkSession; the page delegates to it.)
     expect(
-      src.contains('autoApplyBinding(') &&
+      src.contains('enterWorkSession(') &&
           src.contains('mediaType: ProfileMediaKind.video'),
       isTrue,
       reason:
-          'video page must call autoApplyBinding(mediaType: ProfileMediaKind'
+          'video page must call enterWorkSession(mediaType: ProfileMediaKind'
           '.video) so the media-type binding actually takes effect (else it '
           'is dead UI)',
     );
