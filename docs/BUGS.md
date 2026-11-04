@@ -111,6 +111,12 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+> 共 3612 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4008](bugs/BUG-4008-linux-lan-scan-without-avahi.md) | ✅ | ✅ | linux-lan-scan-without-avahi |
+| [BUG-4007](bugs/BUG-4007-linux-hwdec-auto-safe-software.md) | ✅ | ✅ | Linux 视频默认档疑似软解（Steam Deck）——未复现 |
 | [BUG-4006](bugs/BUG-4006-update-cleanup-deletes-shared-temp.md) | ✅ | ✅ | 非 Windows 的更新清理在共享临时目录里删别的程序的文件 |
 | [BUG-4005](bugs/BUG-4005-external-lookup-never-opens-dictionary.md) | ✅ | ✅ | app 外显式查词（深链 / fushi_cli）只排队、不打开查词页 |
 | [BUG-4004](bugs/BUG-4004-lan-discovery-stop-without-avahi.md) | ✅ | ✅ | Linux 无 Avahi 时局域网发现停止抛空检查异常 |
