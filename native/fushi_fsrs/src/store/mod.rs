@@ -1261,8 +1261,8 @@ mod tests {
             )
             .unwrap();
         // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引 + v15 的查重索引，
-        // 减去 v16 去掉的 idx_srs_review_logs_profile_time。
-        assert_eq!(idx, 22);
+        // 减去 v16 去掉的 idx_srs_review_logs_profile_time，加 v25 的按作品出卡索引。
+        assert_eq!(idx, 23);
     }
 
     #[test]

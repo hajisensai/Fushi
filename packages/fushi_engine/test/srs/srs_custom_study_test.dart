@@ -133,6 +133,75 @@ void main() {
     expect(await s.nextCard(deck), isNull);
   });
 
+  test('a filter session by source serves only that work\'s cards (the '
+      'browse source key), and follows a later source edit', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    final String deck = await s.ensureDeckPath('Works');
+    Future<String> card(SrsSourceRef? source) async {
+      final String noteId = await s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): 'w${seq++}',
+        },
+        deckId: deck,
+        source: source,
+      );
+      return (await s.cardsOfNote(noteId)).single.id;
+    }
+
+    final String a1 = await card(
+      SrsSourceRef.book(bookKey: 'bk-a', sectionIndex: 1, charStart: 0),
+    );
+    final String a2 = await card(
+      SrsSourceRef.book(bookKey: 'bk-a', sectionIndex: 9, charStart: 40),
+    );
+    await card(
+      SrsSourceRef.book(bookKey: 'bk-b', sectionIndex: 1, charStart: 0),
+    );
+    final String plain = await card(null);
+
+    SrsCustomStudy session(String key) => SrsCustomStudy(
+      mode: SrsCustomStudyMode.filter,
+      sinceMs: t,
+      limit: SrsCustomStudy.maxCards,
+      source: key,
+    );
+    t += 1000;
+    final SrsStudyState first = (await s.studyState(
+      deck,
+      custom: session('book:bk-a'),
+    ))!;
+    // 章节 / 位置不进键：同一本书的两张都是候选，别的书与没有出处的不出。
+    expect(<String>{first.next!, first.after!}, <String>{a1, a2});
+    expect(first.custom?.left, 2);
+
+    // 之后给没有出处的笔记补上出处：缓存行的键随写入更新，下一次排队就出它。
+    final String plainNote = (await s.cardRow(plain))!.noteId;
+    await s.editField(
+      SrsEntityKind.note,
+      plainNote,
+      SrsFieldKeys.noteSource,
+      SrsSourceRef.book(
+        bookKey: 'bk-a',
+        sectionIndex: 3,
+        charStart: 0,
+      ).toJson(),
+    );
+    final SrsStudyState again = (await s.studyState(
+      deck,
+      custom: session('book:bk-a'),
+    ))!;
+    expect(again.custom?.left, 3);
+    expect(
+      (await s.studyState(deck, custom: session('book:none')))?.next,
+      isNull,
+    );
+  });
+
   test('review ahead serves cards due later, not today', () async {
     final SrsDbStore s = await openTestStore(
       profileUid: kProfile,

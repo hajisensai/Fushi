@@ -299,6 +299,9 @@ pub(crate) struct NoteInfo {
     /// （[source_from_tags]），也认不出 = 两个空串。
     source_kind: String,
     source_title: String,
+    /// 出处寄存器的分组键（store/browse.rs [super::browse::source_key]，`srs_notes_cache.source_key`，srs.db v25）：
+    /// 只看寄存器、不按制卡标签推；没有出处 = 空串。
+    source_key: String,
 }
 
 /// 没有 `SrsSourceRef` 的笔记按 Fushi 自己的制卡标签认出处（反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡、
@@ -368,6 +371,7 @@ impl NoteInfo {
             pending: v["pd"] == Value::Bool(true),
             source_kind: String::new(),
             source_title: String::new(),
+            source_key: super::browse::source_key(&v["s"]).map_or_else(String::new, |k| k.0),
         };
         // Dart `SrsSourceRef.fromJson`：不是对象或 kind 不是字符串 = 没有出处；title 不是字符串 = 没有标题。
         // 没有出处（含 kind 为空串：统计页同样算「无出处」）时按制卡标签认（[source_from_tags]）——与
@@ -561,6 +565,33 @@ pub(crate) fn backfill_dupe_norms(
     Ok(ids.len())
 }
 
+/// 补算 `source_key IS NULL` 的笔记缓存行（srs.db v25 加列后的老行；Dart 缓存修订号 10 的升级步调用）：只物化这些
+/// 笔记、只改这一列，不重算整行与卡片。与 [flush_notes] 写的值同一个来源（[NoteInfo::of] 的 `source_key`）。身份记录
+/// 已不在的行（缓存孤行）写空串。幂等。返回补了几行。
+pub(crate) fn backfill_source_keys(c: &Connection, profile: &str) -> Result<usize, String> {
+    let ids = strings(
+        c,
+        "SELECT srs_idt(id) AS id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND source_key IS NULL",
+        &[profile],
+    )?;
+    let mut up = c
+        .prepare_cached("UPDATE srs_notes_cache SET source_key = ?1 WHERE id = srs_id(?2)")
+        .map_err(sql)?;
+    for chunk in ids.chunks(CHUNK) {
+        let views = note_infos(c, chunk)?;
+        let mut done: HashSet<&str> = HashSet::with_capacity(chunk.len());
+        for n in &views {
+            up.execute(rusqlite::params![n.source_key, n.id])
+                .map_err(sql)?;
+            done.insert(n.id.as_str());
+        }
+        for id in chunk.iter().filter(|id| !done.contains(id.as_str())) {
+            up.execute(rusqlite::params!["", id]).map_err(sql)?;
+        }
+    }
+    Ok(ids.len())
+}
+
 /// 补算按制卡标签认得出的出处（Dart 缓存修订号 9 的升级步调用）：出处列为空的笔记缓存行按它自己的 `tags_json`
 /// 跑 [source_from_tags]，与写缓存行时的推导同一个函数。只改这两列，不重算整行与卡片。认不出的行原样留空；
 /// 幂等（再跑一遍只会重扫仍为空的行、什么也不改）。返回补了几行。
@@ -662,6 +693,7 @@ fn flush_notes(
                 n.source_title,
                 crate::store::schema::anki_numeric_id(&n.id),
                 dupe,
+                n.source_key,
             ])
             .map_err(sql)?;
         out.notes.push(n.id.clone());
@@ -1017,14 +1049,15 @@ fn delete_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
 
 const NOTE_UPSERT: &str = "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deck_id, \
      deleted_at, term_key, reading_key, sort_field, tags_json, pending_decision, updated_at, media_refs, source_kind, \
-     source_title, anki_id, dupe_norm) \
-     VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, srs_id(?6), ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) ON CONFLICT(id) DO UPDATE SET \
+     source_title, anki_id, dupe_norm, source_key) \
+     VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, srs_id(?6), ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19) ON CONFLICT(id) DO UPDATE SET \
      profile_uid = excluded.profile_uid, note_type_id = excluded.note_type_id, guid = excluded.guid, \
      created_at = excluded.created_at, deck_id = excluded.deck_id, deleted_at = excluded.deleted_at, \
      term_key = excluded.term_key, reading_key = excluded.reading_key, sort_field = excluded.sort_field, \
      tags_json = excluded.tags_json, pending_decision = excluded.pending_decision, \
      updated_at = excluded.updated_at, media_refs = excluded.media_refs, source_kind = excluded.source_kind, \
-     source_title = excluded.source_title, anki_id = excluded.anki_id, dupe_norm = excluded.dupe_norm";
+     source_title = excluded.source_title, anki_id = excluded.anki_id, dupe_norm = excluded.dupe_norm, \
+     source_key = excluded.source_key";
 
 const CARD_UPSERT: &str = "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, cloze_ord, deck_id, \
      suspended, buried_until_day, flag, hidden, queue, due_day, due_at, scheduled_days, reps, lapses, stability, \
@@ -1950,6 +1983,71 @@ mod tests {
             .unwrap();
         assert_eq!(backfill(&d), 2);
         assert_eq!(sources(&d), expect);
+        assert_eq!(backfill(&d), 0);
+    }
+
+    /// `source_key`（srs.db v25，按作品出卡用）：写缓存行时按出处寄存器算（与浏览页出处分组同一个键），按制卡标签
+    /// 推得出的出处不算（空串）；整列置 NULL 后 `backfill_source_keys` 补回同样的值，再跑一遍什么也不改。
+    #[test]
+    fn source_keys_follow_the_source_register_and_are_backfilled() {
+        let d = Device::new("source-keys");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
+                note(N1, "NT"),
+                edit(
+                    "note",
+                    N1,
+                    "source",
+                    json!({"kind": "book", "bookKey": "bk1", "title": "本", "chapter": 3}),
+                ),
+                note(N2, "NT"),
+                edit("note", N2, "tags", json!(["fushi", "video", "video::X"])),
+                note(N3, "NT"),
+                edit(
+                    "note",
+                    N3,
+                    "source",
+                    json!({"kind": "web", "url": "https://e.x/a"}),
+                ),
+            ],
+        );
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_notes: true,
+                ..Dirty::default()
+            },
+        );
+        let keys = |d: &Device| -> Vec<Vec<String>> {
+            d.rows("SELECT srs_idt(id), source_key FROM srs_notes_cache ORDER BY id")
+                .into_iter()
+                .skip(1)
+                .collect()
+        };
+        let expect = vec![
+            vec![N1.to_owned(), "book:bk1".to_owned()],
+            vec![N2.to_owned(), String::new()],
+            vec![N3.to_owned(), "web:https://e.x/a".to_owned()],
+        ];
+        assert_eq!(keys(&d), expect);
+        let backfill = |d: &Device| {
+            let w = d.core.writer().unwrap();
+            in_savepoint(&w, |c| super::backfill_source_keys(c, P)).unwrap()
+        };
+        d.core
+            .writer()
+            .unwrap()
+            .execute_batch("UPDATE srs_notes_cache SET source_key = NULL")
+            .unwrap();
+        let filled = backfill(&d);
+        assert!(filled >= 3, "filled {filled}");
+        assert_eq!(keys(&d), expect);
         assert_eq!(backfill(&d), 0);
     }
 
