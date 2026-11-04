@@ -583,6 +583,7 @@
   "anki_error_field_mapping_mismatch": "ไม่มีการจับคู่ฟิลด์ใดตรงกับประเภทโน้ตที่เลือก Anki จึงปฏิเสธบัตรนี้ เปิด ตั้งค่า Anki เพื่อจับคู่ฟิลด์ใหม่ หรือใช้ 'สร้างเด็ค Lapis'",
   "anki_error_first_field_empty": "ฟิลด์แรกของประเภทโน้ตที่เลือกว่างอยู่ และ Anki ไม่รับโน้ตแบบนั้น โปรดจับคู่ฟิลด์ให้มันใน ตั้งค่า Anki",
   "anki_error_http": "ไม่สามารถส่งออกไปยัง Anki: เกิดข้อผิดพลาด HTTP ขณะติดต่อ AnkiConnect",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "ไม่สามารถสร้างบัตรได้เนื่องจากเข้าถึงอุปกรณ์ที่จับคู่ไม่ได้ ตรวจสอบว่า Fushi กำลังทำงานบนอุปกรณ์ที่จับคู่ หรือปิด สร้างบัตรไปยังอุปกรณ์ที่จับคู่ ใน ตั้งค่า Anki เพื่อสร้างบัตรในเครื่องนี้",
   "anki_error_permission_denied": "AnkiDroid ยังไม่ได้ให้สิทธิ์เข้าถึงบัตร อนุมัติกล่องสิทธิ์ของระบบที่เพิ่งปรากฏขึ้น จากนั้นแตะปุ่มอีกครั้งเพื่อส่งออก",
   "anki_error_permission_permanently_denied": "สิทธิ์เข้าถึงการ์ด AnkiDroid ถูกปฏิเสธถาวร ระบบจึงไม่แสดงกล่องขอสิทธิ์อีก เปิดการตั้งค่าแอปแล้วอนุญาตสิทธิ์ AnkiDroid จากนั้นลองอีกครั้ง",

@@ -52,3 +52,13 @@
 - **未定位**：引擎这一层的根因还没找到，即为什么外部纹理逐帧换尺寸绘制时，`FlutterCompositorPresentLayers` 会阻塞上百毫秒。本次只是规避了触发条件。
 - **探针的坑**：drive 断言失败时仍然返回 exit 0。`flutter drive` 在 integration_test 插件没被识别时，`expect` 失败照样打印 `All tests passed` 并退出 0，所以判定必须核对 summary 里的实际轮数，以及有没有 `Expected` 行。另外，不置顶时测试框架注入的按键偶尔落不到画面上，探针每次按键前先把焦点放回 `Video`。
 - **工具**：runner 新增仅测试模式生效的 `FUSHI_TEST_WINDOW_RECT=x,y,w,h`（钉住外框位置 + 尺寸，不置顶、不抢焦点，见 `docs/agent/integration-testing.md`）；探针新增 `SUBLIST_DPR` / `SUBLIST_LAYERS` / `SUBLIST_CYCLES`，以及 `fushi/integration_test/helpers/layer_tree_probe.dart`（profile 下比较前后帧 layer 树）；视频诊断日志记录字幕列表开 / 关。
+
+### 续 · 2026-11-04（冻结宽度在用户真机上无效；修掉 raster 线程等 libmpv 锁）
+- **用户真机证据**（`%APPDATA%\Fushi\Fushi\logs\video_diag_log.txt`，debug.23345，18:41–18:59，RTX 5090）：每次 `subtitle list open/close` 后 1–3 秒内帧窗口掉到 4–11fps，单帧 raster 300–880ms，build 很小；卡顿持续到宽度早已稳定之后，所以 11-02 的「动画期间冻结画面宽度」没有消掉它。播放条件 `hwdec=nvdec-copy`、`p010`、mkv，开着 Anime4K 全套 7 个着色器 + ewa_lanczossharp。
+- **实验室复现**（profile、hdr-output-2 引擎、2880×1800、边播边开关，素材 `D:\fushi-probe-media\`）：H.264 High10 → nvdec-copy p010 与 8-bit d3d11va 都出过 600–835ms 单帧，但频率远低于用户（100 轮里 6 轮 ≥200ms，且不连发）。10-bit / nvdec-copy、Anime4K 都不是区分条件。长帧里 `TexImage2DInitialization` / `TexImage2DUpload` 恒为 0——排除「离屏渲染目标反复重新分配」和「字形图集上传」。
+- **根因之一（已修）**：`third_party/media_kit_video/windows/video_output.cc` 的 `GpuSurfaceTexture` 回调在 Flutter raster 线程（`LayerTree::Paint` 内）调 `ANGLESurfaceManager::Read()`，后者 `WaitForSingleObject(mutex_, INFINITE)`；`Draw()` 在整段 `mpv_render_context_render` + `glFinish()` 期间持有这把锁（`angle_surface_manager.cc` 旧 59–75 行）。libmpv 一帧慢，Flutter raster 线程就同步卡住，Flutter 的迟帧又拉长 libmpv 下一次 `glFinish`。
+- **[x] ① 修复**：拷贝挪到 `Draw()` 末尾（mpv 渲染线程、`glFinish` 之后、仍在锁内），删掉 `Read()`；raster 线程不再碰这把锁和 media_kit 的 D3D11 设备。记录见 `third_party/media_kit_video/PATCHES.md`。
+- **[x] ② 自动化测试**：`fushi/test/third_party/media_kit_video_raster_never_waits_guard_test.dart`（回调不调 `Read`、`Draw` 在 `glFinish` 后锁内拷贝），连同 ANGLE interop 守卫 12 条通过。
+- **修复前后实验室对照**（同一 exe / app.so / 引擎，只换插件 DLL，交错跑）：trace 里 >20ms 帧中 `LayerTree::Paint` 自身 >10ms 的帧，修复前 7（c1）/ 8（p8，最长 120ms）→ 修复后 0（f8）。≥200ms 帧：修复后 180 轮 0 轮，修复前 140 轮 3 轮（p≈0.08，不显著）。播放截图、vo-drop 与修复前同量级。
+- **[ ] 仍未定位的第二类长帧**：修复前最大的帧不是等锁——p8 close5 +1414 帧 600ms 里 `RenderPassGLES::EncodeCommandsInReactor` 单次 568ms（Flutter 的 ANGLE 上某个 GL 调用阻塞，推测在跨设备共享纹理上等同步），close5 +2331 帧 490ms 里 `FlutterCompositorPresentLayers` 445ms。修复后样本里没再出现，但样本不足以宣称消失。需要用户在真机复测；若仍卡，下一步在 Flutter 侧采样共享纹理前后加 trace，查 legacy shared handle（无 keyed mutex）的隐式跨设备同步。
+- **风险**：拷贝现在在 mpv 渲染线程上做，与 Flutter 采样同一块共享纹理在时间上可重叠（两设备间无 keyed mutex，旧实现同样没有）；慢速素材两张截图未见撕裂，高速运动片源未专门验证。
