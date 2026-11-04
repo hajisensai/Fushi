@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -43,8 +44,10 @@ class FushiMineNoticeCard extends StatefulWidget {
     super.key,
   });
 
-  /// 卡片右侧的动作按钮（如「撤销」）；为 null 时不画。小号卡同样画在消息右侧
-  /// （命中区仍是 48dp，带按钮时小卡随之长高）。
+  /// 卡片右侧的动作按钮（如「撤销」）；为 null 时不画。小号卡同样画在消息右侧。
+  /// 按钮视觉 32 高；触控平台（主题 tapTargetSize 为 padded）命中区撑到 48dp，
+  /// 默认卡带按钮仍是 48 高，小号卡（不带按钮 40 高）带按钮时随命中区长到 48；
+  /// 桌面精确指针命中区即视觉尺寸（[FushiTouchTargetPadding] 的约定）。
   final MineNoticeAction? action;
 
   /// 角落小号：图标块 28、40 高、消息至多两行，给歌词模式这类「正文铺满全屏」
@@ -117,6 +120,9 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
     );
     final bool compact = widget.compact;
     final double iconBox = compact ? 28 : 32;
+    final bool hasAction = widget.action != null;
+    final double verticalPad = compact ? 6 : 8;
+    final double cardMinHeight = compact ? 40 : 48;
     final Widget iconBlock = AnimatedBuilder(
       animation: spring,
       builder: (BuildContext context, Widget? child) => Transform.rotate(
@@ -162,7 +168,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
       excludeSemantics: widget.action == null,
       child: Container(
         constraints: BoxConstraints(
-          minHeight: compact ? 40 : 48,
+          minHeight: cardMinHeight,
           maxWidth: widget.maxWidth,
         ),
         decoration: BoxDecoration(
@@ -197,45 +203,56 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
           child: Stack(
             children: <Widget>[
               Padding(
-                // 小卡带按钮时尾端留白收窄：文字按钮自带内边距。
-                padding: compact
-                    ? EdgeInsetsDirectional.fromSTEB(
-                        6,
-                        6,
-                        widget.action == null ? 14 : 6,
-                        6,
-                      )
-                    : EdgeInsetsDirectional.fromSTEB(
-                        8,
-                        8,
-                        widget.action == null ? 24 : 8,
-                        8,
-                      ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    iconBlock,
-                    SizedBox(width: compact ? 8 : 12),
-                    Flexible(child: texts),
-                    if (widget.action case final MineNoticeAction action) ...[
-                      const SizedBox(width: 8),
-                      FushiTextButton(
-                        key: const ValueKey<String>('mine-notice-action'),
-                        onPressed: action.onPressed,
-                        // 紧凑小按钮：默认 40 高 + 48 命中区 + labelLarge 在
-                        // 两行卡片里比正文还抢眼，收成 32 高、正文同级字号。
-                        style: TextButton.styleFrom(
-                          foregroundColor: accent,
-                          textStyle: type.labelMedium,
-                          minimumSize: const Size(0, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
+                // 只留横向留白；带按钮时尾端收窄：文字按钮自带内边距。上下
+                // 留白只加在消息上、不加在整行上：触控平台按钮的 48dp 命中区
+                // 要能占满行高（命中测试出不了卡片边界），默认卡带按钮因此
+                // 仍是 48 高；行高下限 = 卡片下限，图标块 / 按钮在行内居中。
+                padding: EdgeInsetsDirectional.only(
+                  start: compact ? 6 : 8,
+                  end: hasAction ? (compact ? 6 : 8) : (compact ? 14 : 24),
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: cardMinHeight),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      iconBlock,
+                      SizedBox(width: compact ? 8 : 12),
+                      Flexible(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: verticalPad),
+                          child: texts,
                         ),
-                        child: Text(action.label),
                       ),
+                      if (widget.action
+                          case final MineNoticeAction action) ...<Widget>[
+                        const SizedBox(width: 8),
+                        // 触控平台把命中区撑到 48dp（MD3 与 Apple 两套按钮都
+                        // 经这一层，Apple 玻璃按钮不认 tapTargetSize）；桌面
+                        // 精确指针保持视觉尺寸，与设计系统其它紧凑控件一致。
+                        FushiTouchTargetPadding(
+                          child: FushiTextButton(
+                            key: const ValueKey<String>('mine-notice-action'),
+                            onPressed: action.onPressed,
+                            // 紧凑小按钮：默认 40 高 + labelLarge 在两行卡片里
+                            // 比正文还抢眼，视觉收成 32 高、正文同级字号。
+                            // shrinkWrap：命中区交给外层 FushiTouchTargetPadding，
+                            // 不叠 VisualDensity.compact（会把 32 再压到 24）。
+                            style: TextButton.styleFrom(
+                              foregroundColor: accent,
+                              textStyle: type.labelMedium,
+                              minimumSize: const Size(0, 32),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(action.label),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               if (motion)
