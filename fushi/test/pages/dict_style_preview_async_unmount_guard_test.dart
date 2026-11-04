@@ -19,7 +19,11 @@ void main() {
   late String source;
 
   setUpAll(() {
-    source = File(previewPath).readAsStringSync();
+    // 去掉 `//` 行注释：注释里提到 `Theme.of(context)` / `await` 不算代码。
+    source = File(previewPath)
+        .readAsLinesSync()
+        .where((String l) => !l.trimLeft().startsWith('//'))
+        .join('\n');
   });
 
   /// [name] 方法体（首个 `{` 到配对的 `}`）。
