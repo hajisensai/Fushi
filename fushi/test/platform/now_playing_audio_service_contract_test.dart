@@ -69,7 +69,16 @@ void main() {
     ).readAsStringSync();
     expect(kotlin, contains('"com.ryanheise.audioservice.AudioService"'));
     expect(kotlin, contains('getDeclaredField("instance")'));
-    expect(kotlin, contains('getMethod("getSessionToken")'));
+    // 只有包私有字段走反射；token 必须经类型化调用拿。按名字 getMethod 调库方法
+    // 在 release 下会被 R8 内联删掉（实测 MediaSessionCompat.Token.getToken() 进了
+    // usage.txt 的删除清单），debug 包里看不出来。
+    expect(
+      kotlin,
+      isNot(contains('getMethod(')),
+      reason: 'by-name method reflection does not survive R8 in release',
+    );
+    expect(kotlin, contains('as? MediaBrowserServiceCompat'));
+    expect(kotlin, contains('sessionToken?.token as? MediaSession.Token'));
     final String proguard = File(
       'android/app/proguard-rules.pro',
     ).readAsStringSync();
@@ -77,6 +86,32 @@ void main() {
       proguard,
       contains('-keep class com.ryanheise.audioservice.** { *; }'),
       reason: 'R8 must not rename AudioService.instance',
+    );
+  });
+
+  test('app declares androidx.media at the version audio_service uses', () {
+    final String pluginGradle = _packageFile(
+      'audio_service',
+      'android/build.gradle',
+    ).readAsStringSync();
+    final RegExp media = RegExp(
+      r"implementation 'androidx\.media:media:([^']+)'",
+    );
+    final String? pluginVersion = media.firstMatch(pluginGradle)?.group(1);
+    expect(
+      pluginVersion,
+      isNotNull,
+      reason: 'audio_service no longer declares androidx.media',
+    );
+    final String appGradle = File(
+      'android/app/build.gradle',
+    ).readAsStringSync();
+    expect(
+      media.firstMatch(appGradle)?.group(1),
+      pluginVersion,
+      reason:
+          'NowPlayingControl compiles against MediaBrowserServiceCompat; keep '
+          'app/build.gradle on the plugin version',
     );
   });
 }

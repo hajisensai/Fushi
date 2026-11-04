@@ -3,6 +3,7 @@ package app.fushi.reader.widgets
 import android.content.Context
 import android.content.Intent
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.util.Log
@@ -44,6 +45,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import androidx.media.MediaBrowserServiceCompat
 import app.fushi.reader.R
 
 // "Now playing": cover, title, artist/author, progress and transport controls for the current (or
@@ -366,8 +368,10 @@ internal fun formatClock(ms: Long): String {
  * yet drops the key), and PLAY_PAUSE is a blind toggle. Reading the live session instead lets the
  * toggle be directional and lets us refuse (and open the app) when nothing is attached.
  *
- * `AudioService.instance` is package-private, so the session token is reached by reflection (the
- * class is kept by proguard-rules.pro). The widget runs in the app process, so the service instance
+ * `AudioService.instance` is package-private, so that one field is read by reflection (the class
+ * is kept by proguard-rules.pro); the token is then taken through the typed
+ * `MediaBrowserServiceCompat.getSessionToken()` (androidx.media, declared in app/build.gradle at
+ * the plugin's version). The widget runs in the app process, so the service instance
  * exists exactly while audio_service is up. The platform [MediaController] is built directly: the
  * compat one needs a Looper, which a widget callback thread does not have.
  *
@@ -383,16 +387,13 @@ internal object NowPlayingControl {
     private const val SERVICE = "com.ryanheise.audioservice.AudioService"
 
     private fun controller(context: Context): MediaController? = try {
-        val clazz = Class.forName(SERVICE)
-        val field = clazz.getDeclaredField("instance").apply { isAccessible = true }
-        val service = field.get(null)
-        if (service == null) {
-            null
-        } else {
-            val compatToken = clazz.getMethod("getSessionToken").invoke(service)
-            val token = compatToken?.javaClass?.getMethod("getToken")?.invoke(compatToken)
-            if (token is android.media.session.MediaSession.Token) MediaController(context.applicationContext, token) else null
-        }
+        val field = Class.forName(SERVICE).getDeclaredField("instance").apply { isAccessible = true }
+        // Only the package-private field is read by name. Everything after it is a typed call, so
+        // R8 rewrites the call sites along with any rename or inlining (a by-name getMethod on
+        // MediaSessionCompat.Token.getToken() broke in release: R8 inlines and drops that method).
+        val service = field.get(null) as? MediaBrowserServiceCompat
+        val token = service?.sessionToken?.token as? MediaSession.Token
+        if (token != null) MediaController(context.applicationContext, token) else null
     } catch (t: Throwable) {
         Log.w(TAG, "no live media session", t)
         null
