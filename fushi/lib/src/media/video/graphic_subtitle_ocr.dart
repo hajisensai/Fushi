@@ -9,6 +9,8 @@
 /// OCR」功能分配了 AI 供应商时启用，与漫画同一开关）。
 library;
 
+export 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
@@ -21,6 +23,7 @@ import 'package:flutter/painting.dart'
     show Alignment, BoxFit, FittedSizes, applyBoxFit;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart'
     show mangaEffectiveTextRegions;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -35,45 +38,6 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
         kMangaAiOcrBlocksPerRequest,
         kMangaAiOcrMaxNearbyLines;
 import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
-
-/// 识别不可用的原因（[GraphicSubtitleOcrUnavailable.reason]）。
-enum GraphicSubtitleOcrUnavailableReason {
-  /// 本机没有可用的 OCR 引擎。
-  noEngine,
-
-  /// 选中的是 Lens，用户拒绝了上传同意。
-  lensDeclined,
-
-  /// 当前平台不支持选中的引擎。
-  unsupported,
-}
-
-/// [GraphicSubtitleOcrSession.recognize] 在引擎不可用时抛出。
-class GraphicSubtitleOcrUnavailable implements Exception {
-  const GraphicSubtitleOcrUnavailable(this.reason);
-
-  final GraphicSubtitleOcrUnavailableReason reason;
-
-  @override
-  String toString() => 'GraphicSubtitleOcrUnavailable($reason)';
-}
-
-/// 一个可点的字：所属整句、句内字素下标、在**帧图像素**坐标系下的矩形。
-typedef GraphicSubtitleOcrChar = ({
-  String sentence,
-  int graphemeIndex,
-  Rect rect,
-});
-
-/// 一帧的识别结果：帧图尺寸 + 可点的字。
-class GraphicSubtitleOcrFrame {
-  const GraphicSubtitleOcrFrame({required this.imageSize, required this.chars});
-
-  final Size imageSize;
-  final List<GraphicSubtitleOcrChar> chars;
-
-  bool get isEmpty => chars.isEmpty;
-}
 
 /// 本会话实际用的引擎：识别引擎 + AI 重读来源（供应商 · 模型；没开为 null）。
 typedef GraphicSubtitleOcrEngineInfo = ({

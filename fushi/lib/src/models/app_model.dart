@@ -496,7 +496,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
-import 'package:fushi/src/sync/extension_image_ocr.dart';
+import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';

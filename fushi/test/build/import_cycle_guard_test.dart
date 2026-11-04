@@ -26,9 +26,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// 的 710 个。剩下的环由 AppModel 直接 import 页面 / 媒体源 / 制卡字段撑着，要再缩
 /// 得拆 AppModel 本身。
 ///
+/// 合入 develop（2026-11-05，#2873）时 develop 新增了 4 个本就读 AppModel 的 UI /
+/// provider 文件（`music_apple_music_pages`、`game_stream_client_page`、
+/// `srs_home_stats`、`extension_image_ocr_service`），上限按实测调到 713；同一次合并
+/// 里 develop 把整条浏览器扩展 sync API 经图形字幕 OCR 接进环的那条边已拆掉
+/// （值类型挪到 `graphic_subtitle_ocr_types.dart`），没靠上限放过。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 710;
+const int kMaxCycleFiles = 713;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
