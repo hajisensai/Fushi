@@ -156,7 +156,9 @@ mod tests {
             (1, 62345, 65678)
         );
         assert_eq!(
-            sum("[Events]\nDialogue: 0,0:01:02.34,0:01:05.67,Default,,0,0,0,,x\n  Dialogue :1, 0:00:01.5 ,0:00:02.00 ,y"),
+            sum(
+                "[Events]\nDialogue: 0,0:01:02.34,0:01:05.67,Default,,0,0,0,,x\n  Dialogue :1, 0:00:01.5 ,0:00:02.00 ,y"
+            ),
             (2, 1500, 65670)
         );
         assert_eq!(sum("   \n"), (0, 0, 0));

@@ -2031,7 +2031,10 @@ mod tests {
         let mut t = 0.0;
         p.frame(t, dt, 800.0, 600.0);
         p.input(input::ZOOM, 4.0, 0.0);
-        assert_eq!(p.camera.dist, GALAXY_CAMERA_DIST, "goal moves, camera not yet");
+        assert_eq!(
+            p.camera.dist, GALAXY_CAMERA_DIST,
+            "goal moves, camera not yet"
+        );
         let goal = p.dist_goal;
         assert!(goal < GALAXY_CAMERA_DIST);
         let mut prev = p.camera.dist;
@@ -2133,7 +2136,11 @@ mod tests {
         let before = p.out_pos[..p.verts * 2].to_vec();
         t += dt;
         p.frame(t, dt, 800.0, 600.0);
-        assert_ne!(&p.out_pos[..p.verts * 2], &before[..], "words keep drifting");
+        assert_ne!(
+            &p.out_pos[..p.verts * 2],
+            &before[..],
+            "words keep drifting"
+        );
     }
 
     /// 空闲收敛：惯性与环境动效衰减到零后 MOVING = 0 且画面不再变；任何输入立刻恢复。

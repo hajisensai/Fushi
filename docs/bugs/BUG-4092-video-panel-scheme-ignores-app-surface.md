@@ -1,0 +1,6 @@
+## BUG-4092 · 播放器面板（字幕轨抽屉等）表面色与自定义主题页面底色不同族
+- **报告**：2026-11-04（应用内反馈 DGApb0CQgE，Windows；关联 GitHub hajisensai/Fushi#2832。反馈人以为是自定义主题缺浮层色槽）
+- **真实性**：✅ 真 bug，但不是缺槽位。app 方案这一侧钉了 surfaceColor 时 `buildFushiColorScheme` 已用 `deriveSurfaceRolesFrom` 推出同族 surfaceContainer* 阶梯（`fushi/lib/src/models/theme_notifier.dart:205-252`、`:420-450`）。播放器面板丢掉了它：`videoM3ePanelScheme`（`fushi/lib/src/media/video/video_m3e_panel_theme.dart:31`，修复前）= `videoM3eChromeScheme(cs)`，即只拿 `cs.primary` 重新 `ColorScheme.fromSeed`（`video_m3e_chrome.dart:69-75`），面板底 / 分组卡于是是 seed 的 tone 95 / 90（粉主色下 #FFF0F1 / #FFD9DF），与用户钉的页面底色不同族。字幕轨 / 音轨 / 设置侧板 / 剧集轨道等经 `videoM3ePanelTheme` 的面板全中。
+- **[x] ① 已修复** — `videoM3ePanelScheme`（`video_m3e_panel_theme.dart:38`）在 seed 方案上把 surface / surfaceDim / surfaceBright / surfaceContainer* / onSurface* / outline* / inverse* / surfaceTint / shadow / scrim 换回 app 方案 `cs` 的值，强调色仍取播放器 seed 方案。悬浮在画面上的顶 / 底栏胶囊是刻意的中性表面（`videoM3eNeutralChromeScheme`），不动。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_side_panel_test.dart`「panel scheme keeps the app surface family of a pinned-surface theme」：浅 / 深两档钉底色的 `buildFushiColorScheme`，断言面板方案 surface / surfaceContainerLow…Highest / onSurface* / outlineVariant 与 app 方案一致、`videoM3ePanelSurfaceColor(opaque)` == app surfaceContainerLow、primary 仍是 seed 方案。
+- **备注**：真机复测本轮未做。是否给自定义主题另外暴露 surfaceContainer* 槽位是独立的产品问题，修完这处同族问题已消失，未做。

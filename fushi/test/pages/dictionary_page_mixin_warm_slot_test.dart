@@ -129,7 +129,7 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
                 index: i,
                 screen: screen,
                 controller: controller,
-                onPush: (text, rect, rubySpans) async => 0,
+                onPush: (text, rect, rubySpans, contextSentence) async => 0,
                 onPop: (index) {},
               ),
           ],

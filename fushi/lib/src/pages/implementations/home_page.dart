@@ -256,15 +256,6 @@ HomeTab homeTabForVisualIndex({
   return tabs[logicalIndex];
 }
 
-/// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
-/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
-/// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
-/// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
-/// 非 macOS 平台不读写它，纯 no-op。
-final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
-  HomeTab.home,
-);
-
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
 /// 根侧栏共用，保证三处标签/图标一致。MD3 侧栏另读 [AdaptiveNavItem.railShape]
 /// （各模块的专属形状）与 [peek]（悬停速览卡，只有 HomePage 的 rail 传）。
@@ -988,8 +979,27 @@ class _HomePageState extends BasePageState<HomePage>
     _revealDictionary(carryingPendingLookup: true, focus: focus);
   }
 
+  /// 本页所在路由：登记成主导航外壳，路由层页面背景跟着当前 tab 换模块背景
+  /// （反馈 DYI1IOZxSM，见 [setFushiPageRouteModuleShell]）。
+  Route<Object?>? _backdropShellRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Route<Object?>? route = ModalRoute.of(context);
+    if (route == _backdropShellRoute) return;
+    if (_backdropShellRoute case final Route<Object?> previous) {
+      setFushiPageRouteModuleShell(previous, false);
+    }
+    _backdropShellRoute = route;
+    if (route != null) setFushiPageRouteModuleShell(route, true);
+  }
+
   @override
   void dispose() {
+    if (_backdropShellRoute case final Route<Object?> route) {
+      setFushiPageRouteModuleShell(route, false);
+    }
     externalBrowseRequest.removeListener(_onExternalBrowseRequest);
     _webMineBackground?.dispose();
     _appleChrome.dispose();
@@ -3275,13 +3285,22 @@ class _HomePageState extends BasePageState<HomePage>
     ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
-  /// 外部（小组件深链）要求切浏览页签：取走请求并走与应用内跳转同一条 [_openBrowseTab]。
+  /// 外部（小组件深链）要求切浏览页签：取走请求并走与应用内端口同一个出口
+  /// [_popToBrowseTab]，而不是裸 [_openBrowseTab]。
+  ///
+  /// [externalBrowseRequest] 是全局 notifier，任何非页面代码都能写；可达性门控与
+  /// 「先回到 home 这一层路由」必须在落地点（这里）判，不能指望每个写入方各自做过。
+  /// 浏览模块关着（「功能模块」隐藏 / iOS 商店合规下 [ModuleId.browse] 不存在）时
+  /// 裸 [_openBrowseTab] 会被 [_selectTab] 静默吞掉；有 pushed route 盖着时只在
+  /// 底下换 tab，用户看不见。小组件那条路径 `runWidgetLink` 已先判模块、退回根路由
+  /// 才写请求，所以这里的门是纵深防御、popUntil 对它是 no-op；去不了就丢弃，与
+  /// `runWidgetLink`「目标模块已关：什么都不做」同口径。
   void _onExternalBrowseRequest() {
     final BrowseNavigationRequest? request = externalBrowseRequest.value;
     if (request == null) return;
     externalBrowseRequest.value = null;
     if (!mounted) return;
-    _openBrowseTab(
+    _popToBrowseTab(
       request.tab,
       downloadsSection: request.downloadsSection,
       downloadsWorkFocus: request.downloadsWorkFocus,

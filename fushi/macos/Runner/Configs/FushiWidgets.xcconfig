@@ -1,0 +1,7 @@
+// FushiWidgets（macOS 主屏 / 通知中心小组件扩展）的 base configuration。
+// 版本号跟随 Flutter 的 build-name / build-number，与 Runner 一致（不一致时系统拒载扩展）。
+#include? "../../Flutter/ephemeral/Flutter-Generated.xcconfig"
+MARKETING_VERSION = $(FLUTTER_BUILD_NAME)
+CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)
+// 与 Runner（AppInfo.xcconfig）同一个组；macOS 组名要带 Team ID 前缀。
+FUSHI_APP_GROUP = $(TeamIdentifierPrefix)app.fushi.reader

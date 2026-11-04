@@ -2759,6 +2759,12 @@ class _FakeRwkv implements SrsRwkvScheduling {
   }) async => ready ? List<double>.filled(cards.length, 0) : null;
 
   @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => ready ? List<double>.filled(cards.length, 0) : null;
+
+  @override
   Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
   @override
   Future<void> onCardsPurged(List<String> cardIds) async {}

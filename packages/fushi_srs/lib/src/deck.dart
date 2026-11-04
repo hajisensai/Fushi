@@ -286,7 +286,7 @@ enum SrsCustomStudyMode {
   /// N 天内（今天之后）到期的复习卡，按到期先后。
   ahead('ahead'),
 
-  /// 按卡片状态 / 笔记标签筛。
+  /// 按卡片状态 / 笔记标签 / 出处筛。
   filter('filter');
 
   const SrsCustomStudyMode(this.wire);
@@ -315,6 +315,7 @@ class SrsCustomStudy {
     this.limit = 100,
     this.states = const <SrsCustomStudyState>{},
     this.tags = const <String>[],
+    this.source,
   });
 
   final SrsCustomStudyMode mode;
@@ -323,6 +324,10 @@ class SrsCustomStudy {
   final int limit;
   final Set<SrsCustomStudyState> states;
   final List<String> tags;
+
+  /// 只出这个出处（作品）的卡：浏览页的出处键（`SrsBrowseRow.sourceKey`，与 `src:"<键>"` 同一个键）；null = 不限。
+  /// 只在 [SrsCustomStudyMode.filter] 下生效（浏览页出处视图「只复习这一作」）。
+  final String? source;
 
   static const int maxDays = 3650;
   static const int maxCards = 9999;
@@ -335,6 +340,7 @@ class SrsCustomStudy {
     if (states.isNotEmpty)
       'states': <String>[for (final SrsCustomStudyState s in states) s.wire],
     if (tags.isNotEmpty) 'tags': tags,
+    if (source != null) 'source': source,
   };
 }
 

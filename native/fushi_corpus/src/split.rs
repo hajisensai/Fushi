@@ -17,8 +17,26 @@ pub struct Span {
 fn is_terminator(c: char) -> bool {
     matches!(
         c,
-        '。' | '｡' | '！' | '？' | '!' | '?' | '…' | '‥' | '؟' | '۔' | '।' | '॥' | '።' | '፧' | '។' | '៕' | '။'
-            | '‼' | '⁇' | '⁈' | '⁉'
+        '。' | '｡'
+            | '！'
+            | '？'
+            | '!'
+            | '?'
+            | '…'
+            | '‥'
+            | '؟'
+            | '۔'
+            | '।'
+            | '॥'
+            | '።'
+            | '፧'
+            | '។'
+            | '៕'
+            | '။'
+            | '‼'
+            | '⁇'
+            | '⁈'
+            | '⁉'
     )
 }
 
@@ -29,8 +47,26 @@ fn is_hard_break(c: char) -> bool {
 fn is_closer(c: char) -> bool {
     matches!(
         c,
-        '」' | '』' | '）' | ')' | '】' | '］' | ']' | '》' | '〉' | '〕' | '〙' | '〛' | '｝' | '}' | '"' | '\''
-            | '”' | '’' | '»' | '›' | '｣'
+        '」' | '』'
+            | '）'
+            | ')'
+            | '】'
+            | '］'
+            | ']'
+            | '》'
+            | '〉'
+            | '〕'
+            | '〙'
+            | '〛'
+            | '｝'
+            | '}'
+            | '"'
+            | '\''
+            | '”'
+            | '’'
+            | '»'
+            | '›'
+            | '｣'
     )
 }
 
@@ -112,7 +148,14 @@ pub fn split_sentences(text: &str, max_units: u32) -> Vec<Span> {
 }
 
 /// 码点区间 `[from, to)` 去首尾空白后成句；过长的按 [is_soft_break] / 硬切再拆。
-fn emit(units: &[Unit], total: u32, mut from: usize, mut to: usize, max_units: u32, out: &mut Vec<Span>) {
+fn emit(
+    units: &[Unit],
+    total: u32,
+    mut from: usize,
+    mut to: usize,
+    max_units: u32,
+    out: &mut Vec<Span>,
+) {
     while from < to && units[from].ch.is_whitespace() {
         from += 1;
     }
@@ -155,7 +198,10 @@ fn emit(units: &[Unit], total: u32, mut from: usize, mut to: usize, max_units: u
     if !units[from..to].iter().any(|u| is_content(u.ch)) {
         return;
     }
-    out.push(Span { start: pos(from), end: pos(to) });
+    out.push(Span {
+        start: pos(from),
+        end: pos(to),
+    });
 }
 
 #[cfg(test)]
@@ -182,7 +228,13 @@ mod tests {
     fn latin_period_rules() {
         assert_eq!(
             texts("Pi is 3.14 today. Really?! Yes... \"Fine.\" Next", 0),
-            vec!["Pi is 3.14 today.", "Really?!", "Yes...", "\"Fine.\"", "Next"]
+            vec![
+                "Pi is 3.14 today.",
+                "Really?!",
+                "Yes...",
+                "\"Fine.\"",
+                "Next"
+            ]
         );
     }
 
@@ -193,20 +245,29 @@ mod tests {
 
     #[test]
     fn other_scripts() {
-        assert_eq!(texts("كيف حالك؟ أنا بخير", 0), vec!["كيف حالك؟", "أنا بخير"]);
+        assert_eq!(
+            texts("كيف حالك؟ أنا بخير", 0),
+            vec!["كيف حالك؟", "أنا بخير"]
+        );
         assert_eq!(texts("यह है। वह है।", 0), vec!["यह है।", "वह है।"]);
     }
 
     #[test]
     fn long_sentence_cut_at_soft_break_then_hard() {
         let s = "あいうえお、かきくけこ、さしすせそ";
-        assert_eq!(texts(s, 8), vec!["あいうえお、", "かきくけこ、", "さしすせそ"]);
+        assert_eq!(
+            texts(s, 8),
+            vec!["あいうえお、", "かきくけこ、", "さしすせそ"]
+        );
         assert_eq!(texts("abcdefghij", 4), vec!["abcd", "efgh", "ij"]);
     }
 
     #[test]
     fn utf16_offsets_with_supplementary_plane() {
         let spans = split_sentences("𠮷野家。好き。", 0);
-        assert_eq!(spans, vec![Span { start: 0, end: 5 }, Span { start: 5, end: 8 }]);
+        assert_eq!(
+            spans,
+            vec![Span { start: 0, end: 5 }, Span { start: 5, end: 8 }]
+        );
     }
 }

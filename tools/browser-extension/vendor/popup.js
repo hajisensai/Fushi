@@ -18,6 +18,19 @@ function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+/* 需要继承弹窗主题变量的模态浮层（「卡片已在 Anki 中」面板）的挂载点。app 内 = body：
+   主题变量在 <html> 上，天然继承。浏览器扩展里弹窗活在 shadow root，主题变量（--md-* /
+   --background-color / --text-color，content.js setProperty）与 data-theme 都落在
+   #entries-container 上（content.css 把 html / body 重根到它）；直接挂在 shadow root 下的
+   浮层继承不到任何一个，面板 background 的 var() 全部落空成透明，下面词条的字透上来与
+   面板上的字叠在一起（反馈 _3tWQR6J2G）。挂进容器 = app 内挂 body 的同一语义；容器的
+   overflow / zoom 已被 content.js 中和，fixed 定位的包含块不变。 */
+function __fushiThemedOverlayParent(){
+    var root = window.__fushiRoot;
+    var themed = root && typeof root.getElementById === 'function'
+        ? root.getElementById('entries-container') : null;
+    return themed || __fushiOverlayParent();
+}
 /* BUG-2734：app 内查词框（视频 / 首页 / texthooker）让 WebView 按外壳**最大**高度布局、
    外壳只做裁剪（内容增减不再改原生表面尺寸，免得 Windows 上旧帧被拉伸），于是
    window.innerHeight 大于用户实际看得见的高度。宿主经 __fushiSetVisibleViewportHeight
@@ -1785,13 +1798,122 @@ let lastSelectionSpans = [];
 // 选区快照：文本与位置必须在**同一时刻**取，否则两者可能描述不同的选区。
 // 时机与原来一致（pointerdown / touchstart，document 的 click 处理器清掉选区之前）。
 function snapshotSelection() {
-    lastSelection = __fushiSel()?.toString() || '';
+    const sel = __fushiSel();
+    lastSelection = sel?.toString() || '';
     lastSelectionSpans = lastSelection ? collectGlossarySelectionSpans() : [];
+    lastSelectionHtml = lastSelection ? snapshotSelectionHtml(sel) : '';
 }
 
 function clearSelectionSnapshot() {
     lastSelection = '';
     lastSelectionSpans = [];
+    lastSelectionHtml = '';
+}
+
+// ---------------------------------------------------------------------------
+// {popup-selection-html}（反馈 aBgKMjhfut / BUG-4049 方案 B）
+//
+// {popup-selection-text} 是 Selection.toString() 的纯文本，与 Yomitan 同名占位符同义，
+// 不动。这里是它的「保留样式」版：同一时刻、同一个 Selection 的 Range.cloneContents()，
+// 即屏幕上那棵 DOM 的选中片段——词典 structured-content 的 inline style、class、
+// data-sc-* 都在，再配上所属词典的 scoped CSS（与 {glossary} 同一个 constructDictCss
+// 作用域 `.yomitan-glossary [data-dictionary=…]`），卡片上就是弹窗里看到的样子。
+//
+// 屏幕 DOM 不是导出 DOM：它带弹窗自己的交互件（按钮、音频、本地图片地址、
+// fushi:// 查词链接、坐标锚点 data-fushi-*），这些进卡要么失效要么是垃圾，
+// 所以序列化前过一遍专用净化（sanitizeSelectionHtmlTree），而不是原样塞进字段。
+// 图片整段去掉：屏幕上的 <img> 指向弹窗本地资源，Anki 里解析不到；要带图的释义
+// 走 {glossary} / {selected-glossary}（导出管线会把媒体随卡下发）。
+let lastSelectionHtml = '';
+
+// 屏幕选区里不该进卡的元素：能执行 / 嵌入 / 发请求的（同 DICT_HTML_BLOCKED_SELECTOR），
+// 弹窗样式表（屏幕上每本词典一份 <style>，进卡后由下面重新生成作用域版），
+// 表单与媒体控件，以及引用弹窗本地资源的图片。
+const SELECTION_HTML_DROPPED_SELECTOR = [
+    'style', 'link', 'img', 'picture', 'source', 'video', 'audio', 'canvas', 'track',
+    'button', 'input', 'select', 'option', 'textarea', 'label', 'dialog',
+    '.gloss-image-link', '[hidden]',
+].join(',');
+
+// 屏幕 DOM 上的属性：只留描述外观的（class / style / lang / dir / data-sc-* 等词典
+// CSS 选择器要用的），去掉交互与弹窗内部状态。href 一律去：屏幕链接是 fushi://
+// 查词或宿主拦截的 openLink，在 Anki 里点了要么无效要么跳出卡片。
+function sanitizeSelectionElementAttributes(element) {
+    for (const attr of [...element.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on') || name.startsWith('data-fushi') ||
+            name === 'id' || name === 'href' || name === 'xlink:href' || name === 'srcdoc' ||
+            name === 'tabindex' || name === 'contenteditable' || name === 'draggable' ||
+            name === 'formaction' || name === 'action' || name === 'http-equiv' ||
+            name === 'target' || name === 'rel' || DICT_AUTO_FETCH_ATTRS.has(name)) {
+            element.removeAttribute(attr.name);
+            continue;
+        }
+        // 与 sanitizeDictElementAttributes 同一判据：外链 url() 置空，能执行的写法整条去掉，
+        // 其余（字号、颜色、边距这些就是要保留的样式）原样留下。
+        if (name === 'style') {
+            const stripped = stripDictCssRemoteRefs(attr.value);
+            if (/expression\s*\(|javascript:/i.test(stripped)) {
+                element.removeAttribute(attr.name);
+            } else if (stripped !== attr.value) {
+                element.setAttribute(attr.name, stripped);
+            }
+        }
+    }
+}
+
+function sanitizeSelectionHtmlTree(root) {
+    root.querySelectorAll(`${DICT_HTML_BLOCKED_SELECTOR},${SELECTION_HTML_DROPPED_SELECTOR}`)
+        .forEach(node => node.remove());
+    root.querySelectorAll('*').forEach(sanitizeSelectionElementAttributes);
+}
+
+// 一个 Range 的选中片段所属的词典：公共祖先最近的 [data-dictionary] 容器。
+// 选区跨多本词典时公共祖先在词典容器之上，片段里自带各自的 [data-dictionary] 子树，
+// 这里返回空串、不再外包一层。
+function selectionRangeDictionary(range) {
+    let anchor = range.commonAncestorContainer;
+    if (anchor && anchor.nodeType !== 1) anchor = anchor.parentElement || anchor.parentNode;
+    const host = anchor && typeof anchor.closest === 'function'
+        ? anchor.closest('[data-dictionary]')
+        : null;
+    return host ? (host.getAttribute('data-dictionary') || '') : '';
+}
+
+function snapshotSelectionHtml(sel) {
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return '';
+    const parts = [];
+    for (let i = 0; i < sel.rangeCount; i++) {
+        const range = sel.getRangeAt(i);
+        if (!range || range.collapsed) continue;
+        parts.push({ fragment: range.cloneContents(), dictName: selectionRangeDictionary(range) });
+    }
+    return serializeSelectionHtml(parts);
+}
+
+// parts: [{ fragment: DocumentFragment, dictName: string }]
+function serializeSelectionHtml(parts) {
+    if (!parts || !parts.length) return '';
+    const body = document.createElement('div');
+    for (const part of parts) {
+        const wrapper = document.createElement('div');
+        if (part.dictName) wrapper.setAttribute('data-dictionary', part.dictName);
+        wrapper.appendChild(part.fragment);
+        body.appendChild(wrapper);
+    }
+    sanitizeSelectionHtmlTree(body);
+    if (!(body.textContent || '').trim()) return '';
+
+    const dictNames = [];
+    body.querySelectorAll('[data-dictionary]').forEach(node => {
+        const name = node.getAttribute('data-dictionary');
+        if (name && !dictNames.includes(name)) dictNames.push(name);
+    });
+    let styles = '';
+    for (const dictName of dictNames) {
+        styles += exportedDictStyleTag(dictName, window.dictionaryStyles?.[dictName]);
+    }
+    return `<div style="text-align: left;" class="yomitan-glossary fushi-popup-selection">${body.innerHTML}${styles}</div>`;
 }
 
 // 屏幕侧释义容器的坐标锚点。两侧共享 entry.glossaries 原始下标。
@@ -2001,20 +2123,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         }
         
         let html = `<div style="text-align: left;" class="yomitan-glossary"><ol>${currentGlossary}</ol>`;
-        const css = window.dictionaryStyles?.[lastDict] ?? '';
-        if (css) {
-            const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), lastDict, `.yomitan-glossary [data-dictionary="${lastDict}"]`);
-            // BUG-3762：拼进卡片 HTML 的是字符串，词典 CSS 里的 `</style>` 会闭合标签、
-            // 把后面的内容当 HTML（含脚本）写进用户的 Anki 卡片。
-            const formatted = scopedCss
-            .replace(/<\/style/gi, '<\\/style')
-            .replace(/\s+/g, ' ')
-            .replace(/\s*\{\s*/g, ' { ')
-            .replace(/\s*\}\s*/g, ' }\n')
-            .replace(/;\s*/g, '; ')
-            .trim();
-            html += `<style>${formatted}</style>`;
-        }
+        html += exportedDictStyleTag(lastDict, window.dictionaryStyles?.[lastDict]);
         html += `</div>`;
         
         glossaries[lastDict] = html;
@@ -2152,19 +2261,28 @@ function constructGlossaryHtml(entryIndex) {
     result += '</ol>';
     
     for (const [dictName, css] of Object.entries(styles)) {
-        const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), dictName, `.yomitan-glossary [data-dictionary="${dictName}"]`);
-        // BUG-3762：同上，`</style>` 不能闭合导出卡片里的样式标签。
-        const formatted = scopedCss
-        .replace(/<\/style/gi, '<\\/style')
-        .replace(/\s+/g, ' ')
-        .replace(/\s*\{\s*/g, ' { ')
-        .replace(/\s*\}\s*/g, ' }\n')
-        .replace(/;\s*/g, '; ')
-        .trim();
-        result += `<style>${formatted}</style>`;
+        result += exportedDictStyleTag(dictName, css);
     }
     result += '</div>';
     return result;
+}
+
+// 导出卡片里一本词典的 <style>：词典 CSS 去外链后收进 `.yomitan-glossary [data-dictionary=…]`
+// 作用域。{glossary} / {single-glossary-*} / {popup-selection-html} 三处共用，保证同一本词典
+// 在不同字段里是同一份样式。没有 CSS 时返回空串。
+function exportedDictStyleTag(dictName, css) {
+    if (!css) return '';
+    const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), dictName, `.yomitan-glossary [data-dictionary="${dictName}"]`);
+    // BUG-3762：拼进卡片 HTML 的是字符串，词典 CSS 里的 `</style>` 会闭合标签、
+    // 把后面的内容当 HTML（含脚本）写进用户的 Anki 卡片。
+    const formatted = scopedCss
+    .replace(/<\/style/gi, '<\\/style')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\{\s*/g, ' { ')
+    .replace(/\s*\}\s*/g, ' }\n')
+    .replace(/;\s*/g, '; ')
+    .trim();
+    return `<style>${formatted}</style>`;
 }
 
 function constructFrequencyHtml(frequencies) {
@@ -2775,6 +2893,12 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     // 校验没过）这个标志是 false，Dart 侧照旧把原文交给 SelectionText。
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
+    // {popup-selection-html} 与 {popup-selection-text} 必须描述同一个选区：只有调用方
+    // 传进来的纯文本正是这次快照的文本时才带上快照的 HTML，否则（调用方显式传空 /
+    // 别的文本）HTML 跟着为空，不会出现两个字段一新一旧。
+    const popupSelectionHtml = popupSelectionText && popupSelectionText === lastSelection
+        ? lastSelectionHtml
+        : '';
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     // BUG-2152 第二条路径：跨词典的同一份发音。展示侧在 createPitchSection 里先跑
     // mergeIdenticalPitchGroups 才渲染，制卡侧以前直接吃原始 pitches —— 于是两本词典
@@ -2831,6 +2955,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         pitchCategories,
         phoneticTranscriptions,
         popupSelectionText,
+        popupSelectionHtml,
         glossarySelectionHighlighted,
         audio,
         selectedDictionary: miningDictionaryFor(idx),
@@ -3072,7 +3197,7 @@ function showMinedCardActionPanel(matches, options) {
         // 下面板会被窗口下沿裁掉。开面板时给 <html> 挂 class，popup.css 借它撑出最小
         // 高度，host 的下一次测量就把窗口放大到够放面板（面板关掉即恢复）。
         if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
-        __fushiOverlayParent().appendChild(backdrop);
+        __fushiThemedOverlayParent().appendChild(backdrop);
         document.addEventListener('keydown', onKey, true);
         duplicateBtn.focus();
     });
@@ -6424,9 +6549,11 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     details.appendChild(summary);
 
     let longPressTimer = null;
+    // 本次指针按下是否已经被长按（选词典）消费。只由指针长按计时器置位——键盘 / 手柄
+    // 长按（__fushiDictLongPress）直接调 toggleSelection，没有随后的 click 要吞，
+    // 置位反而会把下一次真点击误吞（ZdghRxjVCm）。
     let longPressed = false;
     const toggleSelection = () => {
-        longPressed = true;
         const selected = selectedDictionaries[entryIdx];
         selected?.label.classList.remove('selected');
         if (selected?.name === dictName) {
@@ -6443,13 +6570,17 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
         toggle();
         return true;
     };
+    const fireLongPress = () => {
+        longPressed = true;
+        toggleSelection();
+    };
     summary.addEventListener('touchstart', (e) => {
         longPressed = false;
-        longPressTimer = setTimeout(toggleSelection, 500);
+        longPressTimer = setTimeout(fireLongPress, 500);
     }, { passive: true });
-    summary.addEventListener('touchend', () => {
+    summary.addEventListener('touchend', (e) => {
         clearTimeout(longPressTimer);
-        if (longPressed) event?.preventDefault?.();
+        if (longPressed) e?.preventDefault?.();
     });
     summary.addEventListener('touchmove', () => clearTimeout(longPressTimer));
     // BUG-2447：`<summary>` 是查词弹窗里唯一「鼠标点一下就会拿到 DOM 焦点」的元素——
@@ -6470,11 +6601,21 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     // 参与聚焦，中键/右键要原样留给弹窗输入桥的 `Mouse<n>` 转发判定。
     summary.addEventListener('mousedown', (e) => {
         longPressed = false;
-        longPressTimer = setTimeout(toggleSelection, 500);
+        longPressTimer = setTimeout(fireLongPress, 500);
         if (e && e.button === 0) e.preventDefault();
     });
     summary.addEventListener('mouseup', () => clearTimeout(longPressTimer));
     summary.addEventListener('mouseleave', () => clearTimeout(longPressTimer));
+    // ZdghRxjVCm：长按与单击是同一次按下的两种结局，只能二选一。`<details>` 的展开 /
+    // 折叠是 `<summary>` 上 click 的 activation behavior——鼠标长按松开后照样派发
+    // click（触屏由上面 touchend 的 preventDefault 掐掉合成 click，鼠标没有对应的
+    // 一步），于是长按选完词典又把它折叠了。这里在 click 上认领：本次按下已被长按
+    // 消费就取消默认动作（不开合），并复位，下一次单击照常开合。
+    summary.addEventListener('click', (e) => {
+        if (!longPressed) return;
+        longPressed = false;
+        e?.preventDefault?.();
+    });
     
     const dictWrapper = document.createElement('div');
     dictWrapper.setAttribute('data-dictionary', dictName);

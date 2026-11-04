@@ -885,6 +885,41 @@ void main() {
       expect(player.mineCalls, 1);
     },
   );
+
+  test('controlledBinding is the selected player only while a phone holds the '
+      'lease; registering alone is not remote control (BUG-4084)', () async {
+    // setUp already connected 'phone'.
+    expect(host.controlledBinding.value, same(player.binding));
+
+    await host.releaseController();
+    expect(host.controlledBinding.value, isNull);
+
+    // A player that registers with no phone connected is not controlled.
+    final _Player other = _Player();
+    host.register(other.binding);
+    expect(host.controlledBinding.value, isNull);
+
+    // The phone connects: it drives the top player.
+    snapshot = await host.handle('snapshot', <String, dynamic>{}, 'phone');
+    expect(host.controlledBinding.value, same(other.binding));
+
+    // Top player closes: the phone moves to the one underneath.
+    host.unregister(other.binding);
+    expect(host.controlledBinding.value, same(player.binding));
+
+    // Lease expires and another phone takes over: null, then back.
+    final List<VideoRemotePlaybackBinding?> seen =
+        <VideoRemotePlaybackBinding?>[];
+    void listener() => seen.add(host.controlledBinding.value);
+    host.controlledBinding.addListener(listener);
+    now = now.add(const Duration(minutes: 1));
+    await host.handle('snapshot', <String, dynamic>{}, 'second-phone');
+    host.controlledBinding.removeListener(listener);
+    expect(seen, <VideoRemotePlaybackBinding?>[null, player.binding]);
+
+    host.unregister(player.binding);
+    expect(host.controlledBinding.value, isNull);
+  });
 }
 
 final class _BlockingFavorites extends FavoriteSentenceRepository {

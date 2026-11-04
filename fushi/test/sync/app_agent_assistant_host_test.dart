@@ -12,9 +12,11 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart';
+import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/remote_ai_agent_session.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -28,6 +30,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -45,6 +48,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 final AiProviderConfig _provider = AiProviderConfig(
@@ -189,6 +195,7 @@ void main() {
     List<AiProviderConfig>? providers,
     bool ready = true,
     void Function()? onLlm,
+    DateTime Function()? clock,
   }) => createAgentAssistantHostWith(
     aiModuleEnabled: () => aiEnabled,
     allowPeers: () => allowPeers,
@@ -199,7 +206,7 @@ void main() {
       onLlm?.call();
       return _StubLlm(turns);
     },
-    clock: () => DateTime.fromMillisecondsSinceEpoch(1700000000000),
+    clock: clock ?? () => DateTime.fromMillisecondsSinceEpoch(1700000000000),
   );
 
   Future<(FushiSyncServer, String)> startHost(
@@ -429,5 +436,159 @@ void main() {
     );
     expect(session.running, isFalse);
     expect(session.awaitingConfirm, isFalse);
+  });
+
+  group('BUG-4067：远端会话历史（按发起设备）', () {
+    /// host 端配好一台已配对的手机（per-peer 口令），手机用它的专属口令连。
+    Future<String> startPairedHost(HostAssistantProvider host) async {
+      await hostDb.upsertPairedPeer(
+        FushiPairedPeersCompanion.insert(
+          peerId: 'phone-1',
+          deviceName: const Value<String?>('Pixel'),
+          token: 'peer-tok',
+          pairedAtMs: 1,
+        ),
+      );
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: p.join(tmp.path, 'sync'),
+        port: 0,
+        token: 'tok',
+        assistant: host,
+      )..pairedPeerTokensProvider = () async => <String>{'peer-tok'};
+      await server.start();
+      addTearDown(server.stop);
+      final String url = 'http://127.0.0.1:${server.port}';
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: url, deviceName: 'PC', token: 'peer-tok'),
+      ]);
+      return url;
+    }
+
+    List<String> texts(RemoteAiAgentSession s) => <String>[
+      for (final AgentEntry e in s.entries)
+        if (e.kind == AgentEntryKind.user) e.text,
+    ];
+
+    test('列出 / 续接 / 改名 / 删除手机发起的会话；host 端列表标「来自 Pixel」', () async {
+      // 每次取时间前进 1 s：两场会话的 updatedAt 不同，「最近更新在前」才确定
+      // （同一时刻按随机 id 排，列表顺序会随机翻）。
+      int tick = 0;
+      final String url = await startPairedHost(
+        agentHost(
+          clock: () => DateTime.fromMillisecondsSinceEpoch(
+            1700000000000 + 1000 * tick++,
+          ),
+        ),
+      );
+      final InterconnectAssistantClient c = client();
+      final HostAssistantTarget target = (await c.probeUrl(url))!;
+      expect(target.supportsAgentHistory, isTrue);
+      final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+        client: c,
+        target: target,
+        locale: 'zh-CN',
+        longPollWait: const Duration(seconds: 2),
+      );
+      addTearDown(session.dispose);
+      final AiAgentSessionLibrary library = session.sessionLibrary!;
+      expect(library.storedOn, 'PC');
+      expect(library.currentSessionUnsaved, isTrue);
+
+      Future<void> say(String text) async {
+        final int before = session.entries.length;
+        await session.send(text);
+        await until(
+          session,
+          () =>
+              !session.running &&
+              session.entries.length >= before + 2 &&
+              session.entries.last.kind == AgentEntryKind.assistant,
+        );
+      }
+
+      await say('第一句');
+      final String first = library.currentSessionId!;
+      expect(library.currentSessionUnsaved, isFalse);
+      await library.newSession();
+      await until(session, () => library.currentSessionId != null);
+      await say('第二句');
+      final String second = library.currentSessionId!;
+      expect(second, isNot(first));
+
+      // host 存的发起设备是配对表里的 peerId，不是口令。
+      expect((await hostDb.getAiAgentSession(first))!.originPeerId, 'phone-1');
+      List<String> ids(List<AiAgentSessionSummary> l) =>
+          l.map((AiAgentSessionSummary s) => s.id).toList();
+      final List<AiAgentSessionSummary> listed = await library.listSessions();
+      expect(ids(listed), <String>[second, first]);
+      expect(listed.last.title, '第一句');
+
+      // 续接第一场：读回整场，接着说进同一场。
+      expect(await library.switchToSession(first), isTrue);
+      expect(library.currentSessionId, first);
+      expect(texts(session), <String>['第一句']);
+      await say('第三句');
+      expect(texts(session), <String>['第一句', '第三句']);
+
+      await library.renameSession(first, '  改过的名字 ');
+      expect(
+        (await library.listSessions())
+            .firstWhere((AiAgentSessionSummary s) => s.id == first)
+            .title,
+        '改过的名字',
+      );
+
+      // 删手上这一场：先换成新对话，host 上的存档没了、不会被收尾写回。
+      expect(await library.deleteSession(first), isTrue);
+      expect(library.currentSessionUnsaved, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(await hostDb.getAiAgentSession(first), isNull);
+      expect(ids(await library.listSessions()), <String>[second]);
+    });
+
+    test('共享口令的老设备：不宣告会话历史（不发会被 403 的请求）', () async {
+      final (_, String url) = await startHost(agentHost());
+      final InterconnectAssistantClient c = client();
+      final HostAssistantTarget target = (await c.probeUrl(url))!;
+      expect(target.agentHistoryVersion, kHostAssistantAgentHistoryVersion);
+      expect(target.supportsAgentHistory, isFalse);
+      final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+        client: c,
+        target: target,
+        locale: 'zh-CN',
+        longPollWait: const Duration(seconds: 1),
+      );
+      addTearDown(session.dispose);
+      expect(session.sessionLibrary, isNull);
+      await expectLater(
+        c.listHistory(target, feature: kHostAssistantFeatureAgent),
+        throwsA(isA<HostAssistantException>()),
+      );
+    });
+
+    test('老 host（能力位没有 agentHistory）：没有会话库，不发 resume', () async {
+      const HostAssistantTarget old = HostAssistantTarget(
+        baseUrl: 'http://old',
+        deviceName: 'Old',
+        features: <String>[kHostAssistantFeatureAgent],
+        pairedToken: true,
+      );
+      expect(old.supportsAgentHistory, isFalse);
+      await expectLater(
+        client().open(
+          old,
+          feature: kHostAssistantFeatureAgent,
+          locale: 'zh',
+          resume: 'rm1',
+        ),
+        throwsA(
+          isA<HostAssistantException>().having(
+            (HostAssistantException e) => e.code,
+            'code',
+            'history_unsupported',
+          ),
+        ),
+      );
+    });
   });
 }

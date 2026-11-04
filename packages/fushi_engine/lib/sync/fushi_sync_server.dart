@@ -434,6 +434,10 @@ class FushiSyncServer {
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
 
+  /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
+  /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
+  final Map<String, int?> _sourceBitrateCache = <String, int?>{};
+
   /// 远端原盘的共享会话（`disc_share_routes.dart`）：token 在路径里，按空闲续期。
   late final DiscShareTokenStore _discShares = DiscShareTokenStore(now: _now);
 
@@ -994,7 +998,19 @@ class FushiSyncServer {
       if (assistant == null) {
         return shelf.Response.notFound('Host assistant off');
       }
-      return handleHostAssistantRequest(assistant, request, method, reqPath);
+      // 会话归属（BUG-4067）：认得出的 per-peer 口令才算「哪台设备」；共享口令 /
+      // 老 client 是匿名调用方——能开会话，但看不到任何会话历史。
+      final String? authorization = request.headers['authorization'];
+      final HostAssistantCaller caller = await _validatePeerAuth(authorization)
+          ? HostAssistantCaller(peerToken: _basicPassword(authorization!))
+          : HostAssistantCaller.anonymous;
+      return handleHostAssistantRequest(
+        assistant,
+        request,
+        method,
+        reqPath,
+        caller: caller,
+      );
     }
     if (reqPath == '/api/subscriptions' ||
         reqPath.startsWith('/api/subscriptions/')) {

@@ -12,6 +12,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -45,6 +46,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 /// 假 AI：回 [reply]（或 [status] 非 200 时报错），记请求次数。

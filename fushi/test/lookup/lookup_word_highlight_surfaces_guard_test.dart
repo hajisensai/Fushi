@@ -43,7 +43,10 @@ void main() {
         reason: 'mixin onTextSelected 未 highlightSelection(count)',
       );
       expect(
-        src.contains('await onPush(text, childRect, rubySpans)'),
+        // 第 4 参是被点处那一句（反馈 TnKWBi4C-9），随子层一起交给宿主。
+        compactCode(
+          src,
+        ).contains('awaitonPush(text,childRect,rubySpans,contextSentence,)'),
         isTrue,
         reason: 'mixin 未 await onPush 取匹配字数用于高亮',
       );
@@ -71,15 +74,21 @@ void main() {
       // 折叠空白比对：守签名语义，不钉 `dart format` 的换行 / 缩进。
       expect(
         compactCode(src).contains(
-          'requiredFuture<int>Function('
+          'typedefNestedPopupPush='
+          'Future<int>Function('
           'Stringtext,'
           'RectselectionRect,'
           'List<FushiRubySpan>rubySpans,'
-          ')'
-          'onPush,',
+          'StringcontextSentence,'
+          ');',
         ),
         isTrue,
         reason: 'onPush 签名未返回 Future<int> 匹配字数',
+      );
+      expect(
+        compactCode(src).contains('requiredNestedPopupPushonPush,'),
+        isTrue,
+        reason: 'buildNestedPopupLayer 的 onPush 必须是 NestedPopupPush',
       );
       expect(
         src.contains('Future<int> pushNestedPopup('),
@@ -96,7 +105,7 @@ void main() {
     test('阅读器车道 onTextSelected 高亮父卡片；onLinkClick 原地跳转不叠层', () {
       final String src = base.readAsStringSync();
       final int text = src.indexOf(
-        'onTextSelected: (text, localRect, rubySpans) async {',
+        'onTextSelected: (text, localRect, rubySpans, _) async {',
       );
       expect(
         text,

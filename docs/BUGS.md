@@ -33,11 +33,94 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3617 条。点号进各自文件。
+> 共 3700 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4101](bugs/BUG-4101-windows-webview-creation-error-controller-type.md) | ✅ | ✅ | Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次 |
+| [BUG-4100](bugs/BUG-4100-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
+| [BUG-4099](bugs/BUG-4099-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |
+| [BUG-4098](bugs/BUG-4098-ai-resources-burned-in-unflagged.md) | ✅ | ✅ | AI 助手把硬字幕 / 只有配音的资源当同等候选推荐给学习 |
+| [BUG-4097](bugs/BUG-4097-music-album-cover-under-top-bar.md) | ✅ | ✅ | MD3 专辑页 / 单曲详情页首项被悬浮顶栏盖住 |
+| [BUG-4096](bugs/BUG-4096-ass-drawing-offset-by-bbox-min.md) | ✅ | ✅ | ASS 矢量绘图遮罩落点减掉了包围盒最小角，与 libass 错位成白条 |
+| [BUG-4095](bugs/BUG-4095-video-web-return-bar-under-caption.md) | ✅ | ✅ | video-web-return-bar-under-caption |
+| [BUG-4094](bugs/BUG-4094-paired-host-mine-failure-unlabeled.md) | ✅ | ✅ | 开着「制卡到已配对设备」时主机 Anki 落卡失败，客户端只显示「连不上 AnkiConnect」看不出是主机 |
+| [BUG-4093](bugs/BUG-4093-inline-notice-actions-mid-banner.md) | ✅ | ✅ | 横幅（FushiInlineNotice）同行动作按钮停在横幅中间 |
+| [BUG-4092](bugs/BUG-4092-video-panel-scheme-ignores-app-surface.md) | ✅ | ✅ | 播放器面板（字幕轨抽屉等）表面色与自定义主题页面底色不同族 |
+| [BUG-4091](bugs/BUG-4091-ass-style-transfer-japanese-italic.md) | ✅ | ✅ | 参考英语ASS生成的日语ASS整行变斜体 |
+| [BUG-4090](bugs/BUG-4090-tv-job-single-movie-file-organize-fails.md) | ✅ | ✅ | 剧集身份的下载任务下到单文件剧场版，整理报 unable to determine episode number |
+| [BUG-4089](bugs/BUG-4089-ms-translator-tts-tfettts-500.md) | ✅ | ✅ | 微软翻译朗读恒失败：bing tfettts 接口已弃用 |
+| [BUG-4088](bugs/BUG-4088-web-browser-enter-ignores-address.md) | ✅ | ✅ | web-browser-enter-ignores-address |
+| [BUG-4087](bugs/BUG-4087-advanced-mining-srs-deck-ignored.md) | ✅ | ✅ | 高级制卡在挖词目标为 Fushi 复习时仍列 Anki 牌组、所选牌组不生效 |
+| [BUG-4086](bugs/BUG-4086-download-task-search-ctrl-f.md) | ✅ | ✅ | 浏览 › 下载任务页按 Ctrl+F 不聚焦任务搜索框 |
+| [BUG-4085](bugs/BUG-4085-video-subtitle-lookup-highlight-leading-punct.md) | ✅ | ✅ | 视频字幕查词高亮落在句首括号上，没覆盖真正查到的词 |
+| [BUG-4084](bugs/BUG-4084-web-browser-hidden-tab-autoplay.md) | ✅ | ✅ | 浏览页被视频页盖住时网页预告片仍自动播放 |
+| [BUG-4083](bugs/BUG-4083-extension-mined-panel-transparent.md) | ✅ | ✅ | 浏览器扩展「卡片已在 Anki 中」面板底板透明，字叠字 |
+| [BUG-4082](bugs/BUG-4082-manga-macos-context-menu-stack.md) | ✅ | ✅ | macOS 漫画阅读器右键菜单不消失、重复叠加 |
+| [BUG-4081](bugs/BUG-4081-shelf-contact-shadow-dot.md) | ✅ | ✅ | shelf-contact-shadow-dot |
+| [BUG-4080](bugs/BUG-4080-reader-lookup-highlight-invisible-light-theme.md) | ✅ | ✅ | 浅色跟随主题下阅读器查词选区高亮几乎看不出来 |
+| [BUG-4079](bugs/BUG-4079-reader-focus-steals-dialog-keyboard.md) | ✅ | ✅ | 小说阅读器高级制卡对话框的句子输入框键盘弹出即收回 |
+| [BUG-4078](bugs/BUG-4078-lyrics-overlay-menu-duplicate-seek.md) | ✅ | ✅ | 歌词覆盖层 ⋯ 菜单的 -10s / +10s 与播放器上的 ±10 键重复 |
+| [BUG-4077](bugs/BUG-4077-android-startup-scudo-oom-loop-pre-23152.md) | ✅ | ✅ | Android 启动约 6 s 内 Scudo OOM 中止并反复重启（23152 之前的版本） |
+| [BUG-4076](bugs/BUG-4076-desktop-unexpected-exit-no-evidence.md) | 🚧 | 🚧 | 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS） |
+| [BUG-4075](bugs/BUG-4075-mobile-srs-sync-memory-exhaustion.md) | 🚧 | 🚧 | iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory） |
+| [BUG-4074](bugs/BUG-4074-windows-update-handoff-false-crash-pre-22838.md) | ✅ | ✅ | Windows 应用内更新交接被误报「停在前台时没了」（22838 之前的版本） |
+| [BUG-4073](bugs/BUG-4073-windows-uia-hittest-av.md) | 🚧 | 🚧 | Windows flutter_windows.dll+0x133cb 访问冲突：UIA HitTestSync 打到失步的 AX 节点 |
+| [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | ✅ | ✅ | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
+| [BUG-4071](bugs/BUG-4071-android-exit-importance-overrides-marker.md) | ✅ | ✅ | Android 后台被厂商杀进程仍被判「停在前台时没了」弹闪退报告 |
+| [BUG-4070](bugs/BUG-4070-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
+| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
+| [BUG-4068](bugs/BUG-4068-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
+| [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | ✅ | ✅ | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
+| [BUG-4066](bugs/BUG-4066-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |
+| [BUG-4065](bugs/BUG-4065-feedback-bottom-left-image-no-material.md) | ✅ | ✅ | 歌词模式左下角插图卡不自动收起 |
+| [BUG-4064](bugs/BUG-4064-video-volume-popover-md2-slider.md) | ✅ | ✅ | 视频音量浮层仍是 MD2 圆钮细轨、外框不分设计系统 |
+| [BUG-4063](bugs/BUG-4063-filled-field-label-clipped-desktop-density.md) | ✅ | ✅ | 带标题输入框 / 下拉的浮起标题贴住或骑出填充块上沿（文字显示不全） |
+| [BUG-4062](bugs/BUG-4062-srs-type-answer-unsupported.md) | ✅ | ✅ | 迁移后打字输入卡变成基础卡 |
+| [BUG-4061](bugs/BUG-4061-srs-first-review-rating-guide.md) | ✅ | ✅ | 首次复习不说明四个评分按钮 |
+| [BUG-4060](bugs/BUG-4060-srs-home-review-today-stats.md) | ✅ | ✅ | 首页复习面板缺少今日复习统计 |
+| [BUG-4059](bugs/BUG-4059-srs-browse-preview-webview-vs-native.md) | ✅ | ✅ | 浏览预览与复习实际卡面不一致 |
+| [BUG-4058](bugs/BUG-4058-srs-front-sentence-no-target-highlight.md) | ✅ | ✅ | 复习卡正面例句不高亮目标词 |
+| [BUG-4057](bugs/BUG-4057-android-online-anime-black-video.md) | 🚧 | 🚧 | Android 在线动画源视频全部黑屏（只有播放器界面） |
+| [BUG-4056](bugs/BUG-4056-scrape-locale-empty-follows-ui-not-original.md) | ✅ | ✅ | 刮削资料语言留空时跟随界面语言而非作品原语言 |
+| [BUG-4055](bugs/BUG-4055-app-video-scan-never-prunes-deleted-files.md) | ✅ | ✅ | app 本地视频来源重扫从不回收已删除文件，删掉的视频留在待确认刮削队列 |
+| [BUG-4054](bugs/BUG-4054-sync-unchanged-books-slow.md) | ✅ | ✅ | 同步时未变的书和统计仍逐本往返、整份重下 |
+| [BUG-4053](bugs/BUG-4053-browser-ext-arrows-hijacked-without-subtitles.md) | ✅ | ✅ | 浏览器扩展字幕没开时左右键仍被上一句下一句接管 |
+| [BUG-4052](bugs/BUG-4052-browser-ext-seek-hold-speed-shortcuts.md) | ✅ | ✅ | 浏览器扩展缺按秒快退快进与按住临时倍速快捷键，设置说明写死旧键 |
+| [BUG-4051](bugs/BUG-4051-browser-floating-player-btn-touch.md) | ✅ | ✅ | 安卓应用内浏览器看油管时找不到换字幕的 Fushi 播放器按钮 |
+| [BUG-4050](bugs/BUG-4050-mac-reader-click-lookup-dead-until-reopen.md) | 🚧 | 🚧 | macOS 阅读器点词不查词、退出重进恢复 |
+| [BUG-4049](bugs/BUG-4049-popup-selection-text-plain.md) | ✅ | ✅ | 制卡字段 popup-selection-text 拍平成纯文本 |
+| [BUG-4048](bugs/BUG-4048-lookup-tab-nested-mining-no-sentence.md) | ✅ | ✅ | 查词页释义里点词叠出的浮层制卡例句恒空 |
+| [BUG-4047](bugs/BUG-4047-popup-dict-long-press-also-toggles.md) | ✅ | ✅ | 查词弹窗长按词典标题选词典松开后又折叠该词典 |
+| [BUG-4046](bugs/BUG-4046-gal-attached-mining-hides-surfaces.md) | ✅ | ✅ | 游戏制卡期间查词卡消失、点不了别的词、hook 文本不更新；制卡后主界面打不开 |
+| [BUG-4045](bugs/BUG-4045-gal-mining-serial-blocks-next-card.md) | ✅ | ✅ | 游戏制卡整张卡串行：上一张卡编码 / 写库期间下一张卡无法采样（无后台制卡队列） |
+| [BUG-4044](bugs/BUG-4044-interconnect-quality-no-original-auto-literal-lan.md) | ✅ | ✅ | 互联播放缺「原画」档，「自动」按地址字面量判局域网，在家也看不到原片 |
+| [BUG-4043](bugs/BUG-4043-video-remote-host-default-subtitle-hidden-by-selection.md) | ✅ | ✅ | 互联远端视频有字幕选择时 host 默认字幕从菜单消失 |
+| [BUG-4042](bugs/BUG-4042-macos-popup-header-button-clipped.md) | ✅ | ✅ | macOS 查词弹窗右上角调节按钮被右边缘裁掉一半 |
+| [BUG-4041](bugs/BUG-4041-dict-render-strange-symbols.md) | ✅ | ✅ | 词典释义里出现奇怪符号 |
+| [BUG-4040](bugs/BUG-4040-shinmeikai-headword-kanji-mark-render.md) | ✅ | ✅ | 新明解国語辞典词头表外字标注渲染异常 |
+| [BUG-4039](bugs/BUG-4039-linux-lookup-popup-content-invisible.md) | — | — | Linux 查词弹窗词典内容不显示但可点击、可制卡 |
+| [BUG-4038](bugs/BUG-4038-srs-lookup-expanded-bottom-clipped.md) | ✅ | ✅ | 复习卡背面释义展开后底部被截断且其他词典消失 |
+| [BUG-4037](bugs/BUG-4037-srs-lookup-popup-flash-below-then-above.md) | — | — | 复习卡查词弹窗先在下方出现再跳到上方 |
+| [BUG-4036](bugs/BUG-4036-dict-style-preview-theme-after-unmount.md) | ✅ | ✅ | 离开词典样式页时预览续体读已卸载 context 空断言 |
+| [BUG-4035](bugs/BUG-4035-srs-native-lookup-no-highlight.md) | ✅ | ✅ | 复习卡原生卡面查词后卡面上没有被查词高亮 |
+| [BUG-4034](bugs/BUG-4034-anki-reposition-editor-open.md) | — | — | Anki 卡组按词频重排失败（AnkiConnect 拒绝全部写入：有编辑器开着） |
+| [BUG-4033](bugs/BUG-4033-srs-legacy-mining-tags-no-source.md) | ✅ | ✅ | 旧 fushi / hibiki 制的卡统计页「制卡来源」认不出出处 |
+| [BUG-4032](bugs/BUG-4032-srs-anki-template-audio-dom-contract.md) | ✅ | ✅ | eggrolls 卡组复习时不播单词音频（卡面外壳不满足 Anki reviewer 的 DOM 契约） |
+| [BUG-4031](bugs/BUG-4031-srs-review-no-rating-feedback.md) | ✅ | ✅ | SRS 评分后没有任何结果提示 |
+| [BUG-4030](bugs/BUG-4030-srs-review-undo-lost-on-reentry.md) | ✅ | ✅ | SRS 退出再进复习页后无法撤销上一次评分 |
+| [BUG-4029](bugs/BUG-4029-gal-subtitle-drops-leading-quote.md) | 🚧 | 🚧 | 游戏抓取文本进字幕窗后丢句首「、偶尔先重复上一句三遍 |
+| [BUG-4028](bugs/BUG-4028-windows-update-new-instance-locks-dll.md) | ✅ | ✅ | Windows 应用内更新：安装期间新启动的 Fushi 占用 DLL 致整包回滚 |
+| [BUG-4027](bugs/BUG-4027-lyrics-modern-wide-missing-stats.md) | ✅ | ✅ | 歌词模式新版宽屏缺阅读速度 / 已读字数 / 阅读时长 |
+| [BUG-4026](bugs/BUG-4026-lyrics-esc-exits-book.md) | ✅ | ✅ | 歌词模式按 Esc 先回阅读器、要再按一次才回书架 |
+| [BUG-4025](bugs/BUG-4025-manga-download-bytes-as-pages.md) | ✅ | ✅ | 漫画下载进度把字节数显示成页数 |
+| [BUG-4024](bugs/BUG-4024-video-continue-watching-streaming-series-scattered.md) | ✅ | ✅ | 继续观看里 Netflix 等流媒体剧集按集散开、不归组 |
+| [BUG-4023](bugs/BUG-4023-video-mobile-hidden-subtitle-no-reveal.md) | ✅ | ✅ | 移动端隐藏字幕播放中无从唤出：点开进度条也不显示 |
+| [BUG-4022](bugs/BUG-4022-video-autoplay-drops-immersive-and-series-volume.md) | ✅ | ✅ | 自动连播（本地换集）退出沉浸锁定，音量不跟随系列 |
+| [BUG-4021](bugs/BUG-4021-video-immersive-long-press-speed.md) | ✅ | ✅ | 沉浸锁定时长按画面仍会临时加速，不跟随沉浸模式档位 |
+| [BUG-4020](bugs/BUG-4020-video-external-subtitle-chars-zero.md) | ✅ | ✅ | 视频外挂字幕（调轴后）字幕字数统计恒为 0 |
 | [BUG-4014](bugs/BUG-4014-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
+| [BUG-4013](bugs/BUG-4013-ios-virtual-address-exhaustion.md) | ✅ | ✅ | iOS 同步 / 播歌 / 浏览器搜索时闪退（进程虚拟地址空间耗尽） |
 | [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
 | [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |
 | [BUG-4010](bugs/BUG-4010-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |

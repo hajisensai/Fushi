@@ -609,10 +609,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String bookTag = AnkiNoteComposer.bookTag;
   static const String videoTag = AnkiNoteComposer.videoTag;
   static const String gameTag = AnkiNoteComposer.gameTag;
-  static const String charPositionTagPrefix =
-      AnkiNoteComposer.charPositionTagPrefix;
-  static String? formatCharPositionTag(int? absoluteChars) =>
-      AnkiNoteComposer.formatCharPositionTag(absoluteChars);
+
   static String previewFromFieldValue(String value, {int maxLen = 60}) =>
       AnkiNoteComposer.previewFromFieldValue(value, maxLen: maxLen);
   static String? sanitizeTitleTag(String? title) =>

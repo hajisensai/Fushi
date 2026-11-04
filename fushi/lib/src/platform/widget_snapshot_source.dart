@@ -19,6 +19,7 @@ import 'package:fushi_engine/srs/srs_stats.dart' show SrsStatsData, SrsStreak;
 import 'package:fushi_engine/srs/srs_stats_loader.dart'
     show SrsStatsBundle, loadSrsStats;
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -64,7 +65,7 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart'
 /// 快照里每个封面最多探测的候选数 = 书架上限，封面文件探测只对入选的几条做。
 const int _kCoverProbeLimit = kWidgetShelfLimit;
 
-/// 从 app 状态收集 Android 桌面小组件快照，并在数据变化时推给 [publisher]。
+/// 从 app 状态收集桌面小组件快照（Android / iOS / macOS 同一份），并在数据变化时推给 [publisher]。
 ///
 /// 数据口径尽量与首页 dashboard 一致（同一批 provider / 同一批纯函数）：
 /// - 书 / 漫画「继续」：`fushiBooksProvider` + [isDashboardContinueBook]，
@@ -496,8 +497,11 @@ class WidgetSnapshotSource {
           '${dir.path}/${sha1.convert(cover.codeUnits).toString()}.img',
         );
         if (await file.exists() && await file.length() > 0) return file.path;
-        final HttpClient client = HttpClient()
-          ..connectionTimeout = const Duration(seconds: 5);
+        // 走应用统一出口（BUG-1498）：公网音源封面经用户代理，局域网媒体服务器
+        // 由 isDirectProxyTarget 闸门判 DIRECT，行为与裸 client 等价。
+        final HttpClient client = createAppHttpClient(
+          connectionTimeout: const Duration(seconds: 5),
+        );
         try {
           final HttpClientRequest request = await client
               .getUrl(Uri.parse(cover))

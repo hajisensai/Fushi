@@ -36,7 +36,7 @@ mod danmaku_sort;
 mod danmaku_xml;
 
 use danmaku_dart::{
-    double_try_parse, int_try_parse, lower_eq_ascii_keyword, round, to_int, trim, NonFinite,
+    NonFinite, double_try_parse, int_try_parse, lower_eq_ascii_keyword, round, to_int, trim,
 };
 use danmaku_json::{JsonDoc, Node};
 
@@ -262,7 +262,7 @@ pub fn parse_dandanplay_json(input: &[u16], shift: Shift) -> DanmakuParse {
                 error_code: e.kind as u32,
                 error_offset: e.offset as u32,
                 items: Vec::new(),
-            }
+            };
         }
     };
     let Node::Map { start, len } = doc.root() else {

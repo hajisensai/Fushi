@@ -17,10 +17,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Map, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Map, Value, json};
 
-use super::{applied_vv, in_savepoint, sql, Local};
+use super::{Local, applied_vv, in_savepoint, sql};
 use crate::store::SrsCore;
 use crate::sync2::codec::Reader;
 use crate::sync2::id::Id;
@@ -34,7 +34,11 @@ const EXT_KEYS: [&str; 3] = ["model", "app", "platform"];
 const TEXT_MAX: usize = 64;
 
 fn clip(s: &str) -> String {
-    s.trim().chars().filter(|c| !c.is_control()).take(TEXT_MAX).collect()
+    s.trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(TEXT_MAX)
+        .collect()
 }
 
 fn meta_get(c: &Connection, key: &str) -> Result<Option<String>, String> {
@@ -54,7 +58,10 @@ fn meta_set(c: &Connection, key: &str, value: &str) -> Result<(), String> {
 }
 
 fn meta_del(c: &Connection, key: &str) -> Result<(), String> {
-    c.prepare_cached("DELETE FROM srs_meta WHERE key = ?1").map_err(sql)?.execute([key]).map_err(sql)?;
+    c.prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+        .map_err(sql)?
+        .execute([key])
+        .map_err(sql)?;
     Ok(())
 }
 
@@ -85,7 +92,9 @@ fn hint_key(device: &Id) -> String {
 }
 
 fn parse_obj(s: Option<String>) -> Map<String, Value> {
-    s.and_then(|s| serde_json::from_str::<Value>(&s).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
+    s.and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
 }
 
 fn str_of<'a>(m: &'a Map<String, Value>, k: &str) -> &'a str {
@@ -97,9 +106,19 @@ pub(crate) fn self_ext(c: &Connection, profile: &str) -> Result<Option<Value>, S
     let info = parse_obj(meta_get(c, &self_key(profile))?);
     let ext: Map<String, Value> = EXT_KEYS
         .iter()
-        .filter_map(|k| Some((*k).to_owned()).zip(Some(str_of(&info, k)).filter(|v| !v.is_empty()).map(|v| json!(v))))
+        .filter_map(|k| {
+            Some((*k).to_owned()).zip(
+                Some(str_of(&info, k))
+                    .filter(|v| !v.is_empty())
+                    .map(|v| json!(v)),
+            )
+        })
         .collect();
-    Ok(if ext.is_empty() { None } else { Some(Value::Object(ext)) })
+    Ok(if ext.is_empty() {
+        None
+    } else {
+        Some(Value::Object(ext))
+    })
 }
 
 /// 记下别的设备刚收下的（更新的）head 的扩展与协议版本。停用之后它又写了 head：取消停用。
@@ -107,17 +126,29 @@ pub(crate) fn record_ext(c: &Connection, profile: &str, h: &Head) -> Result<(), 
     let mut out = Map::new();
     if let Some(ext) = h.ext.as_ref().and_then(Value::as_object) {
         for k in EXT_KEYS {
-            if let Some(v) = ext.get(k).and_then(Value::as_str).map(clip).filter(|v| !v.is_empty()) {
+            if let Some(v) = ext
+                .get(k)
+                .and_then(Value::as_str)
+                .map(clip)
+                .filter(|v| !v.is_empty())
+            {
                 out.insert(k.to_owned(), json!(v));
             }
         }
     }
     out.insert("v".to_owned(), json!(h.protocol));
     out.insert("at".to_owned(), json!(h.at_ms));
-    meta_set(c, &format!("{}{}", ext_prefix(profile), h.device.text()), &Value::Object(out).to_string())?;
+    meta_set(
+        c,
+        &format!("{}{}", ext_prefix(profile), h.device.text()),
+        &Value::Object(out).to_string(),
+    )?;
     let rkey = format!("{}{}", retired_prefix(profile), h.device.text());
     if let Some(r) = meta_get(c, &rkey)? {
-        let at = parse_obj(Some(r)).get("at").and_then(Value::as_i64).unwrap_or(i64::MAX);
+        let at = parse_obj(Some(r))
+            .get("at")
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX);
         if h.at_ms > at {
             meta_del(c, &rkey)?;
         }
@@ -128,12 +159,17 @@ pub(crate) fn record_ext(c: &Connection, profile: &str, h: &Head) -> Result<(), 
 /// 停用了的设备。
 pub(crate) fn retired_set(c: &Connection, profile: &str) -> Result<BTreeSet<Id>, String> {
     let prefix = retired_prefix(profile);
-    Ok(meta_prefixed(c, &prefix)?.into_iter().filter_map(|(k, _)| Id::parse(&k[prefix.len()..])).collect())
+    Ok(meta_prefixed(c, &prefix)?
+        .into_iter()
+        .filter_map(|(k, _)| Id::parse(&k[prefix.len()..]))
+        .collect())
 }
 
 /// 因果投递的「依赖都已应用」：[deps] 的每一分量都已应用，停用了的设备的分量不再等。
 pub(crate) fn deps_ready(deps: &Vv, vv: &Vv, retired: &BTreeSet<Id>) -> bool {
-    deps.0.iter().all(|(d, &s)| s <= vv.get(d) || retired.contains(d))
+    deps.0
+        .iter()
+        .all(|(d, &s)| s <= vv.get(d) || retired.contains(d))
 }
 
 /// 缓冲表里卡住的操作按「卡在谁身上」归账：`(gap, blocking)`。
@@ -141,7 +177,12 @@ pub(crate) fn deps_ready(deps: &Vv, vv: &Vv, retired: &BTreeSet<Id>) -> bool {
 /// - `blocking[D]`：别的设备排在队首的操作在等 D 还没收到的操作，那台设备在缓冲里的条数（D 是「缺段」的那台）。
 ///
 /// 只解码每台设备队首那一条（设备数次读），不扫整张缓冲表。
-fn stuck(c: &Connection, profile: &str, vv: &Vv, retired: &BTreeSet<Id>) -> Result<(BTreeMap<Id, i64>, BTreeMap<Id, i64>), String> {
+fn stuck(
+    c: &Connection,
+    profile: &str,
+    vv: &Vv,
+    retired: &BTreeSet<Id>,
+) -> Result<(BTreeMap<Id, i64>, BTreeMap<Id, i64>), String> {
     let heads: Vec<(Vec<u8>, i64, i64)> = c
         .prepare_cached("SELECT device, MIN(seq), COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1) GROUP BY device")
         .map_err(sql)?
@@ -152,7 +193,9 @@ fn stuck(c: &Connection, profile: &str, vv: &Vv, retired: &BTreeSet<Id>) -> Resu
     let mut gap = BTreeMap::new();
     let mut blocking: BTreeMap<Id, i64> = BTreeMap::new();
     for (dev, first, n) in heads {
-        let Ok(arr) = <[u8; 16]>::try_from(dev.as_slice()) else { continue };
+        let Ok(arr) = <[u8; 16]>::try_from(dev.as_slice()) else {
+            continue;
+        };
         let x = Id(arr);
         if first as u64 > vv.get(&x) + 1 {
             gap.insert(x, n);
@@ -164,7 +207,9 @@ fn stuck(c: &Connection, profile: &str, vv: &Vv, retired: &BTreeSet<Id>) -> Resu
             .query_row(params![profile, dev, first], |r| r.get(0))
             .optional()
             .map_err(sql)?;
-        let Some(op) = raw.and_then(|raw| Op::read(&mut Reader::new(&raw)).ok()) else { continue };
+        let Some(op) = raw.and_then(|raw| Op::read(&mut Reader::new(&raw)).ok()) else {
+            continue;
+        };
         for (d, &s) in &op.deps.0 {
             if *d != x && s > vv.get(d) && !retired.contains(d) {
                 *blocking.entry(*d).or_default() += n;
@@ -177,20 +222,32 @@ fn stuck(c: &Connection, profile: &str, vv: &Vv, retired: &BTreeSet<Id>) -> Resu
 /// [SrsCore::sync2_status] 每台设备的补充字段（按设备 ID 文本）：`model` / `app` / `platform` / `protocol` /
 /// `hint` / `retiredAt` / `gap` / `blocking` / `state`（`ok` / `behind` / `missing` / `upgrade` / `retired`），
 /// 以及本机信息 `selfInfo`。
-pub(crate) fn status_extras(c: &Connection, profile: &str, local: &Local) -> Result<(BTreeMap<String, Value>, Value), String> {
+pub(crate) fn status_extras(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+) -> Result<(BTreeMap<String, Value>, Value), String> {
     let vv = applied_vv(c, profile)?;
     let retired_rows: BTreeMap<String, Map<String, Value>> = {
         let prefix = retired_prefix(profile);
-        meta_prefixed(c, &prefix)?.into_iter().map(|(k, v)| (k[prefix.len()..].to_owned(), parse_obj(Some(v)))).collect()
+        meta_prefixed(c, &prefix)?
+            .into_iter()
+            .map(|(k, v)| (k[prefix.len()..].to_owned(), parse_obj(Some(v))))
+            .collect()
     };
     let retired: BTreeSet<Id> = retired_rows.keys().filter_map(|k| Id::parse(k)).collect();
     let (gap, blocking) = stuck(c, profile, &vv, &retired)?;
     let exts: BTreeMap<String, Map<String, Value>> = {
         let prefix = ext_prefix(profile);
-        meta_prefixed(c, &prefix)?.into_iter().map(|(k, v)| (k[prefix.len()..].to_owned(), parse_obj(Some(v)))).collect()
+        meta_prefixed(c, &prefix)?
+            .into_iter()
+            .map(|(k, v)| (k[prefix.len()..].to_owned(), parse_obj(Some(v))))
+            .collect()
     };
     let rows: Vec<(Vec<u8>, i64, i64)> = c
-        .prepare_cached("SELECT device, applied, head_seq FROM sync2_devices WHERE profile_uid = srs_id(?1)")
+        .prepare_cached(
+            "SELECT device, applied, head_seq FROM sync2_devices WHERE profile_uid = srs_id(?1)",
+        )
         .map_err(sql)?
         .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(sql)?
@@ -199,26 +256,39 @@ pub(crate) fn status_extras(c: &Connection, profile: &str, local: &Local) -> Res
     let mut out = BTreeMap::new();
     let self_info = parse_obj(meta_get(c, &self_key(profile))?);
     for (dev, applied, head_seq) in rows {
-        let Ok(arr) = <[u8; 16]>::try_from(dev.as_slice()) else { continue };
+        let Ok(arr) = <[u8; 16]>::try_from(dev.as_slice()) else {
+            continue;
+        };
         let id = Id(arr);
         let text = id.text();
         let is_self = id == local.device;
         let mut m = Map::new();
-        let ext = if is_self { self_info.clone() } else { exts.get(&text).cloned().unwrap_or_default() };
+        let ext = if is_self {
+            self_info.clone()
+        } else {
+            exts.get(&text).cloned().unwrap_or_default()
+        };
         for k in EXT_KEYS {
             let v = str_of(&ext, k);
             if !v.is_empty() {
                 m.insert(k.to_owned(), json!(v));
             }
         }
-        let protocol = if is_self { Some(segment::PROTOCOL as i64) } else { ext.get("v").and_then(Value::as_i64) };
+        let protocol = if is_self {
+            Some(segment::PROTOCOL as i64)
+        } else {
+            ext.get("v").and_then(Value::as_i64)
+        };
         if let Some(p) = protocol {
             m.insert("protocol".to_owned(), json!(p));
         }
         if let Some(h) = meta_get(c, &hint_key(&id))? {
             m.insert("hint".to_owned(), json!(h));
         }
-        let retired_at = retired_rows.get(&text).and_then(|r| r.get("at")).and_then(Value::as_i64);
+        let retired_at = retired_rows
+            .get(&text)
+            .and_then(|r| r.get("at"))
+            .and_then(Value::as_i64);
         if let Some(at) = retired_at {
             m.insert("retiredAt".to_owned(), json!(at));
         }
@@ -269,7 +339,11 @@ impl SrsCore {
         };
         let label = |m: &Map<String, Value>| -> String {
             let nick = str_of(m, "nick");
-            if nick.is_empty() { str_of(m, "model").to_owned() } else { nick.to_owned() }
+            if nick.is_empty() {
+                str_of(m, "model").to_owned()
+            } else {
+                nick.to_owned()
+            }
         };
         let view = |m: &Map<String, Value>, changed: bool| {
             json!({
@@ -282,7 +356,9 @@ impl SrsCore {
             })
         };
         let unchanged = self.read_visible(|c| {
-            let Some(l) = Local::load(c, profile)? else { return Ok(None) };
+            let Some(l) = Local::load(c, profile)? else {
+                return Ok(None);
+            };
             let cur = parse_obj(meta_get(c, &self_key(profile))?);
             let next = merge(&cur);
             Ok((next == cur && l.name == label(&next)).then(|| view(&next, false)))
@@ -296,15 +372,29 @@ impl SrsCore {
                 Local::create(c, profile, now)?;
             }
             let next = merge(&parse_obj(meta_get(c, &self_key(profile))?));
-            meta_set(c, &self_key(profile), &Value::Object(next.clone()).to_string())?;
-            c.execute("UPDATE sync2_self SET name = ?2 WHERE profile_uid = srs_id(?1)", params![profile, label(&next)]).map_err(sql)?;
+            meta_set(
+                c,
+                &self_key(profile),
+                &Value::Object(next.clone()).to_string(),
+            )?;
+            c.execute(
+                "UPDATE sync2_self SET name = ?2 WHERE profile_uid = srs_id(?1)",
+                params![profile, label(&next)],
+            )
+            .map_err(sql)?;
             Ok(view(&next, true))
         })
     }
 
     /// 停用 / 取消停用一台（别的）设备。停用：它缺段而卡住的别的设备的操作不再等它（下一次投递起；调用方紧接着
     /// 跑一次投递，见 ffi.rs `retire`）。返回 `{"retired": bool}`。
-    pub fn sync2_retire(&self, profile: &str, device: &str, retire: bool, now: i64) -> Result<Value, String> {
+    pub fn sync2_retire(
+        &self,
+        profile: &str,
+        device: &str,
+        retire: bool,
+        now: i64,
+    ) -> Result<Value, String> {
         let id = Id::parse(device).ok_or("retire: bad device")?;
         let w = self.writer()?;
         in_savepoint(&w, |c| {
@@ -320,10 +410,16 @@ impl SrsCore {
                 )
                 .optional()
                 .map_err(sql)?;
-            let Some((applied, head_seq)) = row else { return Err("retire: unknown device".into()) };
+            let Some((applied, head_seq)) = row else {
+                return Err("retire: unknown device".into());
+            };
             let key = format!("{}{}", retired_prefix(profile), id.text());
             if retire {
-                meta_set(c, &key, &json!({"at": now, "applied": applied, "headSeq": head_seq}).to_string())?;
+                meta_set(
+                    c,
+                    &key,
+                    &json!({"at": now, "applied": applied, "headSeq": head_seq}).to_string(),
+                )?;
             } else {
                 meta_del(c, &key)?;
             }

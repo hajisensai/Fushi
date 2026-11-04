@@ -23,12 +23,12 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
-pub use crate::ordering::{cmp_utf16, CLOCK_TOLERANCE_MS};
-use crate::ordering::{is_clamped, SortKey};
+pub use crate::ordering::{CLOCK_TOLERANCE_MS, cmp_utf16};
+use crate::ordering::{SortKey, is_clamped};
 
 use serde::Deserialize;
-use serde_json::value::RawValue;
 use serde_json::Value;
+use serde_json::value::RawValue;
 
 /// 导入复习与原生复习的等价容差（Dart `srsImportEquivalenceToleranceMs`）。
 pub const IMPORT_EQUIVALENCE_TOLERANCE_MS: i64 = 1000;
@@ -104,7 +104,13 @@ impl Log<'_> {
     }
 
     fn sort_key(&self) -> SortKey<'_> {
-        SortKey::new(self.physical, self.counter, &self.writer, &self.id, self.server_time)
+        SortKey::new(
+            self.physical,
+            self.counter,
+            &self.writer,
+            &self.id,
+            self.server_time,
+        )
     }
 }
 
@@ -121,7 +127,10 @@ pub fn import_equivalent(imported: &Log<'_>, native: &Log<'_>) -> bool {
         && native.is_rating_review()
         && match imported.anki_id {
             // 与 Dart int 同语义：减法与取绝对值都按 64 位回绕。
-            Some(anki_ms) => anki_ms.wrapping_sub(native.occurred_at).wrapping_abs() <= IMPORT_EQUIVALENCE_TOLERANCE_MS,
+            Some(anki_ms) => {
+                anki_ms.wrapping_sub(native.occurred_at).wrapping_abs()
+                    <= IMPORT_EQUIVALENCE_TOLERANCE_MS
+            }
             None => false,
         }
 }
@@ -161,7 +170,8 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
             }
         }
     } else {
-        let mut last: std::collections::HashMap<&str, usize> = std::collections::HashMap::with_capacity(logs.len());
+        let mut last: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::with_capacity(logs.len());
         for (i, l) in logs.iter().enumerate() {
             last.insert(&l.id, i);
         }
@@ -203,7 +213,8 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         if revoked {
             s |= STATUS_REVOKED;
         }
-        let equivalent = l.origin == Origin::Anki && natives.iter().any(|n| import_equivalent(l, n));
+        let equivalent =
+            l.origin == Origin::Anki && natives.iter().any(|n| import_equivalent(l, n));
         if equivalent {
             s |= STATUS_EQUIVALENT_IMPORT;
         }
@@ -221,7 +232,12 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         }
         status.push(s);
     }
-    Selection { order, status, last_effective, scheduler_from }
+    Selection {
+        order,
+        status,
+        last_effective,
+        scheduler_from,
+    }
 }
 
 // ---------------------------------------------------------------- 落库形态（JSON）入口
@@ -380,7 +396,11 @@ pub fn parse_full(json: &str, server_time: Option<i64>) -> Result<Parsed<'_>, St
 
 /// [parse_full]，日志可以是瘦存 + 列（[StoredLog]，store/slim.rs `log_row`）：读 `jslim` 与列的读者不经生成列
 /// `json`（逐行拼回原文）。
-pub fn parse_stored<'a>(stored: &'a str, server_time: Option<i64>, cols: Option<&'a LogCols>) -> Result<Parsed<'a>, String> {
+pub fn parse_stored<'a>(
+    stored: &'a str,
+    server_time: Option<i64>,
+    cols: Option<&'a LogCols>,
+) -> Result<Parsed<'a>, String> {
     let (log, res, extra) = parse_wire(stored, server_time, cols)?;
     Ok((log, res.as_ref().map(Outcome::of), extra))
 }
@@ -427,7 +447,8 @@ fn parse_wire<'a>(
         (Some(_), None) => return Err("slim review log read without its columns".to_owned()),
         (None, _) => (stored, "", None),
     };
-    let mut w: WireLog<'a> = serde_json::from_str(json).map_err(|e| format!("bad review log: {e}"))?;
+    let mut w: WireLog<'a> =
+        serde_json::from_str(json).map_err(|e| format!("bad review log: {e}"))?;
     let col = |key: &str| cols.filter(|_| !absent.split(',').any(|a| a == key));
     if let Some(c) = col("id") {
         w.id.get_or_insert(Cow::Borrowed(&c.id));
@@ -583,7 +604,11 @@ fn parse_result<'a>(raw: &'a RawValue) -> Result<WireResult<'a>, String> {
 
 /// 一份历史（落库 JSON + 各自的服务器时刻）的当前状态。
 pub fn state_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<State, String> {
-    let stored: Vec<StoredLog<'_>> = jsons.iter().zip(server_times).map(|(j, s)| (*j, *s, None)).collect();
+    let stored: Vec<StoredLog<'_>> = jsons
+        .iter()
+        .zip(server_times)
+        .map(|(j, s)| (*j, *s, None))
+        .collect();
     state_from_stored(&stored)
 }
 
@@ -617,8 +642,15 @@ pub struct StatRow {
 
 /// 一份归属组（归属卡 + 归它的前身卡，日志合在一起）的有效复习投影：每条有效日志在分类 / 成熟变化
 /// 上看合并历史里的前序有效结果。规则与删除前的 Dart `srsStatProjectionOf` 逐条对应。
-pub fn stats_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<Vec<StatRow>, String> {
-    let stored: Vec<StoredLog<'_>> = jsons.iter().zip(server_times).map(|(j, s)| (*j, *s, None)).collect();
+pub fn stats_from_json(
+    jsons: &[&str],
+    server_times: &[Option<i64>],
+) -> Result<Vec<StatRow>, String> {
+    let stored: Vec<StoredLog<'_>> = jsons
+        .iter()
+        .zip(server_times)
+        .map(|(j, s)| (*j, *s, None))
+        .collect();
     stats_from_stored(&stored)
 }
 
@@ -663,7 +695,11 @@ fn stat_rows(
         let kind = if log.kind == Kind::Review && matches!(log.rating, Some(1..=4)) {
             match extra.rtype {
                 RType::Learn => Some(if prev_queue == 0 { 0 } else { 1 }),
-                RType::Review => Some(if prev_ivl >= MATURE_INTERVAL_DAYS { 3 } else { 2 }),
+                RType::Review => Some(if prev_ivl >= MATURE_INTERVAL_DAYS {
+                    3
+                } else {
+                    2
+                }),
                 RType::Relearn => Some(4),
                 RType::Filtered => Some(5),
                 _ => None,
@@ -735,7 +771,9 @@ fn state_of(
             last_log_id: None,
         });
     };
-    let r = results[last].take().expect("last effective log has a result");
+    let r = results[last]
+        .take()
+        .expect("last effective log has a result");
     Ok(State {
         queue: queue_code(r.queue.as_deref()),
         due_day: r.due_day,
@@ -769,7 +807,12 @@ pub const STATE_WORDS: usize = 14;
 /// 每份历史两个串：lastLogId、scheduler。i64 记录：
 /// `[flags, queue, dueDay, dueAt, ivl, step, reps, lapses, lastReviewedAt, ease, s, d, sf, 0]`，
 /// flags 位：1 有 lastLogId、2 dueDay、4 dueAt、8 记忆状态、16 lastReviewedAt、32 ease；s/d/sf 是 f64 位。
-pub fn states_from_json(text: &[u8], offs: &[u32], servers: &[i64], groups: &[u32]) -> Result<Vec<u8>, String> {
+pub fn states_from_json(
+    text: &[u8],
+    offs: &[u32],
+    servers: &[i64],
+    groups: &[u32],
+) -> Result<Vec<u8>, String> {
     let n_logs = servers.len();
     if offs.len() != n_logs + 1 || groups.is_empty() || *groups.last().unwrap() as usize != n_logs {
         return Err("bad history batch layout".to_owned());
@@ -866,12 +909,20 @@ pub const COLUMN_WORDS: usize = 7;
 ///
 /// 输出布局（小端）：`[u32 组边界 × (n_groups + 1)][u32 输入下标 × 去重后总数][i32 lastEffective × n_groups]
 /// [i32 schedulerFrom × n_groups][u8 STATUS_* × 去重后总数]`；下标都是全局输入下标，-1 = 无。
-pub fn select_columns(ints: &[i64], text: &[u8], offs: &[u32], groups: &[u32]) -> Result<Vec<u8>, String> {
+pub fn select_columns(
+    ints: &[i64],
+    text: &[u8],
+    offs: &[u32],
+    groups: &[u32],
+) -> Result<Vec<u8>, String> {
     if ints.len() % COLUMN_WORDS != 0 {
         return Err("bad history column layout".to_owned());
     }
     let n_logs = ints.len() / COLUMN_WORDS;
-    if offs.len() != n_logs * 3 + 1 || groups.is_empty() || *groups.last().unwrap() as usize != n_logs {
+    if offs.len() != n_logs * 3 + 1
+        || groups.is_empty()
+        || *groups.last().unwrap() as usize != n_logs
+    {
         return Err("bad history column layout".to_owned());
     }
     let text = std::str::from_utf8(text).map_err(|_| "history columns are not UTF-8".to_owned())?;
@@ -902,7 +953,9 @@ pub fn select_columns(ints: &[i64], text: &[u8], offs: &[u32], groups: &[u32]) -
             rating: opt(c[5]),
             anki_id: opt(c[4]),
             occurred_at: c[3],
-            revokes: (bits & (1 << 7) != 0).then(|| slice(3 * i + 2).map(Cow::Borrowed)).transpose()?,
+            revokes: (bits & (1 << 7) != 0)
+                .then(|| slice(3 * i + 2).map(Cow::Borrowed))
+                .transpose()?,
             has_result: bits & (1 << 6) != 0,
         });
     }
@@ -965,7 +1018,11 @@ pub fn import_equivalent_any(text: &[u8], offs: &[u32], groups: &[u32]) -> Resul
         if a >= b || b > n_logs {
             return Err("bad import batch groups".to_owned());
         }
-        out.push(u8::from(logs[a + 1..b].iter().any(|n| import_equivalent(&logs[a], n))));
+        out.push(u8::from(
+            logs[a + 1..b]
+                .iter()
+                .any(|n| import_equivalent(&logs[a], n)),
+        ));
     }
     Ok(out)
 }
@@ -975,12 +1032,20 @@ mod tests {
     use super::*;
 
     fn wire(id: &str, kind: &str, hlc: &str, at: i64, extra: &str) -> String {
-        format!(r#"{{"id":"{id}","p":"p","card":"c","kind":"{kind}","hlc":"{hlc}","at":{at}{extra}}}"#)
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"c","kind":"{kind}","hlc":"{hlc}","at":{at}{extra}}}"#
+        )
     }
 
     #[test]
     fn undo_revokes_and_state_falls_back() {
-        let l1 = wire("l1", "review", "10:0:A", 10, r#","rtype":"review","rating":3,"res":{"queue":"review","dueDay":10}"#);
+        let l1 = wire(
+            "l1",
+            "review",
+            "10:0:A",
+            10,
+            r#","rtype":"review","rating":3,"res":{"queue":"review","dueDay":10}"#,
+        );
         let u1 = wire("u1", "undo", "11:0:A", 11, r#","revokes":"l1""#);
         let s = state_from_json(&[&u1, &l1], &[None, None]).unwrap();
         assert_eq!(s.last_log_id, None);
@@ -993,8 +1058,20 @@ mod tests {
     #[test]
     fn server_time_clamps_sort_key() {
         // b 的 HLC 更晚，但 S(b) + 10 分钟早于 a：钳位后 b 排在 a 前面，a 是最后一条。
-        let a = wire("a", "review", "1000000:0:A", 0, r#","rtype":"review","res":{"queue":"review","dueDay":1}"#);
-        let b = wire("b", "review", "9000000:0:B", 0, r#","rtype":"review","res":{"queue":"review","dueDay":2}"#);
+        let a = wire(
+            "a",
+            "review",
+            "1000000:0:A",
+            0,
+            r#","rtype":"review","res":{"queue":"review","dueDay":1}"#,
+        );
+        let b = wire(
+            "b",
+            "review",
+            "9000000:0:B",
+            0,
+            r#","rtype":"review","res":{"queue":"review","dueDay":2}"#,
+        );
         let s = state_from_json(&[&a, &b], &[None, Some(0)]).unwrap();
         assert_eq!(s.last_log_id.as_deref(), Some("a"));
     }
@@ -1003,6 +1080,12 @@ mod tests {
     fn malformed_log_is_an_error() {
         assert!(state_from_json(&[r#"{"id":"x"}"#], &[None]).is_err());
         assert!(state_from_json(&[&wire("x", "review", "nohlc", 0, "")], &[None]).is_err());
-        assert!(state_from_json(&[&wire("x", "review", "1:0:A", 0, r#","rating":3.5"#)], &[None]).is_err());
+        assert!(
+            state_from_json(
+                &[&wire("x", "review", "1:0:A", 0, r#","rating":3.5"#)],
+                &[None]
+            )
+            .is_err()
+        );
     }
 }

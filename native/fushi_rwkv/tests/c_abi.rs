@@ -214,8 +214,14 @@ fn c_abi_errors_are_codes_with_messages_not_panics() {
         assert!(last_error().contains("precision"));
     }
     // ABI 2：模型种类、int4 与按模型取推荐精度。
-    assert_eq!(unsafe { frwkv_model_kind(handles.model) }, FRWKV_MODEL_LARGE);
-    assert_eq!(unsafe { frwkv_model_kind(std::ptr::null()) }, FRWKV_ERR_ARGUMENT);
+    assert_eq!(
+        unsafe { frwkv_model_kind(handles.model) },
+        FRWKV_MODEL_LARGE
+    );
+    assert_eq!(
+        unsafe { frwkv_model_kind(std::ptr::null()) },
+        FRWKV_ERR_ARGUMENT
+    );
     let runtime = unsafe { frwkv_runtime_new(handles.model, FRWKV_PRECISION_DEFAULT, 0) };
     assert!(!runtime.is_null());
     unsafe { frwkv_runtime_free(runtime) };

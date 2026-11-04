@@ -172,11 +172,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         }
       }
 
-      await profileVm.autoApplyBinding(
+      // 反馈 kEFPY4cuKZ：作品级配置只在这本书的会话里生效（会话覆盖层），不切 App 的
+      // 激活配置；页面 dispose 时离开会话。
+      await profileVm.enterWorkSession(
+        owner: this,
         bookUid: bookKey,
         languageTag: srtRow?.language ?? epubRow?.language,
         mediaType: mediaType,
-        restoreFallback: true,
       );
     } catch (e, st) {
       debugPrint(

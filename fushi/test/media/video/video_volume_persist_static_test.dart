@@ -5,11 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../pages/video_fushi_page_source_corpus.dart';
 import '../../helpers/source_guard.dart' show compactCode;
 
-/// TODO-451 guard: video volume is remembered per video bookUid.
+/// TODO-451 guard: video volume is remembered per title / per series.
 ///
 /// media_kit Player cannot be constructed in the host unit-test environment, so
 /// this locks the persistence wiring at source level. Behavior covered here:
-/// - preference key is video_volume_<bookUid>, never per episode;
+/// - inside a playlist collection the key is the series key (cehHSgF04K: since
+///   unified collections Phase 3 every episode is its own bookUid, so the old
+///   video_volume_<bookUid> key silently became per-episode); single videos keep
+///   video_volume_<bookUid>; reads fall back to the per-title key;
 /// - local and remote loads read the value before controller.load;
 /// - controller.load receives and applies initialVolume before autoPlay;
 /// - real volume changes persist, but temporary M mute does not;
@@ -59,14 +62,19 @@ void main() {
   }
 
   group('preference key and initial read', () {
-    test('uses video_volume_<bookUid> and never episode-indexed keys', () {
+    test('uses the series key in a collection, never episode-indexed keys', () {
       expect(
         _flat(page),
         contains(
-          _flat(r"String get _volumePrefKey => 'video_volume_$_activeBookUid'"),
+          _flat(
+            'String get _volumePrefKey => videoVolumeWriteKey('
+            'bookUid: _activeBookUid, '
+            'collectionId: widget.playlistCollectionId)',
+          ),
         ),
         reason:
-            'volume belongs to the current title, including a disc-selected MPLS',
+            'volume belongs to the series (collection) or the current title, '
+            'including a disc-selected MPLS',
       );
       expect(
         _flat(page),
@@ -111,8 +119,15 @@ void main() {
       // contains 会假红（接线没动）。归一化后钉调用形态本身。
       expect(
         _flat(read),
-        contains(_flat('getPref(_volumePrefKey, defaultValue: 100.0)')),
+        contains(
+          _flat(
+            'videoVolumeReadKeys(bookUid: _activeBookUid, '
+            'collectionId: widget.playlistCollectionId)',
+          ),
+        ),
+        reason: 'series key first, then the per-title key (pre-fix values)',
       );
+      expect(_flat(read), contains(_flat('?? 100.0')));
       // 上限随 mpv 配置的「音量上限」（W-qZRr3lwK：100 / 150 / 200）。
       expect(_flat(read), contains(_flat('.volumeMax.toDouble()')));
       expect(_flat(read), contains(_flat('clamp(0.0, max)')));

@@ -106,10 +106,10 @@ void main() {
       expect(subtitleLookupTerm(s, 3), '界');
     });
 
-    test('点空白/标点（非拉丁）维持 skip-to-end 历史语义', () {
+    test('点标点：跳过标点与其后空白，从下一个可查字位取到句尾', () {
       const String s = 'a, b';
-      // index 1 = ',' (标点，非拉丁) → 取到句尾
-      expect(subtitleLookupTerm(s, 1), ', b');
+      // index 1 = ','：引擎查词前本就剥掉句首标点再 trim，起点与之同源（jjurI3uaT0）。
+      expect(subtitleLookupTerm(s, 1), 'b');
     });
   });
 
@@ -176,6 +176,64 @@ void main() {
       // 此前会带着一串空格去查：引擎 trim 成空返回 0，副作用是白暂停一次视频、
       // 弹一个空浮层。
       expect(subtitleLookupSpan('ab   ', 2), (start: -1, term: ''));
+    });
+  });
+
+  // 反馈 jjurI3uaT0：点「（茜）記事 ちっちゃ！」的「（」，引擎查的是剥掉句首「（」后的
+  // 「茜）…」，matchedRunes 以它为坐标；高亮起点若停在「（」上，亮出来的是「（」本身、
+  // 漏掉真正查到的「茜」。起点必须与 normalizeSearchTerm 的句首剥离同源。
+  group('subtitleLookupSpan — 起点跳过句首标点（与查词清洗同源）', () {
+    const String cue = '（茜）記事 ちっちゃ！';
+
+    test('点「（」：起点落在「茜」，高亮恰好盖住「茜」', () {
+      final ({int start, String term}) r = subtitleLookupSpan(cue, 0);
+      expect(r.start, 1);
+      expect(r.term, '茜）記事 ちっちゃ！');
+      // 引擎对「茜」回报 matchedRunes = 1：高亮 = 句中 [1, 2) = 「茜」。
+      final int count = lookupHighlightGraphemeCount(r.term, 1);
+      expect(
+        cue.characters.toList().sublist(r.start, r.start + count),
+        <String>['茜'],
+      );
+    });
+
+    test('查询串与 normalizeSearchTerm 的句首剥离结果逐字对齐', () {
+      for (int i = 0; i < cue.characters.length; i++) {
+        final ({int start, String term}) r = subtitleLookupSpan(cue, i);
+        if (r.start < 0) continue;
+        final String raw = cue.characters.skip(i).toString().trim();
+        final String engineSees = raw.replaceFirst(
+          RegExp(r'^[\p{P}\p{S}]+', unicode: true),
+          '',
+        );
+        expect(r.term, engineSees.trimLeft(), reason: 'tap $i');
+      }
+    });
+
+    test('点句中「）」：跳到下一个词（記事）', () {
+      final ({int start, String term}) r = subtitleLookupSpan(cue, 2);
+      expect(r.start, 3);
+      expect(r.term, startsWith('記事'));
+    });
+
+    test('多重括号 / 括号后空格一起跳过', () {
+      expect(subtitleLookupSpan('『「茜」』', 0).start, 2);
+      expect(subtitleLookupSpan('（ 茜）', 0), (start: 2, term: '茜）'));
+    });
+
+    test('拉丁引号：点开引号起点落在词首', () {
+      expect(subtitleLookupSpan('"hello" he said', 0), (
+        start: 1,
+        term: 'hello" he said',
+      ));
+    });
+
+    test('点句尾「！」/ 整段标点：start=-1、term 空（不白暂停、不弹空浮层）', () {
+      expect(subtitleLookupSpan(cue, cue.characters.length - 1), (
+        start: -1,
+        term: '',
+      ));
+      expect(subtitleLookupSpan('♪～', 0), (start: -1, term: ''));
     });
   });
 

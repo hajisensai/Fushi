@@ -72,6 +72,15 @@ extension _VideoSpeed on _VideoFushiPageState {
 
   void _handleVideoLongPressStart(LongPressStartDetails details) {
     if (_longPressPreviousSpeed != null) return;
+    // 沉浸锁定态跟随「沉浸模式」档位（LVLfqlFLVA）：长按是指针发起的播放控制，只有
+    // full 档放行。start 早退后 move / end 都是空操作（[_longPressDragBaseSpeed] 与
+    // [_longPressPreviousSpeed] 都没被置上）。
+    if (!videoImmersiveAllowsLongPressSpeed(
+      immersiveLocked: _immersiveLocked.value,
+      mode: _videoImmersiveMode,
+    )) {
+      return;
+    }
     // 长按落在控件上（控制条空隙 / 只认单击的按钮 / 浮层面板）不是长按画面：外层长按
     // 手势是所有控件的祖先，不拦就会在按住按钮时顺手临时加速。判据与双击 / 滚轮同一个
     // （[videoPointerHitsChrome]，真实 hit-test）。start 早退后 move / end 都是空操作。

@@ -2589,31 +2589,51 @@ class InterconnectSyncBackend extends SyncBackend
   set hostTranscodeAvailableForTesting(bool value) =>
       _hostTranscodeAvailable = value;
 
-  int _qualityPresetIndex = -1;
+  /// 上一次 `/streamurl` 带回的源文件平均码率（bps）；老 host / 转不了码 / 蓝光
+  /// 标题 / 探不出时长时为 null。「自动」档拿它和实测链路带宽比。
+  int? _sourceBitrate;
+
+  /// 当前这集源文件的平均码率（bps），菜单「原画」行的副标题用；未知为 null。
+  int? get sourceBitrate => _sourceBitrate;
+
+  int _qualityPresetIndex = kRemoteVideoQualityAuto;
 
   /// 「自动」档下当前实际在用的那一档（null = 还没定，按起点判据走；-1 = 原画直传）。
   ///
   /// 与 [_qualityPresetIndex] 分开：用户选的是「自动」这个**策略**，自适应换的是
   /// 策略下的**当前取值**。混成一个字段的话，自动降档会把用户的设置改成一个具体
   /// 档位——设置看起来自己会动，而且再也回不到自动。
-  /// 仅在用户选「自动」（[qualityPresetIndex] < 0）时有意义。
+  /// 仅在用户选「自动」（[kRemoteVideoQualityAuto]）时有意义。
   int? adaptiveQualityIndex;
 
-  /// [adaptiveQualityIndex] 当前对应的 host 基址。
+  /// [adaptiveQualityIndex] 是对哪条链路上的哪一个源定下的
+  /// （`<host 基址>#<视频 id>#<集>`，见 [_adaptiveScopeFor]）。
   ///
-  /// 这个后端是**进程级单例**，而自适应档是「这条链路当前能跑多少」的观测结果，不是
-  /// 用户设置：在外面用移动网络降到 360p 后回家连局域网，若不按 host / 链路重算，
-  /// `??=` 会短路掉起点判据，继续 360p 转码播（而「局域网就原画直传」是明确承诺的
-  /// 行为），且升档要 90 拍 × 4 级、上界 `kAdaptiveMaxIndex` 还永远回不到原画。
+  /// 这个后端是**进程级单例**，而自适应档是「这条链路对这个源能跑多少」的观测结果，
+  /// 不是用户设置：在外面降到 360p 后回家连局域网、或从 5 Mbps 的番剧换到 40 Mbps
+  /// 的原盘，都必须按新的链路 / 新的源重新起步（[remoteVideoStreamUrls] 里的
+  /// [_startAutoQuality]），否则会沿用一个与眼前无关的旧档。同一集里的自适应换档
+  /// 不改 scope，换档重取流时沿用自适应定下的档。
   String? adaptiveQualityScope;
 
-  /// 自适应档的起点：scope（host 基址）变了就按新链路重算，否则沿用已观测到的档。
+  /// 最近一次链路探测（按 host 基址），[kLinkSampleTtl] 内复用，省得每集起播都测。
+  ({String base, int bitsPerSecond, DateTime at})? _linkSample;
+
+  /// 链路探测结果的有效期。
+  ///
+  /// 短：同一个基址（DDNS 域名）在家和在外面指的是两条完全不同的链路，样本放久了
+  /// 就会拿家里的带宽给外面的起播做决定。过期后下一集起播重测一次（≤ 1.5 秒）。
+  static const Duration kLinkSampleTtl = Duration(minutes: 3);
+
+  /// 判「这条连接在局域网里、不用测」的谓词。测试里换掉它，才能让回环上的真
+  /// host 走带宽探测这条路。
+  @visibleForTesting
+  bool Function(String? hostUrl) privateNetworkHostJudge = isPrivateNetworkHost;
+
+  /// 起点之后的兜底：[remoteVideoStreamUrls] 在「自动」档起播时已按链路定好起点；
+  /// 还没定（host 转不了码，没有可选的）时退回字面量局域网判据，让自适应有个起点。
   void ensureAdaptiveQualityStart() {
-    final String scope = _apiBaseOrNull ?? '';
-    if (adaptiveQualityIndex == null || adaptiveQualityScope != scope) {
-      adaptiveQualityIndex = resolveAutoStartIndex();
-      adaptiveQualityScope = scope;
-    }
+    adaptiveQualityIndex ??= resolveAutoStartIndex();
   }
 
   @override
@@ -2621,18 +2641,29 @@ class InterconnectSyncBackend extends SyncBackend
       ? kInterconnectQualityPresets
       : const <MediaServerQualityPreset>[];
 
+  /// 互联的「自动」在外网会转码，所以单列「原画」：用户明确要原片就永不转码。
+  @override
+  bool get offersOriginalQuality => true;
+
   @override
   int get qualityPresetIndex => _qualityPresetIndex;
 
   @override
   set qualityPresetIndex(int index) => _qualityPresetIndex = index;
 
+  /// 用户选的是不是「自动」（越界的旧偏好值也按自动处理）。
+  bool get _isAutoQuality =>
+      _qualityPresetIndex != kRemoteVideoQualityOriginal &&
+      (_qualityPresetIndex < 0 ||
+          _qualityPresetIndex >= kInterconnectQualityPresets.length);
+
   /// 当次取流要向 host 报的档。
   ///
-  /// 三级：用户显式选的档 > 自适应定下的档 > 起点判据
+  /// 四级：用户选「原画」> 用户显式选的档 > 自适应定下的档 > 起点判据
   /// （[resolveInterconnectAutoPreset]：局域网原画、走公网先压到中档）。
   @visibleForTesting
   MediaServerQualityPreset? effectiveQualityPreset({String? hostUrl}) {
+    if (_qualityPresetIndex == kRemoteVideoQualityOriginal) return null;
     if (_qualityPresetIndex >= 0 &&
         _qualityPresetIndex < kInterconnectQualityPresets.length) {
       return kInterconnectQualityPresets[_qualityPresetIndex];
@@ -2647,7 +2678,7 @@ class InterconnectSyncBackend extends SyncBackend
     return resolveInterconnectAutoPreset(hostUrl);
   }
 
-  /// 「自动」档的起点下标（-1 = 原画）。自适应控制器从这里起步。
+  /// 「自动」档的字面量起点下标（-1 = 原画）：只看地址是不是局域网，不测带宽。
   int resolveAutoStartIndex({String? hostUrl}) {
     final MediaServerQualityPreset? preset = resolveInterconnectAutoPreset(
       hostUrl ?? _apiBaseOrNull,
@@ -2659,6 +2690,9 @@ class InterconnectSyncBackend extends SyncBackend
   /// 已解析的 host 基址（未连上时为 null，起点判据据此退回「当成公网」）。
   String? get _apiBaseOrNull => _ops?.baseUrl;
 
+  String _adaptiveScopeFor(String id, int episodeIndex) =>
+      '${_apiBaseOrNull ?? ''}#$id#$episodeIndex';
+
   /// 向 host 换取可直接播放的视频 stream URL。
   ///
   /// 返回的 [RemoteVideoStreamUrls.streamUrl] 已携带短时 token；播放器不需要
@@ -2667,17 +2701,157 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 画质档以 `maxWidth` / `maxBitrate` 两个 query 参数上报；host 不认（老版本）
   /// 或不肯转（用户关了开关 / 跑不了 ffmpeg）时会照旧回直传 URL，client 无需分支。
+  ///
+  /// 「自动」档对一个新的源起播时先按链路定起点（[_startAutoQuality]）。
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
     int episodeIndex = 0,
   }) async {
     await _ensureResolved();
+    if (_isAutoQuality) {
+      final String scope = _adaptiveScopeFor(id, episodeIndex);
+      if (adaptiveQualityIndex == null || adaptiveQualityScope != scope) {
+        return _startAutoQuality(id, episodeIndex: episodeIndex, scope: scope);
+      }
+    }
     return _fetchVideoStreamUrls(
       id,
       episodeIndex: episodeIndex,
       preset: effectiveQualityPreset(hostUrl: _apiBase),
     );
+  }
+
+  /// 「自动」档对 [scope] 这个源的起点（反馈 uaBRMzK_WM：内网应能看 BD 满码率）。
+  ///
+  /// 旧判据只看地址字面量：经 DDNS 域名、公网 IPv6、端口映射连回家里的 host，
+  /// 字面上都不是私网地址，一律被当成公网压到 720p 2 Mbps，自适应上限又只到
+  /// 8 Mbps——在家也永远看不到原片。现在：
+  /// 1. 字面量局域网 → 原画，不测；
+  /// 2. 否则先签一张**原画直传**的票（host 顺带报源码率），用它测一次链路吞吐
+  ///    （[_linkBitsPerSecondFor]）；
+  /// 3. [resolveInterconnectAutoStartIndex] 按「带宽对源码率」定起点：撑得住原片就
+  ///    直接返回这张原画票（不多一次往返），撑不住才按选中的档再签一张转码票。
+  ///
+  /// host 转不了码时没有可选的：原画票原样返回、不定档（菜单不出现，自适应不跑）。
+  Future<RemoteVideoStreamUrls> _startAutoQuality(
+    String id, {
+    required int episodeIndex,
+    required String scope,
+  }) async {
+    final String base = _apiBase;
+    if (privateNetworkHostJudge(base)) {
+      adaptiveQualityIndex = -1;
+      adaptiveQualityScope = scope;
+      return _fetchVideoStreamUrls(
+        id,
+        episodeIndex: episodeIndex,
+        preset: null,
+      );
+    }
+    final RemoteVideoStreamUrls original = await _fetchVideoStreamUrls(
+      id,
+      episodeIndex: episodeIndex,
+      preset: null,
+    );
+    if (!_hostTranscodeAvailable) {
+      adaptiveQualityIndex = null;
+      adaptiveQualityScope = null;
+      return original;
+    }
+    final int? sourceBitrate = _sourceBitrate;
+    // 蓝光标题直传是一张 EDL 段表，没有单一的可测 URL；按未测处理。
+    final int? link = original.discTitle != null
+        ? null
+        : await _linkBitsPerSecondFor(base, original.streamUrl);
+    final int start = resolveInterconnectAutoStartIndex(
+      privateNetworkHost: false,
+      linkBitsPerSecond: link,
+      sourceBitrate: sourceBitrate,
+    );
+    debugPrint(
+      '[InterconnectQuality] auto start=$start link=$link '
+      'source=$sourceBitrate scope=$scope',
+    );
+    adaptiveQualityIndex = start;
+    adaptiveQualityScope = scope;
+    if (start < 0) return original;
+    return _fetchVideoStreamUrls(
+      id,
+      episodeIndex: episodeIndex,
+      preset: kInterconnectQualityPresets[start],
+    );
+  }
+
+  /// [base] 这条链路的吞吐（bps）：[kLinkSampleTtl] 内的样本直接用，否则对
+  /// [streamUrl] 测一次。测不成返回 null（调用方退回保守起点）。
+  Future<int?> _linkBitsPerSecondFor(String base, String streamUrl) async {
+    final ({String base, int bitsPerSecond, DateTime at})? cached = _linkSample;
+    if (cached != null &&
+        cached.base == base &&
+        DateTime.now().difference(cached.at) < kLinkSampleTtl) {
+      return cached.bitsPerSecond;
+    }
+    final int? measured = await _probeLinkBitsPerSecond(streamUrl);
+    if (measured != null) {
+      _linkSample = (base: base, bitsPerSecond: measured, at: DateTime.now());
+    }
+    return measured;
+  }
+
+  /// 对原画直传地址发一个有界 Range 请求，从首字节起计时读到
+  /// [kInterconnectLinkProbeMaxBytes] 或 [kInterconnectLinkProbeWindow] 为止，按
+  /// [interconnectLinkBitsPerSecond] 折算吞吐。
+  ///
+  /// 首个数据块只用来起表、不计入字节：它的传输时间落在计时之外，算进去会把小样本
+  /// 的吞吐算高。测量失败（超时 / 非 2xx / 连接断开）是「不知道」而不是错误：记一行
+  /// 日志、返回 null，起点退回保守档，播放照常。
+  Future<int?> _probeLinkBitsPerSecond(String streamUrl) async {
+    final Uri? uri = Uri.tryParse(streamUrl);
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+      return null;
+    }
+    try {
+      final HttpClientRequest req = await _ops!.buildRequest('GET', streamUrl);
+      req.headers.set(
+        HttpHeaders.rangeHeader,
+        'bytes=0-${kInterconnectLinkProbeMaxBytes - 1}',
+      );
+      final HttpClientResponse res = await _sendBounded(req);
+      if (res.statusCode != HttpStatus.ok &&
+          res.statusCode != HttpStatus.partialContent) {
+        await res.drain<void>();
+        debugPrint('[InterconnectQuality] link probe HTTP ${res.statusCode}');
+        return null;
+      }
+      final Stopwatch watch = Stopwatch();
+      int bytes = 0;
+      int total = 0;
+      bool reachedEnd = true;
+      await for (final List<int> chunk in res.timeout(
+        kInterconnectLinkProbeWindow * 2,
+      )) {
+        total += chunk.length;
+        if (!watch.isRunning) {
+          watch.start();
+        } else {
+          bytes += chunk.length;
+        }
+        if (total >= kInterconnectLinkProbeMaxBytes ||
+            watch.elapsed >= kInterconnectLinkProbeWindow) {
+          reachedEnd = false;
+          break;
+        }
+      }
+      return interconnectLinkBitsPerSecond(
+        bytes: bytes,
+        elapsed: watch.elapsed,
+        reachedEnd: reachedEnd,
+      );
+    } on Object catch (e) {
+      debugPrint('[InterconnectQuality] link probe failed: $e');
+      return null;
+    }
   }
 
   /// 向 host 签发 stream URL；[preset] 为 null = 不报画质档，host 回原文件直传。
@@ -2709,6 +2883,8 @@ class InterconnectSyncBackend extends SyncBackend
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     _hostTranscodeAvailable = json['transcodeAvailable'] == true;
+    final Object? bitrate = json['sourceBitrate'];
+    _sourceBitrate = bitrate is int && bitrate > 0 ? bitrate : null;
     return RemoteVideoStreamUrls.fromJson(json);
   }
 

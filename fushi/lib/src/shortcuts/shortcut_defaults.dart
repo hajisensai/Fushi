@@ -626,8 +626,10 @@ class ShortcutDefaults {
     ShortcutAction.webBrowserDownloadsOpen: _kb([
       _key(LogicalKeyboardKey.keyY, {ModifierKey.ctrl, ModifierKey.shift}),
     ]),
-    // 音乐：K 播放暂停（与视频页同一习惯键）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键。
+    // 音乐：空格 / K 播放暂停（空格与视频页、有声书同一习惯键；文本框持焦时让路，见
+    // music_shortcuts.dart）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键。
     ShortcutAction.musicTogglePlayPause: _kb([
+      _key(LogicalKeyboardKey.space),
       _key(LogicalKeyboardKey.keyK),
       _key(LogicalKeyboardKey.mediaPlayPause),
     ]),

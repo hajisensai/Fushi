@@ -135,12 +135,26 @@ pub fn read_document(data: &[u8]) -> Result<InDocument<'_>, WireError> {
     let n = r.u32()? as usize;
     let mut sentences = Vec::with_capacity(n.min(1 << 20));
     for _ in 0..n {
-        sentences.push(InSentence { section: r.i32()?, pos: r.i64()?, len: r.i64()?, text: r.str()? });
+        sentences.push(InSentence {
+            section: r.i32()?,
+            pos: r.i64()?,
+            len: r.i64()?,
+            text: r.str()?,
+        });
     }
     if !r.is_empty() {
         return Err(WireError("trailing bytes in document"));
     }
-    Ok(InDocument { kind, key, part, title, fingerprint, normalizer, updated_at, sentences })
+    Ok(InDocument {
+        kind,
+        key,
+        part,
+        title,
+        fingerprint,
+        normalizer,
+        updated_at,
+        sentences,
+    })
 }
 
 /// 一个词元（fushidicts 给出的词典形 + 句内 UTF-16 区间）。
@@ -158,7 +172,11 @@ pub fn read_terms(data: &[u8], count: usize) -> Result<Vec<Vec<InToken<'_>>>, Wi
         let m = r.u32()? as usize;
         let mut tokens = Vec::with_capacity(m.min(4096));
         for _ in 0..m {
-            tokens.push(InToken { start: r.u32()?, len: r.u32()?, lemma: r.str()? });
+            tokens.push(InToken {
+                start: r.u32()?,
+                len: r.u32()?,
+                lemma: r.str()?,
+            });
         }
         out.push(tokens);
     }
@@ -188,7 +206,12 @@ pub fn read_query(data: &[u8]) -> Result<InQuery<'_>, WireError> {
     if !r.is_empty() {
         return Err(WireError("trailing bytes in query"));
     }
-    Ok(InQuery { keys, per_kind, per_doc, kind_mask })
+    Ok(InQuery {
+        keys,
+        per_kind,
+        per_doc,
+        kind_mask,
+    })
 }
 
 /// JSON 字符串转义（输出只给 Dart `jsonDecode` 读）。

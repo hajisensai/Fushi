@@ -139,11 +139,7 @@ impl<'a> Cursor<'a> {
     /// `whitespace().plusString()`。
     fn space(&self, p: usize) -> Option<usize> {
         let q = self.space_optional(p);
-        if q > p {
-            Some(q)
-        } else {
-            None
-        }
+        if q > p { Some(q) } else { None }
     }
 
     /// `whitespace().starString()`。
@@ -294,11 +290,7 @@ impl Cursor<'_> {
             q = end;
         }
         q = self.space_optional(q);
-        if self.at(q, GT) {
-            Some(q + 1)
-        } else {
-            None
-        }
+        if self.at(q, GT) { Some(q + 1) } else { None }
     }
 
     fn external_id(&self, p: usize) -> Option<usize> {
@@ -347,11 +339,7 @@ impl Cursor<'_> {
         if let Some(end) = self.reference(p) {
             return Some(end);
         }
-        if p < self.s.len() {
-            Some(p + 1)
-        } else {
-            None
-        }
+        if p < self.s.len() { Some(p + 1) } else { None }
     }
 
     /// keyword (nameToken | attributeValue | any)*? '>'。
@@ -657,8 +645,10 @@ mod tests {
         assert!(texts("lead<i/>trail").is_some());
         assert!(texts("<!DOCTYPE i [ <!ENTITY a \"]>\"> ]><i/>").is_some());
         assert_eq!(
-            texts("<i><d p=a>x<![CDATA[&amp;<]]><!--no--><?pi z?>&#x41;&#65;&bogus;&#x110000;</d></i>")
-                .unwrap(),
+            texts(
+                "<i><d p=a>x<![CDATA[&amp;<]]><!--no--><?pi z?>&#x41;&#65;&bogus;&#x110000;</d></i>"
+            )
+            .unwrap(),
             vec![(Some("a".into()), "x&amp;<AA&bogus;&#x110000;".into())]
         );
     }

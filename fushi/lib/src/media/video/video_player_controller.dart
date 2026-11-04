@@ -1718,6 +1718,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前音画延迟（毫秒）；设置面板显示用。
   int get delayMs => _delayMs;
 
+  /// 观看统计用的字幕轴换算（[VideoPlaybackSource.subtitleDelayMs]）：与
+  /// [_syncCueForPosition] 求当前 cue 同一个 [_delayMs]。
+  @override
+  int get subtitleDelayMs => _delayMs;
+
   /// 当前播放倍速；未 [load] 时回退最近一次 [setSpeed] 之值（构造默认 1.0）。
   @override
   double get speed => _player?.state.rate ?? _lastSpeed;

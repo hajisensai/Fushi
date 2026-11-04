@@ -136,8 +136,13 @@ class _PlaceholderHostPageState extends ConsumerState<_PlaceholderHostPage>
                 index: i,
                 screen: screen,
                 controller: controller,
-                onPush: (String text, Rect rect, List<FushiRubySpan> _) async =>
-                    0,
+                onPush:
+                    (
+                      String text,
+                      Rect rect,
+                      List<FushiRubySpan> _,
+                      String __,
+                    ) async => 0,
                 onPop: (int index) {},
               ),
           ],

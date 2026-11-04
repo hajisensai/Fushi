@@ -171,6 +171,18 @@ abstract final class SrsRemoteWire {
     );
   }
 
+  static Map<String, Object?> todayReviews(SrsTodayReviewSummary s) =>
+      <String, Object?>{'n': s.count, 'ms': s.durationMs, 'again': s.again};
+
+  static SrsTodayReviewSummary todayReviewsFrom(Object? json) {
+    final Map<String, Object?> m = (json! as Map).cast<String, Object?>();
+    return SrsTodayReviewSummary(
+      count: m['n']! as int,
+      durationMs: m['ms']! as int,
+      again: m['again']! as int,
+    );
+  }
+
   /// 牌组行：牌组视图只带 ID，客户端从它缓存的牌组树里取（[SrsRemoteStoreService] 的回包总带树的标签）。
   static Map<String, Object?> summary(SrsDeckSummary s) => <String, Object?>{
     'deck': s.deck.id,
@@ -257,6 +269,7 @@ abstract final class SrsRemoteWire {
             for (final SrsCustomStudyState s in c.states) s.wire,
           ],
           'tags': c.tags,
+          if (c.source != null) 'source': c.source,
         };
 
   static SrsCustomStudy? customStudyFrom(Object? json) {
@@ -278,6 +291,7 @@ abstract final class SrsRemoteWire {
         for (final Object? t in (m['tags'] as List<Object?>?) ?? const [])
           t! as String,
       ],
+      source: m['source'] as String?,
     );
   }
 
@@ -671,6 +685,10 @@ class SrsRemoteStoreService {
         for (final SrsDeckSummary d in await s.deckSummaries())
           SrsRemoteWire.summary(d),
       ],
+    ),
+    'todayReviewSummary': _Op(
+      (SrsDbStore s, _Args a) async =>
+          SrsRemoteWire.todayReviews(await s.todayReviewSummary()),
     ),
     'deckSummary': _Op((SrsDbStore s, _Args a) async {
       final SrsDeckSummary? d = await s.deckSummary(a.str('deck'));

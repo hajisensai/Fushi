@@ -679,7 +679,8 @@ window.fushiSelection = {
             }
         }
 
-        const container = this.findParagraph(startNode) || document.body;
+        const paragraph = this.findParagraph(startNode);
+        const container = paragraph || document.body;
         const walker = this.createWalker(container);
 
         let text = '';
@@ -732,16 +733,25 @@ window.fushiSelection = {
         if (!text) return null;
 
         const rubyReadings = this.rubyReadingSpans(ranges, text);
+        // 反馈 TnKWBi4C-9：被点处所在的那一句（与查词起点同一个归一后的位置），作
+        // textSelected 第 4 参交给宿主——没有书 / 视频「当前句」的宿主（查词页 / 独立
+        // 查词窗）拿它当嵌套层制卡的例句，与 Yomitan 在弹窗释义里扫词同口径。
+        // 句子只在段落级块（findParagraph：弹窗释义恒落在 .glossary-content 里）内有
+        // 定义；没有段落祖先时不猜，给空串——那时 getSentence 会退到整个 body 遍历，
+        // 而浏览器扩展的页面 Shift 悬停每换一个词就走一次这里（content.js
+        // fushiPageSentence 的惰性契约正是为了躲开它）。
+        const sentence = paragraph ? this.getSentence(startNode, startOffset) : '';
         this.selection = {
             startNode,
             startOffset,
             ranges,
             text,
-            rubyReadings
+            rubyReadings,
+            sentence
         };
 
         const rect = this.getSelectionRect(x, y);
-        window.flutter_inappwebview.callHandler('textSelected', text, rect, rubyReadings);
+        window.flutter_inappwebview.callHandler('textSelected', text, rect, rubyReadings, sentence);
 
         return text;
     },

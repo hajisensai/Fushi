@@ -85,8 +85,10 @@ fn main() {
         let inputs: Vec<_> = rows.iter().map(|r| r.to_input(false).unwrap()).collect();
         let mut inference = SmallInference::new(&model, precision);
         let replayed = inference.replay_with_curves(inputs).unwrap();
-        let by_row: HashMap<usize, (f32, fushi_rwkv::SmallHeads)> =
-            replayed.into_iter().map(|(index, imm, heads)| (index, (imm, heads))).collect();
+        let by_row: HashMap<usize, (f32, fushi_rwkv::SmallHeads)> = replayed
+            .into_iter()
+            .map(|(index, imm, heads)| (index, (imm, heads)))
+            .collect();
         // (pred_curve, pred_imm, passed, elapsed_days) for every non-first review with a known previous answer.
         let mut samples = Vec::new();
         let mut last: HashMap<i64, usize> = HashMap::new();
@@ -99,13 +101,22 @@ fn main() {
                     let (_, heads) = by_row[&previous];
                     let (imm, _) = by_row[&index];
                     let curve = heads.curve_retrievability(row.elapsed_seconds as f32);
-                    samples.push((curve as f64, imm as f64, row.ease > 1, row.elapsed_seconds as f64 / 86_400.0));
+                    samples.push((
+                        curve as f64,
+                        imm as f64,
+                        row.ease > 1,
+                        row.elapsed_seconds as f64 / 86_400.0,
+                    ));
                 }
             }
             last.insert(row.card_id, index);
         }
         let pass_rate = samples.iter().filter(|s| s.2).count() as f64 / samples.len().max(1) as f64;
-        println!("#U\t{user}\t{}\t{}\t{pass_rate:.4}", rows.len(), samples.len());
+        println!(
+            "#U\t{user}\t{}\t{}\t{pass_rate:.4}",
+            rows.len(),
+            samples.len()
+        );
         let group = if pass_rate >= 0.95 {
             1
         } else if pass_rate >= 0.85 {
@@ -130,7 +141,9 @@ fn main() {
             }
         }
     }
-    println!("group\tbucket\tn\tcurve_mean\timm_mean\tobserved\tnear80_n\tnear80_observed\tcurve_ll\timm_ll");
+    println!(
+        "group\tbucket\tn\tcurve_mean\timm_mean\tobserved\tnear80_n\tnear80_observed\tcurve_ll\timm_ll"
+    );
     for (g, name) in GROUPS.iter().enumerate() {
         for (b, (bucket, _)) in BUCKETS.iter().enumerate() {
             let c = cells[g][b];
@@ -144,7 +157,11 @@ fn main() {
                 c.imm / c.n,
                 c.passed / c.n,
                 c.near_n,
-                if c.near_n > 0.0 { c.near_passed / c.near_n } else { f64::NAN },
+                if c.near_n > 0.0 {
+                    c.near_passed / c.near_n
+                } else {
+                    f64::NAN
+                },
                 c.curve_ll / c.n,
                 c.imm_ll / c.n,
             );

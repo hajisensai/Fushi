@@ -10,12 +10,12 @@ use std::io;
 use half::f16;
 
 use super::Cursor;
+use super::D_MODEL;
+use super::HEAD_SIZE;
+use super::HEADS;
 use super::LayerState;
 use super::ModuleState;
 use super::TimeState;
-use super::D_MODEL;
-use super::HEADS;
-use super::HEAD_SIZE;
 
 pub(super) const MAGIC: &[u8] = b"ARWKVMODSTATE2";
 

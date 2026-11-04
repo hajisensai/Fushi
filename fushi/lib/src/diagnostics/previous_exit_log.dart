@@ -31,6 +31,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_launch_presence/fushi_launch_presence.dart';
 
 /// 日志 source 标签（不是 i18n key）。
 const String kPreviousExitUncleanSource = 'Process.previousExitUnclean';
@@ -173,9 +174,13 @@ class PreviousSession {
     this.exitReason,
     this.exitStage,
     this.terminatedBy,
+    this.launchDetail,
   });
 
   final int pid;
+
+  /// 启动时原生给的界面取证（[LaunchPresence.detail]）；平台没回答为 null。
+  final String? launchDetail;
 
   /// 上次进程在退出链第一步写下的退出意图（`windowClose` / `updateHandoff` /
   /// `restart`…，[SessionMarker.recordExitRequested]）；没发起过退出为 null。
@@ -204,6 +209,9 @@ class PreviousSession {
   final int memoryPressureCount;
 
   /// 最后停在前台（resumed / inactive / 还在启动）时没了——比后台被回收可疑得多。
+  ///
+  /// [kSessionLifecycleHeadless]（原生说这次启动没有界面、之后也从没上过屏）不算前台：
+  /// 用户根本没看见它，进程在后台被回收不是闪退（BUG-4072）。
   bool get diedInForeground =>
       lifecycle == 'resumed' ||
       lifecycle == 'inactive' ||
@@ -232,12 +240,18 @@ class PreviousSession {
         exitReason: asString(decoded['exitReason']),
         exitStage: asString(decoded['exitStage']),
         terminatedBy: asString(decoded['terminatedBy']),
+        launchDetail: asString(decoded['launchDetail']),
       );
     } on FormatException {
       return null;
     }
   }
 }
+
+/// 会话标记的生命周期初值：原生说这次引擎**没有界面**（Android 无 Activity 附着——
+/// audio_service 被系统媒体续播 / 媒体键 / 车机拉起；iOS 后台拉起）。收到第一个真实
+/// 生命周期（界面接上来）就被覆盖。见 [PreviousSession.diedInForeground]、BUG-4072。
+const String kSessionLifecycleHeadless = 'headless';
 
 /// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
 class SessionMarker {
@@ -258,9 +272,13 @@ class SessionMarker {
   String? _exitReason;
   String? _exitStage;
   String? _terminatedBy;
+  String? _launchDetail;
 
   /// 读出上次会话（没有 / 损坏返回 null），然后写入本次会话的初始标记。
-  PreviousSession? start({required int nowMs}) {
+  ///
+  /// [launch]：原生对本次启动有没有界面的回答；`hasUi == false` 时初值记
+  /// [kSessionLifecycleHeadless]，否则（含不知道）记 `launching`。
+  PreviousSession? start({required int nowMs, LaunchPresence? launch}) {
     PreviousSession? previous;
     try {
       if (file.existsSync()) {
@@ -270,7 +288,13 @@ class SessionMarker {
       previous = null;
     }
     _startedAt = nowMs;
+    _lifecycle = launch?.hasUi == false
+        ? kSessionLifecycleHeadless
+        : 'launching';
     _lifecycleAt = nowMs;
+    _launchDetail = launch == null || launch.detail.isEmpty
+        ? null
+        : launch.detail;
     _write();
     return previous;
   }
@@ -346,6 +370,7 @@ class SessionMarker {
           'exitReason': _exitReason,
           'exitStage': _exitStage,
           'terminatedBy': _terminatedBy,
+          'launchDetail': _launchDetail,
         }),
         flush: true,
       );
@@ -356,8 +381,20 @@ class SessionMarker {
 }
 
 /// 上次会话没标 clean 时的摘要；标了 clean / 没有上次会话返回 null。
-ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
+///
+/// [androidImportanceAtDeath]：Android `ApplicationExitInfo` 里**同一 pid**（会话标记那个
+/// 进程）死时的重要性。它是平台记下的事实，压过标记按生命周期推断的前后台：标记停在
+/// `launching` / `inactive` 不等于用户看着——无界面启动的引擎（媒体按键 / 系统媒体续播
+/// 拉起的 audio_service 引擎）从来收不到生命周期，进入后台的瞬间被厂商后台管理杀掉时
+/// 标记也还停在 `inactive`（崩溃分诊 e1_jaKAeiF：`o-stop(40)` importance=400）。
+ExitReportEntry? describeUncleanPreviousSession(
+  PreviousSession? previous, {
+  int? androidImportanceAtDeath,
+}) {
   if (previous == null || previous.clean) return null;
+  final bool diedInForeground = androidImportanceAtDeath != null
+      ? androidImportanceAtDeath <= kAndroidForegroundImportance
+      : previous.diedInForeground;
   final StringBuffer b = StringBuffer()
     ..write('上次进程没有走正常退出（崩溃、被系统杀、或被强杀）：')
     ..write('pid=${previous.pid} version=${previous.version} ')
@@ -365,6 +402,11 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
     ..write(
       'lastLifecycle=${previous.lifecycle}@${_iso(previous.lifecycleAt)}',
     );
+  if (androidImportanceAtDeath != null) {
+    b.write(' androidImportanceAtDeath=$androidImportanceAtDeath');
+  }
+  final String? launchDetail = previous.launchDetail;
+  if (launchDetail != null) b.write(' launch={$launchDetail}');
   if (previous.memoryPressureAt != null) {
     b.write(
       ' memoryPressure=${previous.memoryPressureCount}x '
@@ -386,7 +428,7 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
       b.toString(),
       severe: false,
       kind: PreviousExitKind.exitInterrupted,
-      foreground: previous.diedInForeground,
+      foreground: diedInForeground,
       duringStartup: !previous.initialised,
       atMs: previous.lifecycleAt,
     );
@@ -401,20 +443,26 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
       b.toString(),
       severe: false,
       kind: PreviousExitKind.userStopped,
-      foreground: previous.diedInForeground,
+      foreground: diedInForeground,
       duringStartup: !previous.initialised,
       atMs: previous.lifecycleAt,
     );
   }
-  b.write(previous.diedInForeground ? '（停在前台时没了，疑似闪退）' : '（停在后台时没了，多半是系统回收）');
+  b.write(
+    diedInForeground
+        ? '（停在前台时没了，疑似闪退）'
+        : previous.lifecycle == kSessionLifecycleHeadless
+        ? '（无界面启动、从没上过屏时没了，多半是系统回收）'
+        : '（停在后台时没了，多半是系统回收）',
+  );
   return ExitReportEntry(
     kPreviousExitUncleanSource,
     b.toString(),
-    severe: previous.diedInForeground,
-    kind: previous.diedInForeground
+    severe: diedInForeground,
+    kind: diedInForeground
         ? PreviousExitKind.unexpected
         : PreviousExitKind.backgroundReclaim,
-    foreground: previous.diedInForeground,
+    foreground: diedInForeground,
     duringStartup: !previous.initialised,
     atMs: previous.lifecycleAt,
   );
@@ -485,6 +533,27 @@ String androidTrimLevelName(int level) => switch (level) {
   80 => 'COMPLETE',
   _ => 'LEVEL_$level',
 };
+
+/// `consumeExitReports` 里会话标记那个进程（[pid]，且死在它启动之后的 [startedAtMs]
+/// 之后——pid 会被复用）的死时重要性；没有对得上的记录返回 null。
+int? androidImportanceAtDeath(
+  Map<Object?, Object?> payload, {
+  required int pid,
+  int startedAtMs = 0,
+}) {
+  final Object? reasons = payload['reasons'];
+  if (reasons is! List) return null;
+  for (final Object? r in reasons) {
+    if (r is! Map) continue;
+    final Object? recordPid = r['pid'];
+    final Object? importance = r['importance'];
+    final Object? timestamp = r['timestamp'];
+    if (recordPid != pid || importance is! int) continue;
+    if (timestamp is int && timestamp < startedAtMs) continue;
+    return importance;
+  }
+  return null;
+}
 
 /// 把 `ProcessExitChannel.consumeExitReports` 的返回值整理成摘要。
 List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
@@ -1141,6 +1210,7 @@ abstract final class PreviousExitLog {
     bool? isMacOS,
     bool? isIOS,
     MethodChannel? androidChannel,
+    MethodChannel? launchChannel,
     String? localAppData,
     Directory? macReportsDir,
     String? macProcessName,
@@ -1158,30 +1228,53 @@ abstract final class PreviousExitLog {
       pid: pid,
       version: version,
     );
-    final PreviousSession? previous = marker.start(nowMs: now);
+    // 先问原生这次启动有没有界面（BUG-4072）：无界面会话的标记记 headless，之后在后台
+    // 被回收不算「启动即闪退」。只有移动端有这种启动；桌面 / 没注册通道 → null（不知道）。
+    final bool mobile =
+        (isAndroid ?? Platform.isAndroid) || (isIOS ?? Platform.isIOS);
+    final LaunchPresence? launch = mobile
+        ? await queryLaunchPresence(
+            channel: launchChannel ?? launchPresenceChannel,
+          )
+        : null;
+    final PreviousSession? previous = marker.start(nowMs: now, launch: launch);
     _previous = previous;
-    final ExitReportEntry? unclean = describeUncleanPreviousSession(previous);
-    if (unclean != null) out.add(unclean);
-    final ExitReportEntry? forced = describeForcedPreviousExit(previous);
-    if (forced != null) out.add(forced);
     _marker = marker;
 
+    // Android 的退出记录先取：同一 pid 的记录带着进程死时的重要性，会话标记的前后台
+    // 推断要服从它（[describeUncleanPreviousSession]）。
+    Map<Object?, Object?>? androidPayload;
     if (isAndroid ?? Platform.isAndroid) {
       try {
-        final Map<Object?, Object?>? payload =
-            await (androidChannel ?? FushiChannels.processExit)
-                .invokeMapMethod<Object?, Object?>(
-                  'consumeExitReports',
-                  <String, Object?>{
-                    'lookbackMs': kExitReportLookback.inMilliseconds,
-                  },
-                );
-        if (payload != null) out.addAll(formatAndroidExitReports(payload));
+        androidPayload = await (androidChannel ?? FushiChannels.processExit)
+            .invokeMapMethod<Object?, Object?>(
+              'consumeExitReports',
+              <String, Object?>{
+                'lookbackMs': kExitReportLookback.inMilliseconds,
+              },
+            );
       } on MissingPluginException {
         // :popup 等没注册通道的引擎：没有可读的。
       } on PlatformException catch (e, st) {
         ErrorLogService.instance.log('PreviousExitLog.android', e, st);
       }
+    }
+
+    final ExitReportEntry? unclean = describeUncleanPreviousSession(
+      previous,
+      androidImportanceAtDeath: previous == null || androidPayload == null
+          ? null
+          : androidImportanceAtDeath(
+              androidPayload,
+              pid: previous.pid,
+              startedAtMs: previous.startedAt,
+            ),
+    );
+    if (unclean != null) out.add(unclean);
+    final ExitReportEntry? forced = describeForcedPreviousExit(previous);
+    if (forced != null) out.add(forced);
+    if (androidPayload != null) {
+      out.addAll(formatAndroidExitReports(androidPayload));
     }
 
     if (isWindows ?? Platform.isWindows) {

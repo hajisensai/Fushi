@@ -563,6 +563,9 @@ void main() {
           'videoShortcutCopyCue',
           'videoShortcutRateDown',
           'videoShortcutRateUp',
+          'videoShortcutSeekBack',
+          'videoShortcutSeekForward',
+          'videoShortcutHoldSpeed',
         ]) {
           expect(
             html.contains('id="$id"'),

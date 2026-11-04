@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiTopBarActionsBudget;
 import 'package:fushi/src/focus/panel_focus_scope.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
@@ -643,9 +644,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     }
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
     _overlayInert = true;
+    _playbackRouteMark.dispose();
     assert(() {
       WebVideoFushiPage.debugSnapshot = null;
       WebVideoFushiPage.debugToggleList = null;
@@ -2115,6 +2126,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                             String text,
                             Rect rect,
                             List<FushiRubySpan> rubySpans,
+                            String _,
                           ) => pushNestedPopup(
                             query: text,
                             selectionRect: rect,

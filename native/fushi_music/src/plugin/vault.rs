@@ -90,7 +90,7 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
 mod protect {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
-        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+        CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
     };
 
     const ENTROPY: &[u8] = b"fushi-music-plugin-vault-key-v1";
@@ -213,7 +213,9 @@ pub fn drop_legacy_key(root: &Path, expected: &[u8; 32]) -> Result<(), String> {
 /// 残留密文。
 pub fn reset_all(root: &Path) -> Result<(), String> {
     let _guard = lock();
-    let Ok(entries) = fs::read_dir(dir(root)) else { return Ok(()) };
+    let Ok(entries) = fs::read_dir(dir(root)) else {
+        return Ok(());
+    };
     for e in entries.flatten() {
         if e.path().extension().is_some_and(|x| x == "json") {
             fs::remove_file(e.path()).map_err(|err| format!("清理凭据失败：{err}"))?;
@@ -301,7 +303,13 @@ pub fn get(root: &Path, src: KeySource, plugin: &str, key: &str) -> Result<Optio
         .and_then(|p| String::from_utf8(p).ok()))
 }
 
-pub fn set(root: &Path, src: KeySource, plugin: &str, key: &str, value: &str) -> Result<(), String> {
+pub fn set(
+    root: &Path,
+    src: KeySource,
+    plugin: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
     check_args(plugin, key)?;
     let _guard = lock();
     if value.len() > MAX_VALUE_BYTES {
@@ -447,7 +455,14 @@ mod tests {
         let root = std::env::temp_dir().join(format!("fmp-vault-legacy-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let legacy = [3u8; 32];
-        set(&root, KeySource::Provided(legacy), "moe.a", "cookie", "MUSIC_U=1").unwrap();
+        set(
+            &root,
+            KeySource::Provided(legacy),
+            "moe.a",
+            "cookie",
+            "MUSIC_U=1",
+        )
+        .unwrap();
         let mut raw = format!("{LEGACY_SCHEME}:").into_bytes();
         raw.extend_from_slice(&legacy);
         fs::write(dir(&root).join(KEY_FILE), &raw).unwrap();
@@ -460,7 +475,9 @@ mod tests {
         drop_legacy_key(&root, &legacy).unwrap();
         assert_eq!(legacy_key(&root), None);
         assert_eq!(
-            get(&root, KeySource::Provided(legacy), "moe.a", "cookie").unwrap().as_deref(),
+            get(&root, KeySource::Provided(legacy), "moe.a", "cookie")
+                .unwrap()
+                .as_deref(),
             Some("MUSIC_U=1")
         );
         let _ = fs::remove_dir_all(&root);

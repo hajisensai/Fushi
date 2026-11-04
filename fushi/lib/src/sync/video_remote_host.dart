@@ -377,7 +377,11 @@ final class VideoRemoteHost implements VideoRemoteService {
        _favoriteChanges = favoriteChanges,
        _library = library,
        _now = now ?? DateTime.now {
-    _core = VideoRemoteSessionCore(now: _now, onLeaseExpired: _expireLookup);
+    _core = VideoRemoteSessionCore(
+      now: _now,
+      onLeaseExpired: _expireLookup,
+      onOwnerChanged: _syncControlled,
+    );
   }
   final FavoriteSentenceRepository Function() _favorites;
   final Stream<String?> Function()? _favoriteChanges;
@@ -406,6 +410,20 @@ final class VideoRemoteHost implements VideoRemoteService {
   /// the one underneath instead of leaving it with no video (BUG-3878).
   final List<VideoRemotePlaybackBinding> _open = <VideoRemotePlaybackBinding>[];
 
+  final ValueNotifier<VideoRemotePlaybackBinding?> _controlled =
+      ValueNotifier<VideoRemotePlaybackBinding?>(null);
+
+  /// The player a phone is actually driving right now: the selected binding
+  /// while an authenticated controller holds the lease, otherwise null.
+  /// "Registered" alone is not "remote-controlled" — players register as soon
+  /// as they have a video, phone or no phone (BUG-4084).
+  ValueListenable<VideoRemotePlaybackBinding?> get controlledBinding =>
+      _controlled;
+
+  void _syncControlled() {
+    _controlled.value = _core.owner == null ? null : _binding;
+  }
+
   void register(VideoRemotePlaybackBinding binding) {
     _open
       ..removeWhere((VideoRemotePlaybackBinding b) => identical(b, binding))
@@ -419,6 +437,7 @@ final class VideoRemoteHost implements VideoRemoteService {
     _playbackError = null;
     _lookup = null;
     binding.addListener(_changed);
+    _syncControlled();
     _refresh();
     _publish();
   }
@@ -440,6 +459,7 @@ final class VideoRemoteHost implements VideoRemoteService {
       register(underneath);
       return;
     }
+    _syncControlled();
     _publish();
   }
 
@@ -1492,6 +1512,7 @@ final class VideoRemoteHost implements VideoRemoteService {
     await releaseController();
     _binding?.removeListener(_changed);
     _binding = null;
+    _syncControlled();
     _core.dispose();
   }
 
