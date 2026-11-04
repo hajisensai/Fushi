@@ -443,7 +443,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 直接按它的索引查，见 store/browse.rs `anki_dupes`）。老行这一列是 NULL，升级时内核只补这一列
   /// （caches.rs `backfill_dupe_norms`：物化笔记与笔记类型算首字段，不重算整行与卡片——那要读每张卡的血统与
   /// 日志）。只改这一列、不算缓存写入，不进变更日志。
-  static const int _kCacheRevision = 8;
+  /// 9：没有出处记录的制卡笔记按 Fushi 制卡标签认出处（`fushi` / `hibiki` + `book` / `video` / `anime` /
+  /// `game` / `music`，层级 `<分类>::<作品名>` 给作品名；caches.rs `source_from_tags`，反馈 AhIskigAq3）。
+  /// 老行只补 source_kind / source_title 两列（caches.rs `backfill_tag_sources`，按缓存行自己的 tags_json），
+  /// 不算缓存写入，不进变更日志。
+  static const int _kCacheRevision = 9;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
@@ -2295,6 +2299,10 @@ class SrsDbStore implements SrsSync2Host {
       // 整行重算（上一步）已顺带写好 dupe_norm；这一步补的只是剩下的 NULL 行（没有就是一条 SELECT）。
       if (_cacheRevision < 8) {
         await _sync2(const <String, Object?>{'op': 'backfill_dupe_norms'});
+      }
+      // 整行重算已按新规则写好出处；这一步补的只是出处列仍为空、标签认得出的老行。
+      if (_cacheRevision < 9) {
+        await _sync2(const <String, Object?>{'op': 'backfill_tag_sources'});
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
