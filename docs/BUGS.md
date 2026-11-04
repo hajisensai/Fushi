@@ -95,8 +95,8 @@
 | [BUG-4059](bugs/BUG-4059-srs-browse-preview-webview-vs-native.md) | ✅ | ✅ | 浏览预览与复习实际卡面不一致 |
 | [BUG-4058](bugs/BUG-4058-srs-front-sentence-no-target-highlight.md) | ✅ | ✅ | 复习卡正面例句不高亮目标词 |
 | [BUG-4057](bugs/BUG-4057-android-online-anime-black-video.md) | 🚧 | 🚧 | Android 在线动画源视频全部黑屏（只有播放器界面） |
-| [BUG-4056](bugs/BUG-4056-scrape-locale-empty-follows-ui-not-original.md) | 🚧 | 🚧 | 刮削资料语言留空时跟随界面语言而非作品原语言 |
-| [BUG-4055](bugs/BUG-4055-app-video-scan-never-prunes-deleted-files.md) | 🚧 | 🚧 | app 本地视频来源重扫从不回收已删除文件，删掉的视频留在待确认刮削队列 |
+| [BUG-4056](bugs/BUG-4056-scrape-locale-empty-follows-ui-not-original.md) | ✅ | ✅ | 刮削资料语言留空时跟随界面语言而非作品原语言 |
+| [BUG-4055](bugs/BUG-4055-app-video-scan-never-prunes-deleted-files.md) | ✅ | ✅ | app 本地视频来源重扫从不回收已删除文件，删掉的视频留在待确认刮削队列 |
 | [BUG-4054](bugs/BUG-4054-sync-unchanged-books-slow.md) | ✅ | ✅ | 同步时未变的书和统计仍逐本往返、整份重下 |
 | [BUG-4053](bugs/BUG-4053-browser-ext-arrows-hijacked-without-subtitles.md) | ✅ | ✅ | 浏览器扩展字幕没开时左右键仍被上一句下一句接管 |
 | [BUG-4052](bugs/BUG-4052-browser-ext-seek-hold-speed-shortcuts.md) | ✅ | ✅ | 浏览器扩展缺按秒快退快进与按住临时倍速快捷键，设置说明写死旧键 |

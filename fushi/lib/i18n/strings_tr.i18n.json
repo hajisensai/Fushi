@@ -10460,7 +10460,7 @@
   "video_source_scrape_list_load_failed": "Bu liste yüklenemedi. Tekrar deneyin.",
   "video_source_scrape_list_reload": "Yeniden yükle",
   "video_source_scrape_locale": "Meta veri dili",
-  "video_source_scrape_locale_follow_ui": "Arayüz dilini izlemek için boş bırakın",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "TMDB yedek verileri ve ek ayrıntıları için tercih edilen dil. MAL, MAL tarafından sağlanan başlıkları ve özgün metinleri kullanır.",
   "video_source_scrape_manual_ambiguous": "Bu ada sahip birden fazla eser var. Onay bekleyen eserler sekmesini açın ve eşleştirilecek öğeyi seçin.",
   "video_source_scrape_manual_by_id": "Eser kimliği",

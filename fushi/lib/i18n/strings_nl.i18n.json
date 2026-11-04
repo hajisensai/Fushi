@@ -10460,7 +10460,7 @@
   "video_source_scrape_list_load_failed": "Deze lijst kon niet worden geladen. Probeer het opnieuw.",
   "video_source_scrape_list_reload": "Opnieuw laden",
   "video_source_scrape_locale": "Metadatataal",
-  "video_source_scrape_locale_follow_ui": "Laat leeg om de interfacetaal te volgen",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "Voorkeurstaal voor vervangende gegevens en aanvullende details van TMDB. MAL gebruikt de titels en oorspronkelijke teksten die MAL aanlevert.",
   "video_source_scrape_manual_ambiguous": "Meerdere werken hebben deze titel. Open het tabblad met werken die nog moeten worden bevestigd en selecteer het specifieke item om te koppelen.",
   "video_source_scrape_manual_by_id": "Werk-ID",

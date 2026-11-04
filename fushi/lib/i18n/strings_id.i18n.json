@@ -10460,7 +10460,7 @@
   "video_source_scrape_list_load_failed": "Daftar ini tidak dapat dimuat. Coba lagi.",
   "video_source_scrape_list_reload": "Muat ulang",
   "video_source_scrape_locale": "Bahasa metadata",
-  "video_source_scrape_locale_follow_ui": "Kosongkan untuk mengikuti bahasa antarmuka",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "Bahasa pilihan untuk data cadangan dan detail tambahan dari TMDB. MAL menggunakan judul dan teks asli yang disediakan oleh MAL.",
   "video_source_scrape_manual_ambiguous": "Ada beberapa karya dengan judul ini. Buka tab karya yang menunggu konfirmasi dan pilih item yang ingin dicocokkan.",
   "video_source_scrape_manual_by_id": "ID karya",

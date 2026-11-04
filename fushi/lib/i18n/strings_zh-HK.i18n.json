@@ -10460,7 +10460,7 @@
   "video_source_scrape_list_load_failed": "無法載入此清單，請重試。",
   "video_source_scrape_list_reload": "重新載入",
   "video_source_scrape_locale": "資料語言",
-  "video_source_scrape_locale_follow_ui": "留空 = 跟隨介面語言",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "TMDB 後備及補充資料的首選語言；MAL 使用其提供的標題和原始文字。",
   "video_source_scrape_manual_ambiguous": "有多個同名作品。請開啟待確認頁，選擇具體項目進行配對。",
   "video_source_scrape_manual_by_id": "按作品 ID",

@@ -10460,7 +10460,7 @@
   "video_source_scrape_list_load_failed": "Impossibile caricare questo elenco. Riprova.",
   "video_source_scrape_list_reload": "Ricarica",
   "video_source_scrape_locale": "Lingua metadati",
-  "video_source_scrape_locale_follow_ui": "Lascia vuoto per seguire la lingua dell'interfaccia",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "Lingua preferita per i dati di riserva e i dettagli aggiuntivi di TMDB. MAL usa i titoli e i testi originali forniti da MAL.",
   "video_source_scrape_manual_ambiguous": "Più opere hanno questo titolo. Apri la scheda delle opere in attesa e seleziona l’elemento specifico da abbinare.",
   "video_source_scrape_manual_by_id": "ID dell’opera",

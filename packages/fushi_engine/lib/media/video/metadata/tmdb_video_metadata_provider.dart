@@ -31,6 +31,7 @@ class TmdbVideoMetadataProvider
     this.baseUrl = 'https://api.themoviedb.org/3',
     this.imageBaseUrl = 'https://image.tmdb.org/t/p/original',
     this.language = kFallbackVideoMetadataLocale,
+    this.followOriginalLanguage = false,
   }) : assert(client == null || transport == null),
        _apiKey = apiKey.trim(),
        _accessToken = accessToken.trim(),
@@ -52,6 +53,53 @@ class TmdbVideoMetadataProvider
   /// 同源：此前 `language` 有接线而图片语言写死 zh，用户设了 ja 得到日文简介 +
   /// 中文海报。
   VideoMetadataLanguages get _languages => VideoMetadataLanguages(language);
+
+  /// true = 资料语言留空、每部作品按它**自己的原语言**刮（BUG-4056）：按作品取
+  /// 的请求（详情 / 季 / 集 / 别名 / 剧集分组 / 花絮）先查一次该作品的
+  /// `original_language`，再交给按那种语言构造的同源实例（共用 transport 与缓存，
+  /// 文字、`include_image_language`、缓存键都随之换成原语言）。原语言查不到时
+  /// 退回 [language]。搜索与 changes 探针不按作品，仍用 [language]——搜索命中与
+  /// `language` 无关（见 [search]），exact 门在详情阶段再判。
+  final bool followOriginalLanguage;
+
+  /// 跟随原语言时按语言缓存的同源实例（不跟随原语言、不拥有 transport）。
+  final Map<String, TmdbVideoMetadataProvider> _byLanguage =
+      <String, TmdbVideoMetadataProvider>{};
+
+  /// 本次按作品取资料该用的实例：不跟随原语言 → 自己；否则按作品原语言的实例。
+  Future<TmdbVideoMetadataProvider> _scopedTo(
+    VideoMetadataLookup lookup,
+  ) async {
+    final String tag = await _originalLanguageOf(lookup) ?? language;
+    return _byLanguage.putIfAbsent(
+      tag,
+      () => TmdbVideoMetadataProvider(
+        apiKey: _apiKey,
+        accessToken: _accessToken,
+        transport: _transport,
+        baseUrl: baseUrl,
+        imageBaseUrl: imageBaseUrl,
+        language: tag,
+      ),
+    );
+  }
+
+  /// [lookup] 作品的原语言（TMDB `original_language`，ISO 639-1 主子标签）。
+  /// 轻量详情请求（不带 `append_to_response`），独立缓存键；404 / 字段缺失 → null。
+  Future<String?> _originalLanguageOf(VideoMetadataLookup lookup) async {
+    _validateLookup(lookup);
+    final String media = lookup.mediaKind == VideoMetadataMediaKind.tv
+        ? 'tv'
+        : 'movie';
+    final Map<String, Object?>? payload = await _getObjectOrNull(
+      '/$media/${lookup.externalId}',
+      operation: 'TMDB $media original language',
+      cacheKey: 'tmdb:original-language:$media:${lookup.externalId}',
+    );
+    return VideoMetadataLanguages.primarySubtagOf(
+      metadataString(payload?['original_language']),
+    );
+  }
 
   @override
   VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.tmdb;
@@ -156,6 +204,9 @@ class TmdbVideoMetadataProvider
 
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(lookup)).fetchWork(lookup);
+    }
     _validateLookup(lookup);
     final String path = lookup.mediaKind == VideoMetadataMediaKind.tv
         ? '/tv/${lookup.externalId}'
@@ -219,6 +270,9 @@ class TmdbVideoMetadataProvider
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
   ) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(lookup)).fetchSeasons(lookup);
+    }
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <VideoMetadataSeason>[];
@@ -254,6 +308,11 @@ class TmdbVideoMetadataProvider
     VideoMetadataLookup lookup, {
     required int seasonNumber,
   }) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(
+        lookup,
+      )).fetchEpisodes(lookup, seasonNumber: seasonNumber);
+    }
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <VideoMetadataEpisode>[];
@@ -288,6 +347,11 @@ class TmdbVideoMetadataProvider
     VideoMetadataLookup lookup, {
     required int seasonNumber,
   }) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(
+        lookup,
+      )).fetchEpisodeTitleAliases(lookup, seasonNumber: seasonNumber);
+    }
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <int, List<String>>{};
@@ -376,6 +440,9 @@ class TmdbVideoMetadataProvider
   Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
     VideoMetadataLookup lookup,
   ) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(lookup)).listEpisodeGroups(lookup);
+    }
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <VideoMetadataEpisodeGroupSummary>[];
@@ -406,6 +473,13 @@ class TmdbVideoMetadataProvider
     required int seasonNumber,
     int? episodeCount,
   }) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(lookup)).resolveEpisodeGroup(
+        lookup,
+        seasonNumber: seasonNumber,
+        episodeCount: episodeCount,
+      );
+    }
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) return null;
     if (lookup.episodeGroupId != null) {
@@ -515,6 +589,9 @@ class TmdbVideoMetadataProvider
   Future<List<VideoMetadataExtra>> fetchExtras(
     VideoMetadataLookup lookup,
   ) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(lookup)).fetchExtras(lookup);
+    }
     _validateLookup(lookup);
     final String media = lookup.mediaKind == VideoMetadataMediaKind.tv
         ? 'tv'
@@ -575,6 +652,13 @@ class TmdbVideoMetadataProvider
     required int seasonNumber,
     required int episodeNumber,
   }) async {
+    if (followOriginalLanguage) {
+      return (await _scopedTo(lookup)).fetchEpisode(
+        lookup,
+        seasonNumber: seasonNumber,
+        episodeNumber: episodeNumber,
+      );
+    }
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) return null;
     if (lookup.episodeGroupId != null) {
