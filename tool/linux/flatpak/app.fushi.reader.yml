@@ -11,8 +11,12 @@ command: fushi
 finish-args:
   - --share=network
   - --share=ipc
-  - --socket=wayland
-  - --socket=fallback-x11
+  # X11 (XWayland on a Wayland desktop): the out-of-app floating ball and its
+  # overlays place their own windows, which Wayland does not allow. Steam Deck
+  # Game Mode (gamescope) is X11 too. GTK prefers Wayland whenever it can reach
+  # it, so the backend is pinned as well.
+  - --socket=x11
+  - --env=GDK_BACKEND=x11
   - --socket=pulseaudio
   # GPU + gamepads (/dev/input).
   - --device=all
