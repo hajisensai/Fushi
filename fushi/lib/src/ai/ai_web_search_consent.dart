@@ -4,7 +4,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
-/// 正在弹的那一次询问：设置页选后端与字幕生成面板「开始」同时要问时共用这一次。
+/// 正在弹的那一次询问：几个面板同时要问时共用这一次，不连弹两个框。
 Future<void>? _pendingDecision;
 
 /// 「联网搜索抓前 3 页网页交给 AI」的一次性确认（2026-11-04 用户拍板）。
@@ -18,7 +18,9 @@ Future<void>? _pendingDecision;
 /// 不写偏好，下次再问；两个按钮都不默认获焦。说明里写明部分 AI 提供商自带联网搜索
 /// （有的收费），用那种提供商可以不配置这里。
 ///
-/// 只在用户在场的入口调用。没选后端（关闭）或已答过时直接返回。
+/// 只在用户在场、真要抓页之前的入口调用（字幕生成面板开 AI 点「开始」）。**不**挂在
+/// 设置项的 onChanged 上：那也是 ctl `settings.set` 的写入口，弹框会把 CLI / AI 助手的
+/// 调用卡在主窗口上等人点。没选后端（关闭）或已答过时直接返回。
 Future<void> ensureAiWebSearchPageFetchDecided(
   BuildContext context,
   PreferencesRepository prefs,

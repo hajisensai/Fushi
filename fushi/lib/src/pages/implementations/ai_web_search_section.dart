@@ -5,8 +5,8 @@
 /// 配置是一整份 [WebSearchConfig] JSON（偏好键 `ai_web_search`，含 base64 的 Brave
 /// key，设备本地 + 凭据），三个控件各改其中一个字段，读改写逻辑只在本文件。
 ///
-/// 「把抓到的网页交给 AI」开关是首次确认（`ai_web_search_consent.dart`）落下的那个
-/// 决定：第一次选后端时弹框问一次，之后在这里改；关着时联网搜索对 AI 功能不生效。
+/// 「把抓到的网页交给 AI」开关是首次确认（`ai_web_search_consent.dart`，开 AI 生成字幕
+/// 前问一次）落下的那个决定，之后在这里改；关着 / 没答过时联网搜索对 AI 功能不生效。
 ///
 /// 选项是声明式 item（后端分段 + 两个文本框），不手画控件：分段单选走
 /// `SettingsSegmentedItem`（渲染器内部用 `adaptiveSegmentedButton`，MD3 / Apple
@@ -14,7 +14,6 @@
 library;
 
 import 'package:fushi_engine/ai/web_search.dart';
-import 'package:fushi/src/ai/ai_web_search_consent.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kAiWebSearchPageFetchAllow;
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -84,16 +83,11 @@ List<SettingsItem> buildAiWebSearchItems() => <SettingsItem>[
     ],
     defaultValue: kAiWebSearchOff,
     selected: (SettingsContext c) => aiWebSearchKindValue(c.appModel.prefsRepo),
-    onChanged: (SettingsContext c, String value) async {
-      await setAiWebSearchKind(c.appModel.prefsRepo, value);
-      // 第一次选上后端：当场问一次要不要把抓到的网页交给 AI。
-      if (value != kAiWebSearchOff && c.context.mounted) {
-        await ensureAiWebSearchPageFetchDecided(
-          c.context,
-          c.appModel.prefsRepo,
-        );
-      }
-    },
+    // 不在这里弹首次确认：onChanged 也是 ctl `settings.set`（CLI / AI 助手）的写入口，
+    // 在这里 await 一个弹框会让那条调用卡在主窗口等人点。确认放在用户在场、真要抓页
+    // 之前（字幕生成面板「开始」），改主意用下面的开关。
+    onChanged: (SettingsContext c, String value) =>
+        setAiWebSearchKind(c.appModel.prefsRepo, value),
   ),
   SettingsTextItem(
     id: 'ai.web_search.searxng_endpoint',

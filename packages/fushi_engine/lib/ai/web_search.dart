@@ -39,7 +39,6 @@ import 'package:fushi_engine/utils/net/app_proxy.dart'
     show appManualProxyBasicCredentials, resolveAppProxyDirective;
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
 
 /// 单个响应体（搜索 JSON / 结果页 HTML）的字节上限。
 const int kWebSearchMaxResponseBytes = 4 * 1024 * 1024;
@@ -224,7 +223,7 @@ class WebSearchPage {
 /// 不能让调用它的 AI 流程（字幕生成等）整体失败。
 class WebSearchClient {
   /// [client] 发搜索请求；抓结果页用 [pageClient]，没给就用 [client]；两个都没给时
-  /// 另建一个按已校验地址建连的客户端（[createWebSearchPageHttpClient]，见库注释）。
+  /// 另建一个按已校验地址建连的客户端（[pinWebSearchPageConnections]，见库注释）。
   /// [resolveHost] 是抓页前校验主机名用的解析器，[proxyDirective] 是抓页出口
   /// （默认应用代理设置）。
   WebSearchClient({
@@ -240,8 +239,9 @@ class WebSearchClient {
        _pageClient =
            pageClient ??
            client ??
-           IOClient(
-             createWebSearchPageHttpClient(
+           createAppHttpIoClient(
+             configure: (HttpClient c) => pinWebSearchPageConnections(
+               c,
                resolveHost: resolveHost ?? _systemLookup,
                proxyDirective: proxyDirective ?? _appProxyDirective,
              ),
@@ -493,20 +493,22 @@ bool _isPublicIpv4(List<int> b) =>
 
 String _appProxyDirective(Uri url) => resolveAppProxyDirective(url);
 
-/// 抓结果页用的 [HttpClient]：连接超时同 [createAppHttpClient]，但 `findProxy` 恒为
-/// `DIRECT`——走不走代理由 [webSearchPinnedConnectionFactory] 自己按 [proxyDirective]
-/// 决定并自己建隧道。交给 HTTP 栈去连代理的话，它会把**主机名**发给代理
-/// （`CONNECT host:443` / `GET http://host/…`），代理那头重新解析，本机的地址校验就成了
-/// 只管一次的前置检查。
-HttpClient createWebSearchPageHttpClient({
+/// 把 [client] 改装成抓结果页用的：`findProxy` 恒为 `DIRECT`，走不走代理由
+/// [webSearchPinnedConnectionFactory] 自己按 [proxyDirective] 决定并自己建隧道。交给
+/// HTTP 栈去连代理的话，它会把**主机名**发给代理（`CONNECT host:443` /
+/// `GET http://host/…`），代理那头重新解析，本机的地址校验就成了只管一次的前置检查。
+void pinWebSearchPageConnections(
+  HttpClient client, {
   required WebSearchHostResolver resolveHost,
   required WebSearchProxyDirective proxyDirective,
-}) => createAppHttpClient()
-  ..findProxy = ((Uri _) => 'DIRECT')
-  ..connectionFactory = webSearchPinnedConnectionFactory(
-    resolveHost,
-    proxyDirective: proxyDirective,
-  );
+}) {
+  client
+    ..findProxy = ((Uri _) => 'DIRECT')
+    ..connectionFactory = webSearchPinnedConnectionFactory(
+      resolveHost,
+      proxyDirective: proxyDirective,
+    );
+}
 
 /// 抓页客户端的建连函数：自己解析主机名、要求全部地址是公网地址，再**按校验过的地址**
 /// 建连，解析与建连之间被 DNS rebinding 换地址也连不到内网。
@@ -517,7 +519,7 @@ HttpClient createWebSearchPageHttpClient({
 ///   应用代理设置带上），2xx 后 https 在隧道上按原主机名做 TLS，http 直接在隧道上发
 ///   请求。代理只拿到校验过的 IP。
 ///
-/// 只能装在 `findProxy` 恒为 `DIRECT` 的客户端上（[createWebSearchPageHttpClient]）：
+/// 只能装在 `findProxy` 恒为 `DIRECT` 的客户端上（[pinWebSearchPageConnections]）：
 /// HTTP 栈要是自己选了代理（`proxyHost` 非 null），隧道会用主机名去建，这里直接拒。
 Future<ConnectionTask<Socket>> Function(
   Uri url,
