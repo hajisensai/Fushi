@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4102](bugs/BUG-4102-work-profile-session-partial-scope.md) | ✅ | ✅ | 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置 |
 | [BUG-4102](bugs/BUG-4102-apple-widget-parity-lost-in-merge.md) | ✅ | ✅ | apple-widget-parity-lost-in-merge |
 | [BUG-4102](bugs/BUG-4102-ankiconnect-reposition-due-rejected.md) | ✅ | ✅ | AnkiConnect 下「按词频重排新卡」被拒——新版 AnkiConnect 禁写 due |
 | [BUG-4102](bugs/BUG-4102-short-clip-sidecar-dropped.md) | ✅ | ✅ | 短片（识别稿少于 30 行）的外挂字幕在自动字幕生成里整条被丢 |

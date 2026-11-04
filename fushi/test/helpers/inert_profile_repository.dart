@@ -110,6 +110,16 @@ class InertProfileRepository implements ProfileRepository {
   ) async {}
 
   @override
+  Future<void> writeWorkScopedAnkiSettings(
+    int profileId,
+    Map<String, String> ankiMap,
+  ) async {}
+
+  @override
+  Future<Map<String, String>> readWorkScopedAnkiSettings(int profileId) async =>
+      const <String, String>{};
+
+  @override
   Future<int> resolveProfileId({
     required String? bookUid,
     String? languageTag,

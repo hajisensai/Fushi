@@ -29,7 +29,9 @@ class ProfileSettingsView {
     required this.prefs,
     required this.ankiSettings,
     required List<Dictionary> dictionaries,
+    Map<String, String> ankiSnapshot = const <String, String>{},
   }) : prefsMap = Map<String, String>.unmodifiable(prefsMap),
+       ankiSnapshot = Map<String, String>.unmodifiable(ankiSnapshot),
        dictionaries = List<Dictionary>.unmodifiable(dictionaries),
        lookupFilters = DictionaryRepository.lookupFiltersOf(dictionaries);
 
@@ -47,6 +49,10 @@ class ProfileSettingsView {
 
   /// 合成后的 Anki 设置。
   final AnkiSettings ankiSettings;
+
+  /// 该配置快照里自己拥有的 Anki 字段（`ProfileKeys.ankiSettingsToMap` 形，未合成）；空 = 快照
+  /// 没有 Anki 字段（老配置），按 live 设置。作品会话据此决定接不接管 Anki 设置。
+  final Map<String, String> ankiSnapshot;
 
   /// 合成后的词典列表（按管理页顺序）。
   final List<Dictionary> dictionaries;

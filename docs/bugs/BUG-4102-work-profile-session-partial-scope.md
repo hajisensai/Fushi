@@ -1,0 +1,16 @@
+## BUG-4102 · 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置
+- **报告**：2026-11-05（用户：反馈 kEFPY4cuKZ 的后续，PR #2866 合入后按推荐补齐）
+- **真实性**：✅ 真 bug。#2866 把作品级配置改成会话覆盖层后，覆盖层只接了阅读样式 / 悬浮字幕样式 / 查词：
+  - 键范围只认阅读器命名空间与 `floating_lyric_*`，并把字体目录 / 各用途字体表排除在外——`fushi/lib/src/profile/work_profile_scope.dart:84`（`_readerGlobalKeys`）、`:100`（`isWorkScopedPrefKey`）。主题键、`video_subtitle_style`、`srs_mining_*` 都不在内。
+  - 主题读自己的 live 缓存，不经覆盖层——`fushi/lib/src/models/theme_notifier.dart:1695`（`_get` 只读 `_prefs`）。
+  - 制卡链的 Anki 设置读裸 live 存储——`fushi/lib/src/anki/anki_view_model.dart:688`（`createAnkiRepository()` 默认存储），进书不换牌组 / 笔记类型；复习制卡固定落激活配置的复习副本（`_readSrsMiner` 只读 `srsStoreProvider`）。
+  - Android `:popup` 进程 / 悬浮词典是另外的 isolate，没有任何通道知道主进程正打开哪部作品——`fushi/lib/src/models/app_model.dart:4919`（`refreshForWarmDictionaryPopup` 只对账偏好 / 词典），查词仍按全局配置。
+- **[x] ① 已修复** — 覆盖层补齐到 Anki 牌组（配置拥有的 Anki 字段）、复习制卡目标（目标 / 牌组 / 笔记类型 / 字段映射，制卡落进绑定配置的复习副本）、主题、视频字幕样式、字体（含字体目录）：`WorkProfileScope.isWorkScopedPrefKey` 扩键；`ThemeNotifier` 读写经覆盖层并在会话变化时重建；新增 `WorkScopedAnkiSettingsStore` 只接在本机制卡链上（快照 / 应用配置的 `ProfileRepository` 改用裸 live 存储，避免把作品配置的牌组快照进激活配置）；`ReaderSettings` 字体写入经覆盖层；会话变化后 `AppModel` 重解析字体链。主进程把当前会话（配置 id + 会话内写入次数）发布到设备本地偏好 `work_profile_session`（写入递增 `prefs_version`），弹窗进程冷启动 / 热复用时经同一条 `WorkProfileScope.enterProfile` 镜像，不另写一份逻辑；主进程启动时清空。
+- **[x] ② 已加自动化测试** — `fushi/test/profile/work_profile_full_scope_test.dart`（键范围、主题 / 视频字幕样式 / 复习制卡目标 / 字体 / Anki 的会话读写与退出恢复、快照没有 Anki 字段时不接管、`writeWorkScopedAnkiSettings`、弹窗镜像、发布不白抬 `prefs_version`、发布键设备本地、接线源码守卫）；`work_profile_session_test.dart` 更新字体键断言。
+- **审查后补修（PR #2889）**：
+  - 悬浮词典（同进程另一个 engine）热复用只调 `refreshPrefCacheIfChanged`，不镜像主进程作品会话——`fushi/lib/src/pages/implementations/floating_dict_page.dart:80`。改走与 `:popup` 同一条 `AppModel.refreshForWarmDictionaryPopup`（偏好 + 作品会话镜像 + 词典元数据）。
+  - 替对端制卡链（互联转发 / 读写出处笔记 / 游戏串流，`hostMiningAnkiRepositoryProvider`）共用 `_withSrsMining` / `_readSrsMiner`，复习侧叠了主机本机的作品会话、Anki 侧却读 live——`fushi/lib/src/anki/anki_view_model.dart:724`、`:795`。`_withSrsMining` 加 `followWorkSession`：替对端链用 `hostSrsMiningToReviewProvider`（`AppModel.hostSrsMiningTarget` / `hostSrsMiningDestination`，经 `PreferencesRepository.withoutWorkScope` 读激活配置）与激活配置的复习副本。
+  - `WorkScopedAnkiSettingsStore` 读改写用会话内存里的 Anki 字段：弹窗进程同一会话里改的牌组会被主进程下次写入整组覆盖；快照没有 Anki 字段时任何写入（含只改设备本地字段 / 读时迁移回写）都把当时的全局牌组固化进作品配置——`fushi/lib/src/profile/work_profile_anki_settings_store.dart:84`。改为每次经 `WorkProfileScope.readAnki`（`ProfileRepository.readWorkScopedAnkiSettings`）现读持久层；配置拥有的字段没变且尚未接管时只写 live。
+  - 视频遥控制卡（`localOnly`）用裸 live Anki 存储——`fushi/lib/src/pages/implementations/video_fushi/lookup_mining.part.dart:36`，改用 `WorkScopedAnkiSettingsStore`。
+  - 测试：`host_mining_target_test.dart` 加「主机本机的作品会话不影响替对端制卡」两例（真 ProviderContainer + AppModel 读偏好）；`work_profile_full_scope_test.dart` 加快照无 Anki 字段不固化、跨进程读改写不覆盖、`withoutWorkScope`、`publishedSessionValue` / `mirrorPublishedSession` 行为测试，接线守卫改成针对替对端链 / 悬浮词典 / 视频遥控制卡。
+- **备注**：弹窗进程在会话期间对**非 Anki** 作品级键的写入只落绑定配置快照，主进程内存里的会话不刷新（单键写入，不会整组覆盖；主进程下次进入作品时读到）。主题接线（`AppModel._onWorkProfileScopeChanged` → `ThemeNotifier.onWorkProfileScopeChanged`）仍只有源码守卫。真机 / 模拟器复测未做。

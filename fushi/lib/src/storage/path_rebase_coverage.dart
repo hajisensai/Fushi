@@ -1364,6 +1364,12 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     '绑定临时切换前用户自选 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。',
   ),
   PathRebasePref(
+    'work_profile_session',
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '主进程此刻打开的作品会话（配置自增 id + 写入次数，撞正则是因为 profile 里含 file）。不是路径。',
+  ),
+  PathRebasePref(
     'local_audio_db_display_name',
     PathRebaseKind.notAPath,
     PathValueShape.none,

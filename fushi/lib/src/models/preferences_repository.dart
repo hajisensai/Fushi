@@ -403,10 +403,37 @@ class PreferencesRepository extends ChangeNotifier
   /// 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，作品级键（阅读样式 / 悬浮字幕样式）
   /// 的读写改走 [WorkProfileScope] 的会话覆盖层，全局偏好不动。只读视图不参与。
   bool _workScoped(String key) =>
-      !_readOnly && WorkProfileScope.instance.overrides(key);
+      !_readOnly &&
+      _bypassWorkScope == 0 &&
+      WorkProfileScope.instance.overrides(key);
+
+  /// [withoutWorkScope] 嵌套深度；> 0 时读侧跳过作品会话覆盖层。
+  int _bypassWorkScope = 0;
+
+  /// 同步执行 [read]，期间作品级键读的是**全局**（激活配置）值，不叠本机作品会话。给替别的
+  /// 设备 / 浏览器扩展制卡的链路用（`hostMiningAnkiRepositoryProvider`）：主机此刻打开着哪本书
+  /// 与对端无关。[read] 必须是同步的（Dart 单线程，期间不会有别的读交错进来）。
+  T withoutWorkScope<T>(T Function() read) {
+    _bypassWorkScope++;
+    try {
+      return read();
+    } finally {
+      _bypassWorkScope--;
+    }
+  }
 
   /// 作品级配置会话装上 / 撤下后通知监听者重读（偏好值本身由 getter 动态解析）。
   void notifyWorkProfileScopeChanged() => notifyListeners();
+
+  /// 主进程发布的当前作品会话（见 [kWorkProfileSessionPrefKey]；空串 = 没有会话）。
+  String get workProfileSession =>
+      getPref(kWorkProfileSessionPrefKey, defaultValue: '') as String;
+
+  /// 主进程发布作品会话；与已存值相同就不写（不白白递增 `prefs_version` 让弹窗重载）。
+  Future<void> setWorkProfileSession(String value) async {
+    if (workProfileSession == value) return;
+    await setPref(kWorkProfileSessionPrefKey, value);
+  }
 
   Future<void> refreshFromDb() async {
     await loadFromDb();
