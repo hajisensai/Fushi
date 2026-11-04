@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show AudiobookPlayerController;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
@@ -297,7 +299,8 @@ void main() {
         int notified = 0;
         c.addListener(() => notified++);
         async.elapse(
-          kLyricsIllustrationCardAutoClose - const Duration(milliseconds: 1),
+          lyricsIllustrationCardDisplayDuration(0) -
+              const Duration(milliseconds: 1),
         );
         expect(c.cardVisible, isTrue);
         async.elapse(const Duration(milliseconds: 1));
@@ -308,10 +311,47 @@ void main() {
       });
     });
 
+    test('展示时长跟「图片暂停」秒数走：0 秒用打开停留的默认秒数', () {
+      expect(
+        lyricsIllustrationCardDisplayDuration(12),
+        const Duration(seconds: 12),
+      );
+      expect(
+        lyricsIllustrationCardDisplayDuration(0),
+        const Duration(seconds: AudiobookPlayerController.imagePauseOnSec),
+      );
+    });
+
+    test('设了图片暂停秒数：没进停留的卡按该秒数收起（不是固定 5 秒）', () {
+      fakeAsync((FakeAsync async) {
+        final ValueNotifier<int> pause = ValueNotifier<int>(12);
+        addTearDown(pause.dispose);
+        final LyricsIllustrationController c = LyricsIllustrationController()
+          ..imagePauseSec = pause
+          ..load(
+            items(),
+            position: const LyricsBookPosition(3, 10),
+            audioPosition: const Duration(minutes: 30),
+          );
+        expect(
+          c.observe(
+            const LyricsBookPosition(5, 1300),
+            audioPosition: const Duration(minutes: 30, seconds: 9),
+          ),
+          isTrue,
+        );
+        async.elapse(const Duration(seconds: 11));
+        expect(c.cardVisible, isTrue, reason: '12 秒的停留设置下 11 秒时卡还在');
+        async.elapse(const Duration(seconds: 1));
+        expect(c.cardVisible, isFalse);
+        expect(c.shown, 2);
+      });
+    });
+
     test('停留接管（holdCardOpen）后不再按展示时长收卡', () {
       fakeAsync((FakeAsync async) {
         final LyricsIllustrationController c = revealed()..holdCardOpen();
-        async.elapse(kLyricsIllustrationCardAutoClose * 3);
+        async.elapse(lyricsIllustrationCardDisplayDuration(0) * 3);
         expect(c.cardVisible, isTrue);
         // 停留结束由调用方收卡。
         c.closeCard();
@@ -323,7 +363,7 @@ void main() {
       fakeAsync((FakeAsync async) {
         final LyricsIllustrationController browsing = revealed()..showAt(0);
         expect(browsing.debugCardAutoClosePending, isFalse);
-        async.elapse(kLyricsIllustrationCardAutoClose * 2);
+        async.elapse(lyricsIllustrationCardDisplayDuration(0) * 2);
         expect(browsing.cardVisible, isTrue, reason: '用户接手后留到自己关');
 
         final LyricsIllustrationController closed = revealed()..closeCard();
