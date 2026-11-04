@@ -14,6 +14,8 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/music/music_history.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_queue_feed.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
@@ -48,6 +50,7 @@ class MusicSession extends ChangeNotifier {
     required FushiDatabase? Function() database,
     required bool Function() showMediaNotification,
     this.favorites,
+    this.appleMusicFavorites,
   }) : _audio = audio,
        _audiobook = audiobook,
        _database = database,
@@ -73,6 +76,7 @@ class MusicSession extends ChangeNotifier {
       ..addListener(_onEngineChanged);
     _audiobook.addListener(_onAudiobookChanged);
     favorites?.addListener(notifyListeners);
+    appleMusicFavorites?.addListener(notifyListeners);
     _subs.addAll(<StreamSubscription<Object?>>[
       _audio
           .streamFor(_audio.playIntentStream, MediaSessionOwner.music)
@@ -102,6 +106,9 @@ class MusicSession extends ChangeNotifier {
   final MusicPlayerEngine engine;
   final AudioController _audio;
 
+  /// 电台式续播（在线插件的个人电台 / 以某首起电台）：快放完时再取一批拼到队尾。
+  late final MusicQueueFeedRunner queueFeeds = MusicQueueFeedRunner(engine);
+
   /// audio_service 只在 Android / iOS / macOS 有平台实现（系统媒体会话 + 通知 / 锁屏
   /// 控制）；其余平台不为音乐单独起它。测试可覆盖。
   @visibleForTesting
@@ -117,16 +124,29 @@ class MusicSession extends ChangeNotifier {
   /// 收藏状态变化时本会话也 [notifyListeners]；只关心收藏的界面可以直接听它。
   final MusicPluginFavorites? favorites;
 
-  /// 这一首能不能收藏：插件曲目且该插件声明了 `like`；本地 / 服务器曲目为 false。
-  bool canFavorite(MusicPlayItem item) => favorites?.canFavorite(item) ?? false;
+  /// Apple Music 整曲的「喜欢」（Apple Music 评分）；本平台不能整曲播放时也在，只是
+  /// [AppleMusicFavorites.canFavorite] 为 false。变化时本会话也 [notifyListeners]。
+  final AppleMusicFavorites? appleMusicFavorites;
 
-  /// 这一首是否已在平台上喜欢（同步读内存缓存，首次读时后台拉取喜欢集合）。
-  bool isFavorite(MusicPlayItem item) => favorites?.isFavorite(item) ?? false;
+  /// 这一首能不能收藏：声明了 `like` 的插件曲目，或已连接账号时的 Apple Music 整曲；
+  /// 本地 / 其它服务器曲目为 false。
+  bool canFavorite(MusicPlayItem item) =>
+      (favorites?.canFavorite(item) ?? false) ||
+      (appleMusicFavorites?.canFavorite(item) ?? false);
+
+  /// 这一首是否已在平台上喜欢（同步读内存缓存，首次读时后台拉取）。
+  bool isFavorite(MusicPlayItem item) {
+    final AppleMusicFavorites? am = appleMusicFavorites;
+    if (am != null && am.canFavorite(item)) return am.isFavorite(item);
+    return favorites?.isFavorite(item) ?? false;
+  }
 
   /// 喜欢 ↔ 取消喜欢（调插件；成功后更新缓存并通知）。失败抛出让 UI 提示：
   /// [MusicFavoriteUnsupported]（不能收藏）、[MusicFavoriteLoginRequired]（引导登录）、
   /// `MusicPluginException`（插件 / 平台报错）。
   Future<void> toggleFavorite(MusicPlayItem item) {
+    final AppleMusicFavorites? am = appleMusicFavorites;
+    if (am != null && am.canFavorite(item)) return am.toggle(item);
     final MusicPluginFavorites? f = favorites;
     if (f == null) {
       return Future<void>.error(const MusicFavoriteUnsupported());
@@ -249,13 +269,18 @@ class MusicSession extends ChangeNotifier {
   }
 
   void _onTrackStarted(MusicPlayItem item) {
-    unawaited(_rotatePlayEvent(item));
+    // 引擎此时已把位置清零给新曲：上一首播到哪要读它清零前存下的值（同步读，免得被后续
+    // 位置推送覆盖）。
+    unawaited(_rotatePlayEvent(item, listened: engine.listenedBeforeStart));
   }
 
-  Future<void> _rotatePlayEvent(MusicPlayItem? next) async {
+  Future<void> _rotatePlayEvent(
+    MusicPlayItem? next, {
+    Duration? listened,
+  }) async {
     final FushiDatabase? db = _database();
     if (db == null) return;
-    await _finishPlayEvent(db);
+    await _finishPlayEvent(db, listened: listened);
     if (next == null) return;
     _playEventItem = next;
     _playEventId = await db.startMusicPlayEvent(
@@ -282,21 +307,21 @@ class MusicSession extends ChangeNotifier {
     return loadRecentMusicSources(db, limit: limit, kinds: kinds);
   }
 
-  Future<void> _finishPlayEvent(FushiDatabase db) async {
+  /// 结算当前播放事件。[listened] 缺省取引擎当前位置（停止 / 释放时还没清零）。
+  Future<void> _finishPlayEvent(FushiDatabase db, {Duration? listened}) async {
     final int? id = _playEventId;
     final MusicPlayItem? item = _playEventItem;
     _playEventId = null;
     _playEventItem = null;
     if (id == null || item == null) return;
-    final Duration listened = engine.position;
+    final Duration played = listened ?? engine.position;
     final int? durationMs = item.durationMs;
     await db.finishMusicPlayEvent(
       id,
-      listenedMs: listened.inMilliseconds,
+      listenedMs: played.inMilliseconds,
       completed:
           durationMs != null &&
-          listened + kMusicCompletionSlack >=
-              Duration(milliseconds: durationMs),
+          played + kMusicCompletionSlack >= Duration(milliseconds: durationMs),
     );
   }
 
@@ -364,7 +389,10 @@ class MusicSession extends ChangeNotifier {
     _audiobook.removeListener(_onAudiobookChanged);
     favorites?.removeListener(notifyListeners);
     favorites?.dispose();
+    appleMusicFavorites?.removeListener(notifyListeners);
+    appleMusicFavorites?.dispose();
     engine.removeListener(_onEngineChanged);
+    queueFeeds.dispose();
     engine.dispose();
     super.dispose();
   }

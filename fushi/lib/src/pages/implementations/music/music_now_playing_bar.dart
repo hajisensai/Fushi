@@ -225,7 +225,9 @@ Widget musicTransportGroup(MusicSession session, {required double playSize}) {
       FushiIconButtonControl.filledTonal(
         size: ButtonSizeVariant.small,
         tooltip: t.shortcut_action_music_previous_track,
-        onPressed: () => unawaited(engine.skipPrevious()),
+        onPressed: engine.canSkipPrevious
+            ? () => unawaited(engine.skipPrevious())
+            : null,
         icon: const FushiIcon(FushiIcons.skipPrevious),
       ),
       FushiExpressivePlayButton(
@@ -834,7 +836,8 @@ Widget musicPlayModeButton(
     iconSize: iconSize,
     isSelected: on,
     tooltip: tip,
-    onPressed: () => unawaited(cycle()),
+    // 电台由 MusicKit 排队，随机 / 循环无意义。
+    onPressed: engine.canShuffleOrRepeat ? () => unawaited(cycle()) : null,
     icon: AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.short),
       child: FushiIcon(glyph, key: ValueKey<IconData>(glyph)),

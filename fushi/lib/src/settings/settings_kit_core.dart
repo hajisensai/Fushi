@@ -314,8 +314,8 @@ class SettingsShapeIcon extends StatelessWidget {
       );
     }
     // M3E 同样不垫色块（用户 2026-10-29「这些图标底色都去掉」，与 Apple 版和
-    // 二级导航行一致）：裸字形用该色调对应的强调色着色，组间仍能分区；占位
-    // 宽度保持原块边长，标题左缘不漂移。选中时字形换成 primary。
+    // 二级导航行一致）：裸字形统一 primary 实色（见 settingsToneGlyphColor），
+    // 宽窄屏同色；占位宽度保持原块边长，标题左缘不漂移。
     final double extent = size ?? 40;
     final Color glyph = selected
         ? Theme.of(context).colorScheme.primary
@@ -329,18 +329,15 @@ class SettingsShapeIcon extends StatelessWidget {
   }
 }
 
-/// 无底色图标的字形色：M3E 取色调所在强调色系的实色（primary / tertiary /
-/// secondary / error），灰色调取 onSurfaceVariant；墨水屏塌缩成 onSurface。
+/// 无底色图标的字形色（M3E）：分类图标一律 primary 实色（用户 2026-11-05
+/// 「设置页图标统一颜色、不要发虚」——tertiary / secondary 在浅色主题里是
+/// 发灰的淡色，onSurfaceVariant 更淡；且宽屏二级导航行本就全用 primary，按
+/// 色调分色会让窄屏首页与宽屏侧栏不一致）。只有破坏性行（red）保留 error；
+/// 墨水屏塌缩成 onSurface。色调只在 Apple 风格里区分 iOS 系统色。
 Color settingsToneGlyphColor(BuildContext context, SettingsIconTone tone) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
   if (isEinkTheme(context)) return scheme.onSurface;
-  return switch (tone) {
-    SettingsIconTone.blue || SettingsIconTone.teal => scheme.primary,
-    SettingsIconTone.purple || SettingsIconTone.pink => scheme.tertiary,
-    SettingsIconTone.green || SettingsIconTone.orange => scheme.secondary,
-    SettingsIconTone.red => scheme.error,
-    SettingsIconTone.gray => scheme.onSurfaceVariant,
-  };
+  return tone == SettingsIconTone.red ? scheme.error : scheme.primary;
 }
 
 // -----------------------------------------------------------------------------

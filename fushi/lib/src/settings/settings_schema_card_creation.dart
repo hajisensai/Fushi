@@ -117,6 +117,13 @@ SettingsDestination buildCardCreationDestination() {
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
+        id: 'card_creation.srs.background_mining',
+        visible: _toReview,
+        title: t.srs_mining_background_title,
+        subtitle: t.srs_mining_background_hint,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.mine_to_server',
         visible: _ankiOnly(_mineToServerVisible),
         title: t.anki_mine_to_server,

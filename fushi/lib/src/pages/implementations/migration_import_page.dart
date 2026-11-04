@@ -153,23 +153,21 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           tone: FushiHeroTone.destructive,
         ),
         title: Text(t.migration_import_entry),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              for (final MapEntry<String, List<String>> e
-                  in scan.problems.entries) ...<Widget>[
-                Text(
-                  t.migration_import_verify_failed(
-                    batch: e.key,
-                    detail: e.value.join('; '),
-                  ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (final MapEntry<String, List<String>> e
+                in scan.problems.entries) ...<Widget>[
+              Text(
+                t.migration_import_verify_failed(
+                  batch: e.key,
+                  detail: e.value.join('; '),
                 ),
-                const SizedBox(height: 8),
-              ],
+              ),
+              const SizedBox(height: 8),
             ],
-          ),
+          ],
         ),
         actions: <Widget>[
           FushiTextButton(

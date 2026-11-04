@@ -180,31 +180,29 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
       title: Text(t.collection_tmdb_ordering),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  t.collection_tmdb_ordering_hint,
-                  style: context.fushiType.bodyMedium.copyWith(
-                    color: cs.onSurfaceVariant,
+        child: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                t.collection_tmdb_ordering_hint,
+                style: context.fushiType.bodyMedium.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (int i = 0; i < options.length; i++)
+                FushiStaggeredEntrance(
+                  index: i,
+                  child: FushiGroupedListItem(
+                    index: i,
+                    count: options.length,
+                    selected: _selected == options[i].$1,
+                    child: options[i].$2,
                   ),
                 ),
-                const SizedBox(height: 16),
-                for (int i = 0; i < options.length; i++)
-                  FushiStaggeredEntrance(
-                    index: i,
-                    child: FushiGroupedListItem(
-                      index: i,
-                      count: options.length,
-                      selected: _selected == options[i].$1,
-                      child: options[i].$2,
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

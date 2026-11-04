@@ -637,6 +637,8 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         bottom: apple?.groupSpacing ?? (cupertino ? 14 : 12),
       ),
       child: Column(
+        // 有界高度下也按内容收高（BUG-3501；对话框内容区的滚动外壳给有界高度）。
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (!titleInside && widget.title != null && widget.title!.isNotEmpty)
@@ -794,6 +796,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.card),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // 不可折叠分组的标题一律在组上方（内嵌位置在分段形态下没有「卡内

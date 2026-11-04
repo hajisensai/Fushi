@@ -73,33 +73,31 @@ class MagpieUpscalingModeDialog extends StatelessWidget {
       title: Text(t.game_upscaling_pick_title(name: gameName)),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  t.game_upscaling_pick_body,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                t.game_upscaling_pick_body,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              for (final MagpieUpscalingMode mode in MagpieUpscalingMode.values)
-                FushiRadioListTile<MagpieUpscalingMode>(
-                  key: ValueKey<String>(
-                    'magpie-upscaling-mode-${magpieUpscalingModeToKey(mode)}',
-                  ),
-                  value: mode,
-                  groupValue: current,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(modeLabel(mode)),
-                  subtitle: Text(_modeHint(mode)),
-                  onChanged: (MagpieUpscalingMode? picked) =>
-                      Navigator.of(context).pop(picked),
+            ),
+            for (final MagpieUpscalingMode mode in MagpieUpscalingMode.values)
+              FushiRadioListTile<MagpieUpscalingMode>(
+                key: ValueKey<String>(
+                  'magpie-upscaling-mode-${magpieUpscalingModeToKey(mode)}',
                 ),
-            ],
-          ),
+                value: mode,
+                groupValue: current,
+                contentPadding: EdgeInsets.zero,
+                title: Text(modeLabel(mode)),
+                subtitle: Text(_modeHint(mode)),
+                onChanged: (MagpieUpscalingMode? picked) =>
+                    Navigator.of(context).pop(picked),
+              ),
+          ],
         ),
       ),
     );

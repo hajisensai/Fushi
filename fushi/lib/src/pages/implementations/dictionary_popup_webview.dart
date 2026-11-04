@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -53,6 +54,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/webview_asset_url.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
+import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
 
 /// TODO-426：暂时砍掉查词弹窗的「上 N 句 / 下 N 句」句子上下文选择器（用户要求暂时移除，
 /// 后面想到好方案再弄回来）。整条后端链路（[MiningSentenceDraft]、reader/video 的
@@ -653,8 +655,12 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     );
   }
 
+  /// 弹窗右键菜单盖在弹窗 WebView 上：点 WebView 即关（[WebViewMenuDismissBridge]）。
+  final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
+
   @override
   void dispose() {
+    _menuDismiss.detach();
     unawaited(_minedStateSubscription?.cancel());
     _minedStateSubscription = null;
     WidgetsBinding.instance.removeObserver(this);
@@ -2670,6 +2676,9 @@ JSON.stringify((function(){
     }
 
     final Widget webView = InAppWebView(
+      initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
+        WebViewMenuDismissBridge.userScript,
+      ]),
       initialData: popupInitialData,
       initialUrlRequest: popupInitialData != null
           ? null
@@ -2857,6 +2866,7 @@ JSON.stringify((function(){
       },
       onWebViewCreated: (controller) {
         _controller = controller;
+        _menuDismiss.attach(controller);
         _invalidatePopupDocument();
 
         // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __fushiContainer 等）抛异常，此前

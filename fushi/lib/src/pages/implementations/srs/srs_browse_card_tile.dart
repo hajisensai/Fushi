@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_origin.dart'
     show formatCardSourceClock;
 import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -106,8 +107,9 @@ class SrsBrowseRetentionBar extends StatelessWidget {
     return SizedBox(
       width: width,
       height: 4,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2),
+      child: ClipPath(
+        // 细条两端是半圆（胶囊），与条高无关。
+        clipper: const ShapeBorderClipper(shape: StadiumBorder()),
         child: DecoratedBox(
           decoration: BoxDecoration(color: track),
           child: Align(
@@ -282,7 +284,7 @@ class SrsBrowseCardTile extends StatelessWidget {
         child: Row(
           spacing: tokens.spacing.gap,
           children: <Widget>[
-            AnimatedSize(
+            FushiAnimatedSize(
               duration: fushiMotionDuration(context, FushiMotion.short),
               curve: FushiMotion.standard,
               child: selecting

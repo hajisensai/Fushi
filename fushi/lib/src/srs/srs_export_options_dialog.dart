@@ -93,63 +93,57 @@ class _SrsExportOptionsDialogState extends State<SrsExportOptionsDialog> {
       title: Text(t.srs_export_options_title),
       content: SizedBox(
         width: SrsExportOptionsDialog.contentWidth,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: Column(
-              key: const ValueKey<String>('srs-export-options'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
+        child: FushiEntranceScope(
+          child: Column(
+            key: const ValueKey<String>('srs-export-options'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              stagger(
+                AdaptiveSettingsSection(
+                  children: <Widget>[
+                    AdaptiveSettingsSwitchRow(
+                      key: const ValueKey<String>('srs-export-with-scheduling'),
+                      title: t.srs_export_with_scheduling,
+                      subtitle: t.srs_export_with_scheduling_desc,
+                      subtitleMaxLines: 3,
+                      value: o.withScheduling,
+                      onChanged: (bool v) =>
+                          _set(o.copyWith(withScheduling: v)),
+                    ),
+                    AdaptiveSettingsSwitchRow(
+                      key: const ValueKey<String>(
+                        'srs-export-with-deck-configs',
+                      ),
+                      title: t.srs_export_with_deck_configs,
+                      subtitle: t.srs_export_with_deck_configs_desc,
+                      subtitleMaxLines: 3,
+                      value: o.withDeckConfigs,
+                      onChanged: (bool v) =>
+                          _set(o.copyWith(withDeckConfigs: v)),
+                    ),
+                    AdaptiveSettingsSwitchRow(
+                      key: const ValueKey<String>('srs-export-anki-compatible'),
+                      title: t.srs_export_anki_compatible,
+                      subtitle: t.srs_export_anki_compatible_desc,
+                      subtitleMaxLines: 4,
+                      value: o.ankiCompatible,
+                      onChanged: (bool v) =>
+                          _set(o.copyWith(ankiCompatible: v)),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.usesFsrs7 && o.withDeckConfigs) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
                 stagger(
-                  AdaptiveSettingsSection(
-                    children: <Widget>[
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-export-with-scheduling',
-                        ),
-                        title: t.srs_export_with_scheduling,
-                        subtitle: t.srs_export_with_scheduling_desc,
-                        subtitleMaxLines: 3,
-                        value: o.withScheduling,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(withScheduling: v)),
-                      ),
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-export-with-deck-configs',
-                        ),
-                        title: t.srs_export_with_deck_configs,
-                        subtitle: t.srs_export_with_deck_configs_desc,
-                        subtitleMaxLines: 3,
-                        value: o.withDeckConfigs,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(withDeckConfigs: v)),
-                      ),
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-export-anki-compatible',
-                        ),
-                        title: t.srs_export_anki_compatible,
-                        subtitle: t.srs_export_anki_compatible_desc,
-                        subtitleMaxLines: 4,
-                        value: o.ankiCompatible,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(ankiCompatible: v)),
-                      ),
-                    ],
+                  FushiInlineNotice(
+                    key: const ValueKey<String>('srs-export-fsrs7-note'),
+                    message: t.srs_export_fsrs7_note,
                   ),
                 ),
-                if (widget.usesFsrs7 && o.withDeckConfigs) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  stagger(
-                    FushiInlineNotice(
-                      key: const ValueKey<String>('srs-export-fsrs7-note'),
-                      message: t.srs_export_fsrs7_note,
-                    ),
-                  ),
-                ],
               ],
-            ),
+            ],
           ),
         ),
       ),

@@ -145,6 +145,23 @@ class MangaOcrWizardEngines {
     return _copy(decideAiDefault: () => wrap(decide));
   }
 
+  /// 去掉大模型重读与「默认交给 LLM」询问的依赖集，其余不变。给用户不在 app 里的
+  /// 入口用（浏览器扩展抓图取词）：询问框弹在用户看不见的 app 窗口里，而重读结果
+  /// 也没有地方热替换——一次请求只回一次本地识别结果。
+  MangaOcrWizardEngines withoutAiRefinement() => MangaOcrWizardEngines(
+    service: service,
+    externalRunner: externalRunner,
+    remoteRunner: remoteRunner,
+    lensRunner: lensRunner,
+    systemOcrRunner: systemOcrRunner,
+    initialEnginePreference: initialEnginePreference,
+    initialLensLanguage: initialLensLanguage,
+    lensLanguageSetter: lensLanguageSetter,
+    localModel: localModel,
+    localModelSetter: localModelSetter,
+    modelServiceFor: modelServiceFor,
+  );
+
   MangaOcrWizardEngines _copy({
     MangaOcrService? service,
     MangaOcrLocalModel? localModel,

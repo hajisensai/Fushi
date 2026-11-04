@@ -129,6 +129,38 @@ void main() {
     expect(engine.isPlaying, isFalse);
   });
 
+  test('换曲时 onTrackStarted 里读得到上一首清零前的播放位置（播放事件结算用）', () async {
+    final List<Duration?> listened = <Duration?>[];
+    engine.onTrackStarted = (MusicPlayItem i) {
+      started.add(i.trackUid);
+      listened.add(engine.listenedBeforeStart);
+      expect(engine.position, Duration.zero, reason: '新曲从 0 开始');
+    };
+    await engine.playQueue(<MusicPlayItem>[
+      _item('a'),
+      _item('b'),
+      _item('c'),
+    ], context: MusicQueueContext.album);
+    backend.controller.add(
+      const MusicBackendPosition(Duration(seconds: 42), Duration(minutes: 3)),
+    );
+    // 无缝推进：上一首 a 播到 42 秒。
+    backend.controller.add(const MusicBackendAdvanced());
+    await Future<void>.delayed(Duration.zero);
+    backend.controller.add(
+      const MusicBackendPosition(Duration(seconds: 7), Duration(minutes: 3)),
+    );
+    // 用户切歌（重开）：上一首 b 播到 7 秒。
+    await engine.skipNext();
+    expect(started, <String>['a', 'b', 'c']);
+    expect(listened, <Duration?>[
+      null,
+      const Duration(seconds: 42),
+      const Duration(seconds: 7),
+    ]);
+    expect(engine.listenedBeforeStart, isNull, reason: '只在回调里有效');
+  });
+
   test('队列来源：playQueue 记住、onTrackStarted 时可读、换队列替换、stop 清掉', () async {
     MusicPlaySource? seen;
     engine.onTrackStarted = (MusicPlayItem i) => seen = engine.source;

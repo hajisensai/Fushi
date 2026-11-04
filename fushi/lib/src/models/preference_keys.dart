@@ -22,6 +22,13 @@ library;
 /// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
 const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 
+/// 主进程当前生效的作品会话（`<配置 id>:<会话内写入次数>`，空串 = 没有会话，反馈
+/// kEFPY4cuKZ）。Android `:popup` 进程 / 悬浮词典是另外的 isolate，看不到主进程内存里的
+/// `WorkProfileScope`，按它镜像同一份作品配置；写入顺带递增跨进程 `prefs_version`。
+/// 值是**本库**自增 id、描述的是本机此刻打开的作品：设备本地，不进 Profile 快照 / 同步 /
+/// 合并导入；主进程启动时清空（会话只活在主进程内存里）。
+const String kWorkProfileSessionPrefKey = 'work_profile_session';
+
 /// Anki 制卡设置（整份 `AnkiSettings` JSON，String）。原先存在 SharedPreferences
 /// `fushi_anki_settings`，迁进 Drift 是为了让 `:popup` 进程 / 悬浮词典与主 app
 /// 读到同一份（见 `anki_settings_drift_store.dart`）。含 AnkiConnect apiKey 明文 →
@@ -693,6 +700,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
   'srs_lapis_migration_reminder',
+  // bool（默认 false）：挖词目标 = Fushi 复习时「后台制卡」——制卡把请求冻结进进程内的
+  // 后台写入队列、立即返回，卡片随后依次写进复习（SrsMiningAnkiRepository）。非凭据、跨设备。
+  'srs_mining_background',
   // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
   // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
   'srs_mining_deck_id',
@@ -1015,6 +1025,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'widget_privacy_hide_definitions',
   'widget_privacy_hide_profile',
   'widget_privacy_hide_titles',
+  // String：见 [kWorkProfileSessionPrefKey]。非 Profile 键，设备本地。
+  'work_profile_session',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',

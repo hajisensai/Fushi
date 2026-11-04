@@ -82,16 +82,18 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   /// 悬浮词典是同进程的另一个 engine、自有一份 AppModel 偏好缓存：常驻期间主 app
   /// 改了偏好（牌组 / Anki 后端 / Profile 等）它看不到。与 `:popup` 的热复用路径同
-  /// 一口径——单行读跨进程 prefs_version，变了才全量重载并丢掉 Anki 派生状态
-  /// （fiwDIpFep7）。DB 读失败不拦查词 / 制卡：记日志后带旧缓存继续（同 TODO-1336）。
+  /// 一口径（同一个 [AppModel.refreshForWarmDictionaryPopup]）——单行读跨进程
+  /// prefs_version，变了才全量重载、按主进程发布的作品会话重新镜像（反馈 kEFPY4cuKZ）并丢掉
+  /// Anki 派生状态（fiwDIpFep7）；词典元数据变了重载引擎。DB 读失败不拦查词 / 制卡：记日志
+  /// 后带旧缓存继续（同 TODO-1336）。
   Future<void> _syncPrefsChangedElsewhere() async {
     try {
-      if (await appModel.refreshPrefCacheIfChanged() && mounted) {
+      if (await appModel.refreshForWarmDictionaryPopup() && mounted) {
         invalidateAnkiStateAfterPrefsChange(ref);
       }
     } on Object catch (e, stack) {
       ErrorLogService.instance.log(
-        'FloatingDict.refreshPrefCacheIfChanged',
+        'FloatingDict.refreshForWarmDictionaryPopup',
         e,
         stack,
       );

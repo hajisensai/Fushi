@@ -579,187 +579,180 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
       title: Text(t.media_tracking_add_mapping),
       content: SizedBox(
         width: 620,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiDropdownButtonFormField<MediaTrackingLocalTarget>(
-                initialValue: _target,
-                decoration: InputDecoration(
-                  labelText: t.media_tracking_local_item,
-                ),
-                items: <DropdownMenuItem<MediaTrackingLocalTarget>>[
-                  for (final MediaTrackingLocalTarget target in _targets)
-                    DropdownMenuItem<MediaTrackingLocalTarget>(
-                      value: target,
-                      child: Text(
-                        target.title,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value != null) _selectTarget(value);
-                },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiDropdownButtonFormField<MediaTrackingLocalTarget>(
+              initialValue: _target,
+              decoration: InputDecoration(
+                labelText: t.media_tracking_local_item,
               ),
-              const SizedBox(height: 12),
-              FushiDropdownButtonFormField<TrackingKind>(
-                initialValue: _kind,
-                decoration: InputDecoration(labelText: t.media_tracking_kind),
-                items: <DropdownMenuItem<TrackingKind>>[
-                  if (_target?.isGame ?? false)
-                    DropdownMenuItem<TrackingKind>(
-                      value: TrackingKind.game,
-                      child: Text(t.media_tracking_game),
-                    ),
-                  if (!(_target?.isBook ?? false) &&
-                      !(_target?.isGame ?? false))
-                    DropdownMenuItem<TrackingKind>(
-                      value: TrackingKind.anime,
-                      child: Text(t.media_tracking_anime),
-                    ),
-                  if (_target?.isBook ??
-                      false) ...<DropdownMenuItem<TrackingKind>>[
-                    DropdownMenuItem<TrackingKind>(
-                      value: TrackingKind.novel,
-                      child: Text(t.media_tracking_novel),
-                    ),
-                    DropdownMenuItem<TrackingKind>(
-                      value: TrackingKind.manga,
-                      child: Text(t.media_tracking_manga),
-                    ),
-                  ],
-                ],
-                onChanged: (TrackingKind? value) {
-                  if (value != null) setState(() => _kind = value);
-                },
-              ),
-              const SizedBox(height: 12),
-              FushiDropdownButtonFormField<TrackingProgressMode>(
-                initialValue: _mode,
-                decoration: InputDecoration(
-                  labelText: t.media_tracking_progress_mode,
-                ),
-                items: <DropdownMenuItem<TrackingProgressMode>>[
-                  if (_target?.isGame ?? false)
-                    DropdownMenuItem<TrackingProgressMode>(
-                      value: TrackingProgressMode.status,
-                      child: Text(t.media_tracking_status),
-                    ),
-                  if (!(_target?.isBook ?? false) &&
-                      !(_target?.isGame ?? false))
-                    DropdownMenuItem<TrackingProgressMode>(
-                      value: TrackingProgressMode.episode,
-                      child: Text(t.media_tracking_episode),
-                    ),
-                  if (_target?.isBook ??
-                      false) ...<DropdownMenuItem<TrackingProgressMode>>[
-                    DropdownMenuItem<TrackingProgressMode>(
-                      value: TrackingProgressMode.chapter,
-                      child: Text(t.media_tracking_chapter),
-                    ),
-                    DropdownMenuItem<TrackingProgressMode>(
-                      value: TrackingProgressMode.volume,
-                      child: Text(t.media_tracking_volume),
-                    ),
-                  ],
-                ],
-                onChanged: (TrackingProgressMode? value) {
-                  if (value == null) return;
-                  setState(() {
-                    _mode = value;
-                    _offsetController.text =
-                        value == TrackingProgressMode.chapter ||
-                            value == TrackingProgressMode.status
-                        ? '0'
-                        : '1';
-                  });
-                },
-              ),
-              // 收藏状态模式没有进度可偏移（Bangumi 游戏条目无话数/卷数），
-              // 保留输入框只会让用户填出一个被忽略的值。
-              if (_mode != TrackingProgressMode.status) ...<Widget>[
-                const SizedBox(height: 12),
-                FushiTextFieldControl(
-                  controller: _offsetController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: t.media_tracking_progress_offset,
+              items: <DropdownMenuItem<MediaTrackingLocalTarget>>[
+                for (final MediaTrackingLocalTarget target in _targets)
+                  DropdownMenuItem<MediaTrackingLocalTarget>(
+                    value: target,
+                    child: Text(target.title, overflow: TextOverflow.ellipsis),
                   ),
-                ),
               ],
+              onChanged: (value) {
+                if (value != null) _selectTarget(value);
+              },
+            ),
+            const SizedBox(height: 12),
+            FushiDropdownButtonFormField<TrackingKind>(
+              initialValue: _kind,
+              decoration: InputDecoration(labelText: t.media_tracking_kind),
+              items: <DropdownMenuItem<TrackingKind>>[
+                if (_target?.isGame ?? false)
+                  DropdownMenuItem<TrackingKind>(
+                    value: TrackingKind.game,
+                    child: Text(t.media_tracking_game),
+                  ),
+                if (!(_target?.isBook ?? false) && !(_target?.isGame ?? false))
+                  DropdownMenuItem<TrackingKind>(
+                    value: TrackingKind.anime,
+                    child: Text(t.media_tracking_anime),
+                  ),
+                if (_target?.isBook ??
+                    false) ...<DropdownMenuItem<TrackingKind>>[
+                  DropdownMenuItem<TrackingKind>(
+                    value: TrackingKind.novel,
+                    child: Text(t.media_tracking_novel),
+                  ),
+                  DropdownMenuItem<TrackingKind>(
+                    value: TrackingKind.manga,
+                    child: Text(t.media_tracking_manga),
+                  ),
+                ],
+              ],
+              onChanged: (TrackingKind? value) {
+                if (value != null) setState(() => _kind = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            FushiDropdownButtonFormField<TrackingProgressMode>(
+              initialValue: _mode,
+              decoration: InputDecoration(
+                labelText: t.media_tracking_progress_mode,
+              ),
+              items: <DropdownMenuItem<TrackingProgressMode>>[
+                if (_target?.isGame ?? false)
+                  DropdownMenuItem<TrackingProgressMode>(
+                    value: TrackingProgressMode.status,
+                    child: Text(t.media_tracking_status),
+                  ),
+                if (!(_target?.isBook ?? false) && !(_target?.isGame ?? false))
+                  DropdownMenuItem<TrackingProgressMode>(
+                    value: TrackingProgressMode.episode,
+                    child: Text(t.media_tracking_episode),
+                  ),
+                if (_target?.isBook ??
+                    false) ...<DropdownMenuItem<TrackingProgressMode>>[
+                  DropdownMenuItem<TrackingProgressMode>(
+                    value: TrackingProgressMode.chapter,
+                    child: Text(t.media_tracking_chapter),
+                  ),
+                  DropdownMenuItem<TrackingProgressMode>(
+                    value: TrackingProgressMode.volume,
+                    child: Text(t.media_tracking_volume),
+                  ),
+                ],
+              ],
+              onChanged: (TrackingProgressMode? value) {
+                if (value == null) return;
+                setState(() {
+                  _mode = value;
+                  _offsetController.text =
+                      value == TrackingProgressMode.chapter ||
+                          value == TrackingProgressMode.status
+                      ? '0'
+                      : '1';
+                });
+              },
+            ),
+            // 收藏状态模式没有进度可偏移（Bangumi 游戏条目无话数/卷数），
+            // 保留输入框只会让用户填出一个被忽略的值。
+            if (_mode != TrackingProgressMode.status) ...<Widget>[
               const SizedBox(height: 12),
               FushiTextFieldControl(
-                controller: _searchController,
-                onSubmitted: (_) => _search(),
+                controller: _offsetController,
+                keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: t.media_tracking_search,
-                  suffixIcon: FushiIconButtonControl(
-                    onPressed: _busy ? null : _search,
-                    icon: const FushiIcon(FushiIcons.search),
-                  ),
+                  labelText: t.media_tracking_progress_offset,
                 ),
               ),
-              if (_busy)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: FushiCircularProgressIndicator(),
-                ),
-              if (!_busy && _error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: FushiInlineNotice(
-                    severity: FushiNoticeSeverity.error,
-                    message: _error!,
-                  ),
-                ),
-              if (!_busy && _results.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Text(
-                    t.media_tracking_search_results,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // M3E 分段卡片（首尾大圆角、行间 2）。
-                FushiGroupedList(
-                  children: <Widget>[
-                    for (final BangumiSubject subject in _results)
-                      FushiListItem(
-                        density: FushiListDensity.compact,
-                        leading: subject.coverUrl == null
-                            ? const FushiListLeadingIcon(
-                                FushiIcons.books,
-                                shape: FushiLeadingShape.square,
-                              )
-                            : ClipRRect(
-                                borderRadius: FushiM3eShape.smallRadius,
-                                child: Image(
-                                  image: AppHttpImage(subject.coverUrl!),
-                                  width: 42,
-                                  height: 56,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      const FushiIcon(FushiIcons.brokenImage),
-                                ),
-                              ),
-                        title: Text(subject.displayName),
-                        subtitle: Text(
-                          <String>[
-                            if (subject.secondaryName.isNotEmpty)
-                              subject.secondaryName,
-                            '#${subject.id}',
-                          ].join(' · '),
-                        ),
-                        onTap: () => _save(subject),
-                      ),
-                  ],
-                ),
-              ],
             ],
-          ),
+            const SizedBox(height: 12),
+            FushiTextFieldControl(
+              controller: _searchController,
+              onSubmitted: (_) => _search(),
+              decoration: InputDecoration(
+                labelText: t.media_tracking_search,
+                suffixIcon: FushiIconButtonControl(
+                  onPressed: _busy ? null : _search,
+                  icon: const FushiIcon(FushiIcons.search),
+                ),
+              ),
+            ),
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: FushiCircularProgressIndicator(),
+              ),
+            if (!_busy && _error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: FushiInlineNotice(
+                  severity: FushiNoticeSeverity.error,
+                  message: _error!,
+                ),
+              ),
+            if (!_busy && _results.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  t.media_tracking_search_results,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // M3E 分段卡片（首尾大圆角、行间 2）。
+              FushiGroupedList(
+                children: <Widget>[
+                  for (final BangumiSubject subject in _results)
+                    FushiListItem(
+                      density: FushiListDensity.compact,
+                      leading: subject.coverUrl == null
+                          ? const FushiListLeadingIcon(
+                              FushiIcons.books,
+                              shape: FushiLeadingShape.square,
+                            )
+                          : ClipRRect(
+                              borderRadius: FushiM3eShape.smallRadius,
+                              child: Image(
+                                image: AppHttpImage(subject.coverUrl!),
+                                width: 42,
+                                height: 56,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    const FushiIcon(FushiIcons.brokenImage),
+                              ),
+                            ),
+                      title: Text(subject.displayName),
+                      subtitle: Text(
+                        <String>[
+                          if (subject.secondaryName.isNotEmpty)
+                            subject.secondaryName,
+                          '#${subject.id}',
+                        ].join(' · '),
+                      ),
+                      onTap: () => _save(subject),
+                    ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
       actions: <Widget>[

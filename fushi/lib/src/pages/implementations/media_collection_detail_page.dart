@@ -3232,12 +3232,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       context: context,
       builder: (BuildContext context) => FushiAlertDialog(
         title: Text(_episodeDisplayTitle(episode)),
-        content: SingleChildScrollView(
-          child: VideoSpecsPanel(
-            service: widget.videoSpecs,
-            filePath: path,
-            showTitle: false,
-          ),
+        content: VideoSpecsPanel(
+          service: widget.videoSpecs,
+          filePath: path,
+          showTitle: false,
         ),
         actions: <Widget>[
           FushiTextButton(

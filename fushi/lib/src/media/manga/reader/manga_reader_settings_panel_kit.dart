@@ -88,7 +88,7 @@ Future<void> showMangaPanelInfo(
     builder: (BuildContext ctx) => FushiAlertDialog(
       icon: const FushiIcon(FushiIcons.info),
       title: Text(title),
-      content: SingleChildScrollView(child: Text(message)),
+      content: Text(message),
       actions: <Widget>[
         FushiTextButton(
           onPressed: () => Navigator.pop(ctx),

@@ -1,7 +1,7 @@
 /// OpenSubsonic / Subsonic 音乐库客户端（`MusicServerBrowser` 的 Subsonic 实现）。
 ///
-/// 只读浏览 + 播放：getAlbumList2 / getAlbum / getArtists / getArtist / search3 / stream /
-/// getCoverArt。认证走 token 方式（`u` + `s` 盐 + `t = md5(password + salt)`，每个请求
+/// 只读浏览 + 播放：getAlbumList2 / getAlbum / getArtists / getArtist / getPlaylists /
+/// getPlaylist / search3 / stream / getCoverArt。认证走 token 方式（`u` + `s` 盐 + `t = md5(password + salt)`，每个请求
 /// 一个新盐，**从不发明文 `p=`**），或 OpenSubsonic `apiKeyAuthentication` 扩展的
 /// `apiKey`（此时不发 u/t/s）。
 ///
@@ -280,6 +280,41 @@ class SubsonicMusicClient implements MusicServerBrowser {
     ];
   }
 
+  /// `getPlaylists` 协议上不分页：一次全取，再在内存里按 [offset] / [limit] 切片。
+  @override
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  }) async {
+    final Map<String, Object?> r = await _call('getPlaylists');
+    final List<MusicServerPlaylist> all = <MusicServerPlaylist>[
+      for (final Map<String, Object?> p in _maps(
+        _obj(r['playlists'])?['playlist'],
+      ))
+        _playlist(p),
+    ];
+    final int start = offset.clamp(0, all.length);
+    final int end = (start + (limit < 1 ? 1 : limit)).clamp(start, all.length);
+    return MusicServerPage<MusicServerPlaylist>(
+      items: all.sublist(start, end),
+      nextOffset: end < all.length ? end : null,
+      total: all.length,
+    );
+  }
+
+  /// 歌单曲目：`getPlaylist` 的 `entry` 原样顺序（不按碟号 / 轨号重排）。
+  @override
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId) async {
+    final Map<String, Object?> r = await _call('getPlaylist', <String, String>{
+      'id': playlistId,
+    });
+    return <MusicServerTrack>[
+      for (final Map<String, Object?> s in _maps(_obj(r['playlist'])?['entry']))
+        // 子目录 / 视频条目放不了：只留非目录、非视频的曲目。
+        if (s['isDir'] != true && s['isVideo'] != true) _track(s),
+    ];
+  }
+
   @override
   Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {
     final String q = query.trim();
@@ -370,6 +405,26 @@ class SubsonicMusicClient implements MusicServerBrowser {
     albumCount: _int(a['albumCount']),
     coverRef: _str(a['coverArt']),
   );
+
+  MusicServerPlaylist _playlist(Map<String, Object?> p) {
+    final int? durationSec = _int(p['duration']);
+    final String? owner = _str(p['owner']);
+    final String comment = '${p['comment'] ?? ''}'.trim();
+    return MusicServerPlaylist(
+      id: '${p['id']}',
+      title: (p['name'] as String?) ?? '',
+      description: comment.isEmpty ? null : comment,
+      curator: owner,
+      trackCount: _int(p['songCount']),
+      durationMs: durationSec == null ? null : durationSec * 1000,
+      coverRef: _str(p['coverArt']),
+      // Subsonic 只有歌单所有者能改歌单（apiKey 模式不知道用户名，一律视为不可改）。
+      editable:
+          owner != null &&
+          _config.username.isNotEmpty &&
+          owner == _config.username,
+    );
+  }
 
   MusicServerTrack _track(Map<String, Object?> s) {
     final int? durationSec = _int(s['duration']);

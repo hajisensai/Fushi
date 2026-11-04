@@ -41,11 +41,9 @@ class StatDeleteConfirmDialog extends StatelessWidget {
       title: Text(t.stat_delete_title),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: SingleChildScrollView(
-          child: Text(
-            '$itemTitle\n\n${message ?? t.stat_delete_message}',
-            style: tokens.type.listSubtitle,
-          ),
+        child: Text(
+          '$itemTitle\n\n${message ?? t.stat_delete_message}',
+          style: tokens.type.listSubtitle,
         ),
       ),
       actions: <Widget>[
@@ -103,9 +101,7 @@ class StatClearAllConfirmDialog extends StatelessWidget {
       title: Text(t.stat_clear_all_title),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: SingleChildScrollView(
-          child: Text(message, style: tokens.type.listSubtitle),
-        ),
+        child: Text(message, style: tokens.type.listSubtitle),
       ),
       actions: <Widget>[
         FushiDialogAction(

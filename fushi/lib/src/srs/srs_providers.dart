@@ -69,6 +69,18 @@ final Provider<bool> srsMiningToReviewProvider = Provider<bool>(
           SrsMiningTarget.srs,
 );
 
+/// 替别的设备制卡（互联转发 / 读写出处笔记 / 游戏串流接收端）此刻是否发往 Fushi 复习：与
+/// [srsMiningToReviewProvider] 同一判据，但挖词目标读激活配置的值、不叠本机作品会话
+/// （[AppModel.hostSrsMiningTarget]）。
+final Provider<bool> hostSrsMiningToReviewProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(srsModuleEnabledProvider) &&
+      ref.watch(
+            appProvider.select((AppModel app) => app.hostSrsMiningTarget),
+          ) ==
+          SrsMiningTarget.srs,
+);
+
 /// 制卡设置里「Fushi 复习」分组的数据：可选牌组 / 笔记类型 + 当前偏好解析后的落地
 /// 位置（含被删回落）。
 class SrsMiningChoices {

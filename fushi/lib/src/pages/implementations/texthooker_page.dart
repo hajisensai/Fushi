@@ -40,6 +40,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/gal_text_process_editor_page.dart';
@@ -156,6 +157,7 @@ class TexthookerPage extends ConsumerStatefulWidget {
     this.captureSetupEnabled = true,
     this.onShowLibrary,
     this.onShowDiagnostics,
+    this.navigation,
   });
 
   /// 嵌入 [HomeGamePage] 时不再创建第二层 Scaffold/AppBar。
@@ -163,6 +165,10 @@ class TexthookerPage extends ConsumerStatefulWidget {
   final bool captureSetupEnabled;
   final VoidCallback? onShowLibrary;
   final VoidCallback? onShowDiagnostics;
+
+  /// 嵌入页头主位的分区页签（非 Windows 桌面的 games 模块用它在「串流库 / 台词」
+  /// 间切换）。非空时取代默认标题与 [onShowLibrary] 返回键。
+  final Widget? navigation;
 
   @override
   ConsumerState<TexthookerPage> createState() => _TexthookerPageState();
@@ -175,6 +181,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     onLookupStackDepthChanged: recordLookupStackDepth,
   );
   final ScrollController _scroll = ScrollController();
+
+  /// 本平台能不能跑 hook 注入 / 捕获 / 窗口绑定（只有 Windows）。非 Windows 桌面
+  /// 只用本页看外部 WebSocket texthooker 推来的台词，所有 hook 控件隐藏。判据只在
+  /// [GamesModuleForm]，经 [platformServicesProvider] 取平台元组（测试可注入）。
+  bool get _hookCapture => GamesModuleForm.on(
+    isWindows: ref.read(platformServicesProvider).isWindows,
+  ).supportsHookCapture;
+
   final GalHookSessionController _session = GalHookSessionController.instance;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
@@ -491,15 +505,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 child: ListenableBuilder(
                   listenable: _session,
                   builder: (BuildContext context, Widget? child) {
-                    return SingleChildScrollView(
-                      child: GalAudioTracksPanel(
-                        state: _session.state,
-                        onSelectVoice: _session.selectVoiceTrack,
-                        onToggleExcluded: _session.setTrackExcluded,
-                        onPreviewTrack: (GalAudioTrack track) =>
-                            unawaited(handlePreview(track)),
-                        previewingSourcePtr: previewingPtr,
-                      ),
+                    return GalAudioTracksPanel(
+                      state: _session.state,
+                      onSelectVoice: _session.selectVoiceTrack,
+                      onToggleExcluded: _session.setTrackExcluded,
+                      onPreviewTrack: (GalAudioTrack track) =>
+                          unawaited(handlePreview(track)),
+                      previewingSourcePtr: previewingPtr,
                     );
                   },
                 ),
@@ -782,7 +794,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _advancedMiningStill = null;
     final GalHookSessionState sessionState = _session.state;
     final String? lineId = _activeLineId;
-    if (!Platform.isWindows ||
+    if (!_hookCapture ||
         !sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
         lineId == null) {
@@ -818,7 +830,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalHookSessionState sessionState = _session.state;
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
-        !Platform.isWindows) {
+        !_hookCapture) {
       // fallback 制卡不走 [GalHookMiningCoordinator]（那条路径由协调器回写 mined）——
       // 这里在 super 成功（ankiConnect）后自己把当前活跃行标记为已制卡。
       final MinePopupResult result = await super.onMineEntry(
@@ -845,7 +857,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalHookSessionState sessionState = _session.state;
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
-        !Platform.isWindows) {
+        !_hookCapture) {
       return super.onUpdateEntry(noteId, _fieldsForMine(fields));
     }
     return _mineActiveLine(
@@ -992,7 +1004,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 拆出来是因为「附着并捕获」与「绑定窗口」对同一份列表有两种不同的后续处置，
   /// 把处置塞进选择器会逼出模式参数。
   Future<ExternalWindowInfo?> _showExternalWindowPicker() async {
-    if (!Platform.isWindows) {
+    if (!_hookCapture) {
       FushiToast.show(
         msg: t.external_window_unsupported,
         severity: ToastSeverity.error,
@@ -1113,7 +1125,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (_launchingGalHook) return; // 再入守卫：启动进行中，忽略重复点击（避免多开确认对话框）。
     _launchingGalHook = true;
     try {
-      if (!Platform.isWindows) {
+      if (!_hookCapture) {
         FushiToast.show(
           msg: t.external_window_unsupported,
           severity: ToastSeverity.error,
@@ -1748,7 +1760,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         context,
         embedded: true,
       );
-      final Widget? sectionTabs = _buildSectionTabs();
+      final Widget? sectionTabs = widget.navigation ?? _buildSectionTabs();
       return Column(
         children: <Widget>[
           if (sectionTabs != null)
@@ -1812,7 +1824,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // M3E 工具栏按语义分三组（捕获 / 会话工具 / 清空），嵌入模式下由
     // [FushiToolbar] 画成一条浮动胶囊、组间留缝；独立模式（AppBar）按序铺平。
     final List<Widget> captureTools = <Widget>[
-      if (Platform.isWindows && !primaryStart)
+      if (_hookCapture && !primaryStart)
         FushiIconButton(
           icon: Icons.rocket_launch_outlined,
           tooltip: t.game_launch_and_capture,
@@ -1820,7 +1832,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
       // 「游戏已经自己在跑」是和「让 Fushi 拉起游戏」同等常见的起点（Steam / 启动器 /
       // 转区工具拉起的进程都属此列），两条起点并列摆出来，用户不必为了捕获而重启游戏。
-      if (Platform.isWindows && !primaryStart)
+      if (_hookCapture && !primaryStart)
         FushiIconButton(
           icon: Icons.cable_outlined,
           tooltip: t.game_attach_and_capture,
@@ -1835,7 +1847,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
       // 会话音轨面板直达入口：排除 BGM 是会话级操作，此前只能从「某一句的
       // 选轨对话框」绕进去（先随便找一句才能排除，入口藏反了）。
-      if (Platform.isWindows &&
+      if (_hookCapture &&
           state.isActive &&
           _session.selectedTextThreadKey != null)
         FushiIconButton(
@@ -1846,23 +1858,26 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
     ];
     final List<Widget> sessionTools = <Widget>[
-      FushiIconButton(
-        key: const ValueKey<String>('game-toolbar-audio-fallback'),
-        icon: Icons.graphic_eq,
-        tooltip:
-            '${t.game_audio_fallback_policy} · '
-            '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}',
-        focusId: const FushiFocusId('game-toolbar-audio-fallback'),
-        onTap: () => unawaited(_showAudioFallbackPolicyDialog()),
-      ),
-      FushiIconButton(
-        key: const ValueKey<String>('game-toolbar-health'),
-        icon: Icons.monitor_heart_outlined,
-        tooltip: t.game_health,
-        focusId: const FushiFocusId('game-toolbar-health'),
-        onTap: () => unawaited(_showHealthDialog()),
-      ),
-      if (Platform.isWindows)
+      // 音频降级档位与捕获健康都属于 hook 会话；外部 texthooker 没有会话，不摆。
+      if (_hookCapture)
+        FushiIconButton(
+          key: const ValueKey<String>('game-toolbar-audio-fallback'),
+          icon: Icons.graphic_eq,
+          tooltip:
+              '${t.game_audio_fallback_policy} · '
+              '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}',
+          focusId: const FushiFocusId('game-toolbar-audio-fallback'),
+          onTap: () => unawaited(_showAudioFallbackPolicyDialog()),
+        ),
+      if (_hookCapture)
+        FushiIconButton(
+          key: const ValueKey<String>('game-toolbar-health'),
+          icon: Icons.monitor_heart_outlined,
+          tooltip: t.game_health,
+          focusId: const FushiFocusId('game-toolbar-health'),
+          onTap: () => unawaited(_showHealthDialog()),
+        ),
+      if (_hookCapture)
         FushiIconButton(
           key: const ValueKey<String>('game-toolbar-hook-overlay'),
           icon: Icons.picture_in_picture_alt_outlined,
@@ -1873,7 +1888,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
       // 唯一的真开关。开关态走「图标形态 + 选中态底」双通道（不靠颜色单通道，
       // 色觉障碍用户也分得清）。
-      if (Platform.isWindows)
+      if (_hookCapture)
         FushiIconButton(
           key: const ValueKey<String>('game-toolbar-external-window'),
           icon: state.externalWindowMode
@@ -1898,7 +1913,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return <Widget>[
       // 两个起点是一组互斥的主操作：M3E 标准按钮组（按下的一颗变宽、邻居让位），
       // 各按钮自带按压形变，不再外套 FushiPressScale。
-      if (Platform.isWindows && primaryStart)
+      if (_hookCapture && primaryStart)
         FushiButtonGroup(
           children: <Widget>[
             FushiFilledButton.icon(
@@ -1946,25 +1961,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             builder: (BuildContext context, Widget? child) {
               final GalAudioFallbackPolicy current =
                   _session.state.audioFallbackPolicy;
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    for (final GalAudioFallbackPolicy policy
-                        in GalAudioFallbackPolicy.values)
-                      FushiRadioListTile<GalAudioFallbackPolicy>(
-                        value: policy,
-                        groupValue: current,
-                        title: Text(_audioFallbackPolicyLabel(policy)),
-                        subtitle: Text(_audioFallbackPolicyDescription(policy)),
-                        onChanged: (GalAudioFallbackPolicy? picked) {
-                          if (picked != null) {
-                            _session.setAudioFallbackPolicy(picked);
-                          }
-                        },
-                      ),
-                  ],
-                ),
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final GalAudioFallbackPolicy policy
+                      in GalAudioFallbackPolicy.values)
+                    FushiRadioListTile<GalAudioFallbackPolicy>(
+                      value: policy,
+                      groupValue: current,
+                      title: Text(_audioFallbackPolicyLabel(policy)),
+                      subtitle: Text(_audioFallbackPolicyDescription(policy)),
+                      onChanged: (GalAudioFallbackPolicy? picked) {
+                        if (picked != null) {
+                          _session.setAudioFallbackPolicy(picked);
+                        }
+                      },
+                    ),
+                ],
               );
             },
           ),
@@ -2006,16 +2019,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           child: ListenableBuilder(
             listenable: _session,
             builder: (BuildContext context, Widget? child) =>
-                SingleChildScrollView(
-                  child: _CaptureHealthCard(
-                    state: _session.state,
-                    endpoints: _session.endpointStatuses,
-                    // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
-                    // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
-                    ankiConfigured: ref.watch(
-                      ankiViewModelProvider.select(
-                        (AnkiUiState uiState) => uiState.isConfigured,
-                      ),
+                _CaptureHealthCard(
+                  state: _session.state,
+                  endpoints: _session.endpointStatuses,
+                  // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
+                  // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
+                  ankiConfigured: ref.watch(
+                    ankiViewModelProvider.select(
+                      (AnkiUiState uiState) => uiState.isConfigured,
                     ),
                   ),
                 ),
@@ -2088,7 +2099,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                           child: _buildKnifeTextServiceNotice(state),
                         ),
-                      if (Platform.isWindows)
+                      if (_hookCapture)
                         GalAttachedLookupWorkbench(
                           controller: GalHookTextOverlayController
                               .instance
@@ -2566,7 +2577,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                               _session.state.audioTracks.isNotEmpty &&
                               _session.isLineInCurrentSession(line),
                           canRecapture:
-                              Platform.isWindows &&
+                              _hookCapture &&
                               _session.state.isActive &&
                               _session.isLineInCurrentSession(line),
                           recapturing: _session.recapturingLineId == line.id,
@@ -2619,12 +2630,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ],
       );
     }
-    final bool canStart = Platform.isWindows && !_session.state.isActive;
+    final bool canStart = _hookCapture && !_session.state.isActive;
     return GalWorkbenchEmptyState(
       key: const ValueKey<String>('game-lines-empty'),
       icon: Icons.sensors_off_outlined,
       title: t.game_capture_empty_title,
-      body: t.game_capture_empty_body,
+      body: _hookCapture
+          ? t.game_capture_empty_body
+          : t.texthooker_empty_external_body,
       actions: <Widget>[
         if (canStart) ...<Widget>[
           FushiPressScale(
@@ -3858,70 +3871,69 @@ class _CaptureHealthCard extends StatelessWidget {
         .where((e) => e.phase == TexthookerEndpointPhase.connected)
         .length;
     return FushiCard(
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const FushiListLeadingIcon(
-                  Icons.monitor_heart_outlined,
-                  shape: FushiLeadingShape.square,
-                  size: 36,
-                  iconSize: 20,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const FushiListLeadingIcon(
+                Icons.monitor_heart_outlined,
+                shape: FushiLeadingShape.square,
+                size: 36,
+                iconSize: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  t.game_health,
+                  style: context.fushiType.titleMediumEmphasized,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    t.game_health,
-                    style: context.fushiType.titleMediumEmphasized,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _HealthRow(
-              label: t.game_health_process,
-              value: state.gamePid == null ? '—' : 'PID ${state.gamePid}',
-              ready: state.gamePid != null,
-            ),
-            _HealthRow(
-              label: t.game_health_window,
-              value: state.hasWindow
-                  ? t.game_window_bound
-                  : t.game_window_missing,
-              ready: state.hasWindow,
-            ),
-            // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
-            // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
-            const _UpscalingHealthRows(),
-            _HealthRow(
-              label: t.game_health_text,
-              value: endpoints.isEmpty
-                  ? t.game_status_not_configured
-                  : '$connected/${endpoints.length}',
-              ready: state.hasText || connected > 0,
-            ),
-            _HealthRow(
-              label: t.game_health_audio,
-              value: galHookAudioBackendLabel(state.audioBackend),
-              ready: state.hasAudio,
-            ),
-            _HealthRow(
-              label: t.game_health_helper,
-              value: galHookSessionPhaseLabel(state.phase),
-              ready: state.isActive && state.phase != GalHookSessionPhase.error,
-            ),
-            // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
-            _HealthRow(
-              label: t.game_health_anki,
-              value: ankiConfigured
-                  ? t.game_status_ready
-                  : t.game_status_not_configured,
-              ready: ankiConfigured,
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _HealthRow(
+            label: t.game_health_process,
+            value: state.gamePid == null ? '—' : 'PID ${state.gamePid}',
+            ready: state.gamePid != null,
+          ),
+          _HealthRow(
+            label: t.game_health_window,
+            value: state.hasWindow
+                ? t.game_window_bound
+                : t.game_window_missing,
+            ready: state.hasWindow,
+          ),
+          // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
+          // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
+          const _UpscalingHealthRows(),
+          _HealthRow(
+            label: t.game_health_text,
+            value: endpoints.isEmpty
+                ? t.game_status_not_configured
+                : '$connected/${endpoints.length}',
+            ready: state.hasText || connected > 0,
+          ),
+          _HealthRow(
+            label: t.game_health_audio,
+            value: galHookAudioBackendLabel(state.audioBackend),
+            ready: state.hasAudio,
+          ),
+          _HealthRow(
+            label: t.game_health_helper,
+            value: galHookSessionPhaseLabel(state.phase),
+            ready: state.isActive && state.phase != GalHookSessionPhase.error,
+          ),
+          // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
+          _HealthRow(
+            label: t.game_health_anki,
+            value: ankiConfigured
+                ? t.game_status_ready
+                : t.game_status_not_configured,
+            ready: ankiConfigured,
+          ),
+        ],
       ),
     );
   }

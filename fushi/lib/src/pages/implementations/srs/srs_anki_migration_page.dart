@@ -390,18 +390,16 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       builder: (BuildContext dialogContext) => FushiAlertDialog(
         icon: const FushiDialogHeroIcon(icon: FushiIcons.success),
         title: Text(t.srs_import_report_title),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final String line in srsImportReportLines(done))
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(line),
-                ),
-            ],
-          ),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final String line in srsImportReportLines(done))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(line),
+              ),
+          ],
         ),
         actions: <Widget>[
           FushiDialogAction(

@@ -294,15 +294,13 @@ Future<void> showExtensionBulkReport(
   context: context,
   builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
     title: Text(title),
-    content: SingleChildScrollView(
-      child: SelectableText(
-        <String>[
-          summary,
-          ...failures.entries.map(
-            (MapEntry<String, String> entry) => '${entry.key}: ${entry.value}',
-          ),
-        ].join('\n'),
-      ),
+    content: SelectableText(
+      <String>[
+        summary,
+        ...failures.entries.map(
+          (MapEntry<String, String> entry) => '${entry.key}: ${entry.value}',
+        ),
+      ].join('\n'),
     ),
     actions: <Widget>[
       adaptiveDialogAction(

@@ -101,7 +101,9 @@ void main() {
       learnCount: 2,
       reviewCount: 3,
       reviewedToday: 4,
+      timeline: <WidgetSrsDueStep>[(at: 5000, due: 9)],
     ),
+    nextDayAt: 9000,
     vocab: const <WidgetVocabInput>[
       WidgetVocabInput(
         term: '言葉',
@@ -153,6 +155,11 @@ void main() {
           'Month': block('month'),
           'Streak': block('streak'),
           'Srs': block('srs'),
+          'DueStep':
+              (block('srs')['timeline']! as List<Object?>).first!
+                  as Map<String, Object?>,
+          'Heatmap': block('heatmap'),
+          'Rollover': block('rollover'),
           'Vocab': first('vocab'),
           'NowPlaying': block('nowPlaying'),
         };
@@ -165,6 +172,41 @@ void main() {
         reason: 'Swift ${e.key} decodes keys the Dart snapshot does not send',
       );
     }
+  });
+
+  test('rollover carries every day block Swift swaps in', () {
+    final Map<String, Object?> snapshot = fullSnapshot();
+    final Map<String, Object?> rollover =
+        snapshot['rollover']! as Map<String, Object?>;
+    // Same shapes as the top-level blocks (one builder, two days).
+    for (final String key in <String>['today', 'month', 'streak', 'heatmap']) {
+      expect(
+        (rollover[key]! as Map<String, Object?>).keys.toSet(),
+        (snapshot[key]! as Map<String, Object?>).keys.toSet(),
+        reason: key,
+      );
+    }
+  });
+
+  test('both native sides resolve the time-dependent fields at render time', () {
+    final String timeline = File(
+      '$appleDir/Extension/FushiWidgetTimeline.swift',
+    ).readAsStringSync();
+    // WidgetKit: one entry per SRS step / the rollover, each resolved for its date.
+    expect(timeline, contains('changeDates(after:'));
+    expect(timeline, contains('resolved(at:'));
+    expect(snapshotSwift, contains('func resolved(at date: Date)'));
+    final String kotlin = File(
+      'android/app/src/main/java/app/fushi/reader/widgets/WidgetSnapshot.kt',
+    ).readAsStringSync();
+    // Glance: the same JSON is resolved on every load (no second schema).
+    expect(kotlin, contains('resolveRollover('));
+    expect(kotlin, contains('srsDueAt('));
+    expect(kotlin, contains('optString("link")'));
+    final String common = File(
+      'android/app/src/main/java/app/fushi/reader/widgets/WidgetCommon.kt',
+    ).readAsStringSync();
+    expect(common, contains('m.link'));
   });
 
   test('every labels key the Swift widgets read is published by Dart', () {

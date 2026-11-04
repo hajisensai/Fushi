@@ -261,52 +261,50 @@ Future<bool> showAnkiMediaDedupPlanDialog(
       title: Text(t.anki_dedup_plan_title),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                t.anki_dedup_plan_intro(
-                  count: '${plan.duplicatesRemoved}',
-                  size: formatAnkiMediaDedupBytes(plan.bytesSaved),
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              t.anki_dedup_plan_intro(
+                count: '${plan.duplicatesRemoved}',
+                size: formatAnkiMediaDedupBytes(plan.bytesSaved),
               ),
-              const SizedBox(height: 12),
-              // 逐条清单走分段卡片（首尾大圆角、行间 2px），一条一段。
-              FushiGroupedList(
-                children: [
-                  for (final MediaDedupDeletion d in plan.deletions)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      child: Text(
-                        t.anki_dedup_plan_entry(
-                          file: d.filename,
-                          size: formatAnkiMediaDedupBytes(d.bytes),
-                          canonical: d.canonical,
-                        ),
-                        style: context.fushiType.bodySmall,
-                      ),
+            ),
+            const SizedBox(height: 12),
+            // 逐条清单走分段卡片（首尾大圆角、行间 2px），一条一段。
+            FushiGroupedList(
+              children: [
+                for (final MediaDedupDeletion d in plan.deletions)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
                     ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                offerDelete
-                    ? t.anki_dedup_plan_journal
-                    : t.anki_dedup_report_dry_note,
-              ),
-              if (offerDelete) ...[
-                const SizedBox(height: 8),
-                // BUG-1263：AnkiConnect 在 Anki 主线程执行，真删期间 Anki
-                // 会被串行请求占满——提前告知，避免用户以为 Anki 坏了。
-                Text(t.anki_dedup_plan_busy_note),
+                    child: Text(
+                      t.anki_dedup_plan_entry(
+                        file: d.filename,
+                        size: formatAnkiMediaDedupBytes(d.bytes),
+                        canonical: d.canonical,
+                      ),
+                      style: context.fushiType.bodySmall,
+                    ),
+                  ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              offerDelete
+                  ? t.anki_dedup_plan_journal
+                  : t.anki_dedup_report_dry_note,
+            ),
+            if (offerDelete) ...[
+              const SizedBox(height: 8),
+              // BUG-1263：AnkiConnect 在 Anki 主线程执行，真删期间 Anki
+              // 会被串行请求占满——提前告知，避免用户以为 Anki 坏了。
+              Text(t.anki_dedup_plan_busy_note),
             ],
-          ),
+          ],
         ),
       ),
       actions: [

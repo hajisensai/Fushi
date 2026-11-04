@@ -445,32 +445,30 @@ class _MangaOcrSettingsSectionState
         final ThemeData dialogTheme = Theme.of(ctx);
         return FushiAlertDialog(
           title: Text(t.manga_ocr_import_title),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(t.manga_ocr_import_intro),
-                const SizedBox(height: 12),
-                for (final MangaOcrModelFile model in _localModel.manifest)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
-                      style: dialogTheme.textTheme.bodySmall,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FushiTextButton.icon(
-                    onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const FushiIcon(FushiIcons.link, size: 18),
-                    label: Text(t.manga_ocr_import_copy_urls),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.manga_ocr_import_intro),
+              const SizedBox(height: 12),
+              for (final MangaOcrModelFile model in _localModel.manifest)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
+                    style: dialogTheme.textTheme.bodySmall,
                   ),
                 ),
-              ],
-            ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FushiTextButton.icon(
+                  onPressed: () => unawaited(_copyModelUrls()),
+                  icon: const FushiIcon(FushiIcons.link, size: 18),
+                  label: Text(t.manga_ocr_import_copy_urls),
+                ),
+              ),
+            ],
           ),
           actions: <Widget>[
             FushiTextButton(

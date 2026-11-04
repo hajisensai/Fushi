@@ -15,12 +15,15 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -71,13 +74,18 @@ class _RecordingAnki extends BaseAnkiRepository {
   Future<bool> createDeck(String name) async => false;
 }
 
+/// [_target] 非 null 时把挖词目标钉死（本机链与替对端链都读它）；null = 照常读偏好（含作品会话）。
 class _TargetAppModel extends AppModel {
   _TargetAppModel(super.platformServices, this._target);
 
-  final SrsMiningTarget _target;
+  final SrsMiningTarget? _target;
 
   @override
-  SrsMiningTarget get srsMiningTarget => _target;
+  SrsMiningTarget get srsMiningTarget => _target ?? super.srsMiningTarget;
+
+  @override
+  SrsMiningTarget get hostSrsMiningTarget =>
+      _target ?? super.hostSrsMiningTarget;
 }
 
 Map<String, String> _fields(String expression, String reading) =>
@@ -114,7 +122,7 @@ void main() {
   /// `hostMiningAnkiRepositoryProvider`，互联服务由 AppModel 的生产工厂给出。
   AppModel wiredAppModel({
     required bool srsEnabled,
-    required SrsMiningTarget target,
+    required SrsMiningTarget? target,
   }) {
     final ProviderContainer c = ProviderContainer(
       overrides: <Override>[
@@ -266,6 +274,68 @@ void main() {
       final SrsTermStatus? hit = await srsStatus('霧', 'きり');
       expect(hit, isNotNull, reason: '串流卡应落进主机的 Fushi 复习');
       expect(hit!.cardCount, greaterThan(0));
+    });
+  });
+
+  // 反馈 kEFPY4cuKZ：主机本机打开着一本带作品级配置的书时，替对端制卡仍按激活配置的挖词目标
+  // 与落点——复习侧与 Anki 侧读同一份配置，不叠主机的作品会话。
+  group('主机本机的作品会话不影响替对端制卡', () {
+    /// 装上一层挖词目标 = [target] 的作品会话（绑定配置的快照只有这一个键）。
+    void openBoundWork(SrsMiningTarget target) {
+      final WorkProfileScope scope = WorkProfileScope.instance;
+      addTearDown(scope.debugReset);
+      final Object owner = Object();
+      final Map<String, String> snapshot = <String, String>{
+        PreferencesRepository.srsMiningTargetKey: PrefCodec.encode(target.wire),
+      };
+      scope.begin(owner);
+      scope.install(
+        owner,
+        WorkProfileSession(
+          owner: owner,
+          view: ProfileSettingsView(
+            profileId: 99,
+            profileName: 'bound',
+            prefsMap: snapshot,
+            prefs: PreferencesRepository.readOnlySnapshot(db, snapshot),
+            ankiSettings: const AnkiSettings(),
+            dictionaries: const <Dictionary>[],
+          ),
+          writer: (int profileId, String key, String? raw) async {},
+        ),
+      );
+    }
+
+    test('激活配置 = 复习、书的配置 = Anki：对端转发的卡仍落主机复习', () async {
+      await prefs.setSrsMiningTarget(SrsMiningTarget.srs.wire);
+      final AppModel app = wiredAppModel(srsEnabled: true, target: null);
+      openBoundWork(SrsMiningTarget.anki);
+      expect(app.srsMiningTarget, SrsMiningTarget.anki, reason: '本机制卡跟着书走');
+      expect(app.hostSrsMiningTarget, SrsMiningTarget.srs);
+
+      final RemoteMineResult out = await app
+          .createRemoteMiningService()
+          .mineForwarded(forwarded('雪', 'ゆき'));
+
+      expect(out.result, MineResult.success.name);
+      expect(anki.minedPayloads, isEmpty, reason: '书的配置不能把对端的卡改发到 Anki');
+      expect(await srsStatus('雪', 'ゆき'), isNotNull);
+    });
+
+    test('激活配置 = Anki、书的配置 = 复习：对端转发的卡仍写主机 Anki', () async {
+      await prefs.setSrsMiningTarget(SrsMiningTarget.anki.wire);
+      final AppModel app = wiredAppModel(srsEnabled: true, target: null);
+      openBoundWork(SrsMiningTarget.srs);
+      expect(app.srsMiningTarget, SrsMiningTarget.srs);
+      expect(app.hostMiningAnkiRepository, same(anki), reason: '链上没有复习层');
+
+      final RemoteMineResult out = await app
+          .createRemoteMiningService()
+          .mineForwarded(forwarded('雨', 'あめ'));
+
+      expect(out.result, MineResult.success.name);
+      expect(anki.minedPayloads, hasLength(1));
+      expect(await srsStatus('雨', 'あめ'), isNull);
     });
   });
 

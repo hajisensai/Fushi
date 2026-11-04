@@ -263,6 +263,38 @@ void main() {
         );
       }
     });
+
+    testWidgets('M3E 分类图标统一 primary 实色（不按色调用发虚的 tertiary / secondary）', (
+      WidgetTester tester,
+    ) async {
+      final ColorScheme scheme = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF7E57C2),
+      );
+      late BuildContext captured;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(colorScheme: scheme),
+          home: Builder(
+            builder: (BuildContext context) {
+              captured = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      for (final SettingsDestinationId id in SettingsDestinationId.values) {
+        expect(
+          settingsToneGlyphColor(captured, settingsIconToneFor(id)),
+          scheme.primary,
+          reason: '$id 的字形色与宽屏导航行（primary）不一致',
+        );
+      }
+      expect(
+        settingsToneGlyphColor(captured, SettingsIconTone.red),
+        scheme.error,
+        reason: '破坏性行保留 error',
+      );
+    });
   });
 
   group('设置滑条拖动跟手', () {

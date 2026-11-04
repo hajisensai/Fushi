@@ -621,7 +621,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
           tone: FushiHeroTone.destructive,
         ),
         title: Text(title),
-        content: SingleChildScrollView(child: SelectableText(message)),
+        content: SelectableText(message),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),

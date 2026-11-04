@@ -33,10 +33,30 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3700 条。点号进各自文件。
+> 共 3721 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4121](bugs/BUG-4121-mpv-cache-on-disk-without-cache-dir.md) | ✅ | ✅ | 每次开网络流 mpv 报 "Failed to create file cache" |
+| [BUG-4120](bugs/BUG-4120-linux-x11-video-software-rendering.md) | ✅ | ✅ | Linux X11（Steam 游戏模式）视频走 mpv 软件渲染、卡顿 |
+| [BUG-4119](bugs/BUG-4119-linux-lan-scan-without-avahi.md) | ✅ | ✅ | linux-lan-scan-without-avahi |
+| [BUG-4118](bugs/BUG-4118-update-cleanup-deletes-shared-temp.md) | ✅ | ✅ | 非 Windows 的更新清理在共享临时目录里删别的程序的文件 |
+| [BUG-4117](bugs/BUG-4117-external-lookup-never-opens-dictionary.md) | ✅ | ✅ | app 外显式查词（深链 / fushi_cli）只排队、不打开查词页 |
+| [BUG-4116](bugs/BUG-4116-lan-discovery-stop-without-avahi.md) | ✅ | ✅ | Linux 无 Avahi 时局域网发现停止抛空检查异常 |
+| [BUG-4115](bugs/BUG-4115-immersive-media-pages-window-not-draggable.md) | ✅ | ✅ | Windows 音乐歌词页 / 有声书歌词模式 / 小说阅读器里拖不动窗口 |
+| [BUG-4114](bugs/BUG-4114-webview-windows-frame-pacing.md) | ✅ | ✅ | Windows WebView 纹理桥取帧相位抖动，歌词换句 / 滚轮看着掉帧 |
+| [BUG-4113](bugs/BUG-4113-work-profile-session-partial-scope.md) | ✅ | ✅ | 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置 |
+| [BUG-4112](bugs/BUG-4112-apple-widget-parity-lost-in-merge.md) | ✅ | ✅ | apple-widget-parity-lost-in-merge |
+| [BUG-4111](bugs/BUG-4111-ankiconnect-reposition-due-rejected.md) | ✅ | ✅ | AnkiConnect 下「按词频重排新卡」被拒——新版 AnkiConnect 禁写 due |
+| [BUG-4110](bugs/BUG-4110-short-clip-sidecar-dropped.md) | ✅ | ✅ | 短片（识别稿少于 30 行）的外挂字幕在自动字幕生成里整条被丢 |
+| [BUG-4109](bugs/BUG-4109-player-cover-resume-tabs.md) | ✅ | ✅ | 播放页退出后浏览器标签页不续播；有声书 / 音乐播放页盖住浏览器不按住网页 |
+| [BUG-4108](bugs/BUG-4108-epub-utf8-mojibake-windows.md) | ✅ | ✅ | Windows 中文系统上 EPUB 正文 UTF-8 弯引号显示成「鈥檛」：WebView2 拦截响应丢了 charset |
+| [BUG-4107](bugs/BUG-4107-srs-mining-no-background-queue.md) | ✅ | ✅ | 挖词目标 = Fushi 复习时没有后台制卡队列：每张卡都同步写完才返回 |
+| [BUG-4106](bugs/BUG-4106-popup-header-meta-resize-observer-loop.md) | ✅ | ✅ | 查词弹窗词头元数据列 ResizeObserver 同步写布局：每次弹窗变宽都报 loop 错误灌满错误日志，且逐词条强制回流 |
+| [BUG-4105](bugs/BUG-4105-webdav-href-raw-non-ascii.md) | ✅ | ✅ | WebDAV 同步根 PROPFIND href 含裸日文字符时 Uri.decodeFull 抛 Illegal percent encoding |
+| [BUG-4104](bugs/BUG-4104-srs-rated-chip-lingers.md) | ✅ | ✅ | srs-rated-chip-lingers |
+| [BUG-4103](bugs/BUG-4103-source-jump-target-no-highlight.md) | ✅ | ✅ | 卡片来源回跳落点不高亮且回看横幅下正文底部被挡 |
+| [BUG-4102](bugs/BUG-4102-ios-metrickit-oversized-crash-drops-stack.md) | ✅ | ✅ | iOS 崩溃诊断调用树超 256 KB 时丢掉崩溃线程与机型 / 构建号 |
 | [BUG-4101](bugs/BUG-4101-windows-webview-creation-error-controller-type.md) | ✅ | ✅ | Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次 |
 | [BUG-4100](bugs/BUG-4100-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
 | [BUG-4099](bugs/BUG-4099-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |
@@ -119,6 +139,7 @@
 | [BUG-4022](bugs/BUG-4022-video-autoplay-drops-immersive-and-series-volume.md) | ✅ | ✅ | 自动连播（本地换集）退出沉浸锁定，音量不跟随系列 |
 | [BUG-4021](bugs/BUG-4021-video-immersive-long-press-speed.md) | ✅ | ✅ | 沉浸锁定时长按画面仍会临时加速，不跟随沉浸模式档位 |
 | [BUG-4020](bugs/BUG-4020-video-external-subtitle-chars-zero.md) | ✅ | ✅ | 视频外挂字幕（调轴后）字幕字数统计恒为 0 |
+| [BUG-4016](bugs/BUG-4016-lyrics-modern-stats-hidden.md) | ✅ | ✅ | 歌词模式新版底栏自动收起，阅读速度/进度/时间读数随之消失 |
 | [BUG-4014](bugs/BUG-4014-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
 | [BUG-4013](bugs/BUG-4013-ios-virtual-address-exhaustion.md) | ✅ | ✅ | iOS 同步 / 播歌 / 浏览器搜索时闪退（进程虚拟地址空间耗尽） |
 | [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
@@ -214,7 +235,7 @@
 | [BUG-3922](bugs/BUG-3922-installer-and-onboarding-localization.md) | ✅ | ✅ | 安装器只有中文、onboarding 部分文字没翻译 |
 | [BUG-3921](bugs/BUG-3921-continue-card-volume-number.md) | ✅ | ✅ | continue-card-volume-number |
 | [BUG-3920](bugs/BUG-3920-subtitle-search-sheet-header-scrolls-away.md) | ✅ | ✅ | subtitle-search-sheet-header-scrolls-away |
-| [BUG-3919](bugs/BUG-3919-collapsible-header-dialog-intrinsics.md) | 🚧 | 🚧 | collapsible-header-dialog-intrinsics |
+| [BUG-3919](bugs/BUG-3919-collapsible-header-dialog-intrinsics.md) | ✅ | ✅ | collapsible-header-dialog-intrinsics |
 | [BUG-3918](bugs/BUG-3918-home-hero-multi-episode-still-nondeterministic.md) | ✅ | ✅ | home-hero-multi-episode-still-nondeterministic |
 | [BUG-3917](bugs/BUG-3917-lyrics-choose-source-plugin-track-crash.md) | ✅ | ✅ | lyrics-choose-source-plugin-track-crash |
 | [BUG-3916](bugs/BUG-3916-lyrics-plugin-merge-stale-on-parser-bump.md) | ✅ | ✅ | lyrics-plugin-merge-stale-on-parser-bump |

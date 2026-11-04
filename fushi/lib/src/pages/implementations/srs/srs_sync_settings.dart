@@ -160,33 +160,30 @@ Future<SrsProfileConflictChoice?> showSrsProfileConflictDialog(
   builder: (BuildContext dialogContext) => FushiAlertDialog(
     icon: const FushiDialogHeroIcon(icon: FushiIcons.cloudSync),
     title: Text(t.srs_sync_profile_conflict_title),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(t.srs_sync_profile_conflict_body),
-          const SizedBox(height: 8),
-          Text(
-            conflict.localHasNotes
-                ? t.srs_sync_profile_conflict_merge_hint
-                : t.srs_sync_profile_conflict_adopt_hint,
-            style: Theme.of(dialogContext).textTheme.bodySmall,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(t.srs_sync_profile_conflict_body),
+        const SizedBox(height: 8),
+        Text(
+          conflict.localHasNotes
+              ? t.srs_sync_profile_conflict_merge_hint
+              : t.srs_sync_profile_conflict_adopt_hint,
+          style: Theme.of(dialogContext).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        for (final SrsRemoteProfile c in conflict.candidates)
+          FushiListTile(
+            key: ValueKey<String>('srs-profile-conflict-${c.uid}'),
+            title: c.displayName,
+            subtitle: srsProfileCandidateSubtitle(c),
+            icon: FushiIcons.cloudSync,
+            selected: false,
+            onTap: () =>
+                Navigator.of(dialogContext).pop(SrsProfileConflictAdopt(c.uid)),
           ),
-          const SizedBox(height: 8),
-          for (final SrsRemoteProfile c in conflict.candidates)
-            FushiListTile(
-              key: ValueKey<String>('srs-profile-conflict-${c.uid}'),
-              title: c.displayName,
-              subtitle: srsProfileCandidateSubtitle(c),
-              icon: FushiIcons.cloudSync,
-              selected: false,
-              onTap: () => Navigator.of(
-                dialogContext,
-              ).pop(SrsProfileConflictAdopt(c.uid)),
-            ),
-        ],
-      ),
+      ],
     ),
     actions: <Widget>[
       FushiDialogAction(

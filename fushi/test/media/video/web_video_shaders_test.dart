@@ -119,7 +119,7 @@ void main() {
     final int render = processSrc.indexOf('placebo_->Render(');
     final int shaderGateEnd = processSrc.indexOf('#endif', shaderGate);
     final int plainCopy = processSrc.indexOf(
-      'CopyIntoSurface(src_texture.get(), content);',
+      'CopyIntoSurface(src_texture, content);',
     );
     expect(
       shaderGate,

@@ -12,10 +12,12 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_menu_presence.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_dialog_content_scroll.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -530,7 +532,7 @@ class FushiAlertDialog extends StatelessWidget {
     this.shape,
     this.alignment,
     this.constraints,
-    this.scrollable = false,
+    this.scrollable,
   }) : scrollController = null,
        actionScrollController = null,
        insetAnimationDuration = const Duration(milliseconds: 100),
@@ -569,7 +571,7 @@ class FushiAlertDialog extends StatelessWidget {
     this.shape,
     this.alignment,
     this.constraints,
-    this.scrollable = false,
+    this.scrollable,
     this.scrollController,
     this.actionScrollController,
     this.insetAnimationDuration = const Duration(milliseconds: 100),
@@ -602,7 +604,13 @@ class FushiAlertDialog extends StatelessWidget {
   final ShapeBorder? shape;
   final AlignmentGeometry? alignment;
   final BoxConstraints? constraints;
-  final bool scrollable;
+
+  /// null（默认）= 内容区「装得下原样、装不下就滚」（[FushiDialogContentScroll]）：
+  /// 含输入框的对话框在键盘弹出 / 小窗口里不再溢出，调用点不必再手包
+  /// `SingleChildScrollView`；吃满剩余高度的内容（列表）布局不变。
+  /// true = [AlertDialog.scrollable]（标题与内容一起滚，内容拿无界高度）；
+  /// false = 不套任何滚动，内容自己管高度。
+  final bool? scrollable;
   final ScrollController? scrollController;
   final ScrollController? actionScrollController;
   final Duration insetAnimationDuration;
@@ -621,7 +629,7 @@ class FushiAlertDialog extends StatelessWidget {
         title: title,
         titlePadding: titlePadding,
         titleTextStyle: titleTextStyle,
-        content: content,
+        content: _scrollableContent(),
         contentPadding: contentPadding,
         contentTextStyle: contentTextStyle,
         actions: actions,
@@ -643,7 +651,7 @@ class FushiAlertDialog extends StatelessWidget {
         shape: shape,
         alignment: alignment,
         constraints: constraints ?? _kMd3DialogConstraints,
-        scrollable: scrollable,
+        scrollable: scrollable ?? false,
         scrollController: scrollController,
         actionScrollController: actionScrollController,
         insetAnimationDuration: insetAnimationDuration,
@@ -658,7 +666,7 @@ class FushiAlertDialog extends StatelessWidget {
         title: title,
         titlePadding: titlePadding,
         titleTextStyle: titleTextStyle,
-        content: content,
+        content: _scrollableContent(),
         contentPadding: contentPadding,
         contentTextStyle: contentTextStyle,
         actions: actions,
@@ -678,10 +686,17 @@ class FushiAlertDialog extends StatelessWidget {
         shape: shape,
         alignment: alignment,
         constraints: constraints ?? _kMd3DialogConstraints,
-        scrollable: scrollable,
+        scrollable: scrollable ?? false,
       );
     }
     return _buildGlass(context);
+  }
+
+  /// 内容区按 [scrollable] 套滚动外壳（null 才套，见字段注释）。
+  Widget? _scrollableContent() {
+    final Widget? raw = content;
+    if (raw == null || scrollable != null) return raw;
+    return FushiDialogContentScroll(child: raw);
   }
 
   /// M3E：调用方给的图标包进形状库装饰底（[FushiDialogHeroIcon]，9 瓣饼干 +
@@ -723,7 +738,7 @@ class FushiAlertDialog extends StatelessWidget {
       child: Semantics(
         container: true,
         explicitChildNodes: true,
-        child: content!,
+        child: _scrollableContent()!,
       ),
     );
   }
@@ -735,7 +750,7 @@ class FushiAlertDialog extends StatelessWidget {
     Widget? actionsWidget,
   ) {
     final List<Widget> columnChildren;
-    if (scrollable) {
+    if (scrollable ?? false) {
       columnChildren = <Widget>[
         if (head.isNotEmpty || contentWidget != null)
           Flexible(
@@ -1554,44 +1569,46 @@ Future<T?> showFushiMenu<T>({
       FocusManager.instance.highlightMode == FocusHighlightMode.traditional &&
       returnFocus != null &&
       returnFocus is! FocusScopeNode;
-  return navigator
-      .push(
-        _FushiMenuRoute<T>(
-          apple: apple,
-          appleRadius: apple ? _menuRadius(context) : 0,
-          // 墨水屏与系统减弱动效同一入口（fushiMotionEnabled），HBK-AUDIT-042。
-          reduceMotion: !fushiMotionEnabled(context),
-          focusItemOnOpen: keyboardOpened,
-          position: position,
-          positionBuilder: positionBuilder,
-          items: items,
-          initialValue: initialValue,
-          elevation: elevation,
-          shadowColor: shadowColor,
-          surfaceTintColor: surfaceTintColor,
-          semanticLabel: label,
-          shape: shape,
-          menuPadding: menuPadding,
-          color: color,
-          constraints: constraints,
-          clipBehavior: clipBehavior,
-          barrierLabel: l10n.menuDismissLabel,
-          popUpAnimationStyle: popUpAnimationStyle,
-          capturedThemes: InheritedTheme.capture(
-            from: context,
-            to: navigator.context,
-          ),
-          settings: routeSettings,
-          requestFocus: requestFocus,
-        ),
-      )
-      .then<T?>((T? value) {
-        // 取消（Esc / B / 点外面）后把焦点还给打开前的节点：路由出栈时
-        // 下层作用域只会恢复「它记得的」焦点，触发器若是被代码 / 手柄聚焦的，
-        // 这里显式补一次。选中某项后不抢焦点（选项可能已推了新页面）。
-        if (value == null) _restoreMenuReturnFocus(returnFocus);
-        return value;
-      });
+  // 任何时刻至多一个菜单：平台视图（macOS WebView）吞掉点击时旧菜单的遮罩收不到
+  // 事件，不先关掉就会一层层叠上去（反馈 U_8sCB0h_f）。
+  FushiMenuPresence.instance.dismissAll();
+  final _FushiMenuRoute<T> route = _FushiMenuRoute<T>(
+    apple: apple,
+    appleRadius: apple ? _menuRadius(context) : 0,
+    // 墨水屏与系统减弱动效同一入口（fushiMotionEnabled），HBK-AUDIT-042。
+    reduceMotion: !fushiMotionEnabled(context),
+    focusItemOnOpen: keyboardOpened,
+    position: position,
+    positionBuilder: positionBuilder,
+    items: items,
+    initialValue: initialValue,
+    elevation: elevation,
+    shadowColor: shadowColor,
+    surfaceTintColor: surfaceTintColor,
+    semanticLabel: label,
+    shape: shape,
+    menuPadding: menuPadding,
+    color: color,
+    constraints: constraints,
+    clipBehavior: clipBehavior,
+    barrierLabel: l10n.menuDismissLabel,
+    popUpAnimationStyle: popUpAnimationStyle,
+    capturedThemes: InheritedTheme.capture(
+      from: context,
+      to: navigator.context,
+    ),
+    settings: routeSettings,
+    requestFocus: requestFocus,
+  );
+  // 在场登记由路由自己按生命周期管（install 登记，didComplete / dispose 注销），
+  // 不靠 push 返回的 future：菜单开着时整个 Navigator 被销毁，future 不会完成。
+  return navigator.push(route).then<T?>((T? value) {
+    // 取消（Esc / B / 点外面）后把焦点还给打开前的节点：路由出栈时
+    // 下层作用域只会恢复「它记得的」焦点，触发器若是被代码 / 手柄聚焦的，
+    // 这里显式补一次。选中某项后不抢焦点（选项可能已推了新页面）。
+    if (value == null) _restoreMenuReturnFocus(returnFocus);
+    return value;
+  });
 }
 
 void _restoreMenuReturnFocus(FocusNode? node) {
@@ -1723,8 +1740,32 @@ class _FushiMenuRoute<T> extends PopupRoute<T> {
     }
   }
 
+  /// [FushiMenuPresence] 的注销回调；null = 未登记 / 已注销。
+  VoidCallback? _unregisterPresence;
+
+  void _releasePresence() {
+    final VoidCallback? unregister = _unregisterPresence;
+    _unregisterPresence = null;
+    unregister?.call();
+  }
+
+  @override
+  void install() {
+    super.install();
+    _unregisterPresence ??= FushiMenuPresence.instance.register(this);
+  }
+
+  @override
+  void didComplete(T? result) {
+    // 出栈（选中 / 取消 / 被移除）即不在场，退场动效期间不再算菜单开着。
+    _releasePresence();
+    super.didComplete(result);
+  }
+
   @override
   void dispose() {
+    // Navigator 整体销毁时路由只 dispose、不 didComplete：这里兜住，登记不泄漏。
+    _releasePresence();
     _progress?.dispose();
     _opacity?.dispose();
     super.dispose();

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:meta/meta.dart';
 
+import 'package:fushi/src/sync/mdns_fallback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// A peer Fushi instance discovered on the LAN.
@@ -70,7 +71,25 @@ class FushiDevice {
 
 /// Browses the LAN for peer Fushi sync servers advertised via [serviceType].
 class LanDiscoveryService {
-  LanDiscoveryService({required this.deviceId});
+  LanDiscoveryService({
+    required this.deviceId,
+    @visibleForTesting BonsoirDiscovery Function(String type)? discoveryFactory,
+    @visibleForTesting Future<MdnsTransport> Function()? mdnsTransportFactory,
+    @visibleForTesting bool? mdnsFallbackEnabled,
+  }) : _discoveryFactory = discoveryFactory ?? _defaultDiscovery,
+       _mdnsTransportFactory = mdnsTransportFactory ?? UdpMdnsTransport.bind,
+       _mdnsFallbackEnabled = mdnsFallbackEnabled ?? Platform.isLinux;
+
+  static BonsoirDiscovery _defaultDiscovery(String type) =>
+      BonsoirDiscovery(type: type);
+
+  final BonsoirDiscovery Function(String type) _discoveryFactory;
+
+  /// BUG-4119: on Linux bonsoir is a D-Bus client of Avahi, which SteamOS
+  /// ships disabled (and WSL / minimal installs lack). When it cannot
+  /// initialise there, browse with the built-in mDNS client instead.
+  final Future<MdnsTransport> Function() _mdnsTransportFactory;
+  final bool _mdnsFallbackEnabled;
 
   static const String serviceType = '_fushi-sync._tcp';
   static const String attributeId = 'id';
@@ -96,6 +115,22 @@ class LanDiscoveryService {
   final StreamController<List<FushiDevice>> _deviceStream =
       StreamController<List<FushiDevice>>.broadcast();
   BonsoirDiscovery? _discovery;
+
+  /// A discovery whose `initialize()` is still running. Kept apart from
+  /// [_discovery] because a platform browser may only be stopped once it has
+  /// initialised: bonsoir_linux's `stop()` dereferences the Avahi browser that
+  /// `initialize()` creates, so stopping one whose initialize failed (no Avahi
+  /// daemon: WSL, minimal installs) or is still pending threw a null-check
+  /// error. [stopDiscovery] clears this field instead; the starter sees it was
+  /// superseded and stops its own browser once initialize returns.
+  BonsoirDiscovery? _initializing;
+
+  /// The built-in mDNS browser (Linux without Avahi) and its socket. A start
+  /// that is still binding the socket holds [_fallbackStarting]; clearing it
+  /// tells that start it was superseded.
+  Object? _fallbackStarting;
+  MdnsServiceBrowser? _fallbackBrowser;
+  MdnsTransport? _fallbackTransport;
   StreamSubscription<BonsoirDiscoveryEvent>? _sub;
   bool _disposed = false;
 
@@ -108,7 +143,15 @@ class LanDiscoveryService {
   /// 覆盖丢弃上一个」——这两件事从外部没有别的可观测面（原生 browser 在单测环境
   /// 里既不抛也不回执）。
   @visibleForTesting
-  bool get hasActiveBrowser => _discovery != null;
+  bool get hasActiveBrowser =>
+      _discovery != null ||
+      _initializing != null ||
+      _fallbackStarting != null ||
+      _fallbackBrowser != null;
+
+  /// True while discovery runs on the built-in mDNS client (BUG-4119).
+  @visibleForTesting
+  bool get usingMdnsFallback => _fallbackBrowser != null;
 
   Stream<List<FushiDevice>> get devices => _deviceStream.stream;
   List<FushiDevice> get currentDevices => _discoveredDevices.values.toList();
@@ -123,16 +166,97 @@ class LanDiscoveryService {
   /// 一个原生 browser 就成了既不在 controller 的活跃集合里、也没有 owner 的孤儿。
   Future<void> startDiscovery() async {
     if (_disposed) return;
-    if (_discovery != null) await stopDiscovery();
+    if (hasActiveBrowser) await stopDiscovery();
     await _refreshLocalAddresses();
     if (_disposed) return;
-    final BonsoirDiscovery discovery = BonsoirDiscovery(type: serviceType);
+    final BonsoirDiscovery discovery = _discoveryFactory(serviceType);
+    _initializing = discovery;
+    try {
+      await discovery.initialize();
+    } catch (e, stack) {
+      // Never initialised: nothing to stop, nothing published.
+      final bool current = identical(_initializing, discovery);
+      if (current) _initializing = null;
+      if (!_mdnsFallbackEnabled) rethrow;
+      if (!current || _disposed) return; // superseded / disposed meanwhile
+      // Avahi unusable (BUG-4119): expected on SteamOS, so logged, not shown.
+      ErrorLogService.instance.log('LanDiscovery.avahiUnavailable', e, stack);
+      await _startMdnsFallback();
+      return;
+    }
+    if (!identical(_initializing, discovery) || _disposed) {
+      // stopDiscovery() / dispose() / a newer startDiscovery() ran while this
+      // one was initialising and could not stop it; stop it here instead.
+      await discovery.stop();
+      return;
+    }
+    _initializing = null;
     _discovery = discovery;
-    await discovery.initialize();
     _sub = discovery.eventStream!.listen(_onEvent);
     await discovery.start();
     // 起完再复核一次：initialize/start 之间也可能被 dispose 抢在前面。
     if (_disposed) await stopDiscovery();
+  }
+
+  /// Browses with [MdnsServiceBrowser], translating its events into the same
+  /// Bonsoir resolved / lost events [_onEvent] already handles. A socket bind
+  /// failure propagates: then the scan really failed.
+  Future<void> _startMdnsFallback() async {
+    final Object token = Object();
+    _fallbackStarting = token;
+    final MdnsTransport transport;
+    try {
+      transport = await _mdnsTransportFactory();
+    } catch (_) {
+      if (identical(_fallbackStarting, token)) _fallbackStarting = null;
+      rethrow;
+    }
+    // stopDiscovery() / dispose() / a newer start cleared the token meanwhile.
+    final bool superseded = !identical(_fallbackStarting, token);
+    if (!superseded) _fallbackStarting = null;
+    if (superseded || _disposed) {
+      transport.close();
+      return;
+    }
+    final MdnsServiceBrowser browser = MdnsServiceBrowser(
+      transport: transport,
+      serviceType: serviceType,
+    );
+    _fallbackTransport = transport;
+    _fallbackBrowser = browser;
+    _sub = browser.events.map(_toBonsoirEvent).listen(_onEvent);
+    await browser.start();
+  }
+
+  static BonsoirDiscoveryEvent _toBonsoirEvent(MdnsBrowseEvent event) =>
+      switch (event) {
+        MdnsServiceResolved() => BonsoirDiscoveryServiceResolvedEvent(
+          service: BonsoirService.ignoreNorms(
+            name: event.name,
+            type: serviceType,
+            port: event.port,
+            hostname: event.hostname,
+            hostAddresses: event.hostAddresses,
+            attributes: event.attributes,
+          ),
+        ),
+        MdnsServiceLost() => BonsoirDiscoveryServiceLostEvent(
+          service: BonsoirService.ignoreNorms(
+            name: event.name,
+            type: serviceType,
+            port: 0,
+          ),
+        ),
+      };
+
+  Future<void> _stopMdnsFallback() async {
+    _fallbackStarting = null;
+    final MdnsServiceBrowser? browser = _fallbackBrowser;
+    final MdnsTransport? transport = _fallbackTransport;
+    _fallbackBrowser = null;
+    _fallbackTransport = null;
+    await browser?.stop();
+    transport?.close();
   }
 
   /// Snapshot this device's own IPv4 addresses so a resolved service pointing
@@ -217,10 +341,13 @@ class LanDiscoveryService {
   void debugHandleEvent(BonsoirDiscoveryEvent event) => _onEvent(event);
 
   Future<void> stopDiscovery() async {
+    // A discovery still initialising is stopped by its own startDiscovery().
+    _initializing = null;
     await _sub?.cancel();
     _sub = null;
     await _discovery?.stop();
     _discovery = null;
+    await _stopMdnsFallback();
     _discoveredDevices.clear();
     _serviceNameToDeviceId.clear();
     // 已关闭的 controller 不能再 add（StateError）：dispose 走的正是这条路径。
@@ -245,6 +372,7 @@ class LanDiscoveryService {
     _sub = null;
     unawaited(_discovery?.stop());
     _discovery = null;
+    unawaited(_stopMdnsFallback()); // pure Dart: timers + socket, no channel
     _discoveredDevices.clear();
     _serviceNameToDeviceId.clear();
     unawaited(_deviceStream.close());
@@ -259,7 +387,28 @@ class LanBroadcastService {
     required this.deviceId,
     required this.port,
     this.tlsEnabled = false,
-  });
+    @visibleForTesting
+    BonsoirBroadcast Function(BonsoirService service)? broadcastFactory,
+    @visibleForTesting Future<MdnsTransport> Function()? mdnsTransportFactory,
+    @visibleForTesting bool? mdnsFallbackEnabled,
+  }) : _broadcastFactory = broadcastFactory ?? _defaultBroadcast,
+       _mdnsTransportFactory = mdnsTransportFactory ?? UdpMdnsTransport.bind,
+       _mdnsFallbackEnabled = mdnsFallbackEnabled ?? Platform.isLinux;
+
+  static BonsoirBroadcast _defaultBroadcast(BonsoirService service) =>
+      BonsoirBroadcast(service: service);
+
+  final BonsoirBroadcast Function(BonsoirService service) _broadcastFactory;
+
+  /// BUG-4119: as for discovery, Linux without Avahi advertises through the
+  /// built-in mDNS responder instead.
+  final Future<MdnsTransport> Function() _mdnsTransportFactory;
+  final bool _mdnsFallbackEnabled;
+  MdnsServiceResponder? _responder;
+  MdnsTransport? _responderTransport;
+
+  /// Bumped by [stop] so a fallback start still binding its socket backs off.
+  int _generation = 0;
 
   final String deviceName;
   final String deviceId;
@@ -270,41 +419,100 @@ class LanBroadcastService {
   final bool tlsEnabled;
 
   BonsoirBroadcast? _broadcast;
-  bool get isBroadcasting => _broadcast != null;
+  bool get isBroadcasting => _broadcast != null || _responder != null;
+
+  /// True while advertising through the built-in mDNS responder (BUG-4119).
+  @visibleForTesting
+  bool get usingMdnsFallback => _responder != null;
+
+  Map<String, String> get _attributes => <String, String>{
+    LanDiscoveryService.attributeId: deviceId,
+    if (tlsEnabled) LanDiscoveryService.attributeTls: '1',
+  };
 
   Future<void> start() async {
-    if (_broadcast != null) return;
+    if (isBroadcasting) return;
     final BonsoirService service = BonsoirService(
       name: deviceName,
       type: LanDiscoveryService.serviceType,
       port: port,
-      attributes: <String, String>{
-        LanDiscoveryService.attributeId: deviceId,
-        if (tlsEnabled) LanDiscoveryService.attributeTls: '1',
-      },
+      attributes: _attributes,
     );
-    final BonsoirBroadcast broadcast = BonsoirBroadcast(service: service);
+    final BonsoirBroadcast broadcast = _broadcastFactory(service);
     try {
       await broadcast.initialize();
       await broadcast.start();
       _broadcast = broadcast;
+      return;
     } catch (e, stack) {
       // Advertising failure (no Avahi on Linux, blocked local-network perm on
       // iOS, etc.) must NOT kill the already-running HTTP server.
       ErrorLogService.instance.log('LanBroadcast.start', e, stack);
       _broadcast = null;
     }
+    if (!_mdnsFallbackEnabled) return;
+    final int generation = _generation;
+    try {
+      final MdnsTransport transport = await _mdnsTransportFactory();
+      if (generation != _generation) {
+        transport.close(); // stop() ran while the socket was binding
+        return;
+      }
+      final MdnsServiceResponder responder = MdnsServiceResponder(
+        transport: transport,
+        serviceType: LanDiscoveryService.serviceType,
+        instanceName: service.name,
+        hostLabel: mdnsHostLabel(deviceId),
+        port: port,
+        attributes: _attributes,
+      );
+      _responderTransport = transport;
+      _responder = responder;
+      await responder.start();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('LanBroadcast.mdnsFallback', e, stack);
+      _stopResponder();
+    }
+  }
+
+  /// Our own `<label>.local` host name: unique per device so it never
+  /// collides with the machine's own (systemd-resolved may already announce
+  /// `steamdeck.local`).
+  @visibleForTesting
+  static String mdnsHostLabel(String deviceId) {
+    final String safe = deviceId.toLowerCase().replaceAll(
+      RegExp('[^a-z0-9]'),
+      '',
+    );
+    return 'fushi-${safe.length > 12 ? safe.substring(0, 12) : safe}';
+  }
+
+  void _stopResponder() {
+    final MdnsServiceResponder? responder = _responder;
+    final MdnsTransport? transport = _responderTransport;
+    _responder = null;
+    _responderTransport = null;
+    if (responder == null) {
+      transport?.close();
+      return;
+    }
+    // Goodbye packet first, then the socket.
+    unawaited(responder.stop().whenComplete(() => transport?.close()));
   }
 
   Future<void> stop() async {
+    _generation++;
     await _broadcast?.stop();
     _broadcast = null;
+    _stopResponder();
   }
 
   /// 进程退出专用（TODO-086/BUG-191）：广播无 Dart 事件订阅（只对外播报），
   /// 原生 stop 改 fire-and-forget 不阻塞退出；exit(0) 回收原生线程。
   void cutEventSourceForExit() {
+    _generation++;
     unawaited(_broadcast?.stop());
     _broadcast = null;
+    _stopResponder();
   }
 }

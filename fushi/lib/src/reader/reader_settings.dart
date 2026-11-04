@@ -205,6 +205,17 @@ class ReaderSettings {
     }
   }
 
+  /// 写一个本源键的原始串（字体目录 / 字体表这类已编码的 JSON）：作品级配置会话期间写进
+  /// 会话覆盖层（绑定配置的快照），否则写全局偏好。与 [_set] 同一判据，只是不再 toString。
+  Future<void> _writeRaw(String key, String raw) async {
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, raw);
+      return;
+    }
+    await _db.setPref(dbKey, raw);
+  }
+
   /// 删掉一个本源键：作品级配置会话期间作品级键删在会话覆盖层（绑定配置的快照），
   /// 否则删全局偏好。
   Future<void> _delete(String key) async {
@@ -1032,18 +1043,13 @@ class ReaderSettings {
   }) async {
     _cacheFontCatalogState(state, syncLegacyKeys: syncLegacyKeys);
     try {
-      await _db.setPref(
-        '$_prefix$fontCatalogKey',
-        _cache[fontCatalogKey] as String,
-      );
-      await _db.setPref(
-        '$_prefix$fontTargetsKey',
-        _cache[fontTargetsKey] as String,
-      );
+      // 反馈 kEFPY4cuKZ：字体随作品级配置走，会话期间改字体写进作品配置的快照。
+      await _writeRaw(fontCatalogKey, _cache[fontCatalogKey] as String);
+      await _writeRaw(fontTargetsKey, _cache[fontTargetsKey] as String);
       if (!syncLegacyKeys) return;
       for (final String key in _fontTargetKeys) {
         if (!state.hasTarget(key)) continue;
-        await _db.setPref('$_prefix$key', _cache[key] as String);
+        await _writeRaw(key, _cache[key] as String);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log(
@@ -1098,7 +1104,7 @@ class ReaderSettings {
       );
       if (r.relocated > 0) {
         _cache[fontCatalogKey] = r.json;
-        await _db.setPref('$_prefix$fontCatalogKey', r.json);
+        await _writeRaw(fontCatalogKey, r.json);
         healed += r.relocated;
       }
     }
@@ -1113,7 +1119,7 @@ class ReaderSettings {
       );
       if (r.relocated > 0) {
         _cache[key] = r.json;
-        await _db.setPref('$_prefix$key', r.json);
+        await _writeRaw(key, r.json);
         healed += r.relocated;
       }
     }

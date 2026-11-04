@@ -17,6 +17,8 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/media/music/music_history.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_queue_feed.dart';
+import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -26,6 +28,7 @@ import 'package:fushi/src/pages/implementations/music/music_mv_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -52,6 +55,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
+part 'music_plugin_actions.dart';
 part 'music_plugin_detail_pages.dart';
 
 /// 打开某个插件音源的浏览页。
@@ -168,6 +172,7 @@ class _TrackRow extends StatelessWidget {
     required this.onTap,
     this.leadingNumber = false,
     this.onPlayMv,
+    this.menu,
   });
 
   final MusicPluginTrack track;
@@ -178,6 +183,9 @@ class _TrackRow extends StatelessWidget {
 
   /// 这首歌有 MV 且插件能取 MV 流时的「播放 MV」（[_mvAction]）。
   final VoidCallback? onPlayMv;
+
+  /// 行尾「更多」（[musicPluginTrackMenuButton]）；没有可做的动作时为 null。
+  final Widget? menu;
 
   @override
   Widget build(BuildContext context) {
@@ -227,6 +235,7 @@ class _TrackRow extends StatelessWidget {
                   formatMusicDuration(track.durationMs),
                   style: context.fushiType.bodySmall,
                 ),
+                ?menu,
               ],
             ),
           ),
@@ -560,6 +569,7 @@ Widget musicPluginItemTile(
       index: i,
       count: items.length,
       onPlayMv: _mvAction(context, ref, manifest, track),
+      menu: musicPluginTrackMenuButton(context, ref, manifest, track),
       onTap: () => _playTracks(
         ref,
         pluginId,
@@ -898,6 +908,7 @@ class _MusicPluginRecommendViewState
         title: m.name,
         eyebrow: true,
         actions: <Widget>[
+          ?_pluginRadioButton(context, ref, m),
           // 刷新中按钮换成小转圈，旧内容留在原地，新一批到了再整体换上
           // （之前整页先换成加载圈再重画，界面闪一下）。
           if (_refreshing)
@@ -1133,6 +1144,7 @@ class _MusicPluginLibrarySectionState
         _SectionHeader(
           title: t.music_plugin_library_title(name: m.name),
           actions: <Widget>[
+            ?_pluginCreatePlaylistButton(context, ref, m, onCreated: _reload),
             FushiPressScale(
               child: FushiIconButton(
                 key: ValueKey<String>('music-plugin-library-refresh-${m.id}'),

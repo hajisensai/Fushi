@@ -161,41 +161,39 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
         title: Text(t.srs_import_options_title),
         content: SizedBox(
           width: SrsImportOptionsDialog.contentWidth,
-          child: SingleChildScrollView(
-            child: Column(
-              key: const ValueKey<String>('srs-import-options-help'),
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                item(
-                  t.srs_import_with_scheduling,
-                  t.srs_import_with_scheduling_help,
+          child: Column(
+            key: const ValueKey<String>('srs-import-options-help'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              item(
+                t.srs_import_with_scheduling,
+                t.srs_import_with_scheduling_help,
+              ),
+              item(
+                t.srs_import_with_deck_configs,
+                t.srs_import_with_deck_configs_help,
+              ),
+              item(t.srs_import_use_rwkv, t.srs_import_use_rwkv_help),
+              item(
+                t.srs_import_with_fsrs_params,
+                t.srs_import_with_fsrs_params_help,
+              ),
+              item(
+                t.srs_import_merge_notetypes,
+                t.srs_import_merge_notetypes_help,
+              ),
+              item(t.srs_import_update_notes, t.srs_import_update_notes_help),
+              item(
+                t.srs_import_update_notetypes,
+                t.srs_import_update_notetypes_help,
+              ),
+              if (widget.wholeCollection)
+                Text(
+                  t.srs_import_colpkg_note,
+                  style: theme.textTheme.bodyMedium,
                 ),
-                item(
-                  t.srs_import_with_deck_configs,
-                  t.srs_import_with_deck_configs_help,
-                ),
-                item(t.srs_import_use_rwkv, t.srs_import_use_rwkv_help),
-                item(
-                  t.srs_import_with_fsrs_params,
-                  t.srs_import_with_fsrs_params_help,
-                ),
-                item(
-                  t.srs_import_merge_notetypes,
-                  t.srs_import_merge_notetypes_help,
-                ),
-                item(t.srs_import_update_notes, t.srs_import_update_notes_help),
-                item(
-                  t.srs_import_update_notetypes,
-                  t.srs_import_update_notetypes_help,
-                ),
-                if (widget.wholeCollection)
-                  Text(
-                    t.srs_import_colpkg_note,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
         actions: <Widget>[
@@ -354,45 +352,39 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                 screen.width - insetX * 2 - 48,
               )
             : SrsImportOptionsDialog.contentWidth,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: twoColumn
-                // 手机横屏（又宽又矮）：基础开关与「更新」两组并排，不必在 ~250 高的
-                // 正文里上下滚。
-                ? Row(
-                    key: const ValueKey<String>('srs-import-options'),
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: tokens.spacing.gap * 2,
-                    children: <Widget>[
-                      Expanded(
-                        child: Column(
-                          key: const ValueKey<String>(
-                            'srs-import-options-basic',
-                          ),
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisSize: MainAxisSize.min,
-                          children: basic,
-                        ),
+        child: FushiEntranceScope(
+          child: twoColumn
+              // 手机横屏（又宽又矮）：基础开关与「更新」两组并排，不必在 ~250 高的
+              // 正文里上下滚。
+              ? Row(
+                  key: const ValueKey<String>('srs-import-options'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: tokens.spacing.gap * 2,
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        key: const ValueKey<String>('srs-import-options-basic'),
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: basic,
                       ),
-                      Expanded(
-                        key: const ValueKey<String>(
-                          'srs-import-options-updates',
-                        ),
-                        child: updates,
-                      ),
-                    ],
-                  )
-                : Column(
-                    key: const ValueKey<String>('srs-import-options'),
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      ...basic,
-                      SizedBox(height: tokens.spacing.gap),
-                      updates,
-                    ],
-                  ),
-          ),
+                    ),
+                    Expanded(
+                      key: const ValueKey<String>('srs-import-options-updates'),
+                      child: updates,
+                    ),
+                  ],
+                )
+              : Column(
+                  key: const ValueKey<String>('srs-import-options'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    ...basic,
+                    SizedBox(height: tokens.spacing.gap),
+                    updates,
+                  ],
+                ),
         ),
       ),
       actions: <Widget>[

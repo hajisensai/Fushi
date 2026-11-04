@@ -150,80 +150,76 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
       title: Text('${t.media_privacy_action} · ${widget.title}'),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FushiSwitchListTile(
-                key: const ValueKey<String>('media-privacy-switch'),
-                value: effective,
-                onChanged: !loaded || inherited || _writing
-                    ? null
-                    : (bool v) => unawaited(_set(v)),
-                contentPadding: EdgeInsets.zero,
-                secondary: FushiIcon(
-                  effective ? FushiIcons.lock : FushiIcons.lockOpen,
-                ),
-                title: Text(t.media_privacy_switch),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiSwitchListTile(
+              key: const ValueKey<String>('media-privacy-switch'),
+              value: effective,
+              onChanged: !loaded || inherited || _writing
+                  ? null
+                  : (bool v) => unawaited(_set(v)),
+              contentPadding: EdgeInsets.zero,
+              secondary: FushiIcon(
+                effective ? FushiIcons.lock : FushiIcons.lockOpen,
               ),
-              FushiAnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                curve: FushiMotion.standard,
-                alignment: Alignment.topCenter,
-                child: inherited
-                    ? Padding(
-                        key: const ValueKey<String>(
-                          'media-privacy-inherited-note',
-                        ),
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          source != null
-                              ? t.media_privacy_inherited_source_note(
-                                  source: source.label,
-                                )
-                              : t.media_privacy_inherited_note(
-                                  collections: collections!
-                                      .map((MediaCollectionRow c) => c.name)
-                                      .join(' / '),
-                                ),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
+              title: Text(t.media_privacy_switch),
+            ),
+            FushiAnimatedSize(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              alignment: Alignment.topCenter,
+              child: inherited
+                  ? Padding(
+                      key: const ValueKey<String>(
+                        'media-privacy-inherited-note',
+                      ),
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        source != null
+                            ? t.media_privacy_inherited_source_note(
+                                source: source.label,
+                              )
+                            : t.media_privacy_inherited_note(
+                                collections: collections!
+                                    .map((MediaCollectionRow c) => c.name)
+                                    .join(' / '),
                               ),
-                        ),
-                      )
-                    : const SizedBox(width: double.infinity),
-              ),
-              FushiAnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                curve: FushiMotion.standard,
-                alignment: Alignment.topCenter,
-                child: _loadError == null
-                    ? const SizedBox(width: double.infinity)
-                    : Padding(
-                        key: const ValueKey<String>('media-privacy-load-error'),
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          t.media_privacy_load_failed(
-                            reason: _loadError.toString(),
-                          ),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+            FushiAnimatedSize(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              alignment: Alignment.topCenter,
+              child: _loadError == null
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      key: const ValueKey<String>('media-privacy-load-error'),
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        t.media_privacy_load_failed(
+                          reason: _loadError.toString(),
+                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                t.media_privacy_hint,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  t.media_privacy_hint,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

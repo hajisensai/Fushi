@@ -78,6 +78,8 @@ const List<String> _sharedEntries = <String>[
 const List<String> _srsEntries = <String>[
   'card_creation.srs.deck',
   'card_creation.srs.note_type',
+  // 反馈 Rl00Di264R：复习目标的「后台制卡」。
+  'card_creation.srs.background_mining',
 ];
 
 void main() {

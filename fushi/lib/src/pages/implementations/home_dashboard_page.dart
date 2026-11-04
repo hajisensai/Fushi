@@ -104,6 +104,7 @@ import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/misc/dashboard_remote_continue_feed.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart';
@@ -1393,6 +1394,10 @@ class _HomeDashboardPageState
         }
       }
       if (!mounted) return;
+      // 桌面小组件「继续」读同一份结果（不另发互联请求、不另写一套过滤）。
+      RemoteContinueFeed.of(
+        appModel.database,
+      ).publish(continueCandidates, deviceName: deviceName);
       setState(() {
         _remoteContinue = continueCandidates;
         _appliedRemoteBooks = remoteBooks;
@@ -1584,6 +1589,7 @@ class _HomeDashboardPageState
   /// 取图器），回到纯本地视图。没有远端状态时不动 UI。
   void _clearRemoteDashboardData() {
     if (!mounted) return;
+    RemoteContinueFeed.of(ref.read(appProvider).database).clear();
     final bool hasRemoteState =
         _remoteContinue.isNotEmpty ||
         _remoteDeviceName != null ||

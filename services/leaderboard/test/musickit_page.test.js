@@ -23,7 +23,21 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
     async setQueue(q) {
       calls.push(['setQueue', q]);
       if (q.song === 'bad') throw Object.assign(new Error('CONTENT_UNAVAILABLE'), { name: 'MKError' });
-      this.nowPlayingItem = { id: q.song };
+      if (q.station) {
+        this.nowPlayingItem = {
+          id: 'i.1', type: 'song', title: 'S1', artistName: 'A1', albumName: 'AL1',
+          playbackDuration: 180000, playParams: { id: 'i.1', kind: 'song', catalogId: '111' },
+          attributes: { artwork: { url: 'https://x/{w}x{h}bb.jpg' } },
+        };
+      } else {
+        this.nowPlayingItem = { id: q.song };
+      }
+      (listeners.nowPlayingItemDidChange || []).forEach((f) => f());
+    },
+    async skipToNextItem() {
+      calls.push(['skipToNextItem']);
+      this.nowPlayingItem = { id: 'ra.live', type: 'stations', title: 'Live Show', playParams: { id: 'ra.live', kind: 'radioStation' } };
+      (listeners.nowPlayingItemDidChange || []).forEach((f) => f());
     },
     async seekToTime(s) { calls.push(['seek', s]); this.currentPlaybackTime = s; },
     async play() { calls.push(['play']); this.playbackState = 2; (listeners.playbackStateDidChange || []).forEach((f) => f()); },
@@ -32,7 +46,7 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
   };
   const window = {
     MusicKit: {
-      Events: { playbackStateDidChange: 'playbackStateDidChange', mediaPlaybackError: 'mediaPlaybackError' },
+      Events: { playbackStateDidChange: 'playbackStateDidChange', mediaPlaybackError: 'mediaPlaybackError', nowPlayingItemDidChange: 'nowPlayingItemDidChange' },
       async configure(opts) {
         calls.push(['configure', opts]);
         if (opts.storefrontId) instance.storefrontId = opts.storefrontId;
@@ -130,6 +144,35 @@ describe('MusicKit 托管页', () => {
     expect((await b.k.authorize()).authorized).toBe(true);
     // 只 configure 一次。
     expect(b.calls.filter((c) => c[0] === 'configure').length).toBe(1);
+  });
+
+  it('bridge.js：电台交给 MusicKit 自管队列、换歌发 nowPlaying、skipToNext 走 skipToNextItem', async () => {
+    const env = makeEnv();
+    const src = String((await call(env, 'GET', '/musickit/bridge.js')).data);
+    const b = runBridge(src);
+    const r = await b.k.playStation('ra.978194965', false);
+    expect(r.ok).toBe(true);
+    expect(b.calls.find((c) => c[0] === 'setQueue')[1]).toEqual({ station: 'ra.978194965', startPlaying: false });
+    // autoplay === false：只排好不出声。
+    expect(b.calls.some((c) => c[0] === 'play')).toBe(false);
+    expect(r.nowPlaying).toEqual({
+      songId: '111', title: 'S1', artist: 'A1', album: 'AL1',
+      artworkUrl: 'https://x/{w}x{h}bb.jpg', durationMs: 180000,
+    });
+    const np = b.posted.filter(([, m]) => m.type === 'nowPlaying').map(([, m]) => m);
+    expect(np).toHaveLength(1);
+    expect(np[0].songId).toBe('111');
+
+    expect((await b.k.skipToNext()).ok).toBe(true);
+    expect(b.calls.some((c) => c[0] === 'skipToNextItem')).toBe(true);
+    const live = b.posted.filter(([, m]) => m.type === 'nowPlaying').map(([, m]) => m).at(-1);
+    // 直播节目：没有 songId / 时长，只有标题。
+    expect(live.songId).toBe(null);
+    expect(live.durationMs).toBe(null);
+    expect(live.title).toBe('Live Show');
+
+    await b.k.playStation('ra.1', true);
+    expect(b.calls.some((c) => c[0] === 'play')).toBe(true);
   });
 
   it('bridge.js：token 端点不可用时 init 回 {ok:false}，之后可重试', async () => {

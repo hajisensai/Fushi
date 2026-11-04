@@ -156,24 +156,22 @@ Future<String?> showSrsReviewFieldPicker(
       title: Text(title),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: Column(
-              key: const ValueKey<String>('srs-review-field-picker'),
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (final (String id, String label) in fields)
-                  FushiStaggeredEntrance(
-                    index: step++,
-                    child: FushiListItem(
-                      key: ValueKey<String>('srs-review-field-$id'),
-                      title: Text(label),
-                      onTap: () => Navigator.of(dialogContext).pop(id),
-                    ),
+        child: FushiEntranceScope(
+          child: Column(
+            key: const ValueKey<String>('srs-review-field-picker'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (final (String id, String label) in fields)
+                FushiStaggeredEntrance(
+                  index: step++,
+                  child: FushiListItem(
+                    key: ValueKey<String>('srs-review-field-$id'),
+                    title: Text(label),
+                    onTap: () => Navigator.of(dialogContext).pop(id),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
