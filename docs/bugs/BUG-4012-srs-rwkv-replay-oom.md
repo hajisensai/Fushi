@@ -1,4 +1,4 @@
-## BUG-4004 · srs-rwkv-replay-oom
+## BUG-4012 · srs-rwkv-replay-oom
 - **报告**：2026-11-03（用户：iPhone 3.3.0-debug.23213，复习 profile 约 35 万条 `srs_review_logs`、srs.db 2.4 GB；复习同步 v2 收尾（ingestFinish / finishPending）时 RSS 冲到 1.07–1.40 GB，连续 SIGABRT（malloc 失败 → Rust `handle_alloc_error` / Dart VM OOM），多次落在 `ffsrs_store_rwkv_rows` 里；崩后每次启动又进收尾 → 启动即崩循环；另一台安卓（小米 23116PN5BC / Android 16，同构建、另一 profile）11-02 起约 11 次 Scudo「internal map failure」→ SIGABRT + 2 次 EXCESSIVE_RESOURCE_USAGE，全部在 `stage=downloading`（收段逐批 ingest 中），rss 0.9–2.3 GB、PSS 最高 3.3 GB）
 - **真实性**：✅ 真 bug。两处叠加：
   1. `native/fushi_fsrs/src/store/projections.rs:317-353`（base 1c8fd5d731）：`rwkv_replay` 一条语句扫全 profile 日志，读生成列 `l.json`（逐行把瘦存拼回原文），把每条原文 `String` 连同服务器时刻存进 `HashMap<卡, Vec<(String, Option<i64>)>>`，全部扫完才逐份历史解析、算行；局部重放的分歧计算（同文件 `:40-46`）还把血统里的原文再 clone 一份。`fetch_logs`（`:74-90`，优化器训练集 / RWKV 逐卡）同一形态。合成 36 万条日志实测 Rust 堆峰值 291.6 MiB（输出只有 25 MiB）。

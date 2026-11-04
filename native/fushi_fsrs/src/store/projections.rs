@@ -63,7 +63,7 @@ fn rwkv_divergence(
 /// 一条日志在读出时就解析好、只留投影要的字段（选取 [crate::history::select] 的输入与 [EffLog] 的其余字段）。
 ///
 /// 不留落库原文：整 profile 扫描（[SrsCore::rwkv_replay]、全部卡的优化器训练集）要把全部日志留到最后才算行，
-/// 35 万条日志时原文连同字符串开销就是两三百 MB，iPhone 同步收尾时与收段叠在一起 OOM（BUG-4004）。
+/// 35 万条日志时原文连同字符串开销就是两三百 MB，iPhone 同步收尾时与收段叠在一起 OOM（BUG-4012）。
 /// 字符串只留日志 ID 与撤销目标（规范 UUID 存 16 字节，[ScanId]）；写入者 ID 去重存在 [LogsByCard::writers]；
 /// 可空的整数用 [NONE_I64] 表示「没有」（与列模式 `projection::memory_input_columns` 同一约定）。
 struct ScanLog {

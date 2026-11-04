@@ -33,16 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3608 条。点号进各自文件。
+> 共 3616 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4004](bugs/BUG-4004-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
-> 共 3614 条。点号进各自文件。
-> 共 3615 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
 | [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |
 | [BUG-4010](bugs/BUG-4010-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
 | [BUG-4009](bugs/BUG-4009-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
