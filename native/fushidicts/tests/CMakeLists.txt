@@ -78,6 +78,19 @@ add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
 add_fushi_test(kanji_import_query_test kanji_import_query_test.cpp)
 add_fushi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
 add_fushi_test(media_import_query_test media_import_query_test.cpp)
+# BUG-4013: 词典映射按文件身份进程内共享（重载期 shadow 引擎不再把整套词典的虚拟
+# 地址翻倍），media.bin 不映射、按请求定位读。
+add_fushi_test(shared_mapping_test shared_mapping_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 32 位进程的 blobs.bin 窗口映射与整份映射逐字节同结果（含跨窗口、超窗口
+# 堆读、LRU 压到 1 个窗口时的持续淘汰）。
+add_fushi_test(blob_window_test blob_window_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 偏移表 count 超出文件剩余字节时判坏表、不读（32 位窗口模式下按 count
+# 申请堆缓冲会 bad_alloc 穿过 FFI 直接 abort）。
+add_fushi_test(offset_list_bounds_test offset_list_bounds_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 窗口模式下超过一个窗口步长的视图读进堆，堆读长度来自磁盘（glossary /
+# meanings 的 u32 大小、偏移表 count），封顶 blob_file::kMaxHeapViewBytes，坏长度不再
+# 申请「文件剩余全部」。
+add_fushi_test(blob_heap_view_cap_test blob_heap_view_cap_test.cpp "${FUSHI_SRC}")
 # Re-zipping an extracted dictionary wraps every entry in one directory; the
 # importer must address entries by their dictionary-relative name so such an
 # archive imports identically (media keys included), while an archive spanning

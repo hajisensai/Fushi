@@ -56,11 +56,14 @@ void main() {
     required Future<http.Response> Function(http.Request) handler,
     Directory? cacheDirectory,
     DateTime Function()? now,
+    bool followOriginalLanguage = false,
+    String language = 'zh-CN',
   }) {
     final AniDbVideoMetadataProvider result = AniDbVideoMetadataProvider(
       clientName: 'fushitest',
       clientVersion: 1,
-      language: 'zh-CN',
+      language: language,
+      followOriginalLanguage: followOriginalLanguage,
       titleCatalog: catalog,
       client: MockClient(handler),
       now: now,
@@ -78,6 +81,52 @@ void main() {
     200,
     headers: const <String, String>{'content-type': 'application/xml'},
   );
+
+  // BUG-4056：资料语言留空 = 按作品原语言。主标题 x-jat → 原语言日语，标题取
+  // 日文官方名；兜底语言（界面语言 zh-CN）不参与。
+  test('跟随原语言时按主标题推出的原语言选标题', () async {
+    final AniDbVideoMetadataProvider anidb = provider(
+      handler: (_) async => xml(_animeXml),
+      followOriginalLanguage: true,
+    );
+    final VideoMetadataWork work = (await anidb.fetchWork(lookup))!;
+    expect(work.title, 'ヴァイオレット・エヴァーガーデン');
+    final AniDbVideoMetadataProvider explicit = provider(
+      handler: (_) async => xml(_animeXml),
+    );
+    expect(
+      (await explicit.fetchWork(lookup))!.title,
+      '紫罗兰永恒花园',
+      reason: '显式资料语言 zh-CN 不受影响',
+    );
+    expect(work.originalLanguage, 'ja');
+  });
+
+  // 产出的 originalLanguage 与选标题同一个值（主标题 xml:lang 推出）：协调器拿它
+  // 当合并 / 选图语言序，写死 'ja' 会和 TMDB 请求端（original_language=zh）错位。
+  test('中文主标题（x-zht）作品：originalLanguage 为 zh，跟随时取中文标题', () async {
+    const VideoMetadataLookup donghua = VideoMetadataLookup(
+      provider: VideoMetadataProviderKind.anidb,
+      externalId: '77',
+      mediaKind: VideoMetadataMediaKind.tv,
+    );
+    final AniDbVideoMetadataProvider follow = provider(
+      handler: (_) async => xml(_donghuaXml),
+      followOriginalLanguage: true,
+      language: 'en',
+    );
+    final VideoMetadataWork work = (await follow.fetchWork(donghua))!;
+    expect(work.originalLanguage, 'zh');
+    expect(work.title, '全职高手', reason: '界面语言 en 不参与，按原语言选');
+
+    final AniDbVideoMetadataProvider explicit = provider(
+      handler: (_) async => xml(_donghuaXml),
+      language: 'en',
+    );
+    final VideoMetadataWork explicitWork = (await explicit.fetchWork(donghua))!;
+    expect(explicitWork.title, "The King's Avatar");
+    expect(explicitWork.originalLanguage, 'zh', reason: '原语言是作品属性，与资料语言是否显式无关');
+  });
 
   test(
     'MAL ids from <resources type="2"> become non-default cross references',
@@ -634,6 +683,29 @@ const String _animeXml = '''
     <episode id="4299">
       <epno type="2">S1</epno>
       <title xml:lang="en">Special</title>
+    </episode>
+  </episodes>
+</anime>
+''';
+
+const String _donghuaXml = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<anime id="77" restricted="false">
+  <type>TV Series</type>
+  <episodecount>1</episodecount>
+  <startdate>2017-04-07</startdate>
+  <titles>
+    <title type="main" xml:lang="x-zht">Quanzhi Gaoshou</title>
+    <title type="official" xml:lang="zh-Hans">全职高手</title>
+    <title type="official" xml:lang="en">The King's Avatar</title>
+    <title type="official" xml:lang="ja">全職高手</title>
+  </titles>
+  <episodes>
+    <episode id="7701">
+      <epno type="1">1</epno>
+      <length>24</length>
+      <airdate>2017-04-07</airdate>
+      <title xml:lang="en">Episode 1</title>
     </episode>
   </episodes>
 </anime>

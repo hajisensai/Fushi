@@ -1,7 +1,9 @@
 import 'dart:collection';
 import 'dart:convert';
 
+import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
@@ -106,6 +108,35 @@ class _Toolbox implements AgentToolbox {
   }
 }
 
+/// 只记下存了哪几场的存档（这组用例不测历史面，见 agent_session_history_test）。
+class _RecordingHistory implements AgentSessionHistoryStore {
+  _RecordingHistory(this.saved);
+
+  final List<String> saved;
+
+  @override
+  Future<String?> peerIdForToken(String peerToken) async => null;
+
+  @override
+  Future<void> save(
+    AgentSession session, {
+    required String originPeerId,
+  }) async => saved.add(session.id);
+
+  @override
+  Future<List<AiAgentSessionSummary>> list(String originPeerId) async =>
+      const <AiAgentSessionSummary>[];
+
+  @override
+  Future<AgentArchivedSession?> load(String id) async => null;
+
+  @override
+  Future<bool> rename(String id, String title) async => false;
+
+  @override
+  Future<void> delete(String id) async {}
+}
+
 /// 让排进微任务 / 事件队列的后台 loop 跑起来，直到 [ready] 成立。
 Future<void> _until(bool Function() ready) async {
   for (int i = 0; i < 200; i++) {
@@ -126,9 +157,7 @@ Future<void> _until(bool Function() ready) async {
     blocker: () async => blocked,
     source: 'test',
     toolCount: () => 2,
-    persist: persisted == null
-        ? null
-        : (AgentSession s) async => persisted.add(s.id),
+    history: persisted == null ? null : _RecordingHistory(persisted),
     newSessionId: () => 'rmtest',
     open: (String locale) async => AgentSessionParts(
       llm: llm,
@@ -527,6 +556,7 @@ class _FakeProvider implements HostAssistantProvider {
   Future<HostAssistantSession> open(
     String feature, {
     required String locale,
+    HostAssistantCaller caller = HostAssistantCaller.anonymous,
   }) async {
     opened.add(feature);
     return _NoopSession();

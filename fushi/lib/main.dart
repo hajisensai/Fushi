@@ -98,6 +98,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         dataRootMigrationRestart,
         runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/headless_launch_gate.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
@@ -128,6 +129,7 @@ import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
+import 'package:fushi/src/platform/home_widgets/apple_widgets_host.dart';
 import 'package:fushi/src/platform/widget_link_actions.dart';
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_snapshot_source.dart';
@@ -313,6 +315,12 @@ void main([List<String> args = const <String>[]]) {
       /// Necessary to initialise Flutter when running native code before
       /// starting the application.
       final binding = WidgetsFlutterBinding.ensureInitialized();
+      // BUG-4072 方案 C：无界面拉起（Android audio_service 的 MediaBrowserService 被媒体
+      // 续播 / 媒体键 / 车机绑、iOS 后台拉起）的引擎停在精简入口，界面接上来（第一个
+      // resumed / inactive）之前不往下跑：不 runApp、不读写会话标记、不判闪退 / 不提示 /
+      // 不 auto_send、不碰 MainActivity 才注册的通道、不开数据库。必须是 binding 之后的
+      // 第一步（守卫 test/startup/headless_launch_entry_guard_test.dart）。
+      await holdHeadlessLaunchUntilUi(binding: binding);
       final bool hiddenTestMode =
           Platform.environment['FUSHI_TEST_HIDDEN']?.isNotEmpty == true ||
           Platform.environment.containsKey('HIBIKI_TEST_HIDDEN');
@@ -624,6 +632,14 @@ void main([List<String> args = const <String>[]]) {
 
       /// Initialise error log service.
       await ErrorLogService.instance.init();
+      // 这个进程是无界面拉起、在精简入口等过界面的：留一条证据（直接放行不写）。
+      final String? headlessLaunchNote = lastHeadlessLaunchOutcome?.describe();
+      if (headlessLaunchNote != null) {
+        ErrorLogService.instance.logDiagnostic(
+          kHeadlessLaunchLogSource,
+          headlessLaunchNote,
+        );
+      }
       for (final String report
           in DurableFileSharedPreferencesStore.drainRecoveryReports()) {
         ErrorLogService.instance.log('SharedPreferences.recovered', report);
@@ -949,13 +965,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     run: _runAppShortcut,
   );
 
-  /// Android 桌面小组件点按的深链（`fushi://widget/...`），冷启动排队同上。
+  /// 桌面小组件 / 控制中心控件点按的深链（`fushi://widget/...`，Android 与 Apple 同一套
+  /// 语法），冷启动排队同上。
   late final WidgetLinkQueue _widgetLinks = WidgetLinkQueue(
     isActive: () => mounted,
     run: _runWidgetLink,
   );
 
-  /// Android 桌面小组件的快照采集 / 推送；非 Android 平台整个不工作。
+  /// 桌面小组件的快照采集 / 推送（Android / iOS / macOS 同一份 JSON）；其余平台整个不工作。
   late final WidgetSnapshotSource _widgetSnapshots = WidgetSnapshotSource(
     ref: ref,
     isActive: () => mounted,
@@ -1184,8 +1201,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       });
     }
     if (Platform.isMacOS) {
+      // 原生侧只转交 Fushi 自己认的 host（卡片出处 + 小组件 / 菜单栏链接，见
+      // macos/Runner/AppDelegate.swift），统一走 [handleIncomingUrl] 分流。
       _sourceUrlSubscription = SourceUrlChannel.urls.listen(
-        _queueCardSourceUrl,
+        (String url) => handleIncomingUrl(data: url, isInitial: false),
       );
     }
     if (Platform.isIOS) {
@@ -1710,6 +1729,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           openWidgetServerItem(appModel, target),
       isContinueItemOpen: (WidgetContinueLink target) =>
           isWidgetContinueItemCurrentlyOpen(appModel, target),
+      // 悬浮球宿主在 app 就绪后的首帧消费这两个标记（开相机 / 读剪贴板）。
+      openCameraLookup: () => pendingCameraOcr.value = true,
+      openClipboardLookup: () => pendingClipboardLookup.value = true,
     );
   }
 
@@ -3137,7 +3159,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   // 全局浮层），见 captureFeedbackScreenshot。
                                   RepaintBoundary(
                                     key: feedbackScreenshotBoundaryKey,
-                                    child: child!,
+                                    // iOS / macOS 的 Live Activity / 菜单栏播放条与小组件按钮
+                                    // 回调宿主（其它平台原样透传）；快照走 [WidgetSnapshotSource]。
+                                    child: AppleWidgetsHost(child: child!),
                                   ),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),

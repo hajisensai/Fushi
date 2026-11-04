@@ -99,6 +99,10 @@ dependencies:
     path: ../packages/fushi_audio
   fushi_platform:
     path: ../packages/fushi_platform
+  # BUG-4072：告诉 Dart 本次引擎有没有界面（Android 插件注册到每个引擎，含 audio_service
+  # 无界面拉起的那个；iOS 在 AppDelegate 答）。会话标记据此记 headless。
+  fushi_launch_presence:
+    path: ../packages/fushi_launch_presence
   fushi_torrent:
     path: ../packages/fushi_torrent
   google_sign_in: ^6.2.2

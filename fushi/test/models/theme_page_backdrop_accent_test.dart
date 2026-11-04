@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -63,6 +65,8 @@ void main() {
     ThemeNotifier.pageBackdropSeedExtractor = originalExtractor;
     ThemeNotifier.pageBackdropImageDirectory = originalDirectory;
     pageBackdropSettings.value = const PageBackdropSettings();
+    pageBackdropModuleOverrides.value =
+        const <HomeTab, PageBackdropModuleOverride>{};
     await database.close();
     if (scratch.existsSync()) scratch.deleteSync(recursive: true);
   });
@@ -190,5 +194,123 @@ void main() {
       PageBackdropPreset.corner,
     );
     expect(notifier.pageBackdropAccentSeed, isNull);
+  });
+
+  // ── 按模块单独设置（反馈 DYI1IOZxSM）────────────────────────────────
+
+  test('模块单独导入图片：只改这个模块，全局与应用配色不动', () async {
+    final List<String> extracted = <String>[];
+    ThemeNotifier.pageBackdropSeedExtractor = (String path) async {
+      extracted.add(path);
+      return const <int>[green, red];
+    };
+    notifier = build();
+    await notifier.importPageBackdropImage(
+      source('global.png'),
+      portrait: false,
+    );
+    final PageBackdropSettings global = pageBackdropSettings.value;
+    final Color accent = primary();
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+    extracted.clear();
+
+    // 模块图取出来会是红色——但配色必须仍是全局图的绿色。
+    ThemeNotifier.pageBackdropSeedExtractor = (String path) async {
+      extracted.add(path);
+      return const <int>[red];
+    };
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.books,
+      source('books.png'),
+      portrait: false,
+    );
+
+    final PageBackdropModuleOverride? books =
+        pageBackdropModuleOverrides.value[HomeTab.books];
+    expect(books, isNotNull);
+    expect(books!.preset, PageBackdropPreset.custom);
+    expect(books.landscapeImagePath, startsWith(store.path));
+    expect(File(books.landscapeImagePath!).existsSync(), isTrue);
+    expect(pageBackdropSettings.value, global, reason: '全局背景不受影响');
+    expect(
+      pageBackdropSettingsFor(HomeTab.books).landscapeImagePath,
+      books.landscapeImagePath,
+    );
+    expect(pageBackdropSettingsFor(HomeTab.video), global);
+    expect(extracted, isEmpty, reason: '模块图片不取色');
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+    expect(primary(), accent);
+  });
+
+  test('模块单独设形状预设；恢复跟随全局连同模块图片一起删', () async {
+    notifier = build();
+    await notifier.setPageBackdropModulePreset(
+      HomeTab.video,
+      PageBackdropPreset.mesh,
+    );
+    expect(
+      pageBackdropSettingsFor(HomeTab.video).preset,
+      PageBackdropPreset.mesh,
+    );
+    expect(
+      pageBackdropSettingsFor(HomeTab.books).preset,
+      PageBackdropPreset.corner,
+    );
+
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.video,
+      source('v.png'),
+      portrait: false,
+    );
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.video,
+      source('vp.png'),
+      portrait: true,
+    );
+    final PageBackdropModuleOverride video =
+        pageBackdropModuleOverrides.value[HomeTab.video]!;
+    expect(video.portraitImagePath, isNotNull);
+
+    await notifier.clearPageBackdropModulePortraitImage(HomeTab.video);
+    expect(
+      pageBackdropModuleOverrides.value[HomeTab.video]!.portraitImagePath,
+      isNull,
+    );
+    expect(File(video.portraitImagePath!).existsSync(), isFalse);
+
+    await notifier.setPageBackdropModulePreset(HomeTab.video, null);
+    expect(pageBackdropModuleOverrides.value, isEmpty);
+    expect(File(video.landscapeImagePath!).existsSync(), isFalse);
+    expect(pageBackdropSettingsFor(HomeTab.video), pageBackdropSettings.value);
+  });
+
+  test('模块设置随偏好加载发布；模块图在这台设备上不在时退回全局', () async {
+    notifier = build(<String, String>{
+      kPageBackdropPresetPrefKey: PrefCodec.encode('wave'),
+      kPageBackdropModulePresetsPrefKey: PrefCodec.encode(
+        '{"books":"custom","music":"arc"}',
+      ),
+      kPageBackdropModuleImagesPrefKey: PrefCodec.encode(
+        jsonEncode(<String, Object>{
+          'books': <String, String>{'landscape': '${scratch.path}/gone.png'},
+        }),
+      ),
+    });
+    expect(
+      pageBackdropSettingsFor(HomeTab.music).preset,
+      PageBackdropPreset.arc,
+    );
+    expect(pageBackdropSettingsFor(HomeTab.books).hasCustomImage, isTrue);
+
+    await notifier.refreshPageBackdropSeeds();
+    expect(
+      pageBackdropModuleOverrides.value[HomeTab.books]!.landscapeImagePath,
+      isNull,
+    );
+    expect(pageBackdropSettingsFor(HomeTab.books), pageBackdropSettings.value);
+    expect(
+      pageBackdropSettingsFor(HomeTab.books).preset,
+      PageBackdropPreset.wave,
+    );
   });
 }

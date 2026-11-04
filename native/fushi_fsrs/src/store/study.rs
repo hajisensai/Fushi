@@ -49,8 +49,8 @@ struct Tally {
     due: i64,
     new_done: i64,
     review_done: i64,
-    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）。FSRS 牌组 = 到期数；
-    /// RWKV 牌组 = 今天已复习 + 今天到期（合格）的卡，按这个牌组的每日复习上限截断（见 [run]）。
+    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）：今天已复习 + 现在剩余到期
+    /// （RWKV 牌组的到期 = 合格的卡），按这个牌组的每日复习上限截断（RWKV 开了「忽略每日复习上限」的不截，见 [run]）。
     load: i64,
 }
 
@@ -627,10 +627,11 @@ pub(crate) const MAX_EXTENSION: i64 = 9999;
 /// 无状态：「这次会话里答过的卡」= 子树里 [since] 之后有作答日志的卡；会话结束什么都不用清。
 ///
 /// 请求 `"custom": {"since": 会话开始时刻, "mode": "forgotten" | "ahead" | "filter", "days"?: n, "limit"?: n,
-/// "states"?: ["new" | "learning" | "review" | "due"], "tags"?: [标签]}`：
+/// "states"?: ["new" | "learning" | "review" | "due"], "tags"?: [标签], "source"?: 出处键}`：
 /// - forgotten：最近 [days] 天（含今天）里评过「重来」的卡；
 /// - ahead：[days] 天内到期（今天之后）的复习卡，按到期先后；
-/// - filter：按卡片状态（空 = 不限）与笔记标签（空 = 不限；不分大小写，`a` 也匹配层级标签 `a::b`）。
+/// - filter：按卡片状态（空 = 不限）、笔记标签（空 = 不限；不分大小写，`a` 也匹配层级标签 `a::b`）与出处（浏览页
+///   出处视图「只复习这一作」：笔记缓存行 `source_key` 整值相等，srs.db v25；与 `src:"<键>"` 同一个键）。
 ///
 /// 出卡：会话里答过、现在到期的学习卡 → 还没答过的候选（最多 [limit] 张，按会话里已答的卡数扣）→ 20 分钟内到期
 /// 的会话学习卡。结果另带 `"custom": {"left": 剩余候选, "learn": 会话学习卡}`。
@@ -641,6 +642,8 @@ struct CustomStudy {
     limit: i64,
     states: Vec<String>,
     tags: Vec<String>,
+    /// 只出这个出处（作品）的卡；None = 不限。
+    source: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -670,7 +673,13 @@ impl CustomStudy {
                 .map(str::to_owned)
                 .collect()
         };
+        let source = match v.get("source") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(k)) if !k.is_empty() => Some(k.clone()),
+            Some(x) => return Err(format!("study: bad custom source {x}")),
+        };
         Ok(CustomStudy {
+            source,
             since: v
                 .get("since")
                 .and_then(Value::as_i64)
@@ -823,6 +832,14 @@ impl CustomPicker<'_> {
                         args.push(Sql::Text(t.clone()));
                         args.push(Sql::Text(format!("{escaped}::%")));
                     }
+                }
+                if let Some(key) = &self.cu.source {
+                    parts.push(
+                        "note_id IN (SELECT n.id FROM srs_notes_cache n WHERE n.profile_uid = srs_id(?) AND n.deleted_at IS NULL AND n.source_key = ?)"
+                            .to_owned(),
+                    );
+                    args.push(Sql::Text(self.profile.to_owned()));
+                    args.push(Sql::Text(key.clone()));
                 }
                 let cond = if parts.is_empty() {
                     "1".to_owned()
@@ -1066,11 +1083,10 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
             x.review_done += 1;
         }
     }
-    // RWKV 牌组的新卡负荷：合格的卡是「还剩多少」，随作答减少，单拿它和预算比，一天里「暂停」会自己解除。改按今天
-    // 实际要做的复习量：已复习 + 合格，不超过这个牌组今天的复习上限（开了「忽略每日复习上限」的不截）——超出上限的
-    // 部分今天本来也不会出。
-    for d in instant.keys() {
-        let Some(x) = t.get_mut(d) else { continue };
+    // 新卡负荷（FSRS 与 RWKV 同一口径）：到期数 / 合格的卡是「还剩多少」，随作答减少，单拿它和预算比，复习做到一半
+    // 「暂停」就会自己解除。改按今天实际要做的复习量：已复习 + 剩余到期，不超过这个牌组今天的复习上限（RWKV 开了
+    // 「忽略每日复习上限」的不截）——超出上限的部分今天本来也不会出。
+    for (d, x) in t.iter_mut() {
         let mut load = x.due + x.review_done;
         if let Some(node) = ctx
             .tree
@@ -2213,6 +2229,120 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// FSRS 牌组「到期较多暂停出新卡」的负荷 = 今天已复习 + 现在剩余到期，按每日复习上限截断（与 RWKV 同一口径）：
+    /// - 到期远超今天的复习上限：超出上限的部分今天不会出，不算负荷，新卡照常出（以前按全部到期数比，直接暂停）；
+    /// - 复习做到一半：剩余到期减少，但已复习的照算，负荷不降，「暂停」不会在一天里自己解除。
+    #[test]
+    fn fsrs_new_card_load_counts_reviewed_today_plus_due_capped_by_review_limit() {
+        let dir =
+            std::env::temp_dir().join(format!("ffsrs_study_fsrs_load_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let now = 1_760_000_000_000i64;
+        let today = day.index(now);
+        let mut n = 0i64;
+        // 新卡上限 1 → 预算 = 10（没有复习历史），负荷超过 20 才暂停、10~20 之间缩减。
+        for (d, review_limit) in [("CAP", 3), ("FULL", 30)] {
+            exec(
+                &core,
+                "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')",
+                vec![Sql::Text(d.into()), Sql::Text(P.into())],
+            );
+            edit(
+                &core,
+                &mut n,
+                d,
+                "limits",
+                json!({"new": 1, "review": review_limit}),
+            );
+            edit(
+                &core,
+                &mut n,
+                d,
+                "algorithm",
+                json!({"alg": "fsrs7", "auto": false}),
+            );
+        }
+        let card = |id: &str, deck: &str, queue: &str, due_day: i64, k: i64| {
+            exec(
+                &core,
+                CARD_UPSERT,
+                vec![
+                    Sql::Text(id.into()),
+                    Sql::Text(P.into()),
+                    Sql::Text(deck.into()),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(0),
+                    Sql::Text(queue.into()),
+                    Sql::Integer(due_day),
+                    Sql::Null,
+                    Sql::Real(2.0),
+                    Sql::Integer(now - 5 * DAY_MS),
+                    Sql::Text("fushi".into()),
+                    Sql::Integer(k),
+                    Sql::Integer(k),
+                    Sql::Null,
+                ],
+            );
+        };
+        for d in ["CAP", "FULL"] {
+            for k in 0..25 {
+                card(&format!("{d}-r{k:02}"), d, "review", today - 1, k);
+            }
+            for k in 0..5 {
+                card(&format!("{d}-n{k:02}"), d, "new", today, 100 + k);
+            }
+        }
+        let study = |req: &Value| -> Value {
+            let got = core.study(P, req).unwrap();
+            assert_eq!(
+                got,
+                core.read_visible(|c| oracle::study(c, P, req)).unwrap(),
+                "{req}"
+            );
+            got
+        };
+        let req = json!({"now": now, "utcOff": day.utc_offset_min, "rollover": day.rollover_hour});
+        let got = study(&req);
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // CAP：25 张到期，今天最多复习 3 张 → 负荷 3 ≤ 预算 10，新卡照常 1 张。
+        assert_eq!(
+            got["counts"]["CAP"],
+            json!([1, 0, 3, 30, 1, 1, 10, null]),
+            "{got}"
+        );
+        // FULL：25 张到期都在上限 30 以内 → 负荷 25 > 2 × 10，暂停。
+        assert_eq!(
+            got["counts"]["FULL"],
+            json!([0, 0, 25, 30, 1, 0, 10, "paused"]),
+            "{got}"
+        );
+        // FULL 复习了 10 张（排到以后）：剩余到期 15，但已复习 10 张照算 → 负荷仍是 25，照旧暂停
+        // （以前只看剩余到期 15，暂停变成缩减，一天里自己解除）。
+        let mut logs = 0i64;
+        for k in 0..10 {
+            let id = format!("FULL-r{k:02}");
+            log(&core, &mut logs, &id, now - 60_000, "review", 3, "review");
+            card(&id, "FULL", "review", today + 5, k);
+        }
+        let got = study(&req);
+        assert_eq!(
+            got["counts"]["FULL"],
+            json!([0, 0, 15, 30, 1, 0, 10, "paused"]),
+            "{got}"
+        );
+        assert_eq!(got["counts"]["CAP"][7], Value::Null, "{got}");
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 集成审查【中低】：写锁守卫释放（settle）晚于 COMMIT 可见。COMMIT 之后、守卫还持着时在读连接上排队：快照看得见
     /// 新行，触发器记下的 id 还在「未提交」里——以前读路径只重读已提交的，这一次排队按旧会话出卡（漏读一次）。
     #[test]
@@ -2457,6 +2587,36 @@ mod tests {
             (r["next"].clone(), r["after"].clone()),
             (json!("n1"), Value::Null)
         );
+        // 按出处（只复习这一作，会话从此刻开始）：笔记缓存行的出处键整值相等，可与状态叠加；别的作品、没有出处的笔记不出。
+        exec(
+            &core,
+            "UPDATE srs_notes_cache SET source_key = 'book:b1' WHERE id = srs_id('n3')",
+            vec![],
+        );
+        exec(
+            &core,
+            "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, source_key) VALUES (srs_id('r3'), srs_id(?1), 'T', 'g4', 1, 'book:b1'), (srs_id('r2'), srs_id(?1), 'T', 'g5', 1, 'book:b2')",
+            vec![Sql::Text(P.into())],
+        );
+        let r = custom(json!({"since": now, "mode": "filter", "source": "book:b1", "limit": 10}));
+        assert_eq!(
+            (
+                r["next"].clone(),
+                r["after"].clone(),
+                r["custom"]["left"].clone()
+            ),
+            (json!("r3"), json!("n3"), json!(2))
+        );
+        let r = custom(
+            json!({"since": now, "mode": "filter", "source": "book:b1", "states": ["review"]}),
+        );
+        assert_eq!(
+            (r["next"].clone(), r["after"].clone()),
+            (json!("r3"), Value::Null)
+        );
+        let r = custom(json!({"since": now, "mode": "filter", "source": "book:none"}));
+        assert_eq!(r["next"], Value::Null);
+        assert!(core.study(P, &json!({"now": now, "utcOff": 0, "rollover": 4, "deck": "R", "custom": {"since": 0, "mode": "filter", "source": ""}})).is_err());
         // 会话开始前的作答不算会话里答过。
         let r = custom(json!({"since": now, "mode": "ahead", "days": 3}));
         assert_eq!(r["next"], json!("r2"));

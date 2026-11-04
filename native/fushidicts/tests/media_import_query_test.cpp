@@ -4,8 +4,8 @@
 // back byte-for-byte. A miss (unknown media path) must return an empty buffer
 // (size==0) rather than crash or return garbage.
 //
-// Why this matters: query.cpp serves media from a memory-mapped media.bin via a
-// binary search over media.idx; an off-by-one / OOM there is an out-of-bounds
+// Why this matters: query.cpp serves media from media.bin (positional reads, not
+// mapped -- BUG-4013) via a binary search over media.idx; an off-by-one / OOM there is an out-of-bounds
 // read (HBK-AUDIT-100). The only自包含 way to exercise the real import->mmap->
 // memcpy path is to hand-roll a zip with media, import it, and assert bytes.
 //
@@ -101,14 +101,12 @@ int main() {
         ++g_fail;
       }
 
-      // Hit 2: the audio blob, fetched via the view API to exercise both paths.
-      MediaFileView view = q.get_media_file_view(r.title, "audio/hi.ogg");
-      if (view.data == nullptr || view.size != audio_ogg.size() ||
-          std::string(view.data, view.data + view.size) != audio_ogg) {
-        std::fprintf(stderr,
-                     "FAIL audio/hi.ogg view: data=%p size=%zu want %zu\n",
-                     static_cast<const void*>(view.data), view.size,
-                     audio_ogg.size());
+      // Hit 2: the audio blob. media.bin is read positionally (not mapped,
+      // BUG-4013), so a second hit exercises a fresh open + binary search.
+      std::vector<char> ogg = q.get_media_file(r.title, "audio/hi.ogg");
+      if (std::string(ogg.begin(), ogg.end()) != audio_ogg) {
+        std::fprintf(stderr, "FAIL audio/hi.ogg: got %zu bytes want %zu\n",
+                     ogg.size(), audio_ogg.size());
         ++g_fail;
       }
 
@@ -123,11 +121,6 @@ int main() {
       if (!miss.empty()) {
         std::fprintf(stderr, "FAIL miss: got %zu bytes want 0\n", miss.size());
         ++g_fail;
-      }
-      MediaFileView miss_view =
-          q.get_media_file_view(r.title, "img/missing.png");
-      if (miss_view.data != nullptr || miss_view.size != 0) {
-        fail("miss view should be {nullptr, 0}");
       }
 
       // Miss: an unknown dict_name must also return empty, not crash.
