@@ -1389,6 +1389,13 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   @override
   bool get supportsDeckReposition => true;
 
+  /// 重排写的是本机复习库（[SrsDbStore]），没有「连着的那一端此刻能不能写」这回事：
+  /// 恒为 true。**必须与 [supportsDeckReposition] 成对覆盖**——基类
+  /// [DelegatingAnkiRepository] 把探测委派给 inner（Anki 后端），不覆盖就会拿
+  /// AnkiConnect / AnkiDroid 的能力来判复习，复习下重排被误判为不支持（BUG-4122）。
+  @override
+  Future<bool> probeDeckReposition() async => true;
+
   /// 复习出卡按牌组「新卡顺序」直接读卡上的词频名次，刚挖的卡立刻就在对的位置：不需要
   /// 制卡后改写新卡位置（那样每挖一个词都要同步一批位置修改记录）。
   @override
