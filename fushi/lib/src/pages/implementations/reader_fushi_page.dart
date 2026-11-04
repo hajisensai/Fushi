@@ -124,6 +124,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
@@ -349,6 +350,12 @@ bool readerCanOwnFocus(
   required bool caretBusy,
   required bool routeIsCurrent,
 }) {
+  // 任何原因都不能夺走压在本页上面的路由（高级制卡对话框 / 设置 / 菜单）的焦点
+  // （与漫画 / 视频页同一判据）。反馈 IhPv0LqmYU / -RZluBdDUL：高级制卡对话框打开
+  // 期间查词弹窗只是停靠屏外，键盘弹出改视口 → 弹窗 JS resize 重报高度 →
+  // popupRendered；旧判据这一支只看 dictionaryShown，于是把焦点从对话框的句子
+  // 输入框抢回正文，键盘弹出即收回。词典弹窗是原生 WebView 而非路由，不受此限。
+  if (!routeIsCurrent) return false;
   switch (cause) {
     // BUG-1071 ②：词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，指针唤出它时 OS
     // 焦点落在弹窗上。弹窗可见时必须把焦点拉回正文，否则关词典键（Esc / 绑定键）永远
@@ -373,15 +380,16 @@ bool readerCanOwnFocus(
     case FocusReclaimCause.contentReady:
     case FocusReclaimCause.surfaceRemounted:
       if (lyricsMode || !contentReady) return false;
-      return !caretBusy && !dictionaryShown && routeIsCurrent;
+      return !caretBusy && !dictionaryShown;
     // 切窗回前台 / 覆盖层（设置面板等）关闭：与加载无关，歌词态同样要归位，否则
     // 关掉设置面板后歌词模式的 Space / Esc 再次失灵。正文态仍要求内容就绪。
     case FocusReclaimCause.appResumed:
     case FocusReclaimCause.overlayClosed:
       if (!lyricsMode && !contentReady) return false;
       // 光标态 / 弹窗 WebView 持焦期间不抢；上方压着别的路由（设置 / 查词大对话框）
-      // 时不抢（Never break userspace），那些覆盖层关闭时各自的返回点会归还焦点。
-      return !caretBusy && !dictionaryShown && routeIsCurrent;
+      // 时不抢（Never break userspace，见函数开头），那些覆盖层关闭时各自的返回点会
+      // 归还焦点。
+      return !caretBusy && !dictionaryShown;
   }
 }
 
@@ -3690,6 +3698,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
+    WorkProfileScope.instance.leave(this);
     _studyCoverWatch.dispose();
     _pageCurlDrag = null;
     _pageCurl?.dispose();

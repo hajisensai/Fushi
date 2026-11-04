@@ -48,6 +48,7 @@ class AniDbVideoMetadataProvider
     String clientName = '',
     int? clientVersion,
     this.language = kFallbackVideoMetadataLocale,
+    this.followOriginalLanguage = false,
     http.Client? client,
     VideoMetadataHttpClient? transport,
     AniDbTitleCatalog? titleCatalog,
@@ -105,6 +106,11 @@ class AniDbVideoMetadataProvider
   final String apiUrl;
   final String imageBaseUrl;
   final String language;
+
+  /// true = 标题按作品原语言选（资料语言留空，BUG-4056）。原语言见
+  /// [_workOriginalLanguageOf]——与产出的 [VideoMetadataWork.originalLanguage]
+  /// 同一个值，协调器的合并 / 选图语言序靠它和 TMDB 请求端对齐。
+  final bool followOriginalLanguage;
   final AniDbProviderNow _now;
   final AniDbProviderSleep _sleep;
   final _AniDbRequestGate _requestGate;
@@ -714,7 +720,10 @@ class AniDbVideoMetadataProvider
           ? anime.episodes.first.runtimeMinutes
           : null,
       contentRating: anime.restricted ? 'R18+' : null,
-      originalLanguage: 'ja',
+      // 与 [_selectTitles] 选标题同一个值（主标题 xml:lang 推出）：协调器
+      // `_localeOf` 先取它当合并 / 选图语言，写死 'ja' 会让 x-zht / x-kot 作品
+      // 的图被日语序重排，而 TMDB 请求端按 original_language=zh / ko 取回。
+      originalLanguage: _workOriginalLanguageOf(titles),
       homepage: anime.homepage ?? 'https://anidb.net/anime/${anime.animeId}',
       seasonCount: kind == VideoMetadataMediaKind.tv ? 1 : null,
       episodeCount: kind == VideoMetadataMediaKind.tv
@@ -1043,7 +1052,9 @@ class AniDbVideoMetadataProvider
   }
 
   _SelectedTitles _selectTitles(AniDbTitleRecord record) {
-    final List<String> preferredLanguages = _preferredLanguages(language);
+    final List<String> preferredLanguages = _preferredLanguages(
+      followOriginalLanguage ? _workOriginalLanguageOf(record) : language,
+    );
     AniDbTitle? selected;
     for (final String preferred in preferredLanguages) {
       selected ??= _findTitle(record.titles, preferred, 'main');
@@ -1100,6 +1111,28 @@ class AniDbVideoMetadataProvider
     }
     return null;
   }
+
+  /// AniDB 没有「原语言」字段；`type="main"` 主标题的 `xml:lang` 就是原语言的
+  /// 罗马字转写（`x-jat` = 日语、`x-zht` = 汉语、`x-kot` = 韩语、`x-tht` = 泰语），
+  /// 其它主标题语言（欧美作品常见 `en`）就是原语言本身。没有主标题 → null。
+  static String? _originalLanguageOf(AniDbTitleRecord record) {
+    final String? main = record.mainTitle?.language.trim().toLowerCase();
+    if (main == null || main.isEmpty) return null;
+    return switch (main) {
+      'x-jat' => 'ja',
+      'x-zht' => 'zh',
+      'x-kot' => 'ko',
+      'x-tht' => 'th',
+      final String other when other.startsWith('x-') => null,
+      final String other => other,
+    };
+  }
+
+  /// 作品级原语言：[_originalLanguageOf] 推得出就用它，推不出（无主标题 / 未知
+  /// `x-*` 转写）落回 'ja'——AniDB 只收动画，绝大多数是日本动画。选标题与产出的
+  /// [VideoMetadataWork.originalLanguage] 都取这一个值。
+  static String _workOriginalLanguageOf(AniDbTitleRecord record) =>
+      _originalLanguageOf(record) ?? 'ja';
 
   List<String> _preferredLanguages(String locale) {
     final String normalized = locale.trim().replaceAll('_', '-').toLowerCase();

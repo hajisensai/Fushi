@@ -7,9 +7,9 @@ const optionsHtml = fs.readFileSync(require.resolve('./options.html'), 'utf8');
 const optionsJs = fs.readFileSync(require.resolve('./options.js'), 'utf8');
 
 // asb 移植：视频页快捷键判定矩阵。decide 是纯函数：ev={key,code,ctrl,shift,alt,editable}，
-// ctx={enabled,hasVideo,hasTrack}，返回 {action} 或 null（null = 放行给站点）。
+// ctx={enabled,hasVideo,hasTrack,cueShowing}，返回 {action} 或 null（null = 放行给站点）。
 
-const CTX = { enabled: true, hasVideo: true, hasTrack: true };
+const CTX = { enabled: true, hasVideo: true, hasTrack: true, cueShowing: true };
 const shortcutSettingIds = [
   'videoShortcutPrevCue',
   'videoShortcutNextCue',
@@ -45,7 +45,12 @@ function fakeVideo(r = rect(0, 0, 1280, 720), extra = {}) {
 }
 
 // 运行时装配与 manifest 一致：video-target.js 先装（提供 fushiControlledVideo），再装 video-shortcuts.js。
-function createRuntime(initialSettings = {}, { hasTrack = true, seekBy = true, videos = null } = {}) {
+// showing / hidden 模拟两个持有者：subtitle-panel.js 的 fushiSubtitleStudyState().showing 与
+// content.js 的 fushiSubtitleManuallyHidden()（Shift+H）。缺省「有轨就在出字、未隐藏」。
+function createRuntime(initialSettings = {}, {
+  hasTrack = true, seekBy = true, videos = null, showing = hasTrack, hidden = false,
+} = {}) {
+  const subtitle = { showing, hidden };
   const source = fs.readFileSync(require.resolve('./video-shortcuts.js'), 'utf8');
   const targetSource = fs.readFileSync(require.resolve('./video-target.js'), 'utf8');
   let keydown;
@@ -78,6 +83,8 @@ function createRuntime(initialSettings = {}, { hasTrack = true, seekBy = true, v
     innerHeight: 720,
     fushiEpisodeCues: hasTrack ? { 'episode|ja': [{ start: 0, end: 1, text: '字幕' }] } : {},
     fushiVideoKey: () => 'episode',
+    fushiSubtitleStudyState: () => ({ showing: subtitle.showing, any: hasTrack, lang: null, external: false }),
+    fushiSubtitleManuallyHidden: () => subtitle.hidden,
     fushiSubtitleShortcut(action) {
       actions.push(action);
       return true;
@@ -144,6 +151,9 @@ function createRuntime(initialSettings = {}, { hasTrack = true, seekBy = true, v
     video,
     videos: pageVideos,
     requestedKeys,
+    setShowing(on) { subtitle.showing = on; },
+    setHidden(on) { subtitle.hidden = on; },
+    removeStudyState() { delete fakeWindow.fushiSubtitleStudyState; },
     keyUp(overrides) { return fire(keyup, overrides); },
     blur() { blur(); },
     hide() { doc.visibilityState = 'hidden'; visibility(); },
@@ -350,6 +360,23 @@ test('←/→/↑：无字幕轨一律放行（站点自己的 5s 快进/音量�
   assert.strictEqual(decide(ev({ key: 'ArrowLeft' }), noTrack), null);
   assert.strictEqual(decide(ev({ key: 'ArrowRight' }), noTrack), null);
   assert.strictEqual(decide(ev({ key: 'ArrowUp' }), noTrack), null);
+});
+
+test('BUG-4053 ←/→：有轨但 Fushi 字幕没在出画时放行给站点，其它有轨动作不受影响', () => {
+  const offScreen = { ...CTX, cueShowing: false };
+  assert.strictEqual(decide(ev({ key: 'ArrowLeft', code: 'ArrowLeft' }), offScreen), null);
+  assert.strictEqual(decide(ev({ key: 'ArrowRight', code: 'ArrowRight' }), offScreen), null);
+  // 改了键也一样：门跟着动作走，不跟着键走。
+  const combos = require('./video-shortcuts.js').resolveCombos({ 'prev-cue': 'KeyJ' });
+  assert.strictEqual(decide(ev({ code: 'KeyJ' }), { ...offScreen, combos }), null);
+  assert.deepStrictEqual(decide(ev({ code: 'KeyJ' }), { ...CTX, combos }), { action: 'prev-cue' });
+  // 只收紧上一句 / 下一句：重播、侧边栏、偏移、复制仍按「有轨」判。
+  assert.deepStrictEqual(decide(ev({ key: 'ArrowUp' }), offScreen), { action: 'replay-cue' });
+  assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyS' }), offScreen), { action: 'toggle-panel' });
+  assert.deepStrictEqual(decide(ev({ ctrl: true, shift: true, key: 'ArrowLeft' }), offScreen), { action: 'offset-minus' });
+  assert.deepStrictEqual(decide(ev({ ctrl: true, shift: true, code: 'KeyZ' }), offScreen), { action: 'copy-cue' });
+  // 按秒快退 / 快进与字幕无关，照常接管。
+  assert.deepStrictEqual(decide(ev({ shift: true, key: 'ArrowLeft', code: 'ArrowLeft' }), offScreen), { action: 'seek-back' });
 });
 
 test('Shift+S：仅有 Fushi 字幕轨时切换面板；旧 Shift+P/O/F 不再接管', () => {
@@ -572,6 +599,37 @@ test('formatCombo：给人看的键名', () => {
   assert.strictEqual(VS.formatCombo('Ctrl+Shift+BracketLeft'), 'Ctrl+Shift+[');
   assert.strictEqual(VS.formatCombo('Alt+Digit3'), 'Alt+3');
   assert.strictEqual(VS.formatCombo('bad+'), '');
+});
+
+test('BUG-4053 runtime：有轨但 Fushi 字幕没出画（showing=false）时 ←/→ 原样放给站点', () => {
+  const rt = createRuntime({}, { hasTrack: true, showing: false });
+  assert.deepStrictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }), { prevented: false, stopped: false });
+  assert.deepStrictEqual(rt.key({ key: 'ArrowRight', code: 'ArrowRight' }), { prevented: false, stopped: false });
+  assert.deepStrictEqual(rt.actions, [], '站点轨被预取进 store 不等于在出字，不能抢键');
+  // 用户打开 Fushi 字幕后无需刷新即接管（每次按键现读状态）。
+  rt.setShowing(true);
+  assert.deepStrictEqual(rt.key({ key: 'ArrowRight', code: 'ArrowRight' }), { prevented: true, stopped: true });
+  assert.deepStrictEqual(rt.actions, ['next-cue']);
+});
+
+test('BUG-4053 runtime：Shift+H 隐藏字幕也算关闭，←/→ 回到站点；取消隐藏后恢复接管', () => {
+  const rt = createRuntime({}, { hasTrack: true, showing: true });
+  assert.strictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }).prevented, true);
+  rt.setHidden(true);
+  assert.deepStrictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }), { prevented: false, stopped: false });
+  assert.deepStrictEqual(rt.key({ key: 'ArrowRight', code: 'ArrowRight' }), { prevented: false, stopped: false });
+  // 隐藏只影响上一句 / 下一句，重播本句仍接管。
+  assert.strictEqual(rt.key({ key: 'ArrowUp', code: 'ArrowUp' }).prevented, true);
+  rt.setHidden(false);
+  assert.strictEqual(rt.key({ key: 'ArrowRight', code: 'ArrowRight' }).prevented, true);
+  assert.deepStrictEqual(rt.actions, ['prev-cue', 'replay-cue', 'next-cue']);
+});
+
+test('BUG-4053 runtime：面板脚本缺席（无 fushiSubtitleStudyState）一律当没在出字', () => {
+  const rt = createRuntime({}, { hasTrack: true, showing: true });
+  rt.removeStudyState();
+  assert.deepStrictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }), { prevented: false, stopped: false });
+  assert.deepStrictEqual(rt.actions, []);
 });
 
 test('runtime：videoShortcutKeys 初读与热更新都生效（改完不必刷新页面）', () => {

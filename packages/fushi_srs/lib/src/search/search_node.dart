@@ -171,6 +171,43 @@ enum SrsSearchProperty {
 
   /// `d`：FSRS 难度，0–1（Anki 口径：(内核难度 - 1) / 9）。
   difficulty,
+
+  /// `r`：此刻的 FSRS 可提取度，0–1（小数；只在浏览会话里有值，见 native/fushi_fsrs/src/store/browse.rs）。
+  retrievability,
+}
+
+/// `rated:N` / `rated:N:E`：最近 N 天内（含今天）作答过（[rating] 非 null 时还要那次评分为它，1..4）。
+/// 只在浏览会话里求值（内核按有效复习投影换成卡 id 集合）。
+final class SrsSearchRated extends SrsSearchNode {
+  const SrsSearchRated(this.days, [this.rating]);
+  final int days;
+  final int? rating;
+}
+
+/// `is:emptyfield`：笔记的排序字段（第一个字段）去 HTML、trim 后为空。只在浏览会话里求值。
+final class SrsSearchEmptyField extends SrsSearchNode {
+  const SrsSearchEmptyField();
+}
+
+/// `is:dupe`：同笔记类型下首字段查重规范形相同（且非空）的笔记有两条以上。只在浏览会话里求值。
+final class SrsSearchDuplicate extends SrsSearchNode {
+  const SrsSearchDuplicate();
+}
+
+/// `has:` 的媒体种类。
+enum SrsSearchMedia { audio, image }
+
+/// `has:audio` / `has:image`：笔记任一字段原文含 `[sound:` / `<img`。
+final class SrsSearchHasMedia extends SrsSearchNode {
+  const SrsSearchHasMedia(this.media);
+  final SrsSearchMedia media;
+}
+
+/// `src:none` / `src:<kind>` / `src:<出处键>`（值里有 `:` 就是出处键，整值相等）：笔记出处。[value] 已解掉全部
+/// 转义（含通配转义：这里没有通配）。只在浏览会话里求值。
+final class SrsSearchSource extends SrsSearchNode {
+  const SrsSearchSource(this.value);
+  final String value;
 }
 
 /// `prop:` 的比较符。

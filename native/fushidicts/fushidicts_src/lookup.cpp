@@ -307,8 +307,10 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // dictionary with a genuinely distinct inflected entry keeps it (different
   // blob).
   auto same_blob = [](const GlossaryEntry& x, const GlossaryEntry& y) {
-    return x.compressed_data == y.compressed_data && x.compressed_size == y.compressed_size &&
-           x.dict_name == y.dict_name;
+    // 按 blob 身份（来源文件 + 偏移）判等，不比指针：32 位窗口映射下同一 blob 可能
+    // 落在不同窗口（BUG-4013）；64 位整份映射时两者等价。
+    return x.compressed_source == y.compressed_source && x.compressed_offset == y.compressed_offset &&
+           x.compressed_size == y.compressed_size && x.dict_name == y.dict_name;
   };
   for (auto& r : results) {
     // Only an untransformed direct expression hit can be a redirect alias.

@@ -63,15 +63,27 @@ class VideoOrganizationPlan {
     required this.remoteSourceRoot,
     required this.kind,
     required List<VideoOrganizationFilePlan> files,
+    this.standaloneFeatureTitle,
   }) : files = List<VideoOrganizationFilePlan>.unmodifiable(files);
 
   final String remoteSourceRoot;
 
-  /// 实际采用的整理形态。通常等于请求的 kind；请求为 movie、但种子是多集
-  /// 合集包（[looksLikeEpisodicPack]）时改判为 episodic（BUG-2760）——调用方
-  /// 据此把任务改成剧集，导入才会建合集、逐集命名。
+  /// 实际采用的整理形态。通常等于请求的 kind；两个方向的改判：
+  /// * 请求为 movie、但种子是多集合集包（[looksLikeEpisodicPack]）时改判为
+  ///   episodic（BUG-2760）——调用方据此把任务改成剧集，导入才会建合集、逐集命名；
+  /// * 请求为 episodic、但种子里只有**一部无集号的正片**（剧集身份下载到了单文件
+  ///   剧场版，9Fpg5zXriP）时改判为 movie，见 [standaloneFeatureTitle]。
   final VideoOrganizationKind kind;
   final List<VideoOrganizationFilePlan> files;
+
+  /// 剧集请求改判为单部正片时，按**文件本身**取的作品名（[standaloneFeatureTitleOf]）；
+  /// 其余情况为 null。
+  ///
+  /// 任务标题属于剧集身份（「Hibike! Euphonium (2015)」），拿它给剧场版命名会把
+  /// 「誓いのフィナーレ」改名成 TV 版，媒体库按文件名自动识别时只会再认回 TV 版。
+  /// 目标路径按这个名字、无年份排布；调用方必须把任务的 title / year 同步改成它，
+  /// 崩溃重放时以电影请求重算才会得到同一条路径。
+  final String? standaloneFeatureTitle;
 }
 
 class VideoOrganizationResult {
@@ -164,10 +176,38 @@ class VideoDownloadOrganizer {
         classifyExtras: false,
       );
     }
-    // 两种口径都一集认不出，才是真的与「剧集」判定不符（比如误标 kind）：全
-    // Extras 的静默入库只会把问题藏起来，仍然显式失败。
+    // 两种口径都一集认不出：种子与「剧集」判定不符。
     if (kind == VideoOrganizationKind.episodic &&
         pass.recognizedEpisodes == 0) {
+      // 剧集身份下载到了单部正片（9Fpg5zXriP：TV 版身份配上单文件剧场版
+      // 「Chikai no Finale」）：与 BUG-2760 对称，文件结构是比身份 kind 更直接
+      // 的证据，按电影整理。这部正片不是该剧的某一集，也不是它的 Season 00——
+      // 剧场版在 AniDB / TMDB 都是独立条目，硬编一个 S00E01 只会把它绑错作品。
+      final TorrentFileEntry? feature = _singleStandaloneFeature(
+        videoFiles,
+        sharedRoot: sharedRoot,
+      );
+      if (feature != null) {
+        final String featureTitle = standaloneFeatureTitleOf(feature.name);
+        final VideoOrganizationPlan moviePlan = plan(
+          VideoOrganizationRequest(
+            torrentId: request.torrentId,
+            title: featureTitle,
+            kind: VideoOrganizationKind.movie,
+            sourceRoot: request.sourceRoot,
+            pathMapping: request.pathMapping,
+          ),
+          files,
+        );
+        return VideoOrganizationPlan(
+          remoteSourceRoot: moviePlan.remoteSourceRoot,
+          kind: VideoOrganizationKind.movie,
+          files: moviePlan.files,
+          standaloneFeatureTitle: featureTitle,
+        );
+      }
+      // 多个无集号的正片（或全是特典）：判不出哪个是作品、是不是电影，全
+      // Extras 的静默入库只会把问题藏起来，仍然显式失败。
       throw FormatException(
         'unable to determine episode number: ${videoFiles.first.name}',
       );
@@ -665,6 +705,30 @@ class VideoDownloadOrganizer {
     '菜单',
   };
 
+  /// 剧集请求两趟都认不出集号时，种子里那**唯一一部**正片（9Fpg5zXriP）。
+  ///
+  /// 判据保守：除发布组标出的特典外只剩一个视频，且它是全种子最大的视频（电影
+  /// 整理抬正片按体量取，两边必须指向同一个文件，否则改判后重放会排出另一套
+  /// 路径）。多个无集号视频说不清谁是正片、是不是剧集，返回 null 让调用方显式
+  /// 失败。调用前提是所有视频都已解不出集号（[plan] 的两趟口径）。
+  static TorrentFileEntry? _singleStandaloneFeature(
+    List<TorrentFileEntry> videoFiles, {
+    required String? sharedRoot,
+  }) {
+    final List<TorrentFileEntry> features = videoFiles
+        .where(
+          (TorrentFileEntry file) =>
+              !_isExplicitExtra(file.name, sharedRoot: sharedRoot),
+        )
+        .toList(growable: false);
+    if (features.length != 1) return null;
+    final TorrentFileEntry feature = features.single;
+    for (final TorrentFileEntry file in videoFiles) {
+      if (file.size > feature.size) return null;
+    }
+    return feature;
+  }
+
   /// 并列正片判据（BUG-2007，只在 movie 形态种子里用）：
   /// * 不在发布组标记的特典目录、文件名也不是显式附件（NCOP/PV 等）；
   /// * 体量 ≥ 最大正片的 1/4——菜单/CM/预告即使躺在根目录也够不着这个门；
@@ -739,6 +803,24 @@ class VideoDownloadOrganizer {
       '$stem$extension',
     ];
   }
+}
+
+/// 单部正片按文件本身取的作品名（9Fpg5zXriP，见
+/// [VideoOrganizationPlan.standaloneFeatureTitle]）。
+///
+/// 只剥发布组的方括号标签（`[FFF-Kantai]` `[BD][1080p-FLAC]` `【...】`），不走
+/// 文件名解析器：`parseVideoFilename` / `FilenameParser` 都把 ` - ` 之后当集标题
+/// 丢掉，「Hibike! Euphonium - Chikai no Finale」会被归约成 TV 版的名字。剥完为空
+/// （整个名字都在括号里）时退回原文件名。
+String standaloneFeatureTitleOf(String relativePath) {
+  final String stem = p.basenameWithoutExtension(
+    VideoDownloadOrganizer._segments(relativePath).last,
+  );
+  final String stripped = stem
+      .replaceAll(RegExp(r'\[[^\]]*\]|【[^】]*】'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(RegExp(r'^[\s\-_.]+|[\s\-_.]+$'), '');
+  return stripped.isEmpty ? stem : stripped;
 }
 
 /// 整理器眼里的「视频文件」（扩展名判据与 [VideoDownloadOrganizer.plan] 同一份）。

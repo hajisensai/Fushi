@@ -404,3 +404,30 @@ Pure logic and tests: `widget_progress.dart`, `test/platform/widget_snapshot_tes
   is unaffected (verified on the emulator).
 - Deep links are sent as explicit intents to `MainActivity` (no manifest intent-filter needed for
   `fushi://widget/...`).
+
+## Apple (WidgetKit)
+
+iOS / macOS widgets render **the same snapshot** — there is no second schema,
+deep-link grammar or label set:
+
+- Dart: `WidgetSnapshotPublisher.platformSupported` is Android **or** iOS / macOS
+  (`widgetSnapshotPlatformSupported()`); same `WidgetSnapshotSource`, same
+  `updateSnapshot(json)` call on `app.fushi.reader/widgets`.
+- Native (main app process, `fushi/apple/HomeWidgets/FushiHomeWidgets.swift`,
+  `FushiWidgetSnapshotSink`): every `cover` that is a local file is downscaled to a
+  512 px JPEG under `<App Group>/home_widgets/covers/` and rewritten to that
+  relative path (the extension cannot read the app sandbox); remote / missing
+  covers become `""`. The JSON is written atomically to
+  `home_widgets/snapshot.json`, unused covers are pruned, timelines reloaded.
+- Extension (`Shared/FushiWidgetSnapshot.swift`): lenient decoder of the fields
+  it renders (v must equal `kWidgetSnapshotVersion`). Labels come from
+  `labels` (`kWidgetLabelKeys`, including the Apple-only `continueEmpty`,
+  `streakDays`, `lookupHint`, `lookupCamera`, `lookupClipboard`). Taps use
+  `fushi://widget/...` (`FushiLinks`), plus `fushi://shortcut/lookup`.
+- `WidgetLink` has two Apple-driven actions: `camera_lookup` and
+  `clipboard_lookup` (dictionary module gated).
+- Guard: `test/platform/home_widgets/apple_widget_contract_test.dart` reads the
+  Swift sources and checks decoded keys / labels / hard-coded links against Dart.
+- Live Activities (iOS) / the macOS menu-bar player are separate from the
+  snapshot: `lib/src/platform/home_widgets/` (`LiveActivityController`, serial
+  sync per activity kind) over `app.fushi.reader/home_widgets`.

@@ -277,6 +277,21 @@ class VideoSourceScrapeCoordinator
   /// 本趟刮削的有效资料语言（来源级覆盖 > 全局）。
   String get _locale => _scopedLocale ?? config.locale;
 
+  /// 本趟是否按作品原语言刮（全局资料语言留空且本来源没有显式覆盖，BUG-4056）。
+  /// 来源级覆盖一律走 [_scopedLocale]，所以「没有作用域 locale」就是跟随全局。
+  bool get _followsOriginal =>
+      _scopedLocale == null && config.followsWorkOriginalLanguage;
+
+  /// 合并 / 选图用的资料语言：跟随原语言时取作品原语言（主源给的优先，其次
+  /// TMDB 补充源的——MAL 不给原语言），与 provider 请求端按原语言取回的文字和
+  /// 图片同源；推不出原语言或不跟随时就是 [_locale]。
+  String _localeOf(VideoMetadataWork? work, [VideoMetadataWork? supplement]) {
+    if (!_followsOriginal) return _locale;
+    return VideoMetadataLanguages.primarySubtagOf(work?.originalLanguage) ??
+        VideoMetadataLanguages.primarySubtagOf(supplement?.originalLanguage) ??
+        _locale;
+  }
+
   static VideoMetadataProviderRegistry _createRegistry(
     VideoSourceScrapeGlobalConfig config, {
     String? locale,
@@ -837,7 +852,9 @@ class VideoSourceScrapeCoordinator
     // 来源级资料语言与全局不同 → 这一趟用一套自己的 provider（TMDB 的
     // `language` 只能在构造期给），finally 里关掉。注入进来的 registry 不属于
     // 协调器，永远只读不关（见 [_ownsRegistry]）——这里关的是本方法自己建的那套。
-    if (settings.locale != config.locale) {
+    if (settings.locale != config.locale ||
+        settings.followsOriginalLanguage !=
+            config.followsWorkOriginalLanguage) {
       _scopedLocale = settings.locale;
       _scopedRegistry = _localeRegistryFactory(settings.locale);
     }
@@ -2035,7 +2052,7 @@ class VideoSourceScrapeCoordinator
       metadata = supplementVideoMetadata(
         metadata,
         tmdb.metadata,
-        preferredLanguage: _locale,
+        preferredLanguage: _localeOf(metadata, tmdb.metadata),
         supplementPart: await _tmdbSupplementPart(
           resolvedLookup,
           tmdb.metadata,
@@ -2048,7 +2065,7 @@ class VideoSourceScrapeCoordinator
           metadata,
           tmdb.metadata,
           expansion.tmdbSlices,
-          preferredLanguage: _locale,
+          preferredLanguage: _localeOf(metadata, tmdb.metadata),
         );
       }
       // Shoko `MatchAnidbToTmdbEpisodes`：映射表没给切片的季，逐集按标题 +
@@ -2081,7 +2098,7 @@ class VideoSourceScrapeCoordinator
               metadata,
               tmdb.metadata,
               skipSeasons: sliced,
-              preferredLanguage: _locale,
+              preferredLanguage: _localeOf(metadata, tmdb.metadata),
               candidateAliases: aliases,
             );
         metadata = enriched.work;
@@ -2194,7 +2211,7 @@ class VideoSourceScrapeCoordinator
           specialSources: sources.specials,
           slices: await _cardSlices(metadata, expansion, resolvedLookup),
           candidateAliases: tmdbEpisodeAliases,
-          preferredLanguage: _locale,
+          preferredLanguage: _localeOf(metadata, tmdbShow),
           reservedCardKeys: reservedCardKeys,
         );
         metadata = linked.work;
@@ -4542,7 +4559,7 @@ class VideoSourceScrapeCoordinator
       // include_image_language 同源——两端必须一致，否则请求回来的图会在选择
       // 阶段被另一套语言序重新排一遍。原语（Shoko `Main` 槽）由 provider 另拉一
       // 次补进候选池，这里同样插进语言序。
-      languageOrder: VideoMetadataLanguages(_locale).imageLanguages,
+      languageOrder: VideoMetadataLanguages(_localeOf(metadata)).imageLanguages,
       mainLanguage: VideoMetadataLanguages.primarySubtagOf(
         metadata.originalLanguage,
       ),
@@ -5775,6 +5792,7 @@ class _EffectiveSourceSettings {
     required this.enabled,
     required this.provider,
     required this.locale,
+    required this.followsOriginalLanguage,
     required this.writeNfo,
     required this.writeImages,
     required this.nfoPolicy,
@@ -5801,6 +5819,10 @@ class _EffectiveSourceSettings {
         final String value when value.isNotEmpty => value,
         _ => config.locale,
       },
+      // 来源级显式覆盖 = 用户点名要这种语言，不再跟随作品原语言（BUG-4056）。
+      followsOriginalLanguage:
+          (row?.metadataLocale?.trim() ?? '').isEmpty &&
+          config.followsWorkOriginalLanguage,
       writeNfo: row?.writeNfo ?? true,
       writeImages: row?.writeImages ?? true,
       nfoPolicy: _policy(row?.nfoPolicy),
@@ -5815,6 +5837,9 @@ class _EffectiveSourceSettings {
 
   /// 本来源刮削用的资料语言（BCP-47）；已经过「空 → 全局」归一。
   final String locale;
+
+  /// 本来源是否按作品原语言刮（见 [VideoSourceScrapeGlobalConfig.followsWorkOriginalLanguage]）。
+  final bool followsOriginalLanguage;
   final bool writeNfo;
   final bool writeImages;
   final SidecarWritePolicy nfoPolicy;

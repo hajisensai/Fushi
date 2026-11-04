@@ -26,6 +26,8 @@ class AiAgentSessionSummary {
     required this.totalTokens,
     required this.createdAt,
     required this.updatedAt,
+    this.originPeerId = '',
+    this.originDeviceName,
   });
 
   final String id;
@@ -39,6 +41,26 @@ class AiAgentSessionSummary {
   final int totalTokens;
   final int createdAt;
   final int updatedAt;
+
+  /// 远端会话由哪台已配对设备发起（`fushi_paired_peers.peer_id`）；空串 = 本机发起。
+  final String originPeerId;
+
+  /// [originPeerId] 那台设备的展示名（调用方按配对表补上，[withOriginDeviceName]）；
+  /// null = 本机会话或认不出名字。库里不存名字：对端改名 / 重新配对后跟着变。
+  final String? originDeviceName;
+
+  AiAgentSessionSummary withOriginDeviceName(String? name) =>
+      AiAgentSessionSummary(
+        id: id,
+        title: title,
+        scene: scene,
+        profileUid: profileUid,
+        totalTokens: totalTokens,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        originPeerId: originPeerId,
+        originDeviceName: name,
+      );
 }
 
 mixin _FushiDbAiAgent
@@ -56,6 +78,12 @@ mixin _FushiDbAiAgent
       await customStatement(stmt);
     }
   }
+
+  /// v144：已配对设备列自己发起的远端会话（按发起设备过滤、按更新时刻倒序）。
+  Future<void> _ensureAiAgentSessionOriginIndex() => customStatement(
+    'CREATE INDEX IF NOT EXISTS idx_ai_agent_sessions_origin_updated '
+    'ON ai_agent_sessions (origin_peer_id, updated_at)',
+  );
 
   /// v141：会话列表按 Profile 过滤、按更新时刻倒序。不放进 [_ensureAiAgentIndexes]：
   /// 那个在 v136 步就调，彼时存量表还没有 `profile_uid` 列。
@@ -100,6 +128,7 @@ mixin _FushiDbAiAgent
   /// 所属 Profile（[profileUid]，省略 = 当前激活 Profile）。之后同 id 重存只更新
   /// 场景、对话 JSON、用量与 [updatedAt]——**标题、归属、创建时刻不动**，用户改过的
   /// 标题不会被下一轮对话冲掉，会话也不会因为中途切了 Profile 而改换门庭。
+  /// [originPeerId]（远端会话的发起设备）同样只在首次落库时写。
   Future<void> saveAiAgentSessionSnapshot({
     required String id,
     required String title,
@@ -109,6 +138,7 @@ mixin _FushiDbAiAgent
     required int createdAt,
     required int updatedAt,
     String? profileUid,
+    String originPeerId = '',
   }) async {
     final String owner = profileUid ?? await resolveActiveProfileUid();
     await into(aiAgentSessions).insert(
@@ -121,6 +151,7 @@ mixin _FushiDbAiAgent
         createdAt: createdAt,
         updatedAt: updatedAt,
         profileUid: Value<String>(owner),
+        originPeerId: Value<String>(originPeerId),
       ),
       onConflict: DoUpdate(
         (AiAgentSessions old) => AiAgentSessionsCompanion(
@@ -140,11 +171,17 @@ mixin _FushiDbAiAgent
   /// 会话列表（最近更新的在前），只投影元数据列。[profileUid] 非空时只列这个
   /// Profile 的会话与归属不明（空串）的会话；null = 全部 Profile（操作记录页配标题用）。
   /// [excludeScenes]：不列这些场景的会话（在 SQL 里过滤，[limit] 按过滤后计）。
+  /// [originPeerId] 非空时只列这台已配对设备发起的会话（互联 host 回给那台设备的
+  /// 历史列表，不看 Profile）；空串不是合法过滤值——本机会话不按它列。
   Future<List<AiAgentSessionSummary>> listAiAgentSessionSummaries({
     String? profileUid,
+    String? originPeerId,
     Set<String> excludeScenes = const <String>{},
     int limit = 200,
   }) async {
+    if (originPeerId != null && originPeerId.isEmpty) {
+      throw ArgumentError.value(originPeerId, 'originPeerId', 'empty');
+    }
     final $AiAgentSessionsTable t = aiAgentSessions;
     final JoinedSelectStatement<$AiAgentSessionsTable, AiAgentSessionRow>
     query = selectOnly(t)
@@ -156,7 +193,11 @@ mixin _FushiDbAiAgent
         t.totalTokens,
         t.createdAt,
         t.updatedAt,
+        t.originPeerId,
       ]);
+    if (originPeerId != null) {
+      query.where(t.originPeerId.equals(originPeerId));
+    }
     if (profileUid != null) {
       query.where(t.profileUid.isIn(<String>{profileUid, ''}));
     }
@@ -180,6 +221,7 @@ mixin _FushiDbAiAgent
           totalTokens: row.read(t.totalTokens)!,
           createdAt: row.read(t.createdAt)!,
           updatedAt: row.read(t.updatedAt)!,
+          originPeerId: row.read(t.originPeerId)!,
         ),
     ];
   }

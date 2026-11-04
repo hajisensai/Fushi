@@ -305,14 +305,15 @@ void main() {
       reason: '来源分类开关应无条件显示',
     );
     // 只改上面的计数不够：下次谁吞掉一个开关又加一个别的，计数照样是 4。相邻几个
-    // 开关本来就是具名断言，这个（BUG-2396 起的「制卡所在字符数」）补齐第四个。
+    // 开关本来就是具名断言，这个（BUG-2396 起的「制卡位置」，反馈 MhQHXQI-sB 起改写
+    // MiscInfo、行搬进「卡片内容」分组）补齐第四个。
     expect(
       find.widgetWithText(
         AdaptiveSettingsSwitchRow,
-        'Auto-add mining position to tags',
+        'Write mining position to MiscInfo',
       ),
       findsOneWidget,
-      reason: '「制卡所在字符数」开关应无条件显示',
+      reason: '「制卡位置写入 MiscInfo」开关应无条件显示',
     );
     final Finder autoAddRow = find.widgetWithText(
       AdaptiveSettingsSwitchRow,

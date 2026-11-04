@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_single_menu_gate.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
@@ -25,6 +26,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
@@ -1031,6 +1033,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     with WidgetsBindingObserver, WindowListener {
   InAppWebViewController? _controller;
 
+  /// 右键菜单的唯一在途句柄：新菜单开之前先关旧的；WebView 里的鼠标按下经
+  /// `onMangaDismissMenu` 回报时关掉它（反馈 U_8sCB0h_f：macOS 上点 WebView 的事件
+  /// 到不了菜单遮罩，菜单关不掉、每次右键再叠一层）。
+  late final FushiSingleMenuGate _contextMenuGate = FushiSingleMenuGate(
+    routeName: 'manga-reader-context-menu',
+    onOpenChanged: _syncJsContextMenuOpen,
+  );
+
+  /// 把菜单在场状态告诉页内 JS（它据此决定 pointerdown 要不要回报）。
+  void _syncJsContextMenuOpen(bool open) {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    unawaited(
+      controller.evaluateJavascript(
+        source: 'window.__fushiMangaMenuOpen=$open;',
+      ),
+    );
+  }
+
   @override
   ModuleId? get popupDockModule => ModuleId.manga;
 
@@ -1639,11 +1660,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     await ref
         .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(
+        .enterWorkSession(
+          owner: this,
           bookUid: widget.bookKey,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.manga,
-          restoreFallback: true,
         );
   }
 
@@ -1702,6 +1723,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
+    WorkProfileScope.instance.leave(this);
     _pageCurlDrag = null;
     _pageCurl?.dispose();
     _pageCurl = null;
@@ -6334,57 +6357,61 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final Offset anchor = overlay.globalToLocal(Offset(x, y));
-    final _MangaContextAction? action =
-        await showFushiMenu<_MangaContextAction>(
-          context: context,
-          position: RelativeRect.fromRect(
-            Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-            Offset.zero & overlay.size,
-          ),
-          items: <PopupMenuEntry<_MangaContextAction>>[
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.previous,
-              child: Text(t.manga_previous_page),
+    final _MangaContextAction? action = await _contextMenuGate
+        .show<_MangaContextAction>(
+          context,
+          (RouteSettings settings) => showFushiMenu<_MangaContextAction>(
+            context: context,
+            routeSettings: settings,
+            position: RelativeRect.fromRect(
+              Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+              Offset.zero & overlay.size,
             ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.next,
-              child: Text(t.manga_next_page),
-            ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.jump,
-              child: Text(t.manga_jump_to_page),
-            ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.direction,
-              child: Text(
-                _spreadDirection == 'rtl'
-                    ? t.manga_direction_ltr
-                    : t.manga_direction_rtl,
-              ),
-            ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.zoomIn,
-              enabled: _zoomPercent < kMangaZoomMaxPercent,
-              child: Text('${t.manga_zoom} + ($_zoomPercent%)'),
-            ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.zoomOut,
-              enabled: _zoomPercent > kMangaZoomMinPercent,
-              child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
-            ),
-            // 图片动作按平台列（与长按图片面板同一判据 [imageActionsFor]）。
-            for (final ImageAction imageAction in imageActionsFor(
-              defaultTargetPlatformForImageSave(),
-            ))
+            items: <PopupMenuEntry<_MangaContextAction>>[
               PopupMenuItem<_MangaContextAction>(
-                value: _MangaContextAction.forImageAction(imageAction),
-                child: Text(imageActionLabel(imageAction)),
+                value: _MangaContextAction.previous,
+                child: Text(t.manga_previous_page),
               ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.setCover,
-              child: Text(t.manga_page_set_cover),
-            ),
-          ],
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.next,
+                child: Text(t.manga_next_page),
+              ),
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.jump,
+                child: Text(t.manga_jump_to_page),
+              ),
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.direction,
+                child: Text(
+                  _spreadDirection == 'rtl'
+                      ? t.manga_direction_ltr
+                      : t.manga_direction_rtl,
+                ),
+              ),
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.zoomIn,
+                enabled: _zoomPercent < kMangaZoomMaxPercent,
+                child: Text('${t.manga_zoom} + ($_zoomPercent%)'),
+              ),
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.zoomOut,
+                enabled: _zoomPercent > kMangaZoomMinPercent,
+                child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
+              ),
+              // 图片动作按平台列（与长按图片面板同一判据 [imageActionsFor]）。
+              for (final ImageAction imageAction in imageActionsFor(
+                defaultTargetPlatformForImageSave(),
+              ))
+                PopupMenuItem<_MangaContextAction>(
+                  value: _MangaContextAction.forImageAction(imageAction),
+                  child: Text(imageActionLabel(imageAction)),
+                ),
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.setCover,
+                child: Text(t.manga_page_set_cover),
+              ),
+            ],
+          ),
         );
     if (!mounted || action == null) return;
     switch (action) {
@@ -7859,6 +7886,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             }
             unawaited(_showReaderContextMenu(args[0] as String));
           },
+        );
+        // 菜单在场时 WebView 里的鼠标按下（JS 侧只在 __fushiMangaMenuOpen 时回报）：
+        // macOS 上点击被平台视图拿走、到不了菜单遮罩，由这里关菜单。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaDismissMenu',
+          callback: (List<dynamic> _) => _contextMenuGate.dismiss(),
         );
         // 触屏长按页图：与右键菜单同一条 JS 桥，但只在触摸主触点上触发（鼠标
         // 仍走上面的右键菜单）。

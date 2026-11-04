@@ -47,11 +47,22 @@ void main() {
     // 下限的目标编译（`pod install` 未必报错，坏在链接/运行期）。
     const double xcode27MinimumDeploymentTarget = 15.0;
     const String ortMinimumDeploymentTarget = '15.1';
-    final List<double> runnerTargets =
-        RegExp(r'IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);')
-            .allMatches(project)
-            .map((RegExpMatch match) => double.parse(match.group(1)!))
-            .toList();
+    // 只看 Runner 工程自身的 configuration：主屏小组件扩展（FushiWidgets.appex，
+    // 基于 FushiWidgets.xcconfig）按 WidgetKit API 另钉 iOS 17，不在这条对齐链上。
+    final RegExp targetPattern = RegExp(
+      r'IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);',
+    );
+    final List<double> runnerTargets = <double>[
+      for (final String block
+          in project.split('isa = XCBuildConfiguration;').skip(1))
+        if (!block
+            .substring(0, block.indexOf('name = '))
+            .contains('/* FushiWidgets.xcconfig */'))
+          for (final RegExpMatch match in targetPattern.allMatches(
+            block.substring(0, block.indexOf('name = ')),
+          ))
+            double.parse(match.group(1)!),
+    ];
 
     expect(runnerTargets, isNotEmpty);
     for (final double target in runnerTargets) {

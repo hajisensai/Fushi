@@ -37,6 +37,9 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
+    show buildSubtitleLyricsFinder;
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
@@ -188,7 +191,8 @@ const Map<VideoSubtitleStage, (double, double)> kVideoSubtitleStageSpans =
       VideoSubtitleStage.glossary: (0.6, 0.65),
       VideoSubtitleStage.proofread: (0.65, 0.9),
       VideoSubtitleStage.consistency: (0.9, 0.93),
-      VideoSubtitleStage.songCheck: (0.93, 0.95),
+      VideoSubtitleStage.songCheck: (0.93, 0.94),
+      VideoSubtitleStage.lyrics: (0.94, 0.95),
       VideoSubtitleStage.split: (0.95, 0.98),
       VideoSubtitleStage.export: (0.98, 1),
     };
@@ -359,6 +363,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     VideoSubtitleAiConfig? ai;
     AiChatClient? client;
     WebKnowledgeClient? web;
+    WebSearchClient? search;
     if (params.proofread) {
       final AiProviderConfig? provider = proofreadProvider();
       if (provider == null) {
@@ -370,6 +375,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       final List<WebKnowledgeSite> sites =
           aiSettings?.call().aiWebKnowledgeSites ?? const <WebKnowledgeSite>[];
       web = sites.isEmpty ? null : WebKnowledgeClient(sites: sites);
+      final WebSearchConfig? searchConfig = aiSettings?.call().aiWebSearch;
+      search = searchConfig != null && searchConfig.isUsable
+          ? WebSearchClient(config: searchConfig)
+          : null;
       final FushiDatabase? db = database?.call();
       ai = VideoSubtitleAiConfig(
         completer: AiChatTextCompleter(client: client, provider: provider),
@@ -400,6 +409,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         // 上传的视频在任务输入目录里：字幕直接写进产物目录；库视频写在视频旁。
         exportDir: target.uploaded ? ctx.outputsDir : null,
         probeDurationMs: probeDurationMs,
+        // 歌词补齐要 AI 认歌 / 对齐：没开 AI 不装。
+        lyricsFinder: ai == null
+            ? null
+            : buildSubtitleLyricsFinder(webSearch: search),
       );
       final VideoSubtitlePipelineResult result;
       try {
@@ -433,6 +446,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     } finally {
       client?.close();
       web?.close();
+      search?.close();
     }
   }
 

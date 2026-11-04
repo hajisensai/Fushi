@@ -665,15 +665,9 @@ class _AppGameCtlHost implements GameCtlHost {
         GameCtlLaunchPreflight.helperMissing,
       );
     }
-    // TODO-2936 同款：语言级 / 「游戏」媒体类型的 Profile 绑定，非致命、与启动并行。
-    unawaited(
-      context.ref
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            languageTag: game.language,
-            mediaType: ProfileMediaKind.game,
-            restoreFallback: true,
-          ),
+    // 反馈 kEFPY4cuKZ：先取好配置视图模型——会话在启动 / 附着之后才进入，那时页面可能已卸载。
+    final ProfileViewModel profileVm = context.ref.read(
+      profileViewModelProvider.notifier,
     );
     final GalHookLaunchResult result = await _session.launchGame(
       game.exePath,
@@ -684,6 +678,16 @@ class _AppGameCtlHost implements GameCtlHost {
       japaneseLocaleMode: galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
       contentLanguage: game.language,
     );
+    // 反馈 kEFPY4cuKZ：游戏会话期间作品级配置（查词词典）按绑定生效（语言级 / 「游戏」
+    // 媒体类型），不切 App 的激活配置；会话结束（游戏退出 / 停止捕获）即撤层。
+    unawaited(
+      profileVm.enterWorkSession(
+        owner: _session,
+        languageTag: game.language,
+        mediaType: ProfileMediaKind.game,
+        endWhen: (listenable: _session, ended: () => !_session.state.isActive),
+      ),
+    );
     return GameCtlLaunchReport.launched(result);
   }
 
@@ -691,19 +695,21 @@ class _AppGameCtlHost implements GameCtlHost {
   Future<List<ExternalWindowInfo>> listWindows() =>
       WindowCaptureChannel.listWindows();
 
-  /// 工作台 `_attachToRunningGame` 同一组步骤：Profile 绑定（不带语言、无绑定不回退）
-  /// + `startAttachedCapture`。
+  /// 工作台 `_attachToRunningGame` 同一组步骤：`startAttachedCapture` + 「游戏」媒体类型的
+  /// 作品级配置会话（不带语言；会话结束即撤层，不切 App 的激活配置）。
   @override
   Future<void> attach(ExternalWindowInfo window) async {
-    unawaited(
-      context.ref
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            mediaType: ProfileMediaKind.game,
-            restoreFallback: false,
-          ),
+    final ProfileViewModel profileVm = context.ref.read(
+      profileViewModelProvider.notifier,
     );
     await _session.startAttachedCapture(window);
+    unawaited(
+      profileVm.enterWorkSession(
+        owner: _session,
+        mediaType: ProfileMediaKind.game,
+        endWhen: (listenable: _session, ended: () => !_session.state.isActive),
+      ),
+    );
   }
 
   @override

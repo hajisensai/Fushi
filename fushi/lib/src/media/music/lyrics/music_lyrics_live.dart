@@ -166,13 +166,35 @@ class MusicLyricsLive extends ChangeNotifier {
     return s.isEmpty ? null : s;
   }
 
+  /// 下一行歌词（Live Activity / 菜单栏播放条的第二行）；当前是最后一行或没有时间轴为 null。
+  String? get nextLineText {
+    final LyricTimeline? t = _timeline;
+    if (t == null || !t.isSynced) return null;
+    for (int i = _line + 1; i < t.lines.length; i++) {
+      final String s = t.lines[i].text.trim();
+      if (s.isNotEmpty) return s;
+    }
+    return null;
+  }
+
+  /// iOS Live Activity / macOS 菜单栏播放条要当前行：与桌面歌词、媒体会话歌词并列的第三个
+  /// 使用方（`HomeWidgetLiveActivities`）。只有用得上时才解析歌词、跟行。
+  bool _liveActivityWanted = false;
+
+  void setLiveActivityWanted(bool value) {
+    if (_liveActivityWanted == value) return;
+    _liveActivityWanted = value;
+    _onEngine();
+  }
+
   /// 锁屏 / 媒体通知该显示的当前行（设置关着为 null）。
   String? get mediaSessionLine =>
       _mediaSessionEnabled() ? currentLineText : null;
 
   bool get desktopShown => _desktopShown;
 
-  bool get _wanted => _desktopEnabled() || _mediaSessionEnabled();
+  bool get _wanted =>
+      _desktopEnabled() || _mediaSessionEnabled() || _liveActivityWanted;
 
   /// 歌词页换了来源 / 调了偏移：重新解析当前曲目。
   Future<void> reload() async {

@@ -998,7 +998,19 @@ class FushiSyncServer {
       if (assistant == null) {
         return shelf.Response.notFound('Host assistant off');
       }
-      return handleHostAssistantRequest(assistant, request, method, reqPath);
+      // 会话归属（BUG-4067）：认得出的 per-peer 口令才算「哪台设备」；共享口令 /
+      // 老 client 是匿名调用方——能开会话，但看不到任何会话历史。
+      final String? authorization = request.headers['authorization'];
+      final HostAssistantCaller caller = await _validatePeerAuth(authorization)
+          ? HostAssistantCaller(peerToken: _basicPassword(authorization!))
+          : HostAssistantCaller.anonymous;
+      return handleHostAssistantRequest(
+        assistant,
+        request,
+        method,
+        reqPath,
+        caller: caller,
+      );
     }
     if (reqPath == '/api/subscriptions' ||
         reqPath.startsWith('/api/subscriptions/')) {

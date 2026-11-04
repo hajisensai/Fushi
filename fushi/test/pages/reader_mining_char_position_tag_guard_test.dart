@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import 'reader_fushi_page_source_corpus.dart';
 
-/// 源码守卫：小说阅读器制卡时注入的「制卡所在字符数」标签（`chars_12345`）。
+/// 源码守卫：小说阅读器制卡时注入的「制卡位置」文本（反馈 MhQHXQI-sB：写进 MiscInfo，
+/// 不再是 `chars_12345` 标签；文件名沿用旧名，被设置覆盖表引用）。
 ///
 /// 为什么只能守源码：注入点 `_prepareMiningContext` / `_miningCharPosition()` 是
 /// `reader_fushi/mining.part.dart` 里 `extension _ReaderMining on
@@ -12,31 +13,31 @@ import 'reader_fushi_page_source_corpus.dart';
 /// 这个页面 headless 起不来（WebView + 真 EPUB + 真 Anki），行为层拿不到这条线，
 /// 只能在结构上把三条不变式钉死。
 ///
-/// 标签字面量的生成规则（null/负数 → null、`chars_` 前缀）与 `buildNoteTags` 的追加
-/// 与去重由 `packages/fushi_anki` 侧的行为测试咬住；本守卫只管**阅读器这一端有没有
-/// 按开关注入、按什么口径算位置**。
+/// 落哪个字段（Lapis = MiscInfo / 其它类型的 MiscInfo 等价字段 / 没有不写）、怎么追加由
+/// `packages/fushi_anki/test/mining_char_position_misc_info_test.dart` 的行为测试咬住；
+/// 本守卫只管**阅读器这一端有没有按开关注入、按什么口径算位置、文案走不走 i18n**。
 ///
 /// 读的是「主壳 + 全部 `reader_fushi/*.part.dart`」合并语料（见
 /// `reader_fushi_page_source_corpus.dart`）：方法在 part 之间搬家不会让守卫失效，
 /// 新增 part 也自动进扫描面。
 void main() {
-  group('reader 制卡注入 chars_ 位置标签', () {
-    test('AnkiMiningContext 的构造带 charPositionTag，且经开关门控', () {
+  group('reader 制卡注入制卡位置（写 MiscInfo）', () {
+    test('AnkiMiningContext 的构造带 charPositionText，且经开关门控', () {
       final String src = readReaderPageSource();
 
       // ① 注入点确实在 AnkiMiningContext 的构造里（不是别的调用的同名参数）。
-      //    撤掉 mining.part.dart 里 `charPositionTag: ...` 那几行 → enclosingCallOf
+      //    撤掉 mining.part.dart 里 `charPositionText: ...` 那几行 → enclosingCallOf
       //    找不到锚点直接 fail。
-      final EnclosingCall call = enclosingCallOf(src, 'charPositionTag:');
+      final EnclosingCall call = enclosingCallOf(src, 'charPositionText:');
       expect(
         call.name,
         'AnkiMiningContext',
         reason:
-            '「制卡所在字符数」标签必须注入进 AnkiMiningContext 的构造，'
-            '否则两个 backend 的 buildNoteTags 都拿不到它',
+            '制卡位置必须注入进 AnkiMiningContext 的构造，'
+            '否则各 backend 的 buildMinedFields 都拿不到它',
       );
 
-      final List<String> values = namedArgumentValues(src, 'charPositionTag');
+      final List<String> values = namedArgumentValues(src, 'charPositionText');
       expect(
         values,
         hasLength(1),
@@ -46,28 +47,30 @@ void main() {
       );
       final String value = values.single;
 
-      // ② 开关门控：撤掉 `appModel.autoAddCharPositionToTags ? ... : null` 这个三元，
-      //    偏好开关就成了摆设（关掉照样打标签）→ 本条红。
+      // ② 开关门控：撤掉 `appModel.autoAddCharPositionToTags && ... ? ... : null`，
+      //    偏好开关就成了摆设（关掉照样写位置）→ 本条红。
       expect(
         value,
         contains('appModel.autoAddCharPositionToTags'),
         reason:
-            '注入必须被「自动添加制卡位置到标签」偏好门控；'
-            '开关关掉时这个值必须是 null',
+            '注入必须被「制卡位置写入 MiscInfo」偏好（冻结键 '
+            'auto_add_char_position_to_tags）门控；开关关掉时这个值必须是 null',
       );
 
-      // ③ 字面量由 fushi_anki 的单一格式化口径产出，阅读器不自己拼 'chars_$x'——
-      //    否则前缀/分隔符会和 buildNoteTags 侧漂开。
+      // ③ 锚点取不到（快照为 null）时整个值必须是 null，不能格式化出「第 null 字」。
       expect(
-        containsIdentifierCall(
-          value,
-          'BaseAnkiRepository.formatCharPositionTag',
-        ),
-        isTrue,
-        reason:
-            '标签字面量必须走 BaseAnkiRepository.formatCharPositionTag，'
-            '不得在阅读器里另拼一份 chars_ 前缀',
+        compactCode(value),
+        contains('snapshotCharPosition!=null'),
+        reason: '快照为 null（锚点取不到）时不写位置',
       );
+
+      // ④ 文案走 i18n（卡上写的是用户界面语言的一句话），不在阅读器里硬拼字面量。
+      expect(
+        containsIdentifierCall(value, 't.anki_char_position_misc_info_value'),
+        isTrue,
+        reason: '位置文本必须经 t.anki_char_position_misc_info_value 格式化',
+      );
+      expect(value, isNot(contains('chars_')), reason: '不再产出 chars_ 标签字面量');
     });
 
     test('位置取的是 await 前的快照，不是构造时的当前值', () {
@@ -94,7 +97,7 @@ void main() {
 
       // 把构造里的 `snapshotCharPosition` 换回 `_miningCharPosition()`（await 后重算）
       // → 本条红。
-      final String value = namedArgumentValues(src, 'charPositionTag').single;
+      final String value = namedArgumentValues(src, 'charPositionText').single;
       expect(
         containsIdentifier(value, 'snapshotCharPosition'),
         isTrue,
