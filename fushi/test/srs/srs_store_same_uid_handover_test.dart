@@ -24,7 +24,6 @@ import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
