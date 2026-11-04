@@ -10,7 +10,9 @@ class _FakeController extends Fake implements InAppWebViewController {
   final String name;
 }
 
-/// 记下每个控制器收到的步骤：`hold` / `release` / `hide` / `show`。
+/// 记下每个控制器收到的步骤：`hold`（按住并记下在播的，[kWebBrowserCoverHoldMediaScript]）/
+/// `rehold`（只按住不记，[kWebBrowserHoldMediaScript]）/ `release`（解除并续播记下的，
+/// [kWebBrowserCoverReleaseMediaScript]）/ `hide` / `show`。
 class _Recorder {
   final List<String> log = <String>[];
 
@@ -33,9 +35,11 @@ class _Recorder {
   }
 
   Future<void> runScript(InAppWebViewController c, String source) async {
-    final String step = source == kWebBrowserHoldMediaScript
+    final String step = source == kWebBrowserCoverHoldMediaScript
         ? 'hold'
-        : source == kWebBrowserReleaseMediaScript
+        : source == kWebBrowserHoldMediaScript
+        ? 'rehold'
+        : source == kWebBrowserCoverReleaseMediaScript
         ? 'release'
         : 'other';
     _record('${(c as _FakeController).name}:$step');
@@ -142,7 +146,7 @@ void main() {
     expect(rec.log, <String>['a:show', 'a:release']);
   });
 
-  test('盖住期间整页换了文档：新文档重新按住', () async {
+  test('盖住期间整页换了文档：新文档重新按住，但不记续播（此刻在播的是盖住后才开播的）', () async {
     await load(a, ca);
     feature.onPlaybackCoverChanged(covered: true);
     await settle();
@@ -154,7 +158,55 @@ void main() {
       Uri.parse('https://www.netflix.com/title/1'),
     );
     await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
+    expect(rec.log, <String>['a:rehold', 'a:hide']);
+
+    // 重新按住失败：重做时照样不记续播。
+    rec.log.clear();
+    rec.failOnce = 'a:rehold';
+    await feature.onLoadStop(
+      a,
+      ca,
+      Uri.parse('https://www.netflix.com/title/2'),
+    );
+    await settle();
+    await feature.onLoadStop(
+      a,
+      ca,
+      Uri.parse('https://www.netflix.com/title/2'),
+    );
+    await settle();
+    expect(rec.log, <String>['a:rehold', 'a:hide', 'a:rehold', 'a:hide']);
+
+    // 露出：照常解除（续播脚本只续按住前记下的，新文档里没有记录）。
+    rec.log.clear();
+    feature.onPlaybackCoverChanged(covered: false);
+    await settle();
+    expect(rec.log, <String>['a:show', 'a:release']);
+  });
+
+  test('续播脚本与交接按住分开：盖住按住会记录、露出会续播；交接的解除脚本不续播', () {
+    // 盖住：先记录此刻在播的，再走与交接共用的按住。
+    expect(
+      kWebBrowserCoverHoldMediaScript,
+      startsWith('(function(){var r=window.__fushiCoverResume'),
+    );
+    expect(
+      kWebBrowserCoverHoldMediaScript,
+      endsWith(kWebBrowserHoldMediaScript),
+    );
+    // 露出：先解除按住监听，再续播记下的。
+    expect(
+      kWebBrowserCoverReleaseMediaScript,
+      startsWith(kWebBrowserReleaseMediaScript),
+    );
+    expect(kWebBrowserCoverReleaseMediaScript, contains('.play()'));
+    // 交接（PlayInFushiFeature）那对脚本不碰续播记录。
+    expect(kWebBrowserHoldMediaScript, isNot(contains('__fushiCoverResume')));
+    expect(
+      kWebBrowserReleaseMediaScript,
+      isNot(contains('__fushiCoverResume')),
+    );
+    expect(kWebBrowserReleaseMediaScript, isNot(contains('.play()')));
   });
 
   test('WebView 建好但还没加载完：盖住时不去挂起它', () async {

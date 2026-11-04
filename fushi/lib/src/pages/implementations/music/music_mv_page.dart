@@ -43,6 +43,7 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
     show resolvePlatformHwdec;
 import 'package:fushi/src/models/app_model.dart';
@@ -591,8 +592,18 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
     await _applySubDelay();
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
+    _playbackRouteMark.dispose();
     for (final StreamSubscription<Object?> s in _subs) {
       unawaited(s.cancel());
     }
