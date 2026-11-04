@@ -203,6 +203,26 @@ void main() {
       expect(msg, isNot(contains('server-side mining')));
     });
 
+    test(
+      'E52FUMdbR6 paired-host Anki failure names the interconnect server',
+      () {
+        final MineOutcome outcome = MineOutcome.failure(
+          'Could not connect to Anki: connection refused.',
+          errorCode: AnkiErrorCode.pairedDeviceMineFailed,
+        );
+        final String msg = logMineFailure(outcome);
+        expect(
+          msg,
+          t.anki_error_paired_device_mine_failed(
+            reason: 'Could not connect to Anki: connection refused.',
+          ),
+        );
+        expect(msg, contains('Fushi Interconnect server'));
+        expect(msg, contains('connection refused'));
+        expect(mineFailureMessage(outcome), msg);
+      },
+    );
+
     test('unknown/absent errorCode falls back to the detail toast', () {
       final MineOutcome outcome = MineOutcome.failure(
         'All fields are empty',

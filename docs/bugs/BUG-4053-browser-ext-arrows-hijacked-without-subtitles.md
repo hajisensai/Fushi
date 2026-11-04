@@ -1,6 +1,6 @@
 ## BUG-4053 · 浏览器扩展字幕没开时左右键仍被上一句下一句接管
 - **报告**：2026-11-02（应用内反馈 ggOhtYyK4U，QQ 群 fushi-bot 代提交，平台：浏览器扩展，版本未提供）
-- **真实性**：✅ 现象属实，但「怎么判定字幕已关」是产品取舍，**待用户拍板，本条未改代码**。
+- **真实性**：✅ 现象属实。「怎么判定字幕已关」用户拍板 **B**（2026-11-04）。
   - 判据：`tools/browser-extension/video-shortcuts.js:82` `NEEDS_TRACK` 里的 prev-cue / next-cue 只在 `ctx.hasTrack` 时接管（`:182`），而 `hasTrackForVideo()`（`:299`）只看 `window.fushiEpisodeCues` 里**有没有任何**这个视频的轨。这个集合「非空几乎恒真」（`study-tracker.js:136` 的注释已写明并因此改用 `fushiSubtitleStudyState`）：YouTube 主世界桥 `youtube-bridge.js:355` 每秒 `acquire()` 把所有字幕轨整轨预取进 store，与用户开没开 CC、开没开 Fushi 字幕无关；Netflix 整集拦截同理。所以有字幕的视频上，即使画面上没有任何字幕，←/→ 也恒为上一句 / 下一句，站点自己的按秒快进被占。
   - 反馈的「或者提供不同的快捷键」已有：每个动作可独立关闭、可改键（`videoShortcutKeys`，扩展设置与 App 内浏览器设置「快捷键」）；并且 BUG-4052 已新增不依赖字幕轨的按秒快退 / 快进（Shift+←/→）。
 - **需要拍板的取舍**（「字幕已关」指什么）：
@@ -8,6 +8,6 @@
   - **B**：在 A 之外再把「隐藏字幕」（Shift+H，`subtitleHidden`）也算关闭。代价：现有「隐藏字幕做纯听力、用 ←/→ 逐句回听」的用法会失效。
   - **C**：维持现状，靠改键 / 关单项 + 新的 Shift+←/→ 解决。
   - 「站点原生 CC 是否打开」没有跨站可靠信号（YouTube plasma / 桌面播放器、Netflix、通用 `<track>` 各不相同，按「最近 N 秒屏幕上有没有字」判是时间启发式），不建议作为判据。
-- **[ ] ① 未修复** — 等拍板（A / B / C）。
-- **[ ] ② 未加自动化测试** — 随 ① 落地（`video-shortcuts.test.js` 的 runtime 壳可直接注入 `fushiSubtitleStudyState`）。
-- **备注**：拍板后改的是 `video-shortcuts.js` 的 `hasTrackForVideo` 判据与 `NEEDS_TRACK` 注释，App 内浏览器复用同一脚本无需另改。
+- **[x] ① 已修复（B）** — `video-shortcuts.js` 新增 `NEEDS_SHOWING`（prev-cue / next-cue）与 `ctx.cueShowing`：上一句 / 下一句除「有轨」外还要「Fushi 字幕正在出画」才接管。运行时 `cueShowingForVideo()` 每次按键现读两个持有者——`subtitle-panel.js` 的 `fushiSubtitleStudyState().showing`（面板缺席 = 没在出字）与 `content.js` 新增的只读查询 `fushiSubtitleManuallyHidden()`（Shift+H 隐藏 = 关闭）；任一不满足就放行，站点原播放器的 ←/→ 原样生效。门跟动作走（改了键同样生效）；重播 / 侧边栏 / 偏移 / 复制 / 收藏仍按「有轨」判，按秒快退快进（Shift+←/→）与字幕无关不变。`hasTrackForVideo` 保留给其余动作与目标视频判定。App 内浏览器复用同一脚本。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/video-shortcuts.test.js`：判定矩阵（有轨但 `cueShowing=false` 时 ←/→ 与改键后的 prev-cue 放行、其余有轨动作与 Shift+← 不受影响）、runtime（showing=false 放行 → 开字幕后无需刷新即接管、Shift+H 隐藏后放行 / 取消隐藏恢复、面板脚本缺席放行）；`subtitle-hide.test.js`：`fushiSubtitleManuallyHidden` 跟随 Shift+H / 存量 / onChanged。变异验证：删掉 `decide` 里的 `NEEDS_SHOWING` 判断，4 条新测试变红。
+- **备注**：代价（用户已接受）：隐藏字幕做纯听力时 ←/→ 不再逐句回听；没开 Fushi 字幕、只看站点原生字幕的用户 ←/→ 回到站点快进。

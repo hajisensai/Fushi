@@ -18,6 +18,19 @@ function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+/* 需要继承弹窗主题变量的模态浮层（「卡片已在 Anki 中」面板）的挂载点。app 内 = body：
+   主题变量在 <html> 上，天然继承。浏览器扩展里弹窗活在 shadow root，主题变量（--md-* /
+   --background-color / --text-color，content.js setProperty）与 data-theme 都落在
+   #entries-container 上（content.css 把 html / body 重根到它）；直接挂在 shadow root 下的
+   浮层继承不到任何一个，面板 background 的 var() 全部落空成透明，下面词条的字透上来与
+   面板上的字叠在一起（反馈 _3tWQR6J2G）。挂进容器 = app 内挂 body 的同一语义；容器的
+   overflow / zoom 已被 content.js 中和，fixed 定位的包含块不变。 */
+function __fushiThemedOverlayParent(){
+    var root = window.__fushiRoot;
+    var themed = root && typeof root.getElementById === 'function'
+        ? root.getElementById('entries-container') : null;
+    return themed || __fushiOverlayParent();
+}
 /* BUG-2734：app 内查词框（视频 / 首页 / texthooker）让 WebView 按外壳**最大**高度布局、
    外壳只做裁剪（内容增减不再改原生表面尺寸，免得 Windows 上旧帧被拉伸），于是
    window.innerHeight 大于用户实际看得见的高度。宿主经 __fushiSetVisibleViewportHeight
@@ -3184,7 +3197,7 @@ function showMinedCardActionPanel(matches, options) {
         // 下面板会被窗口下沿裁掉。开面板时给 <html> 挂 class，popup.css 借它撑出最小
         // 高度，host 的下一次测量就把窗口放大到够放面板（面板关掉即恢复）。
         if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
-        __fushiOverlayParent().appendChild(backdrop);
+        __fushiThemedOverlayParent().appendChild(backdrop);
         document.addEventListener('keydown', onKey, true);
         duplicateBtn.focus();
     });
