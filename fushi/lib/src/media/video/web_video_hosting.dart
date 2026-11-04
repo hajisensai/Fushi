@@ -22,6 +22,53 @@ WebVideoHosting webVideoHostingFromPref(Object? raw) =>
 /// 放进 `additionalBrowserArguments`；Chromium 忽略未知开关。守卫测试比对两侧字面量。
 const String kWebVideoWindowedHostingSentinel = '--fushi-windowed-hosting';
 
+/// 窗口宿主档环境的浏览器参数：[browserArguments]（app 内浏览器共享环境的那套）后面接哨兵。
+///
+/// fork 在交给 WebView2 之前把哨兵剥掉（[stripWindowedHostingSentinel] 是它的 Dart 镜像），
+/// 所以 WebView2 看到的参数与浏览器环境逐字相同——两者才能共用同一个 user data folder
+/// （同一 cookie 罐；同目录参数不一致会 0x8007139F）。
+String windowedHostingArguments(String browserArguments) =>
+    browserArguments.isEmpty
+    ? kWebVideoWindowedHostingSentinel
+    : '$browserArguments $kWebVideoWindowedHostingSentinel';
+
+/// `WebViewEnvironment::StripWindowedHostingSentinel`（fork C++）的 Dart 镜像，只供测试断言
+/// 「剥完与浏览器参数逐字一致」：整词匹配哨兵，连同它前面的空白剥掉（在开头时连同后面的空白）；
+/// 只是更长开关的子串（`--fushi-windowed-hosting-x`）不算。两侧算法由守卫测试咬住。
+({String arguments, bool found}) stripWindowedHostingSentinel(
+  String arguments,
+) {
+  const String token = kWebVideoWindowedHostingSentinel;
+  bool isSpace(String ch) => ch == ' ' || ch == '\t';
+  String out = arguments;
+  bool found = false;
+  int pos = 0;
+  while ((pos = out.indexOf(token, pos)) != -1) {
+    final int end = pos + token.length;
+    final bool startOk = pos == 0 || isSpace(out[pos - 1]);
+    final bool endOk = end == out.length || isSpace(out[end]);
+    if (!startOk || !endOk) {
+      pos = end;
+      continue;
+    }
+    found = true;
+    int eraseStart = pos;
+    int eraseEnd = end;
+    if (pos > 0) {
+      while (eraseStart > 0 && isSpace(out[eraseStart - 1])) {
+        eraseStart--;
+      }
+    } else {
+      while (eraseEnd < out.length && isSpace(out[eraseEnd])) {
+        eraseEnd++;
+      }
+    }
+    out = out.replaceRange(eraseStart, eraseEnd, '');
+    pos = eraseStart;
+  }
+  return (arguments: out, found: found);
+}
+
 const String kWebVideoDomSubtitlesAsset =
     'assets/web_video/web_video_dom_subtitles.js';
 

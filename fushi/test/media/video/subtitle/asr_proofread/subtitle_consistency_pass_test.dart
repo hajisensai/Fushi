@@ -205,9 +205,9 @@ void main() {
       expect(r2.cues[4].text, '唯が来た！');
     });
 
-    test('回复缺 id：重试 3 次后报错，不写缓存', () async {
+    test('回复没写完且只答批外的 id：连续 3 次后报错，不写缓存', () async {
       final FakeAiCompleter ai = FakeAiCompleter(
-        (String prompt, int call) => '{"99": "x"}',
+        (String prompt, int call) => '99\tx\n',
       );
       final File cache = File(p.join(tmp.path, 'consistency.json'));
       await expectLater(

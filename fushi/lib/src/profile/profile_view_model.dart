@@ -176,7 +176,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     _profileDraftCoordinator.pendingSwitchTarget.addListener(
       _onPendingSwitchTargetChanged,
     );
-    _load();
+    unawaited(_initialLoad());
     // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
     // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
     _profilesChanged = _repo.watchProfilesChanged().listen((_) {
@@ -238,6 +238,22 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   Future<void> reload() => _load();
+
+  /// 首次装载做完（成败都算）：此后 [ProfileUiState.activeProfileId] 是真实的激活配置，不再是初值 -1。
+  ///
+  /// 按激活配置打开东西的 provider（`srsStoreProvider`）先等它再读 id：否则装载期间读到 -1、自己解析一次打开，
+  /// 装载完成 id 变成真实值时又整个重建一遍。
+  Future<void> get loaded => _loaded.future;
+  final Completer<void> _loaded = Completer<void>();
+
+  /// 构造时的首次装载：失败照旧作为未处理错误报出（不吞），只保证 [loaded] 一定完成。
+  Future<void> _initialLoad() async {
+    try {
+      await _load();
+    } finally {
+      _loaded.complete();
+    }
+  }
 
   /// TODO-2936：解析绑定（book 级 > 语言级 > 媒体类型级 > 当前激活）并在结果与当前激活
   /// 不同时切换。各媒体入口（阅读器 / 视频 / 漫画开页、gal launch/attach、浏览

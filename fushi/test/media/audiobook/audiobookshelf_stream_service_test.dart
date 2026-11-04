@@ -8,9 +8,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -228,6 +231,71 @@ void main() {
       () => SrtBookRepository(db).cuesFor(book.uid),
     ))!;
     expect(cues, hasLength(4));
+    // 下载落在持久根下的暂存目录（与持久目录同卷），导入时 rename 进书的持久
+    // 目录：暂存目录与系统临时目录里都不留副本。
+    final Directory staging = Directory(
+      p.join(docs.path, 'audiobooks', AudiobookStorage.stagingDirName),
+    );
+    expect(staging.listSync(), isEmpty);
+    final List<String> leftovers = work
+        .listSync()
+        .map((FileSystemEntity e) => p.basename(e.path))
+        .where((String name) => name.startsWith('abs_'))
+        .toList();
+    expect(leftovers, isEmpty);
+    expect(p.isWithin(p.join(docs.path, 'audiobooks'), book.srtPath), isTrue);
+    expect(p.basename(book.srtPath), startsWith('abs_item_1_'));
+    expect(File(book.srtPath).existsSync(), isTrue);
+  });
+
+  testWidgets('正文 EPUB 落库后持久化失败：回滚正文、字幕书与持久目录，不留孤儿行', (
+    WidgetTester tester,
+  ) async {
+    final Object? error = await tester.runAsync<Object?>(() async {
+      final Directory staging = await AudiobookStorage.stagingDir();
+      final File staged = File(p.join(staging.path, 'abs_item_1_Fables.srt'))
+        ..writeAsStringSync(_srt);
+      try {
+        await importStandaloneSubtitleBook(
+          db: db,
+          repo: SrtBookRepository(db),
+          title: 'Fables',
+          subtitlePath: staged.path,
+          adoptSubtitleFile: true,
+          policy: const DuplicatePolicy.suffix(),
+          tempDir: work,
+          persistCover: (Directory persistDir) async =>
+              throw const FileSystemException('cover write failed'),
+        );
+        return null;
+      } catch (e) {
+        return e;
+      }
+    });
+    expect(error, isA<FileSystemException>());
+    expect(await tester.runAsync(() => db.getAllEpubBooks()), isEmpty);
+    expect(
+      await tester.runAsync(() => SrtBookRepository(db).listAll()),
+      isEmpty,
+    );
+    // 已接管进持久目录的字幕随持久目录一起删掉；持久根下只剩（空的）暂存目录。
+    final List<String> left = Directory(
+      p.join(docs.path, 'audiobooks'),
+    ).listSync().map((FileSystemEntity e) => p.basename(e.path)).toList();
+    expect(left, <String>[AudiobookStorage.stagingDirName]);
+    expect(
+      Directory(
+        p.join(docs.path, 'audiobooks', AudiobookStorage.stagingDirName),
+      ).listSync(),
+      isEmpty,
+    );
+    // 正文 EPUB 的解包目录（`<books>/fushi_books/<key>/`）也要删掉；基目录本身可留。
+    final List<Directory> extracted = books
+        .listSync(recursive: true)
+        .whereType<Directory>()
+        .where((Directory d) => p.basename(d.path) != 'fushi_books')
+        .toList();
+    expect(extracted, isEmpty, reason: '正文 EPUB 的解包目录也要删掉');
   });
 
   testWidgets('封面取不到不影响建书', (WidgetTester tester) async {
@@ -365,17 +433,28 @@ void main() {
 
     test('只有一个字幕文件 → 就是它', () {
       expect(
-        suggestServerSubtitle(detailWith(<String>['whatever.srt']))?.ino,
+        suggestServerSubtitle(detailWith(<String>['whatever.srt']))?.file.ino,
         '30',
       );
     });
 
     test('多个时优先与音频同名的；语言后缀不影响', () {
-      final AudiobookshelfItemDetail d = detailWith(<String>[
-        'other.srt',
-        'part1.ja.srt',
-      ]);
-      expect(suggestServerSubtitle(d)?.filename, 'part1.ja.srt');
+      final AudiobookshelfItemDetail single = _bookDetail(
+        tracks: <Map<String, Object?>>[_track(1, '10', 0, 1)],
+        files: <Map<String, Object?>>[
+          _file('30', 'other.srt', 'unknown'),
+          _file('31', 'part1.ja.srt', 'unknown'),
+        ],
+      );
+      expect(suggestServerSubtitle(single)?.file.filename, 'part1.ja.srt');
+      expect(suggestServerSubtitle(single)?.autoAttach, isTrue);
+      // 三条音轨时 part1.ja.srt 只是第一条的分轨字幕：不当整本书的时间轴，剩下的
+      // other.srt 只作推荐（不自动挂）。
+      final AudiobookshelfSubtitleMatch? multi = suggestServerSubtitle(
+        detailWith(<String>['other.srt', 'part1.ja.srt']),
+      );
+      expect(multi?.file.filename, 'other.srt');
+      expect(multi?.autoAttach, isFalse);
     });
 
     test('其次与标题同名', () {
@@ -383,7 +462,7 @@ void main() {
         'x.srt',
         'Fables.vtt',
       ]);
-      expect(suggestServerSubtitle(d)?.filename, 'Fables.vtt');
+      expect(suggestServerSubtitle(d)?.file.filename, 'Fables.vtt');
     });
 
     test('多个且都对不上 → null（让用户自己选）；没有字幕 → null', () {

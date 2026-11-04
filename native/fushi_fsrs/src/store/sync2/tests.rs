@@ -173,6 +173,34 @@ impl Device {
         crate::store::rows::decode_for_tests(&bytes)
     }
 
+    /// 本机操作日志里**原文**含任一 `needles` 的操作条数。v21 起载荷可能以 zstd 帧存（`pz = 1`）、日志操作的
+    /// 配置快照存成引用：在存储字节里按明文找会漏掉压缩了的行，断言恒成立。这里逐行经
+    /// [super::snapshots::unpack_payload] 还原成原文再找子串。
+    pub fn ops_containing(&self, needles: &[&str]) -> usize {
+        let w = self.core.writer().unwrap();
+        let rows: Vec<(Vec<u8>, Option<String>, Option<i64>, i64)> = w
+            .prepare("SELECT payload, sc, sc_at, pz FROM sync2_ops")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        rows.into_iter()
+            .filter(|(p, sc, at, pz)| {
+                let raw = super::snapshots::unpack_payload(&w, p.clone(), sc.clone(), *at, *pz).unwrap();
+                needles.iter().any(|n| raw.windows(n.len()).any(|win| win == n.as_bytes()))
+            })
+            .count()
+    }
+
+    /// 被清除的操作行都按 [super::semantics::purge_op] 的写法落库：`purged = 1` 且载荷是未压缩的骨架
+    /// （`pz = 0`、快照引用清空）。返回被清除的行数。
+    pub fn assert_purged_rows_are_raw_skeletons(&self) -> usize {
+        let bad = self.rows("SELECT COUNT(*) FROM sync2_ops WHERE purged = 1 AND (pz != 0 OR sc IS NOT NULL OR sc_at IS NOT NULL)");
+        assert_eq!(bad[1][0], "0", "purged ops are stored as raw skeletons");
+        self.rows("SELECT COUNT(*) FROM sync2_ops WHERE purged = 1")[1][0].parse().unwrap()
+    }
+
     pub fn state(&self, card: &str) -> Value {
         let rows = self.rows(&format!("SELECT json FROM srs_review_logs WHERE card_id = srs_id('{card}')"));
         let jsons: Vec<&str> = rows.iter().skip(1).map(|r| r[0].as_str()).collect();
@@ -625,9 +653,9 @@ fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
     for d in [&a, &b] {
         let left = d.rows("SELECT field_key FROM srs_field_edits WHERE entity_id = 'N1'");
         assert_eq!(left.iter().skip(1).map(|r| r[0].as_str()).collect::<Vec<_>>(), vec!["deleted"]);
-        // 按字节找（载荷是二进制，开头就有 0x00：CAST 成 TEXT 后 LIKE 永远匹配不到，断言会恒成立）。
-        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('secret' AS BLOB)) > 0 OR instr(payload, CAST('private' AS BLOB)) > 0");
-        assert_eq!(raw[1][0], "0", "no content left in the local op log");
+        // 在还原后的原文里找（存储字节可能是 zstd 帧，按存储字节找明文断言会恒成立）。
+        assert_eq!(d.ops_containing(&["secret", "private"]), 0, "no content left in the local op log");
+        assert!(d.assert_purged_rows_are_raw_skeletons() >= 3, "the three content ops of N1 are purged");
     }
     // 第三台新设备从位置上完整收下（被清除的骨架链照样接得上）。
     let c = Device::new("c");
@@ -697,11 +725,10 @@ fn content_written_after_seeing_a_purge_revives_the_entity_everywhere() {
     }
     for d in [&a, &b] {
         assert_eq!(note_fields(d), want, "revived content reached every device; the stale concurrent edit is gone");
-        let raw = d.rows(
-            "SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('old text' AS BLOB)) > 0 \
-             OR instr(payload, CAST('stale concurrent' AS BLOB)) > 0",
-        );
-        assert_eq!(raw[1][0], "0", "content the purge saw (or raced with) stays erased");
+        assert_eq!(d.ops_containing(&["old text", "stale concurrent"]), 0, "content the purge saw (or raced with) stays erased");
+        // 对照：搜索看得见留在日志里的内容（复活后的那条），说明上面的 0 不是恒成立。
+        assert_eq!(d.ops_containing(&["imported again"]), 1, "the revived content is found by the search");
+        d.assert_purged_rows_are_raw_skeletons();
         assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
     }
     assert_eq!(projection(&a), projection(&b));
@@ -719,8 +746,8 @@ fn content_written_after_seeing_a_purge_revives_the_entity_everywhere() {
     for d in [&a, &b] {
         let left: Vec<String> = note_fields(d).into_keys().collect();
         assert_eq!(left, vec!["deleted".to_owned()]);
-        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('imported again' AS BLOB)) > 0");
-        assert_eq!(raw[1][0], "0");
+        assert_eq!(d.ops_containing(&["imported again"]), 0);
+        d.assert_purged_rows_are_raw_skeletons();
     }
 }
 
@@ -1491,7 +1518,7 @@ fn deck_config_change_does_not_rewrite_past_reviews() {
 }
 
 /// 旧库：一张卡两条旧日志，作者结果故意与「按当前配置重放」会算出的不同；牌组配置也改过。
-fn legacy_library(d: &Device) {
+pub(crate) fn legacy_library(d: &Device) {
     let deck = super::config::default_deck_id(P);
     let w = d.core.writer().unwrap();
     let log = |id: &str, at: i64, due: i64| {
@@ -2067,7 +2094,7 @@ fn unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat() {
     // 内容没变 → 不写，指回上次的 head。
     let last = match write_head(&a, &mut bucket, T0 + 1000) {
         HeadWrite::Unchanged { path, .. } => path,
-        HeadWrite::Written { .. } => panic!("an unchanged head must not be rewritten"),
+        HeadWrite::Written { .. } | HeadWrite::Recut => panic!("an unchanged head must not be rewritten"),
     };
     assert!(bucket.0.contains_key(&last), "points at the head already on the location: {last}");
     // 本机有新操作 → 写。
@@ -2501,6 +2528,11 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
 /// - 本机状态行写不下（坏 JSON）时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
 #[test]
 fn ingest_slice_commits_on_its_own_with_the_local_state_row() {
+    // 逐条投递的一片（各片当场落投影、推进修订号）；新设备收段通道的各片只追加，见 tests_channel.rs。
+    super::channel::sequential(ingest_slice_commits_on_its_own_with_the_local_state_row_sequential);
+}
+
+fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     let a = Device::new("lt-a");
     let mut bucket = Bucket::default();
     a.apply(T0, vec![review("r1", "C1", T0, 3, "learn"), review("r2", "C2", T0 + 1, 3, "learn"), review("r3", "C3", T0 + 2, 3, "learn")]);
@@ -2583,7 +2615,7 @@ fn failed_obsolete_deletes_are_retried_next_round() {
     let w = a.core.sync2_head_if_changed(P, "loc", u64::MAX, T0 + DAY + 70_000, Some(DAY)).unwrap();
     match w {
         super::transport::HeadWrite::Unchanged { obsolete, .. } => assert_eq!(obsolete.len(), pending),
-        super::transport::HeadWrite::Written { .. } => panic!("head content did not change"),
+        super::transport::HeadWrite::Written { .. } | super::transport::HeadWrite::Recut => panic!("head content did not change"),
     }
     // 下一轮正常：删光并确认。
     a.sync(&mut bucket, "loc", T0 + DAY + 80_000);

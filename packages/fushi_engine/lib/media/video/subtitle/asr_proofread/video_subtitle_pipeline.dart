@@ -961,7 +961,8 @@ class _JobState {
 const double kSubtitleProofreadInputTokensPerChar = 1.78;
 
 /// S3 输出 token / 回复字符（同一次实跑：重建回复 87,068 字符，实计 124,189 输出
-/// token，1.43）。回复按 `"<id>": "<正文>", ` 估。
+/// token，1.43）。回复按每行都改的上限估（`<id><TAB><正文>`）：实际只写要改的行，
+/// 输出远少于此——预估宁可偏贵。
 const double kSubtitleProofreadOutputTokensPerChar = 1.43;
 
 /// 费用预估结果（只含 S3；S0 每作品一次、S4 只送可疑行，量级都远小于 S3）。

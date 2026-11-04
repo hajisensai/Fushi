@@ -44,6 +44,11 @@ abstract interface class SrsSync2Host {
 
   /// 收尾：累积出分叉点就换身份；返回同形结果（`fork`、重签发带来的投影变化）。
   Future<Map<String, Object?>> sync2IngestFinish();
+
+  /// 放掉收段会话（内核 `sync2_ingest_end`）：一轮中途收手、抓段或某一步出错时，会话里预处理好的段与内核为会话
+  /// 留着的页缓存一起放掉，不等下一轮碰巧收尾。各片已提交时记下的待重放 / 待刷新仍在库里，下一轮 `finishPending`
+  /// 收。收尾已收完时是空操作。
+  Future<void> sync2IngestEnd();
 }
 
 /// 状态摘要最多多久重算一次（版本向量没变就不算）。
@@ -59,7 +64,8 @@ const Duration kSrsSync2HeadHeartbeat = Duration(hours: 6);
 /// 64 KB。按段数分批（以前每批 128 段）在大段下一批能到 512 MB、整批跨 FFI 拷进内核再解压，移动端会被杀；按字节
 /// 切则与段多大无关。8 MiB 与旧设计「128 个 64 KB 段 ≈ 8 MB 一批」同量级：老段的批大小与进度粒度不变，大段一批
 /// 也至少两段。预算到了不再开新下载、只等在途的（读完之前不知道段多大），所以一批的实际上界是
-/// 预算 + [kSrsSync2Concurrency] × 单段上限（≈ 32 MiB），Dart 侧与内核各持一份也在百兆以内。
+/// 预算 + [kSrsSync2Concurrency] × 单段上限（≈ 32 MiB）。内核收一批时 Dart 侧预读下一批（[srsFetchInBatches]），
+/// 同一时刻最多两批在 Dart 侧、一批在内核，仍在百兆以内。
 const int kSrsSync2IngestBudgetBytes = 8 * 1024 * 1024;
 
 /// 调用方要求中途收手（库要关 / 调度器卸下）：已收的批次都已提交，下一轮接着拉。
@@ -73,8 +79,15 @@ const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 /// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
 /// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`
 /// 让旧版本停下。
-const int kSrsSync2Protocol = 2;
-const int kSrsSync2MinReader = 2;
+///
+/// 3 = 存量重复流收敛（BUG-4005，内核 store/sync2/dedup.rs）：段里出现新种类 `Dedup` 与带副本说明的骨架，协议 2 的
+/// 读者解不开，head 的 `minReader` = 3 让它们停下、报需要升级（[SrsSync2Report.needsUpgrade]）。
+const int kSrsSync2Protocol = 3;
+const int kSrsSync2MinReader = 3;
+
+/// 一轮里推进重复流收敛作业（[srsSync2Round] 的 `dedup`）最多用多久：作业按一个事务一步分批推进、断点续做，大库的
+/// 一次性收敛（几十万条副本）分到几轮做完，不让某一轮迟迟不发件。
+const Duration kSrsSync2DedupBudget = Duration(seconds: 20);
 
 /// 一轮的结果。
 class SrsSync2Report {
@@ -195,6 +208,7 @@ Future<SrsSync2Report> srsSync2Round({
   final String progressId = srsLocationProgressId(locationId, keyHex);
 
   // 1–2. 读全部 head → 拉缺的段 → 收。需要更新的读者（有设备的 head 要求）就停在这里，一个字节也不写（§8）。
+  final Map<String, List<String>> listed = <String, List<String>>{};
   if (!await srsSync2Pull(
     host: host,
     location: location,
@@ -206,8 +220,32 @@ Future<SrsSync2Report> srsSync2Round({
     ingestBudgetBytes: ingestBudgetBytes,
     fetchConcurrency: fetchConcurrency,
     onStep: onStep,
+    listed: listed,
   )) {
     return report;
+  }
+  // 作者自检（transport.rs `sync2_audit_own`）：这一轮读 head 时列到的本机目录交给内核，水位以下却不在位置上的本机段
+  // 登记重传、随下面第一批发件补上（位置上缺了 head 引用的段，读者只能永远「下一轮再来」）。收段时换了身份的话新身份
+  // 在这个位置上还没有水位，自检什么都不登记。
+  final String selfBefore =
+      (await host.sync2Command(<String, Object?>{
+            'op': 'identity',
+            'now': nowMs(),
+          })).map['device']!
+          as String;
+  final List<String> present = listed['devices/$selfBefore'] ?? <String>[];
+
+  // 2½. 存量重复流收敛（内核 store/sync2/dedup.rs）：本机流里有别的设备同一事实的副本时，作者核对、发 `Dedup`、把
+  // 副本换成骨架（已经传过的段随下面的发件同名重写）。每次一步一个事务，`done` 明确为假才再发；到预算就留给下一轮。
+  onStep?.call('dedup');
+  final Stopwatch dedupClock = Stopwatch()..start();
+  while (dedupClock.elapsed < kSrsSync2DedupBudget) {
+    final SrsSync2Result d = await host.sync2Command(<String, Object?>{
+      'op': 'dedup',
+      'now': nowMs(),
+    });
+    if (d.map['done'] != false) break;
+    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
   }
 
   // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
@@ -220,13 +258,18 @@ Future<SrsSync2Report> srsSync2Round({
   if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
   int upto = 0;
+  bool audited = false;
   while (true) {
     final SrsSync2Result out = await host.sync2Command(<String, Object?>{
       'op': 'outbox',
       'location': progressId,
       'key': keyHex,
+      // 归档位置：副本收敛换下的段不同名重写，归档里留着当初的原文（内核 transport.rs `sync2_outbox_to`）。
+      'archive': archive,
       if (outboxBudgetBytes != null) 'maxBytes': outboxBudgetBytes,
+      if (!audited) 'present': present,
     });
+    audited = true;
     upto = (out.map['upto'] as int?) ?? 0;
     if (out.files.isEmpty) break;
     await srsRunPooled(out.files, kSrsSync2Concurrency, (
@@ -310,6 +353,11 @@ Future<SrsSync2Report> srsSync2Round({
       'now': nowMs(),
     });
   }
+  if (head.map['recut'] == true) {
+    // 发件确认之后段被合并改切（另一轮的发件），head 要引用的段还没传到这里：不写 head（写了就引用一个位置上没有的
+    // 段），下一轮按当前切法补传后再写。
+    return report..error = kSrsSync2OutboxRecut;
+  }
   String? written;
   int? writtenAtBootMs;
   for (final (String path, Uint8List bytes) in head.files) {
@@ -353,6 +401,7 @@ Future<SrsSync2Report> srsSync2Round({
 /// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
 /// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
 /// 不按位置记 head / 转发账（旧根不是一个同步位置，记了会清掉同一位置新根的转发记账）。
+/// [listed] 给了就记下读 head 时列到的每个设备目录（`devices/<id>` → 文件名）：一轮的作者自检用本机那一份，不再多列一次。
 Future<bool> srsSync2Pull({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -364,6 +413,7 @@ Future<bool> srsSync2Pull({
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
   SrsSyncStepCallback? onStep,
+  Map<String, List<String>>? listed,
 }) async {
   // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
   onStep?.call('heads');
@@ -377,7 +427,12 @@ Future<bool> srsSync2Pull({
     (String dir) async {
       int top = -1;
       final Map<String, int> genOf = <String, int>{};
-      for (final SrsLocationEntry f in await location.list(dir)) {
+      final List<SrsLocationEntry> files = await location.list(dir);
+      listed?[dir] = <String>[
+        for (final SrsLocationEntry f in files)
+          if (!f.isFolder) f.name,
+      ];
+      for (final SrsLocationEntry f in files) {
         final int? g = _headGen(f.name);
         if (g == null) continue;
         genOf[f.name] = g;
@@ -443,32 +498,41 @@ Future<bool> srsSync2Pull({
     int done = 0;
     onFetchProgress?.call(0, wanted.length);
     await host.sync2IngestBegin();
-    await for (final SrsFetchedBatch batch in srsFetchInBatches(
-      wanted,
-      fetch: (String path) => srsFetchSegment(location, path),
-      budgetBytes: ingestBudgetBytes,
-      concurrency: fetchConcurrency,
-    )) {
-      // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
-      report.missing += batch.covered - batch.segments.length;
-      if (batch.segments.isNotEmpty) {
-        absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+    // 会话的寿命限在这一段里：收手 / 出错退出时也放掉（[SrsSync2Host.sync2IngestEnd]）。
+    try {
+      await for (final SrsFetchedBatch batch in srsFetchInBatches(
+        wanted,
+        fetch: (String path) => srsFetchSegment(location, path),
+        budgetBytes: ingestBudgetBytes,
+        concurrency: fetchConcurrency,
+      )) {
+        // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
+        report.missing += batch.covered - batch.segments.length;
+        if (batch.segments.isNotEmpty) {
+          absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+        }
+        done += batch.covered;
+        onFetchProgress?.call(done, wanted.length);
+        onStep?.call('ingest $done/${wanted.length}');
+        if (shouldStop?.call() ?? false) {
+          report.error = kSrsSync2Stopped;
+          return false;
+        }
       }
-      done += batch.covered;
-      onFetchProgress?.call(done, wanted.length);
-      onStep?.call('ingest $done/${wanted.length}');
-      if (shouldStop?.call() ?? false) {
-        report.error = kSrsSync2Stopped;
-        return false;
-      }
+      onStep?.call('ingestFinish');
+      absorb(await host.sync2IngestFinish());
+    } finally {
+      await host.sync2IngestEnd();
     }
-    onStep?.call('ingestFinish');
-    absorb(await host.sync2IngestFinish());
   } else if (plan['finishPending'] == true) {
     // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
     onStep?.call('finishPending');
     await host.sync2IngestBegin();
-    absorb(await host.sync2IngestFinish());
+    try {
+      absorb(await host.sync2IngestFinish());
+    } finally {
+      await host.sync2IngestEnd();
+    }
   }
   return true;
 }
@@ -589,11 +653,11 @@ class SrsFetchedBatch {
 }
 
 /// 按原顺序读 [paths]，同时最多 [concurrency] 个在途，按实际读到的字节切批：一批累计到 [budgetBytes] 就不再开
-/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件），
-/// 消费方收完再开下一批（同一时刻内存里只有一批）。每批至少一个路径，所以单个超过预算的文件自成一批；
-/// [paths] 为空时也交出一个空批。
-/// 任一读失败：不再开新的，等在途的跑完后抛出第一个错误（与 [srsRunPooled] 一致）。消费方中途停止监听，
-/// 当前批读完后就不再读。
+/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件）。
+/// 交出一批的同时开始读下一批，消费方收这一批（内核在 worker isolate 上投影）与下载重叠；只预读一批，同一时刻
+/// 内存里最多两批。每批至少一个路径，所以单个超过预算的文件自成一批；[paths] 为空时也交出一个空批。
+/// 任一读失败：不再开新的，等在途的跑完后在交到那一批时抛出第一个错误（与 [srsRunPooled] 一致；之前的批照常
+/// 交出）。消费方中途停止监听，预读的那一批读完后就不再读，且取消要等这批在途的读收完才返回（不留游离的下载）。
 Stream<SrsFetchedBatch> srsFetchInBatches(
   List<String> paths, {
   required Future<Uint8List?> Function(String path) fetch,
@@ -602,14 +666,18 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
 }) async* {
   assert(budgetBytes > 0 && concurrency > 0);
   int next = 0;
-  do {
+  bool stopped = false;
+
+  // 读一批。错误放进结果而不是让 Future 失败：预读的那一批可能在消费方停止监听后才失败，没人等它。
+  Future<_FetchRead> read() async {
     final int start = next;
     final Map<int, Uint8List> got = <int, Uint8List>{};
     int bytes = 0;
     Object? error;
     StackTrace? stack;
     Future<void> worker() async {
-      while (error == null &&
+      while (!stopped &&
+          error == null &&
           next < paths.length &&
           (next == start || bytes < budgetBytes)) {
         final int i = next++;
@@ -629,12 +697,41 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
     await Future.wait(<Future<void>>[
       for (int w = 0; w < min(concurrency, paths.length - start); w++) worker(),
     ]);
-    final Object? failure = error;
-    if (failure != null) Error.throwWithStackTrace(failure, stack!);
-    yield SrsFetchedBatch(<Uint8List>[
-      for (int i = start; i < next; i++) ?got[i],
-    ], covered: next - start);
-  } while (next < paths.length);
+    return _FetchRead(
+      SrsFetchedBatch(<Uint8List>[
+        for (int i = start; i < next; i++) ?got[i],
+      ], covered: next - start),
+      error,
+      stack,
+    );
+  }
+
+  Future<_FetchRead>? ahead = read();
+  try {
+    while (ahead != null) {
+      final _FetchRead r = await ahead;
+      final Object? failure = r.error;
+      if (failure != null) Error.throwWithStackTrace(failure, r.stack!);
+      ahead = next < paths.length ? read() : null;
+      yield r.batch;
+    }
+  } finally {
+    // 消费方停止监听 / 收段抛错：不再开新的读，并等在途的读（至多 [concurrency] 个）收完再结束——生成器拥有
+    // 它启动的读，取消（await for 的 break / return / 抛错）返回时这一轮没有游离在外的下载。预读那一批的
+    // 错误已装在 _FetchRead 里，这里不会抛。
+    stopped = true;
+    final Future<_FetchRead>? inFlight = ahead;
+    if (inFlight != null) await inFlight;
+  }
+}
+
+/// [srsFetchInBatches] 读完的一批，或它的第一个错误。
+class _FetchRead {
+  const _FetchRead(this.batch, this.error, this.stack);
+
+  final SrsFetchedBatch batch;
+  final Object? error;
+  final StackTrace? stack;
 }
 
 /// `head-<gen>-<tag>.json` 的代号；不是 head 返回 null。

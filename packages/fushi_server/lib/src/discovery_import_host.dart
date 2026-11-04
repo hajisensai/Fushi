@@ -10,6 +10,8 @@ library;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary_core.dart'
+    show kLearningLanguageCode;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
@@ -75,6 +77,7 @@ VideoDownloadDiscoveryImporter serverDiscoveryImporter(
   final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
     importers: buildServerDiscoveryImporters(db),
     extractor: extractor,
+    subtitleLangCode: kLearningLanguageCode,
   );
   return (DiscoveryMediaKind kind, List<String> paths) async {
     if (!kServerDownloadDiscoveryKinds.contains(kind.name)) {

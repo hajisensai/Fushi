@@ -27,19 +27,21 @@ fn forged_head(collection: Id, protocol: u32, min_reader: u32) -> Vec<u8> {
         digest: String::new(),
         at_ms: T0,
         name: "future".into(),
+        ext: None,
     }
     .encode(&key)
 }
 
 #[test]
-fn this_version_writes_protocol_two_heads() {
-    assert_eq!((PROTOCOL, MIN_READER), (2, 2));
+fn this_version_writes_protocol_three_heads() {
+    // 3：副本骨架与 `Dedup`（BUG-4005，dedup.rs）——协议 2 的读者解不开，必须停下要求升级。
+    assert_eq!((PROTOCOL, MIN_READER), (3, 3));
     let a = Device::new("br-w");
     let mut bucket = Bucket::default();
     a.sync(&mut bucket, "loc", T0);
     let head = bucket.0.iter().find(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).unwrap();
     let h = Head::decode(&head).unwrap();
-    assert_eq!((h.protocol, h.min_reader), (2, 2));
+    assert_eq!((h.protocol, h.min_reader), (3, 3));
 }
 
 /// head 的 `minReader` 比本机协议新：不收这台设备（不拉它的段、不记它），整轮报需要升级；本机读得了的照收。

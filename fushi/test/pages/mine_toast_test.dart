@@ -4,6 +4,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -82,12 +84,18 @@ void main() {
     expect(icons.length, MineToastStatus.values.length);
   });
 
-  testWidgets('added：绿色结果卡 + 状态标题 + 消息', (WidgetTester tester) async {
+  testWidgets('added：绿色结果卡 + 消息，与普通提示胶囊同高', (WidgetTester tester) async {
     await _pumpToastHost(tester);
     await _show(tester, '卡片已导出到『Fushi』。', MineToastStatus.added);
 
-    expect(find.text(t.card_notice_title_added), findsOneWidget);
+    // 状态标题不单占一行（卡片与普通提示胶囊同为单行 48 高），只进读屏 label。
+    expect(find.text(t.card_notice_title_added), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp(t.card_notice_title_added)),
+      findsOneWidget,
+    );
     expect(find.text('卡片已导出到『Fushi』。'), findsOneWidget);
+    expect(tester.getSize(find.byType(FushiMineNoticeCard)).height, 48);
     expect(_cardBg(tester), mineNoticeTone(MineToastStatus.added).container);
     expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
     await tester.pump(const Duration(seconds: 3)); // 跑完自动消失计时器
@@ -97,7 +105,10 @@ void main() {
     await _pumpToastHost(tester);
     await _show(tester, '卡片已覆盖到『Fushi』。', MineToastStatus.overwritten);
 
-    expect(find.text(t.card_notice_title_overwritten), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(t.card_notice_title_overwritten)),
+      findsOneWidget,
+    );
     expect(
       _cardBg(tester),
       mineNoticeTone(MineToastStatus.overwritten).container,
@@ -113,7 +124,10 @@ void main() {
     await _pumpToastHost(tester);
     await _show(tester, 'AnkiConnect 无响应', MineToastStatus.failed);
 
-    expect(find.text(t.card_notice_title_failed), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(t.card_notice_title_failed)),
+      findsOneWidget,
+    );
     expect(_cardBg(tester), mineNoticeTone(MineToastStatus.failed).container);
     expect(find.byIcon(FushiIcons.filled(FushiIcons.error)), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
@@ -137,4 +151,245 @@ void main() {
     expect(_cardBg(tester), mineNoticeTone(MineToastStatus.added).container);
     await tester.pump(const Duration(seconds: 3));
   });
+
+  testWidgets('角落锚点（歌词模式）：小号卡贴区域左下角、不压屏幕底部正中；撤销后复原', (
+    WidgetTester tester,
+  ) async {
+    await _pumpToastHost(tester);
+    const Rect region = Rect.fromLTRB(40, 60, 500, 520);
+    final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
+      () => region,
+    );
+    try {
+      await _show(tester, '卡片已导出到『日语单词』。', MineToastStatus.added);
+      final FushiMineNoticeCard card = tester.widget(
+        find.byType(FushiMineNoticeCard),
+      );
+      expect(card.compact, isTrue);
+      expect(
+        find.text(mineNoticeTitle(MineToastStatus.added)!),
+        findsNothing,
+        reason: '小号卡不画标题行',
+      );
+      final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
+      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
+      expect(box.bottom, moreOrLessEquals(region.bottom - 12, epsilon: 2));
+      expect(box.height, lessThanOrEqualTo(44));
+      await tester.pump(const Duration(seconds: 3));
+    } finally {
+      anchor.release();
+    }
+
+    await _show(tester, '已添加', MineToastStatus.added);
+    final FushiMineNoticeCard card = tester.widget(
+      find.byType(FushiMineNoticeCard),
+    );
+    expect(card.compact, isFalse, reason: '撤销登记后回到默认大卡');
+    await tester.pump(const Duration(seconds: 3));
+  });
+  testWidgets('角落锚点 + 「撤销」：小卡带按钮仍贴角、按钮可点、按带按钮时长停留', (
+    WidgetTester tester,
+  ) async {
+    await _pumpToastHost(tester);
+    const Rect region = Rect.fromLTRB(40, 60, 500, 520);
+    final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
+      () => region,
+    );
+    int pressed = 0;
+    try {
+      FushiToast.showMine(
+        msg: '卡片已导出到『日语单词』。',
+        status: MineToastStatus.added,
+        action: MineNoticeAction(label: '撤销', onPressed: () => pressed++),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      final FushiMineNoticeCard card = tester.widget(
+        find.byType(FushiMineNoticeCard),
+      );
+      expect(card.compact, isTrue);
+      expect(card.visibleFor, kMineNoticeActionVisibleFor);
+      final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
+      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
+      expect(box.bottom, moreOrLessEquals(region.bottom - 12, epsilon: 2));
+
+      // 普通结果卡 2.4 秒就收；带按钮的小卡还在。
+      await tester.pump(const Duration(seconds: 3));
+      final Finder undo = find.byKey(
+        const ValueKey<String>('mine-notice-action'),
+      );
+      expect(undo, findsOneWidget);
+      // 命中测试必须真落到按钮上（角落路径不能整体 IgnorePointer）。
+      await tester.tap(undo);
+      await tester.pump();
+      expect(pressed, 1);
+      expect(find.byType(FushiMineNoticeCard), findsNothing, reason: '点下即收');
+    } finally {
+      anchor.release();
+    }
+  });
+
+  testWidgets('显示期间撤销锚点（退出歌词模式）：同一张卡整张退回默认大卡与默认位置', (
+    WidgetTester tester,
+  ) async {
+    await _pumpToastHost(tester);
+    const Rect region = Rect.fromLTRB(40, 60, 500, 520);
+    final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
+      () => region,
+    );
+    try {
+      // 带「撤销」的卡停得久，撤销锚点时它一定还在显示期内。
+      FushiToast.showMine(
+        msg: '卡片已导出到『日语单词』。',
+        status: MineToastStatus.added,
+        action: MineNoticeAction(label: '撤销', onPressed: () {}),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        tester
+            .widget<FushiMineNoticeCard>(find.byType(FushiMineNoticeCard))
+            .compact,
+        isTrue,
+      );
+    } finally {
+      anchor.release();
+    }
+    // release 在帧后标脏 toast 条目，下一帧按剩下的锚点（无）重新定尺寸与位置。
+    await tester.pump();
+    await tester.pump();
+    final FushiMineNoticeCard card = tester.widget(
+      find.byType(FushiMineNoticeCard),
+    );
+    expect(card.compact, isFalse, reason: '尺寸与位置同一次解析：不能是贴默认位置的小卡');
+    expect(card.maxWidth, 440);
+    final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
+    final Size screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(
+      box.center.dx,
+      moreOrLessEquals(screen.width / 2, epsilon: 2),
+      reason: '回到屏幕底部正中，不留在已消失的歌词区域角上',
+    );
+    expect(box.bottom, greaterThan(region.bottom));
+    FushiToast.dismissCurrent();
+    await tester.pump();
+  });
+
+  testWidgets('角落锚点解析不出区域（页面被盖住 / 未布局）：退回默认大卡', (WidgetTester tester) async {
+    await _pumpToastHost(tester);
+    final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
+      () => null,
+    );
+    try {
+      await _show(tester, '已添加', MineToastStatus.added);
+      final FushiMineNoticeCard card = tester.widget(
+        find.byType(FushiMineNoticeCard),
+      );
+      expect(card.compact, isFalse);
+      await tester.pump(const Duration(seconds: 3));
+    } finally {
+      anchor.release();
+    }
+  });
+
+  // 「撤销」按钮尺寸契约：视觉 32 高（不叠 VisualDensity.compact 压到 24），触控
+  // 平台命中区 ≥48dp 且落在视觉按钮外、48 带内的触点也算点中；默认卡带按钮仍
+  // 48 高。MD3 与 Apple 玻璃两套按钮都要满足（玻璃按钮不认 tapTargetSize）。
+  for (final bool glass in <bool>[false, true]) {
+    for (final bool compact in <bool>[false, true]) {
+      final String label =
+          '${glass ? 'Apple' : 'MD3'} ${compact ? '小号卡' : '默认卡'}';
+      testWidgets('$label：触控平台撤销按钮视觉 32 高、命中区 48dp', (
+        WidgetTester tester,
+      ) async {
+        int pressed = 0;
+        await _pumpNoticeWithAction(
+          tester,
+          tapTargetSize: MaterialTapTargetSize.padded,
+          glass: glass,
+          compact: compact,
+          onPressed: () => pressed++,
+        );
+        final Finder button = find.byKey(
+          const ValueKey<String>('mine-notice-action'),
+        );
+        expect(button, findsOneWidget);
+        expect(tester.getSize(button).height, 32, reason: '视觉 32 高');
+        final Finder target = find.ancestor(
+          of: button,
+          matching: find.byType(FushiTouchTargetPadding),
+        );
+        expect(tester.getSize(target).height, greaterThanOrEqualTo(48));
+        expect(
+          tester.getSize(find.byType(FushiMineNoticeCard)).height,
+          48,
+          reason: '命中区占满行高，卡片不因按钮长过 48',
+        );
+
+        // 视觉按钮上沿外 / 下沿外 6px（仍在 48 命中带内）都要点中；下沿外
+        // 那一点落在倒计时条上，锁住装饰条不吞命中。
+        final Rect visual = tester.getRect(button);
+        await tester.tapAt(Offset(visual.center.dx, visual.top - 6));
+        await tester.pump();
+        expect(pressed, 1, reason: '48dp 命中带里视觉按钮上方的触点也算点中');
+        await tester.tapAt(Offset(visual.center.dx, visual.bottom + 6));
+        await tester.pump();
+        expect(pressed, 2, reason: '倒计时条不能吞掉命中带底边的触点');
+      });
+    }
+  }
+
+  testWidgets('桌面精确指针（shrinkWrap）：撤销按钮保持视觉 32 高，卡片高度不变', (
+    WidgetTester tester,
+  ) async {
+    await _pumpNoticeWithAction(
+      tester,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      glass: false,
+      compact: false,
+      onPressed: () {},
+    );
+    final Finder button = find.byKey(
+      const ValueKey<String>('mine-notice-action'),
+    );
+    expect(tester.getSize(button).height, 32);
+    expect(tester.getSize(find.byType(FushiMineNoticeCard)).height, 48);
+    // 按钮在卡片行内竖直居中（行高下限 = 卡片下限，不贴顶）。
+    final Rect card = tester.getRect(find.byType(FushiMineNoticeCard));
+    expect(
+      tester.getRect(button).center.dy,
+      moreOrLessEquals(card.center.dy, epsilon: 0.5),
+    );
+  });
+}
+
+Future<void> _pumpNoticeWithAction(
+  WidgetTester tester, {
+  required MaterialTapTargetSize tapTargetSize,
+  required bool glass,
+  required bool compact,
+  required VoidCallback onPressed,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: ThemeData(
+        materialTapTargetSize: tapTargetSize,
+        extensions: <ThemeExtension<dynamic>>[
+          FushiGlassTheme(FushiGlassMaterial.off, glassDesign: glass),
+        ],
+      ),
+      home: Scaffold(
+        body: Center(
+          child: FushiMineNoticeCard(
+            status: MineToastStatus.added,
+            message: '卡片已导出到『日语单词』。',
+            visibleFor: kMineNoticeActionVisibleFor,
+            compact: compact,
+            action: MineNoticeAction(label: '撤销', onPressed: onPressed),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump(const Duration(milliseconds: 400));
 }

@@ -387,6 +387,9 @@ dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation "androidx.webkit:webkit:1.12.0"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
+    // JVM 单测里 android.jar 的 org.json 只是抛 "not mocked" 的桩（HostProxyPolicyTest 等读 JSON 的
+    // 用例因此必红）；测试类路径上放真实现，生产仍用平台自带的 org.json。
+    testImplementation "org.json:json:20240303"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'

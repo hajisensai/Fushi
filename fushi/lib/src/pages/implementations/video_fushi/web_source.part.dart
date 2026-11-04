@@ -5,24 +5,28 @@ part of '../video_fushi_page.dart';
 const double _kVideoWebPageBarHeight = 52;
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
-/// 截图 / 识别画面文字 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；音轨只在站点上报了音轨时画
+/// 截图 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；识别画面文字只在站点画面能
+/// 截帧时画（[canCaptureFrame]，Netflix DRM 不行）；音轨只在站点上报了音轨时画
 /// （[hasSiteAudioTracks]，目前只有 Netflix）；章节按钮交给通用门控（站点给了片头片尾标记才
 /// 有章节）。纯函数，控制条门控 `_shouldRenderControlItem` 与测试同源调用。
 @visibleForTesting
 bool videoWebBackendSupportsControlItem(
   VideoControlItem item, {
   bool hasSiteAudioTracks = false,
+  bool canCaptureFrame = false,
 }) {
   switch (item) {
     case VideoControlItem.frameBackward:
     case VideoControlItem.frameForward:
     case VideoControlItem.screenshot:
-    case VideoControlItem.ocrFrame:
     case VideoControlItem.clipExport:
     case VideoControlItem.danmaku:
       return false;
     case VideoControlItem.audioTrack:
       return hasSiteAudioTracks;
+    // 识别画面文字：站点画面能在页面里截帧（非 DRM，YouTube 等）才画。
+    case VideoControlItem.ocrFrame:
+      return canCaptureFrame;
     default:
       return true;
   }
@@ -40,6 +44,24 @@ bool webVideoPendingTrackCaptureFailed({
     requestedSiteTrackId.isNotEmpty &&
     requestedSiteTrackId == siteTrackCurrent &&
     liveCueCountNow > liveCueCountAtRequest;
+
+/// 播放器层这份站点快照该不该挂播放器控件（纯函数，[_VideoWebSource._webPlayerModeFor] 与测试
+/// 同源调用）：页面里有视频、站点弹层没打断播放（「还在看吗？」/ 播放错误时要露出站点页面让
+/// 用户点）、地址是观看页。播放器层只当播放器，没有「回到网页」这一档
+/// （`docs/specs/2026-11-01-one-browser.md`）。
+@visibleForTesting
+bool webVideoShowsPlayer({
+  required bool hasVideo,
+  required bool blocked,
+  required String href,
+}) => hasVideo && !blocked && webVideoIsWatchPage(href);
+
+/// 播放器层该不该因为地址关掉、回到浏览器（纯函数，[_VideoWebSource._onWebNav] 与测试同源
+/// 调用）：主框架离开了观看页（Netflix 片尾跳回浏览页、未登录被带去登录页、YouTube 跳出
+/// watch）。空地址（还没导航）不算。
+@visibleForTesting
+bool webVideoLeavesPlayer(String url) =>
+    url.isNotEmpty && !webVideoIsWatchPage(url);
 
 /// 网页档设置面板的分组：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。
 @visibleForTesting
@@ -98,11 +120,17 @@ extension _VideoWebSource on _VideoFushiPageState {
     // 用户截图「视频站点这个打不开」：本地调试引擎不支持底层合成）。
     final WebVideoSite? site = widget.webSite;
     if (site != null) {
-      unawaited(
-        Navigator.of(
-          context,
-        ).pushReplacement(fushiWebBrowserRoute(context, site.url)),
-      );
+      // 浏览器交接过来的：那个标签页就在下面、还停在这个地址，回去即可；再压一个浏览器就是
+      // 第二个浏览器。
+      if (widget.webBackToBrowser) {
+        Navigator.of(context).pop();
+      } else {
+        unawaited(
+          Navigator.of(
+            context,
+          ).pushReplacement(fushiWebBrowserRoute(context, site.url)),
+        );
+      }
       return;
     }
     // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
@@ -138,6 +166,14 @@ extension _VideoWebSource on _VideoFushiPageState {
         appModel.videoImmersiveControlLayoutJson;
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _videoFitMode = appModel.videoFitMode;
+    // 浏览器共享的站点设置（广告拦截 / 网页深色 / 网站设置）：与 app 内浏览器同一个服务、同一份
+    // 偏好，见 `web_video_browser_settings.dart`。引擎在后台按需同步（浏览器页打开时同法）。
+    final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
+    unawaited(
+      adblock.ensureLoaded().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('VideoFushi.web.adblockLoad', e, s);
+      }),
+    );
     final WebVideoSession session = WebVideoSession(
       bookUid: _activeBookUid,
       pageUrl: row.videoPath,
@@ -151,6 +187,8 @@ extension _VideoWebSource on _VideoFushiPageState {
           _webPlatform?.applyCommandFailed(command),
       onTrackFailed: _onWebTrackFailed,
       onNetflixMetadata: _onWebNetflixMetadata,
+      adblock: adblock,
+      browserPrefs: appModel.prefsRepo,
     )..qualityTargetHeight = appModel.youtubeQualityTargetHeight;
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
@@ -201,10 +239,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     controller.setSecondaryDelayMs(_secondaryDelayMs);
     controller.onPositionWrite = _persistWebPosition;
     _titleNotifier.value = row.title;
-    session.nav.addListener(_syncWebAddress);
+    session.mainFrameUrl.addListener(_onWebNav);
     _rebuild(() {
       _webSession = session;
-      _webLoginImport ??= _createWebLoginImport();
       _webPlatform = platform;
       _controller = controller;
       _pendingController = null;
@@ -273,6 +310,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _controller?.rebindWebBook(null);
       _webVideoKey = state.videoKey;
       _webActiveTrackKey = null;
+      _webPinnedTrackKey = null;
       _webPendingTrackKey = null;
       _webFailedTrackKeys.clear();
       // 上一集选的图片字幕轨不跟到新视频（新文档的 glue 也已按宿主开关藏起站点字幕）。
@@ -292,13 +330,6 @@ extension _VideoWebSource on _VideoFushiPageState {
     _syncWebAudioTracks(state);
     _syncWebNetflixMetadata(state);
     _notifyWebBlocker(state);
-    // 站点自己的全屏钮（网页档里点的）= 「我要看了」：换成播放器档 + 窗口全屏。
-    if (state.fullscreen && state.hasVideo && !_webPlayerModeFor(state)) {
-      _webForcePlayerKey = state.videoKey;
-      _webBrowseVideoKey = null;
-      unawaited(session.exitPageFullscreen());
-      if (!_webWindowFullscreen) unawaited(_toggleWebWindowFullscreen());
-    }
     final bool playerMode = _webPlayerModeFor(state);
     session.syncInput(playerMode: playerMode, videoChanged: videoChanged);
     if (playerMode) unawaited(_bindWebEpisode(state));
@@ -310,11 +341,8 @@ extension _VideoWebSource on _VideoFushiPageState {
         ? '$base · ${state.videoHeight}p'
         : base;
     if (_titleNotifier.value != title) _titleNotifier.value = title;
-    if (playerMode != _webPlayerMode || state.hasVideo != _webPageHasVideo) {
-      _rebuild(() {
-        _webPlayerMode = playerMode;
-        _webPageHasVideo = state.hasVideo;
-      });
+    if (playerMode != _webPlayerMode) {
+      _rebuild(() => _webPlayerMode = playerMode);
       // 进了播放器档：WebView 不再收输入，键盘焦点收回播放器。
       if (playerMode) {
         _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
@@ -470,76 +498,13 @@ extension _VideoWebSource on _VideoFushiPageState {
     return meta == null ? '' : meta.coverFor(watchId!);
   }
 
-  /// 这份快照该不该是播放器档：没视频一定不是；站点弹层打断播放时不是；用户对**这一集**点过
-  /// 「回到网页」/「在播放器里看」以用户为准（换一集即失效——在网页里点了另一集，就自动进播放器）；否则看地址是不是
-  /// 播放页（[webVideoIsWatchPage]：Netflix 浏览页的预告片不算）。
-  bool _webPlayerModeFor(WebVideoPlaybackState state) {
-    if (!state.hasVideo) return false;
-    // 站点弹层打断了播放（「还在看吗？」/ 播放错误）：播放器档藏着站点页面、WebView 也不收输入，
-    // 用户既看不到也点不到——让位给网页档。弹层没了（快照 blk 回空）自动回到播放器档。
-    if (state.isBlocked) return false;
-    if (_webBrowseVideoKey == state.videoKey) return false;
-    if (_webForcePlayerKey == state.videoKey) return true;
-    return webVideoIsWatchPage(state.href);
-  }
-
-  /// 「回到网页」/「在播放器里看」：只改这一集的档位，同一个 WebView 原地切（不重载、不断播）。
-  void _setWebPlayerMode(bool on) {
-    final WebVideoSession? session = _webSession;
-    final WebVideoPlaybackState? state = session?.lastState;
-    if (session == null || state == null) return;
-    if (on) {
-      _webForcePlayerKey = state.videoKey;
-      _webBrowseVideoKey = null;
-    } else {
-      _webBrowseVideoKey = state.videoKey;
-      _webForcePlayerKey = null;
-      // 网页档要在窗口里选集：窗口全屏一起退掉。
-      if (_webWindowFullscreen) unawaited(_toggleWebWindowFullscreen());
-    }
-    _onWebState(state);
-  }
-
-  /// 网页档 / 播放器档切换（BUG-3801，用户：「应该改成有个按钮切换，而不是独立一个页面」）：
-  /// 两档共用这一个分段按钮——网页档挂在工具条上，播放器档挂在右上组头部——当前在哪一档
-  /// 一眼可见，切换也只在这里点。页面里没有视频时「播放器」段不可选。
-  Widget _buildWebModeToggle() => KeyedSubtree(
-    key: const ValueKey<String>('video-web-mode-toggle'),
-    child: adaptiveSegmentedButton<bool>(
-      context: context,
-      segments: <ButtonSegment<bool>>[
-        ButtonSegment<bool>(
-          value: false,
-          icon: const FushiIcon(FushiIcons.webAsset),
-          label: Text(t.web_video_mode_page),
-        ),
-        ButtonSegment<bool>(
-          value: true,
-          enabled: _webPageHasVideo || _webPlayerMode,
-          icon: const FushiIcon(FushiIcons.playCircle),
-          label: Text(t.web_video_mode_player),
-        ),
-      ],
-      selected: <bool>{_webPlayerMode},
-      onSelectionChanged: (Set<bool> v) => _setWebPlayerMode(v.first),
-    ),
+  /// 这份快照该不该挂播放器控件（[webVideoShowsPlayer]）。站点弹层打断时播放器控件让开、露出
+  /// 站点页面让用户点；弹层没了（快照 blk 回空）自动回到播放器。
+  bool _webPlayerModeFor(WebVideoPlaybackState state) => webVideoShowsPlayer(
+    hasVideo: state.hasVideo,
+    blocked: state.isBlocked,
+    href: state.href,
   );
-
-  /// 播放器档右上组头部的档位切换（[_buildWebModeToggle]）：与原盘「主菜单」同一个挂法（随
-  /// 控制条显隐、窄屏收进「⋯」，收进去时是「回到网页」一项）。
-  List<VideoBarEntry> _webPageBarEntries({required bool desktop}) {
-    return <VideoBarEntry>[
-      VideoBarEntry(
-        priority: 87,
-        menuAction: VideoBarMenuAction(
-          icon: FushiIcons.webAsset,
-          label: t.web_video_page_show,
-          onSelected: () => _setWebPlayerMode(false),
-        ),
-        child: _buildWebModeToggle(),
-      ),
-    ];
-  }
 
   void _onWebTrack(WebVideoTrack track) {
     if (!mounted) return;
@@ -590,8 +555,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (controller == null || !controller.isWebBackend) return;
     final String? pending = _webPendingTrackKey;
     if (pending != null && (_webTracks[pending]?.cues.isNotEmpty ?? false)) {
+      // 显式请求的那条采到了：钉住它。
       _webPendingTrackKey = null;
-      _webActiveTrackKey = pending;
+      _webPinnedTrackKey = pending;
     }
     final String? next = _webSubtitlesOff
         ? null
@@ -599,7 +565,7 @@ extension _VideoWebSource on _VideoFushiPageState {
             tracks: _webTracks.values,
             videoKey: _webVideoKey,
             preferredLanguage: _webPreferredSubtitleLanguage,
-            current: _webActiveTrackKey,
+            pinned: _webPinnedTrackKey,
           );
     final bool changed = next != _webActiveTrackKey;
     _webActiveTrackKey = next;
@@ -618,13 +584,18 @@ extension _VideoWebSource on _VideoFushiPageState {
     globalDefaultContentLanguage: appModel.defaultContentLanguage,
   );
 
-  /// 让站点播放器切到 [track]：它随即下载那条字幕文件，bridge 截下整轨后由
-  /// [_reselectWebTrack] 选中（[_webPendingTrackKey]）。
+  /// 加载 [track] 的整轨：站点播放器轨（Netflix）让播放器切过去，它随即下载那条字幕文件、bridge
+  /// 截下整轨；按需加载的占位轨（YouTube 等，[WebVideoSiteTrack.isLazy]）让站点桥去取。整轨到了由
+  /// [_reselectWebTrack] 选中并钉住（[_webPendingTrackKey]）。
   void _requestWebSiteTrack(WebVideoSiteTrack track, {bool byUser = false}) {
     final WebVideoSession? session = _webSession;
     if (session == null) return;
     if (byUser) _webSubtitleUserChosen = true;
     _webSubtitlesOff = false;
+    if (track.isLazy) {
+      _requestWebLazyTrack(session, track);
+      return;
+    }
     unawaited(
       session.evaluate(
         'window.__fushiWebVideo.selectNetflixTrack(${jsonEncode(track.id)})',
@@ -633,6 +604,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (track.imageBased) {
       // 图片字幕截不到文字：不进 Fushi 叠层，让站点自己画（不可查词）。
       _webPendingTrackKey = null;
+      _webPinnedTrackKey = null;
       _webActiveTrackKey = null;
       _setWebSiteImageTrackShown(true);
       _reselectWebTrack();
@@ -640,18 +612,50 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     _setWebSiteImageTrackShown(false);
-    final String key = track.storeKey(_webVideoKey);
+    _markWebTrackRequested(track.storeKey(_webVideoKey));
+  }
+
+  /// 记下显式请求的整轨：早已采到就直接钉住，否则等它到（[_webPendingTrackKey]）。
+  void _markWebTrackRequested(String key) {
     _webFailedTrackKeys.remove(key);
     _webPendingLiveCueCount = _webLiveCueCount();
     if (_webTracks[key]?.cues.isNotEmpty ?? false) {
       // 早已采到（Netflix 选回之前看过的轨不会重新下载）：直接选中。
       _webPendingTrackKey = null;
-      _webActiveTrackKey = key;
+      _webPinnedTrackKey = key;
     } else {
       _webPendingTrackKey = key;
     }
     _reselectWebTrack();
     _rebuild(() {});
+  }
+
+  /// 按需加载的占位轨：让站点桥取整轨（glue `requestLazyTrack` → providers
+  /// `fushiRequestLazyTrack`）。整轨照常经 `{type:'track'}` 到；取不到时桥发失败回执
+  /// （`{type:'trackFailed'}` → [_onWebTrackFailed]）。页面答「已不是占位」而 Dart 这边也没有
+  /// 这条整轨（换了视频 / 清单过期），同样是确定的失败。
+  void _requestWebLazyTrack(WebVideoSession session, WebVideoSiteTrack track) {
+    _setWebSiteImageTrackShown(false);
+    final String key = track.storeKey(_webVideoKey);
+    _markWebTrackRequested(key);
+    if (_webPendingTrackKey != key) return; // 早已采到
+    unawaited(
+      session
+          .evaluate(
+            'window.__fushiWebVideo.requestLazyTrack(${jsonEncode(key)})',
+          )
+          .then((Object? result) {
+            if (!mounted || result == 'requested') return;
+            if (_webPendingTrackKey == key &&
+                !(_webTracks[key]?.cues.isNotEmpty ?? false)) {
+              ErrorLogService.instance.log(
+                'VideoFushi.web',
+                'lazy subtitle track not requestable ($result): $key',
+              );
+              _onWebTrackFailed(key);
+            }
+          }),
+    );
   }
 
   void _setWebSiteImageTrackShown(bool shown) {
@@ -881,7 +885,6 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (session == null || index < 0 || index >= _webEpisodeUrls.length) {
       return;
     }
-    _webBrowseVideoKey = null;
     unawaited(session.loadUrl(_webEpisodeUrls[index]));
   }
 
@@ -928,6 +931,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     _webSubtitlesOff = key == null;
     _webPendingTrackKey = null;
     _setWebSiteImageTrackShown(false);
+    _webPinnedTrackKey = key;
     _webActiveTrackKey = key;
     _reselectWebTrack();
     _rebuild(() {});
@@ -1056,7 +1060,8 @@ extension _VideoWebSource on _VideoFushiPageState {
   }
 
   /// 视频槽：站点 WebView 垫在最底层（稳定 key，有无 <video> 两种布局之间不重建）；有视频时
-  /// 上面是原生 [Video]（透明底）+ 控制条，没视频时只在顶部留一条返回条、站点页面让在它下面。
+  /// 上面是原生 [Video]（透明底）+ 控制条，没视频 / 站点弹层打断时只在顶部留一条细返回条
+  /// （[_buildWebReturnBar]，淡入淡出）、站点页面让在它下面。
   Widget _wrapWebVideoSurface(Widget video) {
     final WebVideoSession? session = _webSession;
     if (session == null) return video;
@@ -1084,25 +1089,23 @@ extension _VideoWebSource on _VideoFushiPageState {
               ),
             ),
           ),
-        if (hasVideo)
-          Positioned.fill(child: video)
-        else ...<Widget>[
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            height: _kVideoWebPageBarHeight,
-            child: _buildWebPageBar(),
+        if (hasVideo) Positioned.fill(child: video),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          height: _kVideoWebPageBarHeight,
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            child: hasVideo
+                ? const SizedBox.shrink(
+                    key: ValueKey<String>('video-web-return-bar-hidden'),
+                  )
+                : _buildWebReturnBar(),
           ),
-          // 「从浏览器导入登录」的等待状态条（可取消），贴在网页工具条下面。
-          if (_webLoginImport case final WebVideoLoginImport import)
-            Positioned(
-              left: 0,
-              right: 0,
-              top: _kVideoWebPageBarHeight,
-              child: WebVideoLoginImportStatusBar(controller: import),
-            ),
-          // 网页档也要看得到短提示（登录导入等）：播放器档的 OSD 层挂在控制条里，这里补一层。
+        ),
+        // 露出站点页面时也要看得到短提示：播放器档的 OSD 层挂在控制条里，这里补一层。
+        if (!hasVideo)
           Positioned(
             left: 0,
             right: 0,
@@ -1110,162 +1113,113 @@ extension _VideoWebSource on _VideoFushiPageState {
             top: _kVideoWebPageBarHeight,
             child: _buildOsdOverlay(),
           ),
-        ],
       ],
     );
   }
 
-  /// 网页档（登录 / 选人 / 详情 / 选集）上方的浏览器工具条：后退（一级一级往外退，与
-  /// 返回键同一条 [_handleBackOrExit]）/ 前进 / 刷新（加载中是停止）/ 地址栏（网址或搜索词）
-  /// / 档位切换（[_buildWebModeToggle]，常驻）/ 关闭本页（浏览器交接过来的没有）。
-  Widget _buildWebPageBar() {
+  /// 播放器层露出站点页面时（观看页还没有视频 / 站点弹层打断）顶部的细返回条：返回（关掉本层，
+  /// 与返回键同一条 [_handleBackOrExit]）、标题、「在浏览器中打开」（[_exitWebToBrowser]）。
+  /// 没有地址栏 / 前进 / 刷新 / 档位切换——浏览只在 app 内浏览器里，用户只看到一个浏览器
+  /// （`docs/specs/2026-11-01-one-browser.md`）。
+  Widget _buildWebReturnBar() {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
     final WebVideoSession? session = _webSession;
-    if (session == null) return const SizedBox.shrink();
     return ColoredBox(
-      color: cs.surface,
+      key: const ValueKey<String>('video-web-return-bar'),
+      color: theme.colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: ValueListenableBuilder<WebVideoNavState>(
-          valueListenable: session.nav,
-          builder: (BuildContext _, WebVideoNavState nav, Widget? __) => Row(
-            children: <Widget>[
-              FushiIconButtonControl(
-                key: const ValueKey<String>('video-web-nav-back'),
-                tooltip: t.back,
-                icon: const FushiIcon(FushiIcons.back),
-                onPressed: () => unawaited(_handleBackOrExit()),
-              ),
-              FushiIconButtonControl(
-                key: const ValueKey<String>('video-web-nav-forward'),
-                tooltip: t.web_video_nav_forward,
-                icon: const FushiIcon(FushiIcons.forward),
-                onPressed: nav.canGoForward
-                    ? () => unawaited(session.goForward())
-                    : null,
-              ),
-              FushiIconButtonControl(
-                key: const ValueKey<String>('video-web-nav-reload'),
-                tooltip: nav.loading ? t.web_video_nav_close : t.refresh,
-                icon: FushiIcon(
-                  nav.loading ? FushiIcons.close : FushiIcons.refresh,
-                ),
-                onPressed: () => unawaited(session.reloadOrStop()),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FushiSearchField(
-                  fieldKey: const ValueKey<String>('video-web-address'),
-                  controller: _webAddressController,
-                  focusNode: _webAddressFocus,
-                  hintText: t.web_video_address_hint,
-                  leading: FushiIcon(
-                    nav.url.startsWith('https://')
-                        ? FushiIcons.lock
-                        : FushiIcons.globe,
-                  ),
-                  onChanged: (String _) {},
-                  onSubmitted: _submitWebAddress,
+        child: Row(
+          children: <Widget>[
+            FushiIconButtonControl(
+              key: const ValueKey<String>('video-web-return-back'),
+              tooltip: t.back,
+              icon: const FushiIcon(FushiIcons.back),
+              onPressed: () => unawaited(_handleBackOrExit()),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ValueListenableBuilder<String?>(
+                valueListenable: _titleNotifier,
+                builder: (BuildContext _, String? title, Widget? __) => Text(
+                  title ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
                 ),
               ),
-              const SizedBox(width: 4),
-              if (_webLoginImport
-                  case final WebVideoLoginImport import) ...<Widget>[
-                WebVideoLoginImportButton(controller: import),
-                const SizedBox(width: 4),
-              ],
-              // 档位切换常驻（「播放器」段在页面没视频时不可选）：用户从站点格进来时
-              // 落在选剧 / 详情页，切换钮要是藏着，他根本不知道这是 Fushi 播放器页的
-              // 网页档（2026-10-29 用户：「没有上端的切换播放器 / 普通网页的东西」）。
-              _buildWebModeToggle(),
-              const SizedBox(width: 4),
-              // 浏览器交接过来的不给「关闭」：本页网页档只是播放页的一档，返回就回浏览器
-              // （[VideoFushiPage.webBackToBrowser]），再给个关闭钮像是另开了一个页面。
-              if (!widget.webBackToBrowser)
-                FushiIconButtonControl(
-                  key: const ValueKey<String>('video-web-nav-close'),
-                  tooltip: t.web_video_nav_close,
-                  icon: const FushiIcon(FushiIcons.close),
-                  onPressed: () {
-                    _webClosing = true;
-                    unawaited(_handleBackOrExit());
-                  },
-                ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 4),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('video-web-open-in-browser'),
+              tooltip: t.web_video_open_in_browser,
+              icon: const FushiIcon(FushiIcons.globe),
+              onPressed: session == null
+                  ? null
+                  : () => _exitWebToBrowser(
+                      session.mainFrameUrl.value.isNotEmpty
+                          ? session.mainFrameUrl.value
+                          : session.pageUrl,
+                    ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  /// 「从浏览器导入登录」：与漫画源登录、app 内浏览器同一份 [BrowserLoginImport]——登记
-  /// 当前站点、在系统浏览器里打开它，Fushi 浏览器扩展把该站 cookie 送来，写进视频的
-  /// WebView2 环境（[importWebVideoBrowserCookies]）后刷新本页，登记随即结束（之后扩展
-  /// 再送一律被拒，不会每次打开该站都灌一批、刷一次页）。等待时网页工具条下有可取消的
-  /// 状态条。按钮 / 状态条 / 站点选择都在 [WebVideoLoginImport]，这里只接线。
-  WebVideoLoginImport _createWebLoginImport() => WebVideoLoginImport(
-    urls: () {
-      final WebVideoSession? session = _webSession;
-      if (session == null) return null;
-      return (currentUrl: session.nav.value.url, pageUrl: session.pageUrl);
-    },
-    write: importWebVideoBrowserCookies,
-    onImported: _onWebLoginImported,
-    onFailed: () => _showOsd(
-      t.login_import_write_failed,
-      icon: FushiIcons.login,
-      severity: ToastSeverity.error,
-    ),
-  );
-
-  void _onWebLoginImported(int written) {
+  /// 主框架地址变了（[WebVideoSession.mainFrameUrl] 的监听者）：离开观看页就回浏览器
+  /// （[webVideoLeavesPlayer]）。
+  void _onWebNav() {
     final WebVideoSession? session = _webSession;
-    if (!mounted || session == null) return;
-    _showOsd(
-      t.web_video_login_import_received(count: written),
-      icon: FushiIcons.login,
-      severity: ToastSeverity.success,
-    );
-    unawaited(session.reload());
+    if (session == null) return;
+    final String url = session.mainFrameUrl.value;
+    if (webVideoLeavesPlayer(url)) _exitWebToBrowser(url);
   }
 
-  void _endWebLoginImport() {
-    _webLoginImport?.dispose();
-    _webLoginImport = null;
-  }
-
-  /// 地址栏没在编辑时跟着当前页面地址（[WebVideoSession.nav] 的监听者）。
-  void _syncWebAddress() {
-    final WebVideoSession? session = _webSession;
-    if (session == null || _webAddressFocus.hasFocus) return;
-    final String url = session.nav.value.url;
-    if (_webAddressController.text != url) _webAddressController.text = url;
-  }
-
-  void _submitWebAddress(String input) {
-    final String? target = webVideoAddressBarTarget(input);
-    final WebVideoSession? session = _webSession;
-    if (target == null || session == null) return;
-    _webAddressFocus.unfocus();
-    unawaited(session.loadUrl(target));
-  }
-
-  /// 返回键在网页档里的一级：播放器档先退回网页；网页有站内历史就后退一页。都没有（或
-  /// 点了工具条「关闭」、或本页是浏览器交接过来的）返回 false，调用方关掉本页。同步判定：能否后退读工具条缓存的
-  /// [WebVideoNavState.canGoBack]（退出路径不 await，BUG-2119）。
-  bool _webBackStep() {
-    final WebVideoSession? session = _webSession;
-    if (session == null || _webClosing) return false;
-    // 浏览器交接过来的：返回就回浏览器（[VideoFushiPage.webBackToBrowser]）。
-    if (widget.webBackToBrowser) return false;
-    if (_webPlayerMode) {
-      _setWebPlayerMode(false);
-      return true;
+  /// 关掉播放器层、在浏览器里打开 [url]：浏览器交接过来的（[VideoFushiPage.webBackToBrowser]）
+  /// 把地址交回那个标签页（[WebVideoBrowserReturn]）再关页；从视频库打开的没有浏览器可回，
+  /// 先落进度再把本页换成一个浏览器页。只跑一次。
+  ///
+  /// 这条路径是**被动**的（站点自己跳页：Netflix 片尾回 /browse、会话过期跳登录页），触发时本页
+  /// 上面可能压着对话框 / 弹出菜单：先按身份把压在本页路由上面的路由弹掉（[popRoutesAbove]），
+  /// 之后的 pop / pushReplacement 作用的才是本页——否则关掉的是对话框、视频页留在下面继续占着
+  /// 底层合成。本页路由已不在栈里时什么都不做、也不登记回程地址（不给下一次交接留过期地址）。
+  void _exitWebToBrowser(String url) {
+    final Uri? target = Uri.tryParse(url);
+    final ModalRoute<dynamic>? ownRoute = mounted
+        ? ModalRoute.of(context)
+        : null;
+    if (ownRoute == null ||
+        !ownRoute.isActive ||
+        _webExitingToBrowser ||
+        target == null ||
+        (target.scheme != 'http' && target.scheme != 'https')) {
+      return;
     }
-    if (!session.nav.value.canGoBack) return false;
-    unawaited(session.goBack());
-    return true;
+    while (_dismissTopForegroundLayer()) {}
+    if (!popRoutesAbove(Navigator.of(context), ownRoute)) return;
+    _webExitingToBrowser = true;
+    if (widget.webBackToBrowser) {
+      WebVideoBrowserReturn.offer(target);
+      _exitVideoPage();
+      return;
+    }
+    unawaited(_replaceWebWithBrowser(ownRoute, target));
+  }
+
+  Future<void> _replaceWebWithBrowser(
+    ModalRoute<dynamic> ownRoute,
+    Uri target,
+  ) async {
+    await _controller?.flushPosition();
+    if (!context.mounted) return;
+    final NavigatorState nav = Navigator.of(context);
+    // 落进度期间又弹出来的层同样先收掉；本页已被别的路径关掉就不再换。
+    if (!popRoutesAbove(nav, ownRoute)) return;
+    unawaited(
+      nav.pushReplacement(fushiWebBrowserRoute(context, target.toString())),
+    );
   }
 
   /// 网页档制卡（[_onMineEntryImpl] 分流到这里）：**只入队**（schema v90 `web_mine_queue`），
@@ -1364,6 +1318,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           returnHostingAfterMining: WebVideoHosting.windowed,
           idleAutoMining: idle,
           mineReturnState: state == null ? null : WebMineReturnState.of(state),
+          returnToBrowser: widget.webBackToBrowser,
         ),
       ),
     );
@@ -1451,10 +1406,8 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webWindowFullscreen = false;
       unawaited(WindowCaptionChannel.setFullscreen(false));
     }
-    _endWebLoginImport();
+    _webSession?.mainFrameUrl.removeListener(_onWebNav);
     _webSession?.dispose();
-    _webAddressController.dispose();
-    _webAddressFocus.dispose();
     final Route<Object?>? transparentRoute = _webTransparentRoute;
     if (transparentRoute != null) {
       _webTransparentRoute = null;

@@ -168,7 +168,7 @@ void main() {
     ).run(videoPaths: <String>[video.path], work: work);
     final FakeAiCompleter ai = FakeAiCompleter(
       (String prompt, int call) => prompt.startsWith('日本のアニメ')
-          ? '[{"ja": "唯", "reading": "ゆい", "kind": "人名"}]'
+          ? '唯\tゆい\t人名\nEND'
           : replyForIds(prompt, (int id) => '校正$id'),
     );
     await pipeline(
@@ -228,8 +228,7 @@ void main() {
       // 4 个人名一个都没在识别稿里出现、也没有片假名证据 → 无刮削路径硬失败。
       final FakeAiCompleter ai = FakeAiCompleter(
         (String prompt, int call) =>
-            '[{"ja":"別人甲","kind":"人名"},{"ja":"別人乙","kind":"人名"},'
-            '{"ja":"別人丙","kind":"人名"},{"ja":"別人丁","kind":"人名"}]',
+            '別人甲\t\t人名\n別人乙\t\t人名\n別人丙\t\t人名\n別人丁\t\t人名\nEND',
         usage: const AiChatUsage(inputTokens: 100, outputTokens: 10),
       );
       await expectLater(
@@ -247,8 +246,7 @@ void main() {
 
     test('AI 请求失败：失败之前成功的调用照实上报（不是 0 次）', () async {
       final FakeAiCompleter glossary = FakeAiCompleter(
-        (String prompt, int call) =>
-            '[{"ja": "唯", "reading": "ゆい", "kind": "人名"}]',
+        (String prompt, int call) => '唯\tゆい\t人名\nEND',
         usage: const AiChatUsage(inputTokens: 50, outputTokens: 5),
       );
       final _FailAfter ai = _FailAfter(glossary, okCalls: 1);

@@ -18,8 +18,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 /// - `AiChatClient` 的失败码原样带过：`quota_exhausted` / `unauthorized` /
 ///   `rate_limited` / `network_error` / `http_<状态码>` / `provider_not_configured` /
 ///   `bad_response` / `empty_response`；
-/// - 管线自己的：[kSubtitleAiReplyIncomplete]（重试 3 次回复仍没覆盖全部 id 或解析
-///   不出）、[kSubtitleAiNotConfigured]（开了 AI 却没解析出提供商）。
+/// - 管线自己的：[kSubtitleAiReplyIncomplete]（连续 3 次回复都没带来任何新的 id /
+///   条目；截断与漏写的部分各阶段会保留已答的、只补问剩下的）、[kSubtitleAiNotConfigured]（开了 AI 却没解析出提供商）。
 class SubtitleAiRequestFailure implements Exception {
   const SubtitleAiRequestFailure(this.reason, {this.detail, this.usage});
 
@@ -42,7 +42,7 @@ class SubtitleAiRequestFailure implements Exception {
       'SubtitleAiRequestFailure($reason${detail == null ? '' : ': $detail'})';
 }
 
-/// 回复反复不合格（缺 id / 不是 JSON）。
+/// 回复反复不合格：连续几轮一条新记录都没拿到（[runAiLineExchange]）。
 const String kSubtitleAiReplyIncomplete = 'reply_incomplete';
 
 /// 开了 AI 校对，但「字幕校对」功能解析不出可用的提供商。
@@ -217,5 +217,144 @@ Object? decodeLooseAiJson(String reply) {
     return jsonDecode(reply.substring(start, end + 1));
   } on FormatException {
     return null;
+  }
+}
+
+/// 字幕各阶段的回复协议：**一行一条记录，最后一行写 [kAiLineReplyEnd]**。
+///
+/// 不用 JSON：输出撞上 `max_tokens` 截断时 JSON 整段不闭合、解析不出；一行一条
+/// 时只丢最后半行，前面写完的行照用，接着只问剩下的。结束标记让「写完了」成为
+/// 显式信号——S3 / S4 只写改动的行，没有它就分不清「这批不用改」和「没写完」。
+const String kAiLineReplyEnd = 'END';
+
+/// 一次回复按行协议解析的结果。
+class AiLineReply {
+  const AiLineReply({required this.lines, required this.complete});
+
+  /// 写完整的记录行（去掉空行、代码围栏、[kAiLineReplyEnd] 及其后的内容；回复
+  /// 没写完时，没有换行收尾的最后一行可能被截了半截，也丢掉）。
+  final List<String> lines;
+
+  /// 回复确实写完了：写了 [kAiLineReplyEnd]，且提供商没报截断 / 非正常结束。
+  ///
+  /// **只认结束标记这个正向信号**：S3 / S4 的协议是「不写 = 不改」，停止原因正常
+  /// 只说明模型自己停了，不说明它守了协议——回了 JSON、说明文、拒答也都是
+  /// `end_turn` / `stop`，把它们当写完会把「本批无修正」永久落进缓存。停止原因只用来
+  /// 否决：截断（[AiChatCompletion.truncated]）与内容过滤 / 拒答这类非正常结束
+  /// （[isAiLineStopAbnormal]）即使带了结束标记也不算写完。
+  final bool complete;
+}
+
+/// 三家协议「模型正常写完」的停止原因：OpenAI `stop`、Anthropic `end_turn` /
+/// `stop_sequence`、Gemini `STOP`。
+const Set<String> kAiLineNormalStopReasons = <String>{
+  'stop',
+  'end_turn',
+  'stop_sequence',
+  'STOP',
+};
+
+/// 停止原因既不是正常写完、也不是截断：内容过滤（`content_filter` / `SAFETY` /
+/// `RECITATION` / `PROHIBITED_CONTENT`…）、拒答（`refusal`）、调了工具等。这种回复
+/// 是被中途掐掉或根本没按协议答，不能当写完；null（应答里没有停止原因）不算——那时
+/// 只能靠结束标记判断。
+bool isAiLineStopAbnormal(String? stopReason) =>
+    stopReason != null &&
+    !isAiChatStopTruncated(stopReason) &&
+    !kAiLineNormalStopReasons.contains(stopReason);
+
+/// 按行协议解析 [reply]。
+AiLineReply parseAiLineReply(AiChatCompletion reply) {
+  final String text = reply.text;
+  final List<String> raw = text.split('\n');
+  final List<String> lines = <String>[];
+  bool sawEnd = false;
+  for (int k = 0; k < raw.length; k++) {
+    String line = raw[k];
+    if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
+    final String trimmed = line.trim();
+    if (trimmed == kAiLineReplyEnd) {
+      sawEnd = true;
+      break;
+    }
+    if (trimmed.isEmpty || trimmed.startsWith('```')) continue;
+    lines.add(line);
+  }
+  final bool abnormal = isAiLineStopAbnormal(reply.stopReason);
+  final bool complete = sawEnd && !reply.truncated && !abnormal;
+  // 末行可能被截了半截：输出被掐断（截断 / 非正常结束），或拿不到停止原因、也没写
+  // 结束标记（分不清是否被掐断，按被掐断处理）。正常停止却漏了结束标记时末行是
+  // 写完整的，照收。
+  final bool maybeCut =
+      reply.truncated || abnormal || (reply.stopReason == null && !sawEnd);
+  if (maybeCut && !sawEnd && lines.isNotEmpty && !text.endsWith('\n')) {
+    lines.removeLast();
+  }
+  return AiLineReply(lines: lines, complete: complete);
+}
+
+final RegExp _kAiLineRecord = RegExp(
+  r'^\s*(?:id=)?([^\s:：|]+)(?:\t|\s*[:：|]\s*|\s+)(.*)$',
+);
+
+/// `<键><TAB><值>` 记录拆成键与值（值可为空：`12<TAB>` = 把第 12 行清空）。模型偶尔
+/// 把 TAB 写成空格 / 冒号 / 竖线，一并接受；只在第一个分隔处拆，值里的分隔符原样
+/// 保留。不是记录的行（说明文）返回 null。
+(String, String)? splitAiLineRecord(String line) {
+  final RegExpMatch? m = _kAiLineRecord.firstMatch(line);
+  if (m == null) return null;
+  return (m.group(1)!, m.group(2)!.trimRight());
+}
+
+/// 各阶段共用的问答循环：问 [body]（每轮重新构造，只含还没答到的部分）→ 按行协议
+/// 解析 → [absorb] 收下新记录（返回新增条数）→ [done] 判定是否结束。
+///
+/// 回复截断 / 漏写时已收下的记录跨轮保留、下一轮只问剩下的，所以每轮都有进展就一直
+/// 问下去；只有连续 [maxAttempts] 轮一条新记录都没拿到才抛
+/// [kSubtitleAiReplyIncomplete]（[failureDetail] 进 `detail`）。请求本身失败（额度 /
+/// 鉴权 / 网络）由 [AiTextCompleter] 原样抛出，不在这里重试。
+///
+/// 记录集合有限的阶段（S3 / S4 / 短片分类按 id 问）每轮有进展就必然收敛；记录集合
+/// 开放的阶段（专名表，模型可以一直编新条目）必须给 [maxRounds]：总轮数到了还没写完
+/// 同样抛 [kSubtitleAiReplyIncomplete]。
+Future<void> runAiLineExchange({
+  required AiTextCompleter completer,
+  required String stablePrefix,
+  required String Function() body,
+  required int Function(List<String> lines) absorb,
+  required bool Function(AiLineReply reply) done,
+  required String Function() failureDetail,
+  required SubtitleAiUsageTally usage,
+  required SubtitleCancelToken cancel,
+  int maxAttempts = 3,
+  int? maxRounds,
+}) async {
+  int fruitless = 0;
+  int rounds = 0;
+  while (true) {
+    throwIfSubtitleCancelled(cancel);
+    if (maxRounds != null && rounds >= maxRounds) {
+      throw SubtitleAiRequestFailure(
+        kSubtitleAiReplyIncomplete,
+        detail: '${failureDetail()}; gave up after $rounds rounds',
+      );
+    }
+    rounds++;
+    final AiChatCompletion reply = await completer.complete(
+      body(),
+      stablePrefix: stablePrefix,
+    );
+    usage.addCall(reply.usage);
+    final AiLineReply parsed = parseAiLineReply(reply);
+    final int added = absorb(parsed.lines);
+    if (done(parsed)) return;
+    if (added > 0) {
+      fruitless = 0;
+    } else if (++fruitless >= maxAttempts) {
+      throw SubtitleAiRequestFailure(
+        kSubtitleAiReplyIncomplete,
+        detail: failureDetail(),
+      );
+    }
   }
 }

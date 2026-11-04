@@ -41,6 +41,12 @@
     try { return new URLSearchParams(location.search).get('v') || ''; } catch (_) { return ''; }
   }
 
+  // 轨的语言码（`en` / `ja` / `pt-BR`）：store key 的语言段是显示名（同语言人工轨 / ASR 轨靠它
+  // 区分），语言偏好匹配却只认码——随清单 / cue 消息一起发出，隔离世界记进 fushiTrackLangCodes。
+  function trackLanguageCode(track) {
+    return String((track && track.languageCode) || '').replace(/\|/g, '_');
+  }
+
   function trackLabel(track) {
     var label = track && track.name && (
       track.name.simpleText || (track.name.runs && track.name.runs[0] && track.name.runs[0].text)
@@ -243,7 +249,9 @@
     var list = {
       __fushiStream: 'tracks',
       videoKey: videoKey,
-      tracks: Array.from(byLabel.keys()).map(function (lang) { return { lang: lang }; }),
+      tracks: Array.from(byLabel.entries()).map(function (entry) {
+        return { lang: entry[0], languageCode: trackLanguageCode(entry[1]) };
+      }),
     };
     cacheMessage(videoKey + '|#tracks', list);
     try { window.postMessage(list, '/'); } catch (_) {}
@@ -259,10 +267,12 @@
 
   // 按需取轨：隔离世界（subtitle-providers.js fushiRequestLazyTrack）在用户选中占位轨时发
   // {__fushiStream:'fetchTrack', videoKey, lang}。已取过的直接重放缓存；在途的不重复取。
+  // 取不到（清单里没有这条 / 请求失败 / 轨是空的）发 {__fushiStream:'cuesFailed'} 确定回执：
+  // 请求方（app 的「加载中」、扩展面板）据此落成失败，而不是永远等一条不会来的 cue。
   async function fetchLazyTrack(videoKey, lang) {
     var byLabel = pendingTracks.get(videoKey);
     var track = byLabel && byLabel.get(lang);
-    if (!track) return;
+    if (!track) { publishFailed(videoKey, lang, 'unknown track'); return; }
     var key = videoKey + '|' + lang;
     var cached = cache.get(key);
     if (cached) { try { window.postMessage(cached, '/'); } catch (_) {} return; }
@@ -271,10 +281,17 @@
     try {
       var cues = await fetchTrack(track);
       if (cues.length) publish(videoKey.slice(3), track, cues);
-    } catch (_) {
+      else publishFailed(videoKey, lang, 'no cues');
+    } catch (e) {
+      publishFailed(videoKey, lang, String((e && e.message) || e || 'error'));
     } finally {
       lazyInFlight.delete(key);
     }
+  }
+  function publishFailed(videoKey, lang, err) {
+    try {
+      window.postMessage({ __fushiStream: 'cuesFailed', videoKey: videoKey, lang: lang, err: err }, '/');
+    } catch (_) {}
   }
   window.addEventListener('message', function (event) {
     if (event.source !== window || !event.data || event.data.__fushiStream !== 'fetchTrack') return;
@@ -286,6 +303,7 @@
       __fushiStream: 'cues',
       videoKey: 'yt-' + id,
       lang: trackLabel(track),
+      languageCode: trackLanguageCode(track),
       format: 'cues',
       cues: cues,
     };

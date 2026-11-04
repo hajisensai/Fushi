@@ -12,8 +12,9 @@
 //!   实现当基准，随机写入 / 跨日 / 回滚下逐步对拍）；
 //! - 出卡：学习卡 → 到期复习卡（会话里按块下界取此刻可提取度最低的一张，不扫全部到期卡）→ 新卡（部分索引序
 //!   `LIMIT 1`，命中第一张即停）→ 20 分钟内到期的学习卡；
-//! - RWKV-Instant 的牌组：分数由 Dart 侧的 RWKV 服务给（另一个原生库），这里只做排队规则（目标保留率、同日
-//!   间隔守卫、每天最少复习数、按 R 升序），与旧 Dart `_instantReviews` 同口径。
+//! - RWKV-Instant 的牌组：分数由 Dart 侧的 RWKV 服务给（另一个原生库），是**今天结束时刻**的 R——R 到今天结束
+//!   会降到目标保留率以下的卡就是「今天到期」，与 FSRS 按天到期同一粒度，计数、出卡、新卡负荷都用它；这里只做排队
+//!   规则（目标保留率、同日间隔守卫、每天最少复习数、按 R 升序），与旧 Dart `_instantReviews` 同口径。
 //!
 //! 请求 `{"deck"?: 根牌组, "now", "utcOff", "rollover", "exclude"?: [卡], "pick"?: bool,
 //!        "rwkv"?: {"decks": {牌组: [目标保留率, 每天最少, 间隔次数, 间隔秒数]}, "cands": [[卡, 牌组, 上次作答|null, R]]}}`；
@@ -48,6 +49,9 @@ struct Tally {
     due: i64,
     new_done: i64,
     review_done: i64,
+    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）。FSRS 牌组 = 到期数；
+    /// RWKV 牌组 = 今天已复习 + 今天到期（合格）的卡，按这个牌组的每日复习上限截断（见 [run]）。
+    load: i64,
 }
 
 impl Tally {
@@ -58,10 +62,11 @@ impl Tally {
         self.due += o.due;
         self.new_done += o.new_done;
         self.review_done += o.review_done;
+        self.load += o.load;
     }
 
     fn of(r: DeckRaw) -> Tally {
-        Tally { total: r.total, new_avail: r.new_avail, learn: r.learn, due: r.due, new_done: 0, review_done: 0 }
+        Tally { total: r.total, new_avail: r.new_avail, learn: r.learn, due: r.due, new_done: 0, review_done: 0, load: r.due }
     }
 }
 
@@ -349,7 +354,7 @@ fn count_tree(ctx: &Ctx<'_>, tallies: &HashMap<String, Tally>, ids: &[String], r
         }
         let view = &ctx.tree.decks[id].view;
         // 新卡计划与每日上限一样只看牌组自己的值（不随参数继承）。
-        let budget = new_card_budget(int(view, "np", 20), sub.due, ctx.logs.last30(), NewCardPlan::of(&view["npl"]));
+        let budget = new_card_budget(int(view, "np", 20), sub.load, ctx.logs.last30(), NewCardPlan::of(&view["npl"]));
         // 自定义学习「提升今日上限」：只对今天、只加在这个牌组自己这一层（子牌组的上限照旧截）。
         let (ext_new, ext_review) = today_extension(&view["ext"], ctx.today);
         let new_remaining = (budget.allowed + ext_new - sub.new_done).max(0);
@@ -812,6 +817,18 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
             x.review_done += 1;
         }
     }
+    // RWKV 牌组的新卡负荷：合格的卡是「还剩多少」，随作答减少，单拿它和预算比，一天里「暂停」会自己解除。改按今天
+    // 实际要做的复习量：已复习 + 合格，不超过这个牌组今天的复习上限（开了「忽略每日复习上限」的不截）——超出上限的
+    // 部分今天本来也不会出。
+    for d in instant.keys() {
+        let Some(x) = t.get_mut(d) else { continue };
+        let mut load = x.due + x.review_done;
+        if let Some(node) = ctx.tree.decks.get(d.as_str()).filter(|_| !ctx.tree.ignores_review_limit(d)) {
+            let (_, ext_review) = today_extension(&node.view["ext"], ctx.today);
+            load = load.min(int(&node.view, "rp", 200) + ext_review);
+        }
+        x.load = load;
+    }
     let counts = count_tree(&ctx, &t, &ids, root);
     let (mut next, mut after) = (None, None);
     let mut custom_out = Value::Null;
@@ -852,10 +869,8 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
     let counts_json: serde_json::Map<String, Value> = counts
         .iter()
         .map(|(id, k)| {
-            (
-                id.clone(),
-                json!([k.new_count, k.learn_count, k.review_count, k.sub.total, k.budget.limit, k.budget.allowed, k.budget.review_budget, k.budget.reason]),
-            )
+            let row = json!([k.new_count, k.learn_count, k.review_count, k.sub.total, k.budget.limit, k.budget.allowed, k.budget.review_budget, k.budget.reason]);
+            (id.clone(), row)
         })
         .collect();
     Ok(json!({
@@ -1460,6 +1475,50 @@ mod tests {
             assert_eq!(r["counts"][d][2], want_due, "{d}");
             assert_eq!(!r["next"].is_null(), want_next, "{d}: {r}");
         }
+        // FSRS 与 RWKV 混在同一棵子树里：父行的到期 = FSRS 子牌组的到期（FS 的 2 张，按 FS 自己的上限截）+ RWKV
+        // 今天到期（合格）的卡；RWKV 等就绪（pending）时只有 FSRS 那部分。
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')", vec![Sql::Text("MIX".into()), Sql::Text(P.into())]);
+        edit(&core, &mut n, "IGN", "parent", json!("MIX"));
+        edit(&core, &mut n, "FS", "parent", json!("MIX"));
+        // 挂到 MIX 下以后参数归属变成 MIX：FS 设成自己的参数（仍是 FSRS、照旧按自己的上限截），IGN 跟 MIX（缺省 RWKV），
+        // 「忽略每日复习上限」写到 MIX 上。
+        edit(&core, &mut n, "FS", "paramsMode", json!("own"));
+        edit(&core, &mut n, "MIX", "rwkvQueue", json!({"minReviews": 0, "repeatReviews": 5, "repeatSeconds": 30, "refreshEvery": 1, "ignoreLimit": true}));
+        let cands = json!([["IGN-003", "IGN", null, 0.5]]);
+        for (req, want_due) in [
+            (json!({"now": now, "utcOff": 0, "rollover": 4, "rwkv": {"decks": {"IGN": [0.9, 0, 5, 30]}, "cands": [], "pending": true}}), 2),
+            (json!({"now": now, "utcOff": 0, "rollover": 4, "rwkv": {"decks": {"IGN": [0.9, 0, 5, 30]}, "cands": cands}}), 3),
+        ] {
+            let got = core.study(P, &req).unwrap();
+            assert_eq!(got, core.read_visible(|c| oracle::study(c, P, &req)).unwrap());
+            assert_eq!(got["counts"]["MIX"][2], json!(want_due), "{got}");
+            assert_eq!(got["counts"]["MIX"].as_array().unwrap().len(), 8, "{got}");
+        }
+        // RWKV 牌组的新卡负荷 = 今天已复习 + 合格，按牌组的每日复习上限截断（开了「忽略每日复习上限」的不截），
+        // 合格的卡超出今天复习上限的部分今天不会出，不算进负荷。新卡上限 1 → 预算 = 10，负荷超过 20 才暂停。
+        for d in ["OLD", "IGN"] {
+            edit(&core, &mut n, d, "limits", json!({"new": 1, "review": 3}));
+            for _ in 0..25 {
+                card(d, "review");
+            }
+        }
+        let cands: Vec<Value> = core
+            .read_visible(|c| {
+                let mut stmt = c.prepare("SELECT srs_idt(id), srs_idt(deck_id) FROM srs_cards_cache WHERE deck_id IN (srs_id('OLD'), srs_id('IGN'))").map_err(sql)?;
+                let rows = stmt.query_map([], |r| Ok(json!([r.get::<_, String>(0)?, r.get::<_, String>(1)?, null, 0.5]))).map_err(sql)?;
+                rows.collect::<Result<Vec<Value>, _>>().map_err(sql)
+            })
+            .unwrap();
+        assert!(cands.len() >= 64, "{}", cands.len());
+        let req = json!({"now": now, "utcOff": 0, "rollover": 4, "rwkv": {"decks": {"OLD": [0.9, 0, 0, 0], "IGN": [0.9, 0, 0, 0]}, "cands": cands}});
+        let got = core.study(P, &req).unwrap();
+        assert_eq!(got, core.read_visible(|c| oracle::study(c, P, &req)).unwrap());
+        // OLD：32 张合格，但今天最多复习 3 张（已复习 2 张）→ 负荷 3，新卡照常 1 张。
+        assert_eq!(got["counts"]["OLD"][5], json!(1), "{got}");
+        assert_eq!(got["counts"]["OLD"][7], Value::Null, "{got}");
+        // IGN 忽略每日复习上限：32 张合格 + 已复习 2 张全算 → 34 > 2 × 10，暂停。
+        assert_eq!(got["counts"]["IGN"][5], json!(0), "{got}");
+        assert_eq!(got["counts"]["IGN"][7], json!("paused"), "{got}");
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }

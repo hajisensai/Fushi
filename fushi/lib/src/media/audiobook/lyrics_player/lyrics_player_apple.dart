@@ -10,16 +10,27 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.da
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_modern_shared.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_backgrounds.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiFloatingToolbarColors, FushiToolbarItem, FushiTopBarOverflowFit;
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpHistoryActions;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show FushiMotion, fushiMotionDuration;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart'
+    show FushiTextStyleFigures, FushiTypography, FushiTypographyContext;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+part 'lyrics_player_apple_modern.part.dart';
 
 /// Apple 设计系统（iOS / macOS 26 Liquid Glass）下的 Apple Music 风格歌词页。
 ///
@@ -154,6 +165,11 @@ class _WideChrome extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 跳转记录的返回 / 前进排在动作区最前。
+              if (data.jumpActions.isNotEmpty) ...<Widget>[
+                _AppleJumpActions(items: data.jumpActions),
+                const SizedBox(width: 8),
+              ],
               // 布局「顶部」区的按钮（出厂 书籍模式 / 左右互换）；有退书回调时
               // × 直接退书回书架、「书籍模式」键回正文（反馈 QvYpZODImz）。
               for (final Widget button in _appleControlButtons(
@@ -636,55 +652,7 @@ class _NarrowChrome extends StatelessWidget {
           right: padding.right + 10,
           top: layout.headerTop,
           height: kLyricsShellAppleNarrowHeaderHeight,
-          child: Row(
-            children: <Widget>[
-              // 窄屏左上角返回键（iOS 没有系统返回键；此前只有右上角 ×，用户
-              // 认不出它是「返回」，2026-10-09 反馈）。
-              _LyricsIconButton(
-                key: const ValueKey<String>('lyrics_player_back'),
-                icon: CupertinoIcons.chevron_left,
-                diameter: 38,
-                iconSize: 18,
-                color: Colors.white.withValues(alpha: 0.74),
-                tooltip: t.back,
-                onPressed: callbacks.onClose,
-              ),
-              const SizedBox(width: 6),
-              _NarrowIllustrationEntry(data: data, callbacks: callbacks),
-              Expanded(
-                // 书名行也是插图入口（与左侧缩略图同一动作）。
-                child: LyricsIllustrationTapTarget(
-                  controller: data.illustrations,
-                  onOpen: callbacks.onOpenIllustration == null
-                      ? null
-                      : (int index) => callbacks.onOpenIllustration!(
-                          index,
-                          returnToCover: true,
-                        ),
-                  child: _NarrowHeader(title: data.title, clock: data.clock),
-                ),
-              ),
-              // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
-              ..._appleControlButtons(
-                data.compactControls.itemsIn(LyricsControlSlot.top),
-                data,
-                callbacks,
-                wide: false,
-                header: true,
-              ),
-              // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
-              if (callbacks.onExitBook != null)
-                _LyricsIconButton(
-                  key: const ValueKey<String>('lyrics_close_button'),
-                  icon: CupertinoIcons.xmark,
-                  diameter: 38,
-                  iconSize: 18,
-                  color: Colors.white.withValues(alpha: 0.74),
-                  tooltip: t.lyrics_exit_to_library,
-                  onPressed: callbacks.onExitBook!,
-                ),
-            ],
-          ),
+          child: _NarrowHeaderRow(data: data, callbacks: callbacks),
         ),
         Positioned.fromRect(
           rect: bar,
@@ -736,6 +704,85 @@ class _NarrowChrome extends StatelessWidget {
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// 窄屏页眉：返回 · 插图入口 · 书名与读数 · 跳转记录 · 布局「顶部」区按钮 ·（新版
+/// 的 ⋯）· ×。经典与新版窄屏共用。
+class _NarrowHeaderRow extends StatelessWidget {
+  const _NarrowHeaderRow({
+    required this.data,
+    required this.callbacks,
+    this.showMore = false,
+  });
+
+  final LyricsPlayerData data;
+  final LyricsPlayerCallbacks callbacks;
+
+  /// 页眉末尾带 ⋯（新版：底部卡片收起时没有 ⋯）。
+  final bool showMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        // 窄屏左上角返回键（iOS 没有系统返回键；此前只有右上角 ×，用户
+        // 认不出它是「返回」，2026-10-09 反馈）。
+        _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_player_back'),
+          icon: CupertinoIcons.chevron_left,
+          diameter: 38,
+          iconSize: 18,
+          color: Colors.white.withValues(alpha: 0.74),
+          tooltip: t.back,
+          onPressed: callbacks.onClose,
+        ),
+        const SizedBox(width: 6),
+        _NarrowIllustrationEntry(data: data, callbacks: callbacks),
+        Expanded(
+          // 书名行也是插图入口（与左侧缩略图同一动作）。
+          child: LyricsIllustrationTapTarget(
+            controller: data.illustrations,
+            onOpen: callbacks.onOpenIllustration == null
+                ? null
+                : (int index) =>
+                      callbacks.onOpenIllustration!(index, returnToCover: true),
+            child: _NarrowHeader(title: data.title, clock: data.clock),
+          ),
+        ),
+        // 跳转记录的返回 / 前进排在动作区最前。
+        if (data.jumpActions.isNotEmpty)
+          _AppleJumpActions(items: data.jumpActions),
+        // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
+        ..._appleControlButtons(
+          data.compactControls.itemsIn(LyricsControlSlot.top),
+          data,
+          callbacks,
+          wide: false,
+          header: true,
+        ),
+        // 新版窄屏：⋯ 在页眉（底部播放卡收起时也够得着）。
+        if (showMore)
+          _MoreButton(
+            key: const ValueKey<String>('lyrics_more_button'),
+            onMore: callbacks.onMore,
+            diameter: 38,
+            iconSize: 18,
+            color: Colors.white.withValues(alpha: 0.74),
+          ),
+        // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
+        if (callbacks.onExitBook != null)
+          _LyricsIconButton(
+            key: const ValueKey<String>('lyrics_close_button'),
+            icon: CupertinoIcons.xmark,
+            diameter: 38,
+            iconSize: 18,
+            color: Colors.white.withValues(alpha: 0.74),
+            tooltip: t.lyrics_exit_to_library,
+            onPressed: callbacks.onExitBook!,
+          ),
       ],
     );
   }
@@ -1071,9 +1118,11 @@ List<Widget> _appleControlButtons(
   LyricsPlayerCallbacks callbacks, {
   required bool wide,
   required bool header,
+  double? diameterOverride,
+  double? iconSizeOverride,
 }) {
-  final double diameter = header ? 38 : 34;
-  final double iconSize = header ? 18 : 19;
+  final double diameter = diameterOverride ?? (header ? 38 : 34);
+  final double iconSize = iconSizeOverride ?? (header ? 18 : 19);
   final Color? color = header ? Colors.white.withValues(alpha: 0.74) : null;
   Widget? build(LyricsControlItem item) {
     switch (item) {
@@ -1082,6 +1131,7 @@ List<Widget> _appleControlButtons(
           speed: data.speed,
           onChanged: callbacks.onSpeedChanged,
           onSpeedPanel: callbacks.onSpeedPanel,
+          minExtent: diameter,
         );
       case LyricsControlItem.studyTimer:
         final VoidCallback? onToggle = callbacks.onToggleStatsTimer;
@@ -1176,19 +1226,57 @@ List<Widget> _appleControlButtons(
   return <Widget>[for (final LyricsControlItem item in items) ?build(item)];
 }
 
+/// 歌词页顶栏的跳转记录图标：与同排的白色线框图标同一前景色。
+class _AppleJumpActions extends StatelessWidget {
+  const _AppleJumpActions({required this.items});
+
+  final List<FushiToolbarItem> items;
+
+  @override
+  Widget build(BuildContext context) => FushiJumpHistoryActions(
+    items: items,
+    iconSize: 20,
+    colors: FushiFloatingToolbarColors(
+      foreground: Colors.white.withValues(alpha: 0.74),
+    ),
+  );
+}
+
 class _MoreButton extends StatelessWidget {
-  const _MoreButton({required this.onMore});
+  const _MoreButton({
+    required this.onMore,
+    this.collapsedItems = const <LyricsControlItem>[],
+    this.diameter = 34,
+    this.iconSize = 19,
+    this.color,
+    super.key,
+  });
 
   final ValueChanged<LyricsMenuAnchor> onMore;
+
+  /// 新版宽屏右岛收进 ⋯ 的按钮（交给页面排在菜单最前）。
+  final List<LyricsControlItem> collapsedItems;
+  final double diameter;
+  final double iconSize;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return _LyricsIconButton(
       icon: CupertinoIcons.ellipsis,
-      diameter: 34,
-      iconSize: 19,
+      diameter: diameter,
+      iconSize: iconSize,
+      color: color,
       tooltip: t.common_more_actions,
-      onPressedWithRect: onMore,
+      onPressedWithRect: (LyricsMenuAnchor at) => onMore(
+        collapsedItems.isEmpty
+            ? at
+            : LyricsMenuAnchor(
+                rect: at.rect,
+                context: at.context,
+                collapsedItems: collapsedItems,
+              ),
+      ),
     );
   }
 }
@@ -1200,10 +1288,14 @@ class _SpeedButton extends StatelessWidget {
     required this.speed,
     required this.onChanged,
     this.onSpeedPanel,
+    this.minExtent = 34,
   });
 
   final double speed;
   final ValueChanged<double> onChanged;
+
+  /// 最小命中边长（新版宽屏方块里放大到 44）。
+  final double minExtent;
 
   /// 页面弹面板（面板开着期间停表）；null 时按钮自己弹。
   final ValueChanged<LyricsMenuAnchor>? onSpeedPanel;
@@ -1216,7 +1308,7 @@ class _SpeedButton extends StatelessWidget {
       child: FushiPressScale(
         child: FushiPlainButton(
           semanticLabel: '${t.playback_speed} $label',
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(minExtent / 2),
           onPressed: () {
             final ValueChanged<LyricsMenuAnchor>? viaPage = onSpeedPanel;
             final RenderObject? box = context.findRenderObject();
@@ -1238,7 +1330,10 @@ class _SpeedButton extends StatelessWidget {
             );
           },
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+            constraints: BoxConstraints(
+              minWidth: minExtent,
+              minHeight: minExtent,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 7),
               child: Center(
@@ -1283,10 +1378,21 @@ class _SeekByIntent extends Intent {
 /// Niratan `lyricsScrubber`：胶囊轨道白 0.2、填充白 0.72；悬停 / 拖动 / 键盘
 /// 焦点时填充 0.94、粗 5→9。拖动中显示本地值，松手才 [onSeek]。键盘左右键 ±5 秒。
 class _LyricsScrubber extends StatefulWidget {
-  const _LyricsScrubber({required this.clock, required this.onSeek});
+  const _LyricsScrubber({
+    required this.clock,
+    required this.onSeek,
+    this.showTimes = true,
+    this.trackHeight = 14,
+  });
 
   final LyricsPlayerClock clock;
   final ValueChanged<Duration> onSeek;
+
+  /// 轨道下方的两端时间（新版宽屏把时间画在进度线上方，这里不画）。
+  final bool showTimes;
+
+  /// 轨道命中带高度（线画在中间）。
+  final double trackHeight;
 
   @override
   State<_LyricsScrubber> createState() => _LyricsScrubberState();
@@ -1405,7 +1511,7 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           SizedBox(
-            height: 14,
+            height: widget.trackHeight,
             child: FocusableActionDetector(
               mouseCursor: SystemMouseCursors.click,
               shortcuts: const <ShortcutActivator, Intent>{
@@ -1454,7 +1560,7 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
                       curve: Curves.easeInOut,
                       builder: (BuildContext context, double a, Widget? child) {
                         return CustomPaint(
-                          size: Size(width, 14),
+                          size: Size(width, widget.trackHeight),
                           painter: _TrackPainter(
                             fraction: fraction,
                             thickness: lerpDouble(5, 9, a)!,
@@ -1469,17 +1575,19 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
               ),
             ),
           ),
-          const SizedBox(height: 5),
-          Row(
-            children: <Widget>[
-              Text(formatLyricsPlayerTime(shown), style: timeStyle),
-              const Spacer(),
-              Text(
-                '-${formatLyricsPlayerTime(remaining.isNegative ? Duration.zero : remaining)}',
-                style: timeStyle,
-              ),
-            ],
-          ),
+          if (widget.showTimes) ...<Widget>[
+            const SizedBox(height: 5),
+            Row(
+              children: <Widget>[
+                Text(formatLyricsPlayerTime(shown), style: timeStyle),
+                const Spacer(),
+                Text(
+                  '-${formatLyricsPlayerTime(remaining.isNegative ? Duration.zero : remaining)}',
+                  style: timeStyle,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

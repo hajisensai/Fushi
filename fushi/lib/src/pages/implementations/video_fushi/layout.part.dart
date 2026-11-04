@@ -806,8 +806,6 @@ extension _VideoLayout on _VideoFushiPageState {
                         _buildSubtitleDragAdjustBanner(),
                         // 浮条调轴（反馈 JsICLVdq0i）：画面顶部的紧凑调轴浮条。非模式态零尺寸。
                         _buildSubtitleDelayBar(),
-                        // 「跳转回退」胶囊（无历史 / 小窗 / 沉浸锁时零尺寸）。
-                        _buildVideoJumpHistoryPillOverlay(),
                         _buildLevelHudOverlay(),
                         _buildVideoSideActionRail(controller),
                         _buildVideoSidePanelOverlay(controller),
@@ -1147,7 +1145,10 @@ extension _VideoLayout on _VideoFushiPageState {
       duration: () => Duration(milliseconds: controller.durationMs ?? 0),
       onPlayPause: () => unawaited(controller.playOrPause()),
       onSeek: (Duration d) {
-        _recordVideoJumpDeparture(d.inMilliseconds);
+        _recordVideoJumpDeparture(
+          d.inMilliseconds,
+          source: JumpSource.progressBar,
+        );
         unawaited(controller.seekMs(d.inMilliseconds));
       },
       onSeekRelative: (int seconds) =>

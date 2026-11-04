@@ -329,6 +329,11 @@ import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart'
+    show createAppleMusicBridge;
+import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dart'
+    show appleMusicBackendRoute;
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_routing_backend.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
@@ -1384,6 +1389,7 @@ class AppModel with ChangeNotifier {
   /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
   Future<void> _resetSrsStorageHost({required bool isMainProcess}) async {
     await _closeSrsStorage();
+    await useSrsTempDirectory();
     _srsStorageHost = SrsStorageHost(
       dbDirectory: _databaseDirectory.path,
       isMainProcess: isMainProcess,
@@ -1777,6 +1783,17 @@ class AppModel with ChangeNotifier {
 
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
+
+  /// Apple Music 账号与本平台的 MusicKit 桥（MusicKit 方案 §3.1 / §4）：播放后端与设置页共用。
+  /// 懒建；[dispose] 只拆真正建过的那一份（连带桥与网页桥的隐藏 WebView）。
+  AppleMusicAccount get appleMusicAccount =>
+      _appleMusicAccount ??= AppleMusicAccount(
+        bridge: createAppleMusicBridge,
+        connected: () =>
+            isPreferencesReady && prefsRepo.musicAppleMusicConnected,
+        setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
+      );
+  AppleMusicAccount? _appleMusicAccount;
   late final AnkiIntegration ankiIntegration = AnkiIntegration();
 
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
@@ -1872,9 +1889,13 @@ class AppModel with ChangeNotifier {
         ),
       );
     }
-    // 由专用后端播放的曲目（托管播放，如 MusicKit）；其余走默认链路。目前还没有专用后端，
-    // 路由层原样转发（docs/specs/2026-10-31-apple-music-musickit.md §3.3）。
-    const List<MusicBackendRoute> backendRoutes = <MusicBackendRoute>[];
+    // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
+    // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
+    // 落到 mpv 打不开、按单曲失败）。
+    final List<MusicBackendRoute> backendRoutes = <MusicBackendRoute>[
+      if (appleMusicAccount.platformSupported)
+        appleMusicBackendRoute(() => appleMusicAccount.bridge!),
+    ];
     final MusicPlayerEngine engine = MusicPlayerEngine(
       backendFactory: () => MusicRoutingBackend(
         routes: backendRoutes,
@@ -5656,12 +5677,23 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
 
-  /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏）。
-  int get videoJumpPillAutoHideSeconds =>
-      prefsRepo.videoJumpPillAutoHideSeconds;
+  /// 「跳转记录」顶栏图标自动隐藏秒数（0 = 不自动隐藏，默认）。
+  int get jumpHistoryAutoHideSeconds => prefsRepo.jumpHistoryAutoHideSeconds;
 
-  Future<void> setVideoJumpPillAutoHideSeconds(int value) =>
-      prefsRepo.setVideoJumpPillAutoHideSeconds(value);
+  Future<void> setJumpHistoryAutoHideSeconds(int value) =>
+      prefsRepo.setJumpHistoryAutoHideSeconds(value);
+
+  /// 「跳转记录」顶栏返回 / 前进图标开关（默认开；关掉照样记录）。
+  bool get jumpHistoryToolbar => prefsRepo.jumpHistoryToolbar;
+
+  Future<void> setJumpHistoryToolbar(bool value) =>
+      prefsRepo.setJumpHistoryToolbar(value);
+
+  /// 「跳转记录」进度条刻度开关（默认开）。
+  bool get jumpHistoryProgressMarks => prefsRepo.jumpHistoryProgressMarks;
+
+  Future<void> setJumpHistoryProgressMarks(bool value) =>
+      prefsRepo.setJumpHistoryProgressMarks(value);
 
   /// 播放器底栏时间显示剩余时长（默认关，点按底栏时间切换）。
   bool get videoTimeDisplayRemaining => prefsRepo.videoTimeDisplayRemaining;
@@ -7647,6 +7679,8 @@ class AppModel with ChangeNotifier {
   /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
   DiscoveryImportExecutor get discoveryImportExecutor =>
       _discoveryImportExecutor ??= DiscoveryImportExecutor(
+        // 包里有几份字幕时挑学习语言的那份（全 app 只有日语，与视频 sidecar 同源）。
+        subtitleLangCode: kLearningLanguageCode,
         importers: buildProductionDiscoveryImporters(
           db: database,
           srtBookRepo: SrtBookRepository(database),
@@ -7923,36 +7957,39 @@ class AppModel with ChangeNotifier {
   /// 字幕书的远端音频绑定 → 可播放的流式接缝；服务器配置已删 / 已登出 / 不是
   /// Audiobookshelf 时返回 null（调用方当作「没有可播放的音频」）。
   AudiobookRemotePlayback? remotePlaybackFor(RemoteAudioBinding binding) {
+    final AudiobookshelfApi? api = audiobookshelfApiForBinding(binding);
+    return api == null
+        ? null
+        : AudiobookshelfRemotePlayback(
+            api: api,
+            binding: binding,
+            deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
+            // 两路回调会并发落库：只写各自的列，不读出整行再覆盖。
+            onPushed: (int nowMs) => RemoteAudioBindingRepository(
+              database,
+            ).updateProgressMarks(binding.srtBookUid, localProgressAt: nowMs),
+            onSynced: (int serverProgressAt, int syncedAt) =>
+                RemoteAudioBindingRepository(database).updateProgressMarks(
+                  binding.srtBookUid,
+                  serverProgressAt: serverProgressAt,
+                  progressSyncedAt: syncedAt,
+                ),
+            onSyncError: (String what, Object error) => ErrorLogService.instance
+                .log('AudiobookshelfProgress.$what', error, StackTrace.current),
+          );
+  }
+
+  /// 远端绑定 → 那台 Audiobookshelf 服务器的共享协议层实例（借用，不得 close）；
+  /// 服务器配置已删 / 已登出 / 不是 Audiobookshelf 时返回 null。
+  AudiobookshelfApi? audiobookshelfApiForBinding(RemoteAudioBinding binding) {
     if (binding.provider != RemoteAudioBinding.providerAudiobookshelf) {
       return null;
     }
     for (final AudiobookshelfServerConfig server
         in prefsRepo.discoveryAudiobookshelfServers) {
-      if (server.id != binding.serverConfigId) continue;
-      final AudiobookshelfApi? api = audiobookshelfApis.apiFor(server);
-      return api == null
-          ? null
-          : AudiobookshelfRemotePlayback(
-              api: api,
-              binding: binding,
-              deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
-              // 两路回调会并发落库：只写各自的列，不读出整行再覆盖。
-              onPushed: (int nowMs) => RemoteAudioBindingRepository(
-                database,
-              ).updateProgressMarks(binding.srtBookUid, localProgressAt: nowMs),
-              onSynced: (int serverProgressAt, int syncedAt) =>
-                  RemoteAudioBindingRepository(database).updateProgressMarks(
-                    binding.srtBookUid,
-                    serverProgressAt: serverProgressAt,
-                    progressSyncedAt: syncedAt,
-                  ),
-              onSyncError: (String what, Object error) =>
-                  ErrorLogService.instance.log(
-                    'AudiobookshelfProgress.$what',
-                    error,
-                    StackTrace.current,
-                  ),
-            );
+      if (server.id == binding.serverConfigId) {
+        return audiobookshelfApis.apiFor(server);
+      }
     }
     return null;
   }
@@ -10300,6 +10337,9 @@ class AppModel with ChangeNotifier {
     _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
+    // Apple Music 账号持有桥订阅；网页桥还持有隐藏的 HeadlessInAppWebView（播放后端只借用桥）。
+    _appleMusicAccount?.dispose();
+    _appleMusicAccount = null;
     final ExitFlushCallback? mihonExitShutdown = _mihonRuntimeExitShutdown;
     _mihonRuntimeExitShutdown = null;
     if (mihonExitShutdown != null) {
@@ -11263,9 +11303,13 @@ class AppModel with ChangeNotifier {
 
   /// 游戏串流主机侧制卡适配器：游戏工作台「开始串流」与接收端远程启动共用这一份，
   /// 两个入口读同一组 gal 制卡偏好。
+  ///
+  /// 串流卡是替接收端制的，与互联转发 / 浏览器扩展同走 [hostMiningAnkiRepository]：
+  /// 遵守本机挖词目标（目标是 Fushi 复习时落复习）。曾直接用裸 Anki 后端，挖词目标
+  /// 是复习、又没配 Anki 牌组的主机上每张串流卡都失败。
   FushiGameStreamMiningAdapter createGameStreamMiningAdapter() {
     return FushiGameStreamMiningAdapter(
-      repository: () => platformServices.createAnkiRepository(),
+      repository: () => hostMiningAnkiRepository,
       compression: () => MiningMediaCompression.resolve(
         imageTier: miningImageQuality,
         audioTier: miningAudioQuality,

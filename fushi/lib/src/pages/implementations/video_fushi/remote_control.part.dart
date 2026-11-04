@@ -70,7 +70,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
               0,
               controller.durationMs ?? position,
             );
-            _recordVideoJumpDeparture(target);
+            _recordVideoJumpDeparture(target, source: JumpSource.remote);
             await controller.seekMs(target);
             if (action == 'seekCue') await controller.play();
           default:
@@ -640,7 +640,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         favorite,
       );
       final int favoriteMs = miningClipTimeMs(cue.startMs, cue.delayMs);
-      _recordVideoJumpDeparture(favoriteMs);
+      _recordVideoJumpDeparture(favoriteMs, source: JumpSource.favorite);
       await controller.seekMs(favoriteMs);
       await controller.play();
       return;

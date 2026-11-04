@@ -8,6 +8,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi/utils.dart';
 
 class _RecordingSeekController extends AudiobookPlayerController {
@@ -18,6 +19,7 @@ class _RecordingSeekController extends AudiobookPlayerController {
     AudioCue cue, {
     bool callerPositionsReader = false,
     bool revealReader = false,
+    JumpSource jumpSource = JumpSource.cue,
   }) async {
     requestedCue = cue;
   }

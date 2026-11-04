@@ -2,6 +2,8 @@
 // 以及最关键的一条——原生的 Video + MaterialDesktopVideoControls 能原封不动地跑在它上面
 // （VideoController 走外部渲染分支，不碰 mpv 句柄）。
 
+import 'dart:typed_data';
+
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,9 +22,10 @@ WebVideoPlaybackState _state({
   double rate = 1,
   int w = 3840,
   int h = 2160,
+  String href = 'https://www.netflix.com/watch/1',
 }) => parseWebVideoStatePayload(<String, Object?>{
   'type': 'state',
-  'href': 'https://www.netflix.com/watch/1',
+  'href': href,
   'videoKey': 'nf-1',
   'hasVideo': true,
   't': pos,
@@ -249,6 +252,56 @@ void main() {
     test('no mpv handle, no screenshot', () async {
       await expectLater(platform.handle, throwsUnsupportedError);
       expect(await platform.screenshot(), isNull);
+    });
+
+    test('Netflix（硬件 DRM）不截帧、不发命令；YouTube 走页面 canvas 截帧', () async {
+      final List<String> calls = <String>[];
+      // 1x1 PNG 的 data URL：glue `captureFrame` 的成功返回形状。
+      const String png =
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+      final WebVideoPlatformPlayer p = WebVideoPlatformPlayer(
+        evaluate: (String s) async {
+          calls.add(s);
+          return png;
+        },
+      );
+      p.applySnapshot(_state());
+      expect(p.frameCaptureSupported, isFalse);
+      expect(await p.screenshot(), isNull);
+      expect(calls, isEmpty);
+
+      p.applySnapshot(_state(href: 'https://www.youtube.com/watch?v=abc'));
+      expect(p.frameCaptureSupported, isTrue);
+      final Uint8List? bytes = await p.screenshot(format: 'image/png');
+      expect(bytes, isNotNull);
+      expect(bytes!.sublist(1, 4), 'PNG'.codeUnits);
+      expect(calls, <String>[
+        "window.__fushiWebVideo.captureFrame('image/png')",
+      ]);
+      await p.dispose();
+    });
+
+    test('截帧结果码 / 坏 data URL 解成 null', () {
+      for (final Object? r in <Object?>[
+        null,
+        'drm',
+        'tainted',
+        'no-video',
+        'data:image/png,abc',
+        'data:image/png;base64,',
+        'data:image/png;base64,@@@',
+      ]) {
+        expect(decodeWebVideoFrameDataUrl(r), isNull, reason: '$r');
+      }
+      expect(
+        webVideoFrameCaptureSupported('https://www.netflix.com/watch/1'),
+        isFalse,
+      );
+      expect(
+        webVideoFrameCaptureSupported('https://m.youtube.com/watch?v=a'),
+        isTrue,
+      );
+      expect(webVideoFrameCaptureSupported(''), isFalse);
     });
   });
 

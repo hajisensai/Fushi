@@ -125,6 +125,23 @@ void main() {
     File(path).deleteSync();
   });
 
+  // 进程级 SQLite 临时目录（Android 上开库前必须设）：只设一次，同一目录再设是空操作，换目录报错。用常驻的系统临时
+  // 目录，不影响本进程里别的测试。
+  test('useTempDirectory is set once per process', () {
+    final String stable = Directory.systemTemp.path;
+    SrsCore.useTempDirectory(stable);
+    SrsCore.useTempDirectory(stable);
+    expect(
+      () => SrsCore.useTempDirectory(dir.path),
+      throwsA(isA<SrsCoreException>()),
+    );
+    final SrsCore core = SrsCore.open(
+      '${dir.path}${Platform.pathSeparator}srs.db',
+    );
+    expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
+    core.close();
+  });
+
   test('openInBackground rethrows the open failure as SrsCoreException', () {
     // 路径是个目录：SQLite 打不开。错误要以原类型回到调用方（打开页按类型区分「空间不够」等）。
     expect(

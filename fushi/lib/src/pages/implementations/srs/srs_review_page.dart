@@ -1618,8 +1618,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return '${t.srs_custom_study_left} ${custom.left} · '
           '${t.srs_count_learn} ${custom.learn}';
     }
+    final String review = SrsReviewCell(due: _reviewCount).label() ?? '';
     return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
-        '${t.srs_count_review} $_reviewCount';
+        '$review';
   }
 
   bool get _pendingDecision => _detail?.note.hasPendingDecision ?? false;
@@ -2003,6 +2004,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             ),
         ],
         actions: <List<FushiToolbarItem>>[_actionItems()],
+        // 牌组名与卡片计数优先完整显示，动作放不下先收进「⋯」（用户 2026-11-03）。
+        titleFirst: true,
         // 默认平铺、宽度不够才按优先级收进「⋯」（自适应溢出，CLAUDE.md 工具栏规则）。
         overflow: _menuItems(),
       ),

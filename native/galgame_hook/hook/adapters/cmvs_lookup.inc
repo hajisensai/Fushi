@@ -335,7 +335,8 @@ void RetireCmvsLookup(bool discard_requests = true) {
   if (g_header) fushi_voice_hook::g_geometry_provider_registry.Retire(
       g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
       fushi_voice_hook::kLookupGeometryProviderIdCmvs);
-  ClearLookupHoverHighlight();
+  ClearLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdCmvs);
 }
 
 void ProcessCmvsLookupTick() {
@@ -415,11 +416,13 @@ void ProcessCmvsLookupTick() {
   if (GetForegroundWindow() != game || !GetCursorPos(&cursor) ||
       IsLookupOverlayInputShieldVisible()) {
     InvalidateCmvsShiftTarget(false);
-    ClearLookupHoverHighlight(); return;
+    ClearLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdCmvs); return;
   }
   const HWND under = WindowFromPoint(cursor);
   if (under != game && !IsChild(game, under)) {
-    InvalidateCmvsShiftTarget(false); ClearLookupHoverHighlight(); return;
+    InvalidateCmvsShiftTarget(false); ClearLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdCmvs); return;
   }
   cursor.x -= origin.x; cursor.y -= origin.y;
   size_t hit = chosen.count;
@@ -429,15 +432,19 @@ void ProcessCmvsLookupTick() {
         cursor.x < rect.x || cursor.y < rect.y || cursor.x >= rect.x + rect.width ||
         cursor.y >= rect.y + rect.height) continue;
     if (hit != chosen.count) {
-      InvalidateCmvsShiftTarget(false); ClearLookupHoverHighlight(); return;
+      InvalidateCmvsShiftTarget(false); ClearLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdCmvs); return;
     }
     hit = i;
   }
   if (hit == chosen.count) {
-    InvalidateCmvsShiftTarget(false); ClearLookupHoverHighlight(); return;
+    InvalidateCmvsShiftTarget(false); ClearLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdCmvs); return;
   }
   const auto& rect = quads[hit];
-  RequestLookupHoverHighlight(origin.x + rect.x, origin.y + rect.y, rect.width, rect.height);
+  RequestLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdCmvs,
+      origin.x + rect.x, origin.y + rect.y, rect.width, rect.height);
   const auto target = BuildCmvsShiftTarget(chosen, hit, identity, quads, text,
       event, thread, frame, game, input, origin, client);
   AcquireSRWLockExclusive(&g_cmvs_shift_lock);

@@ -1,6 +1,7 @@
 /// Audiobookshelf 条目详情：封面 + 信息 + 「流式播放」。播客列出单集，每集各自流式。
 ///
-/// 「流式播放」= 同一条目（单集）建过书就直接打开；否则先选字幕（服务器上的或本机的），
+/// 「流式播放」= 同一条目（单集）建过书就直接打开；否则服务器上有对得上的字幕就直接
+/// 挂上（[suggestServerSubtitle]），对不上才让用户选字幕（服务器上的或本机的），
 /// 再在进度对话框里建书（取字幕 / 封面、按音轨偏移切时间轴、生成正文），最后用正常的
 /// 阅读器入口打开——阅读器起会话时会认出这本书绑在服务器上，自动改走流式
 /// （`AudiobookSessionLauncher`），查词与制卡都在阅读器里。
@@ -30,6 +31,8 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart'
+    show AudiobookshelfSubtitleMatch;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -258,15 +261,32 @@ class _AudiobookshelfItemPageState
         );
       } else {
         if (!mounted) return;
+        // 服务器上有足够确定的字幕就直接挂上，不再弹选择框；挑不准或只是推荐（多音轨
+        // + 一份对不上名字的字幕）才让用户选。挂错了可在「重新导入」里「从服务器选」换掉。
+        final AudiobookshelfSubtitleMatch? match = suggestServerSubtitle(
+          detail,
+          episode: episode,
+        );
         final AudiobookshelfSubtitleChoice? choice =
-            await chooseAudiobookshelfSubtitle(
-              context: context,
-              detail: detail,
-              episode: episode,
+            await resolveStreamSubtitleChoice(
+              match: match,
+              ask: () => chooseAudiobookshelfSubtitle(
+                context: context,
+                detail: detail,
+                episode: episode,
+              ),
             );
         if (choice == null || !mounted) return;
         book = await _create(service, detail, episode, choice);
         if (book == null) return;
+        if (match != null && match.autoAttach) {
+          FushiToast.show(
+            msg: t.audiobookshelf_subtitle_auto_attached(
+              name: match.file.filename,
+            ),
+            severity: ToastSeverity.info,
+          );
+        }
       }
       await _openBook(book);
     } catch (e) {

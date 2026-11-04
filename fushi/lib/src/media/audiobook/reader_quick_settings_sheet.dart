@@ -142,6 +142,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.expandedTocParents,
     this.volumeSwitch,
     this.lyricsCueSearch,
+    this.audioJumpMarks,
+    this.bookJumpMarks,
+    this.onOpenJumpHistory,
     this.initialSubPage,
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
@@ -284,6 +287,15 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 「搜索」页搜的是音频 cue 文本、点结果跳句；null = 不提供（非歌词模式走书内
   /// 正文搜索 [onSearchJump]）。
   final ReaderLyricsCueSearch? lyricsCueSearch;
+
+  /// 「跳转记录」落点（0~1）：[audioJumpMarks] 是全书时间轴上的（有声书整书进度
+  /// 条），[bookJumpMarks] 是全书字数进度上的（导航页「阅读进度」条）。每次 build
+  /// 现取；null = 不画（刻度设置关闭）。
+  final ({List<double> back, List<double> forward}) Function()? audioJumpMarks;
+  final ({List<double> back, List<double> forward}) Function()? bookJumpMarks;
+
+  /// 打开「跳转记录」面板（本次会话有跳转时才给）：先关本面板再打开。
+  final VoidCallback? onOpenJumpHistory;
 
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
@@ -784,6 +796,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                   ),
                 ),
               ),
+              if (_buildJumpHistoryEntry(context) case final Widget entry)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    0,
+                    tokens.spacing.page,
+                    tokens.spacing.gap / 2,
+                  ),
+                  child: entry,
+                ),
               if (_navTabs.length > 1)
                 Padding(
                   padding: EdgeInsets.fromLTRB(
@@ -1082,6 +1104,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       coverPath: widget.coverPath,
       compact: compact,
       footer: ctrl == null ? null : _buildAudioProgressLine(theme, ctrl),
+      jumpMarks: widget.bookJumpMarks?.call(),
     );
   }
 
@@ -1324,13 +1347,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             _buildImagePauseSection(widget.controller!),
         ],
       ),
-      // 播放控件布局只作用于 MD3：Apple 设计系统的歌词页不读它，隐藏免得切了
-      // 没反应。
-      if (!isGlassDesign(context))
-        AdaptiveSettingsSection(
-          key: const ValueKey<String>('reader_panel_lyrics_controls'),
-          children: <Widget>[_lyricsControlsStyleRow()],
-        ),
+      // 播放控件布局（新版 / 经典）：MD3 与 Apple 两套设计系统都读它。
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('reader_panel_lyrics_controls'),
+        children: <Widget>[_lyricsControlsStyleRow()],
+      ),
       if (widget.onOpenLyricsControlLayout != null)
         AdaptiveSettingsSection(
           children: <Widget>[
@@ -1381,6 +1402,22 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       onOpenTtsVoices: widget.onOpenTtsVoices,
       onSwitchTtsVoice: widget.onSwitchTtsVoice,
       cueStudyOffset: widget.cueStudyOffset,
+      jumpMarks: widget.audioJumpMarks,
+    );
+  }
+
+  /// 「位置」页的「跳转记录」入口行（有历史时才出现）。
+  Widget? _buildJumpHistoryEntry(BuildContext context) {
+    final VoidCallback? open = widget.onOpenJumpHistory;
+    if (open == null) return null;
+    return AdaptiveSettingsNavigationRow(
+      key: const ValueKey<String>('reader_nav_jump_history_row'),
+      title: t.media_jump_history_title,
+      icon: FushiIcons.history,
+      onTap: () {
+        _sideSheetClose(context)();
+        open();
+      },
     );
   }
 
@@ -1648,6 +1685,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        ?_buildJumpHistoryEntry(context),
         if (widget.epubBook != null && widget.onSearchJump != null)
           _buildSearchSection(theme),
         if (widget.onJumpToCharOffset != null) ...[
@@ -2906,7 +2944,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// MD3 歌词模式播放控件布局：新版（默认）/ 经典（`lyrics_controls_style`）。
+  /// 歌词模式播放控件布局：新版（默认）/ 经典（`lyrics_controls_style`），MD3 与
+  /// Apple 两套设计系统都适用。
   /// 纯 Flutter 覆盖层布局，写偏好后 source 经 chrome 重建通道让覆盖层重排。
   Widget _lyricsControlsStyleRow() {
     return AdaptiveSettingsSegmentedRow<LyricsControlsStyle>(

@@ -41,6 +41,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder, fushiPlayButtonRotation;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -57,6 +59,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbarScope;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 /// M3E 悬浮工具栏容器高（规格 64）。阅读器手机底栏带标签时用它。
 const double kFushiFloatingToolbarExtent = 64;
@@ -94,6 +97,8 @@ class FushiToolbarItem {
     this.key,
     this.semanticsId,
     this.tooltip,
+    this.onLongPress,
+    this.emphasized = false,
   });
 
   final IconData icon;
@@ -107,6 +112,14 @@ class FushiToolbarItem {
   final bool selected;
   final Key? key;
   final String? semanticsId;
+
+  /// 长按 / 右键（桌面 secondary tap）的次要动作；null = 没有。收进「⋯」溢出菜单
+  /// 时只保留 [onPressed]。
+  final VoidCallback? onLongPress;
+
+  /// 强调态：不是「选中」，只给图标按钮垫一层 secondaryContainer 底，让临时出现的
+  /// 动作（跳转记录的返回 / 前进）和常驻按钮区分开。语义上不报 selected。
+  final bool emphasized;
 }
 
 /// 悬浮工具栏配色。null 字段回落到主题：MD3 standard = surfaceContainer /
@@ -334,6 +347,67 @@ Color fushiToolbarItemForeground(
 /// 工具栏里的一颗按钮：无标签 = M3E 图标按钮（按压变形由
 /// [FushiIconButtonControl] 自带）；有标签 = 等宽格（图标 + labelSmall），按压
 /// 走 [FushiPressScale] 同款缩放。选中态画 secondaryContainer 胶囊底。
+/// 纯图标按钮外观的自定义构造（[FushiToolbarButton.iconBuilder]）：返回一颗**不带**
+/// tooltip / 长按的裸按钮（点按接 `item.onPressed`），提示、长按 / 右键与语义由
+/// [FushiToolbarLongPressTarget] 统一包。[foreground] 是本栏按钮的前景色，外观自带
+/// 配色的宿主（视频控制条）可以不用。
+typedef FushiToolbarIconBuilder =
+    Widget Function(
+      BuildContext context,
+      FushiToolbarItem item,
+      Color foreground,
+    );
+
+/// 带长按 / 右键的图标按钮的**唯一**手势与提示装配（工具栏按钮的自定义外观、桌面
+/// 经典顶栏、视频控制条共用）：
+///
+/// - 提示（[FushiTooltip]）在外层，长按识别器在里层：命中测试由深到浅登记，里层的
+///   长按先进手势竞技场、同一时限下先胜出，所以触屏长按打开动作而不是只弹提示；
+///   鼠标悬停照样出提示。反过来（长按包在提示外面）长按就会被提示抢走。
+/// - 右键（经绑定表的 [ContextMenuTrigger]，不硬绑次按钮）与长按同一动作。
+/// - 语义：名称恒为 [label]（tooltip 只是提示），点按 / 长按动作都进语义树。
+///
+/// [child] 必须是不带 tooltip / 长按的裸按钮（自己处理点按）。
+class FushiToolbarLongPressTarget extends StatelessWidget {
+  const FushiToolbarLongPressTarget({
+    super.key,
+    required this.label,
+    required this.tooltip,
+    required this.onPressed,
+    required this.onLongPress,
+    required this.child,
+  });
+
+  final String label;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final VoidCallback onLongPress;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => FushiTooltip(
+    message: tooltip,
+    excludeFromSemantics: true,
+    // 右键走绑定表（ContextMenuTrigger），不硬绑次按钮：右键被改绑给别的动作时不双触发。
+    child: ContextMenuTrigger(
+      onInvoke: contextMenuInvoker(onLongPress),
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Semantics(
+          label: label,
+          hint: tooltip == label ? null : tooltip,
+          button: true,
+          enabled: onPressed != null,
+          excludeSemantics: true,
+          onTap: onPressed,
+          onLongPress: onLongPress,
+          child: child,
+        ),
+      ),
+    ),
+  );
+}
+
 class FushiToolbarButton extends StatelessWidget {
   const FushiToolbarButton({
     super.key,
@@ -344,7 +418,13 @@ class FushiToolbarButton extends StatelessWidget {
     this.showLabel = false,
     this.inlineLabel = false,
     this.iconSize = 24,
+    this.iconBuilder,
   });
+
+  /// 纯图标形态的外观换成宿主自己的按钮（视频控制条的 M3E / media_kit 按钮）。
+  /// 只用于纯图标（[showLabel] / [inlineLabel] 为 false）；强调态插入动效、长按 /
+  /// 右键、提示、语义仍由本组件统一处理。
+  final FushiToolbarIconBuilder? iconBuilder;
 
   final FushiToolbarItem item;
   final Color foreground;
@@ -369,30 +449,61 @@ class FushiToolbarButton extends StatelessWidget {
       button = _buildInline(context, fg);
     } else if (!showLabel) {
       final String tooltip = item.tooltip ?? item.label;
+      final VoidCallback? longPress = item.onLongPress;
+      final FushiToolbarIconBuilder? custom = iconBuilder;
       // Apple：玻璃胶囊里的 bar button 是无底的 `.plain` 字形（iOS 26
       // UIBarButtonItemGroup），选中只把字形染成强调色，不再叠一枚选中圆钮
       // （玻璃套玻璃）；字号随 bar button（桌面 18 / 移动 20）。
       final bool apple = isGlassDesign(context);
-      final Widget iconButton = FushiIconButtonControl(
-        key: item.key,
-        icon: FushiIcon(item.icon, color: fg),
-        iconSize: apple ? (fushiAppleCompact(context) ? 18 : 20) : iconSize,
-        tooltip: tooltip,
-        isSelected: apple ? null : item.selected,
-        style: item.selected && !apple
-            ? IconButton.styleFrom(backgroundColor: selectedContainer)
-            : null,
-        onPressed: item.onPressed,
-      );
-      // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
-      // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
-      button = MergeSemantics(
-        child: Semantics(
+      // 有长按 / 右键时提示、长按、语义一律交给 [FushiToolbarLongPressTarget]
+      // （与桌面经典顶栏同一份手势装配），按钮本身不带 tooltip / 长按。
+      final Widget bare = custom != null
+          ? KeyedSubtree(key: item.key, child: custom(context, item, fg))
+          : FushiIconButtonControl(
+              key: item.key,
+              icon: FushiIcon(item.icon, color: fg),
+              iconSize: apple
+                  ? (fushiAppleCompact(context) ? 18 : 20)
+                  : iconSize,
+              tooltip: longPress == null ? tooltip : null,
+              isSelected: apple ? null : item.selected,
+              style: (item.selected || item.emphasized) && !apple
+                  ? IconButton.styleFrom(backgroundColor: selectedContainer)
+                  : null,
+              onPressed: item.onPressed,
+            );
+      if (longPress != null) {
+        button = FushiToolbarLongPressTarget(
           label: item.label,
-          selected: apple && item.selected ? true : null,
-          child: iconButton,
-        ),
-      );
+          tooltip: tooltip,
+          onPressed: item.onPressed,
+          onLongPress: longPress,
+          child: bare,
+        );
+      } else if (custom != null) {
+        button = FushiTooltip(
+          message: tooltip,
+          excludeFromSemantics: true,
+          child: Semantics(
+            label: item.label,
+            button: true,
+            enabled: item.onPressed != null,
+            excludeSemantics: true,
+            onTap: item.onPressed,
+            child: bare,
+          ),
+        );
+      } else {
+        // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
+        // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
+        button = MergeSemantics(
+          child: Semantics(
+            label: item.label,
+            selected: apple && item.selected ? true : null,
+            child: bare,
+          ),
+        );
+      }
     } else {
       final TextStyle? labelStyle = Theme.of(
         context,
@@ -448,8 +559,31 @@ class FushiToolbarButton extends StatelessWidget {
         ),
       );
     }
-    if (item.semanticsId == null) return button;
-    return Semantics(identifier: item.semanticsId, child: button);
+    final VoidCallback? longPress = item.onLongPress;
+    // 强调态按钮是临时插进栏里的（跳转记录）：插入时 M3E 弹簧缩放 + 淡入，墨水屏 /
+    // 减弱动态效果下时长归零即瞬时。
+    final Widget shown = item.emphasized
+        ? TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.release,
+            builder: (BuildContext context, double v, Widget? child) => Opacity(
+              opacity: v.clamp(0.0, 1.0),
+              child: Transform.scale(scale: 0.6 + 0.4 * v, child: child),
+            ),
+            child: button,
+          )
+        : button;
+    // 纯图标的长按 / 右键已由 [FushiToolbarLongPressTarget] 处理。
+    final bool longPressHandled = !showLabel && !inlineLabel;
+    final Widget withLongPress = longPress == null || longPressHandled
+        ? shown
+        : ContextMenuTrigger(
+            onInvoke: contextMenuInvoker(longPress),
+            child: GestureDetector(onLongPress: longPress, child: shown),
+          );
+    if (item.semanticsId == null) return withLongPress;
+    return Semantics(identifier: item.semanticsId, child: withLongPress);
   }
 }
 
@@ -926,6 +1060,7 @@ class FushiFloatingTopBar extends StatefulWidget {
     this.colors,
     this.excludeFocus = false,
     this.adaptiveOverflow = true,
+    this.titleFirst = false,
     this.bare = false,
   });
 
@@ -964,6 +1099,13 @@ class FushiFloatingTopBar extends StatefulWidget {
   /// false = 旧行为：[actions] 恒平铺、[overflow] 恒进「⋯」（布局编辑器的槽位预览用）。
   final bool adaptiveOverflow;
 
+  /// true = 副标题优先完整显示：测宽按副标题的自然宽整段预留（不封顶到
+  /// [kFushiFloatingTopBarTitleMinWidth]），动作放不下就先收进「⋯」；标题本身
+  /// （用户命名、长度无界）仍按保底宽封顶、放不下省略号截断，免得一个超长牌组名
+  /// 把高频动作全挤进「⋯」。用于副标题承载长度有界的关键信息的页头（复习页的
+  /// 卡片计数，用户 2026-11-03）。
+  final bool titleFirst;
+
   /// true = 不画悬浮胶囊底（无底色、无投影），只剩裸图标按钮；放在自带背景的
   /// 沉浸页上用（音乐歌词页：右上动作与左上返回同样裸露，用户 2026-10-29）。
   /// 自适应收纳照旧。
@@ -975,6 +1117,12 @@ class FushiFloatingTopBar extends StatefulWidget {
 
 /// 顶部悬浮条标题胶囊的保底宽度：动作再多也先保它（书名至少露出几个字）。
 const double kFushiFloatingTopBarTitleMinWidth = 160;
+
+/// Material 标题胶囊文字两侧的水平内边距：build 与测宽共用，免得两处手写数字漂移。
+const double _kMaterialTitleHorizontalPadding = 16;
+
+/// Apple 内联标题文字两侧的水平内边距：build 与测宽共用。
+const double _kAppleTitleHorizontalPadding = 4;
 
 /// 自适应溢出的展开回差：多放出一颗按钮需要比「刚好放得下」再多出这么多宽度。
 const double kFushiFloatingTopBarOverflowHysteresis = 24;
@@ -1095,21 +1243,54 @@ int fushiTopBarFitCount(
 /// [titleWidth] 是标题胶囊的自然宽（量得出时给）：标题短于保底宽度时只预留它
 /// 实际占的宽，不再按保底宽多扣——「复习」这种两个字的标题按 160 预留会白白
 /// 挤掉两三颗放得下的按钮（2026-10-20 用户：「放得下的都没必要折叠吧」）。
+///
+/// [subtitleWidth] 是只按副标题量的胶囊自然宽（同样含内边距）。两者都不给时
+/// 按保底宽预留。
+///
+/// [titleFirst] = 副标题按自然宽整段预留（不封顶到保底宽），动作先收进「⋯」也要
+/// 让它完整显示（复习页「新卡 · 学习 · 复习」计数，长度有界）；标题（用户命名、
+/// 长度无界，如 Anki 层级牌组全名）仍按保底宽封顶——超长标题省略号截断，不把
+/// 高频动作挤光。
 double fushiTopBarActionsBudget({
   required double maxWidth,
   int leadingCount = 0,
   required bool hasTitle,
   double? titleWidth,
+  double? subtitleWidth,
+  bool titleFirst = false,
 }) =>
     maxWidth -
     leadingCount * _kTopBarLeadingSlot -
     (hasTitle
-        ? math.min(
-            titleWidth ?? kFushiFloatingTopBarTitleMinWidth,
-            kFushiFloatingTopBarTitleMinWidth,
+        ? _topBarTitleReserve(
+            titleWidth: titleWidth,
+            subtitleWidth: subtitleWidth,
+            titleFirst: titleFirst,
           )
         : 0) -
     8;
+
+/// 标题胶囊在动作预算里预留的宽度，见 [fushiTopBarActionsBudget]。
+double _topBarTitleReserve({
+  required double? titleWidth,
+  required double? subtitleWidth,
+  required bool titleFirst,
+}) {
+  if (titleWidth == null && subtitleWidth == null) {
+    return kFushiFloatingTopBarTitleMinWidth;
+  }
+  final double cappedTitle = math.min(
+    titleWidth ?? 0,
+    kFushiFloatingTopBarTitleMinWidth,
+  );
+  final double subtitle = subtitleWidth ?? 0;
+  return titleFirst
+      ? math.max(subtitle, cappedTitle)
+      : math.min(
+          math.max(titleWidth ?? 0, subtitle),
+          kFushiFloatingTopBarTitleMinWidth,
+        );
+}
 
 /// 前置圆钮（[FushiFloatingTopBar.leading]）在 [maxWidth] 里平铺几颗（纯函数）。
 ///
@@ -1379,7 +1560,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     double maxWidth, {
     required bool hasTitle,
     required int leadingCount,
-    double? titleWidth,
+    ({double title, double subtitle})? titleWidths,
     bool menuPinned = false,
   }) {
     if (!widget.adaptiveOverflow) {
@@ -1396,7 +1577,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         maxWidth,
         hasTitle: hasTitle,
         leadingCount: leadingCount,
-        titleWidth: titleWidth,
+        titleWidths: titleWidths,
       ),
       pinnedMenu: menuPinned || widget.menu.isNotEmpty,
       slotWidth: fushiTopBarActionSlotWidth(context),
@@ -1413,23 +1594,37 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     double maxWidth, {
     required bool hasTitle,
     required int leadingCount,
-    double? titleWidth,
+    ({double title, double subtitle})? titleWidths,
   }) =>
       fushiTopBarActionsBudget(
         maxWidth: maxWidth,
         leadingCount: leadingCount,
         hasTitle: hasTitle,
-        titleWidth: titleWidth,
+        titleWidth: titleWidths?.title,
+        subtitleWidth: titleWidths?.subtitle,
+        titleFirst: widget.titleFirst,
       ) +
       (widget.actionsFollowLeading && !hasTitle ? 8 : 0);
 
-  /// Material 标题胶囊的自然宽（文字 + 两侧各 16 内边距），与下面 build 里
-  /// 胶囊同字体、同文字缩放。带 [FushiFloatingTopBar.titleLeading]（宽度未知）
-  /// 或 Apple 设计系统时返回 null，测宽按保底宽预留。
-  double? _materialTitleWidth(BuildContext context, String t, String s) {
-    if (widget.titleLeading != null || isGlassDesign(context)) return null;
+  /// 标题胶囊的自然宽，分别按标题、副标题量（各自含两侧内边距），与下面 build
+  /// 里同字体、同文字缩放：Material 内边距 [_kMaterialTitleHorizontalPadding]，
+  /// Apple 内联标题 [_kAppleTitleHorizontalPadding]（Apple 只在
+  /// [FushiFloatingTopBar.titleFirst] 时量，其余按保底宽预留）。带
+  /// [FushiFloatingTopBar.titleLeading]（宽度未知）时返回 null，测宽按保底宽预留。
+  ({double title, double subtitle})? _titleWidths(
+    BuildContext context,
+    String t,
+    String s,
+  ) {
+    if (widget.titleLeading != null) return null;
+    final bool apple = isGlassDesign(context);
+    if (apple && !widget.titleFirst) return null;
     final TextTheme text = Theme.of(context).textTheme;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final double padding = apple
+        ? _kAppleTitleHorizontalPadding
+        : _kMaterialTitleHorizontalPadding;
+    // 文字宽取整 + 两侧内边距 + 2 的取整余量。
     double measure(String value, TextStyle? style) {
       if (value.isEmpty) return 0;
       final TextPainter painter = TextPainter(
@@ -1440,17 +1635,16 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       )..layout();
       final double width = painter.width;
       painter.dispose();
-      return width;
+      return width.ceilToDouble() + padding * 2 + 2;
     }
 
-    final double textWidth = math.max(
-      measure(
-        t,
-        text.titleSmall?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
-      ),
-      measure(s, text.labelSmall?.copyWith(height: 1.15)),
-    );
-    return textWidth.ceilToDouble() + 32 + 2;
+    final TextStyle? titleStyle = apple
+        ? fushiAppleInlineTitleStyle(context).copyWith(height: 1.15)
+        : text.titleSmall?.copyWith(fontWeight: FontWeight.w700, height: 1.15);
+    final TextStyle? subtitleStyle = apple
+        ? fushiAppleInlineSubtitleStyle(context).copyWith(height: 1.15)
+        : text.labelSmall?.copyWith(height: 1.15);
+    return (title: measure(t, titleStyle), subtitle: measure(s, subtitleStyle));
   }
 
   /// Apple 的标题：iOS 26 / macOS 26 导航栏的内联标题不装进玻璃——玻璃只给
@@ -1466,7 +1660,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: fushiAppleFloatingExtent(context)),
       child: Padding(
-        padding: const EdgeInsetsDirectional.symmetric(horizontal: 4),
+        padding: const EdgeInsetsDirectional.symmetric(
+          horizontal: _kAppleTitleHorizontalPadding,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -1572,8 +1768,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                   ),
                   child: Padding(
                     padding: EdgeInsetsDirectional.only(
-                      start: titleLeading == null ? 16 : 6,
-                      end: 16,
+                      start: titleLeading == null
+                          ? _kMaterialTitleHorizontalPadding
+                          : 6,
+                      end: _kMaterialTitleHorizontalPadding,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1667,9 +1865,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                   leadingCount: leadingShown,
                   // 收起的前置钮在「⋯」里：⋯ 恒占一格。
                   menuPinned: foldedLeading.isNotEmpty,
-                  titleWidth: titlePill == null
+                  titleWidths: titlePill == null
                       ? null
-                      : _materialTitleWidth(context, t, s),
+                      : _titleWidths(context, t, s),
                 ),
               )
             : (groups: actions, overflow: overflow);
@@ -1745,6 +1943,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
 /// primaryContainer；[morphing] 时在圆（[rounded] = false）与圆角方之间按弹簧
 /// 变形——播放键：播放态 = 圆角方（「正在进行」），暂停态 = 圆。Apple = 圆形
 /// 强调色按钮，不变形（iOS 没有形状变形语汇）。
+///
+/// [playButton] = 主播放 / 暂停键：MD3 外形换成统一的播放键多边形
+/// （[fushiPlayButtonBorder]），播放态（[rounded] = true）转半瓣代替圆 ↔ 圆角方
+/// 形变；Apple 不受影响。
 class FushiToolbarFab extends StatefulWidget {
   const FushiToolbarFab({
     super.key,
@@ -1755,6 +1957,7 @@ class FushiToolbarFab extends StatefulWidget {
     this.morphing = false,
     this.size = 56,
     this.semanticsId,
+    this.playButton = false,
   });
 
   final IconData icon;
@@ -1767,6 +1970,9 @@ class FushiToolbarFab extends StatefulWidget {
   final bool morphing;
   final double size;
   final String? semanticsId;
+
+  /// true = 主播放键（见类注释）；需配合 [morphing]，[rounded] 表示「播放中」。
+  final bool playButton;
 
   @override
   State<FushiToolbarFab> createState() => _FushiToolbarFabState();
@@ -1869,24 +2075,29 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
       builder: (BuildContext context, Widget? child) {
         // 0 = 圆角方（16），1 = 圆（pill）。Apple 恒圆。
         final double pill = glass ? 1 : _shape.value.clamp(0.0, 1.0);
-        final OutlinedBorder shape = FushiMorphBorder(
-          radius: 16,
-          startPill: pill,
-          endPill: pill,
-        );
+        // 播放键：多边形外形，播放态（_shape → 0）转半瓣；字形反向转回。
+        final double angle = widget.playButton
+            ? fushiPlayButtonRotation(1 - _shape.value)
+            : 0;
+        final OutlinedBorder shape = widget.playButton
+            ? fushiPlayButtonBorder()
+            : FushiMorphBorder(radius: 16, startPill: pill, endPill: pill);
         return SizedBox.square(
           dimension: widget.size,
-          child: DecoratedBox(
-            decoration: fushiFloatingPillDecoration(
-              context,
-              color: bg,
-              shape: shape,
-            ),
-            child: Material(
-              type: MaterialType.transparency,
-              shape: shape,
-              clipBehavior: Clip.antiAlias,
-              child: child,
+          child: Transform.rotate(
+            angle: angle,
+            child: DecoratedBox(
+              decoration: fushiFloatingPillDecoration(
+                context,
+                color: bg,
+                shape: shape,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                shape: shape,
+                clipBehavior: Clip.antiAlias,
+                child: Transform.rotate(angle: -angle, child: child),
+              ),
             ),
           ),
         );

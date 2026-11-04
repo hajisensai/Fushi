@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -25,7 +26,9 @@ import 'package:fushi/src/srs/srs_providers.dart';
 /// - 冲突中心 = [SrsDbStore.sync2Conflicts] / [SrsDbStore.sync2Resolve]、
 ///   [SrsDbStore.syncConflicts] / [SrsDbStore.resolveConflict]、
 ///   [SrsDbStore.notesPendingDecision]、`duplicateNoteGroups` / `mergeNotes` /
-///   `dismissDuplicates`（`srs_conflicts_page.dart` 直接调的同一组方法）。
+///   `dismissDuplicates`（`srs_conflicts_page.dart` 直接调的同一组方法）；
+/// - 批量改笔记（设置卡型 / 设置字段 / 查找替换）= `srs_note_batch_edit.dart` 的 `srsPlan*` +
+///   [srsApplyNoteFieldPlan]（浏览页批量菜单）。
 ///
 /// 云同步（书 / 进度）中途的冲突不在这里：见 `ctl_data_routes.dart` 的
 /// `/api/admin/sync/run`（`conflicts` 策略参数）。
@@ -96,6 +99,8 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
             'new': d.newCount,
             'learn': d.learnCount,
             'review': d.reviewCount,
+            // RWKV 牌组的 review = 今天结束前回忆率会降到目标以下的卡。
+            if (d.rwkvScheduled) 'reviewByRwkv': true,
             'total': d.totalCards,
           },
       ],
@@ -394,7 +399,179 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
     deps.changed();
     return <String, Object?>{'dismissed': notes};
   }),
+  // 批量改笔记（浏览页批量菜单的「设置卡型 / 设置字段 / 查找替换」同一组引擎函数）。
+  for (final SrsCtlNoteBatch op in SrsCtlNoteBatch.values)
+    CtlRoute.post('$kSrsCtlRoot/notes/batch/${op.wire}', (CtlCall call) async {
+      final SrsDbStore store = await requireSrsCtlStore(deps);
+      final (SrsNoteFieldPlan plan, Map<String, Object?> echo) =
+          await srsCtlPlanNoteBatch(store, call, op);
+      final bool dryRun = call.optBool('dryRun') ?? false;
+      if (dryRun || plan.isEmpty) {
+        return srsCtlNotePlanJson(plan, echo, dryRun: dryRun);
+      }
+      final SrsNoteFieldApplied applied = await srsApplyNoteFieldPlan(
+        store,
+        plan,
+      );
+      srsCtlAppliedNoteChanges[call] = applied.changes;
+      if (applied.changes.isNotEmpty) deps.changed();
+      return srsCtlNotePlanJson(plan, echo, dryRun: false, applied: applied);
+    }),
 ];
+
+/// 这次调用实际写下的完整改动清单（按 [CtlCall] 实例挂，随调用对象回收）。撤销快照
+/// （`op_descriptions_srs.dart` 的 `_noteBatchUndo`）从这里取：撤销载荷 = 实际写下的改动，
+/// 不再在执行前另算一遍计划；完整清单也不进回给调用方 / 模型的结果。
+final Expando<List<SrsNoteFieldChange>> srsCtlAppliedNoteChanges =
+    Expando<List<SrsNoteFieldChange>>('srsCtlAppliedNoteChanges');
+
+/// 三种批量改笔记（路由段名 = [wire]）。
+enum SrsCtlNoteBatch {
+  cardType('card-type'),
+  setField('set-field'),
+  findReplace('find-replace');
+
+  const SrsCtlNoteBatch(this.wire);
+  final String wire;
+}
+
+/// 一次批量改笔记最多处理的笔记数（防止一句宽泛的查询把整个库都改了）。
+const int kSrsCtlBatchNoteLimit = 5000;
+
+/// body / query 里的原样字符串（不 trim：查找替换与字段值里的空白有意义）。
+String? _rawString(CtlCall call, String name) {
+  final Object? raw = call.body[name] ?? call.query[name];
+  return raw == null ? null : '$raw';
+}
+
+/// 批量目标：`notes`（笔记 id 数组）或查询（`q` / `field` / `deck`，与 `srs.notes.search`
+/// 同一套）。两者都没给 → 400（不允许「不给条件 = 全库」）。
+Future<List<String>> _batchTargets(SrsDbStore store, CtlCall call) async {
+  final List<String> ids = call.stringList('notes');
+  if (ids.isNotEmpty) {
+    if (ids.length > kSrsCtlBatchNoteLimit) {
+      throw CtlFailure.badRequest(
+        '一次最多改 $kSrsCtlBatchNoteLimit 条笔记（给了 ${ids.length} 条）',
+      );
+    }
+    return ids;
+  }
+  final String query = _browseQuery(call);
+  if (query.isEmpty) {
+    throw const CtlFailure.badRequest('给 notes（笔记 id）或 q / field / deck 查询条件');
+  }
+  final SrsBrowseResult result;
+  try {
+    result = await SrsBrowseSession(
+      store,
+    ).query(query: query, mode: SrsBrowseMode.notes);
+  } on SrsSearchUnsupported catch (e) {
+    throw CtlFailure.badRequest('搜索不合法：${e.reason}');
+  }
+  if (result.length > kSrsCtlBatchNoteLimit) {
+    throw CtlFailure.badRequest(
+      '查询命中 ${result.length} 条笔记，超过一次 $kSrsCtlBatchNoteLimit 条的上限；缩小查询再试',
+    );
+  }
+  return <String>[
+    for (final SrsBrowseRow r in await result.rows(0, result.length)) r.noteId,
+  ];
+}
+
+/// 按 [call] 的参数算出 [op] 的修改计划（只读；路由里算一次，预演就到此为止）。
+Future<(SrsNoteFieldPlan, Map<String, Object?>)> srsCtlPlanNoteBatch(
+  SrsDbStore store,
+  CtlCall call,
+  SrsCtlNoteBatch op,
+) async {
+  switch (op) {
+    case SrsCtlNoteBatch.cardType:
+      final String raw = call.requireString('type');
+      final SrsCardType type =
+          SrsCardType.tryParse(raw) ??
+          (throw CtlFailure.badRequest(
+            'type 只能是 ${SrsCardType.values.map((SrsCardType t) => t.wire).join(' / ')}：$raw',
+          ));
+      final List<String> notes = await _batchTargets(store, call);
+      return (
+        await srsPlanCardType(store, notes, type),
+        <String, Object?>{'type': type.wire},
+      );
+    case SrsCtlNoteBatch.setField:
+      final String field = call.requireString('targetField');
+      final String value = _rawString(call, 'value') ?? '';
+      final List<String> notes = await _batchTargets(store, call);
+      return (
+        await srsPlanSetField(store, notes, field, value),
+        <String, Object?>{'targetField': field, 'value': value},
+      );
+    case SrsCtlNoteBatch.findReplace:
+      final String find = _rawString(call, 'find') ?? '';
+      if (find.isEmpty) throw const CtlFailure.badRequest('find 缺失');
+      final String replace = _rawString(call, 'replace') ?? '';
+      final String? field = call.optString('targetField');
+      final bool regex = call.optBool('regex') ?? false;
+      final List<String> notes = await _batchTargets(store, call);
+      try {
+        return (
+          await srsPlanFindReplace(
+            store,
+            notes,
+            fieldName: field,
+            find: find,
+            replace: replace,
+            regex: regex,
+            caseSensitive: call.optBool('caseSensitive') ?? true,
+          ),
+          <String, Object?>{
+            'find': find,
+            'replace': replace,
+            'targetField': ?field,
+            'regex': regex,
+          },
+        );
+      } on FormatException catch (e) {
+        throw CtlFailure.badRequest('正则不合法：${e.message}');
+      }
+  }
+}
+
+/// 回给调用方的摘要：改动只给前 [kSrsCtlBatchSampleSize] 条样例（字段值截短），不把整批
+/// HTML 塞给模型；完整的改动清单只进撤销快照。[applied] 非空 = 已落库：条数按实际写下的算，
+/// `conflicts` = 计划之后又被改过、因而没写的笔记数。
+Map<String, Object?> srsCtlNotePlanJson(
+  SrsNoteFieldPlan plan,
+  Map<String, Object?> echo, {
+  required bool dryRun,
+  SrsNoteFieldApplied? applied,
+}) => <String, Object?>{
+  ...echo,
+  'dryRun': dryRun,
+  'notes': applied?.noteCount ?? plan.noteCount,
+  'fieldChanges': applied?.changes.length ?? plan.changes.length,
+  if (applied != null && applied.conflicts > 0) 'conflicts': applied.conflicts,
+  'unchanged': plan.unchanged,
+  'skipped': plan.skipped.length,
+  if (plan.skipped.isNotEmpty)
+    'skippedSample': plan.skipped.take(kSrsCtlBatchSampleSize).toList(),
+  if (plan.missing.isNotEmpty) 'missing': plan.missing,
+  'sample': <Map<String, Object?>>[
+    for (final SrsNoteFieldChange c in (applied?.changes ?? plan.changes).take(
+      kSrsCtlBatchSampleSize,
+    ))
+      <String, Object?>{
+        'note': c.noteId,
+        'field': c.fieldName,
+        'before': _clip(c.before),
+        'after': _clip(c.after),
+      },
+  ],
+};
+
+/// 摘要里的改动样例条数。
+const int kSrsCtlBatchSampleSize = 20;
+
+String _clip(String s) => s.length <= 160 ? s : '${s.substring(0, 160)}…';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 助手

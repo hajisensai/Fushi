@@ -117,16 +117,16 @@ fn all_payloads(d: &Device) -> Vec<Vec<u8>> {
 
 /// 退回 v15 的载荷形态：快照原文拼回载荷、引用两列清空、快照表清空。
 fn inline_snapshots(w: &rusqlite::Connection) {
-    let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
-        .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+    let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
+        .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
         .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    for (dv, s, p, sc, at) in ops {
-        let p = super::snapshots::unpack_payload(w, p, sc, at).unwrap();
-        w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
+    for (dv, s, p, sc, at, pz) in ops {
+        let p = super::snapshots::unpack_payload(w, p, sc, at, pz).unwrap();
+        w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
             .unwrap();
     }
     w.execute_batch("DELETE FROM sync2_snapshots;").unwrap();
@@ -202,17 +202,17 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
     // 退回 v15 的存储形态：载荷内联原文，快照表清空，标 15。
     {
         let w = a.core.writer().unwrap();
-        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
-            .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
+            .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        for (dv, s, p, sc, at) in ops {
-            let p = super::snapshots::unpack_payload(&w, p, sc, at).unwrap();
+        for (dv, s, p, sc, at, pz) in ops {
+            let p = super::snapshots::unpack_payload(&w, p, sc, at, pz).unwrap();
             w.execute(
-                "UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2",
+                "UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL, pz = 0 WHERE device = ?1 AND seq = ?2",
                 rusqlite::params![dv, s, p],
             )
             .unwrap();
@@ -272,16 +272,16 @@ fn footprint_answered_reviews() {
     // 退回内联存法（v15 的形态）。
     {
         let w = a.core.writer().unwrap();
-        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
-            .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
+            .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        for (dv, s, p, sc, at) in ops {
-            let p = super::snapshots::unpack_payload(&w, p, sc, at).unwrap();
-            w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
+        for (dv, s, p, sc, at, pz) in ops {
+            let p = super::snapshots::unpack_payload(&w, p, sc, at, pz).unwrap();
+            w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
                 .unwrap();
         }
     }
@@ -360,17 +360,244 @@ fn upgrade_refuses_to_start_without_disk_space() {
     assert_eq!(b.digest(), digest);
 }
 
-/// 空间不够就不整理：记下原因、标记留着、库照常可用；空间够了下次打开再整理。
+
+// ------------------------------------------------------------ 打开时的整理（store/compact.rs，BUG-4001）
+
+/// 关掉 [a] 的 core（库文件留着）；返回库路径与目录（目录随返回值活着）。
+fn closed(a: Device) -> (std::path::PathBuf, super::tests::tempdir::Dir) {
+    let Device { core, _dir } = a;
+    drop(core);
+    (_dir.0.join("srs.db"), _dir)
+}
+
+/// 直接开库文件的连接（注册了库里生成列 / 触发器用到的函数）。
+fn raw(path: &Path) -> rusqlite::Connection {
+    let c = rusqlite::Connection::open(path).unwrap();
+    crate::store::ids::register(&c).unwrap();
+    crate::store::slim::register(&c).unwrap();
+    super::digest::register(&c).unwrap();
+    c
+}
+
+/// 给库造约 8 MB 空闲页并记待整理标记；[legacy] 时先把库改回 `auto_vacuum = NONE`（这次修复之前建的老库）。
+fn with_spare_pages(path: &Path, legacy: bool) {
+    let c = raw(path);
+    if legacy {
+        c.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;").unwrap();
+    }
+    c.execute_batch(
+        "CREATE TABLE junk (x); \
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000) INSERT INTO junk SELECT randomblob(4000) FROM n; \
+         DROP TABLE junk;",
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO srs_meta (key, value) VALUES (?1, '18') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [crate::store::compact::PENDING],
+    )
+    .unwrap();
+}
+
+fn pragma_of(path: &Path, name: &str) -> u64 {
+    raw(path).query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).unwrap() as u64
+}
+
+fn meta_of(path: &Path, key: &str) -> Option<String> {
+    raw(path).query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| r.get(0)).ok()
+}
+
+/// 老库（`auto_vacuum = NONE`）重写换文件：额外空间只要「一倍有效数据 + 余量」（少一个字节就不做，标记留着）；做完
+/// 投影 / 摘要不变、空闲页清零、文件变小、改成 INCREMENTAL，标记与计数在换上去的库里已经清掉，旁边不留半成品。
 #[test]
-fn compaction_waits_for_disk_space() {
-    let a = busy_device("fp-disk");
+fn compaction_rewrites_a_legacy_db_with_one_copy_of_live_data() {
+    use crate::store::compact::{staged_path, ATTEMPTS, MARGIN, PENDING};
+    let a = busy_device("fp-rewrite");
+    let before = super::tests::projection(&a);
+    let digest = a.digest();
+    let (path, dir) = closed(a);
+    with_spare_pages(&path, true);
+    assert_eq!(pragma_of(&path, "auto_vacuum"), 0);
+    let size = pragma_of(&path, "page_size");
+    let live = size * (pragma_of(&path, "page_count") - pragma_of(&path, "freelist_count"));
+    let bytes_before = std::fs::metadata(&path).unwrap().len();
+
+    drop(SrsCore::open_with_free_space(&path, |_| Some(live + MARGIN - 1)).unwrap());
+    assert!(meta_of(&path, PENDING).is_some(), "not enough room: marker kept");
+    assert!(meta_of(&path, "compact_last").unwrap().contains("\"reason\":\"disk\""));
+    assert_eq!(pragma_of(&path, "auto_vacuum"), 0);
+
+    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(live + MARGIN)).unwrap(), _dir: dir };
+    assert_eq!(super::tests::projection(&b), before);
+    assert_eq!(b.digest(), digest);
+    let (path, _dir) = closed(b);
+    assert_eq!(pragma_of(&path, "auto_vacuum"), 2, "rewritten as INCREMENTAL");
+    assert_eq!(pragma_of(&path, "freelist_count"), 0);
+    assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none());
+    let last = meta_of(&path, "compact_last").unwrap();
+    assert!(last.contains("\"ok\":true") && last.contains("\"mode\":\"rewrite\""), "{last}");
+    assert!(!staged_path(&path).exists());
+    assert!(std::fs::metadata(&path).unwrap().len() < bytes_before);
+}
+
+/// INCREMENTAL 的库（新建的、整理过的）原地收缩：只要一块 WAL 的余量，不重写整库。
+#[test]
+fn compaction_shrinks_an_incremental_db_in_place() {
+    use crate::store::compact::{CHUNK, MARGIN, PENDING};
+    let a = busy_device("fp-in-place");
+    let before = super::tests::projection(&a);
+    let (path, dir) = closed(a);
+    assert_eq!(pragma_of(&path, "auto_vacuum"), 2, "new databases are INCREMENTAL");
+    with_spare_pages(&path, false);
+    assert!(pragma_of(&path, "freelist_count") > 1000);
+    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(CHUNK + MARGIN)).unwrap(), _dir: dir };
+    assert_eq!(super::tests::projection(&b), before);
+    let (path, _dir) = closed(b);
+    assert_eq!(pragma_of(&path, "freelist_count"), 0);
+    assert!(meta_of(&path, PENDING).is_none());
+    let last = meta_of(&path, "compact_last").unwrap();
+    assert!(last.contains("\"ok\":true") && last.contains("\"mode\":\"in_place\""), "{last}");
+}
+
+/// 还有别的连接开着这个库：不换文件（换了它会继续读写旧文件），标记留着、库照常打开，别的连接照常读。
+#[test]
+fn compaction_does_not_swap_files_under_another_connection() {
+    use crate::store::compact::{staged_path, ATTEMPTS, PENDING};
+    let a = busy_device("fp-other-conn");
+    let before = super::tests::projection(&a);
+    let (path, dir) = closed(a);
+    with_spare_pages(&path, true);
+    let other = raw(&path);
+    other.query_row("SELECT COUNT(*) FROM srs_meta", [], |r| r.get::<_, i64>(0)).unwrap();
+    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: dir };
+    assert_eq!(super::tests::projection(&b), before);
+    let (path, _dir) = closed(b);
+    assert!(meta_of(&path, PENDING).is_some());
+    assert!(meta_of(&path, ATTEMPTS).is_none());
+    assert!(meta_of(&path, "compact_last").unwrap().contains("busy"));
+    assert!(!staged_path(&path).exists());
+    assert_eq!(pragma_of(&path, "auto_vacuum"), 0);
+    // 别的连接还在同一个文件上：看得见这次记下的结果。
+    let seen: String = other.query_row("SELECT value FROM srs_meta WHERE key = 'compact_last'", [], |r| r.get(0)).unwrap();
+    assert!(seen.contains("busy"), "{seen}");
+}
+
+/// 进程死在整理中途（Android 上 1.3 GB 的库被杀）：标记留着、下次打开又整理。旁边没写完的 `<库>.compact` 下次打开
+/// 删掉；连着 [MAX_ATTEMPTS] 次没正常结束就停手、库照常打开，但 [PENDING] 留着、记下停手的版本：同一版本同一升级不再
+/// 碰，整理改版（[COMPACT_REV] 变了）或又升级过（[PENDING] 变了）就重新整理。没到上限的照常整理并清掉计数。
+#[test]
+fn compaction_gives_up_after_interrupted_attempts() {
+    use crate::store::compact::{staged_path, ATTEMPTS, COMPACT_REV, GAVE_UP, MAX_ATTEMPTS, PENDING};
+    let a = busy_device("fp-interrupted");
+    let (path, dir) = closed(a);
+    with_spare_pages(&path, true);
+    // 上一次死在 VACUUM INTO 半路：计数已记、半成品留在旁边。
+    raw(&path).execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, (MAX_ATTEMPTS - 1).to_string()]).unwrap();
+    std::fs::write(staged_path(&path), b"half-written").unwrap();
+    drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
+    assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none());
+    assert!(!staged_path(&path).exists());
+    // 已经连着死了 MAX_ATTEMPTS 次：停手，标记留着，记下停手的版本与原因。
+    with_spare_pages(&path, true);
+    raw(&path).execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, MAX_ATTEMPTS.to_string()]).unwrap();
+    let spare = pragma_of(&path, "freelist_count");
+    drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
+    assert_eq!(meta_of(&path, PENDING).as_deref(), Some("18"), "marker kept");
+    assert!(meta_of(&path, ATTEMPTS).is_none());
+    assert_eq!(meta_of(&path, GAVE_UP), Some(format!("{COMPACT_REV}/18")));
+    assert!(meta_of(&path, "compact_last").unwrap().contains("\"reason\":\"interrupted\""));
+    assert_eq!(pragma_of(&path, "freelist_count"), spare, "left alone");
+    // 同一版本同一升级：再打开也不碰。
+    drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
+    assert_eq!(pragma_of(&path, "freelist_count"), spare, "still left alone");
+    assert!(meta_of(&path, ATTEMPTS).is_none());
+    // 停手发生在旧版整理上（版本号不同）：新版自动重试，整理完清掉全部标记。
+    raw(&path).execute("UPDATE srs_meta SET value = ?2 WHERE key = ?1", rusqlite::params![GAVE_UP, format!("{}/18", COMPACT_REV - 1)]).unwrap();
+    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: dir };
+    let (path, _dir) = closed(b);
+    assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none() && meta_of(&path, GAVE_UP).is_none());
+    assert_eq!(pragma_of(&path, "freelist_count"), 0);
+    assert!(meta_of(&path, "compact_last").unwrap().contains("\"ok\":true"));
+}
+
+/// 升级阶梯整表重建 / 建索引与剥设备本地表的备份的临时库必须能落文件：`SQLITE_TEMP_STORE=3` 的构建里临时库全进
+/// 内存。连接不改 `temp_store`（0 = 按编译默认，即 1 = 文件）。Android 产物由 build_android_so.* 按编译选项字符串核对。
+#[test]
+fn bundled_sqlite_lets_rewrites_spill_to_files() {
+    let a = busy_device("fp-temp-store");
     let w = a.core.writer().unwrap();
-    w.execute_batch("INSERT INTO srs_meta (key, value) VALUES ('compact_pending', '16');").unwrap();
-    assert!(!crate::store::compact::run(&w, &a._dir.0, Some(1024), 7));
-    let last: String = w.query_row("SELECT value FROM srs_meta WHERE key = 'compact_last'", [], |r| r.get(0)).unwrap();
-    assert!(last.contains("\"reason\":\"disk\""), "{last}");
-    assert!(w.query_row("SELECT 1 FROM srs_meta WHERE key = 'compact_pending'", [], |_| Ok(())).is_ok());
-    assert!(crate::store::compact::run(&w, &a._dir.0, Some(u64::MAX), 8));
-    assert!(w.query_row("SELECT 1 FROM srs_meta WHERE key = 'compact_pending'", [], |_| Ok(())).is_err());
-    assert!(crate::store::compact::free_bytes(&a._dir.0.join("srs.db")).is_some_and(|f| f > 0));
+    assert!(!crate::store::compact::temp_store_forced_memory(&w));
+    let mode: i64 = w.query_row("PRAGMA temp_store", [], |r| r.get(0)).unwrap();
+    assert_eq!(mode, 0, "temp_store follows the compiled default (files)");
+}
+
+/// v20 → v21 升级：v20 的 `sync2_ops` 没有 `pz` 列、载荷全是原样。重新打开后补上 `pz`、已有行一律 `pz = 0`
+/// 不重写；投影、摘要、逐条载荷（[super::load_op]）、时间线（恢复预览 / 实体历史）都与升级前相同。之后新写的
+/// 操作才压（`pz = 1`），原样与压缩混存的日志照样完整同步给第三台新设备。
+#[test]
+fn v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged() {
+    use super::timeline::RestoreTarget;
+    let a = busy_device("fp-v20");
+    let before = super::tests::projection(&a);
+    let digest = a.digest();
+    let payloads = all_payloads(&a);
+    let restore = |d: &Device| d.core.sync2_plan_restore(P, &RestoreTarget::At(T0 + 5 * DAY), true, T0 + 20 * DAY).unwrap();
+    let history = |d: &Device| d.core.sync2_history(P, "note", "N1").unwrap();
+    let preview = restore(&a);
+    let hist = history(&a);
+    // 退回 v20 的存储形态：压缩过的行解回原样，删掉 `pz` 列，标 20。
+    {
+        let w = a.core.writer().unwrap();
+        let zipped: Vec<(Vec<u8>, i64, Vec<u8>)> = w
+            .prepare("SELECT device, seq, payload FROM sync2_ops WHERE pz = 1")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (dv, s, p) in zipped {
+            let n = u32::from_le_bytes(p[..4].try_into().unwrap()) as usize;
+            let raw = zstd::bulk::decompress(&p[4..], n).unwrap();
+            w.execute("UPDATE sync2_ops SET payload = ?3, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, raw]).unwrap();
+        }
+        w.execute_batch("ALTER TABLE sync2_ops DROP COLUMN pz; UPDATE srs_meta SET value = '20' WHERE key = 'schema';").unwrap();
+    }
+    let path = a._dir.0.join("srs.db");
+    let dir = a._dir;
+    drop(a.core);
+    {
+        let c = rusqlite::Connection::open(&path).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0, "the v20 form has no pz column");
+    }
+    let b = Device { core: SrsCore::open(&path).unwrap(), _dir: dir };
+    assert_eq!(count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"), crate::store::schema::SCHEMA_VERSION);
+    assert_eq!(count(&b, "SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'"), 1, "pz column added");
+    assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz != 0"), 0, "existing rows stay raw (not rewritten)");
+    assert_eq!(super::tests::projection(&b), before);
+    assert_eq!(b.digest(), digest);
+    assert_eq!(all_payloads(&b), payloads, "old raw rows read back byte for byte");
+    assert_eq!(restore(&b), preview, "timeline restore preview reads the old rows");
+    assert_eq!(history(&b), hist, "entity history reads the old rows");
+
+    // 之后写的操作才压：日志里原样与压缩混存。
+    let deck = super::config::default_deck_id(P);
+    for i in 0..30 {
+        let at = T0 + 30 * DAY + i * DAY;
+        b.apply(at, vec![review(&format!("n{i}"), &format!("C{}", i % 3), at, 1 + i % 4, "review")]);
+        b.apply(at + 1, vec![edit("note", "N1", &format!("f/n{i}"), json!(format!("field value {i} {}", "x".repeat(200))))]);
+    }
+    b.apply(T0 + 70 * DAY, vec![edit("deck", &deck, "retention", json!(0.9))]);
+    let raw_rows = count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz = 0");
+    let zipped_rows = count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz = 1");
+    assert!(raw_rows >= payloads.len() as i64, "{raw_rows} raw rows");
+    assert!(zipped_rows > 0, "new ops are compressed");
+    // 混存的日志完整同步给第三台新设备。
+    let mut bucket = Bucket::default();
+    b.sync(&mut bucket, "loc", T0 + 71 * DAY);
+    let c = Device::new("fp-v21-c");
+    c.sync(&mut bucket, "loc", T0 + 71 * DAY);
+    assert_eq!(super::tests::projection(&c), super::tests::projection(&b));
+    assert_eq!(c.digest(), b.digest());
+    assert_eq!(all_payloads(&c), all_payloads(&b), "every op (raw and compressed) reached the new device intact");
+    assert_eq!(history(&c), history(&b));
 }

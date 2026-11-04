@@ -2201,7 +2201,8 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
 struct SgreHoverHighlightScope {
   bool keep = false;
   ~SgreHoverHighlightScope() {
-    if (!keep) ClearLookupHoverHighlight();
+    if (!keep) ClearLookupHoverHighlight(
+        fushi_voice_hook::kLookupGeometryProviderIdSgre);
   }
 };
 
@@ -2449,7 +2450,9 @@ void ProcessSgreLookupTick() {
       term_rect.height = bottom - term_rect.y;
     }
     if (have_rect) {
-      RequestLookupHoverHighlight(client_origin.x + term_rect.x,
+      RequestLookupHoverHighlight(
+          fushi_voice_hook::kLookupGeometryProviderIdSgre,
+          client_origin.x + term_rect.x,
                                   client_origin.y + term_rect.y,
                                   term_rect.width, term_rect.height);
       hover_highlight.keep = true;
@@ -2460,7 +2463,9 @@ void ProcessSgreLookupTick() {
   // translucent highlight window while no card is up. hit_rect is in client
   // px; the highlight window lives in screen space.
   if (glyph_index >= 0 && game_point && !popup_visible) {
-    RequestLookupHoverHighlight(client_origin.x + hit_rect.x,
+    RequestLookupHoverHighlight(
+        fushi_voice_hook::kLookupGeometryProviderIdSgre,
+        client_origin.x + hit_rect.x,
                                 client_origin.y + hit_rect.y, hit_rect.width,
                                 hit_rect.height);
     hover_highlight.keep = true;

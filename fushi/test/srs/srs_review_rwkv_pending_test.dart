@@ -78,7 +78,7 @@ class _FakeRwkvService extends SrsRwkvService {
   @override
   Future<List<double>?> instantRetrievability(
     List<SrsRwkvCandidate> cards, {
-    required int nowMs,
+    required int atMs,
   }) async {
     scoringCalls++;
     if (!ready) {
@@ -299,6 +299,7 @@ void main() {
     );
     expect(root.reviewCount, 0);
     expect(root.rwkvPending, isTrue);
+    expect(root.rwkvScheduled, isTrue);
     expect(pending.rwkvPending, isTrue);
     expect(pending.hasWorkToday, isFalse);
     expect(
@@ -345,7 +346,7 @@ void main() {
       find.bySemanticsLabel(
         RegExp(
           '${RegExp.escape(t.srs_count_review)} '
-          '${RegExp.escape(t.srs_settings_rwkv_preparing_start)}',
+          '\\(${RegExp.escape(t.srs_settings_rwkv_preparing_start)}\\)',
         ),
       ),
       findsOneWidget,
@@ -362,5 +363,70 @@ void main() {
     expect(after.rwkvPending, isFalse);
     expect(after.reviewCount, 2);
     expect(ready.rwkvPending, isFalse);
+
+    // 就绪后 RWKV 牌组的到期 = 今天结束前回忆率会降到目标线以下的卡，与 FSRS 到期一样照常显示数字（不再显示
+    // 「—」或历史日均）。
+    expect(after.rwkvScheduled, isTrue);
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: after.reviewCount,
+      ),
+      '${t.srs_count_review} 2',
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: FushiDesignSystem.material,
+            glass: FushiGlassMaterial.off,
+            glassDesign: false,
+          ),
+          home: Scaffold(
+            body: SrsCountTriple(
+              newCount: after.newCount,
+              learnCount: after.learnCount,
+              reviewCount: after.reviewCount,
+              reviewPending: after.rwkvPending,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('—'), findsNothing);
+    expect(find.textContaining('≈'), findsNothing);
+  });
+
+  test('准备中：到期一格的文字跟「(准备中)」，到期 0 不写成「到期 0」', () {
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: 4,
+        reviewPending: true,
+      ),
+      '${t.srs_count_review} 4 (${t.srs_settings_rwkv_preparing_start})',
+    );
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: 0,
+        reviewPending: true,
+      ),
+      '${t.srs_count_review} (${t.srs_settings_rwkv_preparing_start})',
+    );
+    expect(
+      srsNavPeekCountsLabel(newCount: 0, learnCount: 0, reviewCount: 7),
+      '${t.srs_count_review} 7',
+    );
+    expect(
+      srsNavPeekCountsLabel(newCount: 0, learnCount: 0, reviewCount: 0),
+      isNull,
+    );
   });
 }

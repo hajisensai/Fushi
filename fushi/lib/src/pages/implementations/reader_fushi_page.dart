@@ -8,6 +8,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
@@ -133,6 +134,7 @@ import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
+import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_script_compactor.dart';
 import 'package:fushi/src/reader/reader_chrome_scaler.dart';
@@ -151,7 +153,7 @@ import 'package:fushi/src/reader/reader_source_locator.dart';
 import 'package:fushi/src/reader/reader_search_navigation.dart';
 import 'package:fushi/src/reader/reader_jump_history.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
-import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_toolbar_layout.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
@@ -176,6 +178,7 @@ import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
@@ -269,6 +272,7 @@ part 'reader_fushi/tts.part.dart';
 part 'reader_fushi/session_remote.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
+part 'reader_fushi/page_curl.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -1752,7 +1756,7 @@ class ReaderFushiPage extends BaseSourcePage {
 }
 
 class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
-    with WidgetsBindingObserver, RouteAware
+    with WidgetsBindingObserver
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
@@ -1913,6 +1917,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 这张图只跨一次章节导航存活；不用于分页/手动跳转，也不落盘。
   MemoryImage? _chapterTransitionSnapshot;
   bool _chapterTransitionCaptureInFlight = false;
+  // 卷页翻页（page_curl.part.dart）：首次用到时创建，覆盖层按这个 key 量视口尺寸。
+  PageCurlController? _pageCurl;
+
+  /// 当前这次 JS 转发的卷页手势（`onPageCurlDrag` start → end / cancel）。
+  PageCurlDrag? _pageCurlDrag;
+  final GlobalKey _pageCurlOverlayKey = GlobalKey(
+    debugLabel: 'reader_page_curl_overlay',
+  );
   bool _hasEverLoaded = false;
   bool _readerTextContextMenuActive = false;
   // BUG-1236：移动端长按拖选后的非模态选区操作条。旧 showMenu 的全屏
@@ -2326,15 +2338,32 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 「跳转回退」历史（见 jump_history.part.dart）：本次阅读会话内存态，不落库。
   final JumpHistory<ReaderJumpPoint> _jumpHistory = newReaderJumpHistory();
 
-  /// 正在执行返回 / 前进：期间触发的跳转（含音频 seek 回调）不再入栈。
-  bool _jumpHistoryRestoring = false;
+  /// 返回 / 前进 / 面板跳转的单飞执行器：[JumpHistoryWalker.busy] 期间（采样、
+  /// 改栈、恢复全程）触发的跳转（含音频 seek 回调）不再入栈，重入的走法直接落空。
+  final JumpHistoryWalker<ReaderJumpPoint> _jumpWalker =
+      JumpHistoryWalker<ReaderJumpPoint>();
 
   /// 最近一次正文跳转入栈的时刻：紧随其后的音频跳转视作同一次动作。
   DateTime? _lastTextJumpRecordedAt;
 
-  /// chrome 收起时胶囊在刚跳转后仍亮一会儿。
-  bool _jumpPillFlashing = false;
-  Timer? _jumpPillFlashTimer;
+  /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
+  /// 页面据此重建，设置一改图标与刻度立刻跟上。
+  ///
+  /// 首次用到才建；[dispose] 只释放建过的那份。用 `late final` 时，没走到顶栏就
+  /// 退出的页面（如加载失败的错误态）会在 dispose 里**首次**求值，在已停用的
+  /// element 上读 AppModel（同 video_fushi_page 的修法）。
+  JumpHistoryPrefsListenable get _jumpPrefs =>
+      _jumpPrefsOrNull ??= JumpHistoryPrefsListenable.fromRepository(
+        appModelNoUpdate.prefsRepo,
+      )..addListener(_onJumpChromeInputsChanged);
+  JumpHistoryPrefsListenable? _jumpPrefsOrNull;
+
+  /// 顶栏返回 / 前进图标的自动隐藏计时（设置「自动隐藏」，默认不隐藏）：只管
+  /// 图标，记录 / 面板 / 刻度不受它影响。同样首次用到才建。
+  JumpHistoryAutoHide get _jumpAutoHide =>
+      _jumpAutoHideOrNull ??= JumpHistoryAutoHide(prefs: _jumpPrefs)
+        ..addListener(_onJumpChromeInputsChanged);
+  JumpHistoryAutoHide? _jumpAutoHideOrNull;
 
   // TODO-1289：图片防剧透遮罩「点击揭开」的本次阅读会话真相源。揭开只删 WebView 内
   // DOM class，章节 (重)载 / 布局设置切换会重跑分页脚本重新遮罩；把已揭开图片的稳定
@@ -2523,17 +2552,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
   int _studyClockModalDepth = 0;
 
-  /// 有整页路由盖在阅读器上（[RouteAware.didPushNext] / [didPopNext]）。与
-  /// [_studyClockModalDepth] 一起进判据（BUG-2208 的「全页路由压住正文」）：从页面
-  /// 外推上来的路由——悬浮球的反馈中心、通知点进的反馈详情——不经任何
-  /// [_withStudyClockPaused] 入口，阅读器只能靠路由监听看见它们。只认 [PageRoute]
-  /// （`appModel.routeObserver` 的类型参数）：侧板 / 对话框 / 查词浮层不触发，统计
-  /// 侧栏与制卡「不停表」的拍板不受影响。bool 而非计数：叠几层页面也只在直接盖住
-  /// / 揭开这一层时各通知一次。
-  bool _studyClockCoveredByRoute = false;
-
-  /// 已向 `appModel.routeObserver` 订阅的本页路由（换路由时重订）。
-  ModalRoute<Object?>? _studyClockRoute;
+  /// 根导航上有没有路由压住阅读器（[studyCoverTracker] 的统一判据）。与
+  /// [_studyClockModalDepth] 一起进判据：整页路由、对话框、侧板、菜单——不管是阅读器
+  /// 自己弹的、悬浮球 / 通知 / 全局快捷键从页面外推上来的，还是以后新加的入口——都
+  /// 默认停表；只有路由构造时带了 [StudyClockTransparentSettings] 的弹层（统计侧板、
+  /// 制卡操作单 / 高级制卡）不停。旧实现只认 [PageRoute]、其余靠各入口自己包 [_withStudyClockPaused]，新入口
+  /// 一漏就照计（BUG-3994）。
+  late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
+    onChanged: () {
+      if (mounted) _syncStudyClockRunState();
+    },
+  );
 
   /// 上一次喂给 [_noteAudiobookPlayingForStudyClock] 的有声书播放态镜像（BUG-2558）。
   ///
@@ -2970,7 +2999,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           mounted && _lyricsMode && _lyricsPageReady;
       ReaderFushiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
       ReaderFushiPage.debugJumpSection = (int index) =>
-          _jumpToChapterAnchor(index, null);
+          _jumpToChapterAnchor(index, null, source: JumpSource.tableOfContents);
       ReaderFushiPage.debugFlushReadingStats = _flushReadingStats;
       return true;
     }());
@@ -3654,7 +3683,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
-    appModelNoUpdate.routeObserver.unsubscribe(this);
+    _studyCoverWatch.dispose();
+    _pageCurlDrag = null;
+    _pageCurl?.dispose();
+    _pageCurl = null;
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -3725,7 +3757,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _observedThemeNotifier = null;
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
-    _jumpPillFlashTimer?.cancel();
+    _jumpAutoHideOrNull?.dispose();
+    _jumpPrefsOrNull?.dispose();
     _revealProgressRefreshTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
@@ -4052,27 +4085,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   }
 
   @override
-  void didPushNext() {
-    _studyClockCoveredByRoute = true;
-    _syncStudyClockRunState();
-  }
-
-  @override
-  void didPopNext() {
-    _studyClockCoveredByRoute = false;
-    _syncStudyClockRunState();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (route is PageRoute && !identical(route, _studyClockRoute)) {
-      appModelNoUpdate.routeObserver
-        ..unsubscribe(this)
-        ..subscribe(this, route);
-      _studyClockRoute = route;
-    }
+    _studyCoverWatch.attach(ModalRoute.of(context));
     final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
     if (!identical(themeHost, _lyricsThemeHost)) {
       _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
@@ -4303,6 +4318,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       fit: StackFit.expand,
                       children: <Widget>[
                         Positioned.fill(child: _buildBody()),
+                        if (_pageCurlEnabled)
+                          Positioned.fill(
+                            child: _buildPageCurlOverlay(bgColor),
+                          ),
                         if (!_readerContentReady ||
                             _chapterTransitionSnapshot != null ||
                             _chapterFadeInPending)
@@ -4412,8 +4431,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         // it never detaches the Positioned's StackParentData (which would
                         // drop the bar to the Stack's top-start alignment).
                         _buildBottomChrome(),
-                        // 跳转回退胶囊（顶部居中，坐在顶栏下方）。
-                        _buildJumpHistoryPill(),
                         // BUG-2230 同口径（网页流媒体页 / 漫画页早已如此）：**出口不是
                         // 内容的一部分，不随内容存亡**。本页的返回箭头挂在顶栏上，而
                         // 顶栏的可见条件含 `_hasEverLoaded`——它只在 WebView 首屏渲染
@@ -4866,8 +4883,8 @@ $liveConfigJs
 
   /// 大跨度音频跳转的出发点 → 「跳转回退」历史（jump_history.part.dart）。
   @override
-  void onBeforeAudioJump(int fromGlobalMs) =>
-      _recordAudioJumpDeparture(fromGlobalMs);
+  void onBeforeAudioJump(int fromGlobalMs, JumpSource source) =>
+      _recordAudioJumpDeparture(fromGlobalMs, source);
 
   AudioCue? _lookupCue;
   final LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>

@@ -19,6 +19,6 @@
   - 新增 `ci-config-gate.yml`：`.github/**` / `tool/**` 改动时跑 `check_release_policy.ps1` 和按磁盘枚举出来的 workflow / 发布脚本守卫（51 个文件），PR 与 develop push 都跑。main.yml 和发布 workflow 不再因 workflow / tool 改动触发之后，这批守卫就靠这道门接住。
 - **[x] ② 已加自动化测试** — `fushi/test/build/release_workflow_concurrency_guard_test.dart`：钉住「push 按分支、其余按 tag/sha、带 workflow 名、`cancel-in-progress: false`」，PowerShell 策略字面量从同一常量推导出来。`fushi/test/build/release_workflow_path_filter_guard_test.dart` 新增一组：按 workflow 正文里**实际调用**的 `tool/` 脚本和本地 action 反向对账 push paths，按 GitHub 语义处理负向模式，同时禁止回退成 `tool/**` / `.github/workflows/**`，并要求两条发布 workflow 互相列出对方。
 - **备注**：
-  - 代价一：push 按分支串行后，最新 commit 的 debug 包最多要等正在跑的那一轮结束才开跑。代价二：push debug 通道的 TestFlight 只在「序列 % 3 == 0」那轮上传，那一轮如果被顶掉，这次上传就跳过，下一个整除的序列照常传，也可以用 `testflight_only` 手动补。
+  - 代价一：push 按分支串行后，最新 commit 的 debug 包最多要等正在跑的那一轮结束才开跑。代价二：push debug 通道的 TestFlight 只在「序列 % 3 == 0」那轮上传，那一轮如果被顶掉，这次上传就跳过，下一个整除的序列照常传，也可以用 `testflight_only` 手动补。（注：2026-11-02 起改为每次 develop push 都传，见 docs/agent/rules-detail.md#testflight-每次-push-自动传。）
   - 服务端只改自身的 PR 不再跑带随包原生库的完整 serve 冒烟（它要冷编 libtorrent），这项冒烟只在共享包变动时由 build-multiplatform 跑。
   - 未在 GitHub 上实跑新 workflow，只做了 YAML 解析、actionlint、守卫测试和 check_release_policy 本地验证。

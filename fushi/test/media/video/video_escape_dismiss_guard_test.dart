@@ -53,10 +53,15 @@ void main() {
           '否则侧栏 / 字幕列表开着时按系统返回键会直接退掉整页（BUG-1862）',
     );
     // pop 路由必须排在关层之后（BUG-2119 起 pop 经 exitAfterPersist 的
-    // `exit: nav.pop` 无条件执行，锚点跟着改成 `nav.pop`）。
+    // `exit: nav.pop` 无条件执行；退出动作抽成了 _exitVideoPage，锚点跟着改成对它的调用）。
     final int dismissAt = body.indexOf('_dismissTopForegroundLayer()');
-    final int popAt = body.indexOf('nav.pop');
+    final int popAt = body.indexOf('_exitVideoPage();');
     expect(popAt, greaterThan(dismissAt), reason: '真正 pop 路由必须排在逐级关层之后');
+    expect(
+      methodBody(src, 'void _exitVideoPage() {').contains('exit: nav.pop'),
+      isTrue,
+      reason: '_exitVideoPage 经 exitAfterPersist 无条件 pop',
+    );
   });
 
   test('Escape 快捷键回调复用同一个层级表，不另抄一份 if 链', () {

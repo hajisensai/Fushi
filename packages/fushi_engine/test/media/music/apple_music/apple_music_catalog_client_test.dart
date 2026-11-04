@@ -19,6 +19,7 @@ Map<String, Object?> _song(
   int disc = 1,
   int track = 1,
   bool preview = true,
+  bool streamable = false,
   String type = 'songs',
 }) => <String, Object?>{
   'id': id,
@@ -38,6 +39,7 @@ Map<String, Object?> _song(
       'previews': <Object?>[
         <String, Object?>{'url': 'https://audio.example/$id.m4a'},
       ],
+    if (streamable) 'playParams': <String, Object?>{'id': id, 'kind': 'song'},
   },
 };
 
@@ -70,7 +72,7 @@ Map<String, Object?> _album(String id, {String? artistId, String? date}) =>
 
 /// 固定返回一枚 token 的来源（计数取用次数）。
 class _Rig {
-  _Rig(this.handler) {
+  _Rig(this.handler, {bool fullTracks = false}) {
     tokens = AppleMusicTokenSource(
       client: MockClient((http.Request r) async {
         tokenFetches++;
@@ -83,6 +85,7 @@ class _Rig {
     client = AppleMusicCatalogClient(
       tokens: tokens,
       storefront: 'JP',
+      fullTracks: fullTracks,
       client: MockClient((http.Request r) async {
         requests.add(r);
         return handler(r);
@@ -236,6 +239,73 @@ void main() {
         );
       },
     );
+
+    group('fullTracks', () {
+      // 1：可串流 + 有试听；2：只有试听（不可串流）；3：可串流、没有试听。
+      Future<http.Response> songs(http.Request r) async =>
+          _json(<String, Object?>{
+            'results': <String, Object?>{
+              'songs': <String, Object?>{
+                'data': <Object?>[
+                  _song('1', streamable: true),
+                  _song('2'),
+                  _song('3', streamable: true, preview: false),
+                ],
+              },
+            },
+          });
+
+      test(
+        'full tracks keep only streamable songs and stream them via MusicKit',
+        () async {
+          final _Rig rig = _Rig(songs, fullTracks: true);
+          final MusicServerSearchResult r = await rig.client.search('x');
+          expect(r.tracks.map((MusicServerTrack t) => t.id), <String>[
+            '1',
+            '3',
+          ]);
+          for (final MusicServerTrack t in r.tracks) {
+            final MusicServerStream s = rig.client.streamFor(t);
+            expect(s.uri, appleMusicSongUri(t.id));
+            expect(isAppleMusicTrackPath(s.uri.toString()), isTrue);
+            expect(appleMusicSongIdFromPath(s.uri.toString()), t.id);
+            expect(s.bitrateKbps, kAppleMusicFullTrackBitrateKbps);
+            expect(s.transcoded, isFalse);
+          }
+          // 不可串流的曲目不交给 MusicKit（列表已滤掉；万一被点到只给试听）。
+          expect(
+            rig.client
+                .streamFor(const MusicServerTrack(id: '2', title: 'x'))
+                .uri
+                .toString(),
+            'https://audio.example/2.m4a',
+          );
+          // 本实例没见过的曲目不给地址。
+          expect(
+            () => rig.client.streamFor(
+              const MusicServerTrack(id: '99', title: 'x'),
+            ),
+            throwsStateError,
+          );
+        },
+      );
+
+      test(
+        'previews keep only songs with a preview and stream the preview',
+        () async {
+          final _Rig rig = _Rig(songs);
+          final MusicServerSearchResult r = await rig.client.search('x');
+          expect(r.tracks.map((MusicServerTrack t) => t.id), <String>[
+            '1',
+            '2',
+          ]);
+          expect(
+            rig.client.streamFor(r.tracks.first).uri.toString(),
+            'https://audio.example/1.m4a',
+          );
+        },
+      );
+    });
 
     test('401 drops the cached token and retries once', () async {
       int calls = 0;

@@ -178,7 +178,11 @@ class _RecordingLinker implements SrsProfileLinker {
   }
 
   @override
-  Future<SrsDbStore> adopt(SrsDbStore store, String uid) async {
+  Future<SrsDbStore> adopt(
+    SrsDbStore store,
+    String uid, {
+    SyncAssetStore? within,
+  }) async {
     adopted.add('${store.profileUid}->$uid');
     return store;
   }
@@ -1362,7 +1366,9 @@ void main() {
       cloud.gate.complete();
       await s.settle();
       expect(srsMigrationProgress.value, isNull);
-      expect(seen.last.done, n);
+      // 最后一次有活可干的迁移把全部文件做完。旧文件删在哪一次迁移里取决于迁移请的发布轮与下一次迁移谁先到（两个
+      // 独立的后台任务）：发布轮先落地时第二次迁移就删光了，之后排着的那一次是空跑（只报起点 0/0），结果相同。
+      expect(seen.where((SrsSyncProgress v) => v.total > 0).last.done, n);
       expect(
         crumbs.listSync().where(
           (FileSystemEntity e) =>
@@ -1944,14 +1950,14 @@ void main() {
       final Future<SrsSync2Report> c = s.syncWithBackend(backend);
       expect(identical(a, b) && identical(b, c), isTrue);
       expect(identical(first, a), isFalse, reason: '已开跑的一轮不能被复用');
-      expect(s.roundStats.coalesced, 2);
+      expect(s.roundStatsFor(backend).coalesced, 2);
       gate.complete();
       await Future.wait(<Future<SrsSync2Report>>[first, a, b, c]);
       expect(runs, 2, reason: '排队中的三次触发只跑一轮');
       expect(crumbDuringRun, isTrue, reason: '跑的时候要有活动面包屑');
       expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
-      expect(s.roundStats.queued, 0);
-      expect(s.roundStats.running, 0);
+      expect(s.roundStatsFor(backend).queued, 0);
+      expect(s.roundStatsFor(backend).running, 0);
     });
 
     test('开头的细分步骤写进面包屑（i8qNDs_V_D：死在「开始」阶段时要知道是哪一步）', () async {
@@ -1983,6 +1989,205 @@ void main() {
       expect(atKey, contains('stage=start:directoryKey '));
       expect(atKey, contains('rss='));
       expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+    });
+
+    test(
+      '文件夹位置与云盘同一套进度 / 面包屑：报到「下载 n/总数」「上传」，跑的时候有 backend=folder 的面包屑',
+      () async {
+        // 真机（小米平板 5，3 GB 真实库）：首次从文件夹收 125 个段跑了好几分钟，界面全程停在「正在准备」、
+        // 进程死在里面也不留面包屑——文件夹这条路径以前一个进度回调都没接。
+        final Directory folder = Directory.systemTemp.createTempSync(
+          'fushi_srs_folder_progress_',
+        );
+        addTearDown(() => folder.deleteSync(recursive: true));
+        final SrsFolderLocation loc = SrsFolderLocation(
+          id: 'usb',
+          path: folder.path,
+        );
+        final (FushiDatabase otherDb, SrsDbStore other) =
+            await openSrsTestStore(deviceId: 'other');
+        addTearDown(otherDb.close);
+        final String rain = await other.createNote(
+          noteTypeId: other.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨',
+          },
+        );
+        await srsSyncFolderLocation(location: loc, store: other);
+
+        final List<SrsSyncProgress> seen = <SrsSyncProgress>[];
+        final List<String> crumbsSeen = <String>[];
+        void onProgress() {
+          final SrsSyncProgress? v = srsSyncProgress.value;
+          if (v == null) return;
+          seen.add(v);
+          if (crumb().existsSync()) crumbsSeen.add(crumb().readAsStringSync());
+        }
+
+        srsSyncProgress.addListener(onProgress);
+        addTearDown(() => srsSyncProgress.removeListener(onProgress));
+        final SrsSyncScheduler s = SrsSyncScheduler(
+          readStore: () async => store,
+          channels: (Future<void> Function(SyncAssetStore) body) async =>
+              (ran: 0, errors: const <Object>[]),
+          directoryKeyOf: (SyncAssetStore b) async => 'k',
+          folderLocations: () async => <SrsFolderLocation>[loc],
+          onDataChanged: () {},
+          onNotice: (SrsSyncNotice _) {},
+        );
+        final SrsSyncNowResult r = await s.syncFolderLocations();
+        expect(r.ran, 1);
+        expect(s.folderErrors, isEmpty);
+        final List<SrsSyncProgress> downloads = <SrsSyncProgress>[
+          for (final SrsSyncProgress v in seen)
+            if (v.stage == SrsSyncStage.downloading) v,
+        ];
+        expect(downloads, isNotEmpty, reason: '收段要报「下载 n/总数」，不能停在「准备」');
+        expect(downloads.last.total, greaterThan(0));
+        expect(downloads.last.done, downloads.last.total);
+        expect(
+          seen.map((SrsSyncProgress v) => v.stage),
+          contains(SrsSyncStage.uploading),
+        );
+        expect(
+          crumbsSeen.any((String c) => c.contains('backend=folder')),
+          isTrue,
+          reason: '跑的时候要有活动面包屑',
+        );
+        expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+        expect(srsSyncProgress.value, isNull);
+        expect(await store.note(rain), isNotNull, reason: '段确实收进了本机');
+      },
+    );
+
+    test('文件夹报告的唯一分类：收手 / 口令类问题 / 位置自身的错 / 需要升级', () {
+      SrsFolderSyncReport withOps(SrsSync2Report ops) =>
+          SrsFolderSyncReport(ops: ops);
+      expect(classifySrsFolderReport(SrsFolderSyncReport()), (
+        stopped: false,
+        locationError: null,
+      ));
+      expect(
+        classifySrsFolderReport(
+          withOps(SrsSync2Report()..error = kSrsSync2Stopped),
+        ),
+        (stopped: true, locationError: null),
+      );
+      for (final String crypto in kSrsLocationCryptoErrors) {
+        expect(
+          classifySrsFolderReport(withOps(SrsSync2Report()..error = crypto)),
+          (stopped: false, locationError: null),
+          reason: '$crypto 由 locationCrypto 显示，不算这个位置的错',
+        );
+      }
+      expect(
+        classifySrsFolderReport(
+          withOps(SrsSync2Report()..error = kSrsSync2MetaUnavailable),
+        ),
+        (stopped: false, locationError: kSrsSync2MetaUnavailable),
+      );
+      expect(
+        classifySrsFolderReport(withOps(SrsSync2Report()..needsUpgrade = true)),
+        (stopped: false, locationError: kSrsSyncNeedsUpgrade),
+      );
+    });
+
+    test('文件夹一轮跑到一半收手：连续失败数不动、不记 folderErrors、不算 ran', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_stop_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'usb',
+        path: folder.path,
+      );
+      final (FushiDatabase otherDb, SrsDbStore other) = await openSrsTestStore(
+        deviceId: 'other',
+      );
+      addTearDown(otherDb.close);
+      for (int i = 0; i < 3; i++) {
+        await other.createNote(
+          noteTypeId: other.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨$i',
+          },
+        );
+        await srsSyncFolderLocation(location: loc, store: other);
+      }
+      bool stop = false;
+      void onProgress() {
+        if (srsSyncProgress.value?.stage == SrsSyncStage.downloading) {
+          stop = true;
+        }
+      }
+
+      srsSyncProgress.addListener(onProgress);
+      addTearDown(() => srsSyncProgress.removeListener(onProgress));
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        folderLocations: () async => <SrsFolderLocation>[loc],
+        locationDisabled: (String id) => stop && id == loc.locationId,
+      );
+      s.folderRoundStats.consecutiveFailures = 3;
+      final SrsSyncNowResult r = await s.syncFolderLocations();
+      expect(stop, isTrue, reason: '这一轮确实开拉了');
+      expect(r.ran, 0);
+      expect(s.folderErrors, isEmpty);
+      expect(
+        s.folderRoundStats.consecutiveFailures,
+        3,
+        reason: '收手既不算失败、也不算成功（不清零）',
+      );
+      expect(s.folderRoundStats.running, 0);
+    });
+
+    test('缺口令的文件夹位置：每轮照常报 locationCrypto，不算失败、不刷诊断；也不碰云盘那份统计', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_needs_key_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'nas',
+        path: folder.path,
+      );
+      SrsLocationKey? current = await srsDeriveLocationKey(
+        store,
+        'correct horse',
+        pendingEnable: true,
+      );
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        folderLocations: () async => <SrsFolderLocation>[loc],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        locationKey: (String id) => id == loc.locationId ? current : null,
+        onEncryptionEnabled: (String id, SrsLocationKey k) async => current = k,
+      );
+      expect((await s.syncFolderLocations()).ran, 1);
+      expect(s.locationCrypto[loc.locationId]?.encrypted, isTrue);
+
+      // 本机忘了口令（换机器 / 清了数据）：位置照样每轮报「需要口令」。
+      current = null;
+      final SrsSyncRoundStats cloud = s.roundStatsFor(
+        LocalDirectoryAssetStore(root),
+      )..consecutiveFailures = 2;
+      for (int i = 0; i < 3; i++) {
+        final SrsSyncNowResult r = await s.syncFolderLocations();
+        expect(r.ran, 1, reason: '口令类问题不进 folderErrors（与 UI 分流一致）');
+        expect(s.locationCrypto[loc.locationId]?.error, kSrsSync2NeedsKey);
+        expect(s.folderErrors, isEmpty);
+      }
+      expect(
+        s.folderRoundStats.consecutiveFailures,
+        0,
+        reason: '缺口令是没处理的配置状态，不是这一轮失败',
+      );
+      expect(s.folderRoundStats.lastFailureAt, isNull);
+      expect(cloud.consecutiveFailures, 2, reason: '文件夹成功不清云盘攒下的连续失败');
     });
 
     test('失败轮次累计连续失败数；成功清零；面包屑不残留', () async {
@@ -2017,11 +2222,11 @@ void main() {
         s.syncWithBackend(backend),
         throwsA(isA<SocketException>()),
       );
-      expect(s.roundStats.consecutiveFailures, 2);
-      expect(s.roundStats.lastFailureAt, isNotNull);
+      expect(s.roundStatsFor(backend).consecutiveFailures, 2);
+      expect(s.roundStatsFor(backend).lastFailureAt, isNotNull);
       expect(crumb().existsSync(), isFalse);
       await s.syncWithBackend(backend);
-      expect(s.roundStats.consecutiveFailures, 0);
+      expect(s.roundStatsFor(backend).consecutiveFailures, 0);
     });
 
     test('进程死在一轮里：下次启动折成 activityCrashRecovered（带阶段与内存）', () {

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +8,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_apple.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_md3.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_modern_shared.dart'
+    show LyricsModernWideGeometry;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show gamepadInputActivity;
@@ -17,39 +18,11 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion, fushiMotionDuration;
+import 'package:fushi/src/utils/misc/fushi_toast.dart'
+    show FushiToast, FushiToastCornerAnchor;
 
 /// 新版宽屏底栏：播放中无指针 / 按键活动多久后自动隐藏。
 const Duration kLyricsChromeIdleHideDelay = Duration(seconds: 3);
-
-/// 浮动件（跳转回退胶囊）占的带子高度：胶囊命中区 48dp + 上下各 4dp 留白。
-const double kLyricsNavigationAccessoryBand = 56;
-
-/// 有浮动件时歌词 WebView 的矩形：外观给的歌词矩形 [lyricsRect] 从底边让出
-/// [kLyricsNavigationAccessoryBand]（矩形太矮时至少留 1dp 高，不出负高度）。
-Rect lyricsViewRectFor(Rect lyricsRect, {required bool hasAccessory}) {
-  if (!hasAccessory) return lyricsRect;
-  final double bottom = math.max(
-    lyricsRect.top + 1,
-    lyricsRect.bottom - kLyricsNavigationAccessoryBand,
-  );
-  return Rect.fromLTRB(
-    lyricsRect.left,
-    lyricsRect.top,
-    lyricsRect.right,
-    bottom,
-  );
-}
-
-/// 浮动件所在的带子：歌词矩形最底下那一截，紧贴外观底栏 / 控件面板的上沿。
-Rect navigationAccessoryRectFor(Rect lyricsRect) {
-  final Rect lyrics = lyricsViewRectFor(lyricsRect, hasAccessory: true);
-  return Rect.fromLTRB(
-    lyricsRect.left,
-    lyrics.bottom,
-    lyricsRect.right,
-    math.max(lyrics.bottom, lyricsRect.bottom),
-  );
-}
 
 /// 歌词播放覆盖层外壳：盖在阅读器之上，阅读器在下面照常存活、跟随音频、记统计
 /// （见 [LyricsPlayerData] 文件头）。本组件只负责：
@@ -58,7 +31,7 @@ Rect navigationAccessoryRectFor(Rect lyricsRect) {
 ///  * 把歌词 WebView 放进外观给出的矩形——**它在 Stack 里的位置恒定**（第 2 个
 ///    孩子），宽窄布局切换 / 旋转只改矩形，不重建平台视图；
 ///  * 外观算出的歌词 HTML 主题变化时回调 [onHtmlThemeChanged]，由页面热更 CSS；
-///  * MD3 新版宽屏底栏的空闲自动隐藏：播放中 [kLyricsChromeIdleHideDelay] 内没有
+///  * 新版（MD3 / Apple 两套设计系统）宽屏底栏的空闲自动隐藏：播放中 [kLyricsChromeIdleHideDelay] 内没有
 ///    底栏相关活动 → 底栏淡出，淡完再一次性把歌词矩形伸到底。**隐藏后只有指针进入
 ///    歌词区下方的底边带子（或按 Tab）才唤出**：正文上的移动 / 点击 / 查词不唤出——
 ///    唤出会把歌词矩形缩回去、竖排正文重排，鼠标下的字会挪位，查词就点不准了。
@@ -73,7 +46,6 @@ class ReaderLyricsPlayerOverlay extends StatefulWidget {
     required this.data,
     required this.callbacks,
     required this.onHtmlThemeChanged,
-    this.navigationAccessory,
   });
 
   /// 歌词 WebView（透明底）。
@@ -84,16 +56,6 @@ class ReaderLyricsPlayerOverlay extends StatefulWidget {
 
   /// 歌词文档主题（颜色 / 对齐 / 透明度阶梯）变化。首帧也会回调一次。
   final ValueChanged<LyricsHtmlTheme> onHtmlThemeChanged;
-
-  /// 歌词区底边、紧贴底栏（控件面板）上方的浮动件（阅读器的「跳转回退」胶囊）。
-  /// null 不画。
-  ///
-  /// 反馈 0AwuVqrNFn：旧实现把它盖在歌词区顶部，压住正文行。现在它有自己的一条
-  /// 带子（[kLyricsNavigationAccessoryBand]）：有浮动件时歌词 WebView 的矩形从底边
-  /// 让出这条带子，胶囊坐在带子里，**不与任何歌词行重叠**——与用户怎么调边距无关
-  /// （默认边距下也成立），因为让位发生在外观给出的歌词矩形上，而不是靠歌词文档的
-  /// 内边距碰运气。
-  final Widget? navigationAccessory;
 
   @override
   State<ReaderLyricsPlayerOverlay> createState() =>
@@ -107,10 +69,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   int _schemeRequest = 0;
   LyricsHtmlTheme? _lastReportedTheme;
 
-  /// 底栏已淡出（[Md3ModernLyricsPlayerDesign.wideChromeHidden]）。
+  /// 底栏已淡出（新版外观的 `wideChromeHidden`）。
   bool _chromeHidden = false;
 
-  /// 歌词矩形已伸到底（[Md3ModernLyricsPlayerDesign.wideLyricsExpanded]）。
+  /// 歌词矩形已伸到底（新版外观的 `wideLyricsExpanded`）。
   bool _lyricsExpanded = false;
 
   /// 空闲计时器：每次活动重排（取消 + 新建，比逐帧轮询便宜）。
@@ -138,6 +100,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     // 桌面手柄走轮询直接派发 Actions，不产生 KeyEvent：单独订阅。
     gamepadInputActivity.addListener(_onGamepadActivity);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoHide());
+    _mineToastAnchor = FushiToast.anchorMineToCorner(_lyricsRegionGlobal);
   }
 
   /// 手柄导航与 Tab 同义：焦点要在底栏按钮间移动，隐藏中也唤出——否则焦点会
@@ -167,7 +130,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     });
   }
 
-  /// 只有 MD3 新版布局宽屏播放中才自动隐藏（Apple / 经典 / 暂停 / 窄屏一律常显）。
+  /// 只有新版布局（MD3 / Apple）宽屏播放中才自动隐藏（经典 / 暂停 / 窄屏一律常显）。
   /// 无障碍导航（读屏）开着时也常显：淡到 0 的子树会退出语义树，读屏的探索 /
   /// 双击走无障碍动作、不产生指针事件，隐藏后既找不到也唤不回。
   ///
@@ -179,7 +142,6 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
       widget.data.playbackActive &&
       widget.data.controlsStyle == LyricsControlsStyle.modern &&
       _wide &&
-      !isGlassDesign(context) &&
       !MediaQuery.accessibleNavigationOf(context);
 
   /// 上次依赖变化时的读屏开关：开关切换时重排计时（并立即复位底栏）。
@@ -267,6 +229,28 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   /// 侧栏 / 对话框 / 查词浮层）一起换成歌词模式配色。
   LyricsThemeHostState? _host;
 
+  /// 歌词 WebView 的矩形（本组件坐标，即外观给的歌词矩形），每次布局刷新；
+  /// 制卡结果卡贴它的底部起始角（见 [FushiToast.anchorMineToCorner]）。
+  Rect? _lyricsRect;
+
+  /// 本页当前是否在屏上可见：上面压了不透明路由（歌词模式上再推一个页面）时
+  /// Overlay 把本页设为 offstage、[TickerMode] 关掉。此时不能再把制卡结果贴到
+  /// 一块看不见的区域角上，[_lyricsRegionGlobal] 返回 null、退回默认大卡。
+  /// 半透明弹层（查词浮层 / 对话框）不关 TickerMode，歌词仍在底下可见，照常贴角。
+  bool _onstage = true;
+
+  /// 歌词模式期间制卡结果改成角落小卡：正文铺满全屏，底部正中的大卡正好压在
+  /// 正文上（群反馈 2026-11-01「字卡提示好大，还挡正文」）。
+  late final FushiToastCornerAnchor _mineToastAnchor;
+
+  Rect? _lyricsRegionGlobal() {
+    final Rect? rect = _lyricsRect;
+    if (!mounted || rect == null || !_onstage) return null;
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || !box.attached) return null;
+    return box.localToGlobal(rect.topLeft) & rect.size;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -294,6 +278,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     _idleTimer?.cancel();
     _expandTimer?.cancel();
     _cursorTimer?.cancel();
+    _mineToastAnchor.release();
     _host?.detach(this);
     super.dispose();
   }
@@ -368,6 +353,8 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    // 建立对 TickerMode 的依赖：被不透明路由盖住 / 揭开时重建并刷新可见性。
+    _onstage = TickerMode.valuesOf(context).enabled;
     _host?.attach(this, _coverScheme);
     final bool apple = isGlassDesign(context);
     // 左右互换带换位动画：进度 0↔1 按 M3E 时长补间，外观按进度插值两端几何，
@@ -390,15 +377,18 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     EdgeInsets padding,
   ) {
     final bool wide =
-        design is Md3ModernLyricsPlayerDesign && lyricsPlayerIsWide(size);
+        (design is Md3ModernLyricsPlayerDesign ||
+            design is AppleModernLyricsPlayerDesign) &&
+        lyricsPlayerIsWide(size);
     if (wide) {
-      _chromeZoneTop = Md3ModernLyricsPlayerDesign(
-        compactExpanded: widget.data.compactControlsExpanded,
-      ).lyricsRect(context, size, padding).bottom;
-      _revealZoneTop = Md3ModernLyricsPlayerDesign(
-        compactExpanded: widget.data.compactControlsExpanded,
-        wideLyricsExpanded: true,
-      ).lyricsRect(context, size, padding).bottom;
+      // 两套新版外观的宽屏歌词矩形出自同一份几何（底栏显示 / 隐藏两档）。
+      final LyricsModernWideGeometry g = LyricsModernWideGeometry.of(
+        context,
+        size,
+        padding,
+      );
+      _chromeZoneTop = g.lyrics.bottom;
+      _revealZoneTop = g.immersiveLyrics(size, padding).bottom;
     } else {
       _chromeZoneTop = double.infinity;
       _revealZoneTop = double.infinity;
@@ -414,10 +404,18 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     required bool apple,
     required double mirror,
   }) {
-    // MD3 按偏好选新版 / 经典布局；Apple 不读这项偏好（设置面板在 Apple 下隐藏）。
+    // 两套设计系统都按偏好选新版 / 经典布局（`lyrics_controls_style`）。
+    final bool classic =
+        widget.data.controlsStyle == LyricsControlsStyle.classic;
     final LyricsPlayerDesign design = apple
-        ? AppleLyricsPlayerDesign(mirrorProgress: mirror)
-        : widget.data.controlsStyle == LyricsControlsStyle.classic
+        ? classic
+              ? AppleLyricsPlayerDesign(mirrorProgress: mirror)
+              : AppleModernLyricsPlayerDesign(
+                  compactExpanded: widget.data.compactControlsExpanded,
+                  wideChromeHidden: _chromeHidden,
+                  wideLyricsExpanded: _lyricsExpanded,
+                )
+        : classic
         ? Md3LyricsPlayerDesign(mirrorProgress: mirror)
         : Md3ModernLyricsPlayerDesign(
             compactExpanded: widget.data.compactControlsExpanded,
@@ -454,6 +452,9 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
               final EdgeInsets padding = MediaQuery.paddingOf(context);
               final Rect rect = design.lyricsRect(context, size, padding);
               _updateAutoHideZones(context, design, size, padding);
+              // 制卡角落小卡贴的是歌词 WebView 的真实矩形：跳转记录已移进顶栏
+              // （[LyricsPlayerData.jumpActions]），WebView 就铺满外观给的歌词矩形。
+              _lyricsRect = rect;
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),
                 child: Stack(
@@ -466,18 +467,9 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
                         child: design.buildBackground(context, widget.data),
                       ),
                     ),
-                    Positioned.fromRect(
-                      rect: lyricsViewRectFor(
-                        rect,
-                        hasAccessory: widget.navigationAccessory != null,
-                      ),
-                      child: widget.lyricsView,
-                    ),
-                    if (widget.navigationAccessory != null)
-                      Positioned.fromRect(
-                        rect: navigationAccessoryRectFor(rect),
-                        child: Center(child: widget.navigationAccessory),
-                      ),
+                    // 跳转记录的返回 / 前进图标在各外观的顶栏右侧（
+                    // [LyricsPlayerData.jumpActions]），不占歌词矩形。
+                    Positioned.fromRect(rect: rect, child: widget.lyricsView),
                     Positioned.fill(
                       child: design.buildChrome(
                         context,

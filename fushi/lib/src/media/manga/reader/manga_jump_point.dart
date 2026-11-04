@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart' show immutable;
 /// 下标会漂，key 不会。本地卷（一卷一条目、无章节）[chapterKey] 为 null。
 /// [page] 是 0-based 页号（双页 spread 记首页，落地时按当时的 spread 表重新折算，
 /// 换了单双页偏好也落得对）；[fraction] 是 webtoon 连续模式的页内归一化偏移，
-/// 翻页模式恒 0。[pageCount] 只用于胶囊文案。
+/// 翻页模式恒 0。[pageCount] 只用于位置文案。
 @immutable
 class MangaJumpPoint {
   const MangaJumpPoint({
@@ -31,24 +31,29 @@ class MangaJumpPoint {
       'fraction: $fraction)';
 }
 
-/// 胶囊上的章名最长字数，再长截断加省略号（胶囊不折行）。
+/// 位置文案里章名的最长字数，再长截断加省略号（tooltip / 面板行不折行）。
 const int kMangaJumpLabelChapterMaxChars = 16;
 
-/// 胶囊上目标点的位置文案（语言无关）：
+/// 跳转落点的位置文案（语言无关）：
 ///
 ///  * 与当前同章（或本地卷）：`12 / 40`；
 ///  * 别的章：`<章名> · 12 / 40`，章名取不到（空）时只给页码。
+///
+/// [alwaysShowChapter]：同章也带章名（「跳转记录」面板，各行与当前位置同一格式，
+/// 一眼看出哪几条在同一话）；本地卷 / 章名取不到时照旧只给页码。顶栏图标的
+/// tooltip 用默认的短格式。
 String mangaJumpPointLabel({
   required MangaJumpPoint point,
   required String? currentChapterKey,
   required String? chapterName,
+  bool alwaysShowChapter = false,
 }) {
   final String pages = point.pageCount > 0
       ? '${point.page + 1} / ${point.pageCount}'
       : '${point.page + 1}';
   final String name = chapterName?.trim() ?? '';
   if (point.chapterKey == null ||
-      point.chapterKey == currentChapterKey ||
+      (!alwaysShowChapter && point.chapterKey == currentChapterKey) ||
       name.isEmpty) {
     return pages;
   }

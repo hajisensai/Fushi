@@ -46,6 +46,30 @@ class SrsMetaLine extends StatelessWidget {
   /// 把已用 [separator] 拼好的本地化串（如 i18n 摘要）拆回各段。
   static List<String> split(String joined) => joined.split(separator);
 
+  /// 全角收尾标点（「（Fushi 3.3）」的「）」等）字形自带右侧留白，后面再接 [separator] 的前导空格
+  /// 会显得中点左边空了两格：这种段后只接「· 」。
+  static const String _fullWidthClosers = '）】」』〉》〕';
+
+  /// [segment] 后面接的分隔符。
+  static String separatorAfter(String segment) =>
+      segment.isNotEmpty &&
+          _fullWidthClosers.contains(segment[segment.length - 1])
+      ? '· '
+      : separator;
+
+  /// 跳过空段、按 [separatorAfter] 拼成一行文本（不需要按段折行的地方用）。
+  static String join(Iterable<String> segments) {
+    final StringBuffer out = StringBuffer();
+    String last = '';
+    for (final String s in segments) {
+      if (s.isEmpty) continue;
+      if (out.isNotEmpty) out.write(separatorAfter(last));
+      out.write(s);
+      last = s;
+    }
+    return out.toString();
+  }
+
   final List<String> segments;
 
   @override
@@ -58,13 +82,49 @@ class SrsMetaLine extends StatelessWidget {
       children: <Widget>[
         for (int i = 0; i < parts.length; i++)
           Text(
-            i == parts.length - 1 ? parts[i] : '${parts[i]}$separator',
+            i == parts.length - 1
+                ? parts[i]
+                : '${parts[i]}${separatorAfter(parts[i])}',
             maxLines: 1,
             softWrap: false,
             overflow: TextOverflow.ellipsis,
           ),
       ],
     );
+  }
+}
+
+/// 到期一格（第三格）显示什么：牌组行 / 首页复习条 / 导航速览 / 复习页顶栏共用这一份口径与格式。
+///
+/// - [due] 就是到期数：FSRS 牌组按存下的到期日；RWKV 牌组 = 今天结束前回忆率会降到目标保留率以下的卡（内核计数，
+///   随作答实时重算，出卡同一口径）。以前 RWKV 那部分显示过近 30 天日均，用户 2026-11-03 拍板删掉；
+/// - [pending]：RWKV 准备中（RWKV 牌组的卡这时本就没算进计数），文字后面跟「准备中」。
+@immutable
+class SrsReviewCell {
+  const SrsReviewCell({required this.due, this.pending = false});
+
+  /// 牌组行的那一格。
+  factory SrsReviewCell.ofDeck(SrsDeckSummary d) =>
+      SrsReviewCell(due: d.reviewCount, pending: d.rwkvPending);
+
+  final int due;
+  final bool pending;
+
+  /// 格子里的字。
+  String get numbers => '$due';
+
+  /// 带名字的文字（速览副行 / 复习页顶栏 / 读屏）：「到期 12」，准备中再跟「(准备中)」
+  /// （准备中时到期 0 不写成「到期 0」——那不代表今天没有到期）。
+  /// [omitZero]：到期 0 且不在准备中时返回 null（速览只列非零项）。
+  String? label({bool omitZero = false}) {
+    final List<String> parts = <String>[
+      if (!((omitZero || pending) && due == 0)) '${t.srs_count_review} $due',
+    ];
+    if (pending) {
+      if (parts.isEmpty) parts.add(t.srs_count_review);
+      return '${parts.join(' · ')} (${t.srs_settings_rwkv_preparing_start})';
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 }
 
@@ -105,6 +165,10 @@ class SrsCountTriple extends StatelessWidget {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             );
     final Color muted = Theme.of(context).disabledColor;
+    final SrsReviewCell review = SrsReviewCell(
+      due: reviewCount,
+      pending: reviewPending,
+    );
     Widget cell(int value, Color color, String label) => FushiTooltip(
       message: label,
       child: ConstrainedBox(
@@ -139,9 +203,9 @@ class SrsCountTriple extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.end,
           children: <Widget>[
-            if (reviewCount > 0)
+            if (review.due > 0)
               Text(
-                '$reviewCount',
+                review.numbers,
                 style: base.copyWith(
                   color: colors.review,
                   fontWeight: FontWeight.w600,
@@ -157,15 +221,10 @@ class SrsCountTriple extends StatelessWidget {
         ),
       ),
     );
-    final String reviewLabel = reviewPending
-        ? '${t.srs_count_review} '
-              '${reviewCount > 0 ? '$reviewCount, ' : ''}'
-              '${t.srs_settings_rwkv_preparing_start}'
-        : '${t.srs_count_review} $reviewCount';
     return Semantics(
       label:
           '${t.srs_count_new} $newCount, ${t.srs_count_learn} $learnCount, '
-          '$reviewLabel',
+          '${review.label()}',
       child: ExcludeSemantics(
         child: Row(
           mainAxisSize: MainAxisSize.min,

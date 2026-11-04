@@ -64,7 +64,7 @@ class _ReaderPageSessionRemote implements ReaderSessionRemote {
     final int? total = _state._progressTotalChars;
     if (total == null || total <= 0) return false;
     final int offset = (total * percent.clamp(0, 100) / 100).round();
-    await _state._jumpToGlobalCharOffset(offset);
+    await _state._jumpToGlobalCharOffset(offset, source: JumpSource.remote);
     return true;
   }
 

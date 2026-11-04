@@ -84,6 +84,45 @@ void main() {
     expect(underlayInputExclusions.value, isEmpty);
   });
 
+  testWidgets('输入区：按 inset 内收（圆角同收），enabled=false 不上报', (
+    WidgetTester tester,
+  ) async {
+    Widget app({required bool enabled}) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Stack(
+        children: <Widget>[
+          Positioned(
+            left: 10,
+            top: 20,
+            width: 48,
+            height: 48,
+            child: UnderlayInputRegion(
+              radius: 24,
+              inset: kUnderlayRegionEdgeInset,
+              enabled: enabled,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    underlayCompositionActive.value = true;
+    await tester.pumpWidget(app(enabled: false));
+    await tester.pump();
+    expect(underlayInputExclusions.value, isEmpty, reason: '动画中途 / 半透明不挖洞');
+
+    await tester.pumpWidget(app(enabled: true));
+    await tester.pump();
+    const double i = kUnderlayRegionEdgeInset;
+    expect(underlayInputExclusions.value, <UnderlayInputExclusion>[
+      const UnderlayInputExclusion(
+        Rect.fromLTRB(10 + i, 20 + i, 58 - i, 68 - i),
+        24 - i,
+      ),
+    ], reason: '洞必须落在抗锯齿边以内');
+  });
+
   testWidgets('「⋯」菜单紧贴按钮下沿，不再空出一个按钮高', (WidgetTester tester) async {
     final GlobalKey anchor = GlobalKey();
     await tester.pumpWidget(

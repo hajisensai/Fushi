@@ -136,7 +136,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
       }
       return;
     }
-    final dynamic result = await _controller!.evaluateJavascript(
+    // 卷页：Flutter 覆盖层播动画，记账（下面的 _paginateStep）在提交那一刻走一次。
+    if (_pageCurlEnabled) {
+      await _pageCurlTurn(direction);
+      return;
+    }
+    await _paginateStep(direction);
+  }
+
+  /// 分页模式的一步翻页（闸门已过）：JS paginate + 进度刷新 + caret 重锚，翻不动
+  /// 就跨章。卷页的提交 / 回落也只走这里。
+  Future<void> _paginateStep(ReaderNavigationDirection direction) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    final dynamic result = await controller.evaluateJavascript(
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
     if (!mounted || _controller == null) return;
@@ -1120,7 +1133,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               onJumpTo: (EpubImageRef ref) {
                 Navigator.pop(routeContext);
                 unawaited(() async {
-                  await _recordTextJumpDeparture();
+                  await _recordTextJumpDeparture(source: JumpSource.gallery);
                   await _navigateToChapter(ref.jumpChapterIndex, manual: true);
                 }());
               },
@@ -2459,7 +2472,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // （见 _buildTopProgressBar / topProgressPillShowsBlur），关闭后再挂回。
     _rebuild(() => _appearanceSheetOpen = true);
     final ValueNotifier<String> notifier = ValueNotifier<String>(kind);
-    void onKindChanged() => _syncPanelClockHold(notifier.value);
+    // 侧板路由本身也是盖住阅读器的模态路由：原地切到统计页（它自己画实时秒表）时
+    // 豁免学习计时。豁免随路由构造带上（StudyClockTransparentSettings.when），推路由
+    // 当帧生效，切种类在事件里改这个开关，不在 build 里补登记（BUG-3994）。
+    final ValueNotifier<bool> statisticsShown = ValueNotifier<bool>(
+      kind == _kReaderPanelStatistics,
+    );
+    void onKindChanged() {
+      statisticsShown.value = notifier.value == _kReaderPanelStatistics;
+      _syncPanelClockHold(notifier.value);
+    }
+
     try {
       // _settings 就是 ReaderFushiSource.readerSettings 本体（见 initState 绑定），
       // 面板控件经 ReaderFushiSource.instance.ttu* 实时读写同一对象，开面板前后都
@@ -2485,6 +2508,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         side: ReaderSideSheetSide.right,
         movableSettings: true,
         switcher: _readerPanelSwitcher(notifier),
+        studyClockTransparentWhen: statisticsShown,
         builder: (_) => ValueListenableBuilder<String>(
           valueListenable: notifier,
           builder: (BuildContext ctx, String current, Widget? _) {
@@ -2531,8 +2555,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       notifier.removeListener(onKindChanged);
       if (identical(_panelKind, notifier)) _panelKind = null;
       _syncPanelClockHold(null);
-      // notifier 不 dispose：路由 Future 在反向转场之前完成，内容（及其
-      // ValueListenableBuilder 监听）在转场期间仍挂着，提前 dispose 会断言。
+      // notifier / statisticsShown 不 dispose：路由 Future 在反向转场之前完成，内容
+      // （及其 ValueListenableBuilder 监听）在转场期间仍挂着，提前 dispose 会断言；
+      // studyCoverTracker 在路由出栈（didPop）时已退订 statisticsShown。
       _appearanceSheetOpen = false;
       // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
       if (mounted) _rebuild(() {});
@@ -2636,6 +2661,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     required WidgetBuilder builder,
     bool movableSettings = false,
     ReaderPanelSwitcher? switcher,
+    ValueListenable<bool>? studyClockTransparentWhen,
   }) async {
     _cancelChromeAutoHide();
     // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
@@ -2655,6 +2681,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             preferences: appModel.prefsRepo,
             bottomSheetWhenCompact: true,
             switcher: switcher,
+            studyClockTransparentWhen: studyClockTransparentWhen,
             builder: builder,
           );
           return;
@@ -2664,6 +2691,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           side: side,
           bottomSheetWhenCompact: true,
           switcher: switcher,
+          studyClockTransparentWhen: studyClockTransparentWhen,
           builder: builder,
         );
       });
@@ -2723,7 +2751,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       readerProgress: (_currentChapter, _book!.chapters.length),
       readerCharOffset: _tocCharOffsetFor(_currentChapter),
       onJumpSection: (int index, String? fragment) async {
-        await _jumpToChapterAnchor(index, fragment);
+        await _jumpToChapterAnchor(
+          index,
+          fragment,
+          source: JumpSource.tableOfContents,
+        );
       },
       // BUG-782：退出必须走 maybePop() 而非直接 pop()。直接 Navigator.pop()
       // 会绕过阅读器 PopScope(canPop:false) 的 onPopInvokedWithResult，使
@@ -2886,6 +2918,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 歌词模式的「搜索」页搜字幕（音频 cue）：正文搜索 / 字数跳转在歌词页里没有
       // 目标（见上 onJumpToCharOffset），字幕才是歌词页上看得见的东西。
       lyricsCueSearch: _lyricsMode ? _lyricsCueSearch() : null,
+      audioJumpMarks: () => _audioJumpMarks() ?? _kNoJumpMarks,
+      bookJumpMarks: () => _bookJumpMarks() ?? _kNoJumpMarks,
+      onOpenJumpHistory: _jumpHistory.isEmpty
+          ? null
+          : () => unawaited(_openJumpHistoryPanel()),
       readerPaperColors: () =>
           (bg: _themeBackgroundColor(), fg: _themeTextColor()),
     );
@@ -3310,9 +3347,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
             if (_modeTogglePromoted)
               _readerControlAction(ReaderControlItem.modeToggle),
           ],
-          trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
-          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后。
-          overflowActions: _overflowControlActions(),
+          // 跳转记录的 ↶ / ↷ 排在右侧动作区最前（钉住，窄窗不收进 ⋮）。
+          trailing: <ReaderHeaderAction>[
+            ..._jumpHistoryHeaderActions(),
+            ..._readerControlActionsIn(ReaderControlSlot.topRight),
+          ],
+          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后，
+          // 其后是「跳转记录」（有历史时）。
+          overflowActions: <ReaderHeaderAction>[
+            ..._overflowControlActions(),
+            ..._jumpHistoryMenuActions(),
+          ],
         ),
       ),
     );
@@ -3360,13 +3405,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
             titleTooltip: t.section_navigation,
             onTitleTap: () =>
                 unawaited(_showAppearanceSheet(initialSubPage: 'location')),
-            actions: _groupedToolbarItems(
-              _renderableControlsIn(ReaderControlSlot.topRight),
-            ),
+            // 跳转记录的 ↶ / ↷ 单独成组排在最前（优先级最高，最后才收进 ⋯）。
+            actions: <List<FushiToolbarItem>>[
+              if (_jumpHistoryToolbarItems()
+                  case final List<FushiToolbarItem> jump when jump.isNotEmpty)
+                jump,
+              ..._groupedToolbarItems(
+                _renderableControlsIn(ReaderControlSlot.topRight),
+              ),
+            ],
             overflow: <FushiToolbarItem>[
               for (final ReaderHeaderAction a in _overflowControlActions())
                 _toolbarItem(a),
             ],
+            // 「跳转记录」入口恒在 ⋯ 里（有历史时）。
+            menu: _jumpHistoryMenuItems(),
             colors: _floatingToolbarColors(),
           ),
         ),
@@ -3420,6 +3473,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             colors: colors,
+            jumpMarks: _audioJumpMarks(),
             onOpenPanel: () =>
                 unawaited(_showAppearanceSheet(initialSubPage: 'audiobook')),
           );
@@ -4271,7 +4325,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String query,
   ) async {
     if (!mounted || _book == null || _controller == null) return;
-    await _recordTextJumpDeparture();
+    await _recordTextJumpDeparture(source: JumpSource.search);
     if (!mounted) return;
     // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
     // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
@@ -4320,13 +4374,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// settings sheet 的 onJumpToFavorite 与 debugJumpToFavorite 测试钩子都走这里。
   Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {
     if (fav.sectionIndex == null) return;
-    await _recordTextJumpDeparture();
+    await _recordTextJumpDeparture(source: JumpSource.favorite);
     // BUG-2596：歌词模式下「跳到收藏」= 把音频定位到那句 cue（歌词页随 cue 推进
     // 高亮/滚过去），与跳章同一条路；正文导航会把歌词文档换成 EPUB 章。找不到
     // 对应 cue（收藏落在对齐没覆盖的正文）就什么都不做——歌词里没有它。
     if (_lyricsMode) {
       final AudioCue? target = _favoriteAudioCue(fav);
-      if (target != null) await _audiobookController?.skipToCue(target);
+      if (target != null) {
+        await _audiobookController?.skipToCue(
+          target,
+          jumpSource: JumpSource.favorite,
+        );
+      }
       return;
     }
     final int? normCharOffset = fav.normCharOffset;
@@ -4576,6 +4635,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final ReaderBookmarkJump jump = readerBookmarkJumpFor(bookmark);
     if (jump.section < 0 || jump.section >= book.chapters.length) return;
+    // 书签跳转同属「收藏」来源；歌词模式下这里不记（音频跳转由控制器漏斗报）。
+    await _recordTextJumpDeparture(source: JumpSource.favorite);
+    if (!mounted) return;
     if (_lyricsMode) {
       final int? offset = readerBookmarkEffectiveOffset(
         bookmark,
@@ -4585,9 +4647,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ? null
           : _audioCueAtCharOffset(jump.section, offset);
       if (cue != null) {
-        await _audiobookController?.skipToCue(cue);
+        await _audiobookController?.skipToCue(
+          cue,
+          jumpSource: JumpSource.favorite,
+        );
       } else {
-        await _jumpToChapterAnchor(jump.section, null);
+        await _jumpToChapterAnchor(
+          jump.section,
+          null,
+          source: JumpSource.favorite,
+        );
       }
       return;
     }

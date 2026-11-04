@@ -270,7 +270,7 @@ void main() {
     );
 
     final String charJump = slice(
-      'Future<void> _jumpToGlobalCharOffset(int globalOffset) async {',
+      'Future<void> _jumpToGlobalCharOffset(',
       'Future<void> _flushReadingStats()',
     );
     expect(

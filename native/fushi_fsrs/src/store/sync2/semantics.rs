@@ -274,12 +274,7 @@ fn conflict_kind(what: &str, entity_kind: &str) -> &'static str {
 pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entity: &str, now: i64, t: &mut Touched) -> Result<(), String> {
     // 每条碰到实体的写入都会走这里；绝大多数实体从没被删过。先走 (实体, 键) 索引问一句「有没有删除」，
     // 没有就返回——否则每条写入都要把这个实体的全部操作读一遍，同一实体上的操作越多越慢（平方级）。
-    let any_delete: bool = conn
-        .prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = 'deleted' LIMIT 1")
-        .map_err(sql)?
-        .exists(params![profile, kind, entity])
-        .map_err(sql)?;
-    if !any_delete {
+    if !any_delete(conn, profile, kind, entity)? {
         return Ok(());
     }
     let all = ops_of(conn, profile, kind, entity)?;
@@ -362,6 +357,14 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
         }
     }
     Ok(())
+}
+
+/// 实体上有没有过 `deleted` 写入（[evaluate_holds] 的快速出口）。
+fn any_delete(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
+    conn.prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = 'deleted' LIMIT 1")
+        .map_err(sql)?
+        .exists(params![profile, kind, entity])
+        .map_err(sql)
 }
 
 /// 这条删除现在要不要扣住（落投影之前问）。
@@ -456,17 +459,20 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
     }
     let skel = op.purge();
     conn.prepare_cached(
-        "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
+        "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL, pz = 0 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
     )
         .map_err(sql)?
         .execute(params![profile, id.device.0.to_vec(), id.seq as i64, &skel.payload[..]])
         .map_err(sql)?;
     if own == Some(&id.device) {
+        // 同名改写（`restamp = 1`）：位置上的旧段仍是合法的同名段，不挡 head（schema.rs `migrate_v23`）；已登记成缺段的
+        // 不降级，已登记成副本收敛（2，归档位置不重写）的升成清除：清除连归档位置也要重写。
         conn.prepare_cached(
-            "INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) \
-             SELECT l.profile_uid, l.location, s.first FROM sync2_locations l \
+            "INSERT INTO sync2_rewrites (profile_uid, location, first, restamp) \
+             SELECT l.profile_uid, l.location, s.first, 1 FROM sync2_locations l \
              JOIN sync2_segments s ON s.profile_uid = l.profile_uid AND s.device = ?2 AND s.first <= ?3 AND s.last >= ?3 \
-             WHERE l.profile_uid = srs_id(?1)",
+             WHERE l.profile_uid = srs_id(?1) \
+             ON CONFLICT(profile_uid, location, first) DO UPDATE SET restamp = MIN(restamp, 1)",
         )
         .map_err(sql)?
         .execute(params![profile, id.device.0.to_vec(), id.seq as i64])

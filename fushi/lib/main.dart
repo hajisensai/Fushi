@@ -41,6 +41,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
+import 'package:fushi/game_stream_companion_main.dart'
+    as game_stream_companion_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
@@ -82,6 +84,7 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi/src/settings/settings_schema.dart'
@@ -254,6 +257,14 @@ SystemUiOverlayStyle fushiSystemOverlayStyle(Brightness brightness) {
 @pragma('vm:entry-point')
 void popupMain() {
   popup_entrypoint.popupMain();
+}
+
+/// The game stream's lookup panel on a second display (Android
+/// `GameStreamCompanionActivity`). Engines resolve entry points in the root
+/// library, so it is forwarded from here like [popupMain].
+@pragma('vm:entry-point')
+void gameStreamCompanionMain() {
+  game_stream_companion_entrypoint.gameStreamCompanionMain();
 }
 
 /// Application execution starts here.
@@ -2986,6 +2997,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             feedbackRouteTransitions,
             // 阅读器靠它看见「整页路由盖住正文」（悬浮球打开反馈中心等），停表。
             appModel.routeObserver,
+            // 学习计时的「被盖住」判据：学习页之上压着任何未豁免的模态路由就停表
+            // （BUG-3994；整页 / 对话框 / 侧板 / 菜单一视同仁，新入口无需各自接线）。
+            studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,
           ],

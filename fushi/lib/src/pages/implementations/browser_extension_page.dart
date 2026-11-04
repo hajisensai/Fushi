@@ -12,6 +12,8 @@ import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -40,16 +42,17 @@ class BrowserExtensionPage extends ConsumerStatefulWidget {
   const BrowserExtensionPage({
     super.key,
     this.detectBrowser = detectDefaultBrowserKind,
-    this.navigation,
+    this.hostedByHub = false,
   });
 
   /// 默认浏览器探测（只用来预选第 1 步的浏览器 chip）。
   final BrowserKindDetector detectBrowser;
 
-  /// 作「网页」模块的子页时（[WebHubPage]），宿主交来的子页页签，占页头标题位；
-  /// null = 独立页（从「设置 › 查词」push 进来，或网页模块只剩这一个子页），
-  /// 页头画本页标题。
-  final Widget? navigation;
+  /// 作「浏览器」模块的子页时（[WebHubPage]）为 true：「标题胶囊 + 子页页签」
+  /// 那一行由宿主统一画、叠在本页上，本页不画页头，正文让出宿主工具栏的高度
+  /// （[FushiFloatingChromeInset]）。false = 独立页（从「设置 › 查词」/ 引导
+  /// push 进来），页头画本页标题与返回键。
+  final bool hostedByHub;
 
   @override
   ConsumerState<BrowserExtensionPage> createState() =>
@@ -172,9 +175,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           // 判据是**本页自己所在的 PageRoute 是不是首个**，不是 `Navigator.canPop()`：
           // 本页的下拉框会临时 push 一个 PopupRoute，canPop() 会因此变成 true，
           // 于是每开一次下拉都闪出一个返回箭头。
-          if (widget.navigation case final Widget navigation)
-            FushiPageHeader.customTitle(title: navigation)
-          else
+          if (!widget.hostedByHub)
             FushiPageHeader(
               title: t.nav_browser_extension,
               leading: ModalRoute.of(context)?.isFirst == false
@@ -197,6 +198,8 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     final String? build = appModel.browserExtensionBuild;
     final bool guideExpanded = _guideExpanded ?? !connected;
     final double page = FushiDesignTokens.of(context).spacing.page;
+    // 宿主 hub 的工具栏行叠在本页上：正文顶部让出它（独立页时为 0）。
+    final double top = FushiFloatingChromeInset.of(context) + 8;
 
     final Widget hero = ValueListenableBuilder<String?>(
       valueListenable: appModel.browserExtensionReportedBuild,
@@ -232,7 +235,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           final bool wide = constraints.maxWidth >= 920;
           if (!wide) {
             return ListView(
-              padding: EdgeInsets.fromLTRB(page, 8, page, 32),
+              padding: EdgeInsets.fromLTRB(page, top, page, 32),
               children: <Widget>[
                 entrance(0, hero),
                 const SizedBox(height: gap),
@@ -245,7 +248,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             );
           }
           return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(page, 8, page, 32),
+            padding: EdgeInsets.fromLTRB(page, top, page, 32),
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(

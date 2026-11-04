@@ -1080,6 +1080,8 @@ String _rootTransitionCss(
   switch (animation) {
     case PageTurnAnimation.none:
     case PageTurnAnimation.cover:
+    // 卷页画在 Flutter 覆盖层（page_curl.dart），JS 只做瞬时落位。
+    case PageTurnAnimation.curl:
       return '';
     case PageTurnAnimation.slide:
       return 'transition:transform ${speed.durationMs}ms $kMangaPageTurnEasing;';
@@ -1653,7 +1655,10 @@ String _mangaGestureJs({
       }
     }
   }
-  function _animMs(){ return PAGE_ANIM === 'none' ? 0 : PAGE_ANIM_MS; }
+  // 卷页画在 Flutter 覆盖层（page_curl.dart）：JS 侧的落位一律瞬时。
+  function _animMs(){
+    return (PAGE_ANIM === 'none' || PAGE_ANIM === 'curl') ? 0 : PAGE_ANIM_MS;
+  }
   function _spreadEl(i){
     var root = document.getElementById('manga-root');
     return root ? root.querySelector('.manga-spread[data-spread="'+i+'"]') : null;
@@ -1818,6 +1823,50 @@ String _mangaGestureJs({
     var root = document.getElementById('manga-root');
     if (root) root.style.transition = '';
   }
+  // 卷页预览（Flutter 覆盖层，page_curl.dart）：只把 strip 瞬时挪到目标跨页的像素
+  // 位置，不改 CURRENT / PAGE_HALF，不跑任何翻页副作用（TURN_SERIAL / 重试失败页 /
+  // 闪屏 / 换页复位缩放与 onMangaZoomChanged）——那些只在提交时由
+  // __mangaApplyTranslate 跑一次；回卷撤销也就不会把原页的缩放 / 适配状态打回默认。
+  // 目标跨页不在已加载窗口里返回 false（Dart 交回普通翻页重载窗口）。
+  function _curlPlaceStrip(i){
+    var root = document.getElementById('manga-root');
+    var el = _spreadEl(i);
+    if (!root || !el) return false;
+    var prevTransition = root.style.transition;
+    root.style.transition = 'none';
+    root.style.transform = 'translateX(' + (-el.offsetLeft) + 'px)';
+    void root.offsetHeight;
+    root.style.transition = prevTransition;
+    return true;
+  }
+  window.__mangaCurlPreview = function(target){
+    _finishPageAnim();
+    _dropDragHandoff();
+    if (!_curlPlaceStrip(target)) return false;
+    _warmNeighbours(target);
+    return true;
+  };
+  window.__mangaCurlRevert = function(){
+    _curlPlaceStrip(CURRENT);
+  };
+  // 卷页的纸面：跨页 i 的页图（一页或两页）在视口里的外接框，按视口比例
+  // [l, t, r, b] 返回；黑边不是纸，不跟着卷。.manga-page 的盒子就是页图本身
+  // （_layoutSource 按页图比例定宽高，没有内部信箱留白）。量不到返回 null。
+  window.__mangaCurlPaperRect = function(i){
+    var pages = document.querySelectorAll('.manga-page[data-spread="'+i+'"]');
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (var k = 0; k < pages.length; k++) {
+      var rc = pages[k].getBoundingClientRect();
+      if (!(rc.width > 0 && rc.height > 0)) continue;
+      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
+      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+    }
+    l = Math.max(0, l); t = Math.max(0, t);
+    r = Math.min(w, r); b = Math.min(h, b);
+    if (!(r > l && b > t)) return null;
+    return [l / w, t / h, r / w, b / h];
+  };
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
     // 翻到含失败页的跨页 = 读者要看它：重取一次。
@@ -2224,6 +2273,24 @@ String _mangaGestureJs({
   function _followActive(){
     return FOLLOW_DRAG && !IS_WEBTOON;
   }
+  // 卷页跟手：手指位置（视口比例）转发给 Dart 的 onPageCurlDrag，纸面由 Flutter 覆盖层
+  // 画，跨页由 Dart 经 __mangaApplyTranslate 瞬时预览。phase: start / move / end / cancel。
+  function _curlSend(phase, x, y, velocity){
+    var b = _bridge();
+    if (!b) return;
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    b.callHandler('onPageCurlDrag', phase, x / w, y / h, (velocity || 0) / w,
+        sx / w, sy / h);
+  }
+  var _curlMoveRaf = 0, _curlLastX = 0, _curlLastY = 0;
+  function _curlMove(x, y){
+    _curlLastX = x; _curlLastY = y;
+    if (_curlMoveRaf) return;
+    _curlMoveRaf = requestAnimationFrame(function(){
+      _curlMoveRaf = 0;
+      if (swipe && swipe.curl) _curlSend('move', _curlLastX, _curlLastY, 0);
+    });
+  }
   function _start(x, y){
     has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X;
     // 新的一次按下：在播的翻页动画直接落到终点，还挂着的上一次松手交接作废。
@@ -2245,6 +2312,12 @@ String _mangaGestureJs({
     // 宽页切半（SPLIT_ACTIVE）的翻页是同一跨页内的视图变换，平移整条 strip
     // 露出的是相邻跨页、不是另一半——这种页不跟手，保持松手判定。
     if (swipe.axis !== 'x' || SPLIT_ACTIVE || !swipe.follow) return;
+    if (swipe.curl) { _curlMove(x, y); return; }
+    if (PAGE_ANIM === 'curl' && ZOOM <= 1.01 && swipe.base === null) {
+      swipe.curl = true;
+      _curlSend('start', x, y, 0);
+      return;
+    }
     var root = document.getElementById('manga-root');
     if (!root) return;
     if (swipe.base === null) {
@@ -2310,6 +2383,7 @@ String _mangaGestureJs({
   function _swipeRelease(turning, instant){
     var s = swipe;
     swipe = null;
+    if (s && s.curl) { _curlSend('cancel', 0, 0, 0); return null; }
     if (!s || s.base === null) return null;
     var root = document.getElementById('manga-root');
     if (!root) return null;
@@ -2656,6 +2730,13 @@ String _mangaGestureJs({
     // 只能是 tap，直接走 tap 路径（不丢选词）。
     if (!has) { _swipeRelease(false); _onTap(x, y); return; }
     has = false;
+    // 卷页跟手：提交 / 回卷由 Dart 控制器按同一组阈值判，这里只交出松手。
+    if (swipe && swipe.curl) {
+      var curlSwipe = swipe;
+      swipe = null;
+      _curlSend('end', x, y, curlSwipe.vx / 1000);
+      return;
+    }
     var dx = x - sx, dy = y - sy, el = Date.now() - st;
     var ax = Math.abs(dx), ay = Math.abs(dy);
     // 松手瞬时速度（最后一段 pointermove，px/s）：跟手之后手势的意图看的是

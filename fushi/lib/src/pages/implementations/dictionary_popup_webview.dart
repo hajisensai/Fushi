@@ -333,14 +333,44 @@ Set<String> enabledDictionaryFontPaths(List<Map<String, dynamic>> fonts) =>
         .map(p.canonicalize)
         .toSet();
 
+/// 「高级制卡」确认往返回点出来的制卡 fields 在交宿主前要并进的两样选择：
+///
+/// * [wordAudioUrl]：单词音频就是 fields 的 `audio`（popup.js 现解析的默认源）。
+///   null = 不改；空串 = 不要（清空）；其余 = 换成这条 URL。原地换掉后下游各车道
+///   （本机、互联转发、待发队列）按原样处理，不必认识新字段。
+/// * [overrides]：对话框里的其余调整，经 [MiningRequestOverrides.attach] 附上。
+///
+/// 纯函数、不读 State：`mineEntry` / `updateEntry` / `queueOverwrite` /
+/// `minedCardAction` 四个桥 handler 经 [DictionaryPopupWebViewState] 的
+/// `_withConfirmMineOverrides` 共用这一处，测试直接调它验合并规则。
+Map<String, String> applyConfirmMineChoices(
+  Map<String, String> fields, {
+  MiningRequestOverrides? overrides,
+  String? wordAudioUrl,
+}) {
+  Map<String, String> out = fields;
+  if (wordAudioUrl != null) {
+    out = <String, String>{...out, 'audio': wordAudioUrl};
+  }
+  if (overrides == null) return out;
+  return MiningRequestOverrides.attach(out, overrides);
+}
+
 /// 词条「高级制卡」按钮的宿主回调。
 ///
 /// * [entryIndex]：该词条在 `:scope > .entry` 里的稳定 DOM 序，确认时
 ///   [DictionaryPopupWebViewState.mineEntryByIndex] 按它精确回点同一颗「+」。
 /// * [matched]：查到的词在句中的表现形（对话框里当前句高亮用）。
 /// * [expression]：词条原形（对话框标题行用；老 popup.js 不传时为空串）。
+/// * [reading]：词条读音（单词音频分区按 expression + reading 列音源，与 ♪ 同一口径；
+///   老 popup.js 不传时为空串，宿主退回用 expression）。
 typedef OpenAdvancedMiningCallback =
-    Future<void> Function(int entryIndex, String matched, String expression);
+    Future<void> Function(
+      int entryIndex,
+      String matched,
+      String expression,
+      String reading,
+    );
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
@@ -1602,14 +1632,57 @@ JSON.stringify((function(){
   /// 不挂在页面状态上的理由见 [MiningRequestOverrides] 的类注释（串行队列异步启动）。
   MiningRequestOverrides? _confirmMineOverrides;
 
+  /// 本次「高级制卡」往返选定的单词音频（[mineEntryByIndex] 的 `wordAudioUrl`）：
+  /// null = 不改（popup.js 现解析的默认源）；空串 = 不要；否则改写 fields 的 `audio`。
+  /// 生命周期同 [_confirmMineOverrides]。
+  String? _confirmMineWordAudioUrl;
+
+  /// 「选择音频源」的候选 `[{name, variant, url}]`：弹窗 ♪ 菜单（`listWordAudioSources`
+  /// 桥）与「高级制卡」的单词音频分区共用这一处，两边列出来的永远是同一份。
+  Future<List<Map<String, String>>> listWordAudioChoices(
+    String expression,
+    String reading,
+  ) async {
+    if (widget.resourceSource != null) {
+      // 别的设备的结果：「选择音频源」只剩那台设备给的默认一条。
+      final String? url = await _resolveWordAudio(expression, reading);
+      return <Map<String, String>>[
+        if (url != null && url.isNotEmpty)
+          <String, String>{'name': '', 'variant': '', 'url': url},
+      ];
+    }
+    return listWordAudioWebViewChoices(
+      ref.read(appProvider),
+      expression,
+      reading,
+    );
+  }
+
+  /// 只重新解析第 [sourceIndex] 个音频源（「高级制卡」确认时刷新互联源的短时令牌）。
+  /// 别的设备的结果没有可刷新的源，回空列表（调用方退回打开时那条）。
+  Future<List<Map<String, String>>> listWordAudioChoicesForSource(
+    String expression,
+    String reading,
+    int sourceIndex,
+  ) async {
+    if (widget.resourceSource != null) return const <Map<String, String>>[];
+    return listWordAudioWebViewChoicesForSource(
+      ref.read(appProvider),
+      expression,
+      reading,
+      sourceIndex,
+    );
+  }
+
   /// 三个制卡桥 handler 解析出 fields 后**同步**调用：本次往返带了覆盖项就并进去。
   /// 必须在把 fields 交给宿主之前、且不隔 await——否则 finally 清掉之后才到的桥调用
-  /// （或下一次普通「+」）会读错。
-  Map<String, String> _withConfirmMineOverrides(Map<String, String> fields) {
-    final MiningRequestOverrides? overrides = _confirmMineOverrides;
-    if (overrides == null) return fields;
-    return MiningRequestOverrides.attach(fields, overrides);
-  }
+  /// （或下一次普通「+」）会读错。合并规则见 [applyConfirmMineChoices]。
+  Map<String, String> _withConfirmMineOverrides(Map<String, String> fields) =>
+      applyConfirmMineChoices(
+        fields,
+        overrides: _confirmMineOverrides,
+        wordAudioUrl: _confirmMineWordAudioUrl,
+      );
 
   /// 宿主已接手 payload：**只解除超时**，不关窗。三个制卡桥 handler 都在把 payload
   /// 交出去的那一刻调。
@@ -1643,10 +1716,14 @@ JSON.stringify((function(){
   /// [overrides]：「高级制卡」对话框里用户为这张卡做的调整。只并进**本次往返**回点
   /// 出来的 `mineEntry` / `updateEntry` / `minedCardAction` 桥调用的 fields（见
   /// [_withConfirmMineOverrides]），往返结束即清。
+  ///
+  /// [wordAudioUrl]：同一往返选定的单词音频（null = 不改，空串 = 不要），语义见
+  /// `AdvancedMiningConfirm`。
   Future<bool> mineEntryByIndex(
     int idx, {
     required bool releaseWhenPayloadConsumed,
     MiningRequestOverrides? overrides,
+    String? wordAudioUrl,
   }) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) {
@@ -1665,6 +1742,7 @@ JSON.stringify((function(){
     _confirmMineOverrides = overrides == null || overrides.isEmpty
         ? null
         : overrides;
+    _confirmMineWordAudioUrl = wordAudioUrl;
     try {
       // popup.js 那头的 promise 在 mine 按钮的 onclick（查重 → 取音 → mineEntry
       // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。
@@ -1727,6 +1805,7 @@ JSON.stringify((function(){
         _confirmMineRoundTrip = null;
         _confirmMineReleaseWhenConsumed = false;
         _confirmMineOverrides = null;
+        _confirmMineWordAudioUrl = null;
       }
     }
   }
@@ -3572,7 +3651,7 @@ JSON.stringify((function(){
 
         // 「高级制卡」：popup 点某词条的「高级制卡」→ 宿主弹 app 原生顶层对话框
         // （BUG-763/766：不画在弹窗 WebView 内，那受弹窗尺寸/半透明限制）。
-        // args[0] = {entryIndex, matched, expression}。
+        // args[0] = {entryIndex, matched, expression, reading}。
         controller.addJavaScriptHandler(
           handlerName: 'openAdvancedMining',
           callback: (args) async {
@@ -3587,6 +3666,7 @@ JSON.stringify((function(){
                 int entryIndex = 0;
                 String matched = '';
                 String expression = '';
+                String reading = '';
                 // BUG-1326：popup.js 传对象；也兼容 JSON 字符串（老的扩展 vendor 副本
                 // 曾经 stringify 过），否则 entryIndex 静默退化成 0 → 确认制卡永远点
                 // 第一个词条。
@@ -3597,8 +3677,9 @@ JSON.stringify((function(){
                   entryIndex = (data['entryIndex'] as num?)?.toInt() ?? 0;
                   matched = data['matched']?.toString() ?? '';
                   expression = data['expression']?.toString() ?? '';
+                  reading = data['reading']?.toString() ?? '';
                 }
-                await open(entryIndex, matched, expression);
+                await open(entryIndex, matched, expression, reading);
                 return null;
               },
             );
@@ -3743,22 +3824,7 @@ JSON.stringify((function(){
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
                 if (expression.isEmpty) return const <Map<String, String>>[];
-                if (widget.resourceSource != null) {
-                  // 别的设备的结果：「选择音频源」只剩那台设备给的默认一条。
-                  final String? url = await _resolveWordAudio(
-                    expression,
-                    reading,
-                  );
-                  return <Map<String, String>>[
-                    if (url != null && url.isNotEmpty)
-                      <String, String>{'name': '', 'variant': '', 'url': url},
-                  ];
-                }
-                return listWordAudioWebViewChoices(
-                  ref.read(appProvider),
-                  expression,
-                  reading,
-                );
+                return listWordAudioChoices(expression, reading);
               },
             );
           },

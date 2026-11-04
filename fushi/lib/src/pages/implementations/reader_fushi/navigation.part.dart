@@ -738,7 +738,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves to
       // the current chapter's path plus a fragment. Jump in place instead of
       // reloading the whole chapter (avoids a visible flash + lost scroll).
-      await _jumpToChapterAnchor(link.chapterIndex, link.fragment);
+      await _jumpToChapterAnchor(
+        link.chapterIndex,
+        link.fragment,
+        source: JumpSource.link,
+      );
       return;
     }
     // HBK-AUDIT-038: route genuine external schemes (http/https/mailto/tel on a
@@ -756,10 +760,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 常见，这类目录项的 spine 章号**全都一样**，此前锚被丢在
   /// [flattenTtuTocEntries] 之外，于是同一章下的每一条目录项都只跳到章首——
   /// 用户看到的「章节跳转不准」。
-  Future<void> _jumpToChapterAnchor(int index, String? fragment) async {
-    await _recordTextJumpDeparture();
+  ///
+  /// [source]：「跳转记录」面板里这次跳转的来源（目录 / 内链 / 书签……）。
+  Future<void> _jumpToChapterAnchor(
+    int index,
+    String? fragment, {
+    required JumpSource source,
+  }) async {
+    await _recordTextJumpDeparture(source: source);
     if (_lyricsMode) {
-      await _jumpToChapterInLyricsMode(index);
+      await _jumpToChapterInLyricsMode(index, source: source);
       return;
     }
     if (fragment == null) {
@@ -782,11 +792,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   ///
   /// 该章没有任何 cue（纯文字章 / 对齐没覆盖到）→ 歌词里根本不存在这一章，
   /// 唯一能到达它的地方是正文：退出歌词模式后按普通跳章落到该章。
-  Future<void> _jumpToChapterInLyricsMode(int index) async {
+  Future<void> _jumpToChapterInLyricsMode(
+    int index, {
+    required JumpSource source,
+  }) async {
     final AudiobookPlayerController? ctrl = _audiobookController;
     final AudioCue? first = _firstCueOfSection(index);
     if (ctrl != null && first != null) {
-      await ctrl.skipToCue(first);
+      await ctrl.skipToCue(first, jumpSource: source);
       return;
     }
     await _toggleLyricsMode();
@@ -1765,9 +1778,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         (progress * _chapterCharCounts[_currentChapter]).round();
   }
 
-  Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
+  Future<void> _jumpToGlobalCharOffset(
+    int globalOffset, {
+    JumpSource source = JumpSource.positionJump,
+  }) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
-    await _recordTextJumpDeparture();
+    await _recordTextJumpDeparture(source: source);
 
     // 进度条拖动是跳转不是阅读：不播种（旧标量水位要在此播种）。跨章走
     // [_beginNavigation] 的 `leave()`；同章 `restoreProgress` 不经导航，得在这里自己
@@ -1858,7 +1874,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       studyClockMayRun(
         manualPause: _studyClockManualPause,
         lifecycleStopped: _studyClockLifecycleStopped,
-        modalDepth: _studyClockModalDepth + (_studyClockCoveredByRoute ? 1 : 0),
+        modalDepth: _studyClockModalDepth + (_studyCoverWatch.covered ? 1 : 0),
         audiobookPlaying: _audiobookController?.isPlaying ?? false,
       );
 

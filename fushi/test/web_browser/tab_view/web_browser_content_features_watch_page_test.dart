@@ -62,7 +62,9 @@ void main() {
     // 合规门照旧：门关着的平台本来就没有动作；门开着时普通页仍出「阅读（小说）」。
     expect(
       novelPage.map((WebBrowserAction a) => a.id),
-      webNovelReaderActionAvailable() ? contains('web_novel_read') : isEmpty,
+      webNovelReaderActionAvailable()
+          ? contains('open_in_fushi.novel')
+          : isEmpty,
     );
     expect(webComicReaderActionAvailable(), isA<bool>());
   });

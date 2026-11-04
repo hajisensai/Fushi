@@ -242,6 +242,117 @@ void main() {
     expect(back.locationId, 'folder:x');
   });
 
+  test('进度 / 诊断与云盘那条路径同一套：拉段按段数报、发件与媒体各报一次、细分步骤交给 onStep', () async {
+    // 真机（小米平板 5，3 GB 真实库）：首次从文件夹收 125 个段跑了好几分钟，以前这里一个回调都不接，界面全程停在
+    // 「正在准备」。
+    final SrsFolderLocation loc = SrsFolderLocation(
+      id: 'usb',
+      path: dir('usb').path,
+    );
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    for (int i = 0; i < 3; i++) {
+      await addNote(a, '語$i');
+      await run(loc, a);
+    }
+    final List<String> events = <String>[];
+    final List<String> steps = <String>[];
+    t += 1000;
+    final SrsFolderSyncReport r = await srsSyncFolderLocation(
+      location: loc,
+      store: b,
+      mediaRoot: dir('media_b'),
+      onFetchProgress: (int done, int total) =>
+          events.add('fetch $done/$total'),
+      onUploadStart: () => events.add('upload'),
+      onMediaStart: () => events.add('media'),
+      shouldStop: () => false,
+      onStep: steps.add,
+    );
+    expect(r.ops!.error, isNull);
+    expect(r.ops!.applied, greaterThan(0));
+    final List<String> fetches = <String>[
+      for (final String e in events)
+        if (e.startsWith('fetch ')) e,
+    ];
+    expect(fetches, isNotEmpty);
+    final int total = int.parse(fetches.first.split('/').last);
+    expect(total, greaterThan(0));
+    expect(fetches.first, 'fetch 0/$total', reason: '开拉前先报一次总数');
+    expect(fetches.last, 'fetch $total/$total');
+    // 阶段次序：拉 → 发件 → 完整媒体对账。b 本机没有要先传的媒体：发件前那一步不报「媒体」（不每轮闪一下）。
+    expect(
+      <String>[
+        for (final String e in events)
+          if (!e.startsWith('fetch ')) e,
+      ],
+      <String>['upload', 'media'],
+    );
+    expect(events.indexOf('upload'), greaterThan(events.indexOf(fetches.last)));
+    expect(steps, contains('migrate:meta'), reason: '位置准备那段也记步骤');
+    expect(steps, contains('ingestFinish'));
+  });
+
+  test('发件前那一步只在真有媒体要传时报「媒体」：本机新加了图 → 报；传过之后的下一轮 → 不报', () async {
+    final SrsFolderLocation loc = SrsFolderLocation(
+      id: 'usb',
+      path: dir('usb').path,
+    );
+    final SrsDbStore a = await device('a');
+    final Directory mediaA = dir('media_a');
+    File(p.join(mediaA.path, 'cat.png')).writeAsBytesSync(<int>[1, 2]);
+    await addNote(a, '猫', picture: '<img src="cat.png">');
+    Future<List<String>> phases() async {
+      final List<String> events = <String>[];
+      t += 1000;
+      final SrsFolderSyncReport r = await srsSyncFolderLocation(
+        location: loc,
+        store: a,
+        mediaRoot: mediaA,
+        onUploadStart: () => events.add('upload'),
+        onMediaStart: () => events.add('media'),
+      );
+      expect(r.ops!.error, isNull);
+      return events;
+    }
+
+    expect(await phases(), <String>[
+      'media',
+      'upload',
+      'media',
+    ], reason: '新图要先于引用它的段传上去');
+    await addNote(a, '犬');
+    expect(await phases(), <String>[
+      'upload',
+      'media',
+    ], reason: '图已在位置上：发件前没东西可传，不报「媒体」');
+  });
+
+  test('shouldStop：收完一批就收手（kSrsSync2Stopped），不发件、不写 head、不碰媒体', () async {
+    final SrsFolderLocation loc = SrsFolderLocation(
+      id: 'usb',
+      path: dir('usb').path,
+    );
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    await addNote(a, '猫');
+    await run(loc, a);
+    final List<String> events = <String>[];
+    t += 1000;
+    final SrsFolderSyncReport r = await srsSyncFolderLocation(
+      location: loc,
+      store: b,
+      mediaRoot: dir('media_b'),
+      onUploadStart: () => events.add('upload'),
+      onMediaStart: () => events.add('media'),
+      shouldStop: () => true,
+    );
+    expect(r.ops!.error, kSrsSync2Stopped);
+    expect(r.media, isNull);
+    expect(events, isEmpty);
+    expect(await headsOf(loc, b), 0);
+  });
+
   /// 位置下全部文件 → 字节（比对「一个字节都没动」）。
   Map<String, List<int>> snapshot(Directory d) => <String, List<int>>{
     for (final File f in d.listSync(recursive: true).whereType<File>())

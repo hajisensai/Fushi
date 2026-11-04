@@ -502,14 +502,19 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     Directory? tempDir;
     try {
       String? audioPath;
+      // Apple Music 整曲受 DRM 保护（resolver 统一判定）：不是失败，降级成纯文本 + 封面卡，
+      // 成功提示里说明原因。
+      bool audioProtected = false;
+      MusicClipSource? source;
       if (item != null && window != null && window.durationMs > 0) {
-        // 逻辑曲目路径（插件 / CD / 光盘章节）不能直接交给 ffmpeg：先解析成可读源。
-        final MusicClipSource source;
+        // 逻辑曲目路径（插件 / CD / 光盘章节 / Apple Music）不能直接交给 ffmpeg：先解析成可读源。
         try {
           source = await resolveMusicClipSource(
             item,
             pluginResolver: musicLyricsClipPluginResolver,
           );
+        } on MusicClipSourceProtected {
+          audioProtected = true;
         } on MusicClipSourceUnavailable catch (e, st) {
           final String reason = 'sentence audio export failed: ${e.message}';
           ErrorLogService.instance.log('MusicLyricsPage.mineAudio', e, st);
@@ -518,6 +523,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             message: reason,
           );
         }
+      }
+      if (item != null && window != null && source != null) {
         final ({int startMs, int endMs}) clip = window.clipInFile(
           fileOffsetMs: source.fileOffsetMs,
           trackDurationMs: item.durationMs,
@@ -607,7 +614,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       }
       if (described.success) {
         FushiToast.showMine(
-          msg: described.message,
+          msg: audioProtected
+              ? '${described.message}\n${t.music_apple_music_card_audio_unavailable}'
+              : described.message,
           status: described.status,
           // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
           action: minedCardUndoToastAction(repo, outcome),

@@ -753,6 +753,14 @@ SettingsDestination buildInterconnectDestination() {
                     ctx.appModel.prefsRepo.gameStreamLookupLayout,
                 writeLookupLayout:
                     ctx.appModel.prefsRepo.setGameStreamLookupLayout,
+                readButtonProfile: () =>
+                    ctx.appModel.prefsRepo.gameStreamButtonProfile,
+                writeButtonProfile:
+                    ctx.appModel.prefsRepo.setGameStreamButtonProfile,
+                readSecondScreen: () =>
+                    ctx.appModel.prefsRepo.gameStreamSecondScreen,
+                writeSecondScreen:
+                    ctx.appModel.prefsRepo.setGameStreamSecondScreen,
               ),
             ),
           ),

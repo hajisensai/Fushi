@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
@@ -31,8 +33,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
-import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
-    show kVideoJumpPillAutoHideDefaultSeconds;
+import 'package:fushi/src/utils/misc/jump_history.dart'
+    show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
@@ -50,7 +52,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
-    show normalizeAppleMusicStorefront;
+    show appleMusicStorefrontForCountry, normalizeAppleMusicStorefront;
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -59,6 +61,7 @@ import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
@@ -180,6 +183,16 @@ const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 /// `SyncRepository.deviceLocalPrefKeys`）：合适的尺寸取决于这台设备的屏幕，
 /// 平板上调大的值随备份到手机 / 电脑只会不合身。
 const String kGameStreamLookupLayoutPrefKey = 'game_stream_lookup_layout';
+
+/// 串流时实体手柄按键的映射（只存改过的键，JSON）。设备本地（见
+/// `SyncRepository.deviceLocalPrefKeys`）：有哪些键、哪个键顺手取决于这台设备
+/// 的手柄，掌机上的映射恢复到手机上没有意义。
+const String kGameStreamButtonProfilePrefKey = 'game_stream_button_profile';
+
+/// 串流时是否把查词面板放到第二块屏幕（双屏掌机的下屏 / 手机外接的显示器）。
+/// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）：有没有第二块屏取决于这台
+/// 设备，掌机上的选择恢复到手机上没有意义。
+const String kGameStreamSecondScreenPrefKey = 'game_stream_second_screen';
 
 /// Windows 悬浮字幕窗口矩形（本机**物理像素**坐标 JSON）。设备本地（见
 /// `SyncRepository.deviceLocalPrefKeys`）：坐标只对这台机器的显示器布局 / DPI
@@ -2083,17 +2096,39 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏，只随控制条显隐）。
-  /// 超时后控制条再出现也不画胶囊，下一次跳转再亮；默认 10 秒。
-  int get videoJumpPillAutoHideSeconds =>
-      getPref(
-            'video_jump_pill_auto_hide_seconds',
-            defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
-          )
-          as int;
+  /// 「跳转记录」顶栏返回 / 前进图标的自动隐藏秒数（0 = 不自动隐藏，默认）。到时
+  /// 只隐藏图标，记录、面板与进度条刻度保留；下一次跳转再出现。
+  ///
+  /// 迁移：新键缺失时读一次旧的视频专用键 `video_jump_pill_auto_hide_seconds`
+  /// ——用户显式设过「不隐藏」(0) 保留 0，设过任意秒数折到最短的新档位；旧键
+  /// 也缺失（从没改过，旧默认 10 秒）= 新默认 0。
+  int get jumpHistoryAutoHideSeconds {
+    final Object? current = getPref('jump_history_auto_hide_seconds');
+    if (current is int) return current;
+    final Object? legacy = getPref('video_jump_pill_auto_hide_seconds');
+    return migrateLegacyJumpPillAutoHide(legacy is int ? legacy : null);
+  }
 
-  Future<void> setVideoJumpPillAutoHideSeconds(int value) async {
-    await setPref('video_jump_pill_auto_hide_seconds', value);
+  Future<void> setJumpHistoryAutoHideSeconds(int value) async {
+    await setPref('jump_history_auto_hide_seconds', value);
+    notifyListeners();
+  }
+
+  /// 顶栏显示返回 / 前进图标（默认开）。关掉照样记录跳转。
+  bool get jumpHistoryToolbar =>
+      getPref('jump_history_toolbar', defaultValue: true) as bool;
+
+  Future<void> setJumpHistoryToolbar(bool value) async {
+    await setPref('jump_history_toolbar', value);
+    notifyListeners();
+  }
+
+  /// 进度条 / 页码滑块上画跳转点刻度（默认开）。
+  bool get jumpHistoryProgressMarks =>
+      getPref('jump_history_progress_marks', defaultValue: true) as bool;
+
+  Future<void> setJumpHistoryProgressMarks(bool value) async {
+    await setPref('jump_history_progress_marks', value);
     notifyListeners();
   }
 
@@ -5004,13 +5039,37 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 本机已把 Apple Music 账号连接到 Fushi（整曲播放 + 资料库）。设备本地。
+  bool get musicAppleMusicConnected =>
+      getPref('music_apple_music_connected', defaultValue: false) == true;
+
+  Future<void> setMusicAppleMusicConnected(bool value) async {
+    await setPref('music_apple_music_connected', value);
+    notifyListeners();
+  }
+
   /// Apple Music catalog 的 storefront（两位小写国家码，缺省 `jp`）。
   String get musicAppleMusicStorefront {
     final Object? raw = getPref(
       'music_apple_music_storefront',
       defaultValue: '',
     );
-    return normalizeAppleMusicStorefront(raw is String ? raw : null);
+    // 没选过：跟系统地区（不在可选表里就落 jp）。
+    if (raw is! String || raw.trim().isEmpty) {
+      return appleMusicStorefrontForCountry(
+        PlatformDispatcher.instance.locale.countryCode,
+      );
+    }
+    return normalizeAppleMusicStorefront(raw);
+  }
+
+  /// 音乐在线来源（插件音源 + 服务器）的顺序与「推荐 / 搜索里显示」开关（JSON `[{id, enabled}]`）。
+  String get musicOnlineSourcesRaw =>
+      getPref('music_online_sources', defaultValue: '') as String;
+
+  Future<void> setMusicOnlineSourcesRaw(String value) async {
+    await setPref('music_online_sources', value);
+    notifyListeners();
   }
 
   Future<void> setMusicAppleMusicStorefront(String storefront) async {
@@ -6406,6 +6465,32 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setGameStreamLookupLayout(GameStreamLookupLayout value) async {
     await setPref(kGameStreamLookupLayoutPrefKey, jsonEncode(value.toJson()));
+    notifyListeners();
+  }
+
+  GameStreamButtonProfile get gameStreamButtonProfile {
+    final String raw =
+        getPref(kGameStreamButtonProfilePrefKey, defaultValue: '') as String;
+    if (raw.isEmpty) return const GameStreamButtonProfile();
+    try {
+      return GameStreamButtonProfile.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return const GameStreamButtonProfile();
+    }
+  }
+
+  Future<void> setGameStreamButtonProfile(GameStreamButtonProfile value) async {
+    await setPref(kGameStreamButtonProfilePrefKey, jsonEncode(value.toJson()));
+    notifyListeners();
+  }
+
+  GameStreamSecondScreen get gameStreamSecondScreen =>
+      GameStreamSecondScreen.fromName(
+        getPref(kGameStreamSecondScreenPrefKey, defaultValue: '') as String,
+      );
+
+  Future<void> setGameStreamSecondScreen(GameStreamSecondScreen value) async {
+    await setPref(kGameStreamSecondScreenPrefKey, value.name);
     notifyListeners();
   }
 

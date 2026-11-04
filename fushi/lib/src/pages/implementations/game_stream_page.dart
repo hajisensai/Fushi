@@ -1,14 +1,21 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show KeyEventDeviceType;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
+import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
+import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -20,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -28,7 +36,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -98,19 +108,22 @@ String? gameStreamHostKeyName(LogicalKeyboardKey key) {
   };
 }
 
-/// Physical controller button → on-screen pad button, so a paired gamepad
-/// drives the same mapping (and key rebinding) as the touch pad.
-GameStreamVirtualButton? gameStreamPadButtonFor(
-  LogicalKeyboardKey key,
-) => switch (key) {
-  LogicalKeyboardKey.gameButtonA => GameStreamVirtualButton.confirm,
-  LogicalKeyboardKey.gameButtonB => GameStreamVirtualButton.cancel,
-  LogicalKeyboardKey.gameButtonLeft1 => GameStreamVirtualButton.shoulderLeft,
-  LogicalKeyboardKey.gameButtonRight1 => GameStreamVirtualButton.shoulderRight,
-  LogicalKeyboardKey.gameButtonStart ||
-  LogicalKeyboardKey.gameButtonSelect => GameStreamVirtualButton.menu,
-  _ => null,
-};
+/// Where D-pad right moves the lookup-mode cursor (graphemes). Right after a
+/// lookup at [lookupStart] that matched [matchedLength] graphemes, it jumps
+/// past the matched word to the next one; otherwise it steps one grapheme.
+/// Never past the line's last grapheme.
+int gameStreamLookupCaretRight({
+  required int caret,
+  required int? lookupStart,
+  required int matchedLength,
+  required int lineLength,
+}) {
+  if (lineLength <= 0) return 0;
+  final int next = matchedLength > 0 && caret == lookupStart
+      ? caret + matchedLength
+      : caret + 1;
+  return next.clamp(0, lineLength - 1);
+}
 
 class GameStreamPage extends StatefulWidget {
   const GameStreamPage({
@@ -125,6 +138,11 @@ class GameStreamPage extends StatefulWidget {
     this.onSettingsChanged,
     this.lookupLayout = const GameStreamLookupLayout(),
     this.onLookupLayoutChanged,
+    this.buttonProfile = const GameStreamButtonProfile(),
+    this.onButtonProfileChanged,
+    this.companionDisplay,
+    this.secondScreen = GameStreamSecondScreen.auto,
+    this.onSecondScreenChanged,
     super.key,
   });
 
@@ -151,7 +169,33 @@ class GameStreamPage extends StatefulWidget {
   /// Persists a rail resize once the drag (or key press) that made it ends.
   final ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged;
 
+  /// What each physical controller button does (persisted by the caller).
+  final GameStreamButtonProfile buttonProfile;
+
+  /// Persists a change made in the controls sheet.
+  final ValueChanged<GameStreamButtonProfile>? onButtonProfileChanged;
+
+  /// The second display, where the lookup panel goes while one is connected
+  /// (null where the platform has none). The caller owns and disposes it.
+  final GameStreamCompanionDisplay? companionDisplay;
+
+  /// Whether to use a second display (persisted by the caller).
+  final GameStreamSecondScreen secondScreen;
+
+  /// Persists a change made in the controls sheet.
+  final ValueChanged<GameStreamSecondScreen>? onSecondScreenChanged;
+
   static const Key videoKey = ValueKey<String>('game-stream-video');
+  static const Key secondScreenKey = ValueKey<String>(
+    'game-stream-second-screen',
+  );
+  static const Key modeChipKey = ValueKey<String>('game-stream-mode-chip');
+  static const Key lookupModeHintKey = ValueKey<String>(
+    'game-stream-lookup-mode-hint',
+  );
+  static const Key lookupModeOutlineKey = ValueKey<String>(
+    'game-stream-lookup-mode-outline',
+  );
   static const Key transcriptKey = ValueKey<String>('game-stream-transcript');
   static const Key transcriptTextKey = ValueKey<String>(
     'game-stream-transcript-text',
@@ -188,14 +232,80 @@ class _GameStreamPageState extends State<GameStreamPage>
   // The on-screen pad stands in for missing buttons on a touch screen; a
   // desktop has a keyboard and mouse, so it starts hidden there.
   bool _controlsVisible = !_isDesktopPlatform;
+
+  /// The user wants the lookup panel shown. Change it only through
+  /// [_setLookupVisible]: hiding the panel also leaves lookup mode.
   bool _lookupVisible = true;
+
+  /// A modal sheet is up and the panel (its WebView) steps aside meanwhile.
+  /// Separate from [_lookupVisible] so a sheet never changes what the user
+  /// chose, nor the input mode.
+  bool _lookupSuspended = false;
+
+  /// The panel is on screen.
+  bool get _lookupShown => _lookupVisible && !_lookupSuspended;
+
+  /// Where controller buttons go (see [GameStreamInputMode]).
+  GameStreamInputMode _inputMode = GameStreamInputMode.game;
+
+  /// Set by the first controller button press: only then does a tap on the
+  /// line enter lookup mode and the mode chip appear. A touch-only phone
+  /// never sees controller hints.
+  bool _controllerUsed = false;
+
+  /// Lookup-mode cursor in the current line, in graphemes.
+  int _lookupCaret = 0;
+
+  /// Where the last lookup started (graphemes), so D-pad right can jump past
+  /// the matched word; null before any lookup on this line.
+  int? _lookupStart;
+
+  /// The line [_lookupCaret] belongs to; a different line resets the cursor.
+  ({String lineId, String text})? _caretLine;
   bool _mineFailed = false;
   final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
       GlobalKey<DictionaryPopupWebViewState>();
   String? _mineMessage;
   final Map<GameStreamVirtualButton, String> _keyBindings =
       <GameStreamVirtualButton, String>{};
-  final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
+
+  /// Every local input holding something down on the host (an on-screen pad
+  /// [GameStreamVirtualButton] or a [GameStreamPhysicalButton]), with the host
+  /// output its press resolved to; the release undoes exactly that output.
+  final Map<Object, _HostOutput> _heldSources = <Object, _HostOutput>{};
+
+  /// How many local inputs hold each host output. Two buttons mapped to the
+  /// same output (Start and Select both on menu, or the on-screen confirm
+  /// while A is down) send one down and one up: the host output is lifted
+  /// only when the last of them is released.
+  final Map<_HostOutput, int> _outputHolds = <_HostOutput, int>{};
+  late GameStreamButtonProfile _buttonProfile = widget.buttonProfile;
+  late GameStreamSecondScreen _secondScreen = widget.secondScreen;
+
+  /// The lookup panel is up on the second display: the video takes the whole
+  /// page and the inline rail is gone.
+  bool _companionActive = false;
+  bool _companionStarted = false;
+
+  /// Display the panel was asked onto; null when none was.
+  int? _companionDisplayId;
+
+  /// The on-screen pad's visibility before the panel moved to the second
+  /// display (which hides it); restored when the panel comes back.
+  bool? _controlsBeforeCompanion;
+  StreamSubscription<GameStreamCompanionMessage>? _companionMessages;
+  GameStreamCompanionState? _sentCompanionState;
+  bool _companionResultSent = false;
+  DictionarySearchResult? _sentCompanionResult;
+  Map<String, String>? _sentCompanionStyles;
+  int _companionRevision = 0;
+  bool _companionSyncScheduled = false;
+
+  /// Physical buttons currently down, with the action their press started:
+  /// the release must undo that action even if the profile changed meanwhile.
+  /// (What that action holds on the host is in [_heldSources].)
+  final Map<GameStreamPhysicalButton, GameStreamButtonAction> _heldPhysical =
+      <GameStreamPhysicalButton, GameStreamButtonAction>{};
   GameStreamTouchInterpreter? _touch;
   GameStreamMouseInterpreter? _mouse;
   ({Rect bounds, Rect content})? _mouseGeometry;
@@ -234,32 +344,28 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   bool _supports(String feature) => widget.session?.supports(feature) ?? false;
 
-  static final List<String> _allowedKeys = <String>[
-    'Enter',
-    'Escape',
-    'Space',
-    'Up',
-    'Down',
-    'Left',
-    'Right',
-    for (int code = 65; code <= 90; code++) String.fromCharCode(code),
-    for (int number = 1; number <= 12; number++) 'F$number',
-  ];
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _lookupController = widget.lookupController;
     _lookupController?.addListener(_onLookupChanged);
+    _caretLine = _currentCaretLine();
     widget.receiver?.addListener(_onReceiverChanged);
     widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     widget.inputComposer.addListener(_onReceiverChanged);
+    unawaited(_startCompanion());
   }
 
   @override
   void didUpdateWidget(GameStreamPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.inputComposer != widget.inputComposer ||
+        oldWidget.receiver != widget.receiver) {
+      // Held buttons belong to the session that saw their downs: lift them
+      // there, never on the new one.
+      unawaited(_releaseHeldInputs(oldWidget.inputComposer));
+    }
     if (oldWidget.inputComposer != widget.inputComposer) {
       unawaited(_releasePointer());
       oldWidget.inputComposer.removeListener(_onReceiverChanged);
@@ -269,6 +375,7 @@ class _GameStreamPageState extends State<GameStreamPage>
       oldWidget.lookupController?.removeListener(_onLookupChanged);
       _lookupController = widget.lookupController;
       _lookupController?.addListener(_onLookupChanged);
+      _onLookupChanged();
     }
     if (oldWidget.receiver != widget.receiver) {
       unawaited(_releasePointer());
@@ -285,10 +392,12 @@ class _GameStreamPageState extends State<GameStreamPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_releasePointer());
+    unawaited(_releaseHeldInputs());
     _lookupController?.removeListener(_onLookupChanged);
     widget.receiver?.removeListener(_onReceiverChanged);
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
     widget.inputComposer.removeListener(_onReceiverChanged);
+    _stopCompanion();
     _statsTimer?.cancel();
     _videoFocus.dispose();
     _keyboardFocus.dispose();
@@ -296,7 +405,302 @@ class _GameStreamPageState extends State<GameStreamPage>
     super.dispose();
   }
 
+  // ---- Second display -----------------------------------------------------
+
+  Future<void> _startCompanion() async {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null) return;
+    display.displays.addListener(_placeCompanion);
+    display.attached.addListener(_onCompanionAttached);
+    display.resets.addListener(_onCompanionReset);
+    _companionMessages = display.messages.listen(_onCompanionMessage);
+    try {
+      await display.start();
+    } catch (error, stack) {
+      // No second display support on this device build: stay single-screen.
+      ErrorLogService.instance.log(
+        'GameStreamPage.startCompanion',
+        error,
+        stack,
+      );
+      return;
+    }
+    if (!mounted) return;
+    _companionStarted = true;
+    _placeCompanion();
+  }
+
+  void _stopCompanion() {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null) return;
+    display.displays.removeListener(_placeCompanion);
+    display.attached.removeListener(_onCompanionAttached);
+    display.resets.removeListener(_onCompanionReset);
+    unawaited(_companionMessages?.cancel());
+    if (_companionDisplayId != null) unawaited(display.dismiss());
+    _companionDisplayId = null;
+  }
+
+  /// Puts the panel on the first second display when the setting allows it,
+  /// or takes it down when it does not (or the display went away).
+  void _placeCompanion() {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null || !_companionStarted || !mounted) return;
+    final List<GameStreamCompanionDisplayInfo> displays =
+        display.displays.value;
+    final int? target =
+        _secondScreen == GameStreamSecondScreen.auto && displays.isNotEmpty
+        ? displays.first.id
+        : null;
+    if (target == _companionDisplayId) return;
+    _companionDisplayId = target;
+    unawaited(
+      _runCompanionCall(
+        'place',
+        target == null ? display.dismiss() : display.show(target),
+        // The call did not reach the platform side (its Activity was being
+        // recreated): nothing was placed, so the next display update places
+        // it again.
+        onFailed: () {
+          if (_companionDisplayId == target) _companionDisplayId = null;
+        },
+      ),
+    );
+  }
+
+  Future<void> _runCompanionCall(
+    String what,
+    Future<void> call, {
+    VoidCallback? onFailed,
+  }) async {
+    try {
+      await call;
+    } catch (error, stack) {
+      onFailed?.call();
+      ErrorLogService.instance.log(
+        'GameStreamPage.companion.$what',
+        error,
+        stack,
+      );
+    }
+  }
+
+  void _onCompanionAttached() {
+    final bool active = widget.companionDisplay?.attached.value ?? false;
+    if (!mounted || active == _companionActive) return;
+    _sentCompanionState = null;
+    _companionResultSent = false;
+    // The panel is gone (closed, crashed, replaced, or the Activity holding
+    // it was recreated): nothing is up on that display any more. Forget it,
+    // so placing it again from the current displays and setting launches a
+    // new one (a no-op when that panel is already on its way).
+    if (!active) _companionDisplayId = null;
+    setState(() {
+      _companionActive = active;
+      if (active) {
+        // The top screen is the game: no pad over it unless asked for.
+        _controlsBeforeCompanion = _controlsVisible;
+        _controlsVisible = false;
+      } else {
+        _controlsVisible = _controlsBeforeCompanion ?? _controlsVisible;
+        _controlsBeforeCompanion = null;
+      }
+    });
+    if (!active) _placeCompanion();
+  }
+
+  /// The platform side was replaced: whatever was placed on the old one is
+  /// gone, also a panel that was launched but never came up (it has no
+  /// attached edge to report). Forget it unconditionally and place again on
+  /// the new one; a show the new side already has is a no-op there.
+  void _onCompanionReset() {
+    if (!mounted) return;
+    _companionDisplayId = null;
+    _placeCompanion();
+  }
+
+  void _setSecondScreen(GameStreamSecondScreen value) {
+    if (value == _secondScreen) return;
+    setState(() => _secondScreen = value);
+    widget.onSecondScreenChanged?.call(value);
+    _placeCompanion();
+  }
+
+  /// What the panel shows; compared with the last one sent after each build.
+  GameStreamCompanionState _companionState() {
+    final GameStreamLookupController? controller = _lookupController;
+    final GameStreamTextEvent? line = controller?.currentLine;
+    final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    final int matched = _matchedLength;
+    return GameStreamCompanionState(
+      lineId: line?.lineId,
+      lineText: line?.text,
+      caret: lookupMode && line != null ? _lookupCaret : null,
+      highlightStart: matched > 0 ? _lookupStart : null,
+      highlightCount: matched > 0 ? matched : null,
+      mode: _inputMode,
+      controllerUsed: _controllerUsed,
+      searching: controller?.searching ?? false,
+      error: controller?.error,
+      mineMessage: _mineMessage,
+      mineFailed: _mineFailed,
+    );
+  }
+
+  void _scheduleCompanionSync() {
+    if (!_companionActive || _companionSyncScheduled) return;
+    _companionSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _companionSyncScheduled = false;
+      _syncCompanion();
+    });
+  }
+
+  /// Sends the panel whatever changed since the last push: the light state
+  /// on any change, the result only when it (or its styles) changed.
+  void _syncCompanion() {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null || !_companionActive || !mounted) return;
+    final GameStreamCompanionState state = _companionState();
+    if (state != _sentCompanionState) {
+      _sentCompanionState = state;
+      unawaited(
+        _runCompanionCall(
+          'state',
+          display.send(state),
+          // Not delivered: the panel does not have it, the next sync resends.
+          onFailed: () {
+            if (identical(_sentCompanionState, state)) {
+              _sentCompanionState = null;
+            }
+          },
+        ),
+      );
+    }
+    final GameStreamLookupController? controller = _lookupController;
+    final DictionarySearchResult? result = controller?.result;
+    final Map<String, String> styles =
+        result?.remoteDictionaryStyles ??
+        controller?.popupResources?.dictionaryStyles ??
+        const <String, String>{};
+    if (_companionResultSent &&
+        identical(result, _sentCompanionResult) &&
+        identical(styles, _sentCompanionStyles)) {
+      return;
+    }
+    _companionResultSent = true;
+    _sentCompanionResult = result;
+    _sentCompanionStyles = styles;
+    final int revision = ++_companionRevision;
+    unawaited(
+      _runCompanionCall(
+        'result',
+        display.send(
+          GameStreamCompanionResult(
+            revision: revision,
+            resultJson: result?.toJson(),
+            popupJson: result?.popupJson,
+            dictionaryStyles: styles,
+          ),
+        ),
+        onFailed: () {
+          if (revision == _companionRevision) _companionResultSent = false;
+        },
+      ),
+    );
+  }
+
+  Future<void> _onCompanionMessage(GameStreamCompanionMessage message) async {
+    if (!mounted) return;
+    final GameStreamLookupController? controller = _lookupController;
+    switch (message) {
+      case GameStreamCompanionReady():
+        // A fresh panel: send everything again.
+        _sentCompanionState = null;
+        _companionResultSent = false;
+        _syncCompanion();
+      case GameStreamCompanionLookupAt(:final String lineId, :final int index):
+        final GameStreamTextEvent? line = controller?.currentLine;
+        if (line == null || line.lineId != lineId) return;
+        _lookupAt(line, index);
+        // Toggle + touch, as on the inline rail.
+        if (_controllerUsed) _setInputMode(GameStreamInputMode.lookup);
+      case GameStreamCompanionLookupText(:final String text):
+        unawaited(controller?.lookup(text));
+      case GameStreamCompanionSetMode(:final GameStreamInputMode mode):
+        _setInputMode(mode);
+      case GameStreamCompanionRequest():
+        await _answerCompanion(message);
+    }
+  }
+
+  Future<void> _answerCompanion(GameStreamCompanionRequest request) async {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null) return;
+    final GameStreamLookupController? controller = _lookupController;
+    final DictionaryPopupResourceSource? resources = controller?.popupResources;
+    Object? value;
+    try {
+      value = switch (request) {
+        GameStreamCompanionMineRequest(:final Map<String, String> fields) =>
+          _mineOutcomeOf(await _mine(fields)).name,
+        GameStreamCompanionDuplicateRequest(
+          :final String expression,
+          :final String reading,
+        ) =>
+          await controller?.isDuplicate(expression, reading) ?? false,
+        GameStreamCompanionMediaRequest(
+          :final String dictionary,
+          :final String path,
+        ) =>
+          encodeGameStreamCompanionMedia(
+            await resources?.mediaFile(dictionary, path),
+          ),
+        GameStreamCompanionAudioRequest(
+          :final String expression,
+          :final String reading,
+        ) =>
+          await resources?.wordAudioRef(expression, reading),
+      };
+    } catch (error, stack) {
+      // The panel still gets an answer (missing media, no audio, a failed
+      // card) so its request does not hang; the cause goes to the log.
+      ErrorLogService.instance.log(
+        'GameStreamPage.companionRequest',
+        error,
+        stack,
+      );
+      value = request is GameStreamCompanionMineRequest
+          ? GameStreamCompanionMineOutcome.error.name
+          : null;
+    }
+    await _runCompanionCall(
+      'reply',
+      display.send(GameStreamCompanionReply(id: request.id, value: value)),
+    );
+  }
+
+  static GameStreamCompanionMineOutcome _mineOutcomeOf(
+    MinePopupResult result,
+  ) => result.ankiConnect
+      ? GameStreamCompanionMineOutcome.ok
+      : result.duplicate
+      ? GameStreamCompanionMineOutcome.duplicate
+      : GameStreamCompanionMineOutcome.error;
+
+  /// The current line as [_caretLine] tracks it.
+  ({String lineId, String text})? _currentCaretLine() {
+    final GameStreamTextEvent? line = _lookupController?.currentLine;
+    return line == null ? null : (lineId: line.lineId, text: line.text);
+  }
+
   void _onLookupChanged() {
+    final ({String lineId, String text})? current = _currentCaretLine();
+    if (current != _caretLine) {
+      _caretLine = current;
+      _lookupCaret = 0;
+      _lookupStart = null;
+    }
     if (mounted) setState(() {});
   }
 
@@ -354,6 +758,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         (receiver.backgrounded ||
             receiver.state != GameStreamReceiverState.connected)) {
       unawaited(_releasePointer());
+      unawaited(_releaseHeldInputs());
     }
     if (mounted) setState(() {});
   }
@@ -672,15 +1077,89 @@ class _GameStreamPageState extends State<GameStreamPage>
     }
   }
 
+  /// The on-screen pad.
   Future<void> _sendButton(
     GameStreamVirtualButton button,
     GameStreamInputAction action,
-  ) {
-    if (action == GameStreamInputAction.down) _heldButtons.add(button);
-    if (action == GameStreamInputAction.up) _heldButtons.remove(button);
+  ) => action == GameStreamInputAction.down
+      ? _hold(button, _padOutput(button))
+      : _release(button);
+
+  /// What pressing pad [button] holds on the host: its keyboard binding when
+  /// it has one, the gamepad button otherwise.
+  _HostOutput _padOutput(GameStreamVirtualButton button) {
     final String? key = _keyBindings[button];
-    if (key != null) return widget.inputComposer.key(key: key, action: action);
-    return widget.inputComposer.gamepad(button: button, action: action);
+    return key == null ? _HostOutput.pad(button) : _HostOutput.key(key);
+  }
+
+  /// Where host pointer actions from a button land: wherever the host cursor
+  /// last went (any pointer path), the middle of the picture before that.
+  Offset _hostCursor(GameStreamInputComposer composer) =>
+      composer.lastPointerPosition ?? _trackpadCursor;
+
+  /// [source] presses [output]; the host sees a down only when nothing else
+  /// already holds it.
+  Future<void> _hold(Object source, _HostOutput output) async {
+    if (_heldSources.containsKey(source)) return;
+    _heldSources[source] = output;
+    final int holds = (_outputHolds[output] ?? 0) + 1;
+    _outputHolds[output] = holds;
+    if (holds > 1) return;
+    await _sendOutput(output, GameStreamInputAction.down, widget.inputComposer);
+  }
+
+  /// [source] lets go; the host sees the up only when it held the last hold.
+  Future<void> _release(Object source) async {
+    final _HostOutput? output = _heldSources.remove(source);
+    if (output == null) return;
+    final int holds = (_outputHolds[output] ?? 1) - 1;
+    if (holds > 0) {
+      _outputHolds[output] = holds;
+      return;
+    }
+    _outputHolds.remove(output);
+    await _sendOutput(output, GameStreamInputAction.up, widget.inputComposer);
+  }
+
+  /// Lifts everything held (backgrounding, a dropped connection, lookup mode,
+  /// disposal) on [composer], the session that saw the downs. Cleared before
+  /// the first await, so a second call sends nothing twice.
+  Future<void> _releaseHeldInputs([GameStreamInputComposer? composer]) async {
+    final GameStreamInputComposer target = composer ?? widget.inputComposer;
+    final List<_HostOutput> held = _outputHolds.keys.toList();
+    _heldSources.clear();
+    _outputHolds.clear();
+    _heldPhysical.clear();
+    for (final _HostOutput output in held) {
+      await _sendOutput(output, GameStreamInputAction.up, target);
+    }
+  }
+
+  Future<void> _sendOutput(
+    _HostOutput output,
+    GameStreamInputAction phase,
+    GameStreamInputComposer composer,
+  ) async {
+    switch (output) {
+      case _HostOutput(:final GameStreamVirtualButton pad?):
+        await composer.gamepad(button: pad, action: phase);
+      case _HostOutput(:final String key?):
+        await composer.key(key: key, action: phase);
+      case _HostOutput(:final String pointer?):
+        final Offset at = _hostCursor(composer);
+        // Nothing has placed the host cursor yet: put it where the press
+        // lands first, as a mouse would have.
+        if (phase == GameStreamInputAction.down &&
+            composer.lastPointerPosition == null) {
+          await composer.pointer(
+            action: GameStreamInputAction.move,
+            normalized: at,
+          );
+        }
+        await composer.pointer(action: phase, normalized: at, button: pointer);
+      case _HostOutput():
+        return;
+    }
   }
 
   String _buttonLabel(GameStreamVirtualButton button) => switch (button) {
@@ -705,26 +1184,186 @@ class _GameStreamPageState extends State<GameStreamPage>
         _ => FushiIcons.keyboard,
       };
 
+  static String _physicalLabel(GameStreamPhysicalButton button) =>
+      switch (button) {
+        GameStreamPhysicalButton.dpadUp => '↑',
+        GameStreamPhysicalButton.dpadDown => '↓',
+        GameStreamPhysicalButton.dpadLeft => '←',
+        GameStreamPhysicalButton.dpadRight => '→',
+        GameStreamPhysicalButton.a => 'A',
+        GameStreamPhysicalButton.b => 'B',
+        GameStreamPhysicalButton.x => 'X',
+        GameStreamPhysicalButton.y => 'Y',
+        GameStreamPhysicalButton.l1 => 'L1',
+        GameStreamPhysicalButton.r1 => 'R1',
+        GameStreamPhysicalButton.l2 => 'L2',
+        GameStreamPhysicalButton.r2 => 'R2',
+        GameStreamPhysicalButton.l3 => 'L3',
+        GameStreamPhysicalButton.r3 => 'R3',
+        GameStreamPhysicalButton.start => 'Start',
+        GameStreamPhysicalButton.select => 'Select',
+      };
+
+  String _actionLabel(GameStreamButtonAction action) => switch (action) {
+    GameStreamPadAction(:final GameStreamVirtualButton button) =>
+      t.game_stream_action_pad(button: _buttonLabel(button)),
+    GameStreamHostKeyAction(:final String key) => t.game_stream_action_key(
+      key: key,
+    ),
+    GameStreamMouseButtonAction(:final GameStreamMouseAction mouse) =>
+      switch (mouse) {
+        GameStreamMouseAction.leftClick => t.game_stream_action_left_click,
+        GameStreamMouseAction.rightClick => t.game_stream_action_right_click,
+        GameStreamMouseAction.middleClick => t.game_stream_action_middle_click,
+        GameStreamMouseAction.wheelUp => t.game_stream_action_wheel_up,
+        GameStreamMouseAction.wheelDown => t.game_stream_action_wheel_down,
+      },
+    GameStreamAppAction(:final GameStreamReceiverAction action) =>
+      switch (action) {
+        GameStreamReceiverAction.toggleLookupPanel =>
+          t.game_stream_action_lookup_panel_toggle,
+        GameStreamReceiverAction.toggleOnScreenPad =>
+          t.game_stream_action_on_screen_pad_toggle,
+        GameStreamReceiverAction.toggleLookupMode =>
+          t.game_stream_action_lookup_mode_toggle,
+      },
+    GameStreamNoAction() => t.game_stream_action_none,
+  };
+
+  /// Every action a controller button can take on this host, in menu order.
+  /// Mouse actions the host does not support are left out.
+  List<GameStreamButtonAction> get _availableButtonActions =>
+      <GameStreamButtonAction>[
+        const GameStreamNoAction(),
+        for (final GameStreamVirtualButton button
+            in GameStreamVirtualButton.values)
+          GameStreamPadAction(button),
+        for (final GameStreamMouseAction mouse in GameStreamMouseAction.values)
+          if (_canRun(GameStreamMouseButtonAction(mouse)))
+            GameStreamMouseButtonAction(mouse),
+        for (final GameStreamReceiverAction action
+            in GameStreamReceiverAction.values)
+          GameStreamAppAction(action),
+        for (final String key in GameStreamHostKeyAction.keys)
+          GameStreamHostKeyAction(key),
+      ];
+
+  void _updateButtonProfile(GameStreamButtonProfile next) {
+    if (next == _buttonProfile) return;
+    setState(() => _buttonProfile = next);
+    widget.onButtonProfileChanged?.call(next);
+  }
+
+  Widget _keysSectionHeader(BuildContext context, String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+    child: Text(
+      label,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ),
+  );
+
+  Widget _controllerButtonRow(
+    GameStreamPhysicalButton button,
+    List<GameStreamButtonAction> actions,
+    StateSetter updateSheet,
+  ) {
+    final GameStreamButtonAction current = _buttonProfile.actionFor(button);
+    // A saved action this host cannot run (e.g. right click on an older
+    // host) still shows, so the row never displays a choice it does not list.
+    final List<GameStreamButtonAction> items = <GameStreamButtonAction>[
+      ...actions,
+      if (!actions.contains(current)) current,
+    ];
+    return FushiListItem(
+      key: ValueKey<String>('game-stream-controller-${button.name}'),
+      leading: FushiListLeadingIcon(
+        FushiIcons.games,
+        tone: _buttonProfile.isCustomized(button)
+            ? FushiCardTone.primary
+            : FushiCardTone.secondary,
+      ),
+      title: Text(_physicalLabel(button)),
+      // The dropdown is as wide as its longest label unless capped; long
+      // labels (and longer translations) end in an ellipsis instead of
+      // overflowing the row on a narrow phone.
+      trailing: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _controllerActionMaxWidth),
+        child: FushiDropdownButton<String>(
+          key: ValueKey<String>('game-stream-controller-action-${button.name}'),
+          isExpanded: true,
+          value: current.toWire(),
+          items: <DropdownMenuItem<String>>[
+            for (final GameStreamButtonAction action in items)
+              DropdownMenuItem<String>(
+                value: action.toWire(),
+                child: Text(
+                  _actionLabel(action),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (String? wire) {
+            final GameStreamButtonAction? action =
+                GameStreamButtonAction.tryParse(wire);
+            if (action == null) return;
+            updateSheet(
+              () => _updateButtonProfile(
+                _buttonProfile.withAction(button, action),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _configureKeys() async {
     // A held control must retain its down/up mapping until it is released.
-    if (_heldButtons.isNotEmpty) return;
-    final bool restoreLookup = _lookupVisible;
-    setState(() => _lookupVisible = false);
+    if (_heldSources.isNotEmpty || _heldPhysical.isNotEmpty) return;
+    setState(() => _lookupSuspended = true);
     try {
       await adaptiveModalSheet<void>(
         context: context,
         builder: (BuildContext context) => StatefulBuilder(
           builder: (BuildContext context, StateSetter updateSheet) =>
-              // M3E 底部弹层：共享弹层框（标题 + 说明），按键映射是一组分段
-              // 列表行，行尾下拉选主机按键。
+              // M3E 底部弹层：共享弹层框（标题 + 说明）。上组是屏幕手柄（仅本次
+              // 会话），下组是实体手柄按键（保存在本设备），行尾下拉选动作。
               FushiModalSheetFrame(
                 title: t.game_stream_keys,
-                subtitle: t.game_stream_keys_hint,
+                subtitle: t.game_stream_keys_scope_hint,
                 leadingIcon: FushiIcons.games,
-                maxHeightFactor: 0.7,
+                maxHeightFactor: 0.8,
                 body: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: <Widget>[
+                    if (widget.companionDisplay != null) ...<Widget>[
+                      _keysSectionHeader(
+                        context,
+                        t.game_stream_second_screen_section,
+                      ),
+                      AdaptiveSettingsSegmentedRow<GameStreamSecondScreen>(
+                        key: GameStreamPage.secondScreenKey,
+                        title: t.game_stream_second_screen,
+                        subtitle: t.game_stream_second_screen_hint,
+                        segments: <ButtonSegment<GameStreamSecondScreen>>[
+                          ButtonSegment<GameStreamSecondScreen>(
+                            value: GameStreamSecondScreen.auto,
+                            label: Text(t.game_stream_second_screen_auto),
+                          ),
+                          ButtonSegment<GameStreamSecondScreen>(
+                            value: GameStreamSecondScreen.off,
+                            label: Text(t.game_stream_second_screen_off),
+                          ),
+                        ],
+                        selected: _secondScreen,
+                        onChanged: (GameStreamSecondScreen value) =>
+                            updateSheet(() => _setSecondScreen(value)),
+                      ),
+                    ],
+                    _keysSectionHeader(context, t.game_stream_keys_pad_section),
                     FushiGroupedList(
                       children: <Widget>[
                         for (final GameStreamVirtualButton button
@@ -748,7 +1387,8 @@ class _GameStreamPageState extends State<GameStreamPage>
                                     value: '',
                                     child: Text(t.game_stream_key_default),
                                   ),
-                                  for (final String key in _allowedKeys)
+                                  for (final String key
+                                      in GameStreamHostKeyAction.keys)
                                     DropdownMenuItem<String>(
                                       value: key,
                                       child: Text(key),
@@ -765,33 +1405,86 @@ class _GameStreamPageState extends State<GameStreamPage>
                             ),
                       ],
                     ),
+                    _keysSectionHeader(
+                      context,
+                      t.game_stream_keys_controller_section,
+                    ),
+                    FushiGroupedList(
+                      children: <Widget>[
+                        for (final GameStreamPhysicalButton button
+                            in GameStreamPhysicalButton.values)
+                          _controllerButtonRow(
+                            button,
+                            _availableButtonActions,
+                            updateSheet,
+                          ),
+                      ],
+                    ),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: FushiTextButton(
+                          key: const ValueKey<String>(
+                            'game-stream-controller-reset',
+                          ),
+                          onPressed: _buttonProfile.overrides.isEmpty
+                              ? null
+                              : () => updateSheet(
+                                  () => _updateButtonProfile(
+                                    const GameStreamButtonProfile(),
+                                  ),
+                                ),
+                          child: Text(t.game_stream_keys_controller_reset),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
         ),
       );
     } finally {
-      if (mounted) setState(() => _lookupVisible = restoreLookup);
+      if (mounted) setState(() => _lookupSuspended = false);
     }
   }
 
-  /// Physical controller buttons always drive the pad; keyboard keys are sent
-  /// to the host only while the video itself holds focus, so typing into the
-  /// transcript or popup never leaks into the game.
+  /// Physical controller buttons always run their profile action; keyboard
+  /// keys are sent to the host only while the video itself holds focus, so
+  /// typing into the transcript or popup never leaks into the game.
+  ///
+  /// Android reports a controller D-pad as arrow keys. Those count as the
+  /// D-pad when Android names a controller as their source; arrows from a
+  /// keyboard keep moving focus (the transcript cursor) unless the video
+  /// holds focus.
   KeyEventResult _onHardwareKey(FocusNode node, KeyEvent event) {
     final bool down = event is KeyDownEvent;
     final bool up = event is KeyUpEvent;
-    final GameStreamVirtualButton? button = gameStreamPadButtonFor(
-      event.logicalKey,
-    );
-    if (button != null) {
-      if (down) unawaited(_sendButton(button, GameStreamInputAction.down));
-      if (up) unawaited(_sendButton(button, GameStreamInputAction.up));
+    final bool videoFocused = FocusManager.instance.primaryFocus == _videoFocus;
+    final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    // In lookup mode every arrow that reaches the page is the D-pad: a
+    // focused line or text field handles its own arrows before they bubble
+    // up here, and the game gets no arrows in this mode anyway.
+    final GameStreamPhysicalButton? physical =
+        GameStreamPhysicalButton.gameButtonFor(event.logicalKey) ??
+        (lookupMode || _isControllerSource(event.deviceType)
+            ? GameStreamPhysicalButton.dpadFor(event.logicalKey)
+            : null);
+    if (physical != null) {
+      // The mode chip appears with the first controller press, not with
+      // whatever rebuild happens next.
+      if (!_controllerUsed) setState(() => _controllerUsed = true);
+      if (lookupMode) {
+        if (down || (event is KeyRepeatEvent && physical.isDpad)) {
+          unawaited(_onLookupButton(physical));
+        }
+        return KeyEventResult.handled;
+      }
+      if (down) unawaited(_pressPhysical(physical));
+      if (up) unawaited(_releasePhysical(physical));
       return KeyEventResult.handled;
     }
-    if (FocusManager.instance.primaryFocus != _videoFocus) {
-      return KeyEventResult.ignored;
-    }
+    if (!videoFocused) return KeyEventResult.ignored;
     final String? key = gameStreamHostKeyName(event.logicalKey);
     if (key == null) return KeyEventResult.ignored;
     if (down || up) {
@@ -803,6 +1496,235 @@ class _GameStreamPageState extends State<GameStreamPage>
       );
     }
     return KeyEventResult.handled;
+  }
+
+  static bool _isControllerSource(KeyEventDeviceType type) => switch (type) {
+    KeyEventDeviceType.gamepad ||
+    KeyEventDeviceType.joystick ||
+    KeyEventDeviceType.directionalPad => true,
+    _ => false,
+  };
+
+  Future<void> _pressPhysical(GameStreamPhysicalButton button) async {
+    // Key repeat arrives as repeated downs on some controllers; the first
+    // press already holds the action.
+    if (_heldPhysical.containsKey(button)) return;
+    final GameStreamButtonAction action = _buttonProfile.actionFor(button);
+    _heldPhysical[button] = action;
+    await _runButtonAction(action, GameStreamInputAction.down, button);
+  }
+
+  Future<void> _releasePhysical(GameStreamPhysicalButton button) async {
+    final GameStreamButtonAction? action = _heldPhysical.remove(button);
+    if (action == null) return;
+    await _runButtonAction(action, GameStreamInputAction.up, button);
+  }
+
+  /// Whether this host can perform [action] (newer pointer kinds are gated
+  /// by the session's features).
+  bool _canRun(GameStreamButtonAction action) => switch (action) {
+    GameStreamMouseButtonAction(:final GameStreamMouseAction mouse) =>
+      mouse.isWheel
+          ? _supports(GameStreamFeature.wheel)
+          : mouse == GameStreamMouseAction.leftClick ||
+                _supports(GameStreamFeature.pointerButtons),
+    _ => true,
+  };
+
+  /// Runs (down) or undoes (up) [action] for the physical button [source].
+  Future<void> _runButtonAction(
+    GameStreamButtonAction action,
+    GameStreamInputAction phase,
+    GameStreamPhysicalButton source,
+  ) async {
+    final bool down = phase == GameStreamInputAction.down;
+    if (!down) {
+      // Whatever the press held (nothing for wheel / app / none actions).
+      await _release(source);
+      return;
+    }
+    if (!_canRun(action)) return;
+    switch (action) {
+      case GameStreamPadAction(:final GameStreamVirtualButton button):
+        await _hold(source, _padOutput(button));
+      case GameStreamHostKeyAction(:final String key):
+        await _hold(source, _HostOutput.key(key));
+      case GameStreamMouseButtonAction(:final GameStreamMouseAction mouse):
+        final String? pointer = mouse.pointerButton;
+        if (pointer != null) {
+          await _hold(source, _HostOutput.pointer(pointer));
+          return;
+        }
+        final GameStreamInputComposer composer = widget.inputComposer;
+        await composer.wheel(
+          normalized: _hostCursor(composer),
+          dy: mouse.wheelNotches,
+        );
+      case GameStreamAppAction(:final GameStreamReceiverAction action):
+        if (!mounted) return;
+        switch (action) {
+          case GameStreamReceiverAction.toggleLookupPanel:
+            _setLookupVisible(!_lookupVisible);
+          case GameStreamReceiverAction.toggleOnScreenPad:
+            setState(() => _controlsVisible = !_controlsVisible);
+          case GameStreamReceiverAction.toggleLookupMode:
+            _setInputMode(GameStreamInputMode.lookup);
+        }
+      case GameStreamNoAction():
+        return;
+    }
+  }
+
+  /// Shows or hides the lookup panel. Lookup mode lives in the panel (its
+  /// chip, hint and outline), so hiding it goes back to the game: buttons
+  /// must never be swallowed by a mode nothing on screen shows.
+  void _setLookupVisible(bool visible) {
+    if (!mounted || visible == _lookupVisible) return;
+    setState(() {
+      _lookupVisible = visible;
+      if (!visible) _inputMode = GameStreamInputMode.game;
+    });
+  }
+
+  /// Switches where controller buttons go. Entering lookup mode lifts every
+  /// button still held for the game (a held Control must not keep skipping)
+  /// and shows the lookup panel.
+  void _setInputMode(GameStreamInputMode mode) {
+    if (!mounted || mode == _inputMode) return;
+    if (mode == GameStreamInputMode.lookup) {
+      unawaited(_releaseHeldInputs());
+    }
+    setState(() {
+      _inputMode = mode;
+      if (mode == GameStreamInputMode.lookup) _lookupVisible = true;
+    });
+  }
+
+  /// Graphemes in the current line (0 without one).
+  int get _lineLength =>
+      _lookupController?.currentLine?.text.characters.length ?? 0;
+
+  /// Grapheme length of the word the last lookup matched at [_lookupStart];
+  /// 0 when there is no match for the current line.
+  int get _matchedLength {
+    final GameStreamLookupController? controller = _lookupController;
+    final GameStreamTextEvent? line = controller?.currentLine;
+    final String? term = controller?.selectedTerm;
+    if (_lookupStart == null ||
+        controller?.result == null ||
+        line == null ||
+        term == null ||
+        controller?.resultLine?.lineId != line.lineId ||
+        controller?.resultLine?.text != line.text) {
+      return 0;
+    }
+    return term.characters.length;
+  }
+
+  void _moveLookupCaret(int to) {
+    final int length = _lineLength;
+    if (length == 0) return;
+    setState(() => _lookupCaret = to.clamp(0, length - 1));
+  }
+
+  /// Looks up the word starting at grapheme [index] of the current [line]
+  /// (the host matches the longest dictionary word from there).
+  void _lookupAt(GameStreamTextEvent line, int index) {
+    final GameStreamLookupController? controller = _lookupController;
+    final ({int start, String term}) span = subtitleTranscriptLookupSpan(
+      line.text,
+      index,
+    );
+    if (span.start < 0 ||
+        controller?.currentLine?.lineId != line.lineId ||
+        controller?.currentLine?.text != line.text) {
+      return;
+    }
+    // The query starts at span.start (a Latin word's first letter, past
+    // leading blanks), so the highlight and D-pad right count from there too.
+    setState(() {
+      _lookupCaret = span.start;
+      _lookupStart = span.start;
+    });
+    unawaited(
+      controller?.lookup(
+        span.term,
+        displayTerm: line.text.characters.elementAt(span.start),
+      ),
+    );
+  }
+
+  /// One controller button in lookup mode. The button the profile uses to
+  /// switch modes (Select by default) and B go back to the game.
+  Future<void> _onLookupButton(GameStreamPhysicalButton button) async {
+    if (_buttonProfile.actionFor(button) ==
+        const GameStreamAppAction(GameStreamReceiverAction.toggleLookupMode)) {
+      _setInputMode(GameStreamInputMode.game);
+      return;
+    }
+    final DictionaryPopupWebViewState? dictionary = _dictionaryKey.currentState;
+    // The dictionary lives in the panel on the second display while it is up.
+    final GameStreamCompanionDictionaryCommand? companionCommand =
+        _companionActive
+        ? switch (button) {
+            GameStreamPhysicalButton.dpadUp =>
+              GameStreamCompanionDictionaryCommand.entryPrevious,
+            GameStreamPhysicalButton.dpadDown =>
+              GameStreamCompanionDictionaryCommand.entryNext,
+            GameStreamPhysicalButton.y =>
+              GameStreamCompanionDictionaryCommand.mineFirstVisible,
+            GameStreamPhysicalButton.x =>
+              GameStreamCompanionDictionaryCommand.playFirstVisibleAudio,
+            _ => null,
+          }
+        : null;
+    if (companionCommand != null) {
+      final GameStreamCompanionDisplay? display = widget.companionDisplay;
+      if (display != null) {
+        await _runCompanionCall(
+          'command',
+          display.send(GameStreamCompanionCommand(companionCommand)),
+        );
+      }
+      return;
+    }
+    switch (button) {
+      case GameStreamPhysicalButton.dpadLeft:
+        _moveLookupCaret(_lookupCaret - 1);
+      case GameStreamPhysicalButton.dpadRight:
+        _moveLookupCaret(
+          gameStreamLookupCaretRight(
+            caret: _lookupCaret,
+            lookupStart: _lookupStart,
+            matchedLength: _matchedLength,
+            lineLength: _lineLength,
+          ),
+        );
+      case GameStreamPhysicalButton.dpadUp:
+        await dictionary?.focusEntryMove(false);
+      case GameStreamPhysicalButton.dpadDown:
+        await dictionary?.focusEntryMove(true);
+      case GameStreamPhysicalButton.a:
+        final GameStreamTextEvent? line = _lookupController?.currentLine;
+        if (line != null && _lineLength > 0) _lookupAt(line, _lookupCaret);
+      case GameStreamPhysicalButton.y:
+        await dictionary?.mineFirstVisibleEntry();
+      case GameStreamPhysicalButton.x:
+        await dictionary?.playFirstVisibleAudio();
+      case GameStreamPhysicalButton.l1:
+        _moveLookupCaret(0);
+      case GameStreamPhysicalButton.r1:
+        _moveLookupCaret(_lineLength - 1);
+      case GameStreamPhysicalButton.b:
+        _setInputMode(GameStreamInputMode.game);
+      case GameStreamPhysicalButton.l2 ||
+          GameStreamPhysicalButton.r2 ||
+          GameStreamPhysicalButton.l3 ||
+          GameStreamPhysicalButton.r3 ||
+          GameStreamPhysicalButton.start ||
+          GameStreamPhysicalButton.select:
+        return;
+    }
   }
 
   /// Soft keyboard: every typed ASCII letter/digit/space becomes a key tap;
@@ -880,8 +1802,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _openSettings() async {
-    final bool restoreLookup = _lookupVisible;
-    setState(() => _lookupVisible = false);
+    setState(() => _lookupSuspended = true);
     try {
       final GameStreamVideoSettings? next = await showGameStreamSettingsSheet(
         context,
@@ -913,7 +1834,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         );
       }
     } finally {
-      if (mounted) setState(() => _lookupVisible = restoreLookup);
+      if (mounted) setState(() => _lookupSuspended = false);
     }
   }
 
@@ -934,6 +1855,9 @@ class _GameStreamPageState extends State<GameStreamPage>
     'window_not_foreground' ||
     'window_activation_timeout' => t.game_stream_input_rejected,
     'unsupported_native_pointer' => t.game_stream_input_pointer_unsupported,
+    // A host whose game takes native controller input (SGRE) refuses keyboard
+    // keys; say so instead of a raw reason code.
+    'unsupported_native_key' => t.game_stream_input_key_unsupported,
     'window_minimized' || 'window_hidden' => t.game_stream_input_window_hidden,
     _ => '${t.game_stream_input_failed} ($reason)',
   };
@@ -941,13 +1865,22 @@ class _GameStreamPageState extends State<GameStreamPage>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    _scheduleCompanionSync();
     // 串流页整页黑底：桌面自绘顶栏（挂在 Navigator 外、只认根主题 surface）
     // 跟着变黑，否则画面顶上压一条浅色带。
     return FushiTitleBarColorScope(
       colors: fushiTitleBarColorsOn(Colors.black),
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Focus(onKeyEvent: _onHardwareKey, child: _buildBody(theme)),
+        // Autofocus: controller buttons must reach the game as soon as the
+        // stream opens, before anything inside the page was tapped. Kept out
+        // of traversal so Tab / D-pad focus moves skip this wrapper.
+        body: Focus(
+          autofocus: true,
+          skipTraversal: true,
+          onKeyEvent: _onHardwareKey,
+          child: _buildBody(theme),
+        ),
       ),
     );
   }
@@ -1011,6 +1944,16 @@ class _GameStreamPageState extends State<GameStreamPage>
                     ),
                   ),
                 if (_controlsVisible) _buildGamepadOverlay(theme),
+                // With the panel on the second display, this screen still
+                // says which mode the buttons are in.
+                if (_companionActive && _controllerUsed)
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: _buildModeChip(theme),
+                    ),
+                  ),
                 Align(
                   alignment: Alignment.topLeft,
                   child: Column(
@@ -1119,18 +2062,18 @@ class _GameStreamPageState extends State<GameStreamPage>
                             icon: const FushiIcon(FushiIcons.settings),
                             onPressed: _configureKeys,
                           ),
-                          FushiIconButtonControl(
-                            tooltip: t.game_stream_lookup_toggle,
-                            icon: FushiIcon(
-                              FushiIcons.resolve(
-                                FushiIcons.dictionary,
-                                filled: _lookupVisible,
+                          if (!_companionActive)
+                            FushiIconButtonControl(
+                              tooltip: t.game_stream_lookup_toggle,
+                              icon: FushiIcon(
+                                FushiIcons.resolve(
+                                  FushiIcons.dictionary,
+                                  filled: _lookupVisible,
+                                ),
                               ),
+                              onPressed: () =>
+                                  _setLookupVisible(!_lookupVisible),
                             ),
-                            onPressed: () => setState(
-                              () => _lookupVisible = !_lookupVisible,
-                            ),
-                          ),
                           FushiIconButtonControl(
                             tooltip: t.game_stream_controls_toggle,
                             icon: FushiIcon(
@@ -1151,6 +2094,13 @@ class _GameStreamPageState extends State<GameStreamPage>
               ],
             ),
           );
+          if (_companionActive) {
+            // The lookup panel is on the second display: all video here.
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[video],
+            );
+          }
           if (compact) {
             // Video and panel share what the boundary strip leaves.
             _bodyHeight = constraints.maxHeight - _railEdgeWidth;
@@ -1164,7 +2114,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     video,
-                    if (_lookupVisible) ...<Widget>[
+                    if (_lookupShown) ...<Widget>[
                       // Full-width edge: grab the boundary anywhere with a
                       // mouse.
                       SizedBox(
@@ -1188,7 +2138,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                 // Visible grip with a 48dp touch target straddling the edge,
                 // as a centred band so the video's bottom strip still reaches
                 // the game beside it.
-                if (_lookupVisible)
+                if (_lookupShown)
                   Positioned(
                     left: 0,
                     right: 0,
@@ -1221,7 +2171,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   video,
-                  if (_lookupVisible) ...<Widget>[
+                  if (_lookupShown) ...<Widget>[
                     // Full-height edge: grab the boundary anywhere with a mouse.
                     SizedBox(
                       width: _railEdgeWidth,
@@ -1241,7 +2191,7 @@ class _GameStreamPageState extends State<GameStreamPage>
               // Visible grip with a 48dp touch target straddling the edge.
               // Only a band, not the full height: the strip it overlaps on
               // the video side would otherwise stop reaching the game.
-              if (_lookupVisible)
+              if (_lookupShown)
                 Positioned(
                   right: railWidth + _railEdgeWidth / 2 - _resizeHitExtent / 2,
                   width: _resizeHitExtent,
@@ -1526,10 +2476,76 @@ class _GameStreamPageState extends State<GameStreamPage>
     );
   }
 
+  /// Which mode the controller buttons are in; tapping it switches modes.
+  Widget _buildModeChip(ThemeData theme) {
+    final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    final FushiSpringSpec spring = context.fushiMotion.effectsDefault;
+    return AnimatedSwitcher(
+      duration: spring.duration,
+      switchInCurve: spring.curve,
+      switchOutCurve: spring.curve,
+      child: FushiPressScale(
+        key: ValueKey<GameStreamInputMode>(_inputMode),
+        child: FushiFilterChip(
+          key: GameStreamPage.modeChipKey,
+          tooltip: t.game_stream_action_lookup_mode_toggle,
+          showCheckmark: false,
+          selected: lookupMode,
+          avatar: Icon(
+            lookupMode ? FushiIcons.search : FushiIcons.games,
+            size: 18,
+          ),
+          label: Text(
+            lookupMode ? t.game_stream_lookup_mode : t.game_stream_game_mode,
+          ),
+          onSelected: (_) => _setInputMode(
+            lookupMode ? GameStreamInputMode.game : GameStreamInputMode.lookup,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLookupRailContent(ThemeData theme, double lineHeight) {
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
     final DictionarySearchResult? result = controller?.result;
+    final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    final FushiSpringSpec spring = context.fushiMotion.effectsDefault;
+    // Lookup mode outlines the panel in the accent color: the buttons are
+    // here now, not in the game.
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        _buildLookupRailColumn(theme, lineHeight, controller, line, result),
+        IgnorePointer(
+          child: AnimatedContainer(
+            key: GameStreamPage.lookupModeOutlineKey,
+            duration: spring.duration,
+            curve: spring.curve,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: lookupMode
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.primary.withValues(alpha: 0),
+                width: 2,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLookupRailColumn(
+    ThemeData theme,
+    double lineHeight,
+    GameStreamLookupController? controller,
+    GameStreamTextEvent? line,
+    DictionarySearchResult? result,
+  ) {
+    final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    final FushiSpringSpec spring = context.fushiMotion.effectsDefault;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1555,9 +2571,47 @@ class _GameStreamPageState extends State<GameStreamPage>
                   children: <Widget>[
                     Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Text(
-                        t.game_stream_line,
-                        style: context.fushiType.titleSmallEmphasized,
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              t.game_stream_line,
+                              style: context.fushiType.titleSmallEmphasized,
+                            ),
+                          ),
+                          if (_controllerUsed) _buildModeChip(theme),
+                        ],
+                      ),
+                    ),
+                    // Grows / shrinks with the mode instead of jumping the
+                    // line below it.
+                    FushiAnimatedSize(
+                      duration: spring.duration,
+                      curve: spring.curve,
+                      alignment: AlignmentDirectional.topStart,
+                      child: AnimatedSwitcher(
+                        duration: spring.duration,
+                        switchInCurve: spring.curve,
+                        switchOutCurve: spring.curve,
+                        child: lookupMode
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  4,
+                                ),
+                                child: Text(
+                                  t.game_stream_lookup_mode_hint,
+                                  key: GameStreamPage.lookupModeHintKey,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: fushiNeutralSecondaryForeground(
+                                      context,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : const SizedBox(width: double.infinity),
                       ),
                     ),
                     if (line == null)
@@ -1586,23 +2640,17 @@ class _GameStreamPageState extends State<GameStreamPage>
                             ),
                           ),
                           keyboardLookup: true,
+                          caret: lookupMode ? _lookupCaret : null,
+                          lookupHighlight: lookupMode && _matchedLength > 0
+                              ? (start: _lookupStart!, count: _matchedLength)
+                              : null,
                           onLookup: (int index, Rect anchor) {
-                            final ({int start, String term}) span =
-                                subtitleTranscriptLookupSpan(line.text, index);
-                            if (span.start < 0 ||
-                                controller?.currentLine?.lineId !=
-                                    line.lineId ||
-                                controller?.currentLine?.text != line.text) {
-                              return;
+                            _lookupAt(line, index);
+                            // Toggle + touch: with a controller in hand, a
+                            // tapped word hands the buttons to the lookup.
+                            if (_controllerUsed) {
+                              _setInputMode(GameStreamInputMode.lookup);
                             }
-                            unawaited(
-                              controller?.lookup(
-                                span.term,
-                                displayTerm: line.text.characters.elementAt(
-                                  span.start,
-                                ),
-                              ),
-                            );
                           },
                         ),
                         trailing: SubtitleTranscriptAction(
@@ -1656,7 +2704,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   showBorder: false,
                   swipeDismissible: false,
                   enableSwipeToClose: false,
-                  onDismiss: () => setState(() => _lookupVisible = false),
+                  onDismiss: () => _setLookupVisible(false),
                   onTextSelected:
                       (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
                           unawaited(controller.lookup(text)),
@@ -1683,8 +2731,36 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 }
 
+/// One thing a local input holds down on the host: a gamepad button, a
+/// keyboard key or a pointer button. Exactly one field is set.
+@immutable
+class _HostOutput {
+  const _HostOutput.pad(GameStreamVirtualButton this.pad)
+    : key = null,
+      pointer = null;
+  const _HostOutput.key(String this.key) : pad = null, pointer = null;
+  const _HostOutput.pointer(String this.pointer) : pad = null, key = null;
+
+  final GameStreamVirtualButton? pad;
+  final String? key;
+  final String? pointer;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _HostOutput &&
+      other.pad == pad &&
+      other.key == key &&
+      other.pointer == pointer;
+
+  @override
+  int get hashCode => Object.hash(pad, key, pointer);
+}
+
 /// Width of the always-visible boundary strip between video and rail.
 const double _railEdgeWidth = 8;
+
+/// Widest a controller button's action dropdown gets in the controls sheet.
+const double _controllerActionMaxWidth = 220;
 
 /// Height of the gap under the line area that carries its resize grip.
 const double _lineGapHeight = 16;
@@ -1699,53 +2775,6 @@ const double _lineAreaBottomPadding = _resizeHitExtent / 2 - _lineGapHeight / 2;
 /// The line row's copy action: icon plus its 2px padding on both sides.
 const double _lineCopyIconSize = 16;
 const double _lineCopyActionExtent = _lineCopyIconSize + 4;
-
-/// Largest font size in [floor]..[GameStreamLookupLayout.maxFitFontSize] at
-/// which [text] laid out [width] wide stays within [height]. A line that does
-/// not fit even at [floor] keeps [floor] (the area scrolls). Half-point steps.
-@visibleForTesting
-double gameStreamFitLineFontSize({
-  required String text,
-  required TextStyle Function(double size) styleFor,
-  required double width,
-  required double height,
-  required double floor,
-  TextScaler textScaler = TextScaler.noScaling,
-  TextDirection textDirection = TextDirection.ltr,
-}) {
-  final double ceiling = math.max(floor, GameStreamLookupLayout.maxFitFontSize);
-  if (text.isEmpty || width <= 0 || height <= 0) return floor;
-  final TextPainter painter = TextPainter(
-    textScaler: textScaler,
-    textDirection: textDirection,
-  );
-  bool fits(double size) {
-    painter
-      ..text = TextSpan(text: text, style: styleFor(size))
-      ..layout(maxWidth: width);
-    return painter.height <= height && painter.width <= width;
-  }
-
-  try {
-    if (!fits(floor)) return floor;
-    int lo = (floor * 2).ceil();
-    int hi = (ceiling * 2).floor();
-    if (lo >= hi || !fits(lo / 2)) return floor;
-    if (fits(hi / 2)) return hi / 2;
-    // Invariant: lo/2 fits, hi/2 does not.
-    while (hi - lo > 1) {
-      final int mid = (lo + hi) ~/ 2;
-      if (fits(mid / 2)) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    return math.max(floor, lo / 2);
-  } finally {
-    painter.dispose();
-  }
-}
 
 /// Length of the rail grip's 48dp-wide touch band along the edge.
 const double _railGripBand = 160;

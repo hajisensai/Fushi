@@ -118,6 +118,33 @@ class GalhookWorkflowTest(unittest.TestCase):
             json.loads(dart_copy.read_text(encoding="utf-8")), data
         )
 
+    def test_softpal_replay_pairs_pac_voice_and_matches_dart_copy(self) -> None:
+        fixture = ROOT / "tests" / "fixtures" / "softpal_replay.json"
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "replay", str(fixture)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        report = json.loads(completed.stdout)
+        # SoftPal 的语音是与正文同一引擎步加载的 voice.pac 条目（逐句资源），优先于
+        # loopback；无语音的旁白页不配任何音频。
+        self.assertEqual(
+            [card["audio_backend"] for card in report["cards"]],
+            ["resource_audio", None],
+        )
+        self.assertEqual(report["duplicate_text_events"], 1)
+        self.assertEqual(report["thread_filtered_events"], 1)
+        self.assertTrue(report["session_clean"])
+        data = json.loads(fixture.read_text(encoding="utf-8"))
+        dart_copy = (
+            ROOT.parent.parent / "fushi" / "test" / "fixtures" / "galhook"
+            / "softpal_replay.json"
+        )
+        self.assertEqual(
+            json.loads(dart_copy.read_text(encoding="utf-8")), data
+        )
+
     def test_kogado_hy_replay_pairs_pcm_and_matches_dart_copy(self) -> None:
         fixture = ROOT / "tests" / "fixtures" / "kogado_hy_replay.json"
         completed = subprocess.run(

@@ -10,6 +10,8 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show isAppleMusicTrackPath;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart'
     show isMusicDiscTitlePath;
 import 'package:fushi_music/fushi_music.dart';
@@ -44,13 +46,26 @@ final class MusicClipSourceUnavailable implements Exception {
   String toString() => message;
 }
 
-/// 播放项 → 制卡截音频的源。截不了抛 [MusicClipSourceUnavailable]（带原因）。
+/// 这一首受 DRM 保护（Apple Music 整曲在 Apple 授权的播放器里解密，拿不到 PCM；录制输出
+/// 违反 MusicKit 条款）：不是失败，制卡方降级成不带句子音频的卡并说明原因。
+final class MusicClipSourceProtected implements Exception {
+  const MusicClipSourceProtected();
+
+  @override
+  String toString() => 'track audio is DRM-protected';
+}
+
+/// 播放项 → 制卡截音频的源。截不了抛 [MusicClipSourceUnavailable]（带原因）；受 DRM 保护
+/// 抛 [MusicClipSourceProtected]（调用方降级成纯文本卡）。
 ///
 /// [pluginResolver]：插件曲目取流（缺省 [resolveMusicPluginStream]，测试注入替身）。
 Future<MusicClipSource> resolveMusicClipSource(
   MusicPlayItem item, {
   MusicPluginStreamResolver? pluginResolver,
 }) async {
+  if (isAppleMusicTrackPath(item.path)) {
+    throw const MusicClipSourceProtected();
+  }
   if (isMusicPluginPath(item.path)) {
     final MusicPluginStream s;
     try {

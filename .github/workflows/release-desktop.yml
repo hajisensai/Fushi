@@ -89,7 +89,7 @@ on:
         required: false
       # TestFlight 上传两条路（见 ios job 的 "Resolve Apple signing mode"）：
       # 手动 workflow_dispatch 的 beta/formal 直接放行、debug 只在 testflight_only=true
-      # 时放行；push 的 debug 通道约每三次传一次（发布序列 % 3 == 0 的那次）。
+      # 时放行；develop 的 push debug 通道每次都传（2026-11-02 起；main 的 push 不传）。
       upload_testflight:
         description: 'Upload a signed iOS build to TestFlight (beta/formal only; needs the Apple secrets).'
         required: false
@@ -109,7 +109,7 @@ on:
       # 是「什么都不外发」，testflight_only 是「只外发 TestFlight」；两者同时为 true 时
       # build_only 赢（TestFlight 门里 build_only 判在前）。
       testflight_only:
-        description: 'Only sign the iOS build and upload it to TestFlight; publish nothing else (manual extra debug upload between the every-third-push ones).'
+        description: 'Only sign the iOS build and upload it to TestFlight; publish nothing else (manual debug re-upload, e.g. when the push run was superseded).'
         required: false
         default: false
         type: boolean
@@ -133,14 +133,13 @@ concurrency:
   # update-manifest，上面「同 tag/sha 串行防互踩资产」的理由对它不成立。而它恰恰总是
   # 补在一次 push 之后、同一个 sha 上 dispatch 的——不拆组就得排在那条完整桌面/Apple
   # 构建后面干等（#2268 等 #2267），还会被同组下一个 pending 顶掉。拆组不引入新的
-  # 撞号：TF 构建号 = 发布序列，同 sha 上 push 那条若也传了 TF（序列被 3 整除），串行时
-  # 后传的一样被 App Store Connect 拒，排队从来挡不住它。后缀追加在末尾，前缀仍是两条
+  # 撞号：TF 构建号 = 发布序列，同 sha 上 push 那条已传过 TF 时，串行时后传的一样被
+  # App Store Connect 拒，排队从来挡不住它。后缀追加在末尾，前缀仍是两条
   # workflow 共用的那个字面量（check_release_policy.ps1 按包含校验）。
   #
   # push 事件按**分支**分组（2026-09-30，理由与代价见 release.yml 同处注释）：正在跑的
-  # 那轮跑完，排队中的旧 pending 被后来者顶掉，仍不 cancel-in-progress。本条额外的代价：
-  # push debug 通道的 TestFlight 只在「发布序列 % 3 == 0」的那轮上传，被顶掉的 pending
-  # 若恰好是那一轮，这一次上传就跳过（下一个整除的序列照传；需要时 testflight_only 手动补）。
+  # 那轮跑完，排队中的旧 pending 被后来者顶掉，仍不 cancel-in-progress。push debug 通道
+  # 每轮都传 TestFlight，被顶掉的 pending 不传，由顶掉它的那轮（更新的 commit）传。
   group: fushi-release-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
   cancel-in-progress: false
 
@@ -2855,8 +2854,8 @@ jobs:
       # ---- App Store 签名 + TestFlight ---------------------------------
       # 上面的未签名 IPA 是 GitHub Release 资产，**保持不变**：老用户用自签工具
       # （AltStore / Sideloadly 等）侧载的就是它，换成 App Store 签名的包会直接
-      # 打断他们。TestFlight 走的是下面这个额外的、只在手动 beta/formal 发布时
-      # 才产出的签名 IPA，它不进 Release 资产。
+      # 打断他们。TestFlight 走的是下面这个额外的签名 IPA（手动 beta/formal、
+      # testflight_only 与每次 develop debug push 才产出），它不进 Release 资产。
       #
       # 每一项 Apple 凭据都是可选的：缺任何一项就整段跳过，未签名 IPA 照常发布，
       # fork 与无账号状态下发布链路不受影响（tool/check_release_policy.ps1 守卫
@@ -2887,14 +2886,15 @@ jobs:
           # 两条路上传：
           #   1. 手动 workflow_dispatch：beta / formal 直接放行；debug 要 testflight_only=true
           #      （手动 dispatch 一个普通 debug 重发不会顺手传 TestFlight）。
-          #   2. push 的 debug 通道：约每三次传一次——发布序列（= 构建号 = commit 计数，
-          #      tool/release_sequence.sh）能被 3 整除的那次（2026-09-16 用户拍板「发三次
-          #      调试版触发一次 TestFlight」）。不每次都传：push 一天跑 5~13 次，全传会让
-          #      App Store Connect 的处理排队压后真正想发的 beta、TestFlight 列表被 debug
-          #      构建淹掉（每个挂 90 天）、每条 push 再多一趟 15 分钟签名构建。用发布序列
-          #      而不是 run 号：本仓不变式是 run 号永远不当序列（check_release_policy.ps1
-          #      整个禁用），且这样从 TestFlight 的构建号就能看出哪次是自动传的。每次 push
-          #      涨的 commit 数不固定，所以是「约」每三次。
+          #   2. push 的 debug 通道：每次都传（2026-11-02 用户拍板「改成每次 CI 自动推 TF，
+          #      不用每次看」，取代 09-16 的「发布序列 % 3 == 0 才传」——那条让大合并后
+          #      要人工核序列、不整除就手动补发）。构建号 = 发布序列（commit 计数，
+          #      tool/release_sequence.sh），沿 develop 每次 push 至少涨一格，天然单调不撞号。
+          #      **只认 develop**：本 workflow 的 push 也覆盖 main，但 main 的 commit 数远低于
+          #      develop（序列落在 develop 早已传过的号段下面），main 快进到 develop 上已传过
+          #      的 sha 时序列完全相同，必撞 ASC 的 409 DUPLICATE（build.md「同一个 commit
+          #      不能重复传 TestFlight」）；main 的 pubspec 版本线也落后于 develop。所以 main
+          #      的 push 只发 GitHub Release，不传 TestFlight。
           #      （09-14 ~ 09-16 曾用定时通道 testflight-debug.yml 每 8 小时查 App Store
           #      Connect 补传，已撤：两条节律并存会重复上传。）
           # build_only 也必须挡住这条：TestFlight 上传是**不可回收**的外发——
@@ -2913,25 +2913,23 @@ jobs:
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
             TESTFLIGHT=true
           fi
-          # push 的 debug 通道：约每三次一次。缺密钥就关门（fork 照常绿），不警告不红。
+          # push 的 debug 通道：develop 每次都传，main 不传。缺密钥就关门（fork 照常绿），不警告不红。
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$RELEASE_CHANNEL" = debug ]; then
-            if [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
-              # 这句不用 `[ … ] && echo … || echo …`：守卫
-              # release_workflow_bash_portability_guard_test 禁掉了该惯用法，因为它在
-              # pipefail 管道 / brace-group 末尾且 test 为假时会把整步静默杀掉。
-              if [ "$CREDS" = true ]; then
-                TESTFLIGHT_NOTE=enabled
-              else
-                TESTFLIGHT_NOTE='skipped, Apple secrets incomplete'
-              fi
-              echo "debug push, build $RELEASE_SEQUENCE is divisible by 3: TestFlight upload $TESTFLIGHT_NOTE"
+            # 这句不用 `[ … ] && echo … || echo …`：守卫
+            # release_workflow_bash_portability_guard_test 禁掉了该惯用法，因为它在
+            # pipefail 管道 / brace-group 末尾且 test 为假时会把整步静默杀掉。
+            if [ "$GITHUB_REF" != refs/heads/develop ]; then
+              TESTFLIGHT_NOTE="skipped, only develop pushes upload (this push is $GITHUB_REF)"
+            elif [ "$CREDS" = true ]; then
+              TESTFLIGHT_NOTE=enabled
             else
-              echo "debug push, build $RELEASE_SEQUENCE: TestFlight only when the build number is divisible by 3 (next at $(( (RELEASE_SEQUENCE / 3 + 1) * 3 )))"
+              TESTFLIGHT_NOTE='skipped, Apple secrets incomplete'
             fi
+            echo "debug push, build $RELEASE_SEQUENCE: TestFlight upload $TESTFLIGHT_NOTE"
           fi
           if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = push ] \
-             && [ "$RELEASE_CHANNEL" = debug ] \
-             && [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
+             && [ "$GITHUB_REF" = refs/heads/develop ] \
+             && [ "$RELEASE_CHANNEL" = debug ]; then
             TESTFLIGHT=true
           fi
           if [ "$CREDS" = false ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
@@ -3109,7 +3107,7 @@ jobs:
 
   # TestFlight 上传（2026-10-17 从 ios job 拆出）：与 publish 同一个审批门。正式 / 测试版
   # dispatch 走环境 `release-publish`，ios job 签好的 IPA 停在这里等批准；push 的
-  # 「每第三次」debug 与 testflight_only 补传走无保护规则的 `release-auto`，照旧直传。
+  # debug 与 testflight_only 补传走无保护规则的 `release-auto`，照旧直传。
   # 门本身（传不传）仍是 ios job「Resolve Apple signing mode」那一处判定，这里只认它的输出。
   testflight:
     needs: ios

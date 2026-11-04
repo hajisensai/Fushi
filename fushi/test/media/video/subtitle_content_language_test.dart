@@ -116,6 +116,15 @@ void main() {
       );
     });
 
+    test('半角片假名的广播 CC → 日语（不被汉字计数判成中文）', () {
+      expect(
+        detectSubtitleContentLanguage(
+          _srt(<String>['(ｲﾘｱ)ﾕﾌｨﾘｱ様｡', '(ｱﾆｽ)魔法学院入学式', '(ｲﾘｱ)ｱﾆｽﾌｨｱ様｡']),
+        ),
+        SubtitleContentLanguage.japanese,
+      );
+    });
+
     test('简体正文 → 简体中文', () {
       expect(
         detectSubtitleContentLanguage(

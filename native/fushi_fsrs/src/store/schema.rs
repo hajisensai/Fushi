@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 19;
+pub const SCHEMA_VERSION: i64 = 24;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -570,6 +570,32 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 只改投影与 `sync2_legacy`，操作日志不动；可重放。腾出的页留在空闲链表、由之后的写入复用，不排整理
         // （VACUUM 要整库重写、峰值多占两倍有效数据，为一成左右的空间不值得在打开时做）。
         super::sync2::strip_synthetic_writers(&tx)?;
+    }
+    if current < 20 {
+        // V20：收段会话的待刷新缓存（store/sync2/schema.rs [super::sync2::schema::V20_CACHE_PENDING]）。只建表，可重放。
+        tx.execute_batch(super::sync2::schema::V20_CACHE_PENDING).map_err(|e| e.to_string())?;
+    }
+    if current < 21 {
+        // V21：操作日志载荷按 zstd 压缩（store/sync2/snapshots.rs [super::sync2::snapshots::pack_payload]）。只加 `pz` 列
+        // （默认 0 = 原样），已有的行不重写：读按 `pz` 分流，之后收到的操作才压。可重放。
+        super::sync2::snapshots::ensure_columns(&tx)?;
+    }
+    if current < 22 {
+        // V22：新设备收段通道的进度表（store/sync2/schema.rs [super::sync2::schema::V22_BOOT]）。只建表，可重放。
+        tx.execute_batch(super::sync2::schema::V22_BOOT).map_err(|e| e.to_string())?;
+    }
+    if current < 23 {
+        // V23：重传登记分两类（store/sync2/schema.rs [super::sync2::schema::migrate_v23]）。只加列，可重放。
+        super::sync2::schema::migrate_v23(&tx)?;
+    }
+    if current < 24 {
+        // V24：存量重复流收敛作业（store/sync2/dedup.rs）。建表，给已启用 v2 的 profile 各排一次作业（作业自己推进，
+        // 结束时排文件整理）。可重放。
+        tx.execute_batch(super::sync2::schema::V24_DEDUP).map_err(|e| e.to_string())?;
+        tx.execute_batch(
+            "INSERT OR IGNORE INTO sync2_dedup (profile_uid, phase, cur_dev, cur_seq) SELECT profile_uid, 0, x'', 0 FROM sync2_self;",
+        )
+        .map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

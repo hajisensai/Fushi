@@ -44,10 +44,23 @@ void main() {
     );
   });
 
+  test('封面取色并列卡 FushiContinueCardRow：悬停抬升 + 整卡点按 + 右键次动作', () {
+    final String s = src(
+      'lib/src/utils/components/fushi_continue_card_row.dart',
+    );
+    expect(s.contains('FushiHoverLift('), isTrue);
+    expect(s.contains('onTap: entry.onOpen'), isTrue);
+    expect(s.contains('onSecondaryTap: entry.onLongPress'), isTrue);
+  });
+
   test('各库页继续卡都经共享件', () {
+    // 2026-11-01 起书架 / 游戏库的继续区改走封面取色并列卡 FushiContinueCardRow
+    // （视频首页宽屏时作为大卡旁的 sideBuilder 用它，大卡仍是 Spotlight）。
     const Map<String, String> pages = <String, String>{
       'lib/src/pages/implementations/reader_fushi_history_page.dart':
-          'FushiContinueSpotlight(',
+          'FushiContinueCardRow.grid(',
+      'lib/src/pages/implementations/games_library_page.dart':
+          'FushiContinueCardRow.grid(',
       'lib/src/pages/implementations/galgame_home_page.dart':
           'FushiContinueSpotlight(',
       'lib/src/pages/implementations/home_dashboard_page.dart':

@@ -5,7 +5,7 @@
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Fushi needs the microphone to record audio for your Anki cards, and to let websites you open in the built-in browser use it when you allow them.</string>
 		<key>NSAppleMusicUsageDescription</key>
-		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards.</string>
+		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards, and to play Apple Music when you connect your account.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>Fushi uses the camera to capture images to add to your Anki cards, to scan pairing QR codes from your other devices, and to let websites you open in the built-in browser use it when you allow them.</string>
 		<key>NSPhotoLibraryUsageDescription</key>

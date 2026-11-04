@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart'
+    show kJumpHistoryAutoHideDefaultSeconds, kJumpHistoryAutoHideOptions;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
@@ -325,6 +327,69 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.translate_outlined,
             searchTitle: t.options_language,
             builder: buildLanguageSelector,
+          ),
+        ],
+      ),
+      // 「跳转记录」（2026-11-02 浮动胶囊改顶栏图标）：小说 / 漫画 / 视频三页共用。
+      // 顶栏图标关掉照样记录；自动隐藏只藏图标，记录 / 面板 / 刻度保留。三项都
+      // 由页面现读偏好（无双写）。
+      SettingsSection(
+        id: 'appearance.section.jump_history',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.media_jump_history_title,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'appearance.jump_history.toolbar',
+            title: t.media_jump_history_setting_toolbar,
+            subtitle: t.media_jump_history_setting_toolbar_hint,
+            icon: FushiIcons.undo,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jumpHistoryToolbar,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setJumpHistoryToolbar(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'appearance.jump_history.progress_marks',
+            title: t.media_jump_history_setting_marks,
+            subtitle: t.media_jump_history_setting_marks_hint,
+            icon: FushiIcons.flag,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jumpHistoryProgressMarks,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setJumpHistoryProgressMarks(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'appearance.jump_history.auto_hide',
+            title: t.media_jump_history_setting_auto_hide,
+            subtitle: t.media_jump_history_setting_auto_hide_hint,
+            icon: FushiIcons.timer,
+            options: <SettingsSegmentOption<int>>[
+              for (final int seconds in kJumpHistoryAutoHideOptions)
+                SettingsSegmentOption<int>(
+                  value: seconds,
+                  label: seconds == 0
+                      ? t.media_jump_history_setting_auto_hide_never
+                      : seconds % 60 == 0
+                      ? t.media_jump_history_setting_auto_hide_minutes(
+                          minutes: seconds ~/ 60,
+                        )
+                      : t.media_jump_history_setting_auto_hide_seconds(
+                          seconds: seconds,
+                        ),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jumpHistoryAutoHideSeconds,
+            onChanged: (SettingsContext settingsContext, int seconds) async {
+              await settingsContext.appModel.setJumpHistoryAutoHideSeconds(
+                seconds,
+              );
+            },
+            defaultValue: kJumpHistoryAutoHideDefaultSeconds,
           ),
         ],
       ),

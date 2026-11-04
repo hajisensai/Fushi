@@ -42,10 +42,9 @@ fn pending_rows(d: &Device) -> i64 {
 
 fn resident(d: &Device) -> usize {
     d.core
-        .ingest_session
-        .lock()
+        .ingest_phase()
         .unwrap()
-        .as_ref()
+        .session()
         .and_then(|s| s.delivery_resident())
         .unwrap_or(0)
 }

@@ -10,8 +10,10 @@ import 'package:fushi/src/models/preferences_repository.dart'
     show
         kDownloadExecutionHostPrefKey,
         kFloatingLyricWindowRectPrefKey,
+        kGameStreamButtonProfilePrefKey,
         kGameStreamLookupLayoutPrefKey,
         kGameStreamRemoteLaunchPrefKey,
+        kGameStreamSecondScreenPrefKey,
         PreferencesRepository;
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
     show kBtSitesLegacyMigrationPref;
@@ -1920,6 +1922,10 @@ class SyncRepository {
     kGameStreamRemoteLaunchPrefKey,
     // 串流查词栏尺寸按这台设备的屏幕调：平板上调大的值恢复到手机上只会不合身。
     kGameStreamLookupLayoutPrefKey,
+    // 串流手柄按键映射按这台设备的手柄配：掌机的映射恢复到手机上没有意义。
+    kGameStreamButtonProfilePrefKey,
+    // 串流第二块屏开关按这台设备有没有第二块屏选：掌机的选择恢复到手机上没有意义。
+    kGameStreamSecondScreenPrefKey,
     // Windows 悬浮字幕窗口矩形存的是本机物理像素坐标：换一台显示器布局 / DPI
     // 不同的设备恢复，窗口会落到屏幕外或尺寸错位。
     kFloatingLyricWindowRectPrefKey,
@@ -2020,6 +2026,9 @@ class SyncRepository {
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',
     'music_exclusive_output',
+    // Apple Music 账号连接：授权（Apple ID / Music-User-Token）只在授权的那台设备上存在，
+    // 漂过去会让另一台设备显示「已连接」却拿不到 token。
+    'music_apple_music_connected',
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
     'manga_ocr_ai_mode',

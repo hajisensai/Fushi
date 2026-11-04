@@ -46,6 +46,7 @@ import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -70,6 +71,9 @@ import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
     show fushiWebBrowserRoute;
+
+import 'package:fushi/src/web_adblock/web_adblock_service.dart'
+    show WebAdblockService, webAdblockServiceProvider;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -206,7 +210,7 @@ import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
-import 'package:fushi/src/media/video/web_video_login_import.dart';
+import 'package:fushi/src/media/video/web_video_browser_return.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;
@@ -229,7 +233,6 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 import 'package:fushi/src/media/video/video_long_press_session_detector.dart';
-import 'package:fushi/src/media/video/video_jump_pill_hover.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
@@ -351,7 +354,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/subtitle_text_override.dart';
 import 'package:fushi/src/media/video/video_jump_history.dart';
-import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -407,12 +410,17 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute, adaptiveSegmentedButton;
+    show adaptivePageRoute;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiFloatingTopBar, FushiToolbarItem, kFushiFloatingToolbarEdgeMargin;
+    show
+        FushiFloatingTopBar,
+        FushiToolbarButton,
+        FushiToolbarItem,
+        fushiFloatingToolbarPalette,
+        kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -818,9 +826,10 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
 
-  /// 本页是 app 内浏览器「用 Fushi 播放」交接过来的：返回直接关掉本页、回到浏览器里原来的
-  /// 站点页，不再一级一级退到本页自己的网页档（带地址栏和关闭钮的那份）——用户是在浏览器里
-  /// 选的集，本页网页档只是同一站点的第二份浏览器（BUG-3801）。
+  /// 本页是 app 内浏览器「用 Fushi 播放」交接过来的播放器层：返回 / 离开观看页都关掉本页、
+  /// 回到交接它的那个浏览器标签页（离开去的地址经 [WebVideoBrowserReturn] 交回标签页加载）。
+  /// 为 false（从视频库打开的网页书）时离开观看页换成一个浏览器页打开那个地址。用户只看到
+  /// 一个浏览器：`docs/specs/2026-11-01-one-browser.md`。
   final bool webBackToBrowser;
 
   /// 网页档：制卡队列在内置档重放完换回本页时带回的重放前状态（站点字幕轨 / 音轨 / 位置），
@@ -1635,11 +1644,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 由下面两个来源合成：
   /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
   ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
-  /// - [_controlsHoldJumpPill]：鼠标停在「返回跳转前位置」胶囊上（qUeubxE-fM）——胶囊
-  ///   盖在控制条之上，不按住就会「收起 → 胶囊移开 → 重新显示 → 胶囊回来」自激振荡。
+  /// - [_controlsHoldJumpPanel]：「跳转记录」面板开着——面板期间控制条保持显示
+  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）。
   final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
   bool _controlsHoldMenuOpen = false;
-  bool _controlsHoldJumpPill = false;
+  bool _controlsHoldJumpPanel = false;
 
   static const double _volumeStep = 5.0;
 
@@ -2307,19 +2316,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 持有底层合成期间让路由层页底（[FushiPageBackdrop]）整个让开的那条路由，dispose 恢复。
   Route<Object?>? _webTransparentRoute;
 
-  /// 播放器档（[_webPlayerModeFor]）：否则是网页档——WebView 收输入、整页原样，播放器控件
-  /// 不挂，只留顶部返回条。
+  /// 播放器档（[_webPlayerModeFor]）：否则露出站点页面（观看页还没有视频 / 站点弹层打断）
+  /// ——WebView 收输入、整页原样，播放器控件不挂，只留顶部一条细返回条。
   bool _webPlayerMode = false;
 
-  /// 站点页面里当前有没有 `<video>`（网页档返回条上的「在播放器里看」）。
-  bool _webPageHasVideo = false;
+  /// 正在因离开观看页 / 「在浏览器中打开」关掉本页（[_exitWebToBrowser] 只跑一次）。
+  bool _webExitingToBrowser = false;
 
   /// 站点正在放广告（glue 在跳 / 快进）：播放器档盖黑屏，快照不进播放器状态。
   bool _webAdShowing = false;
-
-  /// 用户对这一集（videoKey）点了「回到网页」/「在播放器里看」；换集即失效。
-  String? _webBrowseVideoKey;
-  String? _webForcePlayerKey;
 
   /// 网页档里播起的那一集落成的书（站点入口打开 / 站内换了集）；null = 仍是打开时那本。
   String? _webEpisodeBookUid;
@@ -2333,22 +2338,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _webEpisodeMetaDoneUrl;
   bool _webEpisodeMetaBusy = false;
 
-  /// 网页档工具条的地址栏（没在编辑时跟着当前地址走）。
-  final TextEditingController _webAddressController = TextEditingController();
-  final FocusNode _webAddressFocus = FocusNode(debugLabel: 'video-web-address');
-
-  /// 工具条的「关闭」：这一次返回不再一级一级退，直接关掉本页。
-  bool _webClosing = false;
-
-  /// 「从浏览器导入登录」的接入点（[WebVideoLoginImport]，内部是共用实现
-  /// [BrowserLoginImport]：一次即结束、等待时有可取消的状态条）。网页会话就绪时建、
-  /// 拆会话时 dispose。
-  WebVideoLoginImport? _webLoginImport;
-
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
   final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
+
+  /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
   String? _webActiveTrackKey;
+
+  /// 显式选定的轨：用户在面板点选的，或显式请求（用户点选 / 每集按语言偏好替用户开）后采到的
+  /// 那条。只有它钉住选择；自动结果不回写成「选择」，后到的整轨才能取代先到的 live 轨。
+  String? _webPinnedTrackKey;
 
   /// 用户在字幕面板选了「关闭」：不再自动挑轨。
   bool _webSubtitlesOff = false;
@@ -2522,22 +2521,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// media_kit 进度条拖动的出发点记账（进度条 seek 绕过 controller）。
   final VideoSeekBarJumpTracker _seekBarJumpTracker = VideoSeekBarJumpTracker();
 
-  /// 历史变化计数：胶囊在全屏路由里也要跟着重建，走 notifier 而非 setState。
+  /// 历史变化计数：顶栏按钮 / 「⋯」菜单行 / 进度条刻度在全屏路由里也要跟着重建，
+  /// 走 notifier 而非 setState。
   final ValueNotifier<int> _videoJumpHistoryRevision = ValueNotifier<int>(0);
 
-  /// 跳转 / 返回 / 前进后的 6 秒闪现窗口。
-  final ValueNotifier<bool> _videoJumpPillFlashing = ValueNotifier<bool>(false);
+  /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
+  /// 并进顶栏按钮与刻度的重建源，设置一改立刻生效（全屏路由同样跟随）。
+  ///
+  /// 首次用到才建（读 `appModel.prefsRepo`，initState 时 AppModel 可能还没初始化，
+  /// 见 initState 注释）。[dispose] 只释放建过的那份：用 `late final` 时，没走到
+  /// 顶栏就退出的页面（如书不存在的错误态）会在 dispose 里**首次**求值、经
+  /// `ref.read` 在已停用的 element 上找祖先而抛错。
+  JumpHistoryPrefsListenable get _videoJumpPrefs => _videoJumpPrefsOrNull ??=
+      JumpHistoryPrefsListenable.fromRepository(appModel.prefsRepo);
+  JumpHistoryPrefsListenable? _videoJumpPrefsOrNull;
 
-  /// 鼠标是否停在胶囊上（qUeubxE-fM）：悬停期间胶囊布局冻结在 [_videoJumpPillLayout]。
-  final ValueNotifier<bool> _videoJumpPillHovered = ValueNotifier<bool>(false);
-
-  /// 胶囊上一帧实际用的布局（悬停开始时的那一帧即冻结值）。
-  VideoJumpPillLayout? _videoJumpPillLayout;
-  Timer? _videoJumpFlashTimer;
-
-  /// 自上次跳转 / 返回 / 前进起超过自动隐藏时长：胶囊不再随控制条出现，下次跳转复位。
-  final ValueNotifier<bool> _videoJumpPillExpired = ValueNotifier<bool>(false);
-  Timer? _videoJumpPillExpireTimer;
+  /// 顶栏「跳转记录」图标的自动隐藏计时（时长取 [_videoJumpPrefs]，默认 0 = 不
+  /// 隐藏；只藏图标，记录 / 面板 / 刻度保留，下次跳转再出现）。同样首次用到才建。
+  JumpHistoryAutoHide get _videoJumpAutoHide =>
+      _videoJumpAutoHideOrNull ??= JumpHistoryAutoHide(prefs: _videoJumpPrefs);
+  JumpHistoryAutoHide? _videoJumpAutoHideOrNull;
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
   ///
@@ -6818,13 +6821,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
     _controlsHeld.dispose();
-    _videoJumpPillHovered.dispose();
     _videoControlsVisible.dispose();
-    _videoJumpFlashTimer?.cancel();
-    _videoJumpPillExpireTimer?.cancel();
+    _videoJumpAutoHideOrNull?.dispose();
+    _videoJumpPrefsOrNull?.dispose();
     _videoJumpHistoryRevision.dispose();
-    _videoJumpPillFlashing.dispose();
-    _videoJumpPillExpired.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();
     super.dispose();
@@ -7600,7 +7600,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void _ocrCurrentFrame() {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    if (controller.isWebBackend) {
+    if (!controller.canCaptureFrame) {
       _showOsd(t.video_ocr_frame_web_unsupported, icon: FushiIcons.ocr);
       return;
     }
@@ -8087,9 +8087,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_dismissTopForegroundLayer()) return;
     // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
     if (_discSessionShowBarOnBack()) return;
-    // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页（同步判定，
-    // 退出路径不 await，BUG-2119）。
-    if (_webBackStep()) return;
+    _exitVideoPage();
+  }
+
+  /// 关掉本页：先持久化进度 / 报远端停播，再 pop（同步判定，退出路径不 await，BUG-2119）。
+  /// 网页站点后端离开观看页回浏览器时也走这里（`_exitWebToBrowser`，它先把压在本页上面的
+  /// 路由弹掉，pop 到的才是本页）。
+  void _exitVideoPage() {
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;
     final int? remotePositionMs = controller?.positionMs;
@@ -8482,13 +8486,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? unsupported
           : () => _runWhenImmersiveAllowsShortcuts(() {
               _keepControlsAliveIfVisible();
-              unawaited(_recordVideoJumpAround(controller.previousChapter));
+              unawaited(
+                _recordVideoJumpAround(
+                  controller.previousChapter,
+                  source: JumpSource.chapter,
+                ),
+              );
             }),
       nextChapter: web
           ? unsupported
           : () => _runWhenImmersiveAllowsShortcuts(() {
               _keepControlsAliveIfVisible();
-              unawaited(_recordVideoJumpAround(controller.nextChapter));
+              unawaited(
+                _recordVideoJumpAround(
+                  controller.nextChapter,
+                  source: JumpSource.chapter,
+                ),
+              );
             }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
@@ -9248,7 +9262,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
   void _syncControlsHold() {
-    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPill;
+    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPanel;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
@@ -9807,8 +9821,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// MD3 Expressive 底栏播放键：主色实心「宽」胶囊（M3E 宽按钮 = 1.3 倍高），
-  /// 暂停态圆、播放态弹成圆角方形。点击路径与 Apple 分支相同（续命控制条 +
+  /// MD3 Expressive 底栏播放键：主色实心的统一主播放键多边形（12 瓣饼干，
+  /// 播放态转半瓣）；底栏槽位仍按 M3E 宽按钮占 1.3 倍高的宽度。点击路径与 Apple 分支相同（续命控制条 +
   /// `controller.playOrPause`）；按 [controller] 重建以跟随播放态。
   Widget _m3ePlayPauseButton(
     VideoPlayerController controller, {
@@ -9885,6 +9899,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         !videoWebBackendSupportsControlItem(
           item,
           hasSiteAudioTracks: _controller?.audioTracks.isNotEmpty ?? false,
+          canCaptureFrame: _controller?.canCaptureFrame ?? false,
         )) {
       return false;
     }
@@ -9967,13 +9982,48 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// windows. When squeezed, the group collapses its lowest-priority buttons into
   /// a trailing "⋯" menu ([VideoControlBar], BUG-2832) instead of scrolling /
   /// clipping them, so every visible button stays whole and full size.
+  ///
+  /// 右上组挂「⋯」的那一段（[_isLastTopRightSegment]）同时挂「跳转记录」：段头一枚
+  /// 独立的「↶ / ↷」按钮胶囊（[_videoJumpHistoryTopBarGroup]），「⋯」里有历史时多
+  /// 一行「跳转记录」。两者随历史 / 自动隐藏 / 小窗 / 沉浸锁变化，全屏路由不随页面
+  /// setState 重建，所以这一段包一层 [ListenableBuilder]。
   Widget _topBarSlotGroup(
     VideoControlSlot slot,
     VideoPlayerController controller, {
     required VideoControlLayout layout,
     required bool desktop,
     required VideoTopBarSegment segment,
+    BuildContext? jumpContext,
   }) {
+    // 挂「⋯」的那一段：先包一层 [ListenableBuilder]，在它里面带着 jumpContext 再进
+    // 本方法一次（同一份按钮组构建，不另抄一份）。
+    final bool jumpSegment = _isLastTopRightSegment(slot, layout, segment);
+    if (jumpSegment && jumpContext == null) {
+      return ListenableBuilder(
+        listenable: _videoJumpToolbarListenable,
+        builder: (BuildContext jumpContext, Widget? _) {
+          final Widget group = _topBarSlotGroup(
+            slot,
+            controller,
+            layout: layout,
+            desktop: desktop,
+            segment: segment,
+            jumpContext: jumpContext,
+          );
+          if (!_videoJumpToolbarShown) return group;
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _videoJumpHistoryTopBarGroup(jumpContext, desktop: desktop),
+              Flexible(child: group),
+            ],
+          );
+        },
+      );
+    }
+    final VideoBarEntry? jumpMenu = jumpContext == null
+        ? null
+        : _videoJumpHistoryMenuEntry(jumpContext);
     final List<VideoControlItem> rawItems = layout.itemsIn(slot);
     // 标题项被拖进按钮槽时，它在槽内的索引位置有语义（`VideoControlLayout` 保序），
     // 所以按标题把该槽切成 lead / tail 两段按钮，标题本身由顶栏的 title 槽渲染、
@@ -10002,27 +10052,28 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
     // 右上按钮组的最后一段挂「⋯」：移出播放器、又不属于右下传输 / 学习组的动作
     // （音轨、片段导出、上下集、上下章……）常驻这里。
-    final bool lastTopRightSegment =
-        slot == VideoControlSlot.topRight &&
-        (titleIndex < 0
-            ? segment == VideoTopBarSegment.lead
-            : segment == VideoTopBarSegment.tail);
+    final bool lastTopRightSegment = _isLastTopRightSegment(
+      slot,
+      layout,
+      segment,
+    );
     final List<VideoBarEntry> folded = lastTopRightSegment
-        ? _foldedBarEntries(
-            layout,
-            controller,
-            slot: slot,
-            include: (VideoControlItem item) =>
-                !_kVideoBottomFoldedItems.contains(item),
-          )
+        ? <VideoBarEntry>[
+            ..._foldedBarEntries(
+              layout,
+              controller,
+              slot: slot,
+              include: (VideoControlItem item) =>
+                  !_kVideoBottomFoldedItems.contains(item),
+            ),
+            if (jumpMenu != null) jumpMenu,
+          ]
         : const <VideoBarEntry>[];
     // 原盘会话播放正片时，「主菜单 / 弹出菜单」挂在右上组头部：与其它顶栏按钮同一
     // 显隐（随控制条淡出）、同一外观，窄屏同样收进「⋯」。
     final List<VideoBarEntry> disc =
         lastTopRightSegment && controller.isBlurayNavigationSession
         ? _discNavigationBarEntries(desktop: desktop)
-        : lastTopRightSegment && _webMode
-        ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
     if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
       return const SizedBox.shrink();
@@ -10101,6 +10152,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
+  }
+
+  /// [slot] / [segment] 是不是右上组挂「⋯」的最后一段（槽里没有标题时是 lead，有
+  /// 标题时是标题之后的 tail）。
+  bool _isLastTopRightSegment(
+    VideoControlSlot slot,
+    VideoControlLayout layout,
+    VideoTopBarSegment segment,
+  ) {
+    if (slot != VideoControlSlot.topRight) return false;
+    final bool hasTitle = layout.itemsIn(slot).contains(VideoControlItem.title);
+    return hasTitle
+        ? segment == VideoTopBarSegment.tail
+        : segment == VideoTopBarSegment.lead;
   }
 
   String get _clipExportTooltip {
@@ -10408,11 +10473,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.previousChapter:
         _pokeControlsVisible();
-        unawaited(_recordVideoJumpAround(controller.previousChapter));
+        unawaited(
+          _recordVideoJumpAround(
+            controller.previousChapter,
+            source: JumpSource.chapter,
+          ),
+        );
         break;
       case VideoControlItem.nextChapter:
         _pokeControlsVisible();
-        unawaited(_recordVideoJumpAround(controller.nextChapter));
+        unawaited(
+          _recordVideoJumpAround(
+            controller.nextChapter,
+            source: JumpSource.chapter,
+          ),
+        );
         break;
       case VideoControlItem.chapterList:
         _showChapterPanel(controller, sourceSlot: sourceSlot);
@@ -11481,7 +11556,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int? durationMs = controller?.durationMs;
     if (controller == null || durationMs == null || durationMs <= 0) return;
     final int targetMs = (durationMs * fraction.clamp(0.0, 1.0)).round();
-    _recordVideoJumpDeparture(targetMs);
+    _recordVideoJumpDeparture(targetMs, source: JumpSource.progressBar);
     await controller.seekMs(targetMs);
   }
 

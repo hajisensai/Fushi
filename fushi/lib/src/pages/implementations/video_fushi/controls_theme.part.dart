@@ -87,6 +87,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           controller.notifyExternalSeek(target.inMilliseconds),
       // BUG-2731 后续（同移动 theme）：进度条落点那次 player.seek 的 Future。
       onSeekDispatched: controller.noteExternalSeekDispatched,
+      // 网页档（站点视频）拖进度条只挪滑块、松手 seek 一次：每次指针移动都是一次页面往返，
+      // 长距离拖动会把几十次大跨度 seek 灌进 Netflix 播放器直到卡死（远跳卡住）。
+      seekOnDrag: !controller.isWebBackend,
       // TODO-669：进度条 hover 缩略图预览。seek bar hover 时 fork 把 hover 比例
       // （轨道内宽权威值）回调给 [_onSeekBarHover]，桌面转发到取帧调度器、移动端不接
       // （触屏无 hover，故仅桌面 theme 接线）。null 时 fork 零行为变化。
@@ -417,6 +420,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // BUG-2731 后续：fork 把横滑 / 双击 / 进度条落点那次 player.seek 的 Future 交过来，
       // 等它完成才开始按「正常推进」判 seek 收场（seek 还在排队时旧内容照常推进）。
       onSeekDispatched: controller.noteExternalSeekDispatched,
+      // 网页档（站点视频）拖进度条只挪滑块、松手 seek 一次：每次指针移动都是一次页面往返，
+      // 长距离拖动会把几十次大跨度 seek 灌进 Netflix 播放器直到卡死（远跳卡住）。
+      seekOnDrag: !controller.isWebBackend,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Fushi 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（鼠标无此手势；触屏经 touch* 字段复用同一套口径，屏幕亮度桌面不可控只开音量）。横滑 seek
@@ -695,17 +701,61 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoSeekBarVisual visual,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return VideoM3eSeekTrack(
+    final double scale = _videoUiScale * _controlsDensityScale;
+    final double? trackBottomInset = _isDesktopVideoControls
+        ? _videoM3eDesktopTrackBottomInset
+        : null;
+    final Widget track = VideoM3eSeekTrack(
       visual: visual,
       color: _videoChromeAccent(cs),
-      scale: _videoUiScale * _controlsDensityScale,
+      scale: scale,
       hoverBubble: _thumbnailPreview == null,
       cueDensity: _m3eCueDensity(controller, visual.duration),
       // 不画轨道槽：细轨直接压在画面上（底部只有一条很矮的暗角垫着）。桌面把轨道
       // 抬到底栏小胶囊上方（热区容器骑按钮行上沿，轨道离容器底缘 overlap + 10）。
-      trackBottomInset: _isDesktopVideoControls
-          ? _videoM3eDesktopTrackBottomInset
-          : null,
+      trackBottomInset: trackBottomInset,
+    );
+    // 「跳转记录」落点刻度：叠在轨道中线上（同一真相
+    // [videoM3eSeekTrackCenterFromBottom]），与轨道同宽；刻度层 IgnorePointer，拖动 /
+    // 点击照旧落到 fork 的进度条热区。
+    final double tickHeight = 14 * scale;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        track,
+        LayoutBuilder(
+          builder: (BuildContext _, BoxConstraints constraints) {
+            final double h = constraints.maxHeight;
+            final double centerY =
+                h -
+                videoM3eSeekTrackCenterFromBottom(
+                  containerHeight: h,
+                  scale: scale,
+                  alignment: visual.alignment,
+                  trackBottomInset: trackBottomInset,
+                );
+            return Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: centerY - tickHeight / 2,
+                  height: tickHeight,
+                  child: _videoJumpProgressMarks(
+                    controller: controller,
+                    tickWidth: 3 * scale,
+                    tickHeight: tickHeight,
+                    rtl: rtl,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 

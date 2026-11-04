@@ -21,7 +21,9 @@ import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
-/// 把服务器条目里的字幕文件取到本机临时目录，返回本地文件。
+/// 把服务器条目里的字幕文件取到本机 [tempDir]（缺省引擎临时根），返回本地文件。
+/// 要交给导入接管（`adoptSubtitleFile`）的，调用方传 `AudiobookStorage.stagingDir()`，
+/// 保证与持久目录同卷。
 ///
 /// 落盘文件名保留原扩展名（`parseCuesForFormat` 按扩展名分派解析器），并加上条目
 /// id 前缀避免两本书里同名的 `subtitle.srt` 互相覆盖。体积有上限（见
@@ -58,6 +60,8 @@ List<RemoteAudioTrack> remoteTracksOf(List<AudiobookshelfTrack> tracks) =>
 /// 导入一本远端字幕书：解析 [subtitlePath]（null = 不挂字幕，纯听书）、按 [tracks] 切时间轴、生成正文、落
 /// `SrtBook` 与绑定，返回落库的 [SrtBook]。
 ///
+/// - [adoptSubtitleFile]：[subtitlePath] 是临时下载的服务器字幕，持久化时搬走（见
+///   `importStandaloneSubtitleBook`），调用方不再自己删。
 /// - [subtitleOrigin]：`local`（用户选的本机文件）或
 ///   `RemoteAudioBinding.subtitleOriginServer(ino)`（取自服务器条目）。
 /// - 绑定写失败时回滚刚落的字幕书与正文 EPUB 再抛，不留下「书架有卡却没有音频来源」
@@ -73,6 +77,7 @@ Future<SrtBook> importAudiobookshelfSubtitleBook({
   required String title,
   String? author,
   String? subtitlePath,
+  bool adoptSubtitleFile = false,
   String subtitleOrigin = RemoteAudioBinding.subtitleOriginLocal,
   required DuplicatePolicy policy,
   Directory? tempDir,
@@ -91,6 +96,7 @@ Future<SrtBook> importAudiobookshelfSubtitleBook({
     title: title,
     author: author,
     subtitlePath: subtitlePath,
+    adoptSubtitleFile: adoptSubtitleFile,
     policy: policy,
     tempDir: tempDir,
     persistCover: persistCover,
@@ -114,8 +120,14 @@ Future<SrtBook> importAudiobookshelfSubtitleBook({
     );
   } catch (e, stack) {
     engineLog.log('importAudiobookshelfSubtitleBook.binding', e, stack);
-    await repo.delete(book.uid);
-    if (book.bookKey.isNotEmpty) await db.deleteEpubBook(book.bookKey);
+    await rollbackStandaloneSubtitleBook(
+      db: db,
+      repo: repo,
+      uid: book.uid,
+      bookKey: book.bookKey,
+      savedBook: true,
+      persistDir: null,
+    );
     rethrow;
   }
   return book;

@@ -8,16 +8,18 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show isKnownWebPageVideoUrl;
-import 'package:fushi/src/media/video/web_video_bridge.dart'
-    show kWebVideoNetflixHosts;
+import 'package:fushi/src/media/video/web_video_browser_return.dart';
 import 'package:fushi/src/media/video/web_video_session.dart'
     show
         webBrowserSiteCookieNames,
         webVideoBrowserLoginSyncSettled,
-        webVideoIsWatchPage;
+        webVideoIsWatchPage,
+        webVideoSiteForcesPlayer,
+        webVideoSiteHasWatchShape;
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/web_browser/features/open_in_fushi/web_open_in_fushi_action.dart';
+import 'package:fushi/src/web_browser/features/open_in_fushi/web_page_content.dart';
 import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -143,19 +145,28 @@ const String kWebBrowserWatchHandoffScript = r'''
 /// 播放页的窗口宿主档才有硬件 PlayReady。浏览 / 详情页（预告片）不算，用户在那里选集。
 bool webBrowserWatchPageNeedsPlayer(Uri? url) {
   if (url == null) return false;
-  final String host = url.host.toLowerCase();
-  final bool drmSite = kWebVideoNetflixHosts.any(
-    (String d) => host == d || host.endsWith('.$d'),
-  );
-  return drmSite && webVideoIsWatchPage(url.toString());
+  return webVideoSiteForcesPlayer(url.host) &&
+      webVideoIsWatchPage(url.toString());
 }
 
-/// 这一次导航是否该交给播放页（导航前拦截与地址提交后补交共用同一判据）。
+/// 这一次导航是否该自动交给播放页（导航前拦截与地址提交后交接共用同一判据）：浏览器播不了
+/// 的观看页（[webBrowserWatchPageNeedsPlayer]），或 [autoPlaySite] 标了「用 Fushi 播放本站
+/// 视频」的站点的观看页。只有**有观看页形状**的站点（[webVideoSiteHasWatchShape]）才自动交：
+/// 其它站点分不出观看页，自动交就会连首页一起交走（那类站点的标记只把工具栏按钮提成主按钮，
+/// 见 `webBrowserSitePlayerModeOf`）。无痕标签页 / 没有播放页的平台一律不交。
 bool webBrowserShouldHandOffWatchPage(
   Uri? url, {
   required bool incognito,
   required bool playerAvailable,
-}) => !incognito && playerAvailable && webBrowserWatchPageNeedsPlayer(url);
+  bool Function(Uri url)? autoPlaySite,
+}) {
+  if (url == null || incognito || !playerAvailable) return false;
+  if (webBrowserWatchPageNeedsPlayer(url)) return true;
+  return autoPlaySite != null &&
+      webVideoSiteHasWatchShape(url.host) &&
+      webVideoIsWatchPage(url.toString()) &&
+      autoPlaySite(url);
+}
 
 /// 「用 Fushi 播放」：在 YouTube 观看页把当前视频交给 Fushi 自己的视频播放页。
 ///
@@ -172,27 +183,40 @@ bool webBrowserShouldHandOffWatchPage(
 /// 上照常可用），所以五端都装。
 ///
 /// 有播放页的平台（Windows，[playerAvailable]）上，其它网页也给「用 Fushi 播放」：把当前
-/// 页面整页交给播放页（[openInWebVideoPlayer]，Netflix 硬件 DRM / Fushi 字幕层 / 每集
-/// 落库），接着在那里选集播放（用户 2026-10-26：视频站点与浏览器站点合成一份，进
-/// 播放页靠按钮而不是另开一个列表）。已知视频站（[isKnownWebPageVideoUrl]）放工具栏，
-/// 其它网页收在「⋯」里。无痕标签页不给：播放页用的是常规登录存储，还会把看过的集落库。
+/// 页面交给播放器层（[openInWebVideoPlayer]，Netflix 硬件 DRM / Fushi 字幕层 / 每集落库）。
+/// 播放器层只当播放器（`docs/specs/2026-11-01-one-browser.md`）：选集、登录都在本浏览器里，
+/// 它离开观看页就关掉、把地址交回**这个标签页**（[WebVideoBrowserReturn]）。所以 Netflix /
+/// YouTube 这类有观看页形状的站点只在观看页给；其它网页在已知视频站 / 页面里有大视频
+/// （[WebPageContentFeature]）/ 站点标了自动播放时放工具栏，否则收在「⋯」里。动作走统一的
+/// [webOpenInFushiAction]。无痕标签页不给：播放页用的是常规登录存储，还会把看过的集落库。
 ///
-/// 浏览器播不了的观看页（[webBrowserWatchPageNeedsPlayer]）不等用户点：导航提交之前就由
-/// [kWebBrowserWatchHandoffScript] 拦下交给播放页（G-Vr-zkb5L），标签页停在选集页、不建会话。
-/// 站点不经链接、直接用脚本 pushState 进观看页的少数路径拦不到，仍由 [onUrlChanged] 在地址
-/// 提交后补交（并退回上一页），保证不会停在一张黑掉的观看页上。
+/// 不等用户点就自动交给播放器层（标签页回到选集页）：浏览器播不了的观看页
+/// （[webBrowserWatchPageNeedsPlayer]，Netflix），以及站点格里标了「用 Fushi 播放本站视频」
+/// （[autoPlaySite]）的 YouTube 观看页——两者共用 [webBrowserShouldHandOffWatchPage] 一条判据。
+/// Netflix 在导航提交之前就由 [kWebBrowserWatchHandoffScript] 拦下交给播放页（G-Vr-zkb5L），
+/// 标签页停在选集页、不建会话；站点不经链接、直接用脚本 pushState 进观看页的少数路径，以及
+/// YouTube 自动播放站点，由 [onUrlChanged] 在地址提交后交接（并退回上一页，期间页面媒体被
+/// [kWebBrowserHoldMediaScript] 按住），保证不会停在一张黑掉 / 双开的观看页上。
 class PlayInFushiFeature extends WebBrowserFeature {
   PlayInFushiFeature({
     required VideoBookRepository Function() repository,
     required int? Function() youtubeTargetHeight,
     bool Function()? playerAvailable,
+    WebPageContentFeature? pageContent,
+    bool Function(Uri url)? autoPlaySite,
   }) : _repository = repository,
        _youtubeTargetHeight = youtubeTargetHeight,
-       _playerAvailable = playerAvailable ?? webVideoSitesAvailable;
+       _playerAvailable = playerAvailable ?? webVideoSitesAvailable,
+       _pageContent = pageContent,
+       _autoPlaySite = autoPlaySite ?? _never;
+
+  static bool _never(Uri _) => false;
 
   final VideoBookRepository Function() _repository;
   final int? Function() _youtubeTargetHeight;
   final bool Function() _playerAvailable;
+  final WebPageContentFeature? _pageContent;
+  final bool Function(Uri url) _autoPlaySite;
 
   /// 正在起播的标签页（防连点）。
   final Set<String> _launching = <String>{};
@@ -245,6 +269,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
           url,
           incognito: tab.incognito,
           playerAvailable: _playerAvailable(),
+          autoPlaySite: _autoPlaySite,
         ) ||
         context == null ||
         !context.mounted) {
@@ -254,9 +279,31 @@ class PlayInFushiFeature extends WebBrowserFeature {
     final Uri watch = url!;
     _autoHandedOff[tab.id] = watch.toString();
     unawaited(
-      _openPage(context, tab, watch, controller, leaveWatchPage: committed),
+      _handOff(context, tab, watch, controller, leaveWatchPage: committed),
     );
     return true;
+  }
+
+  /// 自动交接落地：YouTube 观看页走 [_play]（每集落库的流媒体书），其它（Netflix）走播放器层
+  /// [_openPage]。两条路径都先 `WebVideoBrowserReturn.take()` 清掉上一次的回程槽。
+  Future<void> _handOff(
+    BuildContext context,
+    WebBrowserTab tab,
+    Uri url,
+    InAppWebViewController controller, {
+    required bool leaveWatchPage,
+  }) {
+    final String? youtubeId = youtubeWatchVideoIdOf(url);
+    if (youtubeId != null) {
+      return _play(context, tab, youtubeId, leaveWatchPage: leaveWatchPage);
+    }
+    return _openPage(
+      context,
+      tab,
+      url,
+      controller,
+      leaveWatchPage: leaveWatchPage,
+    );
   }
 
   @override
@@ -271,6 +318,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
       url,
       incognito: tab.incognito,
       playerAvailable: _playerAvailable(),
+      autoPlaySite: _autoPlaySite,
     )) {
       return;
     }
@@ -278,7 +326,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
     final String key = watch.toString();
     if (_autoHandedOff[tab.id] == key) return;
     _autoHandedOff[tab.id] = key;
-    unawaited(_openPage(context, tab, watch, controller, leaveWatchPage: true));
+    unawaited(_handOff(context, tab, watch, controller, leaveWatchPage: true));
   }
 
   /// 媒体被按住的标签页（播放页还在前面）。
@@ -312,42 +360,39 @@ class PlayInFushiFeature extends WebBrowserFeature {
     final String? videoId = youtubeWatchVideoIdOf(tab.url);
     if (videoId == null) return _pageActions(context, tab);
     return <WebBrowserAction>[
-      WebBrowserAction(
-        id: 'play_in_fushi',
-        icon: FushiIcons.playCircle,
-        label: t.web_browser_play_in_fushi,
-        placement: WebBrowserActionPlacement.toolbar,
-        priority: 80,
-        onPressed: _launching.contains(tab.id)
-            ? null
-            : () => unawaited(_play(context, tab, videoId)),
+      webOpenInFushiAction(
+        kind: WebPageContentKind.video,
+        primary: true,
+        busy: _launching.contains(tab.id),
+        onPressed: () => unawaited(_play(context, tab, videoId)),
       ),
     ];
   }
 
-  /// 非 YouTube 观看页：整页交给播放页（只在有播放页的平台、非无痕、http(s)）。
+  /// 非 YouTube 观看页：交给播放器层（只在有播放页的平台、非无痕、http(s)、观看页）。
   List<WebBrowserAction> _pageActions(BuildContext context, WebBrowserTab tab) {
     final Uri? url = tab.url;
     if (tab.incognito ||
         url == null ||
         (url.scheme != 'http' && url.scheme != 'https') ||
         url.host.isEmpty ||
-        !_playerAvailable()) {
+        !_playerAvailable() ||
+        // 有观看页形状的站点（Netflix / YouTube）的浏览 / 详情页：交过去播放器层会因
+        // 「离开观看页」立刻关掉，那里用户该在浏览器里选集。
+        !webVideoIsWatchPage(url.toString())) {
       return const <WebBrowserAction>[];
     }
-    final bool videoSite = isKnownWebPageVideoUrl(url.toString());
+    final bool primary =
+        isKnownWebPageVideoUrl(url.toString()) ||
+        _autoPlaySite(url) ||
+        _pageContent?.kindOf(tab) == WebPageContentKind.video;
     return <WebBrowserAction>[
-      WebBrowserAction(
-        id: 'play_in_fushi',
-        icon: FushiIcons.playCircle,
-        label: t.web_browser_play_in_fushi,
-        placement: videoSite
-            ? WebBrowserActionPlacement.toolbar
-            : WebBrowserActionPlacement.menu,
-        priority: 80,
-        onPressed: _launching.contains(tab.id)
-            ? null
-            : () => unawaited(_openPage(context, tab, url, tab.controller)),
+      webOpenInFushiAction(
+        kind: WebPageContentKind.video,
+        primary: primary,
+        busy: _launching.contains(tab.id),
+        onPressed: () =>
+            unawaited(_openPage(context, tab, url, tab.controller)),
       ),
     ];
   }
@@ -360,6 +405,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
     bool leaveWatchPage = false,
   }) async {
     if (!_launching.add(tab.id)) return;
+    WebVideoBrowserReturn.take();
     await _holdPage(tab, controller);
     final Future<Set<String>> cookiesBefore = webBrowserSiteCookieNames(url);
     try {
@@ -370,7 +416,6 @@ class PlayInFushiFeature extends WebBrowserFeature {
         url: url,
         title: webVideoSiteDefaultTitle(url.toString()),
         repo: _repository(),
-        backToBrowser: true,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('web_browser.play_in_fushi', e, stack);
@@ -397,12 +442,15 @@ class PlayInFushiFeature extends WebBrowserFeature {
   Future<void> _play(
     BuildContext context,
     WebBrowserTab tab,
-    String videoId,
-  ) async {
+    String videoId, {
+    bool leaveWatchPage = false,
+  }) async {
     if (!_launching.add(tab.id)) return;
+    WebVideoBrowserReturn.take();
     final InAppWebViewController? controller = tab.controller;
     await _holdPage(tab, controller);
     try {
+      if (leaveWatchPage) await _leavePage(controller);
       final String url = youtubeCanonicalWatchUrl(videoId);
       final String title = webVideoEpisodeTitle(
         pageTitle: tab.title,
@@ -444,7 +492,11 @@ class PlayInFushiFeature extends WebBrowserFeature {
             },
           ),
         );
-        page = VideoFushiPage.neutralized(bookUid: row.bookUid, repo: repo);
+        page = VideoFushiPage.neutralized(
+          bookUid: row.bookUid,
+          repo: repo,
+          webBackToBrowser: true,
+        );
       }
       if (!context.mounted) return;
       await Navigator.of(context).push<void>(
@@ -498,8 +550,21 @@ class PlayInFushiFeature extends WebBrowserFeature {
     Future<Set<String>>? cookiesBefore,
   }) async {
     await untilRouteIsCurrent(context);
+    // 播放器层离开了观看页 / 用户点了「在浏览器中打开」：那个地址回到本标签页加载。浏览器播不了
+    // 的观看页（Netflix）不载回来——标签页停在选集页，比一张黑掉的观看页有用。
+    final Uri? back = WebVideoBrowserReturn.take();
     if (!_held.remove(tab.id) || controller == null) return;
     await _evaluate(controller, kWebBrowserReleaseMediaScript);
+    if (back != null &&
+        back.toString() != tab.url?.toString() &&
+        !webBrowserWatchPageNeedsPlayer(back)) {
+      try {
+        await controller.loadUrl(urlRequest: URLRequest(url: WebUri.uri(back)));
+      } catch (e) {
+        debugPrint('[web-browser] load player return url failed: $e');
+      }
+      return;
+    }
     if (site == null || cookiesBefore == null) return;
     await webVideoBrowserLoginSyncSettled(site);
     final Set<String> before = await cookiesBefore;

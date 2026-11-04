@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -48,6 +49,14 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   FushiDatabase get database => _db;
+
+  /// 跳转记录顶栏图标订阅的是 [PreferencesRepository] 本身
+  /// （`JumpHistoryPrefsListenable.fromRepository`），不经可覆写的 AppModel getter：
+  /// 给一份建在同一内存库上的真实偏好仓库（未加载 = 全部出厂默认）。
+  late final PreferencesRepository _prefs = PreferencesRepository(_db);
+
+  @override
+  PreferencesRepository get prefsRepo => _prefs;
 
   @override
   bool get lowMemoryMode => false;

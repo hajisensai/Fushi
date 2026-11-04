@@ -107,12 +107,17 @@ class SrtBookReimportOutcome {
 ///
 /// [isCancelled]：在动磁盘之前的检查点（开始、解析完字幕、重建正文前）检查，为真
 /// 时抛 `AudiobookAlignmentCancelled`，库与磁盘都还没动；之后是提交阶段不再检查。
+///
+/// [subtitleOrigin]：换字幕后记到远端绑定上的字幕来源（只对绑在服务器上的书有效）。
+/// null = 用户选的本机文件（`local`）；从服务器条目取的传
+/// `RemoteAudioBinding.subtitleOriginServer(ino)`。
 Future<SrtBookReimportOutcome> reimportSrtBook({
   required FushiDatabase db,
   required SrtBookRepository repo,
   required String uid,
   List<String>? audioPaths,
   String? subtitlePath,
+  String? subtitleOrigin,
   SrtBookReimportProgress? onProgress,
   SrtBookReimportMessages messages = const SrtBookReimportMessages(),
   bool Function()? isCancelled,
@@ -203,7 +208,8 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     if (binding != null) {
       await bindings.save(
         binding.copyWith(
-          subtitleOrigin: RemoteAudioBinding.subtitleOriginLocal,
+          subtitleOrigin:
+              subtitleOrigin ?? RemoteAudioBinding.subtitleOriginLocal,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         ),
       );

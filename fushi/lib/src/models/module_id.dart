@@ -298,7 +298,7 @@ enum GamesModuleForm {
   streamClient;
 
   /// 本平台上 games 模块的形态。galgame hook 与画面采集只做 Windows（见
-  /// CLAUDE.md「Galgame Hook 硬规则」），其余平台只能当串流接收端。
+  /// CLAUDE.md「领域硬边界」），其余平台只能当串流接收端。
   static GamesModuleForm on({required bool isWindows}) =>
       isWindows ? GamesModuleForm.localLibrary : GamesModuleForm.streamClient;
 }

@@ -592,7 +592,14 @@ Future<void> _openIsolateOcrEngine(
   onAcceleration(acceleration);
 }
 
-/// isolate 入口：建推理会话 → 跑目录任务 → 回发事件。
+/// isolate 入口：建推理会话 → 跑目录任务 → 关会话 → 带着终局消息
+/// [Isolate.exit]。
+///
+/// 必须显式 [Isolate.exit]，不能靠「返回即退出」：宿主 bootstrap 挂的
+/// `BackgroundIsolateBinaryMessenger` 持有一个没有关闭入口的 `ReceivePort`，
+/// isolate 永远等不到自然退出，每跑一卷就漏一个（BUG-3997 同根因）。终局消息
+/// （完成 / 取消 / 出错）随 [Isolate.exit] 一起发出：主 isolate 收到时推理会话
+/// 已经关闭、isolate 正在退出。
 Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
   final OcrCancelToken cancelToken = OcrCancelToken();
@@ -607,6 +614,7 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   });
   args.events.send(_JobControlPortMessage(control.sendPort));
 
+  Object outcome;
   try {
     await _openIsolateOcrEngine(
       engine,
@@ -650,19 +658,18 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         return focus;
       },
     );
-    args.events.send(_JobDoneMessage(mangaJsonPath));
+    outcome = _JobDoneMessage(mangaJsonPath);
   } on OcrCancelledException {
-    args.events.send(const _JobCancelledMessage());
+    outcome = const _JobCancelledMessage();
   } catch (e, stack) {
-    args.events.send(
-      cancelToken.isCancelled
-          ? const _JobCancelledMessage()
-          : _JobErrorMessage('$e', '$stack'),
-    );
+    outcome = cancelToken.isCancelled
+        ? const _JobCancelledMessage()
+        : _JobErrorMessage('$e', '$stack');
   } finally {
     control.close();
     await engine.close();
   }
+  Isolate.exit(args.events, outcome);
 }
 
 // ── 页级会话 isolate 消息协议 ─────────────────────────────────────────────
@@ -727,6 +734,12 @@ class _PageSessionFailedMessage {
 /// 关闭会话的控制消息：置位取消令牌 → 关 ORT 会话 → isolate 退出。
 const String _kPageSessionCloseMessage = 'close';
 
+/// 会话 isolate → 主 isolate 的最后一条消息：推理会话已关闭，随 [Isolate.exit]
+/// 发出。这是会话结束的正常信号；`onExit` 只给崩溃（未走到 [Isolate.exit]）兜底。
+class _PageSessionExitedMessage {
+  const _PageSessionExitedMessage();
+}
+
 class _PageSessionIsolateArgs {
   const _PageSessionIsolateArgs({
     required this.events,
@@ -786,7 +799,11 @@ Future<OcrRecognition> _recognizeIsolateTextImage(
 }
 
 /// 页级会话 isolate 入口：推理会话只建一次，之后串行处理请求（页 / 文字图）
-/// 直到收到关闭。
+/// 直到收到关闭，再带 [_PageSessionExitedMessage] 显式 [Isolate.exit]。
+///
+/// 不能靠「返回即退出」：宿主 bootstrap 挂的 `BackgroundIsolateBinaryMessenger`
+/// 持有一个关不掉的 `ReceivePort`，isolate 永远不会自然退出（BUG-3997 同根因），
+/// 主 isolate 的 close() 也就永远等不到。
 Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
   final OcrCancelToken cancelToken = OcrCancelToken();
@@ -863,7 +880,7 @@ Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
     control.close();
     await engine.close();
   }
-  // 返回即 isolate 退出；主 isolate 经 onExit 得知资源已释放。
+  Isolate.exit(args.events, const _PageSessionExitedMessage());
 }
 
 /// 生产页级会话 runner：常驻 [Isolate.spawn] 后台 isolate。
@@ -936,7 +953,8 @@ class _IsolatePageSession
             textImagesOnly: request.textImagesOnly,
           ),
           onError: _events.sendPort,
-          // 退出时向事件端口发 null：挂起请求失败、close() 完成。
+          // 崩溃兜底：没走到 Isolate.exit 就退出时向事件端口发 null。正常收尾的
+          // 信号是 _PageSessionExitedMessage。
           onExit: _events.sendPort,
           debugName: 'manga_ocr_page_session',
         );
@@ -1100,8 +1118,9 @@ class _IsolatePageSession
       );
       return;
     }
-    if (message == null) {
-      // onExit：isolate 已退出，推理会话已释放（或随 isolate 一起销毁）。
+    if (message is _PageSessionExitedMessage || message == null) {
+      // 正常收尾（Isolate.exit 带来的终局消息，推理会话已关闭）或 onExit 兜底
+      // （isolate 崩溃退出，会话随 isolate 一起销毁）。
       _fail(
         StateError('manga OCR page session isolate exited'),
         StackTrace.current,

@@ -11,7 +11,7 @@ library;
 
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 
-/// 发现页覆盖的媒体域。各域独立枚举（见根 CLAUDE.md 术语表），与持久化的
+/// 发现页覆盖的媒体域。各域独立枚举（见 docs/agent/naming.md 术语表），与持久化的
 /// `MediaKind` 等值域互不混用；本枚举只活在发现/下载编排层，不落库。
 enum DiscoveryMediaKind { novel, audiobook, game, manga }
 

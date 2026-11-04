@@ -295,6 +295,60 @@ CREATE TABLE IF NOT EXISTS sync2_replay_pending (
 ) WITHOUT ROWID;
 "#;
 
+/// V20：分批收段会话里还没刷新的本机缓存（kind 0 = 笔记类型 / 1 = 笔记 / 2 = 卡）。每一片只把投影变化记进来
+/// （与投递同一事务），收尾（[super::transport] `take_cache_pending`）按块刷新一次再删；崩溃 / 中途收手后表还在，
+/// 下一次收尾接着刷。以前每一片当场刷新：新设备追赶时同一张卡在几百片里各重读一遍越来越长的日志，近平方级。
+pub const V20_CACHE_PENDING: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_cache_pending (
+  profile_uid TEXT NOT NULL,
+  kind INTEGER NOT NULL,
+  entity_id TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, kind, entity_id)
+) WITHOUT ROWID;
+"#;
+
+/// V22：新设备收段通道（channel.rs，先追加后折叠）。`sync2_boot` 一个 profile 一行：`phase` 取值与 `cursor` 的含义以
+/// channel.rs 的 `PHASE_*` 常量及其文档为准（追加 / 折叠 / 归并 / 逐条四个阶段，游标随阶段分别是分区、`TARGETS`
+/// 下标、已投的最大序号），这里不另抄数值；`next_rank` 是下一个投递序号。`sync2_boot_order` 是追加阶段记下的投递
+/// 顺序与折叠分区（`PART_ONE_BY_ONE` = 逐条）；`sync2_boot_complex` 是要逐条投影的实体（删除 / 清除 / 合成写入者 /
+/// 移进复杂牌组的卡）；`sync2_boot_moves` 是追加阶段的移卡记录（追加结束时据此补复杂实体）；`sync2_boot_rows` 是
+/// 折叠算出、等归并的投影行。通道做完这五张表（含 `sync2_boot` 本身）的行全删（channel.rs `BOOT_TABLES`）。
+pub const V22_BOOT: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_boot (
+  profile_uid TEXT NOT NULL PRIMARY KEY,
+  phase INTEGER NOT NULL,
+  next_rank INTEGER NOT NULL,
+  cursor INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_boot_order (
+  profile_uid TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  rank INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, part, rank)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_boot_complex (
+  profile_uid TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, kind, entity)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_boot_moves (
+  profile_uid TEXT NOT NULL,
+  deck TEXT NOT NULL,
+  card TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, deck, card)
+) WITHOUT ROWID;
+-- 折叠算出的投影行（存储形态），归并时按表一次写进投影（channel.rs `TARGETS`）。rowid 表：按分区顺序追加。
+CREATE TABLE IF NOT EXISTS sync2_boot_rows (
+  profile_uid TEXT NOT NULL,
+  tbl INTEGER NOT NULL,
+  c1, c2, c3, c4, c5, c6, c7, c8, c9
+);
+CREATE INDEX IF NOT EXISTS idx_sync2_boot_rows ON sync2_boot_rows (profile_uid, tbl);
+"#;
+
 /// V14（集成审查【中】）：转发清理两段式（relay.rs `sync2_relay_ack`）。被新转发 head 取代的旧转发件 / 旧转发 head
 /// 从 `sync2_relay_out` 挪到这里等删，Dart 删成功后发 `obsolete_ack` 才移除；删除中途失败的下一轮照样再删。
 pub const V14_RELAY_GONE: &str = r#"
@@ -305,6 +359,56 @@ CREATE TABLE IF NOT EXISTS sync2_relay_gone (
   PRIMARY KEY (profile_uid, location, path)
 ) WITHOUT ROWID;
 "#;
+
+/// V23：`sync2_rewrites.restamp`——这条重传是不是「同名改写」（1 = 彻底清除；V24 起 2 = 副本收敛，dedup.rs，归档位置
+/// 不重写）：彻底清除 / 骨架化把已经传过的段按同一切法、同一
+/// 链值重新打包，名字不变，位置上的旧文件本身仍是 head 可以引用的合法段，重传只是让位置上的内容跟上本机。0 = 位置上
+/// **缺**这个名字的段（小段合并改切出的新段、作者自检发现缺的段）：它传上去之前 head 不能引用它
+/// （transport.rs `sync2_head_if_changed`）。同一个段两类都登记时按 0 算（[REWRITE_GAP_SQL]）。升级前的行缺省 0：
+/// 宁可多等一轮，不能让 head 引用缺的段。
+pub fn migrate_v23(c: &rusqlite::Connection) -> Result<(), String> {
+    if !has_column(c, "sync2_rewrites", "restamp")? {
+        c.execute_batch("ALTER TABLE sync2_rewrites ADD COLUMN restamp INTEGER NOT NULL DEFAULT 0;").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// V24：存量重复流收敛作业（dedup.rs）。`sync2_dedup` = 每个 profile 一行的阶段与游标；`sync2_dedup_keys` = ID 比
+/// 本机小的设备的候选操作的内容键（同键第一份）；`sync2_dedup_pairs` = 核对过的 (本机 seq → 原件)，改了名的旧修改记录
+/// 带写入者与寄存器键；`sync2_dedup_regs` = 寄存器检查不收的寄存器。作业结束整批删掉。
+pub const V24_DEDUP: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_dedup (
+  profile_uid TEXT NOT NULL PRIMARY KEY,
+  phase INTEGER NOT NULL,
+  cur_dev BLOB NOT NULL,
+  cur_seq INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_dedup_keys (
+  profile_uid TEXT NOT NULL,
+  h BLOB NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, h)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_dedup_pairs (
+  profile_uid TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  tseq INTEGER NOT NULL,
+  writer TEXT NULL,
+  reg BLOB NULL,
+  PRIMARY KEY (profile_uid, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_dedup_regs (
+  profile_uid TEXT NOT NULL,
+  reg BLOB NOT NULL,
+  PRIMARY KEY (profile_uid, reg)
+) WITHOUT ROWID;
+"#;
+
+/// 登记「位置上缺这个段」的重传（挡 head，[migrate_v23]）：已有的同名改写登记一并升成缺段。
+pub const REWRITE_GAP_SQL: &str = "INSERT INTO sync2_rewrites (profile_uid, location, first, restamp) VALUES (srs_id(?1), ?2, ?3, 0) \
+     ON CONFLICT(profile_uid, location, first) DO UPDATE SET restamp = 0";
 
 /// 表 [table] 有没有列 [column]（ALTER 不带 IF NOT EXISTS，靠它让迁移可重放）。
 fn has_column(c: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {

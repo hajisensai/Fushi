@@ -18,6 +18,7 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.d
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_tab_lists.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -29,6 +30,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -63,14 +66,14 @@ import 'package:fushi/src/media/video/web_video_sites.dart'
     show webVideoSitesAvailable;
 import 'package:fushi/src/web_browser/web_browser_site_launch.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
-import 'package:fushi_engine/media/video/video_book_repository.dart';
+
 import 'package:fushi/src/web_browser/web_browser_suggestions.dart';
 
 export 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
 
 /// 站点书签（偏好 `web_browser_sites`），入口页与新标签页起始页共用同一份解析。
 List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
-    parseWebBrowserSites(appModel.prefsRepo.webBrowserSitesJson);
+    webBrowserSitesOf(appModel.prefsRepo.webBrowserSitesJson);
 
 /// 全屏浏览页（[FushiWebBrowserPage]）的路由：所有推浏览页的入口（入口页、视频站点
 /// 入口）都经这一处建路由。
@@ -99,14 +102,15 @@ Future<void> openFushiWebBrowser(BuildContext context, Uri url) => Navigator.of(
 /// 2026-10-19「这个页面应该是独立的子页面，底栏不应该再继续原样显示」——旧版把
 /// WebView 嵌在模块页里，底栏与「阅读本章」FAB 叠在网页上互相遮挡）。
 ///
-/// [navigation] 非 null 时由宿主 hub 提供页头主位（子页页签）；null（手机上本模块
-/// 只有这一个子页）时 MD3 不画页头——模块名已在底部导航上，地址栏就是顶部锚点；
-/// Apple 保留 iOS 根页的左对齐大标题。
+/// [hostedByHub] 为 true（「浏览器」模块 [WebHubPage] 的子页）时本页不画页头：
+/// 「标题胶囊 + 子页页签」那一行由宿主统一画、叠在本页上，正文从它下方开始
+/// （[FushiFloatingChromeInset]）。false（独立挂载，如组件测试）时 MD3 不画页头、
+/// 地址栏就是顶部锚点，Apple 保留 iOS 根页的左对齐大标题。
 class FushiWebBrowserHomePage extends ConsumerStatefulWidget {
-  const FushiWebBrowserHomePage({this.navigation, super.key});
+  const FushiWebBrowserHomePage({this.hostedByHub = false, super.key});
 
-  /// hub 的子页页签（占页头主位）；null = 本模块只有这一个子页。
-  final Widget? navigation;
+  /// 是否作 [WebHubPage] 的子页（页头由宿主画）。
+  final bool hostedByHub;
 
   @override
   ConsumerState<FushiWebBrowserHomePage> createState() =>
@@ -214,17 +218,10 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
-  /// 点站点：标了「用播放页打开」且本平台有播放页就进播放页，否则进浏览器。
-  Future<void> _openSite(WebBrowserSite site) async {
-    if (!webBrowserSiteOpensInPlayer(site)) return _open(site.url);
-    _addressFocus.unfocus();
-    await openInWebVideoPlayer(
-      context,
-      url: site.url,
-      title: site.name,
-      repo: VideoBookRepository(_appModel.database),
-    );
-  }
+  /// 点站点：一律进浏览器（用户只看到一个浏览器，`docs/specs/2026-11-01-one-browser.md`）。
+  /// 标了「用 Fushi 播放本站视频」的站点，观看页由浏览器自动交给播放器层
+  /// （[webBrowserSiteAutoPlays]）。
+  Future<void> _openSite(WebBrowserSite site) => _open(site.url);
 
   Future<void> _saveSites(List<WebBrowserSite> next) async {
     setState(() => _sites = next);
@@ -291,22 +288,36 @@ class _FushiWebBrowserHomePageState
     await _saveSites(replaceWebBrowserSite(_sites, site, next));
   }
 
-  /// 长按 / 右键站点：切换打开方式（只在有播放页的平台）、编辑或移除。
+  /// 长按 / 右键站点：切换「用 Fushi 播放」标记、编辑或移除。标记的含义与要不要给开关按
+  /// [webBrowserSitePlayerModeOf]：有观看页形状的站点是「观看页自动交给播放器」，其它站点是
+  /// 「工具栏一键用 Fushi 播放」，Netflix 总是交给播放器（不给开关），没有播放器层的平台不给。
   Future<void> _siteActions(WebBrowserSite site) async {
+    final WebBrowserSitePlayerMode mode = webBrowserSitePlayerModeOf(site.url);
+    final bool on = site.openInPlayer;
+    final (String, String)? toggle = switch (mode) {
+      WebBrowserSitePlayerMode.autoPlayWatchPages => (
+        on ? t.web_browser_site_auto_play_off : t.web_browser_site_auto_play_on,
+        t.web_browser_site_auto_play_hint,
+      ),
+      WebBrowserSitePlayerMode.toolbarShortcut => (
+        on
+            ? t.web_browser_site_toolbar_play_off
+            : t.web_browser_site_toolbar_play_on,
+        t.web_browser_site_toolbar_play_hint,
+      ),
+      WebBrowserSitePlayerMode.unavailable ||
+      WebBrowserSitePlayerMode.always => null,
+    };
     final _SiteAction? action = await showFushiChoiceDialog<_SiteAction>(
       context: context,
       title: site.name,
       options: <FushiChoiceOption<_SiteAction>>[
-        if (webVideoSitesAvailable())
+        if (toggle != null)
           FushiChoiceOption<_SiteAction>(
             value: _SiteAction.togglePlayer,
-            label: site.openInPlayer
-                ? t.web_browser_site_open_in_browser
-                : t.web_browser_site_open_in_player,
-            subtitle: site.openInPlayer
-                ? null
-                : t.web_browser_site_open_in_player_hint,
-            icon: site.openInPlayer ? FushiIcons.globe : FushiIcons.playCircle,
+            label: toggle.$1,
+            subtitle: on ? null : toggle.$2,
+            icon: on ? FushiIcons.globe : FushiIcons.playCircle,
           ),
         FushiChoiceOption<_SiteAction>(
           value: _SiteAction.edit,
@@ -370,8 +381,11 @@ class _FushiWebBrowserHomePageState
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
-    // 正文从窗口顶端画起（脚手架默认叠放页头）：顶部让出「状态栏 + 页头」。
-    final double top = MediaQuery.paddingOf(context).top;
+    // 正文从窗口顶端画起（脚手架默认叠放页头）：顶部让出「状态栏 + 页头」，
+    // 作 hub 子页时再让出宿主叠在上面的工具栏行（独立挂载时为 0）。
+    final double top =
+        MediaQuery.paddingOf(context).top +
+        FushiFloatingChromeInset.of(context);
     return CustomScrollView(
       key: const ValueKey<String>('web-browser-site-list'),
       slivers: <Widget>[
@@ -469,12 +483,11 @@ class _FushiWebBrowserHomePageState
 
   @override
   Widget build(BuildContext context) {
-    final Widget? navigation = widget.navigation;
     return FushiPageScaffold(
       title: t.web_browser_title,
-      headerTitle: navigation,
-      // 只有这一个子页时：MD3 整条页头不画（见类注释），Apple 走默认大标题。
-      header: navigation == null && !isGlassDesign(context)
+      // 作 hub 子页时页头由宿主画；独立挂载时 MD3 整条页头不画（见类注释），
+      // Apple 走默认大标题。
+      header: widget.hostedByHub || !isGlassDesign(context)
           ? const SizedBox.shrink()
           : null,
       // Builder：正文必须用脚手架内部的 context 读 MediaQuery——脚手架在那里
@@ -511,6 +524,14 @@ class _WebBrowserSiteTile extends StatelessWidget {
     final String trimmed = site.name.trim();
     final String name = trimmed.isEmpty ? site.url.host : trimmed;
     final String initial = name.characters.first.toUpperCase();
+    final String? playerBadge = switch (webBrowserSitePlayerModeOf(site.url)) {
+      WebBrowserSitePlayerMode.always => t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.autoPlayWatchPages when site.openInPlayer =>
+        t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.toolbarShortcut when site.openInPlayer =>
+        t.web_browser_play_in_fushi,
+      _ => null,
+    };
     return FushiCard(
       key: ValueKey<String>('web-browser-site-${site.url}'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -548,10 +569,11 @@ class _WebBrowserSiteTile extends StatelessWidget {
                   style: tokens.type.listTitle,
                 ),
               ),
-              // 点开进播放页的站点：标题后挂一个播放图标（只在有播放页的平台）。
-              if (webBrowserSiteOpensInPlayer(site))
+              // 视频交给 Fushi 播放的站点：标题后挂一个播放图标（含义按
+              // [webBrowserSitePlayerModeOf]：Netflix 总是、其它站点看标记；没有播放器层的平台不挂）。
+              if (playerBadge != null)
                 FushiTooltip(
-                  message: t.web_browser_site_opens_in_player,
+                  message: playerBadge,
                   child: FushiIcon(
                     FushiIcons.playCircle,
                     key: ValueKey<String>(
@@ -795,6 +817,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final ModalRoute<Object?>? route = ModalRoute.of(context);
+    _studyCoverWatch.attach(route);
     if (route is PageRoute<Object?> && !identical(route, _observedRoute)) {
       _routeObserver
         ..unsubscribe(this)
@@ -802,6 +825,16 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       _observedRoute = route;
     }
   }
+
+  /// 学习计时的「被盖住」（任何未豁免的模态路由，BUG-3994）：转告各功能。
+  late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
+    onChanged: () {
+      if (!mounted) return;
+      for (final WebBrowserFeature f in _features) {
+        f.onStudyCoverChanged(covered: _studyCoverWatch.covered);
+      }
+    },
+  );
 
   /// 浏览页被整页路由盖住 / 重新露出：转告各功能（手机遥控据此不在被盖住时抢登记）。
   void _setCovered(bool covered) {
@@ -819,6 +852,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   @override
   void dispose() {
     if (_observedRoute != null) _routeObserver.unsubscribe(this);
+    _studyCoverWatch.dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
@@ -2016,16 +2050,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           itemBuilder: fushiStaggeredItemBuilder(
             (BuildContext context, int i) => _WebBrowserSiteTile(
               site: sites[i],
-              onOpen: () => webBrowserSiteOpensInPlayer(sites[i])
-                  ? unawaited(
-                      openInWebVideoPlayer(
-                        context,
-                        url: sites[i].url,
-                        title: sites[i].name,
-                        repo: VideoBookRepository(_appModel.database),
-                      ),
-                    )
-                  : _navigate(sites[i].url, tab: tab),
+              onOpen: () => _navigate(sites[i].url, tab: tab),
             ),
           ),
         ),

@@ -4,6 +4,10 @@
 /// 另一台同时还在改 / 复习 / 移动它：删除先不生效、条目照常可见，等这里选「删除」或「保留」，
 /// docs/specs/2026-10-25-srs-sync-v2-design.md §5.3）；以及疑似重复的笔记（两台设备各自制了同一个词，§5.4），
 /// 用户选「合并」才合并（复习历史并入保留的那条），选「不是重复」就不再提示。
+///
+/// 每一边都显示是哪台设备（「<名称>（Fushi X.Y）」，srs/srs_device_view.dart）、什么时候改的；文本值画出差异；
+/// 每条给默认推荐并写明理由（设置类：修改时间更晚的一边；扣住的删除：保留——另一边还有复习 / 修改，保留不丢数据），
+/// 同类冲突（同一种实体的同一项 / 同一种删除冲突）可以一次都按这个选。
 library;
 
 import 'dart:async';
@@ -17,6 +21,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
+import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -76,6 +82,12 @@ class _Conflict {
 
   SrsFieldEdit get winner => register.winner!;
   SrsFieldEdit get loser => register.visibleLosers.first;
+
+  /// 「同类」：同一种实体的同一项设置。
+  String get group => '${kind.wire}/${register.key}';
+
+  /// 推荐保留修改时间更晚的一边（一般就是当前生效的；时钟不准时可能是被替换的那边）。
+  bool get recommendRevert => loser.hlc.physical > winner.hlc.physical;
 }
 
 class SrsConflictsPage extends ConsumerStatefulWidget {
@@ -91,6 +103,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   List<SrsNoteCacheRow> _pending = const <SrsNoteCacheRow>[];
   List<_HeldDelete> _held = const <_HeldDelete>[];
   List<SrsDuplicateGroup> _duplicates = const <SrsDuplicateGroup>[];
+  SrsDeviceDirectory _devices = SrsDeviceDirectory.empty;
+
+  /// 勾了「同类都按这个选」的组（[_Conflict.group] / 扣住删除的 `held/<kind>`）。
+  final Set<String> _applySame = <String>{};
 
   @override
   void initState() {
@@ -179,8 +195,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
     final List<SrsDuplicateGroup> duplicates = await store
         .duplicateNoteGroups();
+    final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
     if (!mounted) return;
     setState(() {
+      _devices = devices;
       _conflicts = conflicts;
       _pending = pending;
       _held = held;
@@ -225,10 +243,44 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
   }
 
+  /// 写入者的显示名：本机 / 「<名称>（Fushi X.Y）」/ 认不出给前 8 位 ID。
+  String _who(String writerId) => _devices.label(
+    writerId,
+    selfLabel: t.srs_timeline_this_device,
+    fallback: srsShortDevice(writerId),
+    formatTime: (DateTime x) => srsTimeLabel(context, x),
+  );
+
+  static String _heldGroup(_HeldDelete c) => 'held/${c.kind}';
+
+  int _sameCount(String group) => group.startsWith('held/')
+      ? _held.where((_HeldDelete h) => _heldGroup(h) == group).length
+      : _conflicts.where((_Conflict c) => c.group == group).length;
+
+  void _toggleSame(String group, bool on) =>
+      setState(() => on ? _applySame.add(group) : _applySame.remove(group));
+
+  void _toastMany(int n) {
+    if (n > 1) {
+      FushiToast.show(
+        msg: t.srs_conflict_resolved_many(n: n),
+        severity: ToastSeverity.success,
+      );
+    }
+  }
+
   Future<void> _resolveHeld(_HeldDelete c, {required bool delete}) async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
-    await store.sync2Resolve(c.id, delete: delete);
+    final String group = _heldGroup(c);
+    final List<_HeldDelete> targets = _applySame.contains(group)
+        ? _held.where((_HeldDelete h) => _heldGroup(h) == group).toList()
+        : <_HeldDelete>[c];
+    for (final _HeldDelete h in targets) {
+      await store.sync2Resolve(h.id, delete: delete);
+    }
+    _applySame.remove(group);
+    _toastMany(targets.length);
     if (!mounted) return;
     bumpSrsRevision(ref);
     await _reload();
@@ -265,12 +317,19 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   Future<void> _resolve(_Conflict c, {required bool revert}) async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
-    await store.resolveConflict(
-      c.kind,
-      c.entityId,
-      c.register.key,
-      revert ? c.loser.value : c.winner.value,
-    );
+    final List<_Conflict> targets = _applySame.contains(c.group)
+        ? _conflicts.where((_Conflict x) => x.group == c.group).toList()
+        : <_Conflict>[c];
+    for (final _Conflict x in targets) {
+      await store.resolveConflict(
+        x.kind,
+        x.entityId,
+        x.register.key,
+        revert ? x.loser.value : x.winner.value,
+      );
+    }
+    _applySame.remove(c.group);
+    _toastMany(targets.length);
     if (!mounted) return;
     bumpSrsRevision(ref);
     await _reload();
@@ -381,6 +440,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           _HeldDeleteCard(
             key: ValueKey<String>('srs-held-${c.id}'),
             conflict: c,
+            who: _who,
+            sameCount: _sameCount(_heldGroup(c)),
+            applySame: _applySame.contains(_heldGroup(c)),
+            onApplySameChanged: (bool on) => _toggleSame(_heldGroup(c), on),
             onDelete: () => srsRunLogged(
               'SrsConflicts.applyDelete',
               () => _resolveHeld(c, delete: true),
@@ -443,6 +506,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           _ConflictCard(
             key: ValueKey<String>('srs-conflict-${c.register.winner!.id}'),
             conflict: c,
+            who: _who,
+            sameCount: _sameCount(c.group),
+            applySame: _applySame.contains(c.group),
+            onApplySameChanged: (bool on) => _toggleSame(c.group, on),
             onRevert: () => srsRunLogged(
               'SrsConflicts.revert',
               () => _resolve(c, revert: true),
@@ -564,15 +631,140 @@ class _DuplicateCardState extends State<_DuplicateCard> {
   }
 }
 
+/// 推荐一行：「推荐：<选择>」+ 理由。
+class _Recommendation extends StatelessWidget {
+  const _Recommendation({required this.choice, required this.reason});
+
+  final String choice;
+  final String reason;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Color accent = Theme.of(context).colorScheme.primary;
+    return Row(
+      key: const ValueKey<String>('srs-conflict-recommendation'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        FushiIcon(FushiIcons.lightbulb, size: 18, color: accent),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(
+                  text: t.srs_conflict_recommended(choice: choice),
+                  style: context.fushiType.bodyMedium.copyWith(
+                    color: accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                TextSpan(
+                  text: ' · $reason',
+                  style: context.fushiType.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 「同类 n 条冲突都按这个选」（只在同类不止一条时出现）。
+class _ApplySame extends StatelessWidget {
+  const _ApplySame({
+    required this.count,
+    required this.value,
+    required this.onChanged,
+    required this.groupKey,
+  });
+
+  final int count;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String groupKey;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 1) return const SizedBox.shrink();
+    return FushiCheckboxListTile(
+      key: ValueKey<String>('srs-conflict-apply-same-$groupKey'),
+      value: value,
+      onChanged: (bool? v) => onChanged(v ?? false),
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        t.srs_conflict_apply_same(n: count),
+        style: context.fushiType.bodyMedium,
+      ),
+    );
+  }
+}
+
+/// 冲突一边：标签、值、哪台设备什么时候改的；推荐的一边描边强调。
+class _ConflictSide extends StatelessWidget {
+  const _ConflictSide({
+    required this.label,
+    required this.value,
+    required this.from,
+    required this.recommended,
+  });
+
+  final String label;
+  final String value;
+  final String from;
+  final bool recommended;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return AnimatedContainer(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      padding: EdgeInsets.all(tokens.spacing.gap),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(tokens.spacing.gap),
+        border: Border.all(
+          color: recommended ? cs.primary : cs.outlineVariant,
+          width: recommended ? 2 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: tokens.spacing.gap / 4,
+        children: <Widget>[
+          Text(label, style: tokens.type.sectionLabel),
+          Text(
+            value,
+            style: context.fushiType.bodyLarge,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(from, style: context.fushiType.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
 class _HeldDeleteCard extends StatelessWidget {
   const _HeldDeleteCard({
     super.key,
     required this.conflict,
+    required this.who,
+    required this.sameCount,
+    required this.applySame,
+    required this.onApplySameChanged,
     required this.onDelete,
     required this.onKeep,
   });
 
   final _HeldDelete conflict;
+  final String Function(String writerId) who;
+  final int sameCount;
+  final bool applySame;
+  final ValueChanged<bool> onApplySameChanged;
   final VoidCallback onDelete;
   final VoidCallback onKeep;
 
@@ -586,6 +778,12 @@ class _HeldDeleteCard extends StatelessWidget {
       'delete_move' => t.srs_conflict_deleted_while_moved,
       _ => t.srs_conflict_deleted_while_edited(n: conflict.others),
     };
+    // 推荐保留：另一边还有复习 / 修改，保留不丢；保留之后仍可再删，删了却回不来。
+    final String reason = switch (conflict.kind) {
+      'delete_review' => t.srs_conflict_reason_keep_reviews(n: conflict.others),
+      'delete_move' => t.srs_conflict_reason_keep_move,
+      _ => t.srs_conflict_reason_keep_edits(n: conflict.others),
+    };
     return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -594,28 +792,39 @@ class _HeldDeleteCard extends StatelessWidget {
           Text(conflict.label, style: context.fushiType.titleSmallEmphasized),
           Text(what, style: context.fushiType.bodyMedium),
           Text(
-            t.srs_conflict_from(
-              device: srsShortDevice(conflict.by),
-              time: srsFormatMoment(conflict.at),
-            ),
+            SrsMetaLine.join(<String>[
+              who(conflict.by),
+              srsFormatMoment(conflict.at),
+            ]),
             style: context.fushiType.bodySmall,
+          ),
+          _Recommendation(choice: t.srs_conflict_keep, reason: reason),
+          _ApplySame(
+            count: sameCount,
+            value: applySame,
+            onChanged: onApplySameChanged,
+            groupKey: conflict.kind,
           ),
           Wrap(
             alignment: WrapAlignment.end,
             spacing: tokens.spacing.gap,
             runSpacing: tokens.spacing.gap,
             children: <Widget>[
-              FushiOutlinedButton.icon(
-                key: const ValueKey<String>('srs-held-delete'),
-                onPressed: onDelete,
-                icon: const FushiIcon(FushiIcons.delete),
-                label: Text(t.srs_conflict_apply_delete),
+              FushiPressScale(
+                child: FushiOutlinedButton.icon(
+                  key: const ValueKey<String>('srs-held-delete'),
+                  onPressed: onDelete,
+                  icon: const FushiIcon(FushiIcons.delete),
+                  label: Text(t.srs_conflict_apply_delete),
+                ),
               ),
-              FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('srs-held-keep'),
-                onPressed: onKeep,
-                icon: const FushiIcon(FushiIcons.check),
-                label: Text(t.srs_conflict_keep),
+              FushiPressScale(
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('srs-held-keep'),
+                  onPressed: onKeep,
+                  icon: const FushiIcon(FushiIcons.check),
+                  label: Text(t.srs_conflict_keep),
+                ),
               ),
             ],
           ),
@@ -629,11 +838,19 @@ class _ConflictCard extends StatelessWidget {
   const _ConflictCard({
     super.key,
     required this.conflict,
+    required this.who,
+    required this.sameCount,
+    required this.applySame,
+    required this.onApplySameChanged,
     required this.onRevert,
     required this.onConfirm,
   });
 
   final _Conflict conflict;
+  final String Function(String writerId) who;
+  final int sameCount;
+  final bool applySame;
+  final ValueChanged<bool> onApplySameChanged;
   final VoidCallback onRevert;
   final VoidCallback onConfirm;
 
@@ -642,25 +859,35 @@ class _ConflictCard extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsFieldEdit winner = conflict.winner;
     final SrsFieldEdit loser = conflict.loser;
+    final bool revert = conflict.recommendRevert;
     final String key = srsFieldKeyLabel(conflict.kind, conflict.register.key);
-    Widget side(String label, SrsFieldEdit e) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(label, style: tokens.type.sectionLabel),
-        Text(
-          conflict.formatValue(e.value),
-          style: context.fushiType.bodyLarge,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-        ),
-        Text(
-          t.srs_conflict_from(
-            device: srsShortDevice(e.dot.writerId),
-            time: srsFormatMoment(e.hlc.physical),
-          ),
-          style: context.fushiType.bodySmall,
-        ),
-      ],
+    final String current = conflict.formatValue(winner.value);
+    final String replaced = conflict.formatValue(loser.value);
+    String from(SrsFieldEdit e) => SrsMetaLine.join(<String>[
+      who(e.dot.writerId),
+      srsFormatMoment(e.hlc.physical),
+    ]);
+    // 推荐的一边是实心按钮，另一边描边。
+    Widget button({
+      required String id,
+      required bool primary,
+      required IconData icon,
+      required String label,
+      required VoidCallback onPressed,
+    }) => FushiPressScale(
+      child: primary
+          ? FushiFilledButton.tonalIcon(
+              key: ValueKey<String>(id),
+              onPressed: onPressed,
+              icon: FushiIcon(icon),
+              label: Text(label),
+            )
+          : FushiOutlinedButton.icon(
+              key: ValueKey<String>(id),
+              onPressed: onPressed,
+              icon: FushiIcon(icon),
+              label: Text(label),
+            ),
     );
     return FushiCard(
       child: Column(
@@ -671,24 +898,47 @@ class _ConflictCard extends StatelessWidget {
             '${conflict.entityLabel} · $key',
             style: context.fushiType.titleSmallEmphasized,
           ),
-          side(t.srs_conflict_current, winner),
-          side(t.srs_conflict_replaced, loser),
+          _ConflictSide(
+            label: t.srs_conflict_current,
+            value: current,
+            from: from(winner),
+            recommended: !revert,
+          ),
+          _ConflictSide(
+            label: t.srs_conflict_replaced,
+            value: replaced,
+            from: from(loser),
+            recommended: revert,
+          ),
+          SrsValueDiff(from: replaced, to: current),
+          _Recommendation(
+            choice: revert ? t.srs_conflict_replaced : t.srs_conflict_current,
+            reason: t.srs_conflict_reason_later,
+          ),
+          _ApplySame(
+            count: sameCount,
+            value: applySame,
+            onChanged: onApplySameChanged,
+            groupKey: conflict.group,
+          ),
           Wrap(
             alignment: WrapAlignment.end,
             spacing: tokens.spacing.gap,
             runSpacing: tokens.spacing.gap,
             children: <Widget>[
-              FushiOutlinedButton.icon(
-                key: const ValueKey<String>('srs-conflict-revert'),
+              button(
+                id: 'srs-conflict-revert',
+                primary: revert,
+                icon: FushiIcons.undo,
+                label: t.srs_conflict_revert,
                 onPressed: onRevert,
-                icon: const FushiIcon(FushiIcons.undo),
-                label: Text(t.srs_conflict_revert),
               ),
-              FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('srs-conflict-confirm'),
+              button(
+                id: 'srs-conflict-confirm',
+                primary: !revert,
+                icon: FushiIcons.check,
+                label: t.srs_conflict_confirm,
                 onPressed: onConfirm,
-                icon: const FushiIcon(FushiIcons.check),
-                label: Text(t.srs_conflict_confirm),
               ),
             ],
           ),

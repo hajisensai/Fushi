@@ -33,6 +33,8 @@ import 'package:fushi/src/web_browser/web_browser_prefs.dart'
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
+    show SrsReviewCell;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show loadCollectionOwnCoverCandidates;
@@ -409,21 +411,21 @@ Future<NavPeekFeed> _loadGames({
 
 /// 复习速览的副行：「新卡 3 · 学习中 1 · 到期 20」，只列非零的计数；三个都为
 /// 零（今天已复习完）时为 null。口径与牌组列表 / 首页复习条同一份计数。
+/// 到期那一项与牌组行同一份格式（[SrsReviewCell]），准备中再跟「(准备中)」。
 String? srsNavPeekCountsLabel({
   required int newCount,
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
 }) {
+  final String? review = SrsReviewCell(
+    due: reviewCount,
+    pending: reviewPending,
+  ).label(omitZero: true);
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
     if (learnCount > 0) '${t.srs_count_learn} $learnCount',
-    if (reviewPending)
-      '${t.srs_count_review} '
-          '${reviewCount > 0 ? '$reviewCount ' : ''}'
-          '(${t.srs_settings_rwkv_preparing_start})'
-    else if (reviewCount > 0)
-      '${t.srs_count_review} $reviewCount',
+    ?review,
   ];
   return parts.isEmpty ? null : parts.join(' · ');
 }

@@ -31,6 +31,8 @@ void main() {
         '浏览器类页面：历史就是用户的网页导航，后退手势合理',
     'lib/src/media/video/web_video_session.dart':
         '原生播放器页网页档的站点 WebView（Windows WebView2）：历史是用户在站点里的导航',
+    'lib/src/media/video/web_video_browser_settings.dart':
+        '原生播放器页网页档站点 WebView 的设置（会话 WebView 的 initialSettings 由这里构造）：历史是用户在站点里的导航',
     // #2500 把 WebView 从 fushi_web_browser_page.dart 拆进每标签页视图；加载失败页是
     // Flutter 侧状态、阅读模式就地换 body，都不往 WebView 历史压条目。
     'lib/src/web_browser/tab_view/web_browser_tab_view.dart':
@@ -46,6 +48,11 @@ void main() {
     'lib/src/pages/implementations/music/music_plugin_login.dart':
         '浏览器类页面（音乐插件网页登录），历史对应真实网页跳转',
     'lib/src/media/novel/online/lnreader_runtime.dart': '无头运行时 WebView，不可见、无手势',
+    // 这里只有共用的 appleMusicWebViewSettings()：MusicKit 桥是 HeadlessInAppWebView；
+    // 登录页的桥页面只加载一次、无可见内容，Apple ID 弹窗是独立 windowId 的 WebView，
+    // 历史对应真实网页跳转。
+    'lib/src/media/music/apple_music/apple_music_web_bridge.dart':
+        'MusicKit 桥 / 登录页共用设置：桥页面只加载一次（无头或无可见内容），登录弹窗历史对应真实网页跳转',
     'lib/src/media/audiobook/audiobook_clip_webview_render.dart':
         '离屏渲染用 WebView，不可见、无手势',
     'lib/src/pages/implementations/dictionary_popup_webview.dart':

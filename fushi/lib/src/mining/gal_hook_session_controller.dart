@@ -8,6 +8,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/mining/adts_duration.dart';
+import 'package:fushi/src/mining/gal_game_exit_watch.dart';
+import 'package:fushi/src/mining/galgame_process_group.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -790,7 +792,14 @@ class GalHookSessionController extends ChangeNotifier {
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
     Duration activityFlushDebounce = kGalActivityFlushDebounce,
     GalgamePlayTrackerFactory? playTrackerFactory,
+    // BUG-4002：游戏进程退出监视。null = 用默认 Windows probe（非 Windows 不监视）。
+    GalgameProcessProbe? gameProcessProbe,
+    Duration gameExitPollInterval = const Duration(seconds: 1),
+    int gameExitConfirmSamples = 3,
   }) : _textService = textService ?? TexthookerService.instance,
+       _gameProcessProbeOverride = gameProcessProbe,
+       _gameExitPollInterval = gameExitPollInterval,
+       _gameExitConfirmSamples = gameExitConfirmSamples,
        _activityFlushDebounce = activityFlushDebounce,
        _playTrackerFactory = playTrackerFactory ?? _defaultPlayTrackerFactory,
        _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
@@ -870,6 +879,9 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
   final Duration _windowRebindInterval;
+  final GalgameProcessProbe? _gameProcessProbeOverride;
+  final Duration _gameExitPollInterval;
+  final int _gameExitConfirmSamples;
   final Duration _trackRefreshInterval;
   final Duration _loopbackFreezeDelay;
   final Duration _utteranceSettleInterval;
@@ -1005,6 +1017,16 @@ class GalHookSessionController extends ChangeNotifier {
   Timer? _trackRefreshTimer;
   // BUG-1049：launch 后游戏窗口尚未出现时的重绑监视（见 [_startWindowRebindWatch]）。
   Timer? _windowRebindTimer;
+
+  /// 游戏进程退出监视的定时器（见 [_startGameExitWatch]）。
+  Timer? _gameExitTimer;
+
+  final ValueNotifier<int> _gameExitedCount = ValueNotifier<int>(0);
+
+  /// 每当会话因**游戏进程退出**而自动结束就 +1（BUG-4002）。游戏页据此把停在
+  /// 捕获工作台上的用户送回游戏首页；手动停止不计（用户自己点的停，留在原页）。
+  ValueListenable<int> get gameExitedCount => _gameExitedCount;
+
   bool _windowRebindInFlight = false;
   // A rebind completion must only release the request it started; operation
   // generation alone does not distinguish two watches in the same session.
@@ -1282,10 +1304,10 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 当前游玩计时器；null = 没有从游戏库启动的在跑会话。
   ///
-  /// 生命周期**刻意与 hook 捕获会话解耦**（stop 侧）：`stopCapture` 只停监听不停
-  /// 计时——用户关掉捕获浮窗继续玩是常态，计时靠 tracker 自己的进程判活结束
-  /// （游戏退出→结算落库→定时器自停）。会真正停它的只有三处：再次 [launchGame]
-  /// （换游戏/重开）、[close]（app 正常退出）、[ExitFlushRegistry]（点 X 快杀）。
+  /// 计时器自己不判活：游戏退出由会话的进程存活监视（[_startGameExitWatch]）确认，
+  /// 走 [stopCapture] 结算；接手进程时只换计时主 PID（[GalgamePlayTracker.followMainProcess]）。
+  /// 会停它的入口：[stopCapture]（含游戏退出）、再次 [launchGame] / 附着（换游戏 /
+  /// 重开）、[close]（app 正常退出）、[ExitFlushRegistry]（点 X 快杀）。
   GalgamePlayTracker? _playTracker;
 
   /// 登记进 [ExitFlushRegistry] 的游玩计时落库回调；首个 tracker 启动时登记。
@@ -1547,25 +1569,38 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: window.pid,
     );
+    // 同理，游戏退出就该结束会话，与 hook 走哪条分支无关（BUG-4002）。
+    _startGameExitWatch(
+      generation: generation,
+      pid: window.pid,
+      identity: identity,
+    );
+    await _attachHooksToProcess(generation, pid: window.pid);
+  }
+
+  /// 按 PID 把 hook 挂到一个**已经在跑**的游戏进程上（附着与「接手进程」共用）：
+  /// 探位数 → 找 helper → 引擎注入，失败按既有降级表退到 Loopback 并排引擎重试。
+  /// 调用方负责换代、会话身份、计时与进程存活监视。
+  Future<void> _attachHooksToProcess(int generation, {required int pid}) async {
     _record(
       GalHookEventSeverity.info,
       'resolve',
       'session.attach_resolving',
       'Resolving target process architecture',
-      details: <String, Object?>{'pid': window.pid},
+      details: <String, Object?>{'pid': pid},
     );
-    final bool? is32Bit = await _targetWow64Probe(window.pid);
+    final bool? is32Bit = await _targetWow64Probe(pid);
     if (generation != _operationGeneration) return;
     final String? injector = await _injectorResolver(is32Bit: is32Bit ?? false);
-    if (injector != null && window.pid > 0) {
+    if (injector != null && pid > 0) {
       _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
       final EngineHookGalAudioSource engine = _trackStartingEngine(
         _engineSourceFactory(
-          targetPid: window.pid,
+          targetPid: pid,
           launchExe: null,
           injectorPath: injector,
           // BUG-1267 — 从 PID 反查 exe 后走与 launch 相同的判据，别再写死 false。
-          lunaPcHooks: _lunaPcHooksForPid(window.pid),
+          lunaPcHooks: _lunaPcHooksForPid(pid),
         ),
       );
       await _attachPersistedHookProfiles(engine);
@@ -1576,22 +1611,14 @@ class GalHookSessionController extends ChangeNotifier {
       }
       if (format != null) {
         if (engine.rawVoiceReady) {
-          await _activateResourceWithLoopback(
-            generation,
-            engine,
-            gamePid: window.pid,
-          );
+          await _activateResourceWithLoopback(generation, engine, gamePid: pid);
         } else {
-          _activateEngine(engine, format, gamePid: window.pid);
+          _activateEngine(engine, format, gamePid: pid);
         }
         return;
       }
       if (engine.textHookReady) {
-        await _activateTextWithLoopback(
-          generation,
-          engine,
-          gamePid: window.pid,
-        );
+        await _activateTextWithLoopback(generation, engine, gamePid: pid);
         return;
       }
       // 诊断必须在 stop() 之前取：stop 只负责杀进程，失败原因由本次 start 定格。
@@ -1610,11 +1637,7 @@ class GalHookSessionController extends ChangeNotifier {
         failure: diagnostics.failure,
         detail: galHookDiagnosticsDetail(diagnostics),
       );
-      _scheduleEngineRecovery(
-        generation,
-        pid: window.pid,
-        diagnostics: diagnostics,
-      );
+      _scheduleEngineRecovery(generation, pid: pid, diagnostics: diagnostics);
       return;
     }
     // 走到这里只有两种可能，原因不同、处置也不同：helper 没装（要装组件），或者这个
@@ -1629,7 +1652,7 @@ class GalHookSessionController extends ChangeNotifier {
           : 'The bound window exposes no process id; using loopback',
       details: <String, Object?>{
         'arch': is32Bit == true ? 'x86' : 'x64',
-        'pid': window.pid,
+        'pid': pid,
       },
     );
     await _activateLoopback(
@@ -1930,6 +1953,11 @@ class GalHookSessionController extends ChangeNotifier {
           identity: identity,
           mainPid: runningPid,
         );
+        _startGameExitWatch(
+          generation: generation,
+          pid: runningPid,
+          identity: identity,
+        );
         return const GalHookLaunchResult.launched();
       }
       _fail(
@@ -2029,7 +2057,170 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: gamePid,
     );
+    // gamePid 为空时监视按游戏目录认领进程（计时主 PID 的唯一来源）。
+    _startGameExitWatch(
+      generation: generation,
+      pid: gamePid,
+      identity: identity,
+    );
     return const GalHookLaunchResult.launched();
+  }
+
+  /// 游戏进程存活监视（BUG-4002）：整条捕获会话「游戏还在不在」的**唯一**来源。
+  ///
+  /// 旧实现里「游戏退出」只有游玩计时器看得到，它结算完就自停，会话本身没人收：
+  /// 游戏关了、工作台还停在「正在监听」，只能手动点停止。现在判活只此一路
+  /// （判据见 [GalGameExitWatch]，归属见 [GalgameProcessGroup]），结论同时驱动
+  /// 会话与计时，二者不会再各下各的结论：
+  /// - 确认退出 → [stopCapture]（结算计时 / 超分 / 状态复位与手动停止同一条路）；
+  /// - 接手进程（自重启、启动器换代）→ [_followGameProcessHandoff] 把整条会话
+  ///   （hook、窗口绑定、计时主 PID）重新绑到新进程；
+  /// - 开局不知道 PID（launch 没拿到目标）→ 认领游戏目录下的进程作为计时主进程。
+  ///
+  /// 不受 `canTrackPlaytime` 限制：库外附着的游戏同样要在退出时结束会话。
+  /// 会话被换代（stop、重启、attach、接手）即自停；源停止时（[_stopSourcesInternal]）
+  /// 一并取消。
+  void _startGameExitWatch({
+    required int generation,
+    required int? pid,
+    required GalHookSessionIdentity identity,
+  }) {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
+    if (generation != _operationGeneration) return;
+    final GalgameProcessProbe? probe = _resolveGameProcessProbe();
+    if (probe == null) return;
+    final GalGameExitWatch watch = GalGameExitWatch(
+      pid: pid ?? 0,
+      group: GalgameProcessGroup.forExecutable(
+        identity.executablePath,
+        probe: probe,
+      ),
+      confirmSamples: _gameExitConfirmSamples,
+    );
+    // PID 未知又没有游戏目录可认领：没有任何判据，不起空转的定时器。
+    if (watch.pid <= 0 && watch.group.gameDirectory == null) return;
+    _runGameExitWatch(generation, watch, identity);
+  }
+
+  void _runGameExitWatch(
+    int generation,
+    GalGameExitWatch watch,
+    GalHookSessionIdentity identity,
+  ) {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = Timer.periodic(_gameExitPollInterval, (Timer timer) {
+      if (generation != _operationGeneration) {
+        timer.cancel();
+        if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+        return;
+      }
+      final int watchedPid = watch.pid;
+      switch (watch.sample()) {
+        case GalGameExitStatus.alive:
+        case GalGameExitStatus.unconfirmed:
+          return;
+        case GalGameExitStatus.adopted:
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_process_adopted',
+            'Found the running game process in the game folder',
+            details: <String, Object?>{'pid': watch.pid},
+          );
+          _playTracker?.followMainProcess(watch.pid);
+          return;
+        case GalGameExitStatus.handedOff:
+          timer.cancel();
+          if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_process_handoff',
+            'The game process exited, but another process from the game '
+                'folder is still running; moving the capture session to it',
+            details: <String, Object?>{'from': watchedPid, 'to': watch.pid},
+          );
+          unawaited(
+            _followGameProcessHandoff(
+              fromGeneration: generation,
+              watch: watch,
+              identity: identity,
+            ),
+          );
+          return;
+        case GalGameExitStatus.exited:
+          timer.cancel();
+          if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_exited',
+            'The game exited; stopping capture',
+            details: <String, Object?>{'pid': watchedPid},
+          );
+          unawaited(_stopCaptureAfterGameExit(generation));
+      }
+    });
+  }
+
+  /// 游戏换了进程（改设置后自重启、启动器拉起本体后退出）：把整条捕获会话搬到
+  /// 接手进程上。只换监视器盯的 PID 是不够的——hook / helper 还挂在死进程上、
+  /// `gamePid` 与窗口绑定也指着死进程，工作台会一直显示「正在监听」却收不到台词。
+  ///
+  /// 走与附着同一条注入链路（[_attachHooksToProcess]，游戏已经在跑，只能按 PID
+  /// 附着），并换代以作废旧进程上的引擎重试 / 窗口监视。刻意**不**重启的两样：
+  /// 活动会话与游玩计时——用户这一局没有中断，计时只换主 PID，不切成两段。
+  Future<void> _followGameProcessHandoff({
+    required int fromGeneration,
+    required GalGameExitWatch watch,
+    required GalHookSessionIdentity identity,
+  }) async {
+    if (fromGeneration != _operationGeneration) return;
+    final int generation = ++_operationGeneration;
+    final int successor = watch.pid;
+    await _stopSources();
+    if (generation != _operationGeneration) return;
+    _selectedTextThreadKey = null;
+    _selectedNativeTextThreadId = null;
+    _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
+    _setState(
+      _state.copyWith(
+        phase: GalHookSessionPhase.resolving,
+        gamePid: successor,
+        clearBoundWindow: true,
+        clearLastError: true,
+        clearFallbackReason: true,
+        textSignalReceived: false,
+      ),
+    );
+    _playTracker?.followMainProcess(successor);
+    _runGameExitWatch(generation, watch, identity);
+    // 新进程的窗口通常还没建好：交给会话级窗口监视按新 PID 找到即绑。
+    _startWindowRebindWatch(generation, successor);
+    await _attachHooksToProcess(generation, pid: successor);
+  }
+
+  Future<void> _stopCaptureAfterGameExit(int generation) async {
+    if (generation != _operationGeneration) return;
+    await stopCapture(keepBinding: false);
+    // stopCapture 自身换代一次；期间没有**别的**操作插进来（新 attach / launch）、
+    // 会话此刻是 idle，才通知页面回首页。
+    if (_operationGeneration != generation + 1) return;
+    if (_state.phase != GalHookSessionPhase.idle) return;
+    _gameExitedCount.value++;
+  }
+
+  GalgameProcessProbe? _resolveGameProcessProbe() {
+    final GalgameProcessProbe? injected = _gameProcessProbeOverride;
+    if (injected != null) return injected;
+    if (!_isWindows || !Platform.isWindows) return null;
+    try {
+      return _sharedProcessProbe ??= GalgameWindowsProcessProbe();
+    } on Object {
+      return null;
+    }
   }
 
   /// launch 会话的窗口绑定监视，跟随整条会话的生命周期：
@@ -3137,7 +3328,12 @@ class GalHookSessionController extends ChangeNotifier {
   /// - 伪影主导的线程不参与（BUG-2112）；
   /// - 记忆里有典型行长时，按行长比值最接近者优先，出行数只作平手判据；最接近者
   ///   仍相差两倍以上时**宁可暂不恢复**——此时往往只有名字牌线程先够了行数，
-  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程。
+  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程；
+  /// - native 声明 hook code 只对应一条 lane 的线程
+  ///   （[TexthookerTextThread.hookCodeLaneUnique]，如 SoftPal 把精灵尺寸编进了
+  ///   hook code）不比行长：它没有同指纹的兄弟可混淆。`ENGINE:` 前缀**不**等于
+  ///   唯一——FVP / Luca / BGI / YU-RIS / Kogado Hy 一个 hook code 下有正文与名字牌
+  ///   等多条 lane，它们照常按行长消歧。
   @visibleForTesting
   static TexthookerTextThread? pickRememberedTextThread(
     Iterable<TexthookerTextThread> threads, {
@@ -3154,6 +3350,9 @@ class GalHookSessionController extends ChangeNotifier {
     ];
     if (candidates.isEmpty) return null;
     double distance(TexthookerTextThread thread) {
+      // native 声明 lane 唯一的线程没有要靠行长区分的兄弟；短句扎堆时行长对不上
+      // 就不恢复，会让它一整局都选不上。
+      if (thread.hookCodeLaneUnique) return 0;
       final int? length = textThreadTypicalLength(thread);
       if (typicalLength == null || typicalLength <= 0) return 0;
       if (length == null || length <= 0) return double.infinity;
@@ -4157,6 +4356,17 @@ class GalHookSessionController extends ChangeNotifier {
     await shutdownWindowRecording();
     await _stopSources();
     dispose();
+  }
+
+  /// 释放会话自持的监听源。放在 [dispose] 而不是 [shutdown] 里：任何直接
+  /// dispose 控制器的路径（测试、未来的重建）都不会漏掉退出监视定时器和
+  /// [gameExitedCount] 通知器（BUG-4002 移植时补）。
+  @override
+  void dispose() {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
+    _gameExitedCount.dispose();
+    super.dispose();
   }
 
   /// 注入统计落库用的 DB 惰性解析器（桌面启动流程
@@ -5229,6 +5439,8 @@ class GalHookSessionController extends ChangeNotifier {
     _windowRebindTimer?.cancel();
     _windowRebindTimer = null;
     _windowRebindGeneration++;
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
     _engineRetryTimer?.cancel();
     _engineRetryTimer = null;
     _engineRetryAttempt = 0;
@@ -5399,6 +5611,7 @@ class GalHookSessionController extends ChangeNotifier {
               label: threadLabel,
               text: line.text,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              hookCodeLaneUnique: line.hookCodeIsLaneUnique,
               nativeThreadId: line.threadId == 0 ? null : line.threadId,
               notify: false,
             );
@@ -5423,6 +5636,7 @@ class GalHookSessionController extends ChangeNotifier {
               key: threadKey,
               label: threadLabel,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              hookCodeLaneUnique: line.hookCodeIsLaneUnique,
               nativeThreadId: line.threadId,
             );
           }

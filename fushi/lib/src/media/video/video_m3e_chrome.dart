@@ -9,6 +9,8 @@ import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder, fushiPlayButtonRotation;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:media_kit/media_kit.dart';
@@ -471,8 +473,9 @@ enum VideoM3ePlayButtonStyle {
   translucent,
 }
 
-/// MD3 Expressive 播放 / 暂停键：暂停态圆形、播放态弹成圆角方形，按下再收紧；
-/// 字形是 Material 的 play↔pause 形变图标，与外形同一根弹簧。
+/// MD3 Expressive 播放 / 暂停键：外形是统一的主播放键多边形
+/// （[fushiPlayButtonBorder]），播放态转半瓣（[fushiPlayButtonRotation]），按下
+/// 整体收紧；字形是 Material 的 play↔pause 形变图标，与外形同一根弹簧。
 class VideoM3ePlayPauseButton extends StatefulWidget {
   const VideoM3ePlayPauseButton({
     super.key,
@@ -561,56 +564,57 @@ class _VideoM3ePlayPauseButtonState extends State<VideoM3ePlayPauseButton>
         : chrome.onPrimary;
     final double h = widget.extent;
     final double w = widget.width ?? h;
+    final OutlinedBorder shape = fushiPlayButtonBorder(
+      side: eink
+          ? const BorderSide(color: Colors.white, width: 2)
+          : BorderSide.none,
+    );
     final Widget body = AnimatedBuilder(
       animation: Listenable.merge(<Listenable>[
         _shape.animation,
         _press.animation,
       ]),
-      builder: (BuildContext context, Widget? _) {
+      builder: (BuildContext context, Widget? icon) {
         final double s = _shape.value;
         final double p = _press.value.clamp(0.0, 1.0);
-        // 圆（短边一半）→ 播放态圆角 0.3h → 按下再收到 0.22h。
-        final double half = math.min(w, h) / 2;
-        final double radius = ui
-            .lerpDouble(
-              ui.lerpDouble(half, h * 0.3, s.clamp(0.0, 1.2))!,
-              h * 0.22,
-              p,
-            )!
-            .clamp(4.0, half);
-        final double scale = 1 - 0.04 * p;
-        final BorderRadius br = BorderRadius.circular(radius);
+        final double angle = fushiPlayButtonRotation(s);
         Widget surface = DecoratedBox(
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: br,
-            border: eink ? Border.all(color: Colors.white, width: 2) : null,
-          ),
-          child: Center(
-            child: AnimatedIcon(
-              icon: AnimatedIcons.play_pause,
-              progress: _shape.animation.drive(
-                Animatable<double>.fromCallback(
-                  (double v) => v.clamp(0.0, 1.0),
-                ),
-              ),
-              size: h * (translucent ? 0.46 : 0.5),
-              color: fg,
-            ),
+          decoration: ShapeDecoration(color: bg, shape: shape),
+          child: _M3eInk(
+            onPressed: widget.onPressed,
+            shape: shape,
+            color: fg,
+            // 外形随播放态转半瓣，字形反向转回保持正立。
+            child: Transform.rotate(angle: -angle, child: icon),
           ),
         );
         if (translucent && !eink) {
-          surface = ClipRRect(
-            borderRadius: br,
+          surface = ClipPath(
+            clipper: ShapeBorderClipper(shape: shape),
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
               child: surface,
             ),
           );
         }
-        return Transform.scale(scale: scale, child: surface);
+        return Transform.scale(
+          scale: 1 - 0.04 * p,
+          child: Transform.rotate(angle: angle, child: surface),
+        );
       },
+      child: Center(
+        child: AnimatedIcon(
+          icon: AnimatedIcons.play_pause,
+          progress: _shape.animation.drive(
+            Animatable<double>.fromCallback((double v) => v.clamp(0.0, 1.0)),
+          ),
+          size: h * (translucent ? 0.46 : 0.5),
+          color: fg,
+        ),
+      ),
     );
+    // 多边形是 1:1 的：[width] 只占位（按钮行几何不变），外形画在居中的
+    // h × h 方块里。
     return SizedBox(
       width: w,
       height: h,
@@ -621,11 +625,8 @@ class _VideoM3ePlayPauseButtonState extends State<VideoM3ePlayPauseButton>
         child: Semantics(
           button: true,
           label: widget.semanticLabel,
-          child: _M3eInk(
-            onPressed: widget.onPressed,
-            radius: h * 0.3,
-            color: fg,
-            child: body,
+          child: Center(
+            child: SizedBox.square(dimension: h, child: body),
           ),
         ),
       ),
@@ -637,13 +638,19 @@ class _VideoM3ePlayPauseButtonState extends State<VideoM3ePlayPauseButton>
 class _M3eInk extends StatelessWidget {
   const _M3eInk({
     required this.onPressed,
-    required this.radius,
     required this.color,
     required this.child,
+    this.radius = 0,
+    this.shape,
   });
 
   final VoidCallback? onPressed;
+
+  /// 状态层圆角；给了 [shape] 时不用。
   final double radius;
+
+  /// 状态层外形（多边形播放键）；null = 按 [radius] 圆角。
+  final ShapeBorder? shape;
   final Color color;
   final Widget child;
 
@@ -653,7 +660,8 @@ class _M3eInk extends StatelessWidget {
       type: MaterialType.transparency,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(radius),
+        customBorder: shape,
+        borderRadius: shape == null ? BorderRadius.circular(radius) : null,
         hoverColor: color.withValues(alpha: 0.08),
         focusColor: color.withValues(alpha: 0.16),
         highlightColor: color.withValues(alpha: 0.10),

@@ -11,6 +11,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+
 /// 访问一台 ABS 服务器所需的令牌组。
 ///
 /// 两种来源：
@@ -444,21 +446,14 @@ class AudiobookshelfLibraryFile {
   final int? sizeBytes;
   final String? fileType;
 
-  /// 字幕扩展名。服务端不认 `.srt`（`fileType` 是 `unknown`），只能看扩展名。
-  static const Set<String> subtitleExtensions = <String>{
-    'srt',
-    'vtt',
-    'ass',
-    'ssa',
-    'lrc',
-  };
-
   String get extension {
     final int dot = filename.lastIndexOf('.');
     return dot < 0 ? '' : filename.substring(dot + 1).toLowerCase();
   }
 
-  bool get isSubtitle => subtitleExtensions.contains(extension);
+  /// 服务端不认 `.srt`（`fileType` 是 `unknown`），只能看扩展名；格式集合取有声书
+  /// 字幕的唯一真相源 [kAudiobookSubtitleExtensions]。
+  bool get isSubtitle => kAudiobookSubtitleExtensions.contains(extension);
 
   static AudiobookshelfLibraryFile? parse(Object? raw) {
     if (raw is! Map<String, Object?>) return null;

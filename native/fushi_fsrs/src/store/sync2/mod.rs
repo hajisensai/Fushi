@@ -9,8 +9,11 @@
 //!
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
+pub(crate) mod channel;
 pub mod config;
+pub(crate) mod dedup;
 pub mod digest;
+pub(crate) mod devices;
 pub mod media;
 pub(crate) mod mvr;
 pub mod relay;
@@ -197,19 +200,24 @@ pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String>
     Ok(vv)
 }
 
-fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
-    let bytes = deps.encode();
-    conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([&bytes]).map_err(sql)?;
-    conn.prepare_cached("SELECT srs_idt(id) AS id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
+/// 版本向量（[Vv::encode] 的字节）在 `sync2_deps` 里的行号（没有就加一行）。
+pub(crate) fn intern_deps(conn: &Connection, bytes: &[u8]) -> Result<i64, String> {
+    conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([bytes]).map_err(sql)?;
+    conn.prepare_cached("SELECT srs_idt(id) AS id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([bytes], |r| r.get(0)).map_err(sql)
 }
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
-    let deps = intern_deps(conn, &op.deps)?;
-    // 配置快照原文只存一份（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
-    let (payload, sc, sc_at) = snapshots::pack_payload(conn, op.kind, &op.payload)?;
+    let deps = intern_deps(conn, &op.deps.encode())?;
+    insert_op_at(conn, profile, op, chain, now, deps)
+}
+
+/// [insert_op]，依赖向量已换成 `sync2_deps` 的行号 [deps]（收段通道追加时按会话缓存它，channel.rs `Append`）。
+pub(crate) fn insert_op_at(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64, deps: i64) -> Result<(), String> {
+    // 配置快照原文只存一份、其余按 zstd 压缩（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
+    let packed = snapshots::pack_payload(conn, op.kind, &op.payload)?;
     conn.prepare_cached(
-        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at) \
-         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at, pz) \
+         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
     )
     .map_err(sql)?
     .execute(params![
@@ -221,12 +229,13 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
         deps,
         i64::from(op.kind),
         i64::from(op.schema),
-        payload,
+        packed.bytes,
         i64::from(op.purged),
         chain.to_vec(),
         now,
-        sc,
-        sc_at
+        packed.sc,
+        packed.sc_at,
+        packed.pz
     ])
     .map_err(sql)?;
     Ok(())
@@ -235,7 +244,7 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
 /// 读一条操作（因果判定、前缀闭包、重签发用）。
 pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Option<Op>, String> {
     conn.prepare_cached(
-        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at FROM sync2_ops o \
+        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at, o.pz FROM sync2_ops o \
          JOIN sync2_deps d ON d.id = o.deps WHERE o.profile_uid = srs_id(?1) AND o.device = ?2 AND o.seq = ?3",
     )
     .map_err(sql)?
@@ -250,13 +259,14 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
             r.get::<_, i64>(6)? != 0,
             r.get::<_, Option<String>>(7)?,
             r.get::<_, Option<i64>>(8)?,
+            r.get::<_, i64>(9)?,
         ))
     })
     .optional()
     .map_err(sql)?
-    .map(|(w, l, vv, k, s, p, purged, sc, sc_at)| {
+    .map(|(w, l, vv, k, s, p, purged, sc, sc_at, pz)| {
         let deps = Vv::read(&mut crate::sync2::codec::Reader::new(&vv)).map_err(|e| e.to_string())?;
-        let p = snapshots::unpack_payload(conn, p, sc, sc_at)?;
+        let p = snapshots::unpack_payload(conn, p, sc, sc_at, pz)?;
         Ok(Op {
             id: *id,
             hlc: Hlc { wall: w, logical: l as u32, device: id.device },
@@ -365,28 +375,63 @@ pub(crate) fn strip_synthetic_writers(c: &Connection) -> Result<(usize, usize), 
 
 /// `L(vv)`：这个版本向量覆盖的操作里，迁移进来的旧修改记录的旧 dot 与旧上下文之并（见 dvv.rs）。
 pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Result<Dvv, String> {
+    legacy_closure_with(conn, profile, vv, |d| stored_legacy(conn, profile, d))
+}
+
+/// 一台设备的旧修改记录闭包（`sync2_legacy` 一行）：(upto, 闭包)。
+pub(crate) fn stored_legacy(conn: &Connection, profile: &str, device: &Id) -> Result<Option<(i64, Dvv)>, String> {
+    Ok(conn
+        .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
+        .map_err(sql)?
+        .query_row(params![profile, device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+        .optional()
+        .map_err(sql)?
+        .map(|(upto, ctx)| (upto, Dvv::parse(&ctx))))
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARTIAL_CLOSURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// 测试：[legacy_closure_with] 走「部分」分支的累计次数（冷启动探针 bootstrap_probe.rs 的覆盖计数用）。
+#[cfg(test)]
+pub(crate) fn partial_closures() -> usize {
+    PARTIAL_CLOSURES.with(|c| c.get())
+}
+
+/// [legacy_closure]，每台设备的 `sync2_legacy` 行由 [row] 给（冷启动探针 bootstrap_probe.rs 的行在内存里；子模块
+/// 可见，不对 crate 导出）。
+fn legacy_closure_with(
+    conn: &Connection,
+    profile: &str,
+    vv: &Vv,
+    mut row: impl FnMut(&Id) -> Result<Option<(i64, Dvv)>, String>,
+) -> Result<Dvv, String> {
     let mut out = Dvv::default();
     for (d, &s) in &vv.0 {
-        let row: Option<(i64, String)> = conn
-            .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
-            .map_err(sql)?
-            .query_row(params![profile, d.0.to_vec()], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()
-            .map_err(sql)?;
-        let Some((upto, ctx)) = row else { continue };
+        let Some((upto, ctx)) = row(d)? else { continue };
         if s as i64 >= upto {
-            out.merge(&Dvv::parse(&ctx));
+            out.merge(&ctx);
             continue;
         }
-        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不按引用存（snapshots.rs 只剪日志），
-        // 直读即原文。
+        #[cfg(test)]
+        PARTIAL_CLOSURES.with(|c| c.set(c.get() + 1));
+        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不剪快照（snapshots.rs 只剪日志），
+        // 只可能压缩过。
+        // 副本骨架（dedup.rs）带着旧戳，与原文同样并进来。
         let mut stmt = conn
-            .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
+            .prepare_cached("SELECT payload, pz, purged FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
             .map_err(sql)?;
         let mut q = stmt.query(params![profile, d.0.to_vec(), s as i64, i64::from(op::KIND_EDIT)]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
-            let p: Vec<u8> = r.get(0).map_err(sql)?;
-            if let Ok(Body::Edit(EditBody { legacy: Some(l), .. })) = Body::decode(op::KIND_EDIT, &p) {
+            let p = snapshots::unpack_payload(conn, r.get(0).map_err(sql)?, None, None, r.get(1).map_err(sql)?)?;
+            let body = if r.get::<_, i64>(2).map_err(sql)? != 0 { op::skeleton_body(&p) } else { Body::decode(op::KIND_EDIT, &p) };
+            let stamp = match body {
+                Ok(Body::Edit(EditBody { legacy: Some(l), .. })) | Ok(Body::Duplicate { legacy: Some(l), .. }) => Some(l),
+                _ => None,
+            };
+            if let Some(l) = stamp {
                 out.merge(&Dvv::parse(&l.ctx_json));
                 if !is_synthetic_writer(&l.writer) {
                     out.add(&l.writer, l.seq);
@@ -599,6 +644,16 @@ pub(crate) fn edit_row_id(op: &Op, e: &EditBody) -> String {
 /// 修改记录投影行（Dart `SrsFieldEdit.toJson`）。v2 写入：dot = (设备, seq)、ctx = 作者已应用的版本向量
 /// 并上旧修改记录闭包；迁移进来的旧记录：原样的旧 dot / 旧 ctx / 旧 HLC。
 pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) -> Result<(String, Value), String> {
+    edit_row_with(profile, op, e, |vv| legacy_closure(conn, profile, vv))
+}
+
+/// [edit_row]，旧修改记录闭包由 [closure] 算（只有 v2 写入用到它；冷启动探针 bootstrap_probe.rs 另给闭包）。
+fn edit_row_with(
+    profile: &str,
+    op: &Op,
+    e: &EditBody,
+    closure: impl FnOnce(&Vv) -> Result<Dvv, String>,
+) -> Result<(String, Value), String> {
     let (writer, seq, ctx, hlc) = match &e.legacy {
         Some(l) => {
             let ctx = serde_json::from_str::<Value>(&l.ctx_json).unwrap_or(json!({"vv": {}}));
@@ -607,7 +662,7 @@ pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) 
         }
         None => {
             let full = op.ctx();
-            let mut d = legacy_closure(conn, profile, &full)?;
+            let mut d = closure(&full)?;
             for (dev, &s) in &full.0 {
                 d.raise(&dev.text(), s as i64);
             }
@@ -654,6 +709,11 @@ fn upsert_server_time(conn: &Connection, profile: &str, id: &str, s: Option<i64>
 /// 把一条操作落进投影。[project] = false 时只记意图 / 索引 / 闭包（迁移：投影行本来就在）。
 pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     let body = op.body().map_err(|e| e.to_string())?;
+    project_body(conn, profile, op, body, now, project, t)
+}
+
+/// [project]，载荷已解析成 [body]。
+pub(crate) fn project_body(conn: &Connection, profile: &str, op: &Op, body: Body, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     match body {
         Body::Entity { kind, id, data } => {
             if project {
@@ -713,6 +773,16 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
                     .map_err(sql)?
                     .execute(params![id, profile, json])
                     .map_err(sql)?;
+            }
+        }
+        Body::Dedup { pairs } => {
+            let own = self_device(conn, profile)?;
+            dedup::apply(conn, profile, &op.id.device, &own, &pairs, now, t)?;
+        }
+        // 副本骨架（dedup.rs）：原件另有一份，不投影、不进索引；旧修改记录的旧戳照记进闭包（与收到原文的设备相同）。
+        Body::Duplicate { legacy, .. } => {
+            if let Some(l) = &legacy {
+                note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
             }
         }
         // 不认识的种类 / 已清除的骨架 / 牌组别名：只保存事实，不投影。
@@ -825,18 +895,29 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
     if let Some(l) = &e.legacy {
         note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
     }
+    project_edit_noted(conn, profile, op, e, now, project, t)
+}
+
+/// 修改操作的记账：修改记录 ID → 操作、实体 → 操作索引（移卡另记目标牌组）。
+pub(crate) fn index_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, ent: &str) -> Result<(), String> {
     let eid = edit_row_id(op, e);
     conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (srs_id(?1), srs_id(?2), ?3, ?4)")
         .map_err(sql)?
         .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
         .map_err(sql)?;
-    let ent = e.entity.text();
-    semantics::index(conn, profile, e.kind.wire(), &ent, &op.id, &e.key)?;
+    semantics::index(conn, profile, e.kind.wire(), ent, &op.id, &e.key)?;
     if e.kind == EntKind::Card && e.key == "deck" {
         if let Ok(Value::String(d)) = serde_json::from_str::<Value>(&e.value) {
             semantics::index(conn, profile, "deck", &d, &op.id, "#move")?;
         }
     }
+    Ok(())
+}
+
+/// [project_edit]，旧修改记录闭包已记过（收段通道在追加时记，channel.rs `Append::note_legacy`）。
+pub(crate) fn project_edit_noted(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
+    let ent = e.entity.text();
+    index_edit(conn, profile, op, e, &ent)?;
     // 标签是 OR-Set：整列表的 `tags` 写入（迁移进来的旧记录）按「添加其中每个标签」并入。迁移时也要做：
     // 合成行替换掉旧的 `tags` 行，各设备收到同一批操作后结果相同。
     if e.kind == EntKind::Note && e.key == "tags" {
@@ -876,23 +957,27 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
 /// → 不落；落了就删掉被它支配的）。
 pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, server: Option<i64>, now: i64, t: &mut Touched) -> Result<(), String> {
     let (eid, row) = edit_row(conn, profile, op, e)?;
+    let row_text = canonical(&row);
+    let (writer, seq) = (row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0));
     let ent = e.entity.text();
     // 现存记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`：每收一条修改记录都读一遍。
+    // 只读同一字段键的（支配只在同一 (种类, 实体, 字段键) 里比，registers.rs `land`）加上同 ID 的那行（「同 ID 已在
+    // 就不落」），结果与读整个实体相同。以前读整个实体：一条笔记的每次修改都把它全部字段的正文读出来、拼回再解析，
+    // 新设备追赶时随字段数与修改次数放大，是收段投递的大头。
     let existing: Vec<(String, String, Option<i64>, Option<crate::registers::EditCols>)> = conn
         .prepare_cached(
             "SELECT srs_idt(f.id) AS id, l.server_time, f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq \
              FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
-             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)",
+             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2) AND (f.field_key = ?3 OR f.id = srs_id(?4))",
         )
         .map_err(sql)?
-        .query_map(params![e.kind.wire(), ent], |r| {
+        .query_map(params![e.kind.wire(), ent, e.key, eid], |r| {
             let (j, cols) = crate::store::slim::edit_row(r, 2)?;
             Ok((r.get(0)?, j, r.get(1)?, cols))
         })
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
-    let row_text = canonical(&row);
     let mut items: Vec<crate::registers::StoredEdit<'_>> = existing.iter().map(|(_, j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
     items.push((&row_text, server, None));
     let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
@@ -910,7 +995,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
          VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, srs_edit_pack(?8, ?1, ?2, ?3, ?4, ?5, ?6, ?7))",
     )
     .map_err(sql)?
-    .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
+    .execute(params![eid, profile, e.kind.wire(), ent, e.key, writer, seq, row_text])
     .map_err(sql)?;
     upsert_server_time(conn, profile, &eid, server, now)?;
     match e.kind {
@@ -927,10 +1012,9 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     Ok(())
 }
 
-fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
+/// 日志操作的记账：意图、卡 / 笔记 → 操作索引。
+pub(crate) fn index_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, lid: &str, card: &str) -> Result<(), String> {
     let (intent, arg) = intent_code(&l.intent);
-    let lid = l.id.text();
-    let card = l.card.text();
     conn.prepare_cached(
         "INSERT OR IGNORE INTO sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq) \
          VALUES (srs_id(?1), srs_id(?2), srs_id(?3), srs_id(?4), ?5, ?6, ?7, ?8)",
@@ -938,10 +1022,17 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
     .map_err(sql)?
     .execute(params![lid, profile, card, l.note.as_ref().map(Key::text), intent, arg, op.id.device.0.to_vec(), op.id.seq as i64])
     .map_err(sql)?;
-    semantics::index(conn, profile, "card", &card, &op.id, "#log")?;
+    semantics::index(conn, profile, "card", card, &op.id, "#log")?;
     if let Some(n) = &l.note {
         semantics::index(conn, profile, "note", &n.text(), &op.id, "#log")?;
     }
+    Ok(())
+}
+
+fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
+    let lid = l.id.text();
+    let card = l.card.text();
+    index_log(conn, profile, op, l, &lid, &card)?;
     if !project {
         return Ok(());
     }
@@ -962,6 +1053,19 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
         t.cards.insert(card.clone());
         t.marks.log(&card);
+    } else {
+        // 同一条日志又来了一份，而先到的那份是本机自己的操作、来的这份出自 ID 更小的设备：本机流里有别的设备的副本
+        // （存量重复流），排一次收敛作业（dedup.rs；已排的不动）。
+        let first: Option<Vec<u8>> = conn
+            .prepare_cached("SELECT device FROM sync2_log_meta WHERE log_id = srs_id(?1)")
+            .map_err(sql)?
+            .query_row([&lid], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        let own = self_device(conn, profile)?;
+        if first.as_deref() == Some(&own.0[..]) && op.id.device < own {
+            dedup::enqueue(conn, profile)?;
+        }
     }
     semantics::evaluate_holds(conn, profile, "card", &card, now, t)?;
     if let Some(n) = &l.note {
@@ -1170,30 +1274,87 @@ const MIGRATE_QUEUE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sync2_migrate_que
 /// `srs_meta` 里「这个 profile 的迁移已开始、队列已排好」的标记键前缀（值 = 开始时刻）。
 const MIGRATING_KEY: &str = "sync2_migrating/";
 
-/// 把这一刻已有的旧行按迁移顺序排进队列：身份记录按创建时刻再按 ID；修改记录按旧 writer 再按旧 seq（同一旧
-/// 写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
-fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
-    let phases: [(i64, &str, &str); 4] = [
+/// 把这一刻已有、**还没有任何设备的操作代表**的旧行按迁移顺序排进队列：身份记录按创建时刻再按 ID；修改记录按旧
+/// writer 再按旧 seq（同一旧写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
+/// 返回排进的条数。
+///
+/// 「已被代表」逐条判（以前整库判：本库里只要有别的设备的操作就整个不迁，自己独有的旧行永远不进操作日志；本库里
+/// 还没有别的设备的操作就整个包一遍，两台设备各迁一遍同一份旧库 = 两条重复的操作流，见 BUG-4011）：
+/// - 修改记录：`sync2_edit_ops` 里有这个 ID（迁移出的修改记录投影 ID 由旧 dot 派生，[edit_row_id]，同一条旧记录
+///   在哪台设备迁出都是同一个 ID）；合成写入者 `sync2:` 的行是操作投影出来的，从不包；
+/// - 日志：`sync2_log_meta` 里有这个 ID；
+/// - 身份记录 / 不认识的事件：没有按 ID 的操作索引，扫一遍操作日志里这两种操作（每个实体 / 事件一条，量小）。
+fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<i64, String> {
+    c.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS sync2_migrate_known (phase INTEGER NOT NULL, id BLOB NOT NULL, PRIMARY KEY (phase, id)) WITHOUT ROWID; \
+         DELETE FROM temp.sync2_migrate_known;",
+    )
+    .map_err(sql)?;
+    {
+        let mut stmt = c
+            .prepare("SELECT kind, payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind IN (?2, ?3) AND purged = 0")
+            .map_err(sql)?;
+        let mut known = c.prepare("INSERT OR IGNORE INTO temp.sync2_migrate_known (phase, id) VALUES (?1, srs_id(?2))").map_err(sql)?;
+        let mut q = stmt
+            .query(params![profile, i64::from(op::KIND_ENTITY), i64::from(op::KIND_LEGACY_UNKNOWN)])
+            .map_err(sql)?;
+        while let Some(r) = q.next().map_err(sql)? {
+            let kind: i64 = r.get(0).map_err(sql)?;
+            let payload = snapshots::unpack_payload(c, r.get(1).map_err(sql)?, None, None, r.get(2).map_err(sql)?)?;
+            let (phase, id) = match Body::decode(kind as u16, &payload) {
+                Ok(Body::Entity { id, .. }) => (0, id.text()),
+                Ok(Body::LegacyUnknown { json }) => {
+                    let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
+                    (3, v["x"]["id"].as_str().map(str::to_owned).unwrap_or(json))
+                }
+                _ => continue,
+            };
+            known.execute(params![phase, id]).map_err(sql)?;
+        }
+    }
+    let phases: [(i64, &str, &str, &str); 4] = [
         // 按 ID 文本排（store/ids.rs：非 UUID 的文本与 BLOB 混排时 SQLite 的顺序不同），包装顺序与旧版本逐条相同。
-        (0, "srs_entities", "created_at, srs_idt(id)"),
-        (1, "srs_field_edits", "srs_idt(writer_id), seq"),
-        (2, "srs_review_logs", "occurred_at, srs_idt(id)"),
-        (3, "srs_unknown_events", "srs_idt(id)"),
+        (
+            0,
+            "srs_entities",
+            "t.created_at, srs_idt(t.id)",
+            "NOT EXISTS (SELECT 1 FROM temp.sync2_migrate_known k WHERE k.phase = 0 AND k.id = t.id)",
+        ),
+        (
+            1,
+            "srs_field_edits",
+            "srs_idt(t.writer_id), t.seq",
+            "srs_idt(t.writer_id) NOT LIKE 'sync2:%' AND NOT EXISTS (SELECT 1 FROM sync2_edit_ops o WHERE o.edit_id = t.id)",
+        ),
+        (
+            2,
+            "srs_review_logs",
+            "t.occurred_at, srs_idt(t.id)",
+            "NOT EXISTS (SELECT 1 FROM sync2_log_meta m WHERE m.log_id = t.id)",
+        ),
+        (
+            3,
+            "srs_unknown_events",
+            "srs_idt(t.id)",
+            "NOT EXISTS (SELECT 1 FROM temp.sync2_migrate_known k WHERE k.phase = 3 AND k.id = t.id)",
+        ),
     ];
     let mut base: i64 = 0;
-    for (phase, table, order) in phases {
+    for (phase, table, order, fresh) in phases {
         let added = c
             .execute(
                 &format!(
                     "INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) \
-                     SELECT srs_id(?1), ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, srs_idt(id) FROM {table} WHERE profile_uid = srs_id(?1)"
+                     SELECT srs_id(?1), ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, srs_idt(t.id) FROM {table} t \
+                     WHERE t.profile_uid = srs_id(?1) AND {fresh}"
                 ),
                 params![profile, base, phase],
             )
             .map_err(sql)?;
         base += added as i64;
     }
-    Ok(())
+    c.execute_batch("DELETE FROM temp.sync2_migrate_known;").map_err(sql)?;
+    Ok(base)
 }
 
 /// 一条排队的旧行 → 操作载荷；行已经不在了（不会发生：迁移期间独占写）返回 `None`。
@@ -1496,17 +1657,12 @@ impl SrsCore {
                 .exists([&marker])
                 .map_err(sql)?;
             if !started {
-                // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
-                // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
-                let has_ops: bool = c
-                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device != ?2 LIMIT 1")
-                    .map_err(sql)?
-                    .exists(params![profile, local.device.0.to_vec()])
-                    .map_err(sql)?;
-                if has_ops {
+                // 只排还没有任何设备的操作代表的旧行（[enqueue_legacy_rows]）：v2 之后的备份恢复出来的库（本机身份被
+                // 快照剥掉、迁移标记随之没了，但投影行全是操作投影出来的）一条都不排，只补标记；先收到了别的设备迁出的
+                // 同一份旧库的操作，只包本机独有的那些——不造第二条重复的操作流，也不丢本机独有的旧行。
+                if enqueue_legacy_rows(c, profile)? == 0 {
                     return finish_migration(c, &mut local, profile, now, 0);
                 }
-                enqueue_legacy_rows(c, profile)?;
                 c.execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", params![marker, now.to_string()]).map_err(sql)?;
             }
             let mut applied = applied_vv(c, profile)?;
@@ -1545,6 +1701,32 @@ impl SrsCore {
             c.execute("DELETE FROM srs_meta WHERE key = ?1", [&marker]).map_err(sql)?;
             finish_migration(c, &mut local, profile, now, n)
         })
+    }
+
+    /// 本 profile 操作日志里每条带旧 dot 的修改记录（迁移来的、备份 / 档案合并并入的）的 dot 与 HLC 物理时刻、计数：
+    /// `{"writers": {写入者: [seq, wall, logical, seq, wall, logical, ...]}}`。读操作日志而不是投影：被支配、已不在
+    /// 投影里的记录也在。档案合并（Dart `srs_profile_merge.dart` `_Writers.alias`）据此判断目标里是否已有同一批记录
+    /// （BUG-4011）。已清除内容的操作不算（载荷已剥掉）。
+    pub fn sync2_legacy_dots(&self, profile: &str) -> Result<Value, String> {
+        let r = self.reader()?;
+        let mut out: Map<String, Value> = Map::new();
+        let mut stmt = r
+            .prepare("SELECT payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND purged = 0")
+            .map_err(sql)?;
+        let mut q = stmt.query(params![profile, i64::from(op::KIND_EDIT)]).map_err(sql)?;
+        while let Some(row) = q.next().map_err(sql)? {
+            let payload = snapshots::unpack_payload(&r, row.get(0).map_err(sql)?, None, None, row.get(1).map_err(sql)?)?;
+            let Ok(Body::Edit(e)) = Body::decode(op::KIND_EDIT, &payload) else { continue };
+            let Some(l) = e.legacy else { continue };
+            let mut parts = l.hlc.splitn(3, ':');
+            let (Some(wall), Some(logical)) = (parts.next().and_then(|x| x.parse::<i64>().ok()), parts.next().and_then(|x| x.parse::<i64>().ok())) else {
+                continue;
+            };
+            if let Value::Array(a) = out.entry(l.writer).or_insert_with(|| Value::Array(Vec::new())) {
+                a.extend([json!(l.seq), json!(wall), json!(logical)]);
+            }
+        }
+        Ok(json!({"writers": out}))
     }
 
     /// 追加一批本机内部操作（冲突解决、清除、还原点）：与 [SrsCore::sync2_apply_local] 同一条落库 / 投影 / 重放路径。
@@ -1677,11 +1859,13 @@ pub fn parse_device(s: &str) -> Result<Id, String> {
 }
 
 #[cfg(test)]
-mod mem_bench;
+pub(crate) mod mem_bench;
 #[cfg(test)]
 pub(crate) mod tests;
 #[cfg(test)]
 mod tests_causal;
+#[cfg(test)]
+mod tests_channel;
 #[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
@@ -1691,11 +1875,31 @@ mod tests_digest;
 #[cfg(test)]
 mod tests_replay_pending;
 #[cfg(test)]
+mod tests_cache_pending;
+#[cfg(test)]
+mod real_folder_bench;
+#[cfg(test)]
+mod ingest_mem_bench;
+#[cfg(test)]
 mod tests_footprint;
+#[cfg(test)]
+mod bootstrap_probe;
 #[cfg(test)]
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_delivery_window;
+#[cfg(test)]
+mod tests_devices;
+#[cfg(test)]
+mod tests_migrate_dedup;
+#[cfg(test)]
+mod tests_head_gap;
+#[cfg(test)]
+mod tests_dedup;
+#[cfg(test)]
+mod dedup_probe;
+#[cfg(test)]
+mod dedup_measure;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

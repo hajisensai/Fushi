@@ -35,6 +35,52 @@ void main() {
     });
   });
 
+  group('subtitleVersionTag', () {
+    test('组名优先；没有组名退到发行平台 token；都没有为 null', () {
+      expect(
+        subtitleVersionTag('[shincaps] Grow Up Show - 01 (AT-X).ass'),
+        'shincaps',
+      );
+      expect(
+        subtitleVersionTag(
+          'グロウアップショウ.～ひまわりのサーカス団～.S01E02.それはとっても、眩しくて.WEBRip.Netflix.ja[cc].srt',
+        ),
+        'Netflix',
+      );
+      expect(
+        subtitleVersionTag('Show.S01E01.WEBRip.Amazon.ja-jp[sdh].srt'),
+        'Amazon',
+      );
+      expect(
+        subtitleVersionTag('Show.S01E01.1080p.NF.WEB-DL.ja.srt'),
+        'Netflix',
+      );
+      expect(subtitleVersionTag('Show - 01.ja.srt'), isNull);
+      // 词内子串不算：`Crafty` 不是 Crunchyroll 的 `cr`。
+      expect(subtitleVersionTag('Crafty Show - 01.srt'), isNull);
+    });
+
+    test('Netflix 与 Amazon 的无组名抽轨字幕分成两个版本', () {
+      final List<SubtitleVersionGroup> groups =
+          buildSubtitleVersionGroups(<VideoSubtitleCandidate>[
+            _FakeCandidate(
+              remoteId: 'n1',
+              fileName: 'Show.S01E01.WEBRip.Netflix.ja[cc].srt',
+              episode: 1,
+            ),
+            _FakeCandidate(
+              remoteId: 'a1',
+              fileName: 'Show.S01E01.WEBRip.Amazon.ja-jp[sdh].srt',
+              episode: 1,
+            ),
+          ]);
+      expect(
+        groups.map((SubtitleVersionGroup g) => g.releaseGroupTag).toSet(),
+        <String>{'Netflix', 'Amazon'},
+      );
+    });
+  });
+
   group('buildSubtitleVersionGroups', () {
     test('同合集同变体折成一张卡；不同格式/组分开', () {
       final List<SubtitleVersionGroup> groups =

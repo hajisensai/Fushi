@@ -203,6 +203,45 @@ Future<bool> resolveWebBrowserPermission({
   return answer.allow;
 }
 
+/// 一次 WebView `onPermissionRequest` 的完整应答：资源 → 站点权限种类、按网站设置答
+/// （没记住的弹框）、网页层允许后补齐系统权限。浏览器标签页与网页播放器的网页档共用这一份
+/// （同一个站点在两边读同一份「网站设置」决定）。认不出的资源 / 非 http(s) 来源一律拒绝。
+Future<PermissionResponse> resolveWebBrowserPermissionRequest({
+  required BuildContext context,
+  required WebBrowserSiteSettings settings,
+  required PermissionRequest request,
+  required TargetPlatform platform,
+}) async {
+  final List<WebBrowserSitePermission>? permissions =
+      webBrowserSitePermissionsFor(request.resources);
+  final String? origin = webBrowserOriginOf(
+    Uri.tryParse(request.origin.toString()) ?? Uri(),
+  );
+  bool allow = false;
+  if (permissions != null && origin != null && context.mounted) {
+    allow = await resolveWebBrowserPermission(
+      context: context,
+      settings: settings,
+      origin: origin,
+      permissions: permissions,
+    );
+    // 网页层允许了还要 app 自己有系统权限（Android 摄像头 / 麦克风），用户在
+    // 系统框里拒绝就整条拒绝。
+    if (allow) {
+      allow = await ensureWebBrowserSystemPermissions(
+        permissions,
+        platform: platform,
+      );
+    }
+  }
+  return PermissionResponse(
+    resources: request.resources,
+    action: allow
+        ? PermissionResponseAction.GRANT
+        : PermissionResponseAction.DENY,
+  );
+}
+
 Future<({bool allow, bool remember})?> _askPermission(
   BuildContext context, {
   required String site,

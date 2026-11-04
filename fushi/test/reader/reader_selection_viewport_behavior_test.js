@@ -182,7 +182,7 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     Object.assign(reader, {getScrollContext: () => context,
       paginationMetrics: {minScroll: 0, maxScroll: 200}, pageStepPosition: x => x});
     for (const name of ['getPagePosition', 'lockRootViewport', 'assignPagePosition',
-      'setPagePosition', '_setPagePositionNow', 'paginate']) reader[name] = fn('pagination', name);
+      'setPagePosition', '_setPagePositionNow', 'adjacentPageStep', 'paginate']) reader[name] = fn('pagination', name);
     // 沙箱里没有 C / startViewTransition：效果恒为无，turnPageAnimated 退回瞬时
     // setPagePosition，与动画前的落点 / 清选区语义逐字一致。
     for (const name of ['pageTurnEffect', 'isEinkMode', 'pageTurnAnimationSupported',

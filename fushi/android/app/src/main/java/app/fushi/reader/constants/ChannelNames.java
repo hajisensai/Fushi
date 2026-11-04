@@ -50,4 +50,8 @@ public final class ChannelNames {
     // 上次进程退出原因 + onTrimMemory 记录：实现见 ProcessExitChannel，Dart 门面
     // previous_exit_log.dart。
     public static final String PROCESS_EXIT = PREFIX + "/process_exit";
+    // 串流第二块屏上的查词面板：主进程 GameStreamCompanionDisplay 与面板进程
+    // GameStreamCompanionActivity 各自在自己的引擎上注册同名通道，中间由
+    // GameStreamCompanionRelayService 转发。
+    public static final String GAME_STREAM_COMPANION = PREFIX + "/game_stream_companion";
 }

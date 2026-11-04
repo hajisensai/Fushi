@@ -147,10 +147,9 @@ void main() {
     // 文字块 ShelfCardMeta（标签以「#名字」接在副行里）。
     'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
       'FushiPageHeader',
-      // 「继续阅读」区收口到共享 FushiContinueSpotlight（主卡皮 FushiContinueHero
-      // 内部即 FushiCard，2026-10-31 各库页与视频首页合一），页面里不再直接画
-      // FushiCard。
-      'FushiContinueSpotlight(',
+      // 「继续阅读」区收口到共享 FushiContinueCardRow（2026-11-01 封面取色并列卡，
+      // 卡皮内部即 FushiCard，各库页共用），页面里不再直接画 FushiCard。
+      'FushiContinueCardRow',
       'ShelfCardMeta',
       '_bookCardShell',
     ],
@@ -985,6 +984,11 @@ class AnotherPopupPart {
           'animated up for the current line (kVideoRemoteCurrentScale) -- the '
           'same subtitle-content class as the allowlisted subtitle jump panel '
           'and transcript text, not ordinary chrome.',
+      'lib/src/pages/implementations/game_stream_companion_page.dart':
+          'Game-stream lookup panel on the second display: fontSize: is the '
+          'streamed Hook line itself, fitted to fill the bottom screen '
+          '(gameStreamFitLineFontSize) -- the same subtitle-content class as '
+          'game_stream_page and subtitle_transcript_text, not ordinary chrome.',
       'lib/src/pages/implementations/game_stream_page.dart':
           'Game-stream receiver: fontSize: sizes the streamed Hook line text '
           'in the collapsible transcript rail -- the same subtitle-content '
@@ -1437,6 +1441,9 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/game_stream_page.dart': <String>{
         'fontSize:',
       },
+      'lib/src/pages/implementations/game_stream_companion_page.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/media/video/video_thumbnail_preview_overlay.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1518,7 +1525,7 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
-          <String>{'BorderRadius.circular(', 'fontSize:'},
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },

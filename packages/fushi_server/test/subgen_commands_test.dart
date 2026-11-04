@@ -48,7 +48,8 @@ class _Recognizer implements VideoSubtitleRecognizer {
   }
 }
 
-/// 按 `id=N` 行回 `{"N": "唯ちゃんN"}`，记下每次的前缀。
+/// 按 `id=N` 行回行协议 `N<TAB>唯ちゃんN` + `END`（BUG-3993 起字幕各阶段不再收
+/// JSON），记下每次的前缀。
 class _Completer implements AiTextCompleter {
   final List<String> prefixes = <String>[];
 
@@ -58,16 +59,17 @@ class _Completer implements AiTextCompleter {
     String stablePrefix = '',
   }) async {
     prefixes.add(stablePrefix);
-    final Map<String, String> fix = <String, String>{
-      for (final RegExpMatch m in RegExp(
-        r'^id=(\d+) ',
-        multiLine: true,
-      ).allMatches(prompt))
-        m.group(1)!: '唯ちゃん${m.group(1)}',
-    };
     return AiChatCompletion(
-      text: jsonEncode(fix),
+      text: <String>[
+        for (final RegExpMatch m in RegExp(
+          r'^id=(\d+) ',
+          multiLine: true,
+        ).allMatches(prompt))
+          '${m.group(1)}\t唯ちゃん${m.group(1)}',
+        kAiLineReplyEnd,
+      ].join('\n'),
       usage: const AiChatUsage(inputTokens: 7, outputTokens: 3),
+      stopReason: 'end_turn',
     );
   }
 }
@@ -422,9 +424,14 @@ class _WrongWork extends _Completer {
     String prompt, {
     String stablePrefix = '',
   }) async => const AiChatCompletion(
+    // 专名表行协议：`ja<TAB>reading<TAB>kind<TAB>误识` 每行一条 + `END`。
     text:
-        '[{"ja":"別人甲","kind":"人名"},{"ja":"別人乙","kind":"人名"},'
-        '{"ja":"別人丙","kind":"人名"},{"ja":"別人丁","kind":"人名"}]',
+        '別人甲\t\t人名\t\n'
+        '別人乙\t\t人名\t\n'
+        '別人丙\t\t人名\t\n'
+        '別人丁\t\t人名\t\n'
+        '$kAiLineReplyEnd',
     usage: AiChatUsage(inputTokens: 7, outputTokens: 3),
+    stopReason: 'end_turn',
   );
 }

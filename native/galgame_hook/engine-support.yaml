@@ -371,6 +371,24 @@
         }
       },
       {
+        "engine_id": "softpal",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "Engine-exact text-sprite provider (kLookupGeometryProviderIdSoftpal, 29). The glyph cells come from the PalFontDrawText calls of the published page (sprite-local x/y, the font size, the step to the next glyph on the row); the page sits at its text sprite's last PalSpriteSetPos placement (design pixels); the design screen and keep-aspect flag come from PalGetSystemParameters (+0x38/+0x3c, +0x04) and the design screen is stretched (or fitted) over the client, projected to physical client pixels. Pal samples the mouse buttons with GetAsyncKeyState / GetKeyState every frame: only Pal.dll's two import slots are pointed at wrappers that hide a claimed left press from the engine, and the procedure of PalGetWindowHandle()'s window swallows its WM_LBUTTONDOWN/DBLCLK/UP; whichever sees a press first decides it (softpal_core.h DecideSample / DecideMessage). Refused when the page is no longer on its sprite (another page, a release or a hide), the sprite moved, the client size changed, the host's native-input admission is missing, a card shields the game or the game is not foreground. Pal versions that register their window for touch (the 2026 sample) take a tap from WM_TOUCH itself: the contact is decided at its WM_TOUCH down, a claimed contact's WM_TOUCH messages are swallowed until its up and the promoted mouse press follows that decision (softpal_core.h DecideTouch / ResolveTouch / TakeTouchPromotion); a contact that lands while a card is up is hidden from the engine, judged by its own input time against the last engine frame that saw the card (the host takes the card down before the engine dispatches that WM_TOUCH). Hover and looked-up-term highlights use the shared highlight window, whose clears are owned by provider id (lookup_hover_highlight_state.h), so the per-tick clear of another engine's adapter never blanks the SoftPal frame. The lookup is enabled only when GetAsyncKeyState is wrapped, GetKeyState is wrapped or not imported, and PalSpriteViewCtrl / PalSpriteRelease are hooked (softpal_core.h LookupAdmissible); otherwise the text lane works and the lookup stays off. Offline: fushi_softpal_adapter_test. 2026-11-03 local Fushi-host runs (no card written) on the 2014, 2015 and 2026 samples: mouse click and touch tap on a glyph opened the card without advancing the page, the whole looked-up term was highlighted over the glyphs, taps and swipes on the card and taps outside it did not advance the page, the game stayed foreground throughout."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
         "engine_id": "luca",
         "geometry": {
           "status": "implemented_unverified",
@@ -3685,6 +3703,152 @@
       ],
       "test_paths": [
         "tests/kogado_hy_adapter_test.cpp"
+      ]
+    },
+    {
+      "id": "softpal",
+      "display_name": "SoftPal ADV System",
+      "aliases": [
+        "ソフパル",
+        "SoftPal",
+        "Pal.dll"
+      ],
+      "family": {
+        "id": "softpal",
+        "relation": "SoftPal ADV System runtime (dll\\Pal.dll, cdecl exports the executable resolves with GetProcAddress); three generations measured: 2014 (262 exports), 2015, 2026 (369 exports)"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "MAJOKOI.exe",
+            "koikake.exe",
+            "totsulover.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: 2014 魔女恋日記 MAJOKOI.exe, 2015 恋×シンアイ彼女 koikake.exe, 2026 ディメンション凸ラバース!! totsulover.exe. The adapter never matches on names; identity is a loaded module exporting the Pal runtime surface it binds (softpal_core.h kRequiredExports)."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "All three executables and their dll\\Pal.dll are PE32 machine 0x14c"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "dll/Pal.dll",
+            "voice.pac",
+            "data.pac",
+            "system.pac"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "dll\\Pal.dll plus *.pac archives next to the executable in all three samples"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "USER32.DLL",
+            "DSOUND.DLL",
+            "vorbisfile.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Pal.dll import table: GetAsyncKeyState (plus GetKeyState in the 2026 generation) samples the mouse buttons every frame; DirectSound plays Ogg Vorbis through vorbisfile.dll. The executables import no Pal.dll (GetProcAddress)."
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "Pal.dll"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Pal.dll is loaded from dll\\ by the executable at startup (2026-11-03 probe on all three samples)"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".pac"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "\"PAC \" archives: u32 count at +8, 0x28-byte index entries (0x20 name, u32 size, u32 offset) from 0x804, Ogg payloads stored as is; identical in all three generations"
+          }
+        },
+        "hashes": {
+          "values": [
+            "MAJOKOI.exe sha256:0d751d84fb091159852abed3d86e90223c1f75d58bbc1ba3865940743ab92831",
+            "MAJOKOI dll/Pal.dll sha256:a89fe121b8023d3ea6f0d0c01fd3edf852bdff18fc1906ba86d7a4dad41fa54d",
+            "koikake.exe sha256:93f228aa413aece0f047b27ddb1ea26d4e50316304e6c4029eae4a1a844f437b",
+            "koikake dll/Pal.dll sha256:2a43bc4408aff086c18dc73ccd2d35be4f8a56cf8b3e82da7b75f80ffe61625e",
+            "totsulover.exe sha256:a2d14820e5c63520084565768ab8f14f7c356aad623de2e313b12c14bae83688",
+            "totsulover dll/Pal.dll sha256:bd9360c130e366759b1b5b7d37c103dc0d064f0cded2545252f504c18d9ff235"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is the game executable started directly (Locale Emulator for the 2015 / 2026 samples); there is no launcher process.",
+          "Pal.dll may load after the hook attaches: the adapter installs on the module load that brings a module with the Pal exports."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "softpal_text_sprite_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 16, hook 'SoftPal exact', ENGINE:SOFTPAL:text_<w>x<h>, one lane per text sprite size): PalSpriteLock / PalFontDrawText / PalSpriteUnlock detours collect each text transaction (one glyph per draw call, sprite-local pixels, the global font size); transactions without glyphs (the typewriter reveal) are ignored; transactions are tracked per game thread and per locked sprite (the 2026 sample draws the message body on one thread while another thread locks and draws small sprites mid-page, and nests locks on one thread); a draw string longer than one cell keeps its head and is marked truncated, so ruby drawn as one string (2026: Ｍａｔｕｒｅ) is dropped as an annotation without costing the page, while a truncated body-size string rejects the page; a composed page followed in the same engine step (no PalSpriteSetPos in between) by a composed page on another sprite is the speaker plate and is dropped, while a following transaction that is rejected or empty leaves the pending page a body (softpal_core.h OnPageEvent / OnVoiceEvent / OnTick, the worker's step machine); a glyph under 70% of the size of a glyph it sits on (horizontally over it, ending above its middle within its own height) is source ruby and stays out of the text, so one enlarged glyph does not turn the ordinary text of its page into ruby; the hook code names exactly one lane and its text events carry kTextEventFlagLaneUniqueHookCode, so cross-session thread memory recognises it by hook code alone; every event-ring sequence a producer takes is committed (a faulted voice name as a discard) and the worker takes them strictly in order, reporting only lapped events (diag 0x80); the voice archive index is a name map built one archive per worker tick, finished at once by a voice that arrives first. 2026-11-03 local Fushi-host runs (no card written): 2014 MAJOKOI.exe, 2015 koikake.exe and 2026 totsulover.exe each published only the body on the 1024x256 lane with the speaker plate dropped, and each page's PalSoundLoad voice was exported from voice.pac as that page's text event (host audioBackend gameResource)."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact text-sprite provider kLookupGeometryProviderIdSoftpal (29), see lookup_support.geometry."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Select the 'SoftPal exact' lane of the message body sprite (the lane with the most lines)."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "engine_resource_ogg",
+            "format": "Ogg Vorbis entry of the game's .pac archives, written with the text event of its page",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "x86 only: no x64 SoftPal sample.",
+        "The speaker-plate rule relies on the engine drawing the plate and the body in one engine step; of several texts drawn in one step only the last is published (menus and choices are on other lanes than the body).",
+        "Voice pairing relies on the voice being loaded in the step of its page (PalSoundLoad type 1 with no sprite placement in between); a voice loaded in a later step is not exported.",
+        "A page whose text equals the previous page on the same sprite is treated as a redraw and not republished."
+      ],
+      "adapter_path": "hook/adapters/softpal_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/softpal_replay.json"
+      ],
+      "test_paths": [
+        "tests/softpal_adapter_test.cpp"
       ]
     },
     {

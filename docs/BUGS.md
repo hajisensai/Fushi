@@ -33,10 +33,35 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3596 条。点号进各自文件。
+> 共 3608 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4004](bugs/BUG-4004-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
+> 共 3616 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
+| [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |
+| [BUG-4010](bugs/BUG-4010-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
+| [BUG-4009](bugs/BUG-4009-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
+| [BUG-4008](bugs/BUG-4008-page-curl-back-bleed-and-manga-letterbox.md) | ✅ | ✅ | page-curl-back-bleed-and-manga-letterbox |
+| [BUG-4007](bugs/BUG-4007-lyrics-window-blank-tail.md) | ✅ | ✅ | 歌词模式自动播放一段后后面的文字空白、拨过去整页刷新 |
+| [BUG-4006](bugs/BUG-4006-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
+| [BUG-4005](bugs/BUG-4005-srs-sync2-alias-dedup.md) | ✅ | ✅ | srs-sync2-alias-dedup |
+| [BUG-4004](bugs/BUG-4004-srs-sync2-head-references-unuploaded-segment.md) | ✅ | ✅ | 复习同步 head 引用了位置上没有的段，读者待应用永久卡住 |
+| [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
+| [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
+| [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
+| [BUG-4000](bugs/BUG-4000-srs-legacy-lapis-card-type-flags-empty.md) | ✅ | ✅ | 旧 Lapis 迁来的 Fushi 卡片四个卡型开关全空，正面不显示例句 |
+| [BUG-3999](bugs/BUG-3999-srs-new-device-ingest-slow.md) | ✅ | ✅ | 新设备从同步文件夹收复习数据极慢 |
+| [BUG-3998](bugs/BUG-3998-subtitle-batch-mixed-versions.md) | ✅ | ✅ | 合集批量下载字幕逐集混排不同版本 |
+| [BUG-3997](bugs/BUG-3997-asr-gpu-vram-held-after-transcription.md) | ✅ | ✅ | 每次转录漏一个不退出的后台 isolate（「GPU 转录后显存常驻」未复现） |
+| [BUG-3996](bugs/BUG-3996-srs-folder-sync-no-progress.md) | ✅ | ✅ | SRS 文件夹位置同步整轮停在「正在准备」、不留面包屑 |
+| [BUG-3995](bugs/BUG-3995-subtitle-ai-reply-truncated-retry.md) | ✅ | ✅ | 整季生成字幕 AI 校对暂停：AI 回复多次不完整 |
+| [BUG-3994](bugs/BUG-3994-study-clock-covering-overlays.md) | ✅ | ✅ | 盖住学习页的弹层 / 整页不停学习计时（只认 PageRoute，漫画 / PDF / 浏览器无判据） |
+| [BUG-3993](bugs/BUG-3993-media-server-header-under-status-bar.md) | ✅ | ✅ | media-server-header-under-status-bar |
 | [BUG-3992](bugs/BUG-3992-browser-shortcuts-dead-after-unfocus.md) | ✅ | ✅ | 浏览器 Ctrl+F 等快捷键在焦点离开地址栏后失效 |
 | [BUG-3991](bugs/BUG-3991-browser-svg-favicon-letter.md) | ✅ | ✅ | 浏览器标签页图标退回首字母（站点声明 SVG favicon） |
 | [BUG-3990](bugs/BUG-3990-browser-tab-strip-gap.md) | ✅ | ✅ | 浏览器顶部活动标签不贴地址栏、中间露 6dp 缝 |

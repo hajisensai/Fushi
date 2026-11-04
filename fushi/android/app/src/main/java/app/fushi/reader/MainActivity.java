@@ -293,6 +293,7 @@ public class MainActivity extends AudioServiceActivity {
             floatingDictChannel = null;
         }
         FloatingBallChannel.detach(getFlutterEngine());
+        GameStreamCompanionDisplay.detach();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -362,6 +363,15 @@ public class MainActivity extends AudioServiceActivity {
             return true;
         }
         ensureKeyFocusTarget();
+        // A controller's combined source (0x501 / 0x701) would reach Dart as a
+        // keyboard event; see ControllerKeySource. Already-narrowed events
+        // (Flutter's own redispatch) pass through as the same object.
+        final int flutterSource = ControllerKeySource.forFlutter(event.getSource());
+        if (flutterSource != event.getSource()) {
+            final KeyEvent narrowed = new KeyEvent(event);
+            narrowed.setSource(flutterSource);
+            return super.dispatchKeyEvent(narrowed);
+        }
         return super.dispatchKeyEvent(event);
     }
 
@@ -617,6 +627,8 @@ public class MainActivity extends AudioServiceActivity {
         // 都要从 Activity 起，不必再补 NEW_TASK。
         FloatingBallChannel.registerWith(flutterEngine, this);
         app.fushi.reader.widgets.WidgetChannel.registerWith(flutterEngine, getApplicationContext());
+        // 串流第二块屏：列显示器、把查词面板拉到另一块屏上并转发消息与手柄键。
+        GameStreamCompanionDisplay.registerWith(flutterEngine, this);
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);

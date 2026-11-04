@@ -21,8 +21,11 @@ void main() {
   test('hero 书名经 getDisplayTitleFromMediaItem 应用 override', () {
     expect(
       hero(),
+      // 主卡与并列卡共用 entryOf(item) 建卡，书名参数是 item（主卡传 hero）。
       matches(
-        RegExp(r'mediaSource\s*\.getDisplayTitleFromMediaItem\(\s*hero\s*\)'),
+        RegExp(
+          r'mediaSource\s*\.getDisplayTitleFromMediaItem\(\s*(hero|item)\s*\)',
+        ),
       ),
       reason: 'hero 条书名必须与同卡封面同源，应用编辑弹窗写入的 override 书名',
     );
@@ -32,7 +35,7 @@ void main() {
     // 以表达式形态（带逗号结尾）匹配，避免误伤注释里的提及。
     expect(
       hero(),
-      isNot(contains('hero.title,')),
+      allOf(isNot(contains('hero.title,')), isNot(contains('item.title,'))),
       reason: '直读 hero.title 会在改名后仍显示旧名（BUG-1108）',
     );
   });

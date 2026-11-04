@@ -309,6 +309,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 本键出现之前「填了 key」即启用，默认 false 会让存量用户升级后失效。
   'jimaku_enabled',
   'jimaku_pref_langs',
+  // 「跳转记录」（小说 / 漫画 / 视频共用，2026-11-02 由浮动胶囊改成顶栏图标）：
+  // int 秒（默认 0 = 不自动隐藏）：顶栏返回 / 前进图标自上次跳转起多久后隐藏，
+  // 记录保留；缺失时从旧键 video_jump_pill_auto_hide_seconds 折算一次。
+  'jump_history_auto_hide_seconds',
+  // bool（默认 true）：进度条 / 页码滑块上画返回点与前进点刻度。
+  'jump_history_progress_marks',
+  // bool（默认 true）：顶栏显示返回 / 前进图标。关掉照样记录，面板与刻度照常。
+  'jump_history_toolbar',
   // Kavita 漫画每章「上次成功同步」时刻（JSON 对象 `"<bookUid>|<chapterKey>" →
   // epoch 毫秒`）。String，读写见 kavita_manga_sync.dart；设备本地，不含凭据。
   'kavita_manga_sync_state',
@@ -453,6 +461,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `kBuiltinAcoustidApiKey`，两者都空 = AcoustID 不可用）。凭据：同时登记在
   // kCredentialPreferenceKeys 与 PrefRedactionPolicy.sensitiveKeys。
   'music_acoustid_api_key',
+  // bool（默认 false）：用户在本机把 Apple Music 账号连接到 Fushi（整曲播放 + 资料库；
+  // MusicKit 方案 §4）。Apple 原生的系统授权 app 撤不掉，「断开」靠它；设备本地。
+  'music_apple_music_connected',
   // bool（默认 false）：服务器曲库里显示 Apple Music catalog 来源（MusicKit 方案 P1b：
   // 浏览 + 30 秒试听，developer token 由排行榜 Worker 代签）。显式 opt-in。
   'music_apple_music_enabled',
@@ -501,6 +512,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
   'music_lyrics_providers',
+  // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
+  // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
+  'music_online_sources',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
@@ -817,8 +831,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',
-  // int 秒（默认 10，0 = 不自动隐藏）：「返回跳转前位置」胶囊自上次跳转起多久后
-  // 不再随控制条出现，见 videoJumpPillLiveVisible。
+  // 冻结旧键（int 秒，旧默认 10）：只在 jump_history_auto_hide_seconds 缺失时读一次
+  // 折算（见 PreferencesRepository.jumpHistoryAutoHideSeconds），不再写。
   'video_jump_pill_auto_hide_seconds',
   'video_library_auto_backfill_scrape',
   // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）

@@ -7,10 +7,15 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/video/jimaku_matching.dart'
+    show jimakuVersionKeyOf;
+import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart'
+    show coarseVersionLanguages, probeUnlabeledVersionLanguages;
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 /// 延迟字幕解析的结果：配好的字幕 + 失败原因（二选一有值）。
 class ResolvedPlanSubtitles {
@@ -90,10 +95,33 @@ class JimakuPlanSubtitleResolver {
         )).primaryAudioLanguage,
         globalDefaultContentLanguage: _defaultContentLanguage(),
       );
+      // 文件名没写语言的版本按正文判语言（BUG-3998）；下过的字节留给落盘复用。
+      final Map<String, Future<Uint8List?>> fetched =
+          <String, Future<Uint8List?>>{};
+      final JimakuClient client = jimaku;
+      Future<Uint8List?> fetch(JimakuFile file) =>
+          fetched[file.url] ??= client.downloadFile(file.url);
+      final Map<String, String> contentLanguageByVersion =
+          coarseVersionLanguages(
+            await probeUnlabeledVersionLanguages<JimakuFile>(
+              files: files.where((JimakuFile file) => file.isTextSubtitle),
+              targetEpisodes: <int>[
+                for (final String path in videoAbsolutePaths)
+                  ?parseVideoFilename(p.basename(path)).episode,
+              ],
+              versionOf: jimakuVersionKeyOf,
+              declaredLanguageOf: (JimakuFile file) =>
+                  detectSubtitleLanguage(file.name),
+              episodeOf: (JimakuFile file) => file.episode,
+              sizeOf: (JimakuFile file) => file.size,
+              fetch: fetch,
+            ),
+          );
       final List<ResolvedSubtitleMatch> matches = matchJimakuFilesToVideoNames(
         videoAbsolutePaths,
         files,
         preferredLanguage: preferredLanguage,
+        contentLanguageByVersion: contentLanguageByVersion,
       );
       if (matches.isEmpty) {
         // 反查一条都对不上——绝大多数是条目选错季或用了绝对集号编号。
@@ -103,7 +131,13 @@ class JimakuPlanSubtitleResolver {
         );
       }
       return ResolvedPlanSubtitles.ok(
-        await _download(plan, matches, jimaku, videoAbsolutePaths),
+        await _download(
+          plan,
+          matches,
+          fetch,
+          videoAbsolutePaths,
+          contentLanguageByVersion,
+        ),
       );
     } catch (e) {
       return ResolvedPlanSubtitles.failed('jimaku fetch failed: $e');
@@ -122,8 +156,9 @@ class JimakuPlanSubtitleResolver {
   Future<List<PlanSubtitle>> _download(
     AnimeDownloadPlan plan,
     List<ResolvedSubtitleMatch> matches,
-    JimakuClient jimaku,
+    Future<Uint8List?> Function(JimakuFile file) fetch,
     List<String> videoAbsolutePaths,
+    Map<String, String> contentLanguageByVersion,
   ) async {
     final Directory subsDir = _stagingDirFor(plan.id);
     final Map<String, String> stagedByUrl = <String, String>{};
@@ -135,7 +170,7 @@ class JimakuPlanSubtitleResolver {
     for (final ResolvedSubtitleMatch match in matches) {
       String? staged = stagedByUrl[match.file.url];
       if (staged == null) {
-        final Uint8List? bytes = await jimaku.downloadFile(match.file.url);
+        final Uint8List? bytes = await fetch(match.file);
         if (bytes == null) continue;
         final String? videoPath = _videoPathFor(match, videoAbsolutePaths);
         if (videoPath != null) {
@@ -170,7 +205,9 @@ class JimakuPlanSubtitleResolver {
           episode: match.episode,
           fileName: match.file.name,
           stagedPath: staged,
-          language: detectSubtitleLanguage(match.file.name),
+          language:
+              detectSubtitleLanguage(match.file.name) ??
+              contentLanguageByVersion[jimakuVersionKeyOf(match.file)],
         ),
       );
     }

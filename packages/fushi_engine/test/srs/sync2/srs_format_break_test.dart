@@ -215,7 +215,7 @@ void main() {
     ).readAsBytesSync();
     final Map<String, Object?>? fence = srsDecodeV1Fence(bytes);
     expect(fence, isNotNull);
-    expect(fence!['minReader'], 2);
+    expect(fence!['minReader'], kSrsSync2MinReader);
     expect(fence[kSrsV1MovedToKey], kSrsSync2Folder);
     expect(
       () => jsonDecode(utf8.decode(bytes)),
@@ -1935,6 +1935,9 @@ class _CountingHost implements SrsSync2Host {
 
   @override
   Future<Map<String, Object?>> sync2IngestFinish() => inner.sync2IngestFinish();
+
+  @override
+  Future<void> sync2IngestEnd() => inner.sync2IngestEnd();
 }
 
 /// 协议 1 整份封装的固定样本：密钥 0x11×32，nonce 0x22×24，AAD `fushi-srs-media:cat.png`（旧内核 `seal` 的 AAD），

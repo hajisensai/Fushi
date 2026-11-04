@@ -271,10 +271,11 @@ void main() {
         expect(
           RegExp(
             r"callHandler\(\s*'openAdvancedMining',\s*"
-            r'\{ entryIndex: idx, matched: matched, expression: expression \}\)',
+            r"\{ entryIndex: idx, matched: matched, expression: expression, reading: reading \|\| '' \}\)",
           ).hasMatch(js),
           isTrue,
-          reason: '$path 的「高级制卡」按钮必须原样传 {entryIndex, matched, expression} 对象',
+          reason:
+              '$path 的「高级制卡」按钮必须原样传 {entryIndex, matched, expression, reading} 对象',
         );
       });
     }

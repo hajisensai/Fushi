@@ -305,6 +305,13 @@ enum MusicPlaybackFailure {
   /// 这一首拿不到可播放的流（在线插件曲目：会员 / 无版权 / 只给试听 / 插件已停用或卸载 /
   /// 取流超时 / 流地址打不开）。只影响这一首：引擎自动跳到下一首（连续多首都这样才停）。
   trackUnavailable,
+
+  /// Apple Music 整曲：桥那一代播放器没了（网页桥 renderer 崩溃 / 登录后重建）。不自动跳：
+  /// 停在这首、提示，按播放时重新打开。
+  appleMusicSessionLost,
+
+  /// Apple Music 整曲：账号已断开 / 授权失效。不自动跳（后面的 Apple Music 曲目一样放不了）。
+  appleMusicSignedOut,
 }
 
 final class MusicBackendFailed extends MusicBackendEvent {

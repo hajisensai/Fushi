@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
@@ -18,6 +19,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
   required WidgetBuilder builder,
   bool bottomSheetWhenCompact = false,
   ReaderPanelSwitcher? switcher,
+  ValueListenable<bool>? studyClockTransparentWhen,
 }) {
   final ReaderSideSheetSide side =
       preferences.getPref(kReaderSettingsPanelSidePref) == 'left'
@@ -35,6 +37,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
     sideController: controller,
     bottomSheetWhenCompact: bottomSheetWhenCompact,
     switcher: switcher,
+    studyClockTransparentWhen: studyClockTransparentWhen,
     builder: (BuildContext context) => _ReaderSettingsSideSession(
       key: sessionKey,
       controller: controller,

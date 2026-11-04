@@ -3,7 +3,7 @@
 // 取 SHA-256，与下面钉住的摘要比对。摘要由改用原生实现**之前**的纯 Dart 实现生成
 // （2026-10-18）；截图全是 PNG（无损），解码器换了也必须逐位相同。
 //
-// 只覆盖 Windows 端消费的校准链路（根 CLAUDE.md「Galgame Hook 硬规则」）：这里不涉及
+// 只覆盖 Windows 端消费的校准链路（根 CLAUDE.md「领域硬边界」）：这里不涉及
 // 任何引擎 Hook，测试输入是合成笔画，不含游戏素材。
 //
 // 生成：`FUSHI_PRINT_VECTORS=1 flutter test <本文件>`，把打印的表换进 [_vectors]。

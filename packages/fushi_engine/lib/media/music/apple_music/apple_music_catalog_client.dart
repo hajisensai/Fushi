@@ -1,13 +1,15 @@
-/// Apple Music catalog 来源（MusicKit 方案 §3.2 / §3.6，P1b）：`MusicServerBrowser` 的
-/// Apple Music 实现，**只读浏览 + 30 秒试听**。
+/// Apple Music catalog 来源（MusicKit 方案 §3.2 / §3.6，P1b + P2）：`MusicServerBrowser` 的
+/// Apple Music 实现：只读浏览；未登录时 30 秒试听，登录且有订阅时整曲（[fullTracks]）。
 ///
 /// - 浏览：Dart 直接调公开的 Apple Music API（`api.music.apple.com/v1/catalog/{storefront}`），
 ///   developer token 来自 [AppleMusicTokenSource]（Worker 代签）。不需要用户登录。
 ///   Apple 没有「列出全部专辑 / 艺人」的接口，所以专辑分区是该 storefront 的热门专辑榜
 ///   （`charts?types=albums`），艺人分区是榜单专辑的艺人；真正的入口是搜索。
 /// - 播放：曲目自带的预览片段（`previews[0].url`，约 30 秒 AAC m4a）交给 mpv，五端都能放。
-///   整曲播放要经 Apple 授权的播放器解密（P2 原生 MusicKit / P3 网页桥），不在这一层。
-///   没有预览的曲目（未发行 / 区域受限）不列出，免得点了才报错。
+///   整曲播放要经 Apple 授权的播放器解密（原生 MusicKit / 网页桥），不在这一层：[fullTracks]
+///   时 [streamFor] 给的是 `fushi-apple-music://song/<catalogId>`（[appleMusicSongUri]），由 app 侧
+///   的路由后端交给 MusicKit。试听模式下没有预览的曲目（未发行 / 区域受限）不列出；整曲模式下
+///   不带 `playParams`（不可串流）的曲目不列出，免得点了才报错。
 /// - 不用私有接口（amp-api、逐字 TTML 等），也不缓存、不下载音频。
 ///
 /// 纯 Dart、不碰 Flutter（引擎纯度守卫）。
@@ -43,6 +45,32 @@ const List<String> kAppleMusicStorefrontChoices = <String>[
   'fr',
 ];
 
+/// 整曲播放项的 scheme（app 侧路由后端按它把曲目交给 MusicKit）。
+const String kAppleMusicTrackScheme = 'fushi-apple-music';
+
+/// 一首 catalog 曲目的整曲播放地址：`fushi-apple-music://song/<catalogId>`。
+Uri appleMusicSongUri(String catalogId) => Uri(
+  scheme: kAppleMusicTrackScheme,
+  host: 'song',
+  pathSegments: <String>[catalogId],
+);
+
+/// 播放项路径是不是 Apple Music 整曲。
+bool isAppleMusicTrackPath(String path) =>
+    path.startsWith('$kAppleMusicTrackScheme://');
+
+/// 从整曲播放地址取 catalog id；不是整曲地址回 null。
+String? appleMusicSongIdFromPath(String path) {
+  if (!isAppleMusicTrackPath(path)) return null;
+  final Uri? u = Uri.tryParse(path);
+  if (u == null || u.host != 'song' || u.pathSegments.length != 1) return null;
+  final String id = u.pathSegments.single;
+  return id.isEmpty ? null : id;
+}
+
+/// MusicKit 整曲的编码（网页 MusicKit 上限 256 kbps AAC；原生由系统决定，按同档如实报有损）。
+const int kAppleMusicFullTrackBitrateKbps = 256;
+
 /// 单个请求的超时。
 const Duration kAppleMusicRequestTimeout = Duration(seconds: 15);
 
@@ -77,13 +105,30 @@ String normalizeAppleMusicStorefront(String? raw) {
   return RegExp(r'^[a-z]{2}$').hasMatch(s) ? s : kAppleMusicDefaultStorefront;
 }
 
+/// 系统地区 → Apple Music storefront 的默认值（[choices] 里没有就落缺省 storefront）。
+String appleMusicStorefrontForCountry(
+  String? countryCode, [
+  List<String> choices = kAppleMusicStorefrontChoices,
+]) {
+  final String c = (countryCode ?? '').trim().toLowerCase();
+  return choices.contains(c) ? c : kAppleMusicDefaultStorefront;
+}
+
 /// 一首 catalog 曲目及其预览地址。
 class AppleMusicSong {
-  const AppleMusicSong({required this.track, this.previewUri, this.isrc});
+  const AppleMusicSong({
+    required this.track,
+    this.previewUri,
+    this.isrc,
+    this.streamable = false,
+  });
 
   final MusicServerTrack track;
   final Uri? previewUri;
   final String? isrc;
+
+  /// 带 `playParams`：订阅用户能经 MusicKit 整曲播放。
+  final bool streamable;
 }
 
 Map<String, Object?> _attrs(Map<String, Object?> res) {
@@ -152,6 +197,7 @@ AppleMusicSong? parseAppleMusicSong(Object? raw) {
     ),
     previewUri: preview,
     isrc: _str(a['isrc']),
+    streamable: a['playParams'] is Map<String, Object?>,
   );
 }
 
@@ -224,6 +270,7 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
     String? storefront,
     http.Client? client,
     Uri? apiBase,
+    this.fullTracks = false,
   }) : _tokens = tokens,
        storefront = normalizeAppleMusicStorefront(storefront),
        _client = client ?? createAppHttpIoClient(),
@@ -238,8 +285,15 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
   /// 当前 storefront（两位小写）。
   final String storefront;
 
+  /// 已登录 Apple Music 且订阅有效、本平台有 MusicKit 播放器：整曲播放（[streamFor] 给
+  /// [appleMusicSongUri]），否则只放预览。
+  final bool fullTracks;
+
   /// 本实例列出过的曲目 → 预览地址（[streamFor] 只收本实例列出的曲目）。
   final Map<String, Uri> _previews = <String, Uri>{};
+
+  /// 本实例列出过的可整曲播放的曲目（[fullTracks] 时用）。
+  final Set<String> _streamable = <String>{};
 
   @override
   MusicServerKind get kind => MusicServerKind.appleMusic;
@@ -304,9 +358,11 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
     final List<MusicServerTrack> out = <MusicServerTrack>[];
     for (final Object? r in raw) {
       final AppleMusicSong? s = parseAppleMusicSong(r);
-      final Uri? preview = s?.previewUri;
-      if (s == null || preview == null) continue;
-      _previews[s.track.id] = preview;
+      if (s == null) continue;
+      final Uri? preview = s.previewUri;
+      if (preview != null) _previews[s.track.id] = preview;
+      if (fullTracks ? !s.streamable : preview == null) continue;
+      if (s.streamable) _streamable.add(s.track.id);
       out.add(s.track);
     }
     return out;
@@ -462,10 +518,19 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
 
   // ---------------------------------------------------------------- 播放 / 封面
 
-  /// 预览片段（约 30 秒 AAC）。码率上限无意义：预览只有一档。只收本实例列出过的曲目
-  /// （列表层已滤掉无预览的），别处来的 id 抛 [StateError]。
+  /// [fullTracks] 时是整曲地址（交给 MusicKit），否则是预览片段（约 30 秒 AAC）。码率上限
+  /// 无意义：两种都只有一档。只收本实例列出过的曲目（列表层已滤掉放不了的），别处来的 id
+  /// 抛 [StateError]。
   @override
   MusicServerStream streamFor(MusicServerTrack track, {int? maxBitrateKbps}) {
+    if (fullTracks && _streamable.contains(track.id)) {
+      return MusicServerStream(
+        uri: appleMusicSongUri(track.id),
+        transcoded: false,
+        codec: 'aac',
+        bitrateKbps: kAppleMusicFullTrackBitrateKbps,
+      );
+    }
     final Uri? preview = _previews[track.id];
     if (preview == null) {
       throw StateError('Apple Music track ${track.id} has no preview');

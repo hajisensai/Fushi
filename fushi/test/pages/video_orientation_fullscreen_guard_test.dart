@@ -277,13 +277,16 @@ void main() {
         src,
         'Future<void> _handleBackOrExit() async {',
       );
-      // BUG-2119 起 pop 经 exitAfterPersist 的 `exit: nav.pop` 无条件执行，
-      // 锚点从 `nav.pop()` 改成 `nav.pop`；语义不变：直接退页，无全屏路由中间态。
+      // BUG-2119 起 pop 经 exitAfterPersist 的 `exit: nav.pop` 无条件执行；退出动作抽成了
+      // _exitVideoPage，锚点跟着改；语义不变：直接退页，无全屏路由中间态。
       expect(
-        body.contains('nav.pop'),
+        body.contains('_exitVideoPage();'),
         isTrue,
         reason: '_handleBackOrExit 应直接退页 (无全屏路由中间态)',
       );
+      final String exit = methodBody(src, 'void _exitVideoPage() {');
+      expect(exit.contains('exit: nav.pop'), isTrue);
+      expect(exit.contains('_pushNeutralizedVideoFullscreen'), isFalse);
       expect(
         body.contains('_pushNeutralizedVideoFullscreen'),
         isFalse,

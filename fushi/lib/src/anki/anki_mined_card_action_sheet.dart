@@ -80,6 +80,8 @@ Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
     context: context,
     // 制卡/覆写是有副作用的选择，误触 barrier 就丢掉整次操作——只允许显式取消。
     barrierDismissible: false,
+    // 制卡是阅读的一部分：操作单盖着学习页也照常计时（BUG-3994）。
+    studyClockTransparent: true,
     builder: (dialogContext) => _MinedCardActionDialog(
       matches: matches,
       repo: repo,
@@ -415,6 +417,7 @@ Future<AnkiMinedCardActionResult?> showAnkiNoteViewer({
   return showAppDialog<AnkiMinedCardActionResult>(
     context: context,
     barrierDismissible: false,
+    studyClockTransparent: true,
     builder: (_) =>
         _AnkiNoteViewerDialog(repo: repo, noteId: noteId, overwrite: overwrite),
   );
@@ -645,6 +648,7 @@ Future<Map<String, String>?> showAnkiSourceNoteChanges({
 }) => showAppDialog<Map<String, String>>(
   context: context,
   barrierDismissible: false,
+  studyClockTransparent: true,
   builder: (_) =>
       _AnkiSourceNoteChangesDialog(original: original, candidate: candidate),
 );
@@ -761,6 +765,7 @@ Future<AnkiMinedCardActionResult> showAnkiUnverifiedMinedCardDialog({
         context: context,
         // 与同族操作单同口径：有副作用的选择，误触 barrier 不该丢掉整次操作。
         barrierDismissible: false,
+        studyClockTransparent: true,
         builder: (dialogContext) => _UnverifiedMinedCardDialog(
           repo: repo,
           expression: expression,

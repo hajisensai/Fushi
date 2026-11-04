@@ -95,6 +95,18 @@ typedef _OpenDart =
       ffi.Pointer<ffi.Pointer<ffi.Void>>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
+typedef _SetTempDirC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _SetTempDirDart =
+    int Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
 typedef _CloseC = ffi.Void Function(ffi.Pointer<ffi.Void>);
 typedef _CloseDart = void Function(ffi.Pointer<ffi.Void>);
 typedef _SimpleC =
@@ -261,6 +273,9 @@ final class SrsCoreBindings {
   SrsCoreBindings._(FushiFsrs fsrs, ffi.DynamicLibrary lib)
     : _fsrs = fsrs,
       open = lib.lookupFunction<_OpenC, _OpenDart>('ffsrs_store_open'),
+      setTempDir = lib.lookupFunction<_SetTempDirC, _SetTempDirDart>(
+        'ffsrs_set_temp_dir',
+      ),
       close = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_close'),
       legacyState = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_legacy_state',
@@ -320,6 +335,7 @@ final class SrsCoreBindings {
 
   final FushiFsrs _fsrs;
   final _OpenDart open;
+  final _SetTempDirDart setTempDir;
   final _CloseDart close;
   final _StateDart legacyState;
   final _SimpleDart legacyBegin;
@@ -401,6 +417,21 @@ final class SrsCore {
   /// 自本次开机以来的毫秒，含睡眠、不受改系统时间影响（`ffsrs_boot_time_ms`）。可信时间
   /// （[SrsTrustedClock]）按它推算；取不到时抛 [StateError]（原生库是硬依赖，不退回别的时钟）。
   int bootTimeMs() => _b._bootTimeMs();
+
+  /// 设本进程 srs.db 的 SQLite 临时目录（大排序、整理、备份快照的溢出文件）：整个进程只设一次，必须在打开任何
+  /// srs.db 之前（`ffsrs_set_temp_dir`）。再传同一个目录是空操作，传别的目录抛 [SrsCoreException]。
+  ///
+  /// Android 上必须设（没有平台默认临时目录，不设打不开库），传 app 的 cache 目录这种跟进程走、不会被删的目录；
+  /// 不要传某份库所在的目录（备份恢复会在同一进程开解压到临时目录的源库，那个目录随后被删）。
+  static void useTempDirectory(String dir, {String? libraryPath}) {
+    final SrsCoreBindings b = SrsCoreBindings.load(libraryPath: libraryPath);
+    using((Arena arena) {
+      final (ffi.Pointer<ffi.Uint8> p, int n) = _utf8(arena, dir);
+      final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+      err.value = ffi.nullptr;
+      _check(b, b.setTempDir(p, n, err), err);
+    });
+  }
 
   /// 在当前 isolate 同步打开 / 新建 [path]（`<数据库目录>/srs.db`）。可能整段做格式升级：只给测试与已在
   /// 后台 isolate 里的代码用，app 走 [openInBackground]（守卫 fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart）。
@@ -764,7 +795,10 @@ final class SrsCore {
   ///
   /// [rebaseSince] 给了就是局部重放（lib.rs `SrsCore::rwkv_replay`）：同一快照里算出 rowid 在它之后的日志
   /// 造成的分歧时刻，行从 [rowsFrom]（给了的话）或分歧时刻起取。
-  Uint8List rwkvReplay(
+  ///
+  /// 结果随日志总量线性（每条保留评分约 96 字节），从原生内存直接拷进 [TransferableTypedData]：在后台 isolate
+  /// 里调用时交回调用方不再整块复制，`materialize` 也不复制（[_commandTransferable]）。
+  TransferableTypedData rwkvReplay(
     String profileUid,
     List<List<String>> lineages,
     List<int> ids, {
@@ -773,16 +807,20 @@ final class SrsCore {
     required int since,
     int? rebaseSince,
     int? rowsFrom,
-  }) => _command(_b.rwkvRows, _lineagePage(lineages, profileUid), <int>[
-    lineages.length,
-    1,
-    utcOffsetMin,
-    rolloverHour,
-    since,
-    rebaseSince ?? _noneI64,
-    rowsFrom ?? _noneI64,
-    ...ids,
-  ]);
+  }) => _commandTransferable(
+    _b.rwkvRows,
+    _lineagePage(lineages, profileUid),
+    <int>[
+      lineages.length,
+      1,
+      utcOffsetMin,
+      rolloverHour,
+      since,
+      rebaseSince ?? _noneI64,
+      rowsFrom ?? _noneI64,
+      ...ids,
+    ],
+  );
 
   /// Rust 侧的「无」（`NONE_I64` = i64::MIN）。
   static const int _noneI64 = -0x8000000000000000;
@@ -807,9 +845,28 @@ final class SrsCore {
           for (final String c in lineages[g]) <Object?>[g, c],
       ]);
 
-  Uint8List _command(_CmdDart f, Uint8List page, List<int> args) => using((
-    Arena arena,
-  ) {
+  Uint8List _command(_CmdDart f, Uint8List page, List<int> args) =>
+      _commandWith(f, page, args, Uint8List.fromList);
+
+  /// [_command]，结果直接拷进 [TransferableTypedData]（大结果跨 isolate 交回时少一份整块副本）。
+  TransferableTypedData _commandTransferable(
+    _CmdDart f,
+    Uint8List page,
+    List<int> args,
+  ) => _commandWith(
+    f,
+    page,
+    args,
+    (Uint8List native) => TransferableTypedData.fromList(<TypedData>[native]),
+  );
+
+  /// 跑一条交回字节的内核命令；[take] 在原生缓冲区释放之前把它（原生内存上的视图）拷成调用方要的形态。
+  T _commandWith<T>(
+    _CmdDart f,
+    Uint8List page,
+    List<int> args,
+    T Function(Uint8List native) take,
+  ) => using((Arena arena) {
     final ffi.Pointer<ffi.Int64> a = arena<ffi.Int64>(
       args.isEmpty ? 1 : args.length,
     );
@@ -824,11 +881,9 @@ final class SrsCore {
       err,
     );
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(
-      out.value.asTypedListOutOfLine(len),
-    );
+    final T result = take(out.value.asTypedListOutOfLine(len));
     _b._freeBytes(out.value, len);
-    return bytes;
+    return result;
   });
 
   /// Drift 事务外查询（[snapshotQuery]）的并发上限：内核只读连接池的连接数上限，按本机核数算

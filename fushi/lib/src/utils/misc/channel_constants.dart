@@ -88,4 +88,11 @@ abstract final class FushiChannels {
   static const MethodChannel pictureInPicture = MethodChannel(
     '$_prefix/picture_in_picture',
   );
+
+  /// 串流第二块屏（双屏掌机下屏 / 外接显示器）上的查词面板。原生侧
+  /// `GameStreamCompanionDisplay.java`（主进程）与 `GameStreamCompanionActivity.java`
+  /// （面板进程）用同一个名字，Dart 门面 `game_stream_companion_display_channel.dart`。
+  static const MethodChannel gameStreamCompanion = MethodChannel(
+    '$_prefix/game_stream_companion',
+  );
 }

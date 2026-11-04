@@ -1,6 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 /// 顶部悬浮条按宽度自适应溢出（2026-10-06）：宽时全部平铺、不画「⋯」；骤缩到
 /// 窄宽时**第一帧**就收进「⋯」且不溢出（HBK034：AnimatedSize 收缩时保留旧宽度
@@ -353,6 +357,150 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '预算多算会溢出');
       expect(more, findsOneWidget);
+    });
+  });
+
+  group('titleFirst：标题 / 副标题优先完整显示（复习页卡片计数，2026-11-03）', () {
+    const String subtitle = 'New 0 · Learning 12 · Review 345 · Due today 999';
+
+    Widget titled(
+      double width, {
+      required bool titleFirst,
+      String title = 'Fushi',
+      bool apple = false,
+    }) => MaterialApp(
+      theme: apple
+          ? buildFushiThemeData(
+              scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+              textTheme: Typography.material2021().black,
+              glass: FushiGlassMaterial.off,
+              glassDesign: true,
+            )
+          : null,
+      builder: apple
+          ? (BuildContext context, Widget? child) =>
+                FushiGlassScope(child: child!)
+          : null,
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: _outerWidth(width),
+            child: FushiFloatingTopBar(
+              leading: <FushiToolbarItem>[
+                FushiToolbarItem(
+                  icon: Icons.arrow_back,
+                  label: 'Back',
+                  onPressed: () {},
+                ),
+              ],
+              title: title,
+              subtitle: subtitle,
+              titleFirst: titleFirst,
+              actions: <List<FushiToolbarItem>>[actions],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    bool subtitleTruncated(WidgetTester tester) => tester
+        .renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('fushi_floating_top_bar_subtitle_text'),
+            ),
+            matching: find.byType(RichText),
+          ),
+        )
+        .didExceedMaxLines;
+
+    bool titleTruncated(WidgetTester tester) => tester
+        .renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('fushi_floating_top_bar_title_text'),
+            ),
+            matching: find.byType(RichText),
+          ),
+        )
+        .didExceedMaxLines;
+
+    /// 1000 宽的顶栏：放得下整段副标题后还剩几颗动作的位置（720 宽时副标题本身
+    /// 就要把动作全部挤进「⋯」，测不出标题 / 副标题分开预留）。
+    void wideView(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1600, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('超长标题（层级牌组全名）：标题省略，副标题完整，高频动作仍平铺', (WidgetTester tester) async {
+      wideView(tester);
+      // 远超整行宽的标题：旧实现按标题自然宽整段预留，预算变负、动作全进「⋯」。
+      final String longTitle = List<String>.filled(
+        3,
+        'Custom study · 日本語::Core 6k::Vocabulary::Part 1::Kanji',
+      ).join('::');
+      await tester.pumpWidget(titled(1000, titleFirst: true, title: longTitle));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(subtitleTruncated(tester), isFalse);
+      expect(titleTruncated(tester), isTrue, reason: '标题无界，按保底宽封顶省略');
+      // 预留只按副标题（有界）算：高频动作不该被超长标题全部挤进「⋯」。
+      expect(
+        find.byTooltip('Action 0'),
+        findsOneWidget,
+        reason: '超长标题不得把高频动作挤光',
+      );
+      expect(more, findsOneWidget);
+    });
+
+    testWidgets('Apple 设计系统：开启后动作先收进 ⋯，副标题完整显示', (WidgetTester tester) async {
+      wideView(tester);
+      await tester.pumpWidget(titled(1000, titleFirst: true, apple: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        isGlassDesign(tester.element(find.byType(FushiFloatingTopBar))),
+        isTrue,
+      );
+      // 同宽下不开时动作全部平铺、副标题被省略（下一条）；开了就先收动作。
+      expect(more, findsOneWidget);
+      expect(subtitleTruncated(tester), isFalse);
+    });
+
+    testWidgets('Apple 设计系统：不开时动作全部平铺，副标题被省略', (WidgetTester tester) async {
+      wideView(tester);
+      await tester.pumpWidget(titled(1000, titleFirst: false, apple: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsNothing);
+      expect(subtitleTruncated(tester), isTrue);
+    });
+
+    testWidgets('默认：标题胶囊封顶保底宽，长副标题被省略', (WidgetTester tester) async {
+      await tester.pumpWidget(titled(720, titleFirst: false));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(subtitleTruncated(tester), isTrue);
+    });
+
+    testWidgets('开启：动作先收进 ⋯，副标题完整显示且不溢出', (WidgetTester tester) async {
+      await tester.pumpWidget(titled(720, titleFirst: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsOneWidget);
+      expect(subtitleTruncated(tester), isFalse);
+    });
+
+    testWidgets('开启但宽度足够：全部平铺，不画 ⋯', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1600, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(titled(1400, titleFirst: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsNothing);
+      expect(subtitleTruncated(tester), isFalse);
     });
   });
 }

@@ -277,6 +277,7 @@ class SubtitleTranscriptText extends StatefulWidget {
     this.onBackgroundTap,
     this.keyboardLookup = false,
     this.lookupHighlight,
+    this.caret,
     super.key,
   });
 
@@ -290,6 +291,14 @@ class SubtitleTranscriptText extends StatefulWidget {
   /// 正在查的词：在字形**之下**画主题色底色带（不改排版几何、不影响逐字命中）。
   /// null = 不高亮，组件树与之前完全一致。
   final SubtitleTranscriptHighlightRange? lookupHighlight;
+
+  /// Grapheme cursor driven by the owner (e.g. a game controller's lookup
+  /// mode); null keeps the widget's own keyboard cursor.
+  ///
+  /// Non-null makes the cursor fully controlled: it shows even without focus,
+  /// Enter / Space look up at it, and the movement keys (arrows, Home, End)
+  /// are left to bubble up to the owner, which is the only one that moves it.
+  final int? caret;
 
   @override
   State<SubtitleTranscriptText> createState() => _SubtitleTranscriptTextState();
@@ -319,9 +328,14 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
         key == LogicalKeyboardKey.home ||
         key == LogicalKeyboardKey.end;
     if (!activate && !move) return KeyEventResult.ignored;
+    final int? controlled = widget.caret;
+    // A controlled cursor has one owner: moving it is the owner's job.
+    if (move && controlled != null) return KeyEventResult.ignored;
     if (event is KeyUpEvent) return KeyEventResult.handled;
     if (activate) {
-      if (event is KeyDownEvent) widget.onLookup(_caret, Rect.zero);
+      if (event is KeyDownEvent) {
+        widget.onLookup((controlled ?? _caret).clamp(0, count - 1), Rect.zero);
+      }
     } else {
       setState(() {
         if (key == LogicalKeyboardKey.home) {
@@ -351,23 +365,27 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
   Widget _buildParagraph(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final List<String> graphemes = _focused
+        final bool showCaret = widget.caret != null || _focused;
+        final List<String> graphemes = showCaret
             ? widget.text.characters.toList()
             : const <String>[];
-        final TextSpan textSpan = _focused && graphemes.isNotEmpty
+        final int caret = graphemes.isEmpty
+            ? 0
+            : (widget.caret ?? _caret).clamp(0, graphemes.length - 1);
+        final TextSpan textSpan = showCaret && graphemes.isNotEmpty
             ? TextSpan(
                 style: widget.style,
                 children: <TextSpan>[
-                  TextSpan(text: graphemes.take(_caret).join()),
+                  TextSpan(text: graphemes.take(caret).join()),
                   TextSpan(
-                    text: graphemes[_caret],
+                    text: graphemes[caret],
                     style: TextStyle(
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.primary.withValues(alpha: 0.25),
                     ),
                   ),
-                  TextSpan(text: graphemes.skip(_caret + 1).join()),
+                  TextSpan(text: graphemes.skip(caret + 1).join()),
                 ],
               )
             : TextSpan(text: widget.text, style: widget.style);

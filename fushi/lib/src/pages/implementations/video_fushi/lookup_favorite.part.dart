@@ -247,7 +247,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       _showOsd(t.no_sentence_selected);
       return;
     }
-    _recordVideoCueJumpDeparture(cue);
+    _recordVideoCueJumpDeparture(cue, source: JumpSource.lookup);
     await controller.skipToCue(cue);
   }
 

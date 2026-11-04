@@ -140,4 +140,102 @@ void main() {
     expect(lookups.single.$1, 5);
     expect(lookups.single.$2.contains(render.localToGlobal(local)), isTrue);
   });
+
+  testWidgets('an owner-driven caret shows without focus and clamps', (
+    WidgetTester tester,
+  ) async {
+    const Key paragraph = ValueKey<String>('paragraph');
+    Future<void> pumpCaret(int? caret) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SubtitleTranscriptText(
+            text: '😀日本語',
+            textKey: paragraph,
+            style: subtitleTranscriptTextStyle(fontSize: 14, selected: true),
+            keyboardLookup: true,
+            caret: caret,
+            onLookup: (int index, Rect _) {},
+          ),
+        ),
+      ),
+    );
+    List<String> spans() {
+      final InlineSpan text = tester
+          .widget<RichText>(find.byKey(paragraph))
+          .text;
+      final List<String> parts = <String>[];
+      text.visitChildren((InlineSpan span) {
+        if (span is TextSpan && span.text != null) parts.add(span.text!);
+        return true;
+      });
+      return parts;
+    }
+
+    await pumpCaret(null);
+    expect(spans(), <String>['😀日本語'], reason: 'No caret without focus');
+
+    await pumpCaret(2);
+    expect(spans(), <String>['😀日', '本', '語']);
+
+    await pumpCaret(99);
+    expect(spans(), <String>['😀日本', '語', '']);
+  });
+
+  testWidgets('a controlled caret leaves movement to its owner and looks up '
+      'at the owner caret', (WidgetTester tester) async {
+    const Key paragraph = ValueKey<String>('paragraph');
+    final FocusNode lineFocus = FocusNode();
+    addTearDown(lineFocus.dispose);
+    final List<LogicalKeyboardKey> bubbled = <LogicalKeyboardKey>[];
+    final List<int> lookups = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Focus(
+            onKeyEvent: (FocusNode node, KeyEvent event) {
+              if (event is KeyDownEvent) bubbled.add(event.logicalKey);
+              return KeyEventResult.handled;
+            },
+            child: Focus(
+              focusNode: lineFocus,
+              child: SubtitleTranscriptText(
+                text: '日本語',
+                textKey: paragraph,
+                style: subtitleTranscriptTextStyle(
+                  fontSize: 14,
+                  selected: true,
+                ),
+                keyboardLookup: true,
+                caret: 1,
+                onLookup: (int index, Rect _) => lookups.add(index),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    // Focus the line's own Focus (the one keyboardLookup adds).
+    final Element inner = tester.element(find.byKey(paragraph));
+    Focus.of(inner).requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyEvent(LogicalKeyboardKey.end);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(bubbled, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.end,
+    ]);
+    expect(lookups, <int>[1], reason: 'Enter looks up at the owner caret');
+    final List<String> parts = <String>[];
+    tester.widget<RichText>(find.byKey(paragraph)).text.visitChildren((
+      InlineSpan span,
+    ) {
+      if (span is TextSpan && span.text != null) parts.add(span.text!);
+      return true;
+    });
+    expect(parts, <String>['日', '本', '語'], reason: 'Caret stays at 1');
+  });
 }

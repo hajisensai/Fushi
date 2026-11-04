@@ -441,6 +441,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       videoPath,
       wantAudio: false,
       subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+      subtitleRule: SidecarSubtitleRule.exactName,
     );
     if (!mounted || m.subtitlePath == null || _subtitlePath != null) return;
     setState(() => _subtitlePath = m.subtitlePath);

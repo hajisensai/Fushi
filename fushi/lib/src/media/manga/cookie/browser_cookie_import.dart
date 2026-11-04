@@ -19,6 +19,7 @@ class BrowserSiteCookie {
     required this.hostOnly,
     this.httpOnly = false,
     this.expiresAt,
+    this.sameSite,
   });
 
   final String name;
@@ -35,6 +36,38 @@ class BrowserSiteCookie {
 
   /// 毫秒；会话 cookie 为 null。
   final int? expiresAt;
+
+  /// 回灌进 WebView 时原样带上的 SameSite（null = 不指定，WebView 按默认）。扩展线格式不带它；
+  /// 从另一个 WebView 环境读出来的 cookie（[BrowserSiteCookie.fromWebViewCookie]）带。
+  final HTTPCookieSameSitePolicy? sameSite;
+
+  /// 从一个 WebView 环境读出来的 cookie（`CookieManager.getAllCookies`，Windows fork 走 CDP
+  /// `Storage.getCookies`）。Chromium 的约定：域 cookie 的 domain 带前导 `.`，host-only cookie
+  /// 不带——所以 host-only 由前导点判定，与扩展线格式（[fromJson]）同一条规则。`__Host-` 前缀的
+  /// cookie 按规范没有 Domain 属性，必然落在 host-only 一侧。无名 / 无域 → null。
+  static BrowserSiteCookie? fromWebViewCookie(Cookie cookie) {
+    final String name = cookie.name.trim();
+    final String rawDomain = (cookie.domain ?? '').trim();
+    final bool hostOnly = !rawDomain.startsWith('.');
+    final String domain = (hostOnly ? rawDomain : rawDomain.substring(1))
+        .toLowerCase();
+    if (name.isEmpty || domain.isEmpty) return null;
+    final String path = (cookie.path ?? '').trim();
+    final Object? expires = cookie.expiresDate;
+    return BrowserSiteCookie(
+      name: name,
+      value: cookie.value?.toString() ?? '',
+      domain: domain,
+      path: path.isEmpty ? '/' : path,
+      secure: cookie.isSecure == true,
+      hostOnly: hostOnly,
+      httpOnly: cookie.isHttpOnly == true,
+      expiresAt: cookie.isSessionOnly == true || expires is! int || expires <= 0
+          ? null
+          : expires,
+      sameSite: cookie.sameSite,
+    );
+  }
 
   /// 扩展线格式：`{name, value, domain, path, secure, httpOnly, hostOnly,
   /// expirationDate(秒)}`。字段缺失 / 形状不对 → null（丢弃该条，不整批失败）。
@@ -262,11 +295,13 @@ Future<int> writeBrowserSiteCookies(
         name: cookie.name,
         value: cookie.value,
         path: cookie.path,
-        // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie。
+        // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie（`__Host-`
+        // 前缀的还会被 WebView2 直接拒写）。
         domain: cookie.hostOnly ? null : cookie.canonicalDomain,
         expiresDate: cookie.expiresAt,
         isSecure: cookie.secure,
         isHttpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
       );
       if (ok) written++;
     } catch (_) {
