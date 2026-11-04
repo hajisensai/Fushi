@@ -9426,6 +9426,7 @@
   "text_field_password_show": "Show password",
   "text_segmentation": "文字分詞",
   "texthooker": "文本鉤子",
+  "texthooker_empty_external_body": "Connect a texthooker (LunaTranslator, Textractor or mpv) and enable it in Settings > Lookup; lines will appear here.",
   "texthooker_enabled": "Texthooker（接收文字）",
   "texthooker_enabled_hint": "連接 Textractor/mpv/agent 並查詢收到的文字",
   "texthooker_urls": "Text endpoint URLs",

@@ -1979,7 +1979,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         if (mounted) setState(() {});
         return null;
       }
-      DesktopLookupService.instance.triggerLookup(lookupWord);
+      appModel.queueExternalLookup(lookupWord);
       return null;
     }
     // 原生层（Windows WM_COPYDATA / Linux D-Bus）转交的是任意候选路径、不看扩展名：
@@ -2126,7 +2126,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         openTarget: _handleCtlOpen,
         lookupWord: (String word) async {
           await _focusMainWindowForCtl();
-          DesktopLookupService.instance.triggerLookup(word);
+          ref.read(appProvider).queueExternalLookup(word);
         },
         quitApp: _flushAndExitForWindowClose,
         routes: buildOpRoutes(appOpContext!),
@@ -2975,13 +2975,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     // BUG-1666：同上，冷启动带 `fushi://lookup?word=<词>` 深链时，初始化完成后
-    // 排队一次显式查词（消费侧按用户的剪贴板落点配置路由到主窗 tab / 面板 / 瞬态卡）。
+    // 排队一次显式查词并打开查词 tab（[AppModel.queueExternalLookup]）。
     if (!_lookupDeepLinkHandled && _pendingLookupDeepLinkWord != null) {
       _lookupDeepLinkHandled = true;
       final String word = _pendingLookupDeepLinkWord!;
       _pendingLookupDeepLinkWord = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        DesktopLookupService.instance.triggerLookup(word);
+        ref.read(appProvider).queueExternalLookup(word);
       });
     }
 

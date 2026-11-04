@@ -74,6 +74,7 @@ import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.d
 import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_client_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -623,10 +624,8 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
     _startWebMineBackground();
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
-    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
-    // ——spec 2026-07-10 §7 后服务由 AppModel 持有 app 级监听，消费按
-    // resolveDesktopLookupConsumer 分区（mainTab 仍只归 HomeDictionaryPage），
-    // HomePage 根节点依旧不消费查词请求。
+    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService：
+    // pending 只归 HomeDictionaryPage 消费，HomePage 根节点不消费查词请求。
     appModelNoUpdate.homeDictionaryTabRequest.addListener(
       _onHomeDictionaryTabRequested,
     );
@@ -4093,7 +4092,18 @@ class _HomePageState extends BasePageState<HomePage>
       // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
       HomeTab.games =>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
-            ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
+            // 非 Windows 桌面另挂外部 texthooker 台词页（没有 hook，只看 WS 来的
+            // 台词）；手机端维持纯串流库。
+            ? (appModelNoUpdate.gamesOffersExternalTexthooker
+                  ? GameStreamClientPage(
+                      streamBuilder:
+                          (BuildContext context, Widget navigation) =>
+                              GameStreamLibraryPage(
+                                services: _gameStreamLibraryServices,
+                                navigation: navigation,
+                              ),
+                    )
+                  : GameStreamLibraryPage(services: _gameStreamLibraryServices))
             : const HomeGamePage(),
       HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),

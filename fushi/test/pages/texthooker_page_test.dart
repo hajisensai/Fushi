@@ -28,6 +28,17 @@ Widget _wrapPage(Widget home) {
   );
 }
 
+Widget _wrapPageOn(Widget home, {required bool isWindows}) {
+  return ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(
+        testPlatformServices(isWindows: isWindows, isDesktop: true),
+      ),
+    ],
+    child: MaterialApp(home: home),
+  );
+}
+
 /// 点选台词列表第一句：点卡片左上角的「时间 · 来源」元信息行（不点正文——正文逐字
 /// 可点，会走查词而不是选句）。
 Future<void> _selectFirstLine(WidgetTester tester) async {
@@ -126,6 +137,74 @@ void main() {
     TexthookerService.instance.clear();
   });
   tearDown(() => TexthookerService.instance.clear());
+
+  group('hook controls by platform', () {
+    const List<String> hookOnlyKeys = <String>[
+      'game-toolbar-audio-fallback',
+      'game-toolbar-health',
+      'game-toolbar-hook-overlay',
+      'game-toolbar-external-window',
+      'game-action-launch',
+      'game-action-attach',
+    ];
+
+    testWidgets('non-Windows hides hook controls but keeps lines + clear', (
+      WidgetTester tester,
+    ) async {
+      TexthookerService.instance.appendLine('第一行');
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: false,
+        ),
+      );
+      await tester.pump();
+      for (final String key in hookOnlyKeys) {
+        expect(find.byKey(ValueKey<String>(key)), findsNothing, reason: key);
+      }
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.textContaining('第'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('non-Windows empty state uses the external texthooker copy', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: false,
+        ),
+      );
+      await tester.pump();
+      expect(find.text(t.texthooker_empty_external_body), findsOneWidget);
+      expect(find.text(t.game_capture_empty_body), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-launch')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('Windows still shows hook controls', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('game-toolbar-health')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-action-launch')),
+        findsOneWidget,
+      );
+    });
+  });
 
   testWidgets('renders incoming lines reactively', (WidgetTester tester) async {
     await tester.pumpWidget(_wrapPage(const TexthookerPage()));
@@ -330,7 +409,12 @@ void main() {
   testWidgets(
     'inactive workbench exposes low-frequency actions without a menu',
     (WidgetTester tester) async {
-      await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+      // 健康 / 音频降级是 Hook 捕获会话的入口，只在 Windows 出现（非 Windows 的
+      // 反向断言见上面「non-Windows hides hook controls」）；钉死平台，免得结果
+      // 跟着宿主（CI 是 Linux）走。
+      await tester.pumpWidget(
+        _wrapPageOn(const TexthookerPage(), isWindows: true),
+      );
       await tester.pump();
 
       // 三点「更多」菜单已删：低频入口直接摊在工具栏上，不再需要先展开菜单。
@@ -428,7 +512,10 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(520, 760));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
-        _wrapPage(const Scaffold(body: TexthookerPage(embedded: true))),
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
       );
       await tester.pump();
 
@@ -437,8 +524,9 @@ void main() {
         isNull,
         reason: '摊平后的页头在窄窗不得 RenderFlex overflow',
       );
-      // 平台无关的两个入口在任何桌面/移动平台都必须在（Windows 专属的浮窗 / 外部窗口
-      // 挖矿按钮受 Platform.isWindows 门控，不在此断言，免得 CI（Linux）假红）。
+      // 页头动作最多的是 Windows（Hook 捕获入口全在），所以钉死 Windows 测最挤的
+      // 形态；健康 / 音频降级只在 Hook 捕获平台出现，非 Windows 的反向断言见
+      // 「non-Windows hides hook controls」。
       expect(
         find.byKey(const ValueKey<String>('game-toolbar-audio-fallback')),
         findsOneWidget,

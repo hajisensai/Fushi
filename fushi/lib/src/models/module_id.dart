@@ -301,6 +301,17 @@ enum GamesModuleForm {
   /// CLAUDE.md「领域硬边界」），其余平台只能当串流接收端。
   static GamesModuleForm on({required bool isWindows}) =>
       isWindows ? GamesModuleForm.localLibrary : GamesModuleForm.streamClient;
+
+  /// 本形态能不能跑 galgame hook 的注入 / 捕获 / 窗口绑定（只有 Windows 的
+  /// [localLibrary]）。texthooker 页里所有 Windows 独有控件都问它，不各自判平台。
+  bool get supportsHookCapture => this == GamesModuleForm.localLibrary;
+
+  /// 本形态要不要在 games 模块里单独挂「外部 texthooker 台词」页：Windows 的
+  /// 捕获工作台本来就承载它；非 Windows **桌面**（Linux / macOS）没有 hook，但
+  /// 外部 WebSocket texthooker（LunaTranslator / Textractor / mpv）照样能把台词
+  /// 推过来，需要一个地方看台词、点词查词。手机端不在范围内。
+  bool offersExternalTexthooker({required bool isDesktop}) =>
+      this == GamesModuleForm.streamClient && isDesktop;
 }
 
 /// 「此刻哪些模块可见」的不可变快照：用户意愿（pref）与平台可用性的**唯一合成**。

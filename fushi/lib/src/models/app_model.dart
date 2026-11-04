@@ -2787,6 +2787,18 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// app 外来的显式查词（`fushi://lookup` 深链、`fushi_cli lookup`）的统一出口：
+  /// 排队待查词，再请求打开查词 tab。
+  ///
+  /// 只排队不切 tab 时，词会一直挂在 [DesktopLookupService.pendingText] 上——唯一的
+  /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4117）。
+  /// 唤前台由调用方负责（深链由原生层前置主窗，ctl 先调 `_focusMainWindowForCtl`）。
+  void queueExternalLookup(String text) {
+    if (DesktopLookupService.instance.triggerLookup(text)) {
+      requestHomeDictionaryTab();
+    }
+  }
+
   /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
   /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
   /// [librarySentencesEnabled] 同一纪律，判据放在 getter 自己身上。
@@ -10236,6 +10248,10 @@ class AppModel with ChangeNotifier {
   /// 取自 [PlatformServices]，理由同上。
   GamesModuleForm get gamesModuleForm =>
       GamesModuleForm.on(isWindows: platformServices.isWindows);
+
+  /// games 模块是否要挂外部 texthooker 台词页（非 Windows 桌面）。
+  bool get gamesOffersExternalTexthooker => gamesModuleForm
+      .offersExternalTexthooker(isDesktop: platformServices.isDesktop);
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;

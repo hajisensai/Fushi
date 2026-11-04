@@ -9426,6 +9426,7 @@
   "text_field_password_show": "显示密码",
   "text_segmentation": "文本分词",
   "texthooker": "文本钩子",
+  "texthooker_empty_external_body": "连接 texthooker（LunaTranslator、Textractor 或 mpv）并在 设置 > 查词 中启用后，台词会显示在这里。",
   "texthooker_enabled": "文本钩子（接收文本）",
   "texthooker_enabled_hint": "连接 Textractor/mpv/agent 并查询收到的文本",
   "texthooker_urls": "文本端点地址",
