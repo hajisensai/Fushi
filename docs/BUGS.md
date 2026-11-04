@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3674 条。点号进各自文件。
+> 共 3675 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -95,16 +95,6 @@
 | [BUG-4022](bugs/BUG-4022-video-autoplay-drops-immersive-and-series-volume.md) | ✅ | ✅ | 自动连播（本地换集）退出沉浸锁定，音量不跟随系列 |
 | [BUG-4021](bugs/BUG-4021-video-immersive-long-press-speed.md) | ✅ | ✅ | 沉浸锁定时长按画面仍会临时加速，不跟随沉浸模式档位 |
 | [BUG-4020](bugs/BUG-4020-video-external-subtitle-chars-zero.md) | ✅ | ✅ | 视频外挂字幕（调轴后）字幕字数统计恒为 0 |
-> 共 3608 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4004](bugs/BUG-4004-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
-> 共 3616 条。点号进各自文件。
-> 共 3617 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4014](bugs/BUG-4014-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
 | [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
 | [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |
@@ -115,7 +105,6 @@
 | [BUG-4006](bugs/BUG-4006-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
 | [BUG-4005](bugs/BUG-4005-srs-sync2-alias-dedup.md) | ✅ | ✅ | srs-sync2-alias-dedup |
 | [BUG-4004](bugs/BUG-4004-srs-sync2-head-references-unuploaded-segment.md) | ✅ | ✅ | 复习同步 head 引用了位置上没有的段，读者待应用永久卡住 |
-| [BUG-4004](bugs/BUG-4004-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
