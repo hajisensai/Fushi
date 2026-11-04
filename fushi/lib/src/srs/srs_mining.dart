@@ -153,14 +153,29 @@ class SrsResolvedMiningDestination {
 
 /// 把偏好解析成落地位置：选中的牌组 / 笔记类型不存在（被删）时回落默认牌组 / Lapis。
 /// 没有字段的笔记类型做不出卡，同样回落 Lapis。
+///
+/// [requestedDeckName]：「高级制卡」为这一张卡选的牌组（[MiningRequestOverrides.deckName]，
+/// 复习牌组的「父::子」全名，对话框列的就是全名）。按全名在现存牌组里命中就用它，
+/// 不改偏好；命中不了（对端发来的名字 / 牌组刚被改名删掉）回落偏好里的牌组，不新建
+/// 牌组——与 Anki 后端 `resolveTargetDeck` 同口径（反馈 0h0e_6fqhY：此前 SRS 路径
+/// 完全不读这个覆写，对话框里的牌组选择是摆设）。
 Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
   SrsDbStore store,
-  SrsMiningDestination destination,
-) async {
+  SrsMiningDestination destination, {
+  String? requestedDeckName,
+}) async {
   final SrsDeckTree tree = await store.deckTree();
+  final String requested = requestedDeckName?.trim() ?? '';
+  final String? requestedId = requested.isEmpty
+      ? null
+      : tree.decks
+            .map((SrsDeckView d) => d.id)
+            .where((String id) => tree.fullName(id) == requested)
+            .firstOrNull;
   final bool wantsDeck = destination.deckId.isNotEmpty;
   final bool deckExists = wantsDeck && tree[destination.deckId] != null;
-  final String deckId = deckExists ? destination.deckId : store.defaultDeckId;
+  final String deckId =
+      requestedId ?? (deckExists ? destination.deckId : store.defaultDeckId);
 
   SrsNoteTypeView? noteType;
   bool noteTypeFellBack = false;
@@ -182,7 +197,7 @@ Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
     deckId: deckId,
     deckName: tree[deckId] == null ? null : tree.fullName(deckId),
     noteType: noteType,
-    deckFellBack: wantsDeck && !deckExists,
+    deckFellBack: requestedId == null && wantsDeck && !deckExists,
     noteTypeFellBack: noteTypeFellBack,
   );
 }
@@ -509,6 +524,25 @@ class SrsMiner with AnkiNoteComposer {
           stored: destination.fieldMappingsByType[type.id],
         );
 
+  /// [type] 的 fieldId → 字段名，给共享渲染里**按字段名**判定的规则用（制卡位置落
+  /// MiscInfo，[AnkiNoteComposer.charPositionTargetField]）：SRS 的映射键是 fieldId，
+  /// 不换回名字就永远匹配不上。内置类型（Lapis、Fushi 卡片）给字段键（`MiscInfo` /
+  /// `Source`，与映射同源、不受用户改名影响）；其它类型给字段名。
+  Map<String, String> _fieldNamesFor(SrsNoteTypeView? type) {
+    final SrsBuiltinNoteTypeSpec? builtin = srsBuiltinNoteTypeSpec(
+      _isLapis(type) ? kSrsBuiltinLapisKey : type!.builtinKey,
+    );
+    if (builtin != null) {
+      return <String, String>{
+        for (final String fieldKey in builtin.defaultFieldMappings.keys)
+          srsBuiltinFieldId(store.profileUid, builtin.key, fieldKey): fieldKey,
+      };
+    }
+    return <String, String>{
+      for (final SrsFieldDef f in type!.fields) f.id: f.name,
+    };
+  }
+
   /// 同一套渲染（媒体存进 [media]，字段键 = fieldId）。标签、紧凑释义等其余设置
   /// 沿用用户的制卡设置。
   Future<RenderedMinedFields> _renderFor({
@@ -527,6 +561,7 @@ class SrsMiner with AnkiNoteComposer {
     payload: payload,
     context: context,
     keepEmpty: keepEmpty,
+    fieldNames: _fieldNamesFor(noteType),
   );
 
   List<String> _buildTags(AnkiSettings settings, AnkiMiningContext context) =>
@@ -538,7 +573,6 @@ class SrsMiner with AnkiNoteComposer {
         nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
   static MineOutcome? _parse(
@@ -595,7 +629,11 @@ class SrsMiner with AnkiNoteComposer {
     }
 
     final SrsResolvedMiningDestination target =
-        await resolveSrsMiningDestination(store, destination);
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: payload.overrides?.deckName,
+        );
     final SrsNoteTypeView? noteType = target.noteType;
     final RenderedMinedFields rendered = await _renderFor(
       settings: settings,
@@ -770,6 +808,7 @@ class SrsMiner with AnkiNoteComposer {
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
+    required Map<String, String> fieldNames,
     bool keepEmpty = false,
   }) async {
     Future<String?> addFile(String path) => _storeMediaFile(path);
@@ -807,6 +846,7 @@ class SrsMiner with AnkiNoteComposer {
       dictionaryMediaTags: results[3]! as Map<String, String>,
       audioWarning: audio.failureReason,
       keepEmpty: keepEmpty,
+      fieldNames: fieldNames,
     );
   }
 }

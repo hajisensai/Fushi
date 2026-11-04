@@ -114,6 +114,19 @@ class VideoMetadataProviderRegistry {
   factory VideoMetadataProviderRegistry.production(
     VideoSourceScrapeGlobalConfig config, {
     String? locale,
+  }) => VideoMetadataProviderRegistry._production(
+    config,
+    locale: locale ?? config.locale,
+    // 显式给了 [locale]（来源级 `metadata_locale` 覆盖）就按它刮；只有跟随全局
+    // 且全局留空时才按作品原语言（BUG-4056）。
+    followOriginalLanguage:
+        locale == null && config.followsWorkOriginalLanguage,
+  );
+
+  factory VideoMetadataProviderRegistry._production(
+    VideoSourceScrapeGlobalConfig config, {
+    required String locale,
+    required bool followOriginalLanguage,
   }) => VideoMetadataProviderRegistry(<VideoMetadataProvider>[
     // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
     // 任一处漏传就是「刮削不同语言」。
@@ -125,15 +138,20 @@ class VideoMetadataProviderRegistry {
     AniDbVideoMetadataProvider(
       clientName: config.anidbHttpClientName,
       clientVersion: config.anidbHttpClientVersion,
-      language: locale ?? config.locale,
+      language: locale,
+      followOriginalLanguage: followOriginalLanguage,
       xmlCacheDirectory: () async => Directory(
         p.join((await enginePaths.supportRootDirectory()).path, 'anidb_anime'),
       ),
     ),
-    MalVideoMetadataProvider(language: locale ?? config.locale),
+    MalVideoMetadataProvider(
+      language: locale,
+      followOriginalLanguage: followOriginalLanguage,
+    ),
     TmdbVideoMetadataProvider(
       apiKey: config.tmdbApiKey,
-      language: locale ?? config.locale,
+      language: locale,
+      followOriginalLanguage: followOriginalLanguage,
     ),
   ]);
 

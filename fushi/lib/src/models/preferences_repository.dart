@@ -3481,9 +3481,13 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 小说阅读器制卡时是否给卡片追加「制卡所在字符数」标签（`chars_12345`，全书绝对
-  /// 学习字数位置，countStudyChars 口径）。默认关（2026-09-26 用户要求砍掉这个
-  /// 默认标签：每张卡多一个无意义的数字 tag）；需要的人在 Anki 设置里自己打开。
+  /// 小说阅读器制卡时是否把制卡位置（全书绝对学习字数位置，countStudyChars 口径）写进
+  /// 卡片的 MiscInfo（等价）字段。默认关（2026-09-26 用户要求砍掉当时的默认
+  /// `chars_` 标签）；需要的人在制卡设置里自己打开。
+  ///
+  /// 「制卡位置写入 MiscInfo」开关。偏好键 `auto_add_char_position_to_tags` 是冻结的
+  /// 持久化名：它原本的语义是「打 `chars_12345` 标签」，反馈 MhQHXQI-sB 改为写进
+  /// MiscInfo 字段，键名不追改（开过的用户开关状态照旧）。
   bool get autoAddCharPositionToTags =>
       getPref('auto_add_char_position_to_tags', defaultValue: false) as bool;
 

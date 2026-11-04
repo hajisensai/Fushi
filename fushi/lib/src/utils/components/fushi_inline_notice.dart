@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -20,9 +23,9 @@ enum FushiNoticeSeverity { info, success, warning, error }
 /// - 墨水屏：无填充、前景色细描边（底色在灰阶下塌掉，描边才是边界）。
 ///
 /// [title] 可选（加粗一行）；[message] 是正文（字符串或任意 widget，后者用于
-/// 「文案 + 来源名」这类组合）；[actions] 默认排在正文下方，宽布局（本横幅
-/// 自身宽 ≥ [inlineActionsMinWidth]）时与正文同一行、排在右侧（见
-/// [actionsInline]）；[trailing] 排在正文右侧。
+/// 「文案 + 来源名」这类组合）；[actions] 在放得下时与正文同一行、贴横幅右侧
+/// （正文吃掉其余全部宽度），放不下时换到正文下方（见 [actionsInline]）；
+/// [trailing] 排在正文右侧。
 class FushiInlineNotice extends StatelessWidget {
   const FushiInlineNotice({
     required this.message,
@@ -36,8 +39,11 @@ class FushiInlineNotice extends StatelessWidget {
     super.key,
   });
 
-  /// 自动模式下动作并入正文同一行所需的横幅最小宽度。
-  static const double inlineActionsMinWidth = 600;
+  /// 同行时动作组最多占内容宽度（图标之后）的比例；超出在这个宽度内换行。
+  static const double inlineActionsMaxFraction = 0.45;
+
+  /// 同行时正文至少要留的可读宽度，按正文字号的倍数计（约 16 个汉字）。
+  static const double inlineBodyMinEm = 16;
 
   /// 正文：[String] 或 [Widget]。
   final Object message;
@@ -50,9 +56,10 @@ class FushiInlineNotice extends StatelessWidget {
   final List<Widget> actions;
   final bool showIcon;
 
-  /// [actions] 是否与正文同一行（排在正文右侧）：null = 自动（横幅宽 ≥
-  /// [inlineActionsMinWidth] 时同行，窄屏换到正文下方）；true 恒同行；false
-  /// 恒在下方（旧行为）。
+  /// [actions] 是否与正文同一行（排在横幅右侧）：null = 自动——按实测量：动作组
+  /// 的内在宽度（封顶 [inlineActionsMaxFraction]）让出后，正文还剩至少
+  /// [inlineBodyMinEm] 个字宽就同行，否则换到正文下方；true 恒同行；false
+  /// 恒在下方。
   final bool? actionsInline;
 
   static IconData _defaultIcon(FushiNoticeSeverity severity) {
@@ -183,7 +190,7 @@ class FushiInlineNotice extends StatelessWidget {
         : Text(message.toString(), style: body);
     final String? title = this.title;
 
-    Widget textColumn({required bool withActions}) => Column(
+    final Widget textColumn = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -198,21 +205,16 @@ class FushiInlineNotice extends StatelessWidget {
           SizedBox(height: tokens.spacing.gap / 2),
         ],
         messageWidget,
-        if (withActions && actions.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          onTone(
-            Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap / 2,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: actions,
-            ),
-          ),
-        ],
       ],
     );
 
-    Widget notice(bool inline) => DecoratedBox(
+    final _NoticeActionsPlacement placement = switch (actionsInline) {
+      null => _NoticeActionsPlacement.auto,
+      true => _NoticeActionsPlacement.inline,
+      false => _NoticeActionsPlacement.below,
+    };
+
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: fill,
         borderRadius: radius,
@@ -227,40 +229,39 @@ class FushiInlineNotice extends StatelessWidget {
           vertical: tokens.spacing.rowVertical,
         ),
         child: Row(
-          // 同行动作时整行垂直居中（按钮比正文高），否则图标贴正文首行。
-          crossAxisAlignment: inline
+          crossAxisAlignment: placement == _NoticeActionsPlacement.inline
               ? CrossAxisAlignment.center
               : CrossAxisAlignment.start,
           children: <Widget>[
-            if (showIcon) ...<Widget>[
-              Padding(
-                // 图标与正文首行垂直对齐（20 号图标 vs 正文行高约 20）。
-                padding: EdgeInsets.only(top: inline ? 0 : 1),
-                child: FushiIcon(
-                  icon ?? _defaultIcon(severity),
-                  size: 20,
-                  color: iconColor,
-                ),
+            Expanded(
+              child: _NoticeContentLayout(
+                hasIcon: showIcon,
+                hasActions: actions.isNotEmpty,
+                placement: placement,
+                iconGap: tokens.spacing.gap + 2,
+                actionsGap: tokens.spacing.gap,
+                bodyMinWidth: (body.fontSize ?? 14) * inlineBodyMinEm,
+                actionsMaxFraction: inlineActionsMaxFraction,
+                children: <Widget>[
+                  if (showIcon)
+                    FushiIcon(
+                      icon ?? _defaultIcon(severity),
+                      size: 20,
+                      color: iconColor,
+                    ),
+                  textColumn,
+                  if (actions.isNotEmpty)
+                    onTone(
+                      Wrap(
+                        spacing: tokens.spacing.gap,
+                        runSpacing: tokens.spacing.gap / 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: actions,
+                      ),
+                    ),
+                ],
               ),
-              SizedBox(width: tokens.spacing.gap + 2),
-            ],
-            Expanded(child: textColumn(withActions: !inline)),
-            if (inline) ...<Widget>[
-              SizedBox(width: tokens.spacing.gap),
-              // 动作组可伸缩：按钮多 / 文案长时在分到的宽度内换行，而不是把整行
-              // 撑出横向溢出（视频页在线服务横幅曾溢出 282px）。
-              Flexible(
-                child: onTone(
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: tokens.spacing.gap,
-                    runSpacing: tokens.spacing.gap / 2,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: actions,
-                  ),
-                ),
-              ),
-            ],
+            ),
             if (trailing != null) ...<Widget>[
               SizedBox(width: tokens.spacing.gap),
               Flexible(
@@ -276,12 +277,334 @@ class FushiInlineNotice extends StatelessWidget {
         ),
       ),
     );
+  }
+}
 
-    if (actions.isEmpty || actionsInline == false) return notice(false);
-    if (actionsInline == true) return notice(true);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) =>
-          notice(constraints.maxWidth >= inlineActionsMinWidth),
+/// 动作组相对正文的位置。
+enum _NoticeActionsPlacement { auto, inline, below }
+
+/// 横幅主体（图标 + 正文 + 动作组）的排布。
+///
+/// 此前同行动作是 `Row[Expanded(正文), Flexible(Wrap(动作))]`：两者 flex 相同，
+/// Row 把剩余宽度对半分，Wrap 在 loose 约束下只撑到内容宽，`WrapAlignment.end`
+/// 不生效——宽屏上正文被压到一半宽、按钮停在横幅正中，右半边空着（反馈
+/// hIEGAdQjkL）；是否同行也只看写死的 600 断点。这里按实测排：
+///
+/// - 同行：动作组按内在宽度（封顶内容宽 × [actionsMaxFraction]，但不窄于它最宽
+///   那颗按钮）贴右排，超出封顶在该宽度内换行；正文吃掉其余全部宽度；整行垂直
+///   居中。
+/// - 自动模式下，让出动作组后正文还剩 ≥ [bodyMinWidth] 才同行，否则动作换到
+///   正文下方（与正文左对齐），图标贴正文首行。
+///
+/// 子节点依次是：图标（[hasIcon]）、正文、动作组（[hasActions]）。
+class _NoticeContentLayout extends MultiChildRenderObjectWidget {
+  const _NoticeContentLayout({
+    required this.hasIcon,
+    required this.hasActions,
+    required this.placement,
+    required this.iconGap,
+    required this.actionsGap,
+    required this.bodyMinWidth,
+    required this.actionsMaxFraction,
+    required super.children,
+  });
+
+  final bool hasIcon;
+  final bool hasActions;
+  final _NoticeActionsPlacement placement;
+  final double iconGap;
+  final double actionsGap;
+  final double bodyMinWidth;
+  final double actionsMaxFraction;
+
+  @override
+  _RenderNoticeContent createRenderObject(BuildContext context) =>
+      _RenderNoticeContent(
+        hasIcon: hasIcon,
+        hasActions: hasActions,
+        placement: placement,
+        iconGap: iconGap,
+        actionsGap: actionsGap,
+        bodyMinWidth: bodyMinWidth,
+        actionsMaxFraction: actionsMaxFraction,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderNoticeContent renderObject,
+  ) {
+    renderObject
+      ..hasIcon = hasIcon
+      ..hasActions = hasActions
+      ..placement = placement
+      ..iconGap = iconGap
+      ..actionsGap = actionsGap
+      ..bodyMinWidth = bodyMinWidth
+      ..actionsMaxFraction = actionsMaxFraction;
+  }
+}
+
+class _NoticeParentData extends ContainerBoxParentData<RenderBox> {}
+
+/// 一次排布的结果；`performLayout` 与 `computeDryLayout` 共用同一套计算。
+class _NoticeArrangement {
+  const _NoticeArrangement({
+    required this.size,
+    required this.iconOffset,
+    required this.bodyOffset,
+    required this.actionsOffset,
+  });
+
+  final Size size;
+  final Offset iconOffset;
+  final Offset bodyOffset;
+  final Offset actionsOffset;
+}
+
+class _RenderNoticeContent extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _NoticeParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _NoticeParentData> {
+  _RenderNoticeContent({
+    required bool hasIcon,
+    required bool hasActions,
+    required _NoticeActionsPlacement placement,
+    required double iconGap,
+    required double actionsGap,
+    required double bodyMinWidth,
+    required double actionsMaxFraction,
+  }) : _hasIcon = hasIcon,
+       _hasActions = hasActions,
+       _placement = placement,
+       _iconGap = iconGap,
+       _actionsGap = actionsGap,
+       _bodyMinWidth = bodyMinWidth,
+       _actionsMaxFraction = actionsMaxFraction;
+
+  bool _hasIcon;
+  set hasIcon(bool value) {
+    if (value == _hasIcon) return;
+    _hasIcon = value;
+    markNeedsLayout();
+  }
+
+  bool _hasActions;
+  set hasActions(bool value) {
+    if (value == _hasActions) return;
+    _hasActions = value;
+    markNeedsLayout();
+  }
+
+  _NoticeActionsPlacement _placement;
+  set placement(_NoticeActionsPlacement value) {
+    if (value == _placement) return;
+    _placement = value;
+    markNeedsLayout();
+  }
+
+  double _iconGap;
+  set iconGap(double value) {
+    if (value == _iconGap) return;
+    _iconGap = value;
+    markNeedsLayout();
+  }
+
+  double _actionsGap;
+  set actionsGap(double value) {
+    if (value == _actionsGap) return;
+    _actionsGap = value;
+    markNeedsLayout();
+  }
+
+  double _bodyMinWidth;
+  set bodyMinWidth(double value) {
+    if (value == _bodyMinWidth) return;
+    _bodyMinWidth = value;
+    markNeedsLayout();
+  }
+
+  double _actionsMaxFraction;
+  set actionsMaxFraction(double value) {
+    if (value == _actionsMaxFraction) return;
+    _actionsMaxFraction = value;
+    markNeedsLayout();
+  }
+
+  RenderBox? get _icon => _hasIcon ? firstChild : null;
+  RenderBox get _body => _hasIcon ? childAfter(firstChild!)! : firstChild!;
+  RenderBox? get _actions => _hasActions ? lastChild : null;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _NoticeParentData) {
+      child.parentData = _NoticeParentData();
+    }
+  }
+
+  double _iconExtent(double Function(RenderBox icon) measure) {
+    final RenderBox? icon = _icon;
+    return icon == null ? 0 : measure(icon) + _iconGap;
+  }
+
+  /// 同行时动作组可用的最大宽度：内在宽度封顶 [_actionsMaxFraction]，但不窄于
+  /// 它最宽的那颗按钮（再窄按钮本身就要被压坏）。
+  double _inlineActionsWidth(RenderBox actions, double contentWidth) {
+    // 单行自然宽度用无界干布局量：RenderWrap 的 maxIntrinsicWidth 不计 spacing，
+    // 按它排会差几颗间距的宽度而折成两行。
+    final double natural = actions.getDryLayout(const BoxConstraints()).width;
+    final double cap = math.max(
+      contentWidth * _actionsMaxFraction,
+      actions.getMinIntrinsicWidth(double.infinity),
+    );
+    return math.min(natural, cap);
+  }
+
+  _NoticeArrangement _arrange(
+    BoxConstraints constraints,
+    ChildLayouter layoutChild,
+  ) {
+    final RenderBox? icon = _icon;
+    final RenderBox body = _body;
+    final RenderBox? actions = _actions;
+    final Size iconSize = icon == null
+        ? Size.zero
+        : layoutChild(icon, BoxConstraints.loose(constraints.biggest));
+    final double iconExtent = icon == null ? 0 : iconSize.width + _iconGap;
+    final double contentWidth = math.max(0, constraints.maxWidth - iconExtent);
+
+    bool inline = false;
+    double actionsMax = 0;
+    if (actions != null) {
+      actionsMax = contentWidth.isFinite
+          ? _inlineActionsWidth(actions, contentWidth)
+          : double.infinity;
+      inline = switch (_placement) {
+        _NoticeActionsPlacement.inline => true,
+        _NoticeActionsPlacement.below => false,
+        _NoticeActionsPlacement.auto =>
+          !contentWidth.isFinite ||
+              contentWidth - actionsMax - _actionsGap >= _bodyMinWidth,
+      };
+    }
+
+    if (actions != null && inline) {
+      final Size actionsSize = layoutChild(
+        actions,
+        BoxConstraints(maxWidth: math.min(actionsMax, contentWidth)),
+      );
+      final double bodyMax = math.max(
+        0,
+        contentWidth - actionsSize.width - _actionsGap,
+      );
+      final Size bodySize = layoutChild(
+        body,
+        BoxConstraints(maxWidth: bodyMax),
+      );
+      final double width = constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : iconExtent + bodySize.width + _actionsGap + actionsSize.width;
+      final double height = math.max(
+        iconSize.height,
+        math.max(bodySize.height, actionsSize.height),
+      );
+      final Size size = constraints.constrain(Size(width, height));
+      double centered(Size child) => (size.height - child.height) / 2;
+      return _NoticeArrangement(
+        size: size,
+        iconOffset: Offset(0, centered(iconSize)),
+        bodyOffset: Offset(iconExtent, centered(bodySize)),
+        actionsOffset: Offset(
+          size.width - actionsSize.width,
+          centered(actionsSize),
+        ),
+      );
+    }
+
+    final Size bodySize = layoutChild(
+      body,
+      BoxConstraints(maxWidth: contentWidth),
+    );
+    final Size actionsSize = actions == null
+        ? Size.zero
+        : layoutChild(actions, BoxConstraints(maxWidth: contentWidth));
+    final double actionsTop = actions == null
+        ? bodySize.height
+        : bodySize.height + _actionsGap;
+    final double width = constraints.hasBoundedWidth
+        ? constraints.maxWidth
+        : iconExtent + math.max(bodySize.width, actionsSize.width);
+    // 图标与正文首行垂直对齐（20 号图标 vs 正文行高约 20）。
+    const double iconTop = 1;
+    final double height = math.max(
+      icon == null ? 0 : iconTop + iconSize.height,
+      actionsTop + actionsSize.height,
+    );
+    return _NoticeArrangement(
+      size: constraints.constrain(Size(width, height)),
+      iconOffset: const Offset(0, iconTop),
+      bodyOffset: Offset(iconExtent, 0),
+      actionsOffset: Offset(iconExtent, actionsTop),
     );
   }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) =>
+      _arrange(constraints, ChildLayoutHelper.dryLayoutChild).size;
+
+  @override
+  void performLayout() {
+    final _NoticeArrangement a = _arrange(
+      constraints,
+      ChildLayoutHelper.layoutChild,
+    );
+    size = a.size;
+    final RenderBox? icon = _icon;
+    if (icon != null) {
+      (icon.parentData! as _NoticeParentData).offset = a.iconOffset;
+    }
+    (_body.parentData! as _NoticeParentData).offset = a.bodyOffset;
+    final RenderBox? actions = _actions;
+    if (actions != null) {
+      (actions.parentData! as _NoticeParentData).offset = a.actionsOffset;
+    }
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) {
+    final RenderBox? actions = _actions;
+    return _iconExtent((RenderBox i) => i.getMinIntrinsicWidth(height)) +
+        math.max(
+          _body.getMinIntrinsicWidth(height),
+          actions?.getMinIntrinsicWidth(height) ?? 0,
+        );
+  }
+
+  @override
+  double computeMaxIntrinsicWidth(double height) {
+    final RenderBox? actions = _actions;
+    return _iconExtent((RenderBox i) => i.getMaxIntrinsicWidth(height)) +
+        _body.getMaxIntrinsicWidth(height) +
+        (actions == null
+            ? 0
+            : _actionsGap + actions.getMaxIntrinsicWidth(height));
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _arrange(
+    BoxConstraints(maxWidth: width),
+    ChildLayoutHelper.dryLayoutChild,
+  ).size.height;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      computeMinIntrinsicHeight(width);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
 }

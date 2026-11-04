@@ -211,8 +211,14 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
-  /// 直接进浏览页（空地址 = 只恢复上次的标签页，见 [FushiWebBrowserPage.initialUrl]）。
+  /// 进浏览页：地址栏有内容时与回车同一套判据打开它（[_openAddress]），
+  /// 空地址才只恢复上次的标签页（见 [FushiWebBrowserPage.initialUrl]）。
   Future<void> _enterBrowser() async {
+    final String input = _address.text.trim();
+    if (input.isNotEmpty) {
+      _openAddress(input);
+      return;
+    }
     _addressFocus.unfocus();
     await Navigator.of(context).push<void>(fushiWebBrowserRoute(context, ''));
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
@@ -374,6 +380,29 @@ class _FushiWebBrowserHomePageState
       onClear: _address.clear,
       onChanged: (String _) {},
       onSubmitted: _openAddress,
+      // 「进入浏览器」是地址栏的尾部动作（iCf7dQzT-t）：有内容时打开它，空时
+      // 只恢复上次的标签页（[_enterBrowser]）。MD3 是 tonal 圆钮（与词典页
+      // 搜索栏尾部钮同形），Apple / 墨水屏不铺底。
+      trailing: <Widget>[_buildEnterButton(context)],
+    );
+  }
+
+  Widget _buildEnterButton(BuildContext context) {
+    final bool plain = isGlassDesign(context) || isEinkTheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return FushiPressScale(
+      child: FushiIconButton(
+        key: const ValueKey<String>('web-browser-enter'),
+        icon: FushiIcons.tab,
+        tooltip: t.web_browser_enter,
+        backgroundColor: plain ? null : cs.secondaryContainer,
+        enabledColor: plain ? null : cs.onSecondaryContainer,
+        constraints: plain
+            ? null
+            : const BoxConstraints.tightFor(width: 40, height: 40),
+        padTouchTarget: true,
+        onTap: () => unawaited(_enterBrowser()),
+      ),
     );
   }
 
@@ -392,21 +421,6 @@ class _FushiWebBrowserHomePageState
         SliverPadding(
           padding: EdgeInsets.fromLTRB(page, top + tokens.spacing.gap, page, 0),
           sliver: SliverToBoxAdapter(child: _buildAddressBar(context)),
-        ),
-        // 不输地址也能进浏览页：恢复上次的标签页，没有就开新标签页。
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 0),
-          sliver: SliverToBoxAdapter(
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('web-browser-enter'),
-                onPressed: () => unawaited(_enterBrowser()),
-                icon: const FushiIcon(FushiIcons.tab),
-                label: Text(t.web_browser_enter),
-              ),
-            ),
-          ),
         ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(

@@ -59,6 +59,39 @@ void main() {
     );
   });
 
+  // A keyed mutex only synchronises devices that call AcquireSync/ReleaseSync.
+  // The consumer is Flutter's ExternalTextureD3d (eglCreatePbufferFromClientBuffer
+  // + eglBindTexImage once per handle); neither it nor ANGLE's D3D11 backend
+  // ever acquires the mutex (ANGLE only exposes it through
+  // eglQuerySurfacePointerANGLE(EGL_DXGI_KEYED_MUTEX_ANGLE)). A producer-only
+  // keyed mutex therefore syncs nothing and leaves Flutter touching a
+  // keyed-mutex resource without holding it, which D3D11 leaves undefined.
+  // Turning it on needs an engine patch that acquires on the raster side.
+  test('no producer-only keyed mutex on the shared texture', () {
+    final String manager = code(managerSourcePath);
+    final bool pluginUsesKeyedMutex =
+        manager.contains('D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX') ||
+        manager.contains('IDXGIKeyedMutex');
+    if (!pluginUsesKeyedMutex) return;
+    final Iterable<File> enginePatches =
+        Directory('../ci/patches/flutter-engine')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((File f) => f.path.endsWith('.patch'));
+    final bool engineAcquires = enginePatches.any((File f) {
+      final String patch = f.readAsStringSync();
+      return patch.contains('external_texture_d3d') &&
+          patch.contains('AcquireSync');
+    });
+    expect(
+      engineAcquires,
+      isTrue,
+      reason:
+          'the shared texture uses a keyed mutex but no Flutter engine patch '
+          'acquires it in ExternalTextureD3d (BUG-3888)',
+    );
+  });
+
   test('Draw publishes the frame into the shared texture after glFinish', () {
     final String draw = functionBody(code(managerSourcePath), 'Draw');
     final int finish = draw.indexOf('SwapBuffers();');
