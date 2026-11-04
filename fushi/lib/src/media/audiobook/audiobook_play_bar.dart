@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder;
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
     show FushiJumpProgressMarks;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
@@ -85,9 +87,19 @@ class AudiobookPlayBar extends StatelessWidget {
     // Apple：iOS 播放键的 `.glassProminent` 形态——纸张前景色实心圆 + 反色
     // 字形（不透明前景色经 [fushiGlassFill] 的 tint 档按 0.82 重铺）。不用
     // 12% 前景色的轻着色：玻璃本身已是中性灰底，再叠一层淡色圆对比度不够。
+    //
+    // MD3 外形是统一的主播放键多边形（[fushiPlayButtonBorder]），固定形状、不再
+    // 随按压形变；Apple 不变。
+    final bool glass = isGlassDesign(context);
     final ButtonStyle? playStyle = fg == null
-        ? null
-        : isGlassDesign(context)
+        ? (glass
+              ? null
+              : ButtonStyle(
+                  shape: WidgetStatePropertyAll<OutlinedBorder>(
+                    fushiPlayButtonBorder(),
+                  ),
+                ))
+        : glass
         ? ButtonStyle(
             backgroundColor: WidgetStatePropertyAll<Color>(fg),
             foregroundColor: WidgetStatePropertyAll<Color>(
@@ -97,6 +109,7 @@ class AudiobookPlayBar extends StatelessWidget {
         : IconButton.styleFrom(
             backgroundColor: fg.withValues(alpha: 0.12),
             foregroundColor: fg,
+            shape: fushiPlayButtonBorder(),
           );
     // 上一句/下一句、设置齿轮按旧版是无框原生 [IconButton]（仅图标），纸张主题
     // 前景色经 [IconButton.styleFrom] 的 foregroundColor 注入。
@@ -887,6 +900,9 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           children: <Widget>[
+            // 与 MD3 版同一顺序（用户 2026-11-03）：字幕与进度条在左占满，上一句 /
+            // 播放 / 下一句成组在右。
+            info,
             _FocusableBarButton(
               id: const FushiFocusId('audiobook_prev'),
               icon: FushiIcon(left.icon),
@@ -897,7 +913,6 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
             ),
             if (widget.showPlayButton)
               AudiobookPlayFab(controller: c, size: 48),
-            info,
             _FocusableBarButton(
               id: const FushiFocusId('audiobook_next'),
               icon: FushiIcon(right.icon),
@@ -914,8 +929,9 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
   }
 }
 
-/// 有声书播放键的 M3E 形状变形 FAB（[FushiToolbarFab] morphing：暂停 = 圆、
-/// 播放中 = 圆角方），悬浮工具栏 / 迷你播放条旁共用。只随控制器重建。
+/// 有声书播放键 FAB（[FushiToolbarFab] playButton：MD3 = 统一播放键多边形，
+/// 播放中转半瓣；Apple = 强调色圆钮），悬浮工具栏 / 迷你播放条旁共用。只随控制器
+/// 重建。
 class AudiobookPlayFab extends StatelessWidget {
   const AudiobookPlayFab({required this.controller, this.size = 56, super.key});
 
@@ -935,6 +951,7 @@ class AudiobookPlayFab extends StatelessWidget {
             icon: playing ? FushiIcons.pause : FushiIcons.play,
             tooltip: playing ? t.pause : t.play,
             morphing: true,
+            playButton: true,
             rounded: playing,
             size: size,
             semanticsId: 'fushi.reader.audiobook.play_fab',

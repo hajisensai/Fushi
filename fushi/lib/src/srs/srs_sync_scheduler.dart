@@ -515,7 +515,8 @@ class SrsSyncScheduler {
         onUploadStart: _reportUploadStart,
         beforeUpload: (String? keyHex) =>
             _mediaBeforeUpload(backend, store, directoryKey, keyHex),
-        shouldStop: () => _locationStopped(directoryKey),
+        // 每批之后看一次：位置被关 / 调度器卸下，或这一轮用的副本开始作废（换配置 / 重开，见 [_syncWithBackend]）。
+        shouldStop: () => _locationStopped(directoryKey) || store.isWindingDown,
         onStep: _step,
         v1MediaMigrations: _v1Media,
         onV1Bound: onV1Bound,
@@ -991,13 +992,45 @@ class SrsSyncScheduler {
     );
   }
 
+  /// 在 [store] 上跑一轮 [_runner]。副本途中被作废（[SrsDbStore.retire]，作废已发起时在检查点收手）按收手交回
+  /// （[kSrsSync2Stopped]）：已提交的片留在库里，下一轮从断点续；收段会话由作废那一刻放掉（内核回到空闲）。
+  /// 跑完时副本已开始作废也按收手交回：之后的发布 / 校时 / 媒体对账都写这份副本，交给新副本那一轮去做。
+  /// 作废的不是这份副本（别的错误）照常抛出。
+  Future<SrsSync2Report> _runRoundOn(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String directoryKey, {
+    SrsLocationKey? locationKey,
+    Future<void> Function()? onV1Bound,
+  }) async {
+    final SrsSync2Report report;
+    try {
+      report = await _runner(
+        backend,
+        store,
+        directoryKey,
+        locationKey: locationKey,
+        onV1Bound: onV1Bound,
+      );
+    } on SrsStoreRetiredError catch (e) {
+      if (!identical(e.store, store)) rethrow;
+      return SrsSync2Report()..error = kSrsSync2Stopped;
+    }
+    if (store.isWindingDown && report.error == null) {
+      report.error = kSrsSync2Stopped;
+    }
+    return report;
+  }
+
   static String _memoryDescription() =>
       'rss=${ProcessInfo.currentRss >> 20}MB maxRss=${ProcessInfo.maxRss >> 20}MB';
 
+  /// [replaced]：上一轮用的、途中被作废的副本（[_runRoundOn] 换副本重排时给）；读到的还是它就不再跑。
   Future<SrsSync2Report> _syncWithBackend(
     SyncAssetStore backend,
-    String? directoryKey,
-  ) async {
+    String? directoryKey, {
+    SrsDbStore? replaced,
+  }) async {
     if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     if (!_firstSyncConfirmed()) {
       _noticeOnce(SrsSyncNotice.awaitingConfirm);
@@ -1005,7 +1038,10 @@ class SrsSyncScheduler {
     }
     _step('store');
     SrsDbStore? store = await _readStore();
-    if (store == null || _halted) {
+    if (store == null ||
+        _halted ||
+        identical(store, replaced) ||
+        store.isWindingDown) {
       return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
     _step('directoryKey');
@@ -1054,14 +1090,24 @@ class SrsSyncScheduler {
     }
     // 引擎在一轮开头写探针取服务器时间，整轮（上传 / 拉取 / 快照，大库能跑几十分钟）跑完才回来：
     final SrsLocationKey? locKey = _locationKey?.call(key);
-    final SrsSync2Report report = await _runner(
+    final SrsDbStore roundStore = store;
+    final SrsSync2Report report = await _runRoundOn(
       backend,
-      store,
+      roundStore,
       key,
       locationKey: locKey,
       onV1Bound: () async =>
           unawaited(_publishV1Bindings(backend, directoryKey)),
     );
+    if (report.error == kSrsSync2Stopped && roundStore.isWindingDown) {
+      // 这一轮用的副本途中被换掉（切配置 / profile 关联重开）：已在检查点收手，之后的发布 / 校时 / 媒体对账都不在
+      // 它上面做。用新副本马上重排一轮；只重排一次：新副本又在途中被换掉时按收手交回，由下一次触发接着跑。
+      if (replaced == null && !_halted && !_isLocationDisabled(key)) {
+        _step('storeReplaced');
+        return _syncWithBackend(backend, directoryKey, replaced: roundStore);
+      }
+      return report;
+    }
     if (_isLocationDisabled(key)) {
       // 一轮跑到一半用户关掉了这个位置：在下一个检查点收了手（[kSrsSync2Stopped]）或恰好跑完。之后的发布 / 媒体对账
       // 都不做，按「关掉」交回——立即同步不把它算成失败，也不算这个位置同步成功。
@@ -1286,7 +1332,8 @@ class SrsSyncScheduler {
               onFetchProgress: _reportFetchProgress,
               onUploadStart: _reportUploadStart,
               onMediaStart: _reportMediaStart,
-              shouldStop: () => _locationStopped(l.locationId),
+              shouldStop: () =>
+                  _locationStopped(l.locationId) || store.isWindingDown,
               onStep: _step,
             );
             return (report, classifySrsFolderReport(report));
