@@ -1,0 +1,326 @@
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+index fc8eb56..07d7fd2 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "flutter/shell/platform/windows/egl/manager.h"
+ 
++#include <d3d10.h>  // Fushi patch: ID3D10Multithread
++
+ #include <string>
+ #include <vector>
+ 
+@@ -39,6 +41,20 @@ Manager::Manager(GpuPreference gpu_preference) {
+     return;
+   }
+ 
++  // Fushi patch (keyed mutex external textures): |ExternalTextureD3d| copies
++  // keyed-mutex shared textures with D3D11 calls on ANGLE's immediate context
++  // from the raster thread, outside ANGLE's share-context lock, while the
++  // resource context may be inside ANGLE on the IO thread. Turn on the D3D11
++  // runtime's immediate-context lock now, before any other thread can use the
++  // device (toggling it later would race the calls already in flight).
++  if (InitializeDevice()) {
++    Microsoft::WRL::ComPtr<ID3D10Multithread> multithread;
++    if (SUCCEEDED(resolved_device_.As(&multithread))) {
++      multithread->SetMultithreadProtected(TRUE);
++      multithread_protected_ = true;
++    }
++  }
++
+   is_valid_ = true;
+ }
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
+index 89ad31d..e669d86 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.h
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
+@@ -104,6 +104,20 @@ class Manager {
+   // Gets the |ID3D11Device| chosen by ANGLE.
+   bool GetDevice(ID3D11Device** device);
+ 
++  // Fushi patch (keyed mutex external textures): ANGLE's D3D11 device as
++  // resolved in the constructor (null if it could not be resolved). Its
++  // free-threaded |ID3D11Device| methods may be called from any thread; its
++  // immediate context only through |protected_device|.
++  ID3D11Device* d3d11_device() const { return resolved_device_.Get(); }
++
++  // Fushi patch (keyed mutex external textures): |d3d11_device| when its
++  // immediate context is multithread protected (done in the constructor),
++  // else null. Only then may code outside ANGLE issue immediate-context calls
++  // on that device from the raster thread.
++  ID3D11Device* protected_device() const {
++    return multithread_protected_ ? resolved_device_.Get() : nullptr;
++  }
++
+   // Get the EGL context used to render Flutter views.
+   virtual Context* render_context() const;
+ 
+@@ -178,6 +192,10 @@ class Manager {
+   // The current D3D device.
+   Microsoft::WRL::ComPtr<ID3D11Device> resolved_device_ = nullptr;
+ 
++  // Fushi patch (keyed mutex external textures): whether the constructor put
++  // |resolved_device_|'s immediate context under the D3D11 runtime lock.
++  bool multithread_protected_ = false;
++
+   FML_DISALLOW_COPY_AND_ASSIGN(Manager);
+ };
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc b/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
+index 7228c4b..5012b1b 100644
+--- a/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
++++ b/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
+@@ -60,6 +60,103 @@ void ExternalTextureD3d::ReleaseImage() {
+     eglDestroySurface(egl_manager_->egl_display(), egl_surface_);
+     egl_surface_ = EGL_NO_SURFACE;
+   }
++  // Fushi patch (keyed mutex): the surface above wrapped |private_texture_|.
++  private_texture_.Reset();
++  keyed_mutex_.Reset();
++  shared_texture_.Reset();
++  has_private_frame_ = false;
++}
++
++// Fushi patch (keyed mutex external textures, BUG-3888).
++//
++// A legacy shared texture (D3D11_RESOURCE_MISC_SHARED) written on the
++// producer's device and sampled here is only serialized implicitly by the OS,
++// and the producer can overwrite it while a frame that samples it is still in
++// flight. With D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX both sides must hold the
++// key around every access, so the engine never binds the shared texture to GL
++// at all: per new frame it takes key 0 without waiting, copies the texture
++// into an engine-owned one on ANGLE's device and gives the key back at once.
++// GL samples only the engine-owned copy, which the producer cannot touch, and
++// the key is never held across ANGLE's draws (releasing a keyed mutex unbinds
++// the resource behind ANGLE's state cache).
++//
++// The D3D11 calls run on ANGLE's immediate context outside ANGLE's lock; the
++// egl::Manager made that context multithread protected at creation.
++ExternalTextureD3d::SharedTextureKind ExternalTextureD3d::OpenKeyedMutexTexture(
++    HANDLE handle) {
++  ID3D11Device* device = egl_manager_->d3d11_device();
++  if (device == nullptr) {
++    return SharedTextureKind::kPlain;
++  }
++  Microsoft::WRL::ComPtr<ID3D11Texture2D> shared;
++  if (FAILED(device->OpenSharedResource(handle,
++                                        IID_PPV_ARGS(shared.GetAddressOf())))) {
++    // Not openable here: let the stock path report the failure.
++    return SharedTextureKind::kPlain;
++  }
++  D3D11_TEXTURE2D_DESC desc = {};
++  shared->GetDesc(&desc);
++  if ((desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) == 0) {
++    return SharedTextureKind::kPlain;
++  }
++  if (egl_manager_->protected_device() == nullptr) {
++    FML_LOG(ERROR) << "Keyed mutex texture: ANGLE's device is not multithread "
++                      "protected; not showing it.";
++    return SharedTextureKind::kUnusable;
++  }
++  Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
++  if (FAILED(shared.As(&keyed_mutex))) {
++    FML_LOG(ERROR) << "Keyed mutex texture: IDXGIKeyedMutex unavailable.";
++    return SharedTextureKind::kUnusable;
++  }
++  D3D11_TEXTURE2D_DESC private_desc = desc;
++  private_desc.MiscFlags = 0;
++  private_desc.CPUAccessFlags = 0;
++  private_desc.Usage = D3D11_USAGE_DEFAULT;
++  // ANGLE wraps the copy as a pbuffer: it samples it and creates an RTV.
++  private_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
++  Microsoft::WRL::ComPtr<ID3D11Texture2D> private_texture;
++  if (FAILED(device->CreateTexture2D(&private_desc, nullptr,
++                                     private_texture.GetAddressOf()))) {
++    FML_LOG(ERROR) << "Keyed mutex texture: creating the engine copy failed.";
++    return SharedTextureKind::kUnusable;
++  }
++  shared_texture_ = std::move(shared);
++  keyed_mutex_ = std::move(keyed_mutex);
++  private_texture_ = std::move(private_texture);
++  has_private_frame_ = false;
++  return SharedTextureKind::kKeyedMutex;
++}
++
++bool ExternalTextureD3d::CopyUnderKeyedMutex() {
++  ID3D11Device* device = egl_manager_->protected_device();
++  if (device == nullptr) {
++    return has_private_frame_;
++  }
++  // Never wait: the producer holds key 0 only for its own CopyResource. If
++  // it holds it right now, keep showing the previous copy; the producer
++  // marks the texture dirty again after it releases, which re-resolves it.
++  const HRESULT acquired = keyed_mutex_->AcquireSync(0, 0);
++  if (acquired == static_cast<HRESULT>(WAIT_TIMEOUT)) {
++    return has_private_frame_;
++  }
++  if (FAILED(acquired)) {
++    FML_LOG(ERROR) << "Keyed mutex texture: AcquireSync failed: 0x" << std::hex
++                   << static_cast<unsigned long>(acquired);
++    return has_private_frame_;
++  }
++  // S_OK, or WAIT_ABANDONED (the producer's device went away while holding
++  // the key; we own it now and the content is whatever it last finished).
++  Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
++  device->GetImmediateContext(context.GetAddressOf());
++  context->CopyResource(private_texture_.Get(), shared_texture_.Get());
++  const HRESULT released = keyed_mutex_->ReleaseSync(0);
++  if (FAILED(released)) {
++    FML_LOG(ERROR) << "Keyed mutex texture: ReleaseSync failed: 0x" << std::hex
++                   << static_cast<unsigned long>(released);
++  }
++  has_private_frame_ = true;
++  return true;
+ }
+ 
+ bool ExternalTextureD3d::CreateOrUpdateTexture(
+@@ -67,6 +164,9 @@ bool ExternalTextureD3d::CreateOrUpdateTexture(
+   if (descriptor == nullptr ||
+       SAFE_ACCESS(descriptor, handle, nullptr) == nullptr) {
+     ReleaseImage();
++    // Fushi patch (keyed mutex): the surface is gone, so the same handle
++    // coming back must rebuild it (and the keyed-mutex copy target).
++    last_surface_handle_ = nullptr;
+     return false;
+   }
+ 
+@@ -105,11 +205,24 @@ bool ExternalTextureD3d::CreateOrUpdateTexture(
+         EGL_TEXTURE_RGBA,  // always EGL_TEXTURE_RGBA
+         EGL_NONE};
+ 
+-    egl_surface_ = egl_manager_->CreateSurfaceFromHandle(
+-        (type_ == kFlutterDesktopGpuSurfaceTypeD3d11Texture2D)
+-            ? EGL_D3D_TEXTURE_ANGLE
+-            : EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE,
+-        handle, attributes, /*hdr=*/is_half_float_);
++    // Fushi patch (keyed mutex): a keyed-mutex share handle is never bound;
++    // GL gets the engine-owned copy (see |OpenKeyedMutexTexture|).
++    const SharedTextureKind kind =
++        (type_ == kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle)
++            ? OpenKeyedMutexTexture(handle)
++            : SharedTextureKind::kPlain;
++    if (kind == SharedTextureKind::kKeyedMutex) {
++      egl_surface_ = egl_manager_->CreateSurfaceFromHandle(
++          EGL_D3D_TEXTURE_ANGLE,
++          reinterpret_cast<EGLClientBuffer>(private_texture_.Get()),
++          attributes, /*hdr=*/is_half_float_);
++    } else if (kind == SharedTextureKind::kPlain) {
++      egl_surface_ = egl_manager_->CreateSurfaceFromHandle(
++          (type_ == kFlutterDesktopGpuSurfaceTypeD3d11Texture2D)
++              ? EGL_D3D_TEXTURE_ANGLE
++              : EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE,
++          handle, attributes, /*hdr=*/is_half_float_);
++    }
+ 
+     if (egl_surface_ == EGL_NO_SURFACE ||
+         eglBindTexImage(egl_manager_->egl_display(), egl_surface_,
+@@ -123,7 +236,12 @@ bool ExternalTextureD3d::CreateOrUpdateTexture(
+   if (release_callback) {
+     release_callback(SAFE_ACCESS(descriptor, release_context, nullptr));
+   }
+-  return egl_surface_ != EGL_NO_SURFACE;
++  if (egl_surface_ == EGL_NO_SURFACE) {
++    return false;
++  }
++  // Fushi patch (keyed mutex): one copy per resolve, i.e. per frame the
++  // producer marked available.
++  return keyed_mutex_ ? CopyUnderKeyedMutex() : true;
+ }
+ 
+ }  // namespace flutter
+diff --git a/engine/src/flutter/shell/platform/windows/external_texture_d3d.h b/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
+index cb8943b..5cfc07b 100644
+--- a/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
++++ b/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
+@@ -5,6 +5,10 @@
+ #ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_EXTERNAL_TEXTURE_D3D_H_
+ #define FLUTTER_SHELL_PLATFORM_WINDOWS_EXTERNAL_TEXTURE_D3D_H_
+ 
++#include <d3d11.h>
++#include <dxgi.h>
++#include <wrl/client.h>
++
+ #include <memory>
+ 
+ #include "flutter/fml/macros.h"
+@@ -38,6 +42,24 @@ class ExternalTextureD3d : public ExternalTexture {
+       const FlutterDesktopGpuSurfaceDescriptor* descriptor);
+   // Detaches the previously attached surface, if any.
+   void ReleaseImage();
++  // Fushi patch (keyed mutex): what |OpenKeyedMutexTexture| found.
++  enum class SharedTextureKind {
++    // No keyed mutex (or not inspectable): the stock share-handle path.
++    kPlain,
++    // Keyed mutex; |shared_texture_|, |keyed_mutex_| and |private_texture_|
++    // are set and GL binds |private_texture_|.
++    kKeyedMutex,
++    // Keyed mutex, but the engine copy could not be set up. The texture
++    // must not be sampled without the key, so it is not shown.
++    kUnusable,
++  };
++  // Fushi patch (keyed mutex): opens |handle| on ANGLE's device and, when the
++  // texture carries a keyed mutex, creates the engine-owned copy target.
++  SharedTextureKind OpenKeyedMutexTexture(HANDLE handle);
++  // Fushi patch (keyed mutex): copies the producer's latest frame into
++  // |private_texture_| under key 0. Returns whether |private_texture_| holds
++  // a frame (this one, or the previous one when the producer held the key).
++  bool CopyUnderKeyedMutex();
+ 
+   FlutterDesktopGpuSurfaceType type_;
+   const FlutterDesktopGpuSurfaceTextureCallback texture_callback_;
+@@ -50,6 +72,14 @@ class ExternalTextureD3d : public ExternalTexture {
+   // Fushi patch (HDR output): whether the bound surface is
+   // kFlutterDesktopPixelFormatRGBA16F (half float, extended range).
+   bool is_half_float_ = false;
++  // Fushi patch (keyed mutex): the producer's texture (opened on ANGLE's
++  // device, never bound to GL), its keyed mutex, and the engine-owned copy
++  // that |egl_surface_| wraps. All null on the stock path.
++  Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_texture_;
++  Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex_;
++  Microsoft::WRL::ComPtr<ID3D11Texture2D> private_texture_;
++  // Whether |private_texture_| has received at least one copy.
++  bool has_private_frame_ = false;
+ 
+   FML_DISALLOW_COPY_AND_ASSIGN(ExternalTextureD3d);
+ };
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+index 2c05e8f..0040954 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+@@ -301,6 +301,10 @@ void FlutterDesktopViewSetUnderlayComposition(FlutterDesktopViewRef view,
+   ViewFromHandle(view)->SetUnderlayComposition(enabled);
+ }
+ 
++bool FlutterDesktopGpuSurfaceSupportsKeyedMutex() {
++  return true;
++}
++
+ IDXGIAdapter* FlutterDesktopViewGetGraphicsAdapter(FlutterDesktopViewRef view) {
+   auto engine = ViewFromHandle(view)->GetEngine();
+   IDXGIAdapter* adapter;
+diff --git a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+index 248a1dc..417eab6 100644
+--- a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
++++ b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+@@ -344,6 +344,19 @@ FLUTTER_EXPORT void FlutterDesktopViewSetUnderlayComposition(
+     FlutterDesktopViewRef view,
+     bool enabled);
+ 
++// Fushi patch (keyed mutex external textures): whether this engine
++// synchronizes kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle textures created
++// with D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX. Such a texture is never sampled
++// directly: per new frame the engine does AcquireSync(0, 0), copies it into
++// an engine-owned texture on ANGLE's device and ReleaseSync(0) right away; if
++// the producer holds the key at that moment the previous copy stays on
++// screen. Producers must take key 0 around their own writes.
++//
++// Engines without this patch do not export the symbol and would sample a
++// keyed-mutex texture without the lock (undefined in D3D11): resolve it with
++// GetProcAddress and only create keyed-mutex textures when it returns true.
++FLUTTER_EXPORT bool FlutterDesktopGpuSurfaceSupportsKeyedMutex();
++
+ // Retrieves the DXGI adapter used for rendering. Returns true if the adapter
+ // was successfully retrieved, or false if an error occured.
+ // The caller must provide a valid pointer to an IDXGIAdapter* and is
