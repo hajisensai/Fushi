@@ -2,7 +2,7 @@
 /// `docs/specs/2026-09-28-floating-ball.md`）。
 ///
 /// Android：原生系统悬浮球服务 + MediaProjection 截屏 OCR；iOS：截自己的窗口 +
-/// App Intent 查词入口；Windows / macOS：原生置顶窗口画的应用外悬浮球（只画与报
+/// App Intent 查词入口；Windows / macOS / Linux（X11）：原生置顶窗口画的应用外悬浮球（只画与报
 /// 事件，动作由 Dart 执行，契约见 `docs/specs/2026-09-30-desktop-system-floating-ball.md`）。
 /// 其它平台原生侧没有实现，这里一律按「没有」处理，不抛错。
 library;

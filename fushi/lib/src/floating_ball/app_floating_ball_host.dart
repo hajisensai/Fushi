@@ -249,6 +249,7 @@ bool floatingBallSystemActionAvailable(
   isIOS: Platform.isIOS,
   isDesktop: isDesktopSystemBallPlatform,
   lookupModuleEnabled: lookupModuleEnabled,
+  globalLookupSupported: GlobalLookupController.isSupported,
 );
 
 /// 桌面系统球动作落到的执行面：全局查词覆盖窗与主窗。宿主只决定「哪颗按钮走
