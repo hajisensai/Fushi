@@ -140,7 +140,7 @@ ButtonStyle fushiSelectedTonalIconButtonStyle(
 
 /// 在官方 M3E [IconButton] 上补齐 M3E 弹簧形变。
 ///
-/// material_ui 1.8 的官方 M3E IconButton 只给出各状态的目标形状（round：静止
+/// material_ui 1.8～1.10 的官方 M3E IconButton 只给出各状态的目标形状（round：静止
 /// 胶囊、选中方圆角；square：静止方圆角、选中胶囊；按下统一收到小圆角），状态
 /// 之间是 200 ms 定时补间（`kThemeChangeDuration`），没有 M3E 的 spatial 弹簧。
 /// 这里经官方按钮自己的 [WidgetStatesController] 读 pressed、[selected] 由调用方
