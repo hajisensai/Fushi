@@ -1,4 +1,4 @@
-## BUG-4078 · Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次
+## BUG-4101 · Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次
 - **报告**：2026-11-04（应用内反馈 `bsDs3AQsy0`：Windows 10 Pro 19045，3.2.0-debug.22671，`PlatformException(0, Cannot create the InAppWebView instance!)` × 多次 + `type 'WindowsInAppWebViewController' is not a subtype of type 'InAppWebViewController'`）。
 - **真实性**：✅ 真 bug，两处：
   1. `packages/flutter_inappwebview_windows/lib/src/in_app_webview/in_app_webview.dart:384`（旧）`_onCreationError` 把平台控制器 `_controller ?? WindowsInAppWebViewController.static()` 直接交给 `params.onReceivedError`，没像同文件 `onWebViewCreated`（`:356`）和 `in_app_webview_controller.dart:165` 的 `_controllerFromPlatform` 那样先经 `params.controllerFromPlatform` 转换。app-facing 包装层（`flutter_inappwebview-6.1.5/lib/src/in_app_webview/in_app_webview.dart:329-331`）的回调把 dynamic 隐式转成 `InAppWebViewController` → TypeError，TODO-904 / BUG-440 设计的 sentinel 恢复（reader toast + 退回书架）在真实路径上永远到不了。旧测试只用假 channel 测到 `CustomPlatformViewController`，没经过包装层的类型转换。
