@@ -3996,6 +3996,7 @@
   "handlebar_phonetic_transcriptions": "Lautschrift",
   "handlebar_pitch_accent_categories": "Tonhöhenkategorien",
   "handlebar_pitch_accent_positions": "Tonhöhenpositionen",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "Popup-Auswahltext",
   "handlebar_reading": "Lesung",
   "handlebar_selected_glossary": "Ausgewähltes Glossar",

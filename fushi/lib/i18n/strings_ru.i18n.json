@@ -3996,6 +3996,7 @@
   "handlebar_phonetic_transcriptions": "Фонетические транскрипции",
   "handlebar_pitch_accent_categories": "Категории ударения",
   "handlebar_pitch_accent_positions": "Позиции ударения",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "Текст выделения во всплывающем окне",
   "handlebar_reading": "Чтение",
   "handlebar_selected_glossary": "Выбранный глоссарий",

@@ -3996,6 +3996,7 @@
   "handlebar_phonetic_transcriptions": "발음 표기",
   "handlebar_pitch_accent_categories": "악센트 유형",
   "handlebar_pitch_accent_positions": "악센트 위치",
+  "handlebar_popup_selection_html": "Popup selection (styled HTML)",
   "handlebar_popup_selection_text": "팝업 선택 텍스트",
   "handlebar_reading": "읽기",
   "handlebar_selected_glossary": "선택된 해설",
