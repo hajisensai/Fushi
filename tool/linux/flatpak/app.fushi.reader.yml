@@ -144,6 +144,20 @@ modules:
         url: https://gitlab.freedesktop.org/-/project/14497/uploads/289d58230e2981b51f23d31faf25bef9/libdisplay-info-0.4.0.tar.xz
         sha256: 43b180baa143e2035654759d84e2b2f5ee77d5fe817c423838c7fe59c0d68459
 
+  # mpv's X11 support (and with it vaapi-x11) requires xpresent, which the GNOME
+  # SDK does not ship.
+  - name: libXpresent
+    config-opts:
+      - --disable-static
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share/man
+    sources:
+      - type: archive
+        url: https://xorg.freedesktop.org/archive/individual/lib/libXpresent-1.0.1.tar.xz
+        sha256: b964df9e5a066daa5e08d2dc82692c57ca27d00b8cc257e8e960c9f1cf26231b
+
   - name: mpv
     buildsystem: meson
     config-opts:
@@ -164,6 +178,10 @@ modules:
       - -Dvaapi=enabled
       - -Ddrm=enabled
       - -Dvaapi-drm=enabled
+      # Under X11 media_kit hands mpv the X11 display for hwdec interop; with
+      # vaapi-x11 the decoded frames go to the GPU texture without a CPU copy.
+      - -Dx11=enabled
+      - -Dvaapi-x11=enabled
     sources:
       - type: archive
         url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
