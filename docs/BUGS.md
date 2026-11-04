@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3678 条。点号进各自文件。
+> 共 3679 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4081](bugs/BUG-4081-shelf-contact-shadow-dot.md) | ✅ | ✅ | shelf-contact-shadow-dot |
 | [BUG-4080](bugs/BUG-4080-reader-lookup-highlight-invisible-light-theme.md) | ✅ | ✅ | 浅色跟随主题下阅读器查词选区高亮几乎看不出来 |
 | [BUG-4079](bugs/BUG-4079-reader-focus-steals-dialog-keyboard.md) | ✅ | ✅ | 小说阅读器高级制卡对话框的句子输入框键盘弹出即收回 |
 | [BUG-4078](bugs/BUG-4078-lyrics-overlay-menu-duplicate-seek.md) | ✅ | ✅ | 歌词覆盖层 ⋯ 菜单的 -10s / +10s 与播放器上的 ±10 键重复 |
