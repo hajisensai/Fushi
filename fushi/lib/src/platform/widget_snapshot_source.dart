@@ -19,6 +19,7 @@ import 'package:fushi_engine/srs/srs_stats.dart' show SrsStatsData, SrsStreak;
 import 'package:fushi_engine/srs/srs_stats_loader.dart'
     show SrsStatsBundle, loadSrsStats;
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -496,8 +497,11 @@ class WidgetSnapshotSource {
           '${dir.path}/${sha1.convert(cover.codeUnits).toString()}.img',
         );
         if (await file.exists() && await file.length() > 0) return file.path;
-        final HttpClient client = HttpClient()
-          ..connectionTimeout = const Duration(seconds: 5);
+        // 走应用统一出口（BUG-1498）：公网音源封面经用户代理，局域网媒体服务器
+        // 由 isDirectProxyTarget 闸门判 DIRECT，行为与裸 client 等价。
+        final HttpClient client = createAppHttpClient(
+          connectionTimeout: const Duration(seconds: 5),
+        );
         try {
           final HttpClientRequest request = await client
               .getUrl(Uri.parse(cover))
