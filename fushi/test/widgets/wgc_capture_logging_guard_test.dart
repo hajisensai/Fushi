@@ -109,7 +109,7 @@ void main() {
   });
 
   test(
-    'texture_bridge.cc instruments key WGC lifecycle points; timer pump success path not per-frame logged',
+    'texture_bridge.cc instruments key WGC lifecycle points; frame delivery success path not per-frame logged',
     () {
       final String src = _read(<String>[
         'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
@@ -143,12 +143,13 @@ void main() {
         'createSession-fail',
         'startCapture-fail',
         'state-inactive',
-        'pump-start',
-        'pump-stop-start',
-        'pump-stop-timer-done',
-        'pump-remove-tick-done',
-        'pump-stop-done',
-        'pump-late-noop',
+        'worker-start',
+        'worker-start-fail',
+        'worker-run',
+        'worker-stop-start',
+        'worker-stop-joined',
+        'worker-stop-done',
+        'deliver-late-noop',
         'frame-noop',
         'frame-getfail',
         'frame-first-success',
@@ -228,7 +229,8 @@ void main() {
       expect(
         src.contains('defer_enqueue=0'),
         isFalse,
-        reason: 'timer pump path must not use handler-stack enqueue fallback',
+        reason:
+            'frame delivery must not use the old handler-stack enqueue fallback',
       );
       expect(
         src.contains('add_FrameArrived'),
@@ -257,9 +259,9 @@ void main() {
             'RetireFramePoolLocked must log the retired frame pool pointer (crash forensics)',
       );
 
-      final int pumpStop = src.indexOf('WgcLog::Write("pump-stop-start"');
+      final int pumpStop = src.indexOf('WgcLog::Write("worker-stop-start"');
       final int removeTick = src.indexOf(
-        'WgcLog::Write("pump-remove-tick-done"',
+        'WgcLog::Write("worker-stop-joined"',
         pumpStop,
       );
       final int sessionCloseStart = src.indexOf(
@@ -273,17 +275,18 @@ void main() {
       expect(
         pumpStop,
         greaterThanOrEqualTo(0),
-        reason: 'retire must log timer pump stop before closing WGC resources',
+        reason:
+            'retire must log frame worker stop before closing WGC resources',
       );
       expect(
         removeTick,
         greaterThan(pumpStop),
-        reason: 'Tick removal must be visible before session/pool close',
+        reason: 'worker join must be visible before session/pool close',
       );
       expect(
         sessionCloseStart,
         greaterThan(removeTick),
-        reason: 'session close must happen after timer Tick removal',
+        reason: 'session close must happen after the frame worker is joined',
       );
       expect(
         poolCloseStart,
@@ -291,23 +294,36 @@ void main() {
         reason: 'pool close must be logged after session close starts',
       );
 
-      final int pumpStart = src.indexOf('void TextureBridge::PumpFrameLocked(');
+      final int workerStart = src.indexOf('void RunFrameWorker(');
+      expect(workerStart, greaterThanOrEqualTo(0));
+      final int workerEnd = src.indexOf('}  // namespace', workerStart);
+      expect(workerEnd, greaterThan(workerStart));
+      final String workerBody = src.substring(workerStart, workerEnd);
+      expect(
+        workerBody.contains('WgcLog::Write("frame-getfail"'),
+        isTrue,
+        reason: 'worker TryGetNextFrame failure should be observable',
+      );
+      expect(
+        workerBody.contains('get_failure_logged'),
+        isTrue,
+        reason: 'the worker logs a failing TryGetNextFrame once, not per frame',
+      );
+
+      final int pumpStart = src.indexOf(
+        'void TextureBridge::DeliverFrameLocked(',
+      );
       expect(pumpStart, greaterThanOrEqualTo(0));
       final int pumpEnd = src.indexOf('bool TextureBridge::ShouldDropFrame()');
       expect(pumpEnd, greaterThan(pumpStart));
       final String pumpBody = src.substring(pumpStart, pumpEnd);
-      expect(
-        pumpBody.contains('WgcLog::Write("frame-getfail"'),
-        isTrue,
-        reason: 'timer pump TryGetNextFrame failure should be observable',
-      );
       final int needsUpdateIdx = pumpBody.indexOf('if (needs_update_)');
-      final int tryGetIdx = pumpBody.indexOf('TryGetNextFrame');
+      final int seqIdx = pumpBody.indexOf('seq == delivered_seq_');
       expect(needsUpdateIdx, greaterThanOrEqualTo(0));
       expect(
-        tryGetIdx,
+        seqIdx,
         greaterThan(needsUpdateIdx),
-        reason: 'resize must be handled before trying to take a frame',
+        reason: 'resize must be handled before checking for a new frame',
       );
       final int frameAvailIdx = pumpBody.indexOf('frame_available_()');
       expect(frameAvailIdx, greaterThanOrEqualTo(0));

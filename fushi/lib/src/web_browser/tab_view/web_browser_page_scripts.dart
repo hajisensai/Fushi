@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:fushi/src/web_browser/web_browser_scroll_collapse.dart';
+
 /// 标签页 WebView 注入的页内脚本（全部幂等、只装在顶层框架）。
 ///
 /// JS 实现而不是各平台原生回调的原因：Windows 的 WebView2 fork 没有
@@ -7,8 +9,13 @@ import 'dart:convert';
 /// 行为才一致、可测。
 
 /// 页内滚动上报：`fushiBrowserScroll(y, dy)`。用捕获阶段监听 `scroll`，内部容器
-/// 滚动（很多单页应用滚的是 body 下的某个 div）也算；按帧合并。
+/// 滚动（很多单页应用滚的是 body 下的某个 div）也算。不逐帧上报（每帧过一次 JS 桥
+/// 会在滚动最忙的时候跟绘制抢线程，Android Hybrid Composition 下 raster 与 platform
+/// 线程合并时尤甚）：只在收起状态机可能翻转的时刻报，见 [kWebBrowserScrollScript]。
 const String kWebBrowserScrollHandler = 'fushiBrowserScroll';
+
+/// 滚动停顿超过它（毫秒）就重新允许上报（见 [kWebBrowserScrollScript]）。
+const int kWebBrowserScrollRunGapMs = 250;
 
 /// 全屏变化：`fushiBrowserFullscreen(bool)`。
 const String kWebBrowserFullscreenHandler = 'fushiBrowserFullscreen';
@@ -21,12 +28,24 @@ const String kWebBrowserScrollScript =
 (function(){
   if (window.__fushiBrowserScroll) return;
   window.__fushiBrowserScroll = true;
+  // 只在宿主收起状态机（WebBrowserCollapseState）可能翻转时上报，不逐帧过桥：
+  // 同方向累计（换方向清零，与状态机同一口径）越过阈值时报一次，dy = 累计量；
+  // 滚到顶报一次。报过之后同方向继续滚不再报（状态机不会再变）；宿主可能从别处
+  // 改了收起状态（点小地址条展开 / 甩动底栏收起 / 换标签页），所以触摸 / 指针按下、
+  // 换滚动容器或停顿超过 ${kWebBrowserScrollRunGapMs}ms 后重新允许上报（累计量保留）。
+  var T = $kWebBrowserCollapseScrollThreshold, GAP = $kWebBrowserScrollRunGapMs;
   var last = -1, pending = false, target = null;
+  var runDir = 0, runAcc = 0, runSent = false, topSent = false, lastAt = 0;
+  function rearm(){ runSent = false; }
   function yOf(t){
     if (!t || t === document || t === document.documentElement || t === document.body) {
       return window.scrollY || document.documentElement.scrollTop || 0;
     }
     return t.scrollTop || 0;
+  }
+  function send(y, dy){
+    var b = window.flutter_inappwebview;
+    if (b && b.callHandler) b.callHandler('$kWebBrowserScrollHandler', y, dy);
   }
   function flush(){
     pending = false;
@@ -35,17 +54,29 @@ const String kWebBrowserScrollScript =
     var dy = y - last;
     last = y;
     if (dy === 0) return;
-    var b = window.flutter_inappwebview;
-    if (b && b.callHandler) b.callHandler('$kWebBrowserScrollHandler', y, dy);
+    var now = Date.now();
+    if (now - lastAt > GAP) rearm();
+    lastAt = now;
+    if (y <= 0) {
+      runDir = 0; runAcc = 0; runSent = false;
+      if (!topSent) { topSent = true; send(y, dy); }
+      return;
+    }
+    topSent = false;
+    var dir = dy > 0 ? 1 : -1;
+    if (dir !== runDir) { runDir = dir; runAcc = 0; runSent = false; }
+    runAcc += dy;
+    if (!runSent && Math.abs(runAcc) > T) { runSent = true; send(y, runAcc); }
   }
   document.addEventListener('scroll', function(e){
     var t = e.target;
-    if (t !== target) { target = t; last = Math.round(yOf(t)); return; }
+    if (t !== target) { target = t; last = Math.round(yOf(t)); rearm(); return; }
     if (!pending) { pending = true; requestAnimationFrame(flush); }
   }, {capture: true, passive: true});
+  window.addEventListener('pointerdown', rearm, {capture: true, passive: true});
+  window.addEventListener('touchstart', rearm, {capture: true, passive: true});
 })();
 ''';
-
 const String kWebBrowserFullscreenScript =
     '''
 (function(){

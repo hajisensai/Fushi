@@ -202,8 +202,8 @@ namespace flutter_inappwebview_plugin
     device_context->Flush();
   }
 
-  void TextureBridgeGpu::ProcessFrame(
-    winrt::com_ptr<ID3D11Texture2D> src_texture, size_t request_width,
+  void TextureBridgeGpu::ProcessFrame(ID3D11Texture2D* src_texture,
+    ABI::Windows::Graphics::SizeInt32 content_size, size_t request_width,
     size_t request_height)
   {
     D3D11_TEXTURE2D_DESC desc;
@@ -212,12 +212,11 @@ namespace flutter_inappwebview_plugin
     // BUG-3913：帧池按容量分配后 WGC 帧纹理比内容大，有效内容是左上角的
     // ContentSize（不超过帧纹理本身）。
     Size content = { desc.Width, desc.Height };
-    if (last_frame_content_size_.Width > 0 &&
-      last_frame_content_size_.Height > 0) {
+    if (content_size.Width > 0 && content_size.Height > 0) {
       content = {
-        (std::min)(static_cast<size_t>(last_frame_content_size_.Width),
+        (std::min)(static_cast<size_t>(content_size.Width),
           static_cast<size_t>(desc.Width)),
-        (std::min)(static_cast<size_t>(last_frame_content_size_.Height),
+        (std::min)(static_cast<size_t>(content_size.Height),
           static_cast<size_t>(desc.Height)) };
     }
 
@@ -263,7 +262,7 @@ namespace flutter_inappwebview_plugin
       const D3D11_BOX box = { 0, 0, 0, static_cast<UINT>(content.width),
         static_cast<UINT>(content.height), 1 };
       device_context->CopySubresourceRegion(shader_src_.get(), 0, 0, 0, 0,
-        src_texture.get(), 0, &box);
+        src_texture, 0, &box);
       if (placebo_->Render(shader_src_.get(), shader_dst_.get())) {
         scale_failure_logged_ = false;
         CopyIntoSurface(shader_dst_.get(), visible);
@@ -279,7 +278,7 @@ namespace flutter_inappwebview_plugin
     }
 #endif
 
-    CopyIntoSurface(src_texture.get(), content);
+    CopyIntoSurface(src_texture, content);
   }
 
   bool TextureBridgeGpu::SetShaders(const std::vector<std::string>& shader_texts)
@@ -417,8 +416,14 @@ namespace flutter_inappwebview_plugin
         SurfaceSizesDetail(surface_size_, { width, height }));
     }
 
-    if (last_frame_) {
-      ProcessFrame(last_frame_, width, height);
+    // BUG-4102：源是取帧线程已经拷好的私有纹理（mailbox），不再是 WGC 帧缓冲本身；
+    // 持 mailbox 锁拷完，取帧线程这期间不会覆写它。
+    {
+      StagedFrame staged = AcquireStagedFrame();
+      if (staged.texture) {
+        mailbox_->probe.OnRaster();
+        ProcessFrame(staged.texture, staged.content, width, height);
+      }
     }
 
     if (!surface_) {
