@@ -32,7 +32,25 @@
     popupOpen: false,
     lookupSeq: 0,
     screenshot: null, // base64 of the frame, built lazily for mining
+    // Reading area for this game, frame pixels {x, y, w, h}; null = whole screen.
+    region: parseRegion(new URLSearchParams(location.hash.slice(1)).get('region')),
+    // Setting the reading area: null, or {draft: rect|null} while the player draws it.
+    areaMode: null,
   };
+
+  function parseRegion(text) {
+    const v = String(text || '').split(',').map(Number);
+    if (v.length !== 4 || v.some((n) => !Number.isFinite(n)) || v[2] < 8 || v[3] < 8) return null;
+    return { x: v[0], y: v[1], w: v[2], h: v[3] };
+  }
+
+  function regionText(r) {
+    return [r.x, r.y, r.w, r.h].map((n) => Math.round(n)).join(',');
+  }
+
+  function regionFits(r) {
+    return !!r && state.width > 0 && r.x >= 0 && r.y >= 0 && r.x + r.w <= state.width && r.y + r.h <= state.height;
+  }
 
   // Popup CSS is sent once per revision (BUG-1718 contract), like background.js.
   let popupCss = { revision: '', body: null };
@@ -161,12 +179,28 @@
 
   // ── drawing ──────────────────────────────────────────────────────────
 
+  function areaEl(r, cls) {
+    const v = toView({ left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h });
+    const el = document.createElement('div');
+    el.className = cls;
+    Object.assign(el.style, {
+      left: v.left + 'px', top: v.top + 'px', width: v.width + 'px', height: v.height + 'px',
+    });
+    return el;
+  }
+
   function draw() {
     boxesEl.style.left = '0px';
     boxesEl.style.top = '0px';
     boxesEl.style.width = window.innerWidth + 'px';
     boxesEl.style.height = window.innerHeight + 'px';
     boxesEl.textContent = '';
+    if (state.areaMode) {
+      const shown = state.areaMode.draft || state.region;
+      if (shown) boxesEl.appendChild(areaEl(shown, 'area editing'));
+      return;
+    }
+    if (regionFits(state.region)) boxesEl.appendChild(areaEl(state.region, 'area'));
     state.lines.forEach((line, i) => {
       const r = toView(line.box);
       const el = document.createElement('div');
@@ -459,6 +493,7 @@
   }
 
   function onButton(button) {
+    if (state.areaMode) { onAreaButton(button); return; }
     switch (button) {
       case 'UP': if (state.popupOpen) scrollPopup(-140); else moveLine(-1); break;
       case 'DOWN': if (state.popupOpen) scrollPopup(140); else moveLine(1); break;
@@ -469,14 +504,108 @@
       case 'A': if (state.popupOpen) closePopup(); else lookup(); break;
       case 'X': if (state.popupOpen) sendPopup({ type: 'mine', entryIndex: 0 }); break;
       case 'B': if (state.popupOpen) closePopup(); else exit(); break;
+      case 'Y': enterAreaMode(); break;
       default: break;
     }
   }
 
+  // ── reading area ─────────────────────────────────────────────────────
+  // Y: set the part of the screen the Lens reads for this game (the dialogue
+  // box). Drag a rectangle by touch, or A to take the text found now. Saved per
+  // game by the plugin; only that area is sent for OCR from then on.
+
+  const AREA_HELP = 'Reading area: drag a box · A use the text found now · X whole screen · B cancel';
+
+  function enterAreaMode() {
+    closePopup();
+    state.areaMode = { draft: null };
+    document.documentElement.classList.add('area-mode');
+    showStatus(AREA_HELP, true);
+    draw();
+  }
+
+  function leaveAreaMode(message) {
+    state.areaMode = null;
+    document.documentElement.classList.remove('area-mode');
+    showStatus(message || '');
+    draw();
+  }
+
+  // Band around the lines found now: full width (later lines can be longer) and
+  // room for one more line above and two below (dialogue boxes grow downward).
+  function areaFromLines() {
+    if (!state.lines.length) return null;
+    const boxes = state.lines.map((l) => l.box);
+    const lineHeight = Math.max(...boxes.map((b) => b.bottom - b.top));
+    const top = Math.max(0, Math.min(...boxes.map((b) => b.top)) - lineHeight);
+    const bottom = Math.min(state.height, Math.max(...boxes.map((b) => b.bottom)) + 2 * lineHeight);
+    return { x: 0, y: top, w: state.width, h: bottom - top };
+  }
+
+  function saveArea(area) {
+    const region = area && parseRegion(regionText(area));
+    state.region = region;
+    if (window.parent !== window) {
+      window.parent.postMessage({ fushiLens: 'region', region: region ? regionText(region) : null }, '*');
+    }
+    leaveAreaMode(region ? 'Reading area saved for this game' : 'Reading the whole screen');
+    if (state.frameId) loadFrame(state.frameId);
+  }
+
+  function onAreaButton(button) {
+    switch (button) {
+      case 'A': {
+        const area = state.areaMode.draft || areaFromLines();
+        if (area) saveArea(area);
+        else showStatus('No text found to take the area from. Drag a box instead.', true);
+        break;
+      }
+      case 'X': saveArea(null); break;
+      case 'B': case 'Y': leaveAreaMode(); break;
+      default: break;
+    }
+  }
+
+  // Frame pixel point for a view point.
+  function toFrame(x, y) {
+    const t = viewTransform();
+    return {
+      x: Math.max(0, Math.min(state.width, (x - t.ox) / t.scale)),
+      y: Math.max(0, Math.min(state.height, (y - t.oy) / t.scale)),
+    };
+  }
+
+  let dragStart = null;
+  document.addEventListener('pointerdown', (e) => {
+    if (!state.areaMode || popupBox.contains(e.target)) return;
+    dragStart = toFrame(e.clientX, e.clientY);
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!state.areaMode || !dragStart) return;
+    const p = toFrame(e.clientX, e.clientY);
+    state.areaMode.draft = {
+      x: Math.min(dragStart.x, p.x), y: Math.min(dragStart.y, p.y),
+      w: Math.abs(p.x - dragStart.x), h: Math.abs(p.y - dragStart.y),
+    };
+    draw();
+  });
+  document.addEventListener('pointerup', () => {
+    if (!state.areaMode || !dragStart) return;
+    dragStart = null;
+    const d = state.areaMode.draft;
+    if (d && (d.w < 24 || d.h < 16)) {
+      state.areaMode.draft = null;
+      draw();
+      return;
+    }
+    if (d) showStatus('A save this area · drag again to redo · B cancel', true);
+  });
+
   const KEYS = {
     ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
     Enter: 'A', ' ': 'A', Escape: 'B', Backspace: 'B', x: 'X', m: 'X',
-    PageUp: 'LB', PageDown: 'RB', '[': 'LB', ']': 'RB',
+    PageUp: 'LB', PageDown: 'RB', '[': 'LB', ']': 'RB', y: 'Y',
   };
   document.addEventListener('keydown', (e) => {
     const button = KEYS[e.key];
@@ -528,7 +657,7 @@
   }
 
   document.addEventListener('click', (e) => {
-    if (!touchEnabled()) return;
+    if (!touchEnabled() || state.areaMode) return;
     if (popupBox.contains(e.target)) return;
     const hit = hitTest(e.clientX, e.clientY);
     if (!hit) {
@@ -554,7 +683,13 @@
     frameImg.src = new URL(`frame/${frameId}.jpg`, ROOT).href;
     showStatus('Reading text…', true);
     const started = performance.now();
-    const r = await postJson('ocr', { frameId });
+    try { await frameImg.decode(); } catch (_) { /* size comes from the OCR reply */ }
+    if (state.frameId !== frameId) return;
+    state.width = frameImg.naturalWidth || state.width;
+    state.height = frameImg.naturalHeight || state.height;
+    // A saved area from another resolution (docked to a TV) is ignored, not clipped.
+    const region = regionFits(state.region) ? regionText(state.region) : undefined;
+    const r = await postJson('ocr', region ? { frameId, region } : { frameId });
     if (state.frameId !== frameId) return;
     if (!r.ok || !r.data) { showStatus(errorText(r), true); return; }
     state.width = r.data.width;
@@ -564,7 +699,8 @@
     state.line = state.lines.reduce((best, l, i, all) => (l.box.bottom > all[best].box.bottom ? i : best), 0);
     draw();
     const ms = Math.round(performance.now() - started);
-    showStatus(state.lines.length ? `${state.lines.length} lines · ${ms} ms` : 'No text found on screen.');
+    if (state.lines.length) showStatus(`${state.lines.length} lines · ${ms} ms`);
+    else showStatus(region ? 'No text in the reading area. Press Y to change it.' : 'No text found on screen.', !!region);
   }
 
   async function start() {

@@ -39,6 +39,25 @@ html, body {
   background: rgba(138, 180, 255, 0.12);
 }
 
+/* Drawing the reading area: a finger drag draws, the browser must not pan. */
+.area-mode,
+.area-mode body {
+  touch-action: none;
+}
+
+/* Reading area for this game: only this part of the screen is read. */
+.area {
+  position: absolute;
+  border-radius: 6px;
+  outline: 1px dashed rgba(138, 180, 255, 0.45);
+}
+
+.area.editing {
+  outline: 2px dashed #8ab4ff;
+  background: rgba(138, 180, 255, 0.1);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+
 .glyph {
   position: absolute;
   border-radius: 3px;

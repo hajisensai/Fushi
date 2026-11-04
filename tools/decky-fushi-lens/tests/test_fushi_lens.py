@@ -246,5 +246,45 @@ class ServiceTest(unittest.TestCase):
         self.assertNotIn("token", self.config.load())
 
 
+
+class RegionSettingsTest(unittest.TestCase):
+    """Per-game reading areas in the plugin settings (main.py)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import asyncio
+        import importlib
+        import types
+
+        sys.modules.setdefault("decky", types.ModuleType("decky"))
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        cls.main = importlib.import_module("main")
+        cls.arun = staticmethod(asyncio.run)
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.plugin = self.main.Plugin()
+        self.plugin.settings = {}
+        self.plugin.settings_path = os.path.join(self.dir.name, "settings.json")
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_set_and_clear_region_per_game(self):
+        r = self.arun(self.plugin.set_region("1961950", "100,520,1080,240"))
+        self.assertEqual(r, {"ok": True, "regions": {"1961950": "100,520,1080,240"}})
+        self.arun(self.plugin.set_region("42", "0,0,640,400"))
+        with open(self.plugin.settings_path, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["regions"], {"1961950": "100,520,1080,240", "42": "0,0,640,400"})
+        r = self.arun(self.plugin.set_region("1961950", None))
+        self.assertEqual(r["regions"], {"42": "0,0,640,400"})
+
+    def test_rejects_bad_regions(self):
+        for bad in ["1,2,3", "-1,0,100,100", "0,0,4,100", "a,b,c,d", "0,0,100.5,100", 5]:
+            self.assertEqual(self.arun(self.plugin.set_region("1", bad)), {"ok": False, "error": "region"}, bad)
+        self.assertEqual(self.main._regions({"regions": {"1": "0,0,2,2", "2": "0,0,100,100", "3": None}}),
+                         {"2": "0,0,100,100"})
+        self.assertEqual(self.main._regions({"regions": "junk"}), {})
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@ import {
   Navigation,
   PanelSection,
   PanelSectionRow,
+  Router,
   TextField,
   ToggleField,
   staticClasses,
@@ -33,6 +34,7 @@ type Status = {
   button: string;
   buttonError: string | null;
   touch: boolean;
+  regions: Record<string, string>;
 };
 type Result = { ok: boolean; error?: string; detail?: string };
 type FrameInfo = { frameId: string; width: number; height: number };
@@ -45,6 +47,7 @@ const captureNow = callable<[], Result & Partial<FrameInfo>>("capture");
 const setButton = callable<[string], Result>("set_button");
 const setLensOpen = callable<[boolean], Result>("set_lens_open");
 const setTouch = callable<[boolean], Result>("set_touch");
+const setRegion = callable<[string, string | null], Result & { regions?: Record<string, string> }>("set_region");
 
 const ERRORS: Record<string, string> = {
   unreachable: "Can't reach Fushi at that address. Is it running with Interconnect on?",
@@ -62,6 +65,20 @@ const errorText = (r: Result) => ERRORS[r.error ?? ""] ?? `Error: ${r.error}${r.
 
 let lensUrl: string | null = null;
 let touchEnabled = false;
+// Reading area per game ("x,y,w,h" in frame pixels), keyed by Steam appid.
+let regions: Record<string, string> = {};
+
+// The game in front ("0" outside a game, e.g. reading the Steam UI itself).
+const currentApp = (): { id: string; name: string } => {
+  const app = Router.MainRunningApp;
+  return { id: String(app?.appid ?? "0"), name: app?.display_name ?? "" };
+};
+
+const remember = (s: Status) => {
+  lensUrl = s.lensUrl;
+  touchEnabled = s.touch;
+  regions = s.regions ?? {};
+};
 let pendingFrame: string | null = null;
 let postToLens: ((msg: unknown) => void) | null = null;
 
@@ -121,10 +138,15 @@ const swallow = (evt: GamepadEvent) => {
 function LensRoute() {
   const frame = useRef<HTMLIFrameElement>(null);
   const trap = useRef<HTMLDivElement>(null);
-  const [touch] = useState(touchEnabled);
-  const [src] = useState(() =>
-    lensUrl ? `${lensUrl}#frame=${pendingFrame ?? ""}${touch ? "&touch=1" : ""}` : null,
-  );
+  const [app] = useState(currentApp);
+  const [src] = useState(() => {
+    if (!lensUrl) return null;
+    const hash = new URLSearchParams({ frame: pendingFrame ?? "" });
+    if (touchEnabled) hash.set("touch", "1");
+    const region = regions[app.id];
+    if (region) hash.set("region", region);
+    return `${lensUrl}#${hash}`;
+  });
 
   useEffect(() => {
     const origin = lensUrl ? new URL(lensUrl).origin : "";
@@ -134,6 +156,10 @@ function LensRoute() {
       if (e.source !== frame.current?.contentWindow) return;
       if (e.data?.fushiLens === "ack") clearTimeout(bFallback);
       if (e.data?.fushiLens === "exit") Navigation.NavigateBack();
+      if (e.data?.fushiLens === "region") {
+        const region = typeof e.data.region === "string" ? e.data.region : null;
+        void setRegion(app.id, region).then((r) => r.regions && (regions = r.regions));
+      }
     };
     // The iframe lives in the Big Picture window, while this code runs in
     // SharedJSContext: the page's "exit" goes to the window that hosts it.
@@ -191,7 +217,7 @@ function LensRoute() {
         ref={frame}
         src={src}
         tabIndex={-1}
-        style={{ width: "100%", height: "100%", border: 0, display: "block", pointerEvents: touch ? "auto" : "none" }}
+        style={{ width: "100%", height: "100%", border: 0, display: "block" }}
         title="Fushi Lens"
       />
     </Focusable>
@@ -209,8 +235,7 @@ function Panel() {
 
   const refresh = async () => {
     const s = await getStatus();
-    lensUrl = s.lensUrl;
-    touchEnabled = s.touch;
+    remember(s);
     setStatus(s);
   };
   useEffect(() => {
@@ -230,6 +255,8 @@ function Panel() {
   };
 
   if (!status) return <PanelSection>Loading…</PanelSection>;
+  const app = currentApp();
+  const appRegion = app.id !== "0" ? status.regions?.[app.id] : undefined;
   return (
     <>
       <PanelSection title="Fushi">
@@ -315,6 +342,22 @@ function Panel() {
             onChange={(on) => run(() => setTouch(on))}
           />
         </PanelSectionRow>
+        {app.id !== "0" && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={busy || !appRegion}
+              description={
+                appRegion
+                  ? `${app.name || "This game"}: reads only the saved area. Press Y in the Lens to change it.`
+                  : `${app.name || "This game"}: reads the whole screen. Press Y in the Lens to read only the dialogue box.`
+              }
+              onClick={() => run(() => setRegion(app.id, null), "Reading the whole screen.")}
+            >
+              Read the whole screen
+            </ButtonItem>
+          </PanelSectionRow>
+        )}
         {status.buttonError && (
           <PanelSectionRow>
             <div style={{ fontSize: "12px", opacity: 0.85 }}>Back buttons unavailable: {status.buttonError}</div>
@@ -322,7 +365,7 @@ function Panel() {
         )}
         <PanelSectionRow>
           <div style={{ fontSize: "12px", opacity: 0.7 }}>
-            In the Lens: D-pad picks a line and a character, A looks up, X mines, B goes back. Set the button to
+            In the Lens: D-pad picks a line and a character, A looks up, X mines, Y sets the reading area, B goes back. Set the button to
             “None” for the game in Steam Input so the game ignores it.
           </div>
         </PanelSectionRow>
@@ -341,9 +384,9 @@ function Icon() {
 
 export default definePlugin(() => {
   routerHook.addRoute(ROUTE, LensRoute, { exact: true });
-  getStatus().then((s) => ((lensUrl = s.lensUrl), (touchEnabled = s.touch)));
+  getStatus().then(remember);
   const onFrame = addEventListener<[FrameInfo]>("fushi_lens_frame", (info) => {
-    if (!lensUrl) getStatus().then((s) => ((lensUrl = s.lensUrl), openLens(info.frameId)));
+    if (!lensUrl) getStatus().then((s) => (remember(s), openLens(info.frameId)));
     else openLens(info.frameId);
   });
   const onError = addEventListener<[Result]>("fushi_lens_error", (r) =>

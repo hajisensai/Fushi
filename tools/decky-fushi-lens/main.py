@@ -32,6 +32,24 @@ def _load_settings(path: str) -> Dict[str, Any]:
         return {}
 
 
+def _valid_region(region: Any) -> bool:
+    """"x,y,w,h" with whole, non-negative numbers and a usable size."""
+    if not isinstance(region, str):
+        return False
+    parts = region.split(",")
+    if len(parts) != 4 or not all(p.strip().isdigit() for p in parts):
+        return False
+    _, _, w, h = (int(p) for p in parts)
+    return w >= 8 and h >= 8
+
+
+def _regions(settings: Dict[str, Any]) -> Dict[str, str]:
+    raw = settings.get("regions")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): v for k, v in raw.items() if _valid_region(v)}
+
+
 def _error(e: Exception) -> Dict[str, Any]:
     if isinstance(e, HostError):
         return {"ok": False, "error": e.reason, "detail": e.detail}
@@ -91,6 +109,7 @@ class Plugin:
         status["button"] = self.paddles.button if self.paddles else DEFAULT_BUTTON
         status["buttonError"] = self.paddles.error if self.paddles else None
         status["touch"] = self.settings.get("touch") is True
+        status["regions"] = _regions(self.settings)
         return status
 
     async def begin_pairing(self, address: str) -> Dict[str, Any]:
@@ -132,6 +151,20 @@ class Plugin:
         self.settings["touch"] = bool(enabled)
         self._save_settings()
         return {"ok": True, "touch": self.settings["touch"]}
+
+    async def set_region(self, appid: str, region: Optional[str]) -> Dict[str, Any]:
+        """Save the reading area ("x,y,w,h" in frame pixels) for one game, or clear it."""
+        regions = _regions(self.settings)
+        key = str(appid)
+        if region is None:
+            regions.pop(key, None)
+        elif _valid_region(region):
+            regions[key] = region
+        else:
+            return {"ok": False, "error": "region"}
+        self.settings["regions"] = regions
+        self._save_settings()
+        return {"ok": True, "regions": regions}
 
     def _save_settings(self) -> None:
         os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
