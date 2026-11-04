@@ -578,13 +578,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           },
         ),
       ),
-      // 制卡所在字符数标签（`chars_12345`）：只有小说阅读器会注入，但开关与其余标签
-      // 开关同区——用户找「卡片带哪些标签」只会来这里找。
+      // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB，原 `chars_12345` 标签）：只有小说阅读器
+      // 会注入；行在「卡片内容」分组，id 沿用旧名作 reveal 锚点。
       AnkiSectionRow.tagCharPosition => SettingsSearchTarget(
         id: 'card_creation.anki.tag_char_position',
         child: AdaptiveSettingsSwitchRow(
-          title: t.auto_add_char_position_to_tags,
-          subtitle: t.auto_add_char_position_to_tags_hint,
+          title: t.anki_char_position_misc_info,
+          subtitle: t.anki_char_position_misc_info_hint,
           icon: FushiIcons.pin,
           value: appModel.autoAddCharPositionToTags,
           onChanged: (bool value) {

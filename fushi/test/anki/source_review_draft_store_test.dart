@@ -58,7 +58,7 @@ void main() {
         source: AnkiMiningSource.book,
         bookTitleTag: 'book',
         collectionTag: 'series',
-        charPositionTag: 'chars_42',
+        charPositionText: '制卡位置：第 42 字',
         clipStartMs: 10,
         clipEndMs: 20,
         synchronizedVideo: true,
@@ -95,7 +95,7 @@ void main() {
       expect(restored.source, context.source);
       expect(restored.bookTitleTag, context.bookTitleTag);
       expect(restored.collectionTag, context.collectionTag);
-      expect(restored.charPositionTag, context.charPositionTag);
+      expect(restored.charPositionText, context.charPositionText);
       expect(restored.clipStartMs, context.clipStartMs);
       expect(restored.clipEndMs, context.clipEndMs);
       expect(

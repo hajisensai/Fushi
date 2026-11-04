@@ -524,6 +524,25 @@ class SrsMiner with AnkiNoteComposer {
           stored: destination.fieldMappingsByType[type.id],
         );
 
+  /// [type] 的 fieldId → 字段名，给共享渲染里**按字段名**判定的规则用（制卡位置落
+  /// MiscInfo，[AnkiNoteComposer.charPositionTargetField]）：SRS 的映射键是 fieldId，
+  /// 不换回名字就永远匹配不上。内置类型（Lapis、Fushi 卡片）给字段键（`MiscInfo` /
+  /// `Source`，与映射同源、不受用户改名影响）；其它类型给字段名。
+  Map<String, String> _fieldNamesFor(SrsNoteTypeView? type) {
+    final SrsBuiltinNoteTypeSpec? builtin = srsBuiltinNoteTypeSpec(
+      _isLapis(type) ? kSrsBuiltinLapisKey : type!.builtinKey,
+    );
+    if (builtin != null) {
+      return <String, String>{
+        for (final String fieldKey in builtin.defaultFieldMappings.keys)
+          srsBuiltinFieldId(store.profileUid, builtin.key, fieldKey): fieldKey,
+      };
+    }
+    return <String, String>{
+      for (final SrsFieldDef f in type!.fields) f.id: f.name,
+    };
+  }
+
   /// 同一套渲染（媒体存进 [media]，字段键 = fieldId）。标签、紧凑释义等其余设置
   /// 沿用用户的制卡设置。
   Future<RenderedMinedFields> _renderFor({
@@ -542,6 +561,7 @@ class SrsMiner with AnkiNoteComposer {
     payload: payload,
     context: context,
     keepEmpty: keepEmpty,
+    fieldNames: _fieldNamesFor(noteType),
   );
 
   List<String> _buildTags(AnkiSettings settings, AnkiMiningContext context) =>
@@ -553,7 +573,6 @@ class SrsMiner with AnkiNoteComposer {
         nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
   static MineOutcome? _parse(
@@ -789,6 +808,7 @@ class SrsMiner with AnkiNoteComposer {
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
+    required Map<String, String> fieldNames,
     bool keepEmpty = false,
   }) async {
     Future<String?> addFile(String path) => _storeMediaFile(path);
@@ -826,6 +846,7 @@ class SrsMiner with AnkiNoteComposer {
       dictionaryMediaTags: results[3]! as Map<String, String>,
       audioWarning: audio.failureReason,
       keepEmpty: keepEmpty,
+      fieldNames: fieldNames,
     );
   }
 }

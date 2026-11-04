@@ -876,16 +876,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add work title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
       'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
-  // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo
+  // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB，原「chars_12345 标签」）。写 prefsRepo
   // （changed=true），真正的消费点在制卡路径 reader_fushi/mining.part.dart 的
-  // charPositionTag（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
-  // 也没有 Anki，探不到「卡上真带了这个 tag」。两端各有专项测试咬住：注入点由源码
-  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），tag 装配由
-  // fushi_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
-  'cardCreation/Auto-add mining position to tags':
+  // charPositionText（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
+  // 也没有 Anki，探不到「卡上 MiscInfo 真写了位置」。两端各有专项测试咬住：注入点由源码
+  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），落字段由
+  // fushi_anki 的 charPositionTargetField / buildMinedFields 用例钉死。
+  'cardCreation/Write mining position to MiscInfo':
       'test/pages/reader_mining_char_position_tag_guard_test.dart + '
-      'packages/fushi_anki/test/mining_tag_and_parallel_test.dart '
-      '(charPositionTag group)',
+      'packages/fushi_anki/test/mining_char_position_misc_info_test.dart',
   // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
   // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
   // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
