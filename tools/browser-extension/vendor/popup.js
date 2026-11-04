@@ -8811,6 +8811,8 @@ window.renderPopup = function() {
     if (__fushiHeaderMetaObserver) {
         try { __fushiHeaderMetaObserver.disconnect(); } catch (_) { /* no-op */ }
     }
+    // 已排上的那一帧 flush 不该再量即将摘掉的旧词头（isConnected 也会挡掉，这里是不攒引用）。
+    __fushiHeaderMetaDirty.clear();
     masonryDirtyBodies.clear();
     masonryDirtyAll = false;
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
