@@ -74203,6 +74203,18 @@ class $AiAgentSessionsTable extends AiAgentSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _originPeerIdMeta = const VerificationMeta(
+    'originPeerId',
+  );
+  @override
+  late final GeneratedColumn<String> originPeerId = GeneratedColumn<String>(
+    'origin_peer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -74213,6 +74225,7 @@ class $AiAgentSessionsTable extends AiAgentSessions
     createdAt,
     updatedAt,
     profileUid,
+    originPeerId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -74289,6 +74302,15 @@ class $AiAgentSessionsTable extends AiAgentSessions
         profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
       );
     }
+    if (data.containsKey('origin_peer_id')) {
+      context.handle(
+        _originPeerIdMeta,
+        originPeerId.isAcceptableOrUnknown(
+          data['origin_peer_id']!,
+          _originPeerIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -74330,6 +74352,10 @@ class $AiAgentSessionsTable extends AiAgentSessions
         DriftSqlType.string,
         data['${effectivePrefix}profile_uid'],
       )!,
+      originPeerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin_peer_id'],
+      )!,
     );
   }
 
@@ -74362,6 +74388,13 @@ class AiAgentSessionRow extends DataClass
   /// 恢复后原样回灌，而 `profiles` 随备份恢复，自增 id 会对不上。空串 = 归属不明
   /// （v141 前的存档且迁移时解析不出激活 Profile 的 uid），对所有 Profile 可见。
   final String profileUid;
+
+  /// v144：互联 host 替已配对设备跑的远端会话是**哪台设备**发起的
+  /// （`fushi_paired_peers.peer_id`，配对时对端上报的稳定设备 id，重新配对不变）。
+  /// 首次落库时盖戳，之后不改——本机续接这场会话也不改，发起的设备照样能在自己的
+  /// 会话列表里看到它。空串 = 本机发起（或用共享口令开的、认不出设备的老会话）。
+  /// 已配对设备经 `/api/assistant/history` 只能列 / 续接 / 改名 / 删除自己发起的。
+  final String originPeerId;
   const AiAgentSessionRow({
     required this.id,
     required this.title,
@@ -74371,6 +74404,7 @@ class AiAgentSessionRow extends DataClass
     required this.createdAt,
     required this.updatedAt,
     required this.profileUid,
+    required this.originPeerId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -74383,6 +74417,7 @@ class AiAgentSessionRow extends DataClass
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     map['profile_uid'] = Variable<String>(profileUid);
+    map['origin_peer_id'] = Variable<String>(originPeerId);
     return map;
   }
 
@@ -74396,6 +74431,7 @@ class AiAgentSessionRow extends DataClass
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       profileUid: Value(profileUid),
+      originPeerId: Value(originPeerId),
     );
   }
 
@@ -74413,6 +74449,7 @@ class AiAgentSessionRow extends DataClass
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       profileUid: serializer.fromJson<String>(json['profileUid']),
+      originPeerId: serializer.fromJson<String>(json['originPeerId']),
     );
   }
   @override
@@ -74427,6 +74464,7 @@ class AiAgentSessionRow extends DataClass
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'profileUid': serializer.toJson<String>(profileUid),
+      'originPeerId': serializer.toJson<String>(originPeerId),
     };
   }
 
@@ -74439,6 +74477,7 @@ class AiAgentSessionRow extends DataClass
     int? createdAt,
     int? updatedAt,
     String? profileUid,
+    String? originPeerId,
   }) => AiAgentSessionRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -74448,6 +74487,7 @@ class AiAgentSessionRow extends DataClass
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     profileUid: profileUid ?? this.profileUid,
+    originPeerId: originPeerId ?? this.originPeerId,
   );
   AiAgentSessionRow copyWithCompanion(AiAgentSessionsCompanion data) {
     return AiAgentSessionRow(
@@ -74465,6 +74505,9 @@ class AiAgentSessionRow extends DataClass
       profileUid: data.profileUid.present
           ? data.profileUid.value
           : this.profileUid,
+      originPeerId: data.originPeerId.present
+          ? data.originPeerId.value
+          : this.originPeerId,
     );
   }
 
@@ -74478,7 +74521,8 @@ class AiAgentSessionRow extends DataClass
           ..write('totalTokens: $totalTokens, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('profileUid: $profileUid')
+          ..write('profileUid: $profileUid, ')
+          ..write('originPeerId: $originPeerId')
           ..write(')'))
         .toString();
   }
@@ -74493,6 +74537,7 @@ class AiAgentSessionRow extends DataClass
     createdAt,
     updatedAt,
     profileUid,
+    originPeerId,
   );
   @override
   bool operator ==(Object other) =>
@@ -74505,7 +74550,8 @@ class AiAgentSessionRow extends DataClass
           other.totalTokens == this.totalTokens &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.profileUid == this.profileUid);
+          other.profileUid == this.profileUid &&
+          other.originPeerId == this.originPeerId);
 }
 
 class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
@@ -74517,6 +74563,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<String> profileUid;
+  final Value<String> originPeerId;
   final Value<int> rowid;
   const AiAgentSessionsCompanion({
     this.id = const Value.absent(),
@@ -74527,6 +74574,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.profileUid = const Value.absent(),
+    this.originPeerId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   AiAgentSessionsCompanion.insert({
@@ -74538,6 +74586,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     required int createdAt,
     required int updatedAt,
     this.profileUid = const Value.absent(),
+    this.originPeerId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -74554,6 +74603,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<String>? profileUid,
+    Expression<String>? originPeerId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -74565,6 +74615,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (profileUid != null) 'profile_uid': profileUid,
+      if (originPeerId != null) 'origin_peer_id': originPeerId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -74578,6 +74629,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<String>? profileUid,
+    Value<String>? originPeerId,
     Value<int>? rowid,
   }) {
     return AiAgentSessionsCompanion(
@@ -74589,6 +74641,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       profileUid: profileUid ?? this.profileUid,
+      originPeerId: originPeerId ?? this.originPeerId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -74620,6 +74673,9 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     if (profileUid.present) {
       map['profile_uid'] = Variable<String>(profileUid.value);
     }
+    if (originPeerId.present) {
+      map['origin_peer_id'] = Variable<String>(originPeerId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -74637,6 +74693,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('profileUid: $profileUid, ')
+          ..write('originPeerId: $originPeerId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -126715,6 +126772,7 @@ typedef $$AiAgentSessionsTableCreateCompanionBuilder =
       required int createdAt,
       required int updatedAt,
       Value<String> profileUid,
+      Value<String> originPeerId,
       Value<int> rowid,
     });
 typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
@@ -126727,6 +126785,7 @@ typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<String> profileUid,
+      Value<String> originPeerId,
       Value<int> rowid,
     });
 
@@ -126776,6 +126835,11 @@ class $$AiAgentSessionsTableFilterComposer
 
   ColumnFilters<String> get profileUid => $composableBuilder(
     column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originPeerId => $composableBuilder(
+    column: $table.originPeerId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -126828,6 +126892,11 @@ class $$AiAgentSessionsTableOrderingComposer
     column: $table.profileUid,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get originPeerId => $composableBuilder(
+    column: $table.originPeerId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AiAgentSessionsTableAnnotationComposer
@@ -126866,6 +126935,11 @@ class $$AiAgentSessionsTableAnnotationComposer
 
   GeneratedColumn<String> get profileUid => $composableBuilder(
     column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originPeerId => $composableBuilder(
+    column: $table.originPeerId,
     builder: (column) => column,
   );
 }
@@ -126915,6 +126989,7 @@ class $$AiAgentSessionsTableTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<String> profileUid = const Value.absent(),
+                Value<String> originPeerId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AiAgentSessionsCompanion(
                 id: id,
@@ -126925,6 +127000,7 @@ class $$AiAgentSessionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 profileUid: profileUid,
+                originPeerId: originPeerId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -126937,6 +127013,7 @@ class $$AiAgentSessionsTableTableManager
                 required int createdAt,
                 required int updatedAt,
                 Value<String> profileUid = const Value.absent(),
+                Value<String> originPeerId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AiAgentSessionsCompanion.insert(
                 id: id,
@@ -126947,6 +127024,7 @@ class $$AiAgentSessionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 profileUid: profileUid,
+                originPeerId: originPeerId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
