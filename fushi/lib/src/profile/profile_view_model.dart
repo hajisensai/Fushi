@@ -622,14 +622,17 @@ final profileViewModelProvider =
         await ReaderFushiSource.readerSettings?.refreshFromDb();
       }
 
-      // 先取好：游戏会话的进入在启动之后才发起，那时本 provider 可能已因切配置重建。
-      final AppModel workScopeApp = ref.read(appProvider);
+      // 游戏会话的进入在启动之后才发起，那时本 provider 可能已因切配置重建、本 ref 已失效，
+      // 所以经容器（比单个 provider 活得长）去取 App。取值仍是用到时才取：构建视图模型
+      // 不顺带建 AppModel——只看配置列表的宿主（查词弹窗顶栏的制卡目标按钮等）不依赖它。
+      final ProviderContainer container = ref.container;
       return ProfileViewModel(
         repo,
         onApplied,
         profileDraftCoordinator,
         deletionCascade: srsProfileCleanupFor(ref),
-        onWorkScopeSettled: () => workScopeApp.workProfileScopeSettled,
+        onWorkScopeSettled: () =>
+            container.read(appProvider).workProfileScopeSettled,
       );
     });
 
