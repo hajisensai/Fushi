@@ -8,7 +8,6 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiSettings, BaseAnkiRepository;
