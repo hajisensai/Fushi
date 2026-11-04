@@ -1,0 +1,15 @@
+## BUG-4004 · 复习卡原生卡面查词后卡面上没有被查词高亮
+- **报告**：2026-11-04（开发者反馈 #hbre3AQKXS，Android OnePlus CPH2747，3.3.0-debug.23261；正文空，标题「查词没高亮，并且查词的时候弹窗会闪一下，先在下面生成才到上面」。日志只有 `SrsReviewPage.focus`，可知发生在复习页卡面查词）。「弹窗闪一下」另见 BUG-4006。
+- **真实性**：✅ 真 bug（高亮部分）。复习卡面有两条取词路径：
+  - WebView 卡面 `srs_card_face.dart:2079` 给 `SrsCardLookupRequest` 传 `onMatched`，查到后 eval `highlightSelection(count)` 在卡面上高亮；
+  - 原生卡面（Fushi 卡型的词条 / 例句，`SrsNativeLookupRegion`）在修前 `fushi/lib/src/pages/implementations/srs/srs_card_lookup.dart:1220`（`_lookupHit` 里的 `c.lookup(SrsCardLookupRequest(...))`）**不传 `onMatched`**，整个原生区也没有任何高亮绘制；`SrsCardLookupRequest.onMatched` 的文档（修前 `:94`）明写「WebView 表面据此在卡面上高亮被查词」——原生表面从设计上就缺这一腿。命中结构 `SrsNativeLookupHit` 也只带被点字所在的**最深**段落（注音段时是基字的子段落），没有承载整段文字的外层段落和取词标记，就算想高亮也换算不出被查词的范围。
+- **[x] ① 已修复** — `srs_card_lookup.dart`：
+  - `SrsNativeLookupHit` 增加 `outerParagraph`（命中路径上标记之前最后经过的段落）与 `data`；
+  - `SrsLookupTextData.outerRangesFor`（`:994`）：整段偏移区间 → 外层段落区间（`mapOuterOffset` 的反向，注音段整段占位符）；
+  - `srsNativeLookupHighlightRects`（`:1081`）：从查询起点起命中的 `matchedChars` 个字 → 区域坐标系矩形；
+  - `SrsNativeLookupRegionState._lookupHit`（`:1291`）传 `onMatched`，结果回来后存矩形并由 `_SrsLookupHighlightPainter`（`:1409`，与 WebView 卡面 `.fushi-dict-highlight` 同色同形）画在卡面上；弹窗关闭 / 别的表面发起新查词时清掉（`onLookupStateChanged`）。弹窗开着时 barrier 盖住卡面、卡面不会滚动，矩形在关窗前一直有效。
+  - 网页浏览器字幕面板（`web_browser_subtitle_panel.dart`）复用同一个 `SrsNativeLookupRegion`，一并获得高亮。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_card_lookup_test.dart`：
+  - widget 行为「原生区：查到结果后卡面高亮被查词（注音段 + 普通字），关弹窗后清掉」：真卡面点「通」查「通う」，断言高亮矩形覆盖注音段「通」和普通段「う」，`closeAll` 后清空；
+  - 纯函数「SrsLookupTextData.outerRangesFor」。
+- **备注**：未在真机肉眼复测（无 Android 设备在本轮会话里）。

@@ -70,6 +70,8 @@ class _LookupApp extends AppModel {
 Future<DictionarySearchResult> _fakeSearch(String term, int max) async =>
     DictionarySearchResult(
       searchTerm: term,
+      // 引擎按最长匹配回报命中长度：假词典整串命中（卡面高亮据此标出整个查询串）。
+      bestLength: term.length,
       entries: <DictionaryEntry>[
         DictionaryEntry(word: term, reading: 'よみ', meaning: 'm'),
       ],
@@ -219,6 +221,88 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     });
   }
+
+  // 反馈 hbre3AQKXS：原生卡面查词后卡面上没有被查词的高亮（WebView 卡面有）。
+  testWidgets('原生区：查到结果后卡面高亮被查词（注音段 + 普通字），关弹窗后清掉', (
+    WidgetTester tester,
+  ) async {
+    final SrsCardLookupController lookup = await pumpCard(tester, answer: true);
+    final Finder term = find.byKey(const ValueKey<String>('srs-fushi-term'));
+    final Finder regionFinder = find
+        .ancestor(of: term, matching: find.byType(SrsNativeLookupRegion))
+        .first;
+    final SrsNativeLookupRegionState region = tester
+        .state<SrsNativeLookupRegionState>(regionFinder);
+    expect(region.debugHighlightRects, isEmpty);
+
+    final Offset tsu = rubyBaseCenter(tester, term, '通');
+    final Offset u = rubyBaseCenter(tester, term, 'う');
+    await tester.tapAt(tsu);
+    await settlePopup(tester);
+    expect(lookup.isOpen, isTrue);
+    expect(lookup.debugQueries, <String>['通う']);
+
+    final RenderBox regionBox = tester.renderObject<RenderBox>(regionFinder);
+    bool covered(Offset global) {
+      final Offset local = regionBox.globalToLocal(global);
+      return region.debugHighlightRects.any((Rect r) => r.contains(local));
+    }
+
+    expect(region.debugHighlightRects, isNotEmpty);
+    expect(covered(tsu), isTrue, reason: '注音段「通」整段高亮');
+    expect(covered(u), isTrue, reason: '命中 2 字：普通段「う」也高亮');
+
+    lookup.closeAll();
+    await tester.pump();
+    expect(lookup.isOpen, isFalse);
+    expect(region.debugHighlightRects, isEmpty);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  test('SrsLookupTextData.outerRangesFor：普通段按偏移平移，注音段整段占位符', () {
+    const SrsLookupTextData data = SrsLookupTextData(
+      '毎日のように通う',
+      segments: <SrsLookupTextSegment>[
+        SrsLookupTextSegment(
+          outerStart: 0,
+          outerLength: 1,
+          fullStart: 0,
+          placeholder: true,
+        ),
+        SrsLookupTextSegment(
+          outerStart: 1,
+          outerLength: 4,
+          fullStart: 2,
+          placeholder: false,
+        ),
+        SrsLookupTextSegment(
+          outerStart: 5,
+          outerLength: 1,
+          fullStart: 6,
+          placeholder: true,
+        ),
+        SrsLookupTextSegment(
+          outerStart: 6,
+          outerLength: 1,
+          fullStart: 7,
+          placeholder: false,
+        ),
+      ],
+    );
+    expect(data.outerRangesFor(1, 3), const <TextRange>[
+      TextRange(start: 0, end: 1),
+      TextRange(start: 1, end: 2),
+    ]);
+    expect(data.outerRangesFor(6, 8), const <TextRange>[
+      TextRange(start: 5, end: 6),
+      TextRange(start: 6, end: 7),
+    ]);
+    expect(data.outerRangesFor(3, 3), isEmpty);
+    expect(
+      const SrsLookupTextData('abc').outerRangesFor(1, 3),
+      const <TextRange>[TextRange(start: 1, end: 3)],
+    );
+  });
 
   group('制卡来源（cardSource）', () {
     Future<List<AnkiMiningContext>> mineBoth(WidgetTester tester) async {
