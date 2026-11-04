@@ -136,6 +136,58 @@ void main() {
     expect(clampPageCurlPoint(inside, size: _size, y0: 400), inside);
   });
 
+  group('Apple Books follow geometry', () {
+    test('a drag lifts the real corner on the pressed half', () {
+      expect(pageCurlCornerYFor(_size, 100), 0);
+      expect(pageCurlCornerYFor(_size, 700), 800);
+    });
+
+    test('the paper edge catches up to the finger, then stays under it', () {
+      Offset follow(Offset finger) => pageCurlFollowPoint(
+        size: _size,
+        start: const Offset(200, 400),
+        finger: finger,
+        cornerY: 800,
+        forward: true,
+      );
+      // 刚按下：纸面平铺，角点在原位（不跳）。
+      expect(follow(const Offset(200, 400)).dx, closeTo(400, 0.001));
+      // 拖过追手距离后：纸边就在手指下。
+      expect(follow(const Offset(50, 400)).dx, closeTo(50, 0.001));
+      // 往反方向拖：不倒卷。
+      expect(follow(const Offset(300, 400)).dx, closeTo(400, 0.001));
+    });
+
+    test('pressing near a corner lifts it toward the finger', () {
+      Offset follow(Offset finger, {required double startY}) =>
+          pageCurlFollowPoint(
+            size: _size,
+            start: Offset(380, startY),
+            finger: finger,
+            cornerY: 800,
+            forward: true,
+          );
+      // 按在右下角附近（y = 720）横拖半页：角抬到手指高度，折痕是斜的。
+      expect(
+        follow(const Offset(180, 720), startY: 720).dy,
+        closeTo(720, 0.001),
+      );
+      // 按在边缘中段（y = 420）横拖：角留在下缘，折痕竖直。
+      expect(follow(const Offset(180, 420), startY: 420).dy, closeTo(800, 0.5));
+    });
+
+    test('a backward drag pulls the previous page in at twice the speed', () {
+      final Offset p = pageCurlFollowPoint(
+        size: _size,
+        start: const Offset(20, 700),
+        finger: const Offset(120, 700),
+        cornerY: 800,
+        forward: false,
+      );
+      expect(p.dx, closeTo(-200, 0.001));
+    });
+  });
+
   test('curl speeds are one token above the slide speeds', () {
     for (final PageTurnAnimationSpeed s in PageTurnAnimationSpeed.values) {
       expect(s.curlDuration > s.duration, isTrue, reason: s.key);
@@ -166,8 +218,8 @@ void main() {
     expect(curl.visible, isTrue);
 
     drag.update(const Offset(200, 420));
-    // 角点跟着手指走（相对位移），轴线随之左移。
-    expect(curl.geometry.point.dx, closeTo(220, 0.5));
+    // 按在右缘附近：纸边追到手指下，之后贴着手指走。
+    expect(curl.geometry.point.dx, closeTo(200, 0.5));
     drag.end(const Offset(200, 420), -0.1);
     await tester.pump();
     expect(host.calls.where((String c) => c.startsWith('commit')), <String>[
@@ -265,7 +317,7 @@ void main() {
     await settlePrepare(tester);
     drag.update(const Offset(220, 400));
     expect(curl.geometry.mirror, isTrue);
-    expect(curl.geometry.point.dx, closeTo(200, 0.5));
+    expect(curl.geometry.point.dx, closeTo(180, 0.5));
     drag.end(const Offset(220, 400), 0.3);
     await settleAnimation(tester);
     expect(host.calls, contains('commit:f'));
@@ -289,11 +341,12 @@ void main() {
       );
       await settlePrepare(tester);
       expect(curl.geometry.paper, const Rect.fromLTWH(0, 150, 400, 500));
-      // 拎起的角在纸面右缘、按下点的高度（纸面局部坐标）。
-      expect(curl.geometry.corner, const Offset(400, 250));
+      // 按在纸面下半：拎纸面的右下真角（纸面局部坐标）。
+      expect(curl.geometry.corner, const Offset(400, 500));
       drag.update(const Offset(200, 420));
-      expect(curl.geometry.point.dx, closeTo(220, 0.5));
-      expect(curl.geometry.point.dy, closeTo(270, 0.5));
+      expect(curl.geometry.point.dx, closeTo(200, 0.5));
+      // 按在边缘中段：角点不往手指抬，只带上手指的纵向位移（+20）。
+      expect(curl.geometry.point.dy, closeTo(520, 0.5));
       drag.end(const Offset(200, 420), -0.1);
       await settleAnimation(tester);
       expect(host.calls, contains('commit:f'));
@@ -315,10 +368,11 @@ void main() {
         mirror: true,
       );
       await settlePrepare(tester);
-      expect(curl.geometry.corner, const Offset(300, 400));
-      // 按下点离纸面左缘（镜像后的角）10px；往右拖 100 → 角点在局部 x = 200。
+      expect(curl.geometry.corner, const Offset(300, 800));
+      // 按下点离纸面左缘（镜像后的角）10px；往右拖 100 → 纸边已追到手指下，
+      // 角点在局部 x = 190。
       drag.update(const Offset(160, 400));
-      expect(curl.geometry.point.dx, closeTo(200, 0.5));
+      expect(curl.geometry.point.dx, closeTo(190, 0.5));
       drag.cancel();
       await settleAnimation(tester);
     });
@@ -333,7 +387,7 @@ void main() {
 
       unawaited(curl.turn(size: _size, forward: true, mirror: false));
       await settlePrepare(tester);
-      expect(curl.geometry.corner, const Offset(400, 400 * 0.88));
+      expect(curl.geometry.corner, const Offset(400, 400));
       await settleAnimation(tester);
       expect(host.calls, contains('commit:f'));
     });
@@ -730,7 +784,8 @@ void main() {
       first.update(const Offset(0, 0));
       first.end(const Offset(0, 0), -3);
       second.update(const Offset(360, 400));
-      expect(curl.geometry.point.dx, closeTo(380, 0.5));
+      // 拖了 20px：纸边还在追手指的途中（smoothstep(0.2) = 0.104）。
+      expect(curl.geometry.point.dx, closeTo(377.92, 0.5));
       second.end(const Offset(360, 400), 0);
       await settleAnimation(tester);
       expect(host.calls.where((String c) => c.startsWith('commit')), isEmpty);

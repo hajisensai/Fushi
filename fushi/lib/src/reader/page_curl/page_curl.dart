@@ -190,6 +190,79 @@ Offset clampPageCurlPoint(
 /// 「完全翻过」时角点的位置。
 Offset pageCurlTurnedPoint(Size size, double y0) => Offset(-size.width, y0);
 
+/// 纸边追上手指所用的拖动距离（占纸面宽）：从页中间按下时，纸边先在这段距离里
+/// 平滑追到手指下，之后贴着手指走（苹果图书的手感：手里捏着的是纸边）。
+const double kPageCurlCatchUpFraction = 0.25;
+
+/// 角点抬到手指高度所用的拖动距离（占纸面宽）。
+const double kPageCurlLiftFraction = 0.5;
+
+double _smoothstep(double edge0, double edge1, double x) {
+  if (edge1 <= edge0) return x < edge0 ? 0 : 1;
+  final double t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+  return t * t * (3 - 2 * t);
+}
+
+/// 按下点离被拎起的角多近（0 = 按在边缘中段，1 = 按在角附近）。决定角点抬向手指
+/// 的程度：按在角附近拖出斜折痕（掀书角），按在中段保持竖直折痕。
+@visibleForTesting
+double pageCurlCornerWeight({
+  required Size size,
+  required double startY,
+  required double cornerY,
+}) {
+  final double fromCorner =
+      (startY - cornerY).abs() / math.max(1.0, size.height);
+  return 1 - _smoothstep(0.2, 0.45, fromCorner);
+}
+
+/// 拖动按下时拎哪个角（纸面局部 y）：上半页拎上角，下半页拎下角（苹果图书）。
+@visibleForTesting
+double pageCurlCornerYFor(Size size, double startY) =>
+    startY < size.height / 2 ? 0 : size.height;
+
+/// 拖动跟手时角点的位置（纸面局部、未镜像空间，未做书脊约束）。
+///
+/// - 横向：前进时纸边从「按下点到纸边的距离」开始，在 [kPageCurlCatchUpFraction]
+///   的拖动距离内平滑追到手指下，之后纸边就在手指下；后退时上一页的边以两倍速
+///   从书脊另一侧拉回来（手指从左缘拖到右缘刚好铺平）。
+/// - 纵向：手指的上下位移原样带给角点；另外按在角附近时，角点随拖动逐渐抬到手指
+///   高度（[kPageCurlLiftFraction]），卷出斜的折痕，而不是整条竖线平推。
+@visibleForTesting
+Offset pageCurlFollowPoint({
+  required Size size,
+  required Offset start,
+  required Offset finger,
+  required double cornerY,
+  required bool forward,
+}) {
+  final double w = size.width;
+  final double weight = pageCurlCornerWeight(
+    size: size,
+    startY: start.dy,
+    cornerY: cornerY,
+  );
+  final double progress = forward ? start.dx - finger.dx : finger.dx - start.dx;
+  final double lift =
+      (start.dy - cornerY) *
+      weight *
+      _smoothstep(0, kPageCurlLiftFraction * w, progress);
+  final double y = cornerY + (finger.dy - start.dy) + lift;
+  if (forward) {
+    final double gap = math.max(0.0, w - start.dx);
+    final double catchUp = _smoothstep(
+      0,
+      kPageCurlCatchUpFraction * w,
+      progress,
+    );
+    final double x = finger.dx + gap * (1 - catchUp);
+    // 往反方向拖：纸面留在起点，不倒卷。
+    return Offset(math.min(x, w), y);
+  }
+  final double x = -w + 2 * (finger.dx - start.dx);
+  return Offset(math.max(x, -w), y);
+}
+
 /// 由松手时的位移 / 速度判断是否提交（与平移 / 覆盖的拖动跟手同一阈值）。
 ///
 /// [progressPx] = 沿翻页方向已经拖过的距离（向反方向拖为负），[velocity] = 沿翻页
@@ -569,12 +642,12 @@ class PageCurlController extends ChangeNotifier {
     return Offset(_mirror ? _paper.width - x : x, p.dy - _paper.top);
   }
 
-  /// 按当前纸面矩形定卷曲的起点：拖动从按下点的高度拎起，点按 / 按键从靠下的
-  /// 角拎起；角点回到「平铺」（前进）或「完全翻过」（后退）。
+  /// 按当前纸面矩形定卷曲的起点：拖动拎离按下点近的那个真角（上半页上角、下半页
+  /// 下角），点按 / 按键拎下角；角点回到「平铺」（前进）或「完全翻过」（后退）。
   void _anchorToPaper() {
     _y0 = _sessionDrag == null
-        ? _size.height * 0.88
-        : _start.dy.clamp(0.0, _size.height);
+        ? _size.height
+        : pageCurlCornerYFor(_size, _start.dy);
     _point = _forward
         ? Offset(_size.width, _y0)
         : pageCurlTurnedPoint(_size, _y0);
@@ -599,15 +672,14 @@ class PageCurlController extends ChangeNotifier {
       _forward ? _start.dx - _finger.dx : _finger.dx - _start.dx;
 
   void _followFinger() {
-    final Offset delta = _finger - _start;
-    final Offset raw = _forward
-        ? Offset(_size.width, _y0) + delta
-        : pageCurlTurnedPoint(_size, _y0) + Offset(delta.dx * 2, delta.dy);
-    // 往反方向拖：纸面留在起点（前进）/ 完全翻过（后退），不倒卷。
-    final Offset bounded = _forward
-        ? Offset(math.min(raw.dx, _size.width), raw.dy)
-        : Offset(math.max(raw.dx, -_size.width), raw.dy);
-    _point = clampPageCurlPoint(bounded, size: _size, y0: _y0);
+    final Offset raw = pageCurlFollowPoint(
+      size: _size,
+      start: _start,
+      finger: _finger,
+      cornerY: _y0,
+      forward: _forward,
+    );
+    _point = clampPageCurlPoint(raw, size: _size, y0: _y0);
     notifyListeners();
   }
 
@@ -811,10 +883,15 @@ class PageCurlController extends ChangeNotifier {
         (_settleFromRest ? Easing.standard : Easing.standardDecelerate)
             .transform(t);
     final Offset p = Offset.lerp(_settleFrom, _settleTo, eased)!;
-    // 翻过去的途中略微抬高，卷出弧线而不是平推。
-    final double lift = math.sin(eased * math.pi) * _size.height * 0.04;
+    // 翻过去的途中把角往页心抬，卷出弧线而不是平推。点按 / 按键从静止起翻：角从
+    // 下角掀起、中途明显上弧再落平（苹果图书点按翻页）；松手接力时手指已带出了
+    // 折痕的斜度，只补一点弧线。
+    final double towardCenter = _y0 > _size.height / 2 ? -1.0 : 1.0;
+    final double liftAmount = _settleFromRest ? 0.14 : 0.04;
+    final double lift =
+        math.sin(eased * math.pi) * _size.height * liftAmount * towardCenter;
     _point = clampPageCurlPoint(
-      Offset(p.dx, p.dy - lift),
+      Offset(p.dx, p.dy + lift),
       size: _size,
       y0: _y0,
     );
