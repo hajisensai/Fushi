@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3676 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4078](bugs/BUG-4078-windows-webview-creation-error-controller-type.md) | ✅ | ✅ | Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次 |
 > 共 3699 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
@@ -65,7 +70,7 @@
 | [BUG-4075](bugs/BUG-4075-mobile-srs-sync-memory-exhaustion.md) | 🚧 | 🚧 | iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory） |
 | [BUG-4074](bugs/BUG-4074-windows-update-handoff-false-crash-pre-22838.md) | ✅ | ✅ | Windows 应用内更新交接被误报「停在前台时没了」（22838 之前的版本） |
 | [BUG-4073](bugs/BUG-4073-windows-uia-hittest-av.md) | 🚧 | 🚧 | Windows flutter_windows.dll+0x133cb 访问冲突：UIA HitTestSync 打到失步的 AX 节点 |
-| [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | 🚧 | 🚧 | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
+| [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | ✅ | ✅ | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
 | [BUG-4071](bugs/BUG-4071-android-exit-importance-overrides-marker.md) | ✅ | ✅ | Android 后台被厂商杀进程仍被判「停在前台时没了」弹闪退报告 |
 | [BUG-4070](bugs/BUG-4070-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
 | [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |

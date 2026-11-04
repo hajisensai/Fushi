@@ -98,6 +98,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         dataRootMigrationRestart,
         runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/headless_launch_gate.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
@@ -314,6 +315,12 @@ void main([List<String> args = const <String>[]]) {
       /// Necessary to initialise Flutter when running native code before
       /// starting the application.
       final binding = WidgetsFlutterBinding.ensureInitialized();
+      // BUG-4072 方案 C：无界面拉起（Android audio_service 的 MediaBrowserService 被媒体
+      // 续播 / 媒体键 / 车机绑、iOS 后台拉起）的引擎停在精简入口，界面接上来（第一个
+      // resumed / inactive）之前不往下跑：不 runApp、不读写会话标记、不判闪退 / 不提示 /
+      // 不 auto_send、不碰 MainActivity 才注册的通道、不开数据库。必须是 binding 之后的
+      // 第一步（守卫 test/startup/headless_launch_entry_guard_test.dart）。
+      await holdHeadlessLaunchUntilUi(binding: binding);
       final bool hiddenTestMode =
           Platform.environment['FUSHI_TEST_HIDDEN']?.isNotEmpty == true ||
           Platform.environment.containsKey('HIBIKI_TEST_HIDDEN');
@@ -625,6 +632,14 @@ void main([List<String> args = const <String>[]]) {
 
       /// Initialise error log service.
       await ErrorLogService.instance.init();
+      // 这个进程是无界面拉起、在精简入口等过界面的：留一条证据（直接放行不写）。
+      final String? headlessLaunchNote = lastHeadlessLaunchOutcome?.describe();
+      if (headlessLaunchNote != null) {
+        ErrorLogService.instance.logDiagnostic(
+          kHeadlessLaunchLogSource,
+          headlessLaunchNote,
+        );
+      }
       for (final String report
           in DurableFileSharedPreferencesStore.drainRecoveryReports()) {
         ErrorLogService.instance.log('SharedPreferences.recovered', report);
