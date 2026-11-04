@@ -267,7 +267,36 @@ fn open_drift_reader(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
+/// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 读连接
+/// + 读连接池（至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条 256 MB，iOS 上合计 1.5 GB 以上
+/// 的虚拟地址，与词典映射一起把 iOS 默认的进程地址空间吃满（真机崩溃报告：mapped file 常驻 4.6–5.3 GB，各处分配
+/// 失败 SIGABRT）。只有常驻的写连接与读连接（Rust 命令的长读：缓存刷新 / 历史）用 mmap；其余连接在 iOS 上走页缓存 +
+/// pread，桌面 / Android 地址空间充裕，照旧映射。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum MmapRole {
+    /// 写连接、常驻读连接。
+    Primary,
+    /// 读连接池、写那一路的只读连接、读会话、快照整理。
+    Secondary,
+}
+
+/// 单条连接的 mmap 上限（字节）。
+pub(crate) const MMAP_BYTES: i64 = 268_435_456;
+
+/// [role] 这条连接在本平台上的 mmap_size。
+pub(crate) fn mmap_size_for(role: MmapRole) -> i64 {
+    match role {
+        MmapRole::Primary => MMAP_BYTES,
+        MmapRole::Secondary if cfg!(target_os = "ios") => 0,
+        MmapRole::Secondary => MMAP_BYTES,
+    }
+}
+
 fn configure(conn: &Connection) -> Result<(), String> {
+    configure_as(conn, MmapRole::Secondary)
+}
+
+fn configure_as(conn: &Connection, role: MmapRole) -> Result<(), String> {
     conn.busy_timeout(Duration::from_millis(5000))
         .map_err(|e| e.to_string())?;
     // 摘要桶触发器用的 SQL 函数（store/sync2/digest.rs，审查 S-7）：三张投影表的每次写入都经它们增减桶值。
@@ -277,11 +306,12 @@ fn configure(conn: &Connection) -> Result<(), String> {
     slim::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
-    // 上限 256 MB；WAL 模式下 SQLite 照常处理。
-    conn.execute_batch(
+    // 上限 256 MB；WAL 模式下 SQLite 照常处理。哪些连接映射见 [MmapRole]。
+    conn.execute_batch(&format!(
         "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; \
-         PRAGMA mmap_size = 268435456; PRAGMA cache_size = -65536;",
-    )
+         PRAGMA mmap_size = {}; PRAGMA cache_size = -65536;",
+        mmap_size_for(role)
+    ))
     .map_err(|e| e.to_string())
 }
 
@@ -305,7 +335,7 @@ impl SrsCore {
                     | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .map_err(|e| format!("open {}: {e}", path.display()))?;
-            configure(&writer)?;
+            configure_as(&writer, MmapRole::Primary)?;
             #[cfg(any(test, feature = "id_audit"))]
             ids::audit::install(&mut writer);
             // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
@@ -334,7 +364,7 @@ impl SrsCore {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open reader {}: {e}", path.display()))?;
-        configure(&reader)?;
+        configure_as(&reader, MmapRole::Primary)?;
         #[cfg(any(test, feature = "id_audit"))]
         let reader = ids::audit::installed(reader);
         let drift_readers =
@@ -1425,6 +1455,21 @@ mod read_routing_tests {
         let guard = core.drift_write_reader.lock().unwrap();
         let used = cache_used(guard.as_ref().unwrap());
         assert!(used <= IDLE_CACHE_BYTES, "write-path reader kept {used} bytes of page cache after select");
+    }
+
+    /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有常驻写连接 / 读连接按 [MMAP_BYTES] 映射；读连接池、写那一路
+    /// 的只读连接等次要连接在 iOS 上不映射（合计地址占用从 6–7 × 256 MB 收到 2 × 256 MB），其它平台照旧。
+    #[test]
+    fn only_primary_connections_reserve_mmap_address_space_on_ios() {
+        let core = open("mmap_roles");
+        let mmap = |c: &Connection| -> i64 { c.query_row("PRAGMA mmap_size", [], |r| r.get(0)).unwrap() };
+        assert_eq!(mmap(&core.writer().unwrap()), MMAP_BYTES);
+        assert_eq!(mmap(&core.reader().unwrap()), MMAP_BYTES);
+        let expected_secondary = if cfg!(target_os = "ios") { 0 } else { MMAP_BYTES };
+        assert_eq!(mmap_size_for(MmapRole::Secondary), expected_secondary);
+        assert_eq!(mmap(&open_drift_reader(&core.path).unwrap()), expected_secondary);
+        let guard = core.drift_write_reader.lock().unwrap();
+        assert_eq!(mmap(guard.as_ref().unwrap()), expected_secondary);
     }
 
     #[test]

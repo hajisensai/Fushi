@@ -21,11 +21,6 @@ struct DictionaryStyle {
   std::string styles;
 };
 
-struct MediaFileView {
-  const char* data;
-  size_t size;
-};
-
 struct ZSTD_DDict_s;
 
 struct GlossaryEntry {
@@ -128,8 +123,6 @@ class DictionaryQuery {
   std::vector<KanjiResult> query_kanji(const std::string& character) const;
 
   std::vector<char> get_media_file(const std::string& dict_name, const std::string& media_path) const;
-  SWIFT_IMPORT_UNSAFE
-  MediaFileView get_media_file_view(const std::string& dict_name, const std::string& media_path) const;
   std::vector<DictionaryStyle> get_styles() const;
   std::vector<std::string> get_freq_dict_order() const;
 

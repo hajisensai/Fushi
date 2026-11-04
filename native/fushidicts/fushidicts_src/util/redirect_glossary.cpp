@@ -80,10 +80,12 @@ bool write_flag(const std::string& dict_dir, bool present, uint64_t blobs_size) 
 
 namespace {
 
+// 经 map_rd_shared（BUG-4013）：词典已被引擎装载时复用那份映射，不再为一次扫描另映射一整份 blobs.bin。
 struct Mapped {
+  memory::shared_mapping owner;
   memory::mapped_file file;
-  explicit Mapped(const std::string& path) : file(memory::map_rd(path)) {}
-  ~Mapped() { memory::unmap(file); }
+  explicit Mapped(const std::string& path)
+      : owner(memory::map_rd_shared(path)), file(owner ? *owner : memory::mapped_file{}) {}
   Mapped(const Mapped&) = delete;
   Mapped& operator=(const Mapped&) = delete;
 };

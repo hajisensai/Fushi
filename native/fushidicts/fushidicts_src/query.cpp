@@ -71,11 +71,18 @@ ZSTD_DCtx* thread_dctx() {
 struct DictionaryQuery::DictionaryData {
   hash::linear table;
   hash::bloom bloom;
-  memory::mapped_file blobs;
-  memory::mapped_file hash_table;
-  memory::mapped_file bloom_filter;
-  memory::mapped_file media;
-  memory::mapped_file media_index;
+  // BUG-4013：映射经 map_rd_shared 按文件身份进程内共享——词典重载时 shadow 引擎与
+  // 旧引擎 / 后台借用句柄同时在世，私有映射会让整套词典的虚拟地址占用翻倍，iOS 上把
+  // 地址空间吃满后任何分配都 abort。
+  memory::shared_mapping blobs;
+  memory::shared_mapping hash_table;
+  memory::shared_mapping bloom_filter;
+  memory::shared_mapping media_index;
+  // media.bin 不映射（BUG-4013）：整套词典约 1.6 GB，只在弹窗显示图片 / 播音频时读，
+  // 按请求用 file_reader 定位读取。media_size 是装载时的大小，读取时不符即视为文件
+  // 已被替换（与 media.idx 不再配套），返回未命中。
+  std::string media_path;
+  uint64_t media_size = 0;
   int version = 1;                   // 磁盘格式版本（marker 文件名解析，见 dict_format_version）
   ZSTD_DDict* zstd_dict = nullptr;   // v2 + dict.zstd 存在时非空
   // 本词典没有任何 term 带词性（term_rules.flag = 0）：读侧把空 rules 当通配 "*"，
@@ -86,11 +93,6 @@ struct DictionaryQuery::DictionaryData {
   bool redirect_free = false;
 
   ~DictionaryData() {
-    memory::unmap(blobs);
-    memory::unmap(hash_table);
-    memory::unmap(bloom_filter);
-    memory::unmap(media);
-    memory::unmap(media_index);
     ZSTD_freeDDict(zstd_dict);
   }
 };
@@ -232,23 +234,23 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   dict.data = std::make_unique<DictionaryData>();
   dict.data->version = version;
 
-  dict.data->hash_table = memory::map_rd(path + "/hash.table");
+  dict.data->hash_table = memory::map_rd_shared(path + "/hash.table");
   if (!dict.data->hash_table) {
     return;
   }
-  dict.data->table.load(dict.data->hash_table.data, dict.data->hash_table.size);
+  dict.data->table.load(dict.data->hash_table->data, dict.data->hash_table->size);
 
   // 上游 d4183d4 删掉了「bloom.filter 缺失时现场重建」的 migration：fork importer
   // 从第一天就写 bloom.filter，migration 是死代码，且 build_to_file 失败会 throw
   // 并穿过无 try/catch 的 FFI 入口（上游 TestFlight 崩溃同款路径）。缺失/损坏时
   // bloom 保持置空（contains 恒真穿透），词典照常可查，只失去 bloom 加速。
-  dict.data->bloom_filter = memory::map_rd(path + "/bloom.filter");
+  dict.data->bloom_filter = memory::map_rd_shared(path + "/bloom.filter");
   if (dict.data->bloom_filter) {
-    dict.data->bloom.load(dict.data->bloom_filter.data, dict.data->bloom_filter.size);
+    dict.data->bloom.load(dict.data->bloom_filter->data, dict.data->bloom_filter->size);
   }
   dict.data->table.set_bloom(&dict.data->bloom);
 
-  dict.data->blobs = memory::map_rd(path + "/blobs.bin");
+  dict.data->blobs = memory::map_rd_shared(path + "/blobs.bin");
   if (!dict.data->blobs) {
     return;
   }
@@ -256,10 +258,10 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   // 词性有无（util/term_rules_flag.hpp）：导入端写好的 sidecar 直接读；存量词典
   // 缺 sidecar 就扫一次记录并回填（回填失败只是下次再扫，不影响本次装载）。
   if (type == TERM) {
-    const uint64_t blobs_size = dict.data->blobs.size;
+    const uint64_t blobs_size = dict.data->blobs->size;
     std::optional<bool> rules_present = fushi::term_rules_flag::read(path, blobs_size);
     if (!rules_present.has_value()) {
-      rules_present = scan_term_rules_present(dict.data->hash_table, dict.data->blobs);
+      rules_present = scan_term_rules_present(*dict.data->hash_table, *dict.data->blobs);
       fushi::term_rules_flag::write(path, *rules_present, blobs_size);
     }
     dict.data->rules_wildcard = !*rules_present;
@@ -271,9 +273,17 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
     dict.data->redirect_free = redirects_present.has_value() && !*redirects_present;
   }
 
-  dict.data->media = memory::map_rd(path + "/media.bin");
-  if (dict.data->media) {
-    dict.data->media_index = memory::map_rd(path + "/media.idx");
+  {
+    std::error_code ec;
+    const std::string media_path = path + "/media.bin";
+    const uintmax_t media_size = std::filesystem::file_size(fushi::fs_path(media_path), ec);
+    if (!ec && media_size > 0) {
+      dict.data->media_index = memory::map_rd_shared(path + "/media.idx");
+      if (dict.data->media_index) {
+        dict.data->media_path = media_path;
+        dict.data->media_size = static_cast<uint64_t>(media_size);
+      }
+    }
   }
 
   // dict.zstd 是可选产物（训练样本不足时导入端不写），存在才挂 DDict；
@@ -335,10 +345,10 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
       continue;
     }
-    BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
 
     auto count = idx.read<uint32_t>();
     for (uint32_t i = 0; i < count; i++) {
@@ -346,10 +356,10 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs.size) {
+      if (offset + 1 > data->blobs->size) {
         continue;
       }
-      BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
+      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
 
       auto type = blob.read<uint8_t>();
       if (type != 0) {
@@ -394,7 +404,7 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
       entry.dict_name = name;
       entry.definition_tags = definition_tags;
       entry.term_tags = term_tags;
-      entry.compressed_data = data->blobs.data + glossary_offset;
+      entry.compressed_data = data->blobs->data + glossary_offset;
       entry.compressed_size = glossary_size;
       entry.zstd_dict = data->zstd_dict;
       entry.dict_redirect_free = data->redirect_free;
@@ -434,10 +444,10 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
       continue;
     }
-    BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
 
     auto count = idx.read<uint32_t>();
     for (uint32_t i = 0; i < count; i++) {
@@ -445,10 +455,10 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs.size) {
+      if (offset + 1 > data->blobs->size) {
         continue;
       }
-      BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
+      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
 
       auto type = blob.read<uint8_t>();
       if (type != 2) {
@@ -500,9 +510,9 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
         }
       }
 
-      if (meanings_size > 0 && meanings_offset < data->blobs.size) {
+      if (meanings_size > 0 && meanings_offset < data->blobs->size) {
         // kanji meanings 恒为普通 zstd 帧（训练字典只用于 term glossary）。
-        std::string joined = decompress_glossary(data->blobs.data + meanings_offset, meanings_size, nullptr);
+        std::string joined = decompress_glossary(data->blobs->data + meanings_offset, meanings_size, nullptr);
         size_t start = 0;
         while (start <= joined.size()) {
           size_t nl = joined.find('\n', start);
@@ -535,10 +545,10 @@ void DictionaryQuery::enrich_freq(TermResult& term) const {
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
       continue;
     }
-    BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
     auto count = idx.read<uint32_t>();
 
     std::vector<Frequency> frequencies;
@@ -547,10 +557,10 @@ void DictionaryQuery::enrich_freq(TermResult& term) const {
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs.size) {
+      if (offset + 1 > data->blobs->size) {
         continue;
       }
-      BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
+      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
 
       auto type = blob.read<uint8_t>();
       if (type != 1) {
@@ -599,10 +609,10 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
       continue;
     }
-    BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
     auto count = idx.read<uint32_t>();
 
     std::vector<Pitch> pitches;
@@ -636,10 +646,10 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs.size) {
+      if (offset + 1 > data->blobs->size) {
         continue;
       }
-      BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
+      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
 
       auto type = blob.read<uint8_t>();
       if (type != 1) {
@@ -743,74 +753,79 @@ void DictionaryQuery::materialize(TermResult& term) const {
 }
 
 std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, const std::string& media_path) const {
-  auto view = get_media_file_view(dict_name, media_path);
-  if (view.data == nullptr || view.size == 0) {
-    return {};
-  }
-  return {view.data, view.data + view.size};
-}
-
-MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name, const std::string& media_path) const {
   const std::string normalized_media_path = fushidicts::normalize_media_path(media_path);
   for (const auto& [name, styles, data] : term_dicts_) {
     if (name != dict_name) {
       continue;
     }
 
-    if (!data->media || !data->media_index) {
+    if (data->media_path.empty() || !data->media_index) {
       return {};
     }
 
-    BlobReader idx_hdr(data->media_index.data, data->media_index.size);
+    BlobReader idx_hdr(data->media_index->data, data->media_index->size);
     auto count = idx_hdr.read<uint32_t>();
 
     const size_t idx_entry_end = sizeof(uint32_t) + static_cast<size_t>(count) * sizeof(uint64_t);
-    if (idx_entry_end > data->media_index.size) {
+    if (idx_entry_end > data->media_index->size) {
       return {};
     }
 
-    auto find_by_indexed_path = [&](std::string_view requested_path) -> MediaFileView {
+    // media.bin 记录：u16 path_len | path | u32 blob_size | blob。按请求打开、定位读
+    // （BUG-4013）——二分 ~log2(N) 次小读走页缓存，相对图片解码可忽略。
+    const memory::file_reader media(data->media_path);
+    if (!media || media.size() != data->media_size) {
+      return {};
+    }
+
+    std::string path_buf;
+    auto find_by_indexed_path = [&](std::string_view requested_path) -> std::vector<char> {
       size_t left = 0;
       size_t right = count;
       while (left < right) {
         const size_t mid = left + (right - left) / 2;
         uint64_t record_offset;
-        std::memcpy(&record_offset, data->media_index.data + sizeof(uint32_t) + mid * sizeof(uint64_t), sizeof(uint64_t));
+        std::memcpy(&record_offset, data->media_index->data + sizeof(uint32_t) + mid * sizeof(uint64_t),
+                    sizeof(uint64_t));
 
-        if (record_offset >= data->media.size) {
+        uint16_t path_size = 0;
+        if (!media.read_at(record_offset, &path_size, sizeof(path_size))) {
           return {};
         }
-        BlobReader rec(data->media.data + record_offset, data->media.size - record_offset);
-        auto path_size = rec.read<uint16_t>();
-        std::string_view indexed_path = rec.read_str(path_size);
+        path_buf.resize(path_size);
+        if (path_size > 0 && !media.read_at(record_offset + sizeof(uint16_t), path_buf.data(), path_size)) {
+          return {};
+        }
+        const std::string_view indexed_path = path_buf;
         if (indexed_path < requested_path) {
           left = mid + 1;
         } else if (indexed_path > requested_path) {
           right = mid;
         } else {
-          auto blob_size = rec.read<uint32_t>();
-          if (!rec.has(blob_size)) {
+          const uint64_t size_offset = record_offset + sizeof(uint16_t) + path_size;
+          uint32_t blob_size = 0;
+          if (!media.read_at(size_offset, &blob_size, sizeof(blob_size)) || blob_size == 0) {
             return {};
           }
-          const char* blob_data = reinterpret_cast<const char*>(rec.ptr);
-          return {.data = blob_data, .size = blob_size};
+          std::vector<char> blob(blob_size);
+          if (!media.read_at(size_offset + sizeof(uint32_t), blob.data(), blob_size)) {
+            return {};
+          }
+          return blob;
         }
       }
       return {};
     };
 
-    MediaFileView view = find_by_indexed_path(normalized_media_path);
-    if (view.data != nullptr) {
-      return view;
+    std::vector<char> found = find_by_indexed_path(normalized_media_path);
+    if (!found.empty()) {
+      return found;
     }
 
     std::string legacy_media_path = normalized_media_path;
     std::ranges::replace(legacy_media_path, '/', '\\');
     if (legacy_media_path != normalized_media_path) {
-      view = find_by_indexed_path(legacy_media_path);
-      if (view.data != nullptr) {
-        return view;
-      }
+      return find_by_indexed_path(legacy_media_path);
     }
     return {};
   }
@@ -853,16 +868,17 @@ int ensure_redirect_glossary_flag(const std::string& dir) {
 // scan the record region (no boundary metadata, glossary blobs interleaved),
 // so we must go through the hash table. bloom.filter is not needed here.
 int probe_dict_content(const std::string& dir) {
-  memory::mapped_file hash_table = memory::map_rd(dir + "/hash.table");
-  if (!hash_table || hash_table.size < sizeof(uint32_t)) {
-    memory::unmap(hash_table);
+  // map_rd_shared（BUG-4013）：已装载的词典复用引擎那份映射。
+  const memory::shared_mapping hash_owner = memory::map_rd_shared(dir + "/hash.table");
+  if (!hash_owner || hash_owner->size < sizeof(uint32_t)) {
     return 0;
   }
-  memory::mapped_file blobs = memory::map_rd(dir + "/blobs.bin");
-  if (!blobs) {
-    memory::unmap(hash_table);
+  const memory::shared_mapping blobs_owner = memory::map_rd_shared(dir + "/blobs.bin");
+  if (!blobs_owner) {
     return 0;
   }
+  const memory::mapped_file& hash_table = *hash_owner;
+  const memory::mapped_file& blobs = *blobs_owner;
 
   int mask = 0;
   uint32_t capacity = 0;
@@ -908,7 +924,5 @@ int probe_dict_content(const std::string& dir) {
     }
   }
 
-  memory::unmap(blobs);
-  memory::unmap(hash_table);
   return mask;
 }

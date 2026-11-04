@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <compare>
 #include <cstring>
+#include <map>
+#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -92,54 +95,227 @@ int errno_from_win32(DWORD err) {
 
 int last_error() { return g_last_error; }
 
-mapped_file map_rd(const std::string& path) {
+namespace {
+
+// An open read-only file plus the identity the shared-mapping cache keys on.
+struct opened_file {
+#ifdef _WIN32
+  HANDLE handle = INVALID_HANDLE_VALUE;
+#else
+  int fd = -1;
+#endif
+  uint64_t size = 0;
+  // device/volume, inode/file index, mtime (ns or FILETIME ticks)
+  uint64_t dev = 0;
+  uint64_t ino = 0;
+  int64_t mtime = 0;
+
+  bool ok() const {
+#ifdef _WIN32
+    return handle != INVALID_HANDLE_VALUE;
+#else
+    return fd >= 0;
+#endif
+  }
+  void close_file() {
+#ifdef _WIN32
+    if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
+    handle = INVALID_HANDLE_VALUE;
+#else
+    if (fd >= 0) close(fd);
+    fd = -1;
+#endif
+  }
+};
+
+// Opens [path] read-only; fails (returns !ok()) for a missing or empty file.
+opened_file open_rd(const std::string& path) {
+  opened_file f;
 #ifdef _WIN32
   const std::wstring wpath = to_wide(path);
-  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                            FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file == INVALID_HANDLE_VALUE) {
+  f.handle = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (f.handle == INVALID_HANDLE_VALUE) {
+    return f;
+  }
+  BY_HANDLE_FILE_INFORMATION info{};
+  if (!GetFileInformationByHandle(f.handle, &info)) {
+    f.close_file();
+    return f;
+  }
+  f.size = (static_cast<uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+  f.dev = info.dwVolumeSerialNumber;
+  f.ino = (static_cast<uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+  f.mtime = static_cast<int64_t>((static_cast<uint64_t>(info.ftLastWriteTime.dwHighDateTime) << 32) |
+                                 info.ftLastWriteTime.dwLowDateTime);
+#else
+  f.fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (f.fd < 0) {
+    return f;
+  }
+  struct stat st {};
+  if (fstat(f.fd, &st) != 0) {
+    f.close_file();
+    return f;
+  }
+  f.size = static_cast<uint64_t>(st.st_size);
+  f.dev = static_cast<uint64_t>(st.st_dev);
+  f.ino = static_cast<uint64_t>(st.st_ino);
+#if defined(__APPLE__)
+  f.mtime = static_cast<int64_t>(st.st_mtimespec.tv_sec) * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+  f.mtime = static_cast<int64_t>(st.st_mtim.tv_sec) * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+#endif
+  if (f.size == 0) {
+    f.close_file();
+  }
+  return f;
+}
+
+// Maps an opened file read-only. Does not close [f].
+mapped_file map_opened(const opened_file& f) {
+  if (!f.ok() || f.size == 0) {
     return {};
   }
-
-  LARGE_INTEGER file_size;
-  if (!GetFileSizeEx(file, &file_size) || file_size.QuadPart == 0) {
-    CloseHandle(file);
-    return {};
-  }
-
-  HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
-  CloseHandle(file);
+#ifdef _WIN32
+  HANDLE mapping = CreateFileMappingW(f.handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
   if (!mapping) {
     return {};
   }
-
   auto* data = static_cast<uint8_t*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
   CloseHandle(mapping);
   if (!data) {
     return {};
   }
-
-  return {.data = data, .size = static_cast<size_t>(file_size.QuadPart)};
 #else
-  int fd = open(path.c_str(), O_RDONLY);
-  if (fd < 0) {
-    return {};
-  }
-
-  struct stat st {};
-  if (fstat(fd, &st) != 0 || st.st_size == 0) {
-    close(fd);
-    return {};
-  }
-
-  auto* data = static_cast<uint8_t*>(mmap(nullptr, st.st_size, PROT_READ, MAP_SHARED, fd, 0));
-  close(fd);
+  auto* data = static_cast<uint8_t*>(mmap(nullptr, f.size, PROT_READ, MAP_SHARED, f.fd, 0));
   if (data == reinterpret_cast<uint8_t*>(MAP_FAILED)) {
     return {};
   }
-
-  return {.data = data, .size = static_cast<size_t>(st.st_size)};
 #endif
+  return {.data = data, .size = static_cast<size_t>(f.size)};
+}
+
+struct mapping_key {
+  uint64_t dev;
+  uint64_t ino;
+  uint64_t size;
+  int64_t mtime;
+  auto operator<=>(const mapping_key&) const = default;
+};
+
+struct mapping_cache {
+  std::mutex mu;
+  std::map<mapping_key, std::weak_ptr<const mapped_file>> entries;
+};
+
+// Leaked on purpose: engines can outlive static destruction at process exit.
+mapping_cache& cache() {
+  static auto* c = new mapping_cache();
+  return *c;
+}
+
+}  // namespace
+
+mapped_file map_rd(const std::string& path) {
+  opened_file f = open_rd(path);
+  mapped_file m = map_opened(f);
+  f.close_file();
+  return m;
+}
+
+shared_mapping map_rd_shared(const std::string& path) {
+  opened_file f = open_rd(path);
+  if (!f.ok()) {
+    return {};
+  }
+  const mapping_key key{f.dev, f.ino, f.size, f.mtime};
+  mapping_cache& c = cache();
+  std::lock_guard lock(c.mu);
+  if (auto it = c.entries.find(key); it != c.entries.end()) {
+    if (shared_mapping hit = it->second.lock()) {
+      f.close_file();
+      return hit;
+    }
+  }
+  mapped_file m = map_opened(f);
+  f.close_file();
+  if (!m) {
+    return {};
+  }
+  // Drop entries whose mapping is already gone so the table stays bounded.
+  std::erase_if(c.entries, [](const auto& e) { return e.second.expired(); });
+  shared_mapping owned(new mapped_file(m), [](const mapped_file* p) {
+    unmap(*p);
+    delete p;
+  });
+  c.entries[key] = owned;
+  return owned;
+}
+
+size_t live_shared_mappings() {
+  mapping_cache& c = cache();
+  std::lock_guard lock(c.mu);
+  return static_cast<size_t>(
+      std::count_if(c.entries.begin(), c.entries.end(), [](const auto& e) { return !e.second.expired(); }));
+}
+
+file_reader::file_reader(const std::string& path) {
+  opened_file f = open_rd(path);
+  if (!f.ok()) {
+    return;
+  }
+#ifdef _WIN32
+  handle_ = reinterpret_cast<intptr_t>(f.handle);
+#else
+  handle_ = f.fd;
+#endif
+  size_ = f.size;
+  open_ = true;
+}
+
+file_reader::~file_reader() {
+  if (!open_) {
+    return;
+  }
+#ifdef _WIN32
+  CloseHandle(reinterpret_cast<HANDLE>(handle_));
+#else
+  close(static_cast<int>(handle_));
+#endif
+}
+
+bool file_reader::read_at(uint64_t offset, void* dst, size_t n) const {
+  if (!open_ || offset > size_ || n > size_ - offset) {
+    return false;
+  }
+  auto* out = static_cast<uint8_t*>(dst);
+  size_t done = 0;
+  while (done < n) {
+    const uint64_t pos = offset + done;
+#ifdef _WIN32
+    const DWORD chunk = static_cast<DWORD>(std::min<size_t>(n - done, 1u << 30));
+    OVERLAPPED ov{};
+    ov.Offset = static_cast<DWORD>(pos & 0xFFFFFFFFu);
+    ov.OffsetHigh = static_cast<DWORD>(pos >> 32);
+    DWORD got = 0;
+    if (!ReadFile(reinterpret_cast<HANDLE>(handle_), out + done, chunk, &got, &ov) || got == 0) {
+      return false;
+    }
+#else
+    const ssize_t got = pread(static_cast<int>(handle_), out + done, n - done, static_cast<off_t>(pos));
+    if (got < 0) {
+      if (errno == EINTR) continue;
+      return false;
+    }
+    if (got == 0) {
+      return false;
+    }
+#endif
+    done += static_cast<size_t>(got);
+  }
+  return true;
 }
 
 mapped_file map_rw(const std::string& path, size_t file_size) {

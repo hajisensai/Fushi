@@ -78,6 +78,9 @@ add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
 add_fushi_test(kanji_import_query_test kanji_import_query_test.cpp)
 add_fushi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
 add_fushi_test(media_import_query_test media_import_query_test.cpp)
+# BUG-4013: 词典映射按文件身份进程内共享（重载期 shadow 引擎不再把整套词典的虚拟
+# 地址翻倍），media.bin 不映射、按请求定位读。
+add_fushi_test(shared_mapping_test shared_mapping_test.cpp "${FUSHI_SRC}")
 # Re-zipping an extracted dictionary wraps every entry in one directory; the
 # importer must address entries by their dictionary-relative name so such an
 # archive imports identically (media keys included), while an archive spanning
