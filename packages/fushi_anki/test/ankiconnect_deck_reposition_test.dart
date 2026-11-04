@@ -7,13 +7,14 @@ import 'package:http/testing.dart';
 
 // 卡组新卡按词频重排的 AnkiConnect 侧契约：
 //   1. 卡组范围按 **卡组 id 子树** 圈（不用 `deck:"名"` 通配，BUG-2051），且限定
-//      `is:new -deck:filtered`；
+//      `is:new -is:suspended -is:buried -deck:filtered`；
 //   2. `cardsInfo` 分批、解析 `note/ord/due/type/fields`；
 //   3. 写位置**只走**原生 `scheduling.repositionNewCards`（`/api/v1` JSON-RPC），
 //      先用 `api.describe` 探测能力；探测不到就一张都不写、不发任何写 `due` 的
 //      请求（AnkiConnect 26.10.11.0 起的 legacy.py 拒绝 `setSpecificValueOfCard`
 //      写 `due`，原生方法只在 master a579cd5d76 之后才有）；
-//   4. 仓储层对 `type != 0` 的卡二次过滤——复习卡的 due 是日期，绝不能当位置写。
+//   4. 仓储层对 `type != 0` 或 `queue != 0` 的卡二次过滤——复习卡的 due 是日期，
+//      绝不能当位置写；暂停 / 搁置的新卡原生接口一律回 invalidState。
 
 class _Recording {
   final List<http.Request> requests = <http.Request>[];
@@ -52,11 +53,15 @@ class _DualFake {
     this.nativeReposition = true,
     this.rpcError = const <String, String>{},
     this.describeStatus = 200,
+    this.legacy,
   });
 
   final bool? nativeReposition;
   final Map<String, String> rpcError;
   final int describeStatus;
+
+  /// 旧协议 action 的回包（`body → result`）；null 时一律回 `result: null`。
+  final Object? Function(Map<String, dynamic> body)? legacy;
 
   final List<http.Request> requests = <http.Request>[];
 
@@ -114,7 +119,10 @@ class _DualFake {
         );
       }
       return http.Response(
-        jsonEncode(<String, Object?>{'result': null, 'error': null}),
+        jsonEncode(<String, Object?>{
+          'result': legacy?.call(body),
+          'error': null,
+        }),
         200,
         headers: <String, String>{'content-type': 'application/json'},
       );
@@ -187,6 +195,7 @@ Map<String, Object?> _card({
   int ord = 0,
   int due = 0,
   int type = 0,
+  int? queue,
   Map<String, String> fields = const <String, String>{'Expression': '猫'},
 }) => <String, Object?>{
   'cardId': id,
@@ -194,7 +203,7 @@ Map<String, Object?> _card({
   'ord': ord,
   'due': due,
   'type': type,
-  'queue': type == 0 ? 0 : 2,
+  'queue': queue ?? (type == 0 ? 0 : 2),
   'modelName': 'Lapis',
   'deckName': 'Mining',
   'fields': <String, Object?>{
@@ -216,7 +225,7 @@ void main() {
     test('按 id 圈子树，名字相同前缀但不是子卡组的不算', () {
       expect(
         ankiDeckNewCardsQuery(decks, 'Mining'),
-        '(did:1 OR did:2 OR did:3) is:new -deck:filtered',
+        '(did:1 OR did:2 OR did:3) is:new -is:suspended -is:buried -deck:filtered',
         reason: 'Mining_old 与 Mining 只差一个字，deck:"Mining_" 通配会把它圈进来',
       );
     });
@@ -224,7 +233,7 @@ void main() {
     test('叶子卡组只有自己一个 id', () {
       expect(
         ankiDeckNewCardsQuery(decks, 'Mining::Anime::S1'),
-        'did:3 is:new -deck:filtered',
+        'did:3 is:new -is:suspended -is:buried -deck:filtered',
       );
     });
 
@@ -426,8 +435,73 @@ void main() {
       expect(find['action'], 'findCards');
       expect(
         (find['params'] as Map<String, dynamic>)['query'],
-        '(did:1 OR did:2) is:new -deck:filtered',
+        '(did:1 OR did:2) is:new -is:suspended -is:buried -deck:filtered',
       );
+    });
+
+    test('暂停 / 搁置的新卡（type=0, queue<0）不进计划、不写、不报失败', () async {
+      // 上游 API_V1.md：scheduling.repositionNewCards 对 suspended / buried
+      // 卡回 invalidState。假服务端模拟一台「搜索串没生效」的 Anki（cardsInfo
+      // 照样回暂停卡），验证仓储层二次过滤兜住，且写入不会因它们报失败。
+      final _DualFake fake = _DualFake(
+        rpcError: <String, String>{
+          '2': 'Card is suspended.',
+          '3': 'Card is buried.',
+          '4': 'Card is buried.',
+        },
+        legacy: (Map<String, dynamic> body) {
+          switch (body['action']) {
+            case 'deckNamesAndIds':
+              return <String, int>{'Mining': 1};
+            case 'findCards':
+              return <int>[1, 2, 3, 4, 5];
+            case 'cardsInfo':
+              return <Object?>[
+                _card(id: 1, note: 10, due: 3),
+                _card(id: 2, note: 20, due: 1, queue: -1),
+                _card(id: 3, note: 30, due: 2, queue: -2),
+                _card(id: 4, note: 40, due: 4, queue: -3),
+                _card(id: 5, note: 50, due: 5),
+              ];
+          }
+          return null;
+        },
+      );
+      final _Repo repo = _Repo(service: fake.service());
+      final List<AnkiCardInfo> cards = await repo.listNewCards('Mining');
+      expect(cards.map((AnkiCardInfo c) => c.cardId).toList(), <int>[1, 5]);
+      final Map<String, dynamic> find =
+          jsonDecode(
+                fake.requests
+                    .firstWhere(
+                      (http.Request r) =>
+                          r.url.path != '/api/v1' &&
+                          jsonDecode(r.body)['action'] == 'findCards',
+                    )
+                    .body,
+              )
+              as Map<String, dynamic>;
+      expect(
+        (find['params'] as Map<String, dynamic>)['query'],
+        'did:1 is:new -is:suspended -is:buried -deck:filtered',
+      );
+
+      final AnkiCardDueWriteResult r = await repo
+          .setNewCardPositions(<AnkiCardDueUpdate>[
+            for (int i = 0; i < cards.length; i++)
+              AnkiCardDueUpdate(cardId: cards[i].cardId, due: i + 1),
+          ]);
+      expect(r.failures, isEmpty);
+      expect(r.written, 2);
+      final List<String> written = <String>[
+        for (final Map<String, dynamic> req in fake.rpc)
+          if (req['method'] == 'scheduling.repositionNewCards')
+            ((req['params'] as Map<String, dynamic>)['cardIds']
+                        as List<dynamic>)
+                    .single
+                as String,
+      ];
+      expect(written, unorderedEquals(<String>['1', '5']));
     });
 
     test('listNewCards：卡组不存在时不发 findCards、返回空', () async {

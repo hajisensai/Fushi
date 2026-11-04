@@ -1314,6 +1314,10 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
 /// 再限定 `is:new` 并排除筛选牌组（`-deck:filtered`：那里的 `due` 是暂存值，
 /// 改了会在退出筛选时被覆盖或把原值弄丢）。
 ///
+/// 还要排除暂停 / 搁置的新卡（`-is:suspended -is:buried`）：它们 `type` 仍是 0，
+/// `is:new` 会选中，但原生 `scheduling.repositionNewCards` 对暂停、搁置的卡一律
+/// 回 `invalidState`（上游 API_V1.md 该节原文）。圈进计划就是每轮必失败。
+///
 /// 不用 `deck:"名字"`：它是通配匹配（BUG-2051，`_` 单字、`*` 任意），带 `_`
 /// 的卡组名会把兄弟卡组一起圈进来，而重排写的是队列位置，圈错一张就是改错
 /// 一张。`did:` 只匹配该 id 本身、不含子卡组，所以子树要自己按 `父::子` 名字
@@ -1332,7 +1336,7 @@ String ankiDeckNewCardsQuery(
   final String scope = ids.length == 1
       ? 'did:${ids.single}'
       : '(${ids.map((int id) => 'did:$id').join(' OR ')})';
-  return '$scope is:new -deck:filtered';
+  return '$scope is:new -is:suspended -is:buried -deck:filtered';
 }
 
 Map<String, Object> _addNoteDuplicateOptions({

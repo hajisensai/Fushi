@@ -17,7 +17,7 @@
 //   * `findNotes {query}` / `findCards {query}` / `guiBrowse {query}`：
 //     支持本仓实际发出的几种搜索式——`deck:"X" "Field:value"`（findNotesByField）、
 //     `(did:a OR did:b) ("dupe:mid,text" OR …)`（ankiDuplicateSearchQuery）、
-//     `nid:a,b,c`（guiBrowse）、`did:N is:new -deck:filtered`（重排）、
+//     `nid:a,b,c`（guiBrowse）、`did:N is:new -is:suspended -is:buried -deck:filtered`（重排）、
 //     `"<文件名>"` / `sourceId=…` 裸文本（媒体去重 / 来源反查）
 //   * `notesInfo {notes:[id]}` → `[{noteId, modelName, tags, fields:{name:{value, order}}, cards}]`，
 //     不存在的 note 回 `{}`；`cardsInfo {cards:[id]}` 同理（`AnkiCardInfo.fromJson` 认的键）

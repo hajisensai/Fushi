@@ -1301,11 +1301,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final List<int> ids = await service.findCards(query);
     if (ids.isEmpty) return const <AnkiCardInfo>[];
     final List<AnkiCardInfo> cards = await service.cardsInfo(ids);
-    // 搜索串已经限定 is:new，这里再按 type 二次校验：查询与写回之间用户可能
-    // 刚学了几张，复习卡的 due 是日期，绝不能当位置写。
+    // 搜索串已经限定 is:new 且排除暂停 / 搁置，这里再按 type + queue 二次校验：
+    // 查询与写回之间用户可能刚学了几张（复习卡的 due 是日期，绝不能当位置写），
+    // 或刚暂停 / 搁置了几张（原生接口对它们回 invalidState，圈进计划就是必败）。
     return <AnkiCardInfo>[
       for (final AnkiCardInfo c in cards)
-        if (c.isNew) c,
+        if (c.isNew && c.queue == 0) c,
     ];
   }
 
