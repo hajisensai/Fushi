@@ -218,25 +218,26 @@ void main() {
       expect(j.containsKey('cueSentence'), isFalse);
     });
 
-    // 「制卡所在字符数」标签（`chars_12345`）：小说阅读器算好字面量，经互联转发到
-    // 主机端由 buildNoteTags 追加。撤掉 forwarded_mine_payload.dart 里
-    // `if (charPositionTag != null) 'charPositionTag': charPositionTag`
-    // 或 fromJson 的 `charPositionTag: json['charPositionTag'] as String?`
-    // 任一行，这三条里就有红的。
-    test('制卡位置标签：round-trip 原样往返', () {
+    // 制卡位置文本（反馈 MhQHXQI-sB：写进 MiscInfo，不再是 `chars_12345` 标签）：小说
+    // 阅读器按界面语言格式化好，经互联转发到主机端由 buildMinedFields 写进 MiscInfo。
+    // 撤掉 forwarded_mine_payload.dart 里
+    // `if (charPositionText != null) 'charPositionText': charPositionText`
+    // 或 fromJson 的 `charPositionText: json['charPositionText'] as String?`
+    // 任一行，这几条里就有红的。
+    test('制卡位置：round-trip 原样往返', () {
       const ForwardedMinePayload p = ForwardedMinePayload(
         rawPayloadJson: '{"expression":"猫"}',
         sentence: '猫がいる',
-        charPositionTag: 'chars_12345',
+        charPositionText: '制卡位置：第 12345 字',
       );
       final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
         jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>,
       );
-      expect(r.charPositionTag, 'chars_12345');
+      expect(r.charPositionText, '制卡位置：第 12345 字');
     });
 
-    test('制卡位置标签：旧对端不发这个键 → 解析成 null，卡照建', () {
-      // 主机端 buildNoteTags 收到 null 就不追加这条 tag——绝不能因为对端版本旧
+    test('制卡位置：旧对端不发这个键 → 解析成 null，卡照建', () {
+      // 主机端收到 null 就不写 MiscInfo 位置——绝不能因为对端版本旧
       // 就把整条远端制卡请求抛掉（对齐 clipStartMs/clipEndMs 的同一条纪律）。
       final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
         <String, dynamic>{
@@ -244,15 +245,34 @@ void main() {
           'sentence': 'x',
         },
       );
-      expect(r.charPositionTag, isNull);
+      expect(r.charPositionText, isNull);
     });
 
-    test('制卡位置标签：null 时不写进 wire（旧服务端不会收到多余键）', () {
+    test('制卡位置：null 时不写进 wire（旧服务端不会收到多余键）', () {
       const ForwardedMinePayload p = ForwardedMinePayload(
         rawPayloadJson: '{}',
         sentence: '',
       );
+      expect(p.toJson().containsKey('charPositionText'), isFalse);
+    });
+
+    test('制卡位置：不复用旧 wire 键 charPositionTag（两个方向都不碰）', () {
+      // 旧版接收端把 `charPositionTag` 的值当 Anki 标签打：新发送端往这个键里塞一句
+      // 位置文本，旧主机上就会长出「制卡位置：第_1_字」这种垃圾标签。旧发送端送来的
+      // `chars_12345` 标签字面量也不再读——位置已经不进标签。
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: '',
+        charPositionText: '制卡位置：第 1 字',
+      );
       expect(p.toJson().containsKey('charPositionTag'), isFalse);
+      final ForwardedMinePayload legacy =
+          ForwardedMinePayload.fromJson(<String, dynamic>{
+            'rawPayloadJson': '{"expression":"猫"}',
+            'sentence': 'x',
+            'charPositionTag': 'chars_12345',
+          });
+      expect(legacy.charPositionText, isNull);
     });
   });
 }

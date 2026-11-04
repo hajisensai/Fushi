@@ -13,6 +13,7 @@ import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
@@ -45,6 +46,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 /// 假 AI：按请求内容回复（[reply] 拿到用户提示词）；记下请求。
@@ -462,22 +466,21 @@ void main() {
       expect(ai.prompts.single, contains('"name":"Old"'));
     });
 
-    test('自动整理被额度截断 = partial，不推进水位', () async {
+    test('自动整理中途请求失败 = failed，不推进水位', () async {
       for (final String t in haruhi) {
         await book(t);
       }
-      await db
-          .into(db.libraryOrganizeRuns)
-          .insert(
-            LibraryOrganizeRunsCompanion.insert(
-              domain: 'books',
-              trigger: 'auto',
-              startedAt: DateTime.now().millisecondsSinceEpoch,
-              status: 'done',
-              requestCount: const Value<int>(kLibraryOrganizeDailyAutoRequests),
-            ),
-          );
-      final LibraryOrganizeService s = service(_FakeAi(groupHaruhi));
+      final LibraryOrganizeService s = LibraryOrganizeService(
+        db: db,
+        settings: _Settings(assigned: true),
+        nameLanguage: 'ja',
+        videoTagPrefix: '系列:',
+        clientFactory: () => AiChatClient(
+          client: MockClient(
+            (http.Request request) async => http.Response('denied', 401),
+          ),
+        ),
+      );
       final int? before = await s.lastCompletedAutoRunStartedAt(
         CollectionShelfDomain.books,
       );
@@ -485,15 +488,15 @@ void main() {
         CollectionShelfDomain.books,
         trigger: OrganizeTrigger.auto,
       );
-      expect(r.status, LibraryOrganizeStatus.overBudget);
+      expect(r.status, LibraryOrganizeStatus.failed);
       final LibraryOrganizeRunRow row = (await (db.select(
         db.libraryOrganizeRuns,
       )..where((t) => t.id.equals(r.runId))).get()).single;
-      expect(row.status, 'partial');
+      expect(row.status, 'failed');
       expect(
         await s.lastCompletedAutoRunStartedAt(CollectionShelfDomain.books),
         before,
-        reason: '截断的那次不算跑完',
+        reason: '失败截断的那次不算跑完',
       );
     });
 
@@ -511,7 +514,8 @@ void main() {
       expect(await db.getAllMediaCollections(), isEmpty);
     });
 
-    test('自动整理每日额度用完：不再发请求', () async {
+    test('自动整理没有本地每日次数上限：今天已发过很多次仍照常请求', () async {
+      // 反馈 -HlQ_PrIMb：删掉「每库每天 5 次」的硬上限，频率交给提供商限速。
       for (final String t in haruhi) {
         await book(t);
       }
@@ -523,15 +527,17 @@ void main() {
               trigger: 'auto',
               startedAt: DateTime.now().millisecondsSinceEpoch,
               status: 'done',
-              requestCount: const Value<int>(kLibraryOrganizeDailyAutoRequests),
+              requestCount: const Value<int>(500),
             ),
           );
       final _FakeAi ai = _FakeAi(groupHaruhi);
       final LibraryOrganizeResult r = await service(
         ai,
       ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
-      expect(r.status, LibraryOrganizeStatus.overBudget);
-      expect(ai.prompts, isEmpty);
+      expect(r.status, LibraryOrganizeStatus.done);
+      expect(r.error, isNull);
+      expect(ai.prompts, hasLength(1));
+      expect(r.changes, greaterThan(0));
     });
 
     test('漫画与书分域：书的整理看不到漫画', () async {

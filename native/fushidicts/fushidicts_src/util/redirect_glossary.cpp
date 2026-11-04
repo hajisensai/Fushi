@@ -80,18 +80,21 @@ bool write_flag(const std::string& dict_dir, bool present, uint64_t blobs_size) 
 
 namespace {
 
+// 经 map_rd_shared（BUG-4013）：词典已被引擎装载时复用那份映射，不再为一次扫描另映射一整份 blobs.bin。
 struct Mapped {
+  memory::shared_mapping owner;
   memory::mapped_file file;
-  explicit Mapped(const std::string& path) : file(memory::map_rd(path)) {}
-  ~Mapped() { memory::unmap(file); }
+  explicit Mapped(const std::string& path)
+      : owner(memory::map_rd_shared(path)), file(owner ? *owner : memory::mapped_file{}) {}
   Mapped(const Mapped&) = delete;
   Mapped& operator=(const Mapped&) = delete;
 };
 
 template <typename T>
-bool read_at(const memory::mapped_file& f, uint64_t pos, T& out) {
-  if (pos > f.size || f.size - pos < sizeof(T)) return false;
-  std::memcpy(&out, f.data + pos, sizeof(T));
+bool read_at(const memory::blob_file& f, uint64_t pos, T& out) {
+  const memory::blob_span span = f.view(pos, sizeof(T));
+  if (span.size < sizeof(T)) return false;
+  std::memcpy(&out, span.data, sizeof(T));
   return true;
 }
 
@@ -99,8 +102,9 @@ bool read_at(const memory::mapped_file& f, uint64_t pos, T& out) {
 
 std::optional<bool> scan_dict_dir(const std::string& dict_dir) {
   Mapped hash_table(dict_dir + "/hash.table");
-  Mapped blobs(dict_dir + "/blobs.bin");
-  if (!hash_table.file || hash_table.file.size < sizeof(uint32_t) || !blobs.file) return std::nullopt;
+  // blobs.bin 经 blob_file：32 位进程按窗口映射（BUG-4013），64 位整份映射。
+  const memory::shared_blob_file blobs = memory::open_blob_file(dict_dir + "/blobs.bin");
+  if (!hash_table.file || hash_table.file.size < sizeof(uint32_t) || !blobs) return std::nullopt;
 
   // v2（.fushidicts_2）词典的 term glossary 可能用 dict.zstd 训练字典压缩；与
   // DictionaryQuery::add_dict 同样的挂载条件。
@@ -116,7 +120,7 @@ std::optional<bool> scan_dict_dir(const std::string& dict_dir) {
   if (!dctx) return std::nullopt;
 
   const memory::mapped_file& ht = hash_table.file;
-  const memory::mapped_file& bl = blobs.file;
+  const memory::blob_file& bl = *blobs;
   uint32_t capacity = 0;
   std::memcpy(&capacity, ht.data, sizeof(uint32_t));
   const size_t slot_size = sizeof(uint64_t) * 2;  // {hash, offset}
@@ -153,9 +157,11 @@ std::optional<bool> scan_dict_dir(const std::string& dict_dir) {
       if (!read_at(bl, pos, glossary_offset) || !read_at(bl, pos + sizeof(uint64_t), glossary_size)) continue;
       // query_raw 不校验 glossary 区间；这里越界的记录在查询期解压同样失败（判否），
       // 跳过即同口径。
-      if (glossary_offset > bl.size || bl.size - glossary_offset < glossary_size) continue;
+      if (glossary_offset > bl.size() || bl.size() - glossary_offset < glossary_size) continue;
       if (!seen.insert(glossary_offset).second) continue;
-      const uint8_t* data = bl.data + glossary_offset;
+      const memory::blob_span glossary = bl.view(glossary_offset, glossary_size);
+      if (glossary.size < glossary_size) continue;
+      const uint8_t* data = glossary.data;
       if (!may_be_redirect(data, glossary_size)) continue;
       const unsigned long long raw_size = ZSTD_getFrameContentSize(data, glossary_size);
       buf.resize(static_cast<size_t>(raw_size));

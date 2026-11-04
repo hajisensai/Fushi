@@ -8,6 +8,8 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadSubtitlePolicy;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
+    show VideoResourceCandidate;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
@@ -25,6 +27,17 @@ import 'package:fushi/src/ops/ctl_video_routes.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
+class _Release extends VideoResourceCandidate {
+  _Release(String title)
+    : super(
+        providerId: 'nyaa',
+        providerInstanceId: 'nyaa',
+        remoteId: title,
+        title: title,
+        providerPriority: 0,
+      );
+}
+
 /// 路由表构建期不碰 ref；任何访问都说明构建期越界读了 app 状态。
 class _NoRef implements WidgetRef {
   @override
@@ -37,6 +50,33 @@ Matcher _badRequest() => throwsA(
 );
 
 void main() {
+  group('AI 资源列表的学习适用性（反馈 nvXct9coD5）', () {
+    VideoResourceCandidate candidate(String title) => _Release(title);
+
+    test('硬字幕 / 只有配音的标出来并排到最后，其余保持原顺序', () {
+      final List<VideoResourceLearningFit> ranked =
+          rankVideoResourcesForLearning(<VideoResourceCandidate>[
+            candidate('[北宇治字幕组] Hibike! Euphonium [BDRip 1080p][简日内嵌]'),
+            candidate('[Group] Hibike! Euphonium [BD 1080p][简日内封]'),
+            candidate('[Group] Hibike! Euphonium [English Dub][1080p]'),
+            candidate('[Other] Hibike! Euphonium [1080p HEVC]'),
+          ], workLanguage: 'ja');
+      expect(
+        ranked.map((VideoResourceLearningFit f) => f.resource.title).toList(),
+        <String>[
+          '[Group] Hibike! Euphonium [BD 1080p][简日内封]',
+          '[Other] Hibike! Euphonium [1080p HEVC]',
+          '[北宇治字幕组] Hibike! Euphonium [BDRip 1080p][简日内嵌]',
+          '[Group] Hibike! Euphonium [English Dub][1080p]',
+        ],
+      );
+      expect(ranked[0].burnedInSubtitles, isFalse);
+      expect(ranked[0].dubOnly, isFalse);
+      expect(ranked[2].burnedInSubtitles, isTrue);
+      expect(ranked[3].dubOnly, isTrue);
+    });
+  });
+
   group('buildVideoCtlRoutes', () {
     final List<CtlRoute> routes = buildVideoCtlRoutes(
       OpContext(ref: _NoRef(), focusMainWindow: () async {}),
