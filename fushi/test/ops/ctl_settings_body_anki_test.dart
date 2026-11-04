@@ -147,6 +147,7 @@ void main() {
         'desktop_executable_detect',
         'desktop_launch',
         'srs_mining_target',
+        'srs_mining_background',
         'batch_mining',
         'queue_undelivered_mines',
         'pending_mine_landing',
