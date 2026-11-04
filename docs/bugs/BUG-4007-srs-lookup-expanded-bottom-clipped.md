@@ -1,20 +1,39 @@
 ## BUG-4007 · 复习卡背面释义展开后底部被截断且其他词典消失
 - **报告**：2026-11-04（开发者反馈 #1b5vbu96Ts，标题「展开以后底部被截断了，而且其他字典没了」，Android OnePlus CPH2747 363x792@3.5，3.3.0-debug.23261；正文空。截图第二轮单独导出）。
-- **真实性**：✅ 真 bug（代码路径已证实，未上真机）。
+- **真实性**：✅ 真 bug。
   - **截图纠正了第一轮的猜测**：截图 `1b5vbu96Ts_s0.png` 里**没有查词弹窗**。画面是 Fushi 卡片窄版式背面：释义 WebView（主词典「払う」已展开，⑦ 一行在半行处被硬切）下面紧跟原生页脚「来源」。即被截断的是**卡面释义区**，「其他词典没了」是它们在截断线以下。第一轮沿查词弹窗自适应高度链去找，方向错了。
-  - **根因**：窄版式释义 WebView 的高度跟内容走（页面上报 `onContentHeight`），超过 `kSrsDefsMaxInlineHeight`（4800）就改成一屏高，打算让 WebView 内部滚动（`fushi/lib/src/pages/implementations/srs/srs_fushi_card_view.dart:1223-1226`）。但纵向拖的归属只看「有没有 `onContentHeight`」：
-    - `srs_fushi_card_view.dart:1127` 窄版式恒传 `onContentHeight: _onDefsHeight`；
-    - `fushi/lib/src/pages/implementations/srs/srs_card_face.dart:2240` 据此 `scrollsInPage: widget.face.onContentHeight == null`，结果为 false；
-    - `srsCardFaceGestureRecognizers`（`srs_card_face.dart:218-230`）在 false 时**不认领** `VerticalDragGestureRecognizer`。
+  - **根因**：修前窄版式释义 WebView 的高度跟内容走（页面上报 `onContentHeight`），超过 `kSrsDefsMaxInlineHeight`（4800，纹理上限）就改成一屏高，打算让 WebView 内部滚动（修前 `fushi/lib/src/pages/implementations/srs/srs_fushi_card_view.dart:1223-1226`）。但纵向拖的归属只看「有没有 `onContentHeight`」：
+    - `srs_fushi_card_view.dart:1127` 窄版式恒传 `onContentHeight`；
+    - `fushi/lib/src/pages/implementations/srs/srs_card_face.dart:2240` 据此 `scrollsInPage: onContentHeight == null`，结果为 false；
+    - `srsCardFaceGestureRecognizers`（`srs_card_face.dart:218-230`）在 false 时不认领纵向拖。
 
-    所以切到「一屏高」以后，触屏纵向拖全被外层 `SingleChildScrollView` 赢走，WebView 的 scrollTop 永远是 0。用户只能看到释义前一屏高，后面的主词典余文和全部其他词典都够不着。桌面滚轮不受影响，页内能原生滚动。「展开」（主词典展开 / 其他词典全部展开）是把内容推过 4800 的那一步。
-  - 现有测试 `fushi/test/srs/srs_fushi_card_view_test.dart:354` 只断言超限后高度变成一屏（844），没有断言此时 WebView 能被拖动，所以漏掉了。
-- **[ ] ①** — 未修。需要先定嵌套滚动方案（见备注），本轮不擅自定。
-- **[ ] ②** —
+    所以切到一屏高后，触屏纵向拖全归外层 `SingleChildScrollView`，WebView 的 scrollTop 永远是 0：只看得到释义第一屏，后面的主词典余文和全部其他词典都够不着。说是「内部滚动」，实际上这个状态下没有任何手势能滚动页面。「展开」（主词典展开 / 其他词典全部展开）是把内容推过 4800 的那一步。
+  - 旧测试 `srs_fushi_card_view_test.dart` 只断言超限后高度变成一屏（844），没断言此时能看到后面的内容，所以漏掉了。
+- **[x] ① 已修复**（47076879cf）。方案 (b)：外层 Flutter 是唯一的滚动所有者，页内滚动由外层驱动。
+  - **为什么不选 (a)「页内滚到头交回外层」**：要有两个滚动所有者，在 Android 平台视图上交接滚动。手指落在一屏高的 WebView 上时，外层一直滚不动，直到页内滚到头才交回；交接时还要靠跨平台通道转发 overscroll 和惯性，容易出现死区和抢手势。(b) 不改手势归属（窄版式释义仍不认领纵向拖），没有这类问题。
+  - **布局**：`fushi/lib/src/pages/implementations/srs/srs_defs_scroll_window.dart`（新）`SrsDefsScrollWindow`。
+    - 释义区在外层滚动里**始终占满内容高度**，所以外层能一路滚到页脚；
+    - 超限时平台视图只是其中一段 4800 高的窗口（纹理上限保留），摆在内容坐标 `top` 处；
+    - 视口滑出窗口时，`srsDefsWindowTop` 让可见段居中进新窗口。窗口在 4800 里留了余量，平常滚动只是 Flutter 平移，不过平台通道。
+  - **页面**：`srs_card_face.dart` 新增 `SrsCardFace.pageWindow` / `SrsPageWindowLink` / `srsPageWindowScript`。
+    - 窗口态下页面根节点 `overflow-y:hidden`，页面本身不能被拖或被滚轮滚动；
+    - 页内位置钉成 `top`，页面自己滚走（换卡重放内容、聚焦、锚点）或内容高度变化时都被拉回；
+    - 平台视图重建、外壳重载后按最近一次的 `top` 重放（`_injectBridge`）；
+    - 页面的滚轮转交判据把窗口态视为不可滚，滚轮同样交给外层。
+  - **换窗口的顺序**：先等页面执行完 `scrollTo`（`apply` 在 `evaluateJavascript` 返回后才完成），再挪平台视图，不会把旧位置的内容画到新位置上。
+  - **树形不变**：两种模式下树形相同（同一个 `Stack` + `Positioned`），进出窗口态不重建平台视图，已展开的分组不会丢。
+- **[x] ② 已加自动化测试**：
+  - `fushi/test/srs/srs_fushi_card_view_test.dart`「释义超过纹理上限：外层一路滚到最后一本词典与来源页脚，窗口跟着换位置」，锁住原始失败路径：
+    - 内容 9000：释义区占 9000，平台视图 4800，进窗口态时页面被钉在 0；
+    - 把内容末尾（最后一本词典的 300px）滚进视口后，这段落在平台视图里，且页内偏移 = 平台视图在内容里的偏移；
+    - 外层继续滚到底能看到「来源」页脚；
+    - 滚回顶部时窗口跟回；
+    - 内容收回上限以内时退出窗口态。
+    - 变异实测：把换窗口逻辑改成永不移动，此用例变红。
+  - `fushi/test/srs/srs_defs_scroll_window_test.dart`：
+    - `srsDefsWindowTop` 的不动、居中、贴边三组纯函数用例；
+    - node 在假 DOM 上真执行 `srsPageWindowScript`：页面不可滚、位置钉死、页面自滚 / 内容变高后拉回、守卫只装一次、退出后复原。
 - **备注**：
-  - **为什么不能只认领纵向拖**：WebView 一屏高、认领纵向拖之后，手指落在它上面时外层不再滚动，原生页脚（来源 / 词频）在用户把 WebView 拖到正好铺满屏幕后就够不着了，等于把截断从 WebView 内部挪到了页脚。
-  - **为什么上限不能简单去掉**：363 逻辑宽 × 3.5 dpr 下，4800 逻辑高已是 16800 物理像素，超过常见 GPU 最大纹理边长 16384，这是上限存在的理由。
-  - **可选方案**（需拍板）：
-    - (a) 超限态认领纵向拖，WebView 高度取「视口 − 可抓取余量」，并把页内滚到底 / 顶的 overscroll 转交外层（页内脚本回报，宿主 `_scroll.jumpTo`，与现有 `onWheel` 同一条桥）；
-    - (b) 超限态不放 WebView 内滚，改由外层滚动驱动页内 `scrollTo`（WebView 用 sticky 视口窗口，跟随外层偏移）。
-  - 方案定了以后，测试层：widget 测试断言超限态 `scrollsInPage == true` 与 overscroll 转交；Android 真机复测原始路径（长词条 + 其他词典全部展开）。
+  - 未在 Android 真机复测（本轮无设备）。
+  - 换窗口那一下要过一次平台通道，页面换位与纹理更新之间可能有一帧对不上。窗口留了约 4000px 余量，正常阅读滚动很少触发换窗口。
+  - `pageZoom`（外观页预览缩放）下页内 px 与逻辑 px 不是 1:1。复习页窄版式不传 `pageZoom`，不受影响；外观预览若要在窄版式里放超长释义，需另行核对。

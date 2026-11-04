@@ -60,7 +60,7 @@
 | [BUG-4010](bugs/BUG-4010-dict-render-strange-symbols.md) | ✅ | ✅ | 词典释义里出现奇怪符号 |
 | [BUG-4009](bugs/BUG-4009-shinmeikai-headword-kanji-mark-render.md) | ✅ | ✅ | 新明解国語辞典词头表外字标注渲染异常 |
 | [BUG-4008](bugs/BUG-4008-linux-lookup-popup-content-invisible.md) | — | — | Linux 查词弹窗词典内容不显示但可点击、可制卡 |
-| [BUG-4007](bugs/BUG-4007-srs-lookup-expanded-bottom-clipped.md) | — | — | 复习卡背面释义展开后底部被截断且其他词典消失 |
+| [BUG-4007](bugs/BUG-4007-srs-lookup-expanded-bottom-clipped.md) | ✅ | ✅ | 复习卡背面释义展开后底部被截断且其他词典消失 |
 | [BUG-4006](bugs/BUG-4006-srs-lookup-popup-flash-below-then-above.md) | — | — | 复习卡查词弹窗先在下方出现再跳到上方 |
 | [BUG-4005](bugs/BUG-4005-dict-style-preview-theme-after-unmount.md) | ✅ | ✅ | 离开词典样式页时预览续体读已卸载 context 空断言 |
 | [BUG-4004](bugs/BUG-4004-srs-native-lookup-no-highlight.md) | ✅ | ✅ | 复习卡原生卡面查词后卡面上没有被查词高亮 |

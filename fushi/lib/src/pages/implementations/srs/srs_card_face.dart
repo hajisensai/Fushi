@@ -84,9 +84,14 @@ class SrsCardFace {
     this.onImageTap,
     this.onEditSelection,
     this.onVisibleSounds,
+    this.pageWindow,
   });
 
   final String cardId;
+
+  /// 非 null 时宿主可把页面切成「窗口」态（[SrsPageWindowLink.apply]）：平台视图只有一段
+  /// 窗口高、页内纵向滚动位置由宿主钉死，滚动物理只归外层 Flutter（BUG-4007）。
+  final SrsPageWindowLink? pageWindow;
   final bool showingAnswer;
 
   /// 渲染器给出的正文 HTML（问题面 = question，答案面 = answer）。
@@ -205,7 +210,62 @@ class SrsCardFace {
         onImageTap: onImageTap,
         onEditSelection: onEditSelection,
         onVisibleSounds: onVisibleSounds,
+        pageWindow: pageWindow,
       );
+}
+
+/// 宿主 → 卡面页面的「窗口」通道（BUG-4007）。
+///
+/// 混合渲染窄版式的释义 WebView 跟内容等高、由外层 Flutter 滚动；内容超过平台视图纹理
+/// 上限（`kSrsDefsMaxInlineHeight`）时平台视图只能是一段窗口。窗口态下：
+/// - 页面根节点 `overflow-y:hidden`：触屏 / 滚轮都滚不动页面本身，滚动物理只有外层一个所有者；
+/// - 页内滚动位置 = 宿主给的 [top]（窗口在内容里的起点），页面自己发起的滚动（换卡重放、
+///   聚焦、锚点）与内容高度变化后都被拉回这个值；
+/// - 宿主把平台视图摆在内容坐标 [top] 处，于是窗口里显示的正好是那一段内容。
+///
+/// [apply] 在页面执行完之后才返回：宿主据此**先**换页内位置、**再**挪平台视图，换窗口时
+/// 不会把旧位置的内容画在新位置上。null = 退出窗口态（页面跟内容等高，不可滚）。
+class SrsPageWindowLink {
+  double? _top;
+  Future<void> Function(double? top)? _apply;
+
+  /// 最近一次要求的窗口起点（null = 不在窗口态）。页面重载后卡面据此重放。
+  double? get top => _top;
+
+  /// 切换 / 移动窗口；卡面还没有页面时只记下，页面就绪后重放。
+  Future<void> apply(double? top) async {
+    _top = top;
+    final Future<void> Function(double? top)? apply = _apply;
+    if (apply != null) await apply(top);
+  }
+}
+
+/// [SrsPageWindowLink] 下发到页面的脚本（幂等；守卫监听只装一次）。
+@visibleForTesting
+String srsPageWindowScript(double? top) {
+  final String t = top == null ? 'null' : top.round().toString();
+  return '''
+(function(t){
+  var r = document.documentElement;
+  window.__fushiSrsWindowTop = t;
+  if (!window.__fushiSrsWindowGuard) {
+    window.__fushiSrsWindowGuard = true;
+    var pin = function(){
+      var w = window.__fushiSrsWindowTop;
+      if (typeof w === 'number' && Math.abs(window.scrollY - w) >= 1) window.scrollTo(0, w);
+    };
+    window.addEventListener('scroll', pin, {passive: true});
+    if (window.ResizeObserver) new window.ResizeObserver(pin).observe(document.body);
+  }
+  if (t === null) {
+    r.style.overflowY = '';
+    window.scrollTo(0, 0);
+    return;
+  }
+  r.style.overflowY = 'hidden';
+  window.scrollTo(0, t);
+})($t);
+''';
 }
 
 /// 卡面 WebView 平台视图自己认领的手势（eo2pH56Ont / Z9APuG_imH）：谁渲染谁吃手势，与查词弹窗
@@ -266,7 +326,9 @@ String srsCardMetricsScript({
     window.addEventListener('wheel', function(e){
       if (e.ctrlKey || e.metaKey) return;
       var el = document.scrollingElement || document.documentElement;
-      if (el.scrollHeight > window.innerHeight + 1) return;
+      // 窗口态（SrsPageWindowLink）页面本身不滚：滚轮同样交给外层。
+      if (el.scrollHeight > window.innerHeight + 1 &&
+          getComputedStyle(document.documentElement).overflowY !== 'hidden') return;
       call('$kSrsWheelHandler', e.deltaY);
     }, {passive: true});
   }
@@ -1902,6 +1964,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   void initState() {
     super.initState();
+    _attachPageWindow(widget.face.pageWindow);
     _liveFaces++;
     // 外观改动（定制页里拖滑块 / 切开关）即时下发：只换主题部分，卡片脚本不重跑。
     ref.listenManual<SrsCardAppearance>(srsCardAppearanceProvider, (_, _) {
@@ -1929,8 +1992,31 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     }
   }
 
+  // ---------------------------------------------------------------- 窗口态（BUG-4007）
+
+  void _attachPageWindow(SrsPageWindowLink? link) {
+    link?._apply = _applyPageWindow;
+  }
+
+  void _detachPageWindow(SrsPageWindowLink? link) {
+    if (link != null && link._apply == _applyPageWindow) link._apply = null;
+  }
+
+  Future<void> _applyPageWindow(double? top) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_sync.shellReady) return;
+    try {
+      await controller.evaluateJavascript(source: srsPageWindowScript(top));
+    } catch (e, stack) {
+      // 平台视图半销毁：新视图 onLoadStop 后 [_injectBridge] 按 link.top 重放。
+      if (!mounted || !identical(_controller, controller)) return;
+      ErrorLogService.instance.log('SrsWebCardFace.pageWindow', e, stack);
+    }
+  }
+
   @override
   void dispose() {
+    _detachPageWindow(widget.face.pageWindow);
     _liveFaces--;
     _lookup?.unregister(this);
     if (identical(SrsWebCardFace.debugController, _controller)) {
@@ -2170,6 +2256,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   void didUpdateWidget(SrsWebCardFace oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.face.pageWindow, widget.face.pageWindow)) {
+      _detachPageWindow(oldWidget.face.pageWindow);
+      _attachPageWindow(widget.face.pageWindow);
+    }
     _sync.update(_document(context));
     _syncGestureGate();
   }
@@ -2237,6 +2327,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             wheel: wheel,
             zoom: zoom,
           ),
+        );
+      }
+      // 新页面（换外壳 / 平台视图重建）没有窗口态：按宿主最近一次的要求重放。
+      final double? windowTop = widget.face.pageWindow?.top;
+      if (windowTop != null) {
+        await controller.evaluateJavascript(
+          source: srsPageWindowScript(windowTop),
         );
       }
     } catch (_) {
