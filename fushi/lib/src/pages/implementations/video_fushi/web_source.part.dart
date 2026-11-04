@@ -419,6 +419,23 @@ extension _VideoWebSource on _VideoFushiPageState {
     _ensureWatchTracker(controller, bound.title);
     unawaited(_refreshFavoritedCueCache());
     unawaited(_refreshStagedMineCount());
+    // 站点剧集 metadata 先于这一集落书到了：这一集现在才有书，收进它的剧合集。
+    final String? boundWatchId = _webNetflixWatchId(url);
+    final NetflixTitleMetadata? boundMeta = boundWatchId == null
+        ? null
+        : _webNetflixMeta[boundWatchId];
+    if (boundMeta != null) unawaited(_linkWebSeries(boundMeta));
+  }
+
+  /// 把库里这部剧已落书的各集收进它的 playlist 合集（GBDddvjDsj / BUG-4024：继续观看 /
+  /// 视频库按剧归组、续播带系列上下文）。metadata 到达（顺带收编本修复前散着的集）与新一集
+  /// 落书两处触发，幂等。
+  Future<void> _linkWebSeries(NetflixTitleMetadata meta) async {
+    try {
+      await linkWebVideoSeriesEpisodes(appModel.database, meta);
+    } catch (e, st) {
+      ErrorLogService.instance.log('VideoFushi.webSeries', e, st);
+    }
   }
 
   /// 已绑定的这一集还是占位书名 / 没封面，而页面已经给出真名 / 封面：补上（每集最多跑一次
@@ -822,6 +839,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webNetflixMeta[e.id] = meta;
       _webNetflixMetaRequested.add(e.id);
     }
+    unawaited(_linkWebSeries(meta));
     final WebVideoPlaybackState? state = _webSession?.lastState;
     final String? watchId = state == null
         ? null
