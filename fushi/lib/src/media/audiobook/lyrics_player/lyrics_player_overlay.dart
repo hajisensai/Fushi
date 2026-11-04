@@ -8,6 +8,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_apple.dart
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_md3.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -135,9 +136,15 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     return box.localToGlobal(rect.topLeft) & rect.size;
   }
 
+  /// 有声书播放页（歌词模式）开着时，把所在路由（阅读器页）登记成「播放页」：底下的
+  /// 浏览页据此让网页别跟着播（BUG-4084）。登记跟着覆盖层走——只在歌词模式挂着，
+  /// 退回正文阅读就撤，纯读书不算盖住浏览器的播放页。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
     final bool accessibleNavigation = MediaQuery.accessibleNavigationOf(
       context,
     );
@@ -160,6 +167,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     _cursorTimer?.cancel();
     _mineToastAnchor.release();
     _host?.detach(this);
+    _playbackRouteMark.dispose();
     super.dispose();
   }
 

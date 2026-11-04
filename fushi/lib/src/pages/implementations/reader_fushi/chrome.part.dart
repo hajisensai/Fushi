@@ -3327,7 +3327,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final Color fg = _themeTextColor();
     final ReaderControlLayout layout = _controlLayout;
     return Positioned(
-      top: _stableTopInset,
+      top: _topChromeInset,
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
@@ -3390,7 +3390,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     ];
     return Positioned(
       key: const ValueKey<String>('fushi_floating_header'),
-      top: _stableTopInset + kReaderFloatingBarMargin,
+      top: _topChromeInset + kReaderFloatingBarMargin,
       left: viewPadding.left + kReaderFloatingBarMargin,
       right: viewPadding.right + kReaderFloatingBarMargin,
       child: RepaintBoundary(
@@ -3909,7 +3909,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           );
 
     return Positioned(
-      top: _stableTopInset,
+      top: _topChromeInset,
       left: 16,
       right: 16,
       child: Align(

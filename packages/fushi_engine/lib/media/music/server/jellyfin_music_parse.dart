@@ -130,6 +130,54 @@ MusicServerTrack? parseJellyfinMusicTrack(Map<String, Object?> j) {
   );
 }
 
+/// 富文本简介剥成纯文本（Jellyfin / Emby 的 `Overview` 可能带 HTML 标签）。
+String? _plainText(Object? v) {
+  final String? s = _str(v);
+  if (s == null) return null;
+  final String t = s
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&amp;', '&')
+      .trim();
+  return t.isEmpty ? null : t;
+}
+
+/// 歌单是不是音频歌单：`MediaType` 缺失（旧版本 / 兼容层不报）时保留，报了别的（Video /
+/// Book …）就丢。
+bool jellyfinIsAudioPlaylist(Map<String, Object?> j) {
+  final String? mediaType = _str(j['MediaType']);
+  return mediaType == null || mediaType.toLowerCase() == 'audio';
+}
+
+/// 一个歌单（`IncludeItemTypes=Playlist` 的行）。非音频歌单 / 没 id 返回 null。
+MusicServerPlaylist? parseJellyfinMusicPlaylist(Map<String, Object?> j) {
+  final String? id = _str(j['Id']);
+  if (id == null || !jellyfinIsAudioPlaylist(j)) return null;
+  return MusicServerPlaylist(
+    id: id,
+    title: _str(j['Name']) ?? '',
+    description: _plainText(j['Overview']),
+    trackCount: _int(j['ChildCount']) ?? _int(j['SongCount']),
+    durationMs: jellyfinTicksToMs(j['RunTimeTicks']),
+    coverRef: _hasPrimary(j) ? id : null,
+  );
+}
+
+/// 歌单曲目（`/Playlists/{id}/Items` 的行）：**保持歌单顺序**（不经
+/// [sortMusicServerTracks]），只留音频条目（混合歌单里的视频等丢掉）。
+List<MusicServerTrack> parseJellyfinPlaylistTracks(Object? json) =>
+    <MusicServerTrack>[
+      for (final Map<String, Object?> r in jellyfinItemsOf(json))
+        if ((_str(r['Type']) ?? 'Audio') == 'Audio' &&
+            (_str(r['MediaType']) ?? 'Audio') == 'Audio')
+          ?parseJellyfinMusicTrack(r),
+    ];
+
 /// 曲目按碟号 → 轨号 → 标题排（服务器排序参数在兼容层上不保证生效）。
 List<MusicServerTrack> sortMusicServerTracks(
   Iterable<MusicServerTrack> tracks,

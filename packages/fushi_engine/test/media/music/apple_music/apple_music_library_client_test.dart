@@ -263,7 +263,7 @@ void main() {
           expect(req.url.path, '/v1/me/library/search');
           expect(
             req.url.queryParameters['types'],
-            'library-songs,library-albums,library-artists',
+            'library-songs,library-albums,library-artists,library-playlists',
           );
           return _json(<String, Object?>{
             'results': <String, Object?>{

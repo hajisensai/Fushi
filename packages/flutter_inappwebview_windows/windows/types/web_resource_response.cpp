@@ -1,3 +1,4 @@
+#include "../utils/content_type.h"
 #include "../utils/flutter.h"
 #include "../utils/strconv.h"
 #include "web_resource_response.h"
@@ -64,11 +65,11 @@ namespace flutter_inappwebview_plugin
             responseHeaders->AppendHeader(utf8_to_wide(key).c_str(), utf8_to_wide(val).c_str());
           }
         }
+        // Fushi patch: contentEncoding is the charset (Android `encoding`, iOS
+        // `textEncodingName`), carried as Content-Type's charset parameter, never
+        // as an HTTP Content-Encoding header (see utils/content_type.h).
         if (contentType.has_value() && !contentType.value().empty()) {
-          responseHeaders->AppendHeader(L"Content-Type", utf8_to_wide(contentType.value()).c_str());
-        }
-        if (contentEncoding.has_value() && !contentEncoding.value().empty()) {
-          responseHeaders->AppendHeader(L"Content-Encoding", utf8_to_wide(contentEncoding.value()).c_str());
+          responseHeaders->AppendHeader(L"Content-Type", utf8_to_wide(contentTypeWithCharset(contentType.value(), contentEncoding.value_or(""))).c_str());
         }
       }
 

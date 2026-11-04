@@ -10,7 +10,7 @@ import 'package:fushi_engine/media/video/strm_file.dart'
         kSourceLibrarySftpScheme;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kProfileFallbackIdPrefKey;
+    show kProfileFallbackIdPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/sync/backup_srs_tables.dart' show hasLegacySrsTables;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
@@ -2215,8 +2215,9 @@ List<String> mergeSkippedDeviceLocalPrefKeys() =>
 /// 值是**本库**自增 id 的偏好键：接管源库偏好（同机换包名迁移）时不能照搬——
 /// profiles 按名字合并、id 重新分配，源库的 id 在本库指向的是别的配置。
 /// 整份恢复不受影响（那时 profiles 表与这些键来自同一个库，彼此一致）。
-List<String> mergeSkippedLocalIdPrefKeys() =>
-    List<String>.unmodifiable(const <String>[kProfileFallbackIdPrefKey]);
+List<String> mergeSkippedLocalIdPrefKeys() => List<String>.unmodifiable(
+  const <String>[kProfileFallbackIdPrefKey, kWorkProfileSessionPrefKey],
+);
 
 /// Tables that a merge import must never copy from its attached backup DB.
 ///

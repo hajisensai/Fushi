@@ -75,7 +75,34 @@ vec4 backAt(vec2 q, float shade) {
 // 圆柱表面明暗：k = 离轴线距离 / r（0 = 圆柱顶 / 底，法向朝读者；1 = 轮廓，法向
 // 水平）。k² 在 0 处导数为 0，与平铺部分（明度 1）无缝接续。
 float rollShade(float k) {
-  return mix(1.0, 0.84, k * k);
+  return mix(1.0, 0.88, k * k);
+}
+
+// 卷起的纸投在下面那页上的阴影浓度（苹果图书的阴影很淡）。
+const float FLAP_SHADOW = 0.12;
+const float ROLL_SHADOW = 0.10;
+
+// 卷起的纸（翻起的那片 + 圆柱）投在下面的阴影，在整个平面上**连续**定义——
+// 旧实现按「轴线左 / 圆柱带 / 圆柱右」三段各算各的（圆柱带里干脆不画），段与段
+// 交界处阴影突然断开，翻起那片的边碰到圆柱的地方就露出一块没阴影的白楔和一道
+// 硬分界线。
+//   - 翻起那片：沿用平铺背面的反射映射（进到圆柱带里仍延续同一公式），越出纸面的
+//     距离就是离那片外缘的距离；进圆柱带后平滑淡出。
+//   - 圆柱：按离圆柱带（0 ≤ d ≤ r）的距离往两侧衰减；沿轴向越出纸面的部分不画，
+//     不在空白处凭空出现一条暗带。
+// 返回 (翻起那片的阴影, 下面那页受的阴影)：纸面自身（平铺正面 + 正在卷起的圆柱
+// 正面）只受翻起那片投下的阴影——它跨过折痕连续，折痕两侧不会一明一暗；圆柱的
+// 阴影只投在露出来的下面那页上（两者取大），不压到这张纸自己身上。
+vec2 liftShadow(vec2 p, vec2 axisPoint, vec2 n, float d, float r) {
+  vec2 q = p + n * (PI * r - 2.0 * min(d, r));
+  float sf = 1.0 - smoothstep(0.0, max(r * 0.8, 14.0), outside(q));
+  float flap = FLAP_SHADOW * sf * sf * (1.0 - smoothstep(0.0, r, d));
+  float gap = d < 0.0 ? -d : max(0.0, d - r);
+  vec2 qEdge = p + n * (r * PI * 0.5 - d);
+  float along = outside(qEdge - n * dot(qEdge - axisPoint, n));
+  float fall = 1.0 - smoothstep(0.0, r * 1.2 + 10.0, gap);
+  float roll = ROLL_SHADOW * fall * fall * (1.0 - smoothstep(0.0, 24.0, along));
+  return vec2(flap, max(flap, roll));
 }
 
 // 圆柱背面的一道柔和高光（偏向轮廓一侧），k = 0 与 k = 1 处都为 0。
@@ -93,11 +120,11 @@ vec4 under(vec2 frag, float shadow) {
 }
 
 // 平铺的正面（纸面外露出下面），带上方翻起那片投下的阴影。
-vec4 flatAt(vec2 p, vec2 frag, float shadow) {
+vec4 flatAt(vec2 p, vec2 frag, vec2 shadow) {
   if (outside(p) > 0.0) {
-    return under(frag, shadow);
+    return under(frag, shadow.y);
   }
-  return vec4(sheetAt(p) * (1.0 - shadow), 1.0);
+  return vec4(sheetAt(p) * (1.0 - shadow.x), 1.0);
 }
 
 void main() {
@@ -109,7 +136,7 @@ void main() {
   vec2 v = uCorner - uPoint;
   float len = length(v);
   if (len < 0.5) {
-    fragColor = flatAt(p, frag, 0.0);
+    fragColor = flatAt(p, frag, vec2(0.0));
     return;
   }
   vec2 n = v / len;
@@ -117,18 +144,16 @@ void main() {
   float a = (len - PI * r) * 0.5;
   vec2 axisPoint = uPoint + n * a;
   float d = dot(p - axisPoint, n);
+  vec2 shadow = liftShadow(p, axisPoint, n, d, r);
 
   if (d <= 0.0) {
     // 最上层：卷过来平铺的背面，法向朝读者，与圆柱顶同一亮度。
     vec2 qBack = p + n * (PI * r - 2.0 * d);
-    float outBack = outside(qBack);
-    if (outBack <= 0.0) {
+    if (outside(qBack) <= 0.0) {
       fragColor = backAt(qBack, 1.0);
       return;
     }
-    // 翻起的那片投在下面的软阴影（贴着它的外缘最浓）。
-    float s = 1.0 - smoothstep(0.0, max(r * 0.6, 10.0), outBack);
-    fragColor = flatAt(p, frag, 0.24 * s * s);
+    fragColor = flatAt(p, frag, shadow);
     return;
   }
 
@@ -146,18 +171,14 @@ void main() {
     // 圆柱下半圈（正面，向上翘起）：底部与平铺的正面接续，轮廓处与上半圈同一明度。
     vec2 qFront = p + n * (r * theta - d);
     if (outside(qFront) <= 0.0) {
-      fragColor = vec4(sheetAt(qFront) * rollShade(k), 1.0);
+      // 正在卷起的正面压着翻起那片的阴影，与折痕左侧的平铺正面连续。
+      fragColor = vec4(sheetAt(qFront) * rollShade(k) * (1.0 - shadow.x), 1.0);
       return;
     }
-    fragColor = under(frag, 0.0);
+    fragColor = under(frag, shadow.y);
     return;
   }
 
-  // 卷曲之外：底下的页，靠近卷起处有一道阴影。只在卷起的纸面「投影」覆盖得到的
-  // 范围里画（沿轴线方向越出纸面就不画），不会在空白处凭空出现一条暗带。
-  vec2 qEdge = p + n * (r * PI * 0.5 - d);
-  float along = outside(qEdge - n * dot(qEdge - axisPoint, n));
-  float fall = 1.0 - smoothstep(0.0, r * 0.9 + 8.0, d - r);
-  float alongFade = 1.0 - smoothstep(0.0, 24.0, along);
-  fragColor = under(frag, 0.18 * fall * fall * alongFade);
+  // 卷曲之外：底下的页，带上卷起的纸投下的阴影。
+  fragColor = under(frag, shadow.y);
 }

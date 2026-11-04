@@ -21,7 +21,8 @@ import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
         kLibraryManualOrderPrefKeyPrefix,
-        kSectionTabOrderPrefKeyPrefix;
+        kSectionTabOrderPrefKeyPrefix,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show kSrsLapisMigrationReminderPrefKey;
@@ -69,6 +70,8 @@ class ProfileKeys {
     'active_profile_id',
     // 绑定临时切换前用户自己选的配置 id：与 active_profile_id 同族。
     'profile_fallback_id',
+    // 主进程此刻打开的作品会话（发给弹窗进程镜像）：与 active_profile_id 同族。
+    kWorkProfileSessionPrefKey,
     // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
     // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
     // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。

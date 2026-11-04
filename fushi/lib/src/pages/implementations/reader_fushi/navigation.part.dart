@@ -223,6 +223,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
       // 重复应用是幂等的：__fushiApplyHighlights 会先清空再重建 range map。
       _applyChapterHighlights();
+      // BUG-4102：带句子区间的跳转（卡片来源回跳 / 收藏页 / 制卡历史）给落点句画
+      // 「你跳到了这里」标记。与收藏高亮同处、同时机：每次本章恢复落定（首开、换样式
+      // 重分页、宽变重导）都重画，DOM 重建不会把标记丢掉；离开该章即作废（见
+      // [_beginNavigation]）。
+      _applyJumpTargetMark();
       // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
       // (__fushiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
       // 的元素，__fushiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
@@ -482,6 +487,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (chapter != _currentChapter) {
       _chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;
     }
+    // BUG-4102：落点标记只属于跳转目标那一章；导航去别的章就作废（同章重恢复保留）。
+    if (_jumpTargetSpan?.chapter != chapter) _jumpTargetSpan = null;
     _currentChapter = chapter;
     _initialProgress = progress;
     _initialCharOffset = charOffset;

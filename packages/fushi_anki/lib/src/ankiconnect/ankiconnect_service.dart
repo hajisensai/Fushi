@@ -232,16 +232,17 @@ class AnkiConnectService {
     String body, {
     required String action,
     required bool idempotent,
+    String path = '',
   }) async {
     try {
-      return await _post(body);
+      return await _post(body, path: path);
     } on http.ClientException catch (e) {
       final bool retryable = idempotent
           ? _isConnectionDrop(e)
           : _isPreDeliveryFailure(e);
       if (retryable) {
         try {
-          return await _post(body);
+          return await _post(body, path: path);
         } on http.ClientException catch (retryError) {
           if (!idempotent && !_isPreDeliveryFailure(retryError)) {
             throw AnkiConnectCommitUnknownException(action, retryError);
@@ -284,12 +285,19 @@ class AnkiConnectService {
   static bool _isPreDeliveryFailure(http.ClientException e) =>
       e is AnkiConnectPreDeliveryException;
 
-  Future<http.Response> _post(String body) {
+  /// [path] 为空 = 旧协议（`/`，body 里带 `action` / `version` / `key`）；
+  /// [kApiV1Path] = 新协议（JSON-RPC 2.0），apiKey 改走 `Authorization: Bearer`。
+  Future<http.Response> _post(String body, {String path = ''}) {
     return _client
         .post(
-          Uri.parse('${useHttps ? 'https' : 'http'}://$host:$port'),
+          Uri.parse('${useHttps ? 'https' : 'http'}://$host:$port$path'),
           body: body,
-          headers: {'Content-Type': 'application/json', 'Connection': 'close'},
+          headers: <String, String>{
+            'Content-Type': 'application/json',
+            'Connection': 'close',
+            if (path == kApiV1Path && apiKey.isNotEmpty)
+              'Authorization': 'Bearer $apiKey',
+          },
         )
         .timeout(_timeout);
   }
@@ -976,31 +984,176 @@ class AnkiConnectService {
     return out;
   }
 
-  /// 批量改写新卡的队列位置：每张卡一条 `setSpecificValueOfCard`
-  /// `{card, keys: ['due'], newValues: [due], warning_check: true}`，打成
-  /// `multi` 分批发。`warning_check` 是 AnkiConnect 对 did/queue/type 这类
-  /// 危险键的显式确认开关（本机 AnkiConnect 源码里 `due` 不在那张清单上，
-  /// 带上只是前向兼容，无副作用）。
+  // ── API v1（JSON-RPC 2.0，`/api/v1`）：新卡重排 ─────────────────────────
+
+  /// AnkiConnect 新协议的路径。旧协议在 `/`。
+  static const String kApiV1Path = '/api/v1';
+
+  /// 原生「重新定位新卡」方法名（上游 master a579cd5d76 起才有，见
+  /// https://git.sr.ht/~foosoft/anki-connect/tree/master/item/API_V1.md）。
+  static const String kNativeRepositionMethod = 'scheduling.repositionNewCards';
+
+  /// 一个 JSON-RPC 批次最多几条：上游 `Batches are limited to 100 requests`。
+  static const int kRpcBatchSize = 100;
+
+  /// 探测这台 AnkiConnect 有没有**可用的**原生 [kNativeRepositionMethod]。
   ///
-  /// **结果形状不走 error 信封**（读的是插件源码）：成功是 `[true]`，
-  /// 卡不存在等异常是 `[[false, "<msg>"]]`，参数形状不对直接 `false`——
-  /// 三种都在 `result` 里、`error` 为 null。调用方用
-  /// [ankiSetSpecificValueFailure] 解读，别拿 `isError` 当成功判据。
+  /// 为什么必须探测、不能直接写 `due`：AnkiConnect 自 26.10.11.0 起重写了旧协议
+  /// 适配层（`plugin/legacy.py`），`setSpecificValueOfCard` 对 `due` 一律回
+  /// `Use native scheduling commands for protected state.`——旧的「逐卡写 due」
+  /// 路径在新版上必然整批失败；而原生方法只在 `/api/v1` 上、且只在
+  /// a579cd5d76 之后才有，没进任何发布 tag。所以能力只能**问出来**：调
+  /// `api.describe`，看 `methods` 里它在不在、`available` 是不是 true（上游
+  /// `runtime.describe` 会把 Anki 本体缺原生接口的情况报成 available=false）。
   ///
-  /// 同 id + 同值重发结果一致，幂等，可安全走连接掉线重试。逐条报告结果
-  /// （与 [updates] 同序），失败条不抛。
-  Future<List<AnkiConnectBatchResult>> setCardsDueMany(
+  /// 结论：
+  /// * true = 能用原生重排；
+  /// * false = 明确不能（旧版 AnkiConnect 没有 `/api/v1`、回的不是 JSON-RPC、
+  ///   方法不在清单里或不可用）；
+  /// * 抛异常 = 下不了结论（连不上、401/403 鉴权 / 来源被拒）——不把「不可达」
+  ///   降级成「不支持」，调用方按未知处理。
+  Future<bool> supportsNativeRepositionNewCards() async {
+    await _guardSelfLoop();
+    final http.Response response = await _postWithStaleConnectionRetry(
+      jsonEncode(<String, Object>{
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'api.describe',
+        'params': <String, Object>{},
+      }),
+      action: 'api.describe',
+      idempotent: true,
+      path: kApiV1Path,
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw AnkiConnectException(
+        'AnkiConnect rejected the API v1 request (HTTP ${response.statusCode}); '
+        'check the API key and the allowed origins',
+      );
+    }
+    if (response.statusCode != 200) return false;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      return false;
+    }
+    final Object? result = decoded is Map ? decoded['result'] : null;
+    final Object? methods = result is Map ? result['methods'] : null;
+    if (methods is! List) return false;
+    for (final Object? m in methods) {
+      if (m is Map && m['name'] == kNativeRepositionMethod) {
+        return m['available'] != false;
+      }
+    }
+    return false;
+  }
+
+  /// 用原生 [kNativeRepositionMethod] 把每张新卡放到 [AnkiCardDueUpdate.due] 这个
+  /// 队列位置。调用前先用 [supportsNativeRepositionNewCards] 确认能力。
+  ///
+  /// **每张卡一条请求**（`cardIds` 只放这一张，`startingFrom` = 目标位置，
+  /// `shiftExisting: false`）：上游文档写明「Anki assigns positions by note, so
+  /// selected siblings share a position」——一条请求里放多张同 note 的卡，位置会被
+  /// 合并，跟我们的逐卡计划对不上；单卡请求则恰好把这张卡放到绝对位置，与旧的
+  /// 逐卡写 due 语义一致，撤销快照照样逐卡恢复。按 [kRpcBatchSize] 打成 JSON-RPC
+  /// 批次，一批一次往返。批内无序（上游 `A JSON-RPC batch array does not order
+  /// commands`）无所谓：每条写的是互不相干的绝对位置。
+  ///
+  /// 同卡同位置重发结果一致，幂等，可安全走连接掉线重试。返回值与 [updates] 同序：
+  /// 成功项 [AnkiConnectBatchResult.result] 是 `changedCount`，失败项带错误文本
+  /// （如这张卡已不是新卡时上游回 `invalidState`），一条失败不吞整批。
+  Future<List<AnkiConnectBatchResult>> repositionNewCards(
     List<AnkiCardDueUpdate> updates,
-  ) {
-    return _requestMultiChunked(<AnkiConnectAction>[
-      for (final AnkiCardDueUpdate u in updates)
-        AnkiConnectAction('setSpecificValueOfCard', <String, dynamic>{
-          'card': u.cardId,
-          'keys': <String>['due'],
-          'newValues': <int>[u.due],
-          'warning_check': true,
-        }),
-    ]);
+  ) async {
+    final List<AnkiConnectBatchResult> out = <AnkiConnectBatchResult>[];
+    for (int i = 0; i < updates.length; i += kRpcBatchSize) {
+      final int end = (i + kRpcBatchSize).clamp(0, updates.length);
+      out.addAll(await _repositionBatch(updates.sublist(i, end)));
+    }
+    return out;
+  }
+
+  Future<List<AnkiConnectBatchResult>> _repositionBatch(
+    List<AnkiCardDueUpdate> updates,
+  ) async {
+    await _guardSelfLoop();
+    final http.Response response = await _postWithStaleConnectionRetry(
+      jsonEncode(<Map<String, Object>>[
+        for (int i = 0; i < updates.length; i++)
+          <String, Object>{
+            'jsonrpc': '2.0',
+            'id': i,
+            'method': kNativeRepositionMethod,
+            'params': <String, Object>{
+              'cardIds': <String>['${updates[i].cardId}'],
+              'startingFrom': updates[i].due,
+              'stepSize': 1,
+              'randomize': false,
+              'shiftExisting': false,
+            },
+          },
+      ]),
+      action: kNativeRepositionMethod,
+      idempotent: true,
+      path: kApiV1Path,
+    );
+    if (response.statusCode != 200) {
+      throw AnkiConnectException(
+        'AnkiConnect returned HTTP ${response.statusCode} for '
+        '$kNativeRepositionMethod',
+      );
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw AnkiConnectException(
+        'Invalid (non-JSON) response for $kNativeRepositionMethod',
+      );
+    }
+    if (decoded is Map) {
+      // 整批被拒（如 -32600 invalid request）：上游回单个错误对象而不是数组。
+      throw AnkiConnectException(
+        _rpcErrorText(decoded['error']) ??
+            'Unexpected response for $kNativeRepositionMethod',
+      );
+    }
+    if (decoded is! List) {
+      throw AnkiConnectException(
+        'Unexpected response for $kNativeRepositionMethod (expected a list)',
+      );
+    }
+    final Map<int, Map<dynamic, dynamic>> byId = <int, Map<dynamic, dynamic>>{
+      for (final Object? item in decoded)
+        if (item is Map && item['id'] is int) item['id'] as int: item,
+    };
+    return <AnkiConnectBatchResult>[
+      for (int i = 0; i < updates.length; i++) _decodeRpcItem(byId[i]),
+    ];
+  }
+
+  static AnkiConnectBatchResult _decodeRpcItem(Map<dynamic, dynamic>? item) {
+    if (item == null) {
+      return const AnkiConnectBatchResult(error: 'no response for this card');
+    }
+    final String? error = _rpcErrorText(item['error']);
+    if (error != null) return AnkiConnectBatchResult(error: error);
+    final Object? result = item['result'];
+    if (result is Map && result['changedCount'] is num) {
+      return AnkiConnectBatchResult(result: result['changedCount']);
+    }
+    return AnkiConnectBatchResult(error: 'unexpected result: $result');
+  }
+
+  /// JSON-RPC 错误对象 → `<data.type>: <message>`；不是错误返回 null。
+  static String? _rpcErrorText(Object? error) {
+    if (error == null) return null;
+    if (error is! Map) return error.toString();
+    final Object? data = error['data'];
+    final Object? type = data is Map ? data['type'] : null;
+    final String message = error['message']?.toString() ?? 'error';
+    return type == null ? message : '$type: $message';
   }
 
   // TODO-1007/1008：在 Anki 桌面端打开浏览器并选中 [noteId]（`guiBrowse` 接收
@@ -1157,28 +1310,13 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
   }
 }
 
-/// 解读一条 `setSpecificValueOfCard` 的结果：null = 成功，否则是失败原因。
-///
-/// AnkiConnect 该 action 把失败写在 `result` 里而不是 `error`：成功 `[true]`，
-/// 异常 `[[false, "<msg>"]]`，参数形状不对返回裸 `false`。
-String? ankiSetSpecificValueFailure(AnkiConnectBatchResult r) {
-  if (r.isError) return r.error;
-  final Object? v = r.result;
-  if (v is List && v.isNotEmpty) {
-    final Object? first = v.first;
-    if (first == true) return null;
-    if (first is List && first.isNotEmpty && first.first == false) {
-      return first.length > 1 ? first[1].toString() : 'rejected';
-    }
-    return 'unexpected setSpecificValueOfCard result: $first';
-  }
-  if (v == false) return 'setSpecificValueOfCard rejected the request';
-  return 'unexpected setSpecificValueOfCard result: $v';
-}
-
 /// 卡组新卡重排的 Anki 搜索串：按**卡组 id** 选中 [deckName] 及其全部子卡组，
 /// 再限定 `is:new` 并排除筛选牌组（`-deck:filtered`：那里的 `due` 是暂存值，
 /// 改了会在退出筛选时被覆盖或把原值弄丢）。
+///
+/// 还要排除暂停 / 搁置的新卡（`-is:suspended -is:buried`）：它们 `type` 仍是 0，
+/// `is:new` 会选中，但原生 `scheduling.repositionNewCards` 对暂停、搁置的卡一律
+/// 回 `invalidState`（上游 API_V1.md 该节原文）。圈进计划就是每轮必失败。
 ///
 /// 不用 `deck:"名字"`：它是通配匹配（BUG-2051，`_` 单字、`*` 任意），带 `_`
 /// 的卡组名会把兄弟卡组一起圈进来，而重排写的是队列位置，圈错一张就是改错
@@ -1198,7 +1336,7 @@ String ankiDeckNewCardsQuery(
   final String scope = ids.length == 1
       ? 'did:${ids.single}'
       : '(${ids.map((int id) => 'did:$id').join(' OR ')})';
-  return '$scope is:new -deck:filtered';
+  return '$scope is:new -is:suspended -is:buried -deck:filtered';
 }
 
 Map<String, Object> _addNoteDuplicateOptions({

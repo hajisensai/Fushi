@@ -8,6 +8,8 @@ import 'package:fushi_engine/epub/epub_book.dart'
     show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show AudiobookPlayerController;
 import 'package:fushi/src/reader/illustration_aspect_probe.dart';
 
 // 歌词模式里的书中插图（2026-10-07 用户需求）。
@@ -315,7 +317,16 @@ const Duration kLyricsIllustrationNaturalAdvance = Duration(seconds: 90);
 /// 提示点）。停留只在「图片暂停」> 0、连续播放、阅读器可见时才开始；其余经过插图
 /// 的路径（图片暂停 0 秒、±10 秒 / 拖进度跨过插图、窗口不可见）此前没有任何收起
 /// 逻辑，卡永久留在角落（反馈 yR5QF92EHO / BUG-4065）。这是展示时长，不是动效时长。
-const Duration kLyricsIllustrationCardAutoClose = Duration(seconds: 5);
+///
+/// 时长跟「图片暂停」（插图停留秒数，[imagePauseSec]）走：用户把停留调成 12 秒，
+/// 没进停留的卡也展示 12 秒，而不是另一套固定 5 秒。停留关着（0 秒）时用打开停留的
+/// 默认秒数（[AudiobookPlayerController.imagePauseOnSec]）——卡仍要自动收起
+/// （BUG-4065），不能是 0 秒一闪而过。
+Duration lyricsIllustrationCardDisplayDuration(int imagePauseSec) => Duration(
+  seconds: imagePauseSec > 0
+      ? imagePauseSec
+      : AudiobookPlayerController.imagePauseOnSec,
+);
 
 /// 「弹出停留」的连续播放判据（纯函数）：两次观测之间是否是顺着播过去的。
 ///
@@ -353,8 +364,14 @@ class LyricsIllustrationController extends ChangeNotifier {
   /// 卡片自动收起计时（[observe] 弹卡时起；停留接管 / 用户接手 / 收起时作废）。
   Timer? _cardAutoCloseTimer;
 
-  /// 弹卡后没进停留时多久自动收起（测试可调）。
-  Duration cardAutoCloseAfter = kLyricsIllustrationCardAutoClose;
+  /// 「图片暂停」秒数（播放器的 [AudiobookPlayerController.imagePauseSec]）。决定
+  /// 弹卡后没进停留时多久自动收起（[cardAutoCloseAfter]）；null = 当作关着。弹卡那一刻
+  /// 读值，用户中途改设置只影响之后弹出的卡。
+  ValueListenable<int>? imagePauseSec;
+
+  /// 弹卡后没进停留时多久自动收起。
+  Duration get cardAutoCloseAfter =>
+      lyricsIllustrationCardDisplayDuration(imagePauseSec?.value ?? 0);
 
   /// 顺着播放走过插图时是否自动弹出插图卡（[cardVisible]）。true = 「弹出停留」
   /// （偏好 `lyrics_illustration_cue` = popup，默认）；false = 「红点」：插图位只
