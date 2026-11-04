@@ -69,8 +69,9 @@ enum _PageState {
 /// - 只在被视频页 / 播放页盖住时（[onPlaybackCoverChanged]，`PlaybackRouteMarks`）触发；
 ///   盖上设置页、标签网格等别的整页路由不算。
 /// - 浏览器里只是切走的后台标签页**不**暂停、不挂起，照常播放（与 Chrome 一致）。
-/// - 有手机遥控会话的那一页（[remoteSessionTabId]）不暂停、不挂起：遥控要靠页面回话。
-///   会话在盖住期间结束（换视频 / 没视频了），那一页随即按规则隐藏。
+/// - 正被手机遥控的那一页（[remoteControlledTabId]：有已认证的手机控制端、且控制的正是
+///   这一页）不暂停、不挂起：遥控要靠页面回话。只是页面里有视频、登记了遥控绑定不算。
+///   盖住期间手机断开 / 换控别的播放器 / 会话结束，那一页随即按规则隐藏。
 ///
 /// 变成看不见时两步，顺序固定：
 /// 1. 先跑 [kWebBrowserHoldMediaScript]：暂停在播的 `<video>` / `<audio>`，之后谁再开播
@@ -87,17 +88,17 @@ enum _PageState {
 /// 挂起它。WebView 被回收（[onWebViewDisposed]）时连控制器一起撒手。
 class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
   WebBrowserPageVisibilityFeature({
-    this.remoteSessionTabId,
+    this.remoteControlledTabId,
     WebBrowserPageHiddenSetter? setHidden,
     WebBrowserPageScriptRunner? runScript,
   }) : _setHidden = setHidden ?? webBrowserSetPageHidden,
        _runScript = runScript ?? _evaluate {
-    _remoteTabId = remoteSessionTabId?.value;
-    remoteSessionTabId?.addListener(_onRemoteSessionChanged);
+    _remoteTabId = remoteControlledTabId?.value;
+    remoteControlledTabId?.addListener(_onRemoteSessionChanged);
   }
 
-  /// 有手机遥控会话的标签页 id（`WebBrowserVideoRemote.sessionTabId`）；null = 没装遥控。
-  final ValueListenable<String?>? remoteSessionTabId;
+  /// 正被手机遥控的标签页 id（`WebBrowserVideoRemote.remoteControlledTabId`）；null = 没装遥控。
+  final ValueListenable<String?>? remoteControlledTabId;
 
   final WebBrowserPageHiddenSetter _setHidden;
   final WebBrowserPageScriptRunner _runScript;
@@ -152,7 +153,7 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
 
   void _onRemoteSessionChanged() {
     final String? previous = _remoteTabId;
-    final String? next = remoteSessionTabId?.value;
+    final String? next = remoteControlledTabId?.value;
     if (previous == next) return;
     _remoteTabId = next;
     if (previous != null) _sync(previous);
@@ -167,7 +168,7 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
 
   @override
   void dispose() {
-    remoteSessionTabId?.removeListener(_onRemoteSessionChanged);
+    remoteControlledTabId?.removeListener(_onRemoteSessionChanged);
     _controllers.clear();
     _applied.clear();
     _chains.clear();

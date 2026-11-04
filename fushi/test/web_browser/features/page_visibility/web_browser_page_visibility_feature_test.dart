@@ -61,7 +61,7 @@ void main() {
     rec = _Recorder();
     remote = ValueNotifier<String?>(null);
     feature = WebBrowserPageVisibilityFeature(
-      remoteSessionTabId: remote,
+      remoteControlledTabId: remote,
       setHidden: rec.setHidden,
       runScript: rec.runScript,
     );
@@ -115,7 +115,7 @@ void main() {
     expect(rec.log, isEmpty);
   });
 
-  test('有手机遥控会话的标签页被播放页盖住也不暂停', () async {
+  test('正被手机遥控的标签页被播放页盖住也不暂停', () async {
     await load(a, ca);
     await load(b, cb);
     remote.value = 'a';
@@ -131,7 +131,7 @@ void main() {
     expect(rec.log, <String>['a:hold', 'a:hide']);
   });
 
-  test('已隐藏的页开始遥控会话：恢复它', () async {
+  test('已隐藏的页开始被手机遥控：恢复它', () async {
     await load(a, ca);
     feature.onPlaybackCoverChanged(covered: true);
     await settle();

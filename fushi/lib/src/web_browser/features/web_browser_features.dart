@@ -59,6 +59,7 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
                 runtime: host.runtimeMessage,
                 register: app.videoRemoteHost.register,
                 unregister: app.videoRemoteHost.unregister,
+                controlledBinding: app.videoRemoteHost.controlledBinding,
                 mineImmersion: (ImmersionMinePayload payload) =>
                     app.createRemoteMiningService().mineImmersion(payload),
                 miningPads: () => (
@@ -72,9 +73,9 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
   return <WebBrowserFeature>[
     // 各功能实现在这里登记。
     pageContent,
-    // 浏览页被播放页盖住时按住媒体并告诉 WebView 它已隐藏（有手机遥控会话的那页除外）。
+    // 浏览页被播放页盖住时按住媒体并告诉 WebView 它已隐藏（正被手机遥控的那页除外）。
     WebBrowserPageVisibilityFeature(
-      remoteSessionTabId: extensionHost.videoRemote?.sessionTabId,
+      remoteControlledTabId: extensionHost.videoRemote?.remoteControlledTabId,
     ),
     WebComicFeature(ref: ref, pageContent: pageContent),
     WebNovelFeature(ref: ref, pageContent: pageContent),

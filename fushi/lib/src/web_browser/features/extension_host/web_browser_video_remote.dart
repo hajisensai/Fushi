@@ -106,6 +106,7 @@ class WebBrowserVideoRemotePorts {
     required this.runtime,
     required this.register,
     required this.unregister,
+    required this.controlledBinding,
     required this.mineImmersion,
     required this.miningPads,
     this.closeTab,
@@ -124,6 +125,11 @@ class WebBrowserVideoRemotePorts {
   /// 遥控宿主（`AppModel.videoRemoteHost`）的登记 / 注销。
   final void Function(VideoRemotePlaybackBinding binding) register;
   final void Function(VideoRemotePlaybackBinding binding) unregister;
+
+  /// 遥控宿主当前真被手机控制着的绑定（`VideoRemoteHost.controlledBinding`）：有已认证的
+  /// 手机控制端、且它控制的正是这个绑定才非 null。只「登记了」不算——前台页有个视频
+  /// （例如 Netflix 首页的预告片）就会登记，跟有没有手机无关。
+  final ValueListenable<VideoRemotePlaybackBinding?> controlledBinding;
 
   /// 沉浸制卡（`AppModel.createRemoteMiningService().mineImmersion`）。
   final Future<RemoteMineResult> Function(ImmersionMinePayload payload)
@@ -155,7 +161,9 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     this.idlePollInterval = const Duration(milliseconds: 1500),
     this.requestTimeout = const Duration(milliseconds: 1500),
     this.autoPoll = true,
-  });
+  }) {
+    ports.controlledBinding.addListener(_syncRemoteControlledTab);
+  }
 
   final WebBrowserVideoRemotePorts ports;
   final Duration activePollInterval;
@@ -179,11 +187,24 @@ class WebBrowserVideoRemote extends ChangeNotifier {
   @visibleForTesting
   VideoRemotePlaybackBinding? get binding => _session?.binding;
 
-  final ValueNotifier<String?> _sessionTabId = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> _remoteControlledTabId = ValueNotifier<String?>(
+    null,
+  );
 
-  /// 当前有手机遥控会话的标签页 id（null = 没有）。页面可见性据此不暂停 / 不挂起这一页：
-  /// 遥控要靠页面回话，挂起了手机就控不动（BUG-4084）。
-  ValueListenable<String?> get sessionTabId => _sessionTabId;
+  /// 正被手机遥控的标签页 id（null = 没有）：这一页有会话、遥控宿主有已认证的手机控制端、
+  /// 且手机控制的正是这一页的绑定。页面可见性据此不暂停 / 不挂起这一页：遥控要靠页面回话，
+  /// 挂起了手机就控不动（BUG-4084）。只是登记了会话（页面里有视频）不算。
+  ValueListenable<String?> get remoteControlledTabId => _remoteControlledTabId;
+
+  void _syncRemoteControlledTab() {
+    if (_disposed) return;
+    final _WebVideoRemoteSession? session = _session;
+    _remoteControlledTabId.value =
+        session != null &&
+            identical(ports.controlledBinding.value, session.binding)
+        ? session.tab.id
+        : null;
+  }
 
   // ── 浏览页生命周期 ───────────────────────────────────────────────────
 
@@ -239,9 +260,9 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     final _WebVideoRemoteSession? session = _session;
     if (session == null) return;
     _session = null;
-    _sessionTabId.value = null;
     session.searchHandles.clear();
     ports.unregister(session.binding);
+    _syncRemoteControlledTab();
   }
 
   @override
@@ -249,7 +270,8 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     _disposed = true;
     _timer?.cancel();
     _endSession();
-    _sessionTabId.dispose();
+    ports.controlledBinding.removeListener(_syncRemoteControlledTab);
+    _remoteControlledTabId.dispose();
     super.dispose();
   }
 
@@ -344,7 +366,7 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       session.update(state);
       _session = session;
       ports.register(session.binding);
-      _sessionTabId.value = tab.id;
+      _syncRemoteControlledTab();
       return;
     }
     session.update(state);
