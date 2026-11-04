@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3676 条。点号进各自文件。
+> 共 3677 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4079](bugs/BUG-4079-paired-host-mine-failure-unlabeled.md) | ✅ | ✅ | 开着「制卡到已配对设备」时主机 Anki 落卡失败，客户端只显示「连不上 AnkiConnect」看不出是主机 |
 | [BUG-4078](bugs/BUG-4078-advanced-mining-srs-deck-ignored.md) | ✅ | ✅ | 高级制卡在挖词目标为 Fushi 复习时仍列 Anki 牌组、所选牌组不生效 |
 | [BUG-4077](bugs/BUG-4077-android-startup-scudo-oom-loop-pre-23152.md) | ✅ | ✅ | Android 启动约 6 s 内 Scudo OOM 中止并反复重启（23152 之前的版本） |
 | [BUG-4076](bugs/BUG-4076-desktop-unexpected-exit-no-evidence.md) | 🚧 | 🚧 | 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS） |

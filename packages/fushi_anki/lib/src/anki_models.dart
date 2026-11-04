@@ -1807,6 +1807,13 @@ class AnkiErrorCode {
   static const String pairedDeviceUnreachable =
       'ANKI_PAIRED_DEVICE_UNREACHABLE';
 
+  /// 反馈 E52FUMdbR6：互联远端制卡**送到了**已配对设备，但那台设备上的 Anki 落卡失败
+  /// （它的 AnkiConnect 没开、牌组缺失……）。[MineOutcome.errorDetail] 是主机回传的
+  /// 原因；主 app 必须把它包成「已配对设备上的 Anki 制卡失败：…」——否则用户看到
+  /// 「连不上 AnkiConnect」会以为是本机的 Anki，根本想不到卡是发去了电脑。
+  /// 主机已经收到请求，所以它**不是**「确定没送到」，不进待发队列。
+  static const String pairedDeviceMineFailed = 'ANKI_PAIRED_DEVICE_MINE_FAILED';
+
   /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
   ///
   /// AnkiConnect 按字段**名**匹配，不认识的名字被静默丢弃；而

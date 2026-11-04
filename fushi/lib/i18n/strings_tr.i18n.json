@@ -583,6 +583,7 @@
   "anki_error_field_mapping_mismatch": "Alan eşlemelerinizin hiçbiri seçili not türüyle uyuşmuyor, bu yüzden Anki kartı reddetti. Alanları yeniden eşlemek için Anki ayarları'nı açın veya 'Lapis destesi oluştur' seçeneğini kullanın.",
   "anki_error_first_field_empty": "Seçili not türünün ilk alanı boş ve Anki böyle bir notu kabul etmiyor. Anki ayarları'ndan buna bir alan eşleyin.",
   "anki_error_http": "Anki'ye aktarılamadı: AnkiConnect ile iletişim kurulurken bir HTTP hatası oluştu.",
+  "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_unreachable": "Kart oluşturulamadı çünkü hiçbir eşleştirilmiş cihaza ulaşılamadı. Eşleştirilmiş cihazda Fushi'nin çalıştığından emin olun veya kartları yerel olarak oluşturmak için Anki ayarları'ndan Eşleştirilmiş cihaza çıkar seçeneğini kapatın.",
   "anki_error_permission_denied": "AnkiDroid kart erişim izni vermedi. Görünen sistem izin iletişim kutusunu onaylayın, ardından dışa aktarmak için düğmeye tekrar dokunun.",
   "anki_error_permission_permanently_denied": "AnkiDroid kart erişimi kalıcı olarak reddedildi, bu yüzden sistem artık izin penceresini göstermiyor. Uygulama ayarlarını açıp AnkiDroid iznini verin, ardından tekrar deneyin.",
