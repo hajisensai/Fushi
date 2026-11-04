@@ -1,0 +1,20 @@
+## BUG-4005 · 查词页释义里点词叠出的浮层制卡例句恒空
+- **报告**：2026-11-03（应用内反馈 TnKWBi4C-9，Windows 3.3.0-debug.23080，附录像：「在查词 tab 对词典制卡时被挖掘的对应句子不会填入 sentence，yomitan 和 hoshi reader 都支持挖掘词典中的文字」）
+- **真实性**：✅ 真缺陷（录像 + 代码路径对上）。录像：查词页搜「子供たちは澄んだ目で私を見つめた」，在结果区释义里点「世間知らず」叠出浮层，从浮层制卡，Anki 里 Sentence 字段为空。根因是数据通道里根本没有这句话：
+  - `fushi/assets/popup/selection.js`（修复前 744 行）`selectFromPosition` 发 `textSelected` 只带 `text, rect, rubyReadings`——同文件 `getSentence(node, offset)` 早就实现了「被点处所在的那一句」（跨文本节点扩句、跳振假名、括号配平），弹窗里却从没调用过；
+  - `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart` `onTextSelected` 回调、`DictionaryPageMixin.buildNestedPopupLayer` 的 `onPush`、`DictionaryPopupEntry` 都没有句子这一维；
+  - `fushi/lib/src/pages/implementations/home_dictionary_page.dart`（修复前 1951-1957 行）只给**结果区**制卡补源文本条那一句（BUG-3216），浮层层的 `miningFieldsForLayer` 是默认原样返回，查词页没有书 / 视频的当前句，于是浮层词的 `{sentence}` 恒空。
+- **[x] ① 已修复** — 把「这个词出自哪一句」作为查词事件的一部分沿真实数据通道带到它所属的浮层 entry：
+  - `selection.js`：`selectFromPosition` 在与取词同一个归一后的起点上 `getSentence`，记进 `selection.sentence` 并作 `textSelected` **第 4 参**（旧宿主忽略多余参数，向后兼容）；只在有段落级祖先（`findParagraph`，弹窗释义恒在 `.glossary-content` 里）时取句，没有时给空串——否则会退到整个 body 遍历，而浏览器扩展页面 Shift 悬停每换一个词都走这里（`content.js` `fushiPageSentence` 的惰性契约）。三镜像逐字节同步。
+  - `dictionary_popup_webview.dart`：新 `DictionaryTextSelected` typedef（第 4 参 `contextSentence`），`textSelected` 桥解析 `args[3]`；右键「查词」两条入口传空串。`DictionaryPopupLayer` 同 typedef 透传。
+  - `dictionary_page_mixin.dart`：新 `NestedPopupPush` typedef（第 4 参 `contextSentence`），`pushNestedPopup(contextSentence:)` 交给 `beginTop`。
+  - `dictionary_popup_controller.dart`：`DictionaryPopupEntry.contextSentence` / `DictionaryPopupHistoryPage.contextSentence`，生命周期与 `rubySpans` 完全同构（热槽复用替换、复位清空、原地跳转清空、后退恢复）。
+  - 用它的宿主只有「没有别的例句来源」的两个：`home_dictionary_page.dart` 覆写 `miningFieldsForLayer` 用 `withFallbackMiningSentence(fields, entry.contextSentence)`；`popup_dictionary_page.dart`（独立查词窗）嵌套层制卡 / 覆写同样补句。JS 已带非空句子时不覆盖。提交 `d398ab4b00`。
+  - 其余宿主（阅读器 `base_source_page`、视频 / 远程 / 网页视频、texthooker、悬浮歌词、复习卡、游戏串流）只接受新参数、行为逐字不变：它们的嵌套层制卡例句仍取各自的「当前句」（`video_fushi_page.dart` 原注释「递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句」是既有产品语义）。是否在这些宿主里也改用释义句，见备注。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/dictionary/popup_selection_context_sentence_test.js`（+ 同名 `.dart` wrapper，含三镜像字节一致）：fake DOM 里真执行 `selection.js`，断言 `textSelected` 第 4 参是被点处那一句（不含前后句）、跨 `<b>` 文本节点拼回整句、无段落祖先时为空串；修复前源码上红（已实测）。
+  - `fushi/test/pages/dictionary_popup_context_sentence_test.dart`：controller 上 `contextSentence` 的生命周期（beginTop / pushChild 记录、热槽换词替换 / 复位清空、原地跳转清空 / 后退恢复 / 前进再清空）+ `withFallbackMiningSentence` 补句规则。
+  - 既有 `getSentence` 用到 `TreeWalker.previousNode`，五个取词 node harness 的 fake TreeWalker 补上该方法（`test/lookup/*_bug*_test.js`、`token_start_cjk_bracket_fb_pm3a_test.js`）；回调签名变更连带更新了构造 `DictionaryPopupWebView` / `DictionaryPopupLayer` / `buildNestedPopupLayer` 的测试与 `lookup_word_highlight_surfaces_guard_test.dart` 源码守卫。
+- **备注**：
+  - **待拍板（不擅自改）**：阅读器 / 视频等宿主里从释义点出来的嵌套词，制卡例句现在仍是书 / 字幕的当前句（那句通常不含这个嵌套词）。Yomitan 在弹窗里扫词用的是释义句。选项：A 维持现状（嵌套词例句 = 宿主当前句）；B 嵌套层一律改用释义句（`contextSentence` 已随 entry 到位，宿主覆写 `miningFieldsForLayer` 即可）；C 做成设置项。
+  - 未在真机复测（本轮无 GUI 验证）；JS 端到端（真 WebView 点击 → 制卡字段）未跑集成测试。

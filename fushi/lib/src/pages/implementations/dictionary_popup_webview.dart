@@ -372,6 +372,22 @@ typedef OpenAdvancedMiningCallback =
       String reading,
     );
 
+/// 查词弹窗 / 结果区 WebView 里「选中了一段文本要查」的回调。
+///
+/// [rubySpans]：被点文本上来源自带的振假名（释义里的 ruby，`textSelected` 第 3 参），
+/// 以 [text] 为坐标系；右键菜单「查词」等没有 ruby 的路径传空表。
+///
+/// [contextSentence]：被点处所在的那一句（selection.js `getSentence`，`textSelected`
+/// 第 4 参，反馈 TnKWBi4C-9）；右键「查词」等不是点在某处的路径传空串。宿主自行决定
+/// 用不用它当制卡例句。
+typedef DictionaryTextSelected =
+    void Function(
+      String text,
+      Rect localRect,
+      List<FushiRubySpan> rubySpans,
+      String contextSentence,
+    );
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -456,14 +472,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 二者均不受影响（零回归）。
   final bool transparentDocumentBackground;
 
-  /// [rubySpans]：被点文本上来源自带的振假名（释义里的 ruby，`textSelected` 第 3 参），
-  /// 以 [text] 为坐标系；右键菜单「查词」等没有 ruby 的路径传空表。
-  final void Function(
-    String text,
-    Rect localRect,
-    List<FushiRubySpan> rubySpans,
-  )?
-  onTextSelected;
+  /// [DictionaryTextSelected]：在释义正文里点词 / 右键「查词」。
+  final DictionaryTextSelected? onTextSelected;
   final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
   final Future<MinePopupResult> Function(Map<String, String> fields)?
@@ -2690,6 +2700,7 @@ JSON.stringify((function(){
                   text,
                   Rect.zero,
                   const <FushiRubySpan>[],
+                  '',
                 );
               }
             },
@@ -3744,6 +3755,10 @@ JSON.stringify((function(){
                       FushiRubySpan.listFromWire(
                         args.length > 2 ? args[2] : null,
                       ),
+                      // 反馈 TnKWBi4C-9：被点处所在的那一句（旧 selection.js 不带）。
+                      args.length > 3 && args[3] is String
+                          ? args[3] as String
+                          : '',
                     );
                   }
                 }
@@ -4179,7 +4194,12 @@ JSON.stringify((function(){
     }
     switch (action) {
       case _PopupContextMenuAction.search:
-        widget.onTextSelected?.call(text, Rect.zero, const <FushiRubySpan>[]);
+        widget.onTextSelected?.call(
+          text,
+          Rect.zero,
+          const <FushiRubySpan>[],
+          '',
+        );
       case _PopupContextMenuAction.copy:
         // BUG-402 范式：桌面 WebView2 合成模式下原生复制键转发受限，自己把选区文本写
         // 系统剪贴板。

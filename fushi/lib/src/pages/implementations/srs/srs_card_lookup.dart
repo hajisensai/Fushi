@@ -452,11 +452,13 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     }());
   }
 
+  /// [contextSentence]（释义里被点处那一句）不用：复习卡制卡例句取自卡片本身。
   Future<int> _pushNested(
     String query,
     Rect selectionRect,
-    List<FushiRubySpan> rubySpans,
-  ) {
+    List<FushiRubySpan> rubySpans, [
+    String contextSentence = '',
+  ]) {
     _queries.add(query.trim());
     return pushNestedPopup(
       query: query,

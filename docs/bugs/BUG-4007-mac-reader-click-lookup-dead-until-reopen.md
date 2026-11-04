@@ -1,0 +1,12 @@
+## BUG-4007 · macOS 阅读器点词不查词、退出重进恢复
+- **报告**：2026-11-03（应用内反馈 BiJ9I8_tln，macOS 27.0.1 / Mac17,4 arm64，3.3.0-debug.23080，附录像 + 日志：「不能正常查词，esc 退出后重进恢复正常」）
+- **真实性**：⚠️ 现象属实（录像），**未能定位根因、未复现**（本轮无 macOS 设备，日志里没有覆盖事发时段的有效记录）。不改代码，记下已排除项与收窄后的方向，等下一份证据。
+- **录像证据（ffmpeg 4fps 抽帧逐帧看）**：正文（深色主题、悬浮工具栏、底部有声书状态胶囊 `|| 2:41 … 3.6%`）里多次点词，**没有一次出高亮或弹窗**；每次点击都让悬浮顶栏 / 底栏在显示与收起之间翻转，正文不发生位移。Esc 退回书架，重开同一本书后点「本調子」立即出高亮与弹窗。
+- **据此收窄（推断，按代码路径）**：
+  - 悬浮 chrome 的「点一下显、再点一下收」只有一条正文入口：JS `selectText` 命中**空白** → `onTapEmpty` → `_handleFloatingChromeReveal`（`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart` `onTapEmpty` 处理器；`chrome.part.dart` `_handleFloatingChromeReveal`）。所以点击确实到达了正文 WebView 的 DOM，是**命中测试把文字判成了空白**：`fushi/lib/src/reader/reader_selection_scripts.dart` `getSelectableCharacterAtPoint` → `getCaretRange` / `charRangeVisible` 返回 null。
+  - 排除：macOS 平台视图命中忽略区（BUG-1692 机制）——那会让点击根本进不了 DOM，不会走 `onTapEmpty`；Flutter 侧会切换悬浮栏的只有状态行胶囊与顶部进度 pill 两个小控件，不在点击位置。排除：点词门控 `__fushiTapGate` 镜像失配——任一方向失配都只会退到 Dart `onTap` 链，交替点击至少一半能查到词。
+  - 「重进即好」说明坏的是**本次页面会话里的 JS / DOM 状态**，而不是持久化数据。`charRangeVisible` 把字判为不可见的两条路径是候选：① `window.__fushiTextUnrevealed`（VN 逐字显现的 live Range `window.__fushiRevealRange`，`reader_visual_novel_scripts.dart` `prepareRevealRange` / `clearRevealRange`）残留，整屏字都被当作「未显现」；② `visibleContentBox` 用 `window.innerWidth/innerHeight` 与 body content box 求交，WKWebView 视口尺寸若停在一个过期值（窗口缩放 / 全屏切换后），盒子退化，正文字全落在盒外。两者都只在 WebKit 上有过专门分支，与「只在 Mac 上报」吻合，但**都未证实**。
+- **[ ] ① 未修复** — 证据不足以确定根因，不做猜测性修改。
+- **[ ] ② 未加测试**
+- **下一步要的证据**：反馈人当时的阅读模式（分页 / 连续 / VN）与是否开了逐字显现；开「调试日志」后复现一次，取 `[806-TAP]` 点击坐标探针那几行；有 Mac 时用 WebView inspection 在坏状态下执行 `window.__fushiRevealRange`、`window.innerWidth/innerHeight`、`fushiSelection.visibleContentBox()`、`fushiSelection.getSelectableCharacterAtPoint(x, y)` 取值。
+- **备注**：日志尾部只有 popup `ResizeObserver loop completed` 噪声与一条前一天的 `DictPopupWebview.popupEntriesFetch HTTP 0`（落回内联字面量，与正文命中无关）。
