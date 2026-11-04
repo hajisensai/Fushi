@@ -408,6 +408,16 @@ class PreferencesRepository extends ChangeNotifier
   /// 作品级配置会话装上 / 撤下后通知监听者重读（偏好值本身由 getter 动态解析）。
   void notifyWorkProfileScopeChanged() => notifyListeners();
 
+  /// 主进程发布的当前作品会话（见 [kWorkProfileSessionPrefKey]；空串 = 没有会话）。
+  String get workProfileSession =>
+      getPref(kWorkProfileSessionPrefKey, defaultValue: '') as String;
+
+  /// 主进程发布作品会话；与已存值相同就不写（不白白递增 `prefs_version` 让弹窗重载）。
+  Future<void> setWorkProfileSession(String value) async {
+    if (workProfileSession == value) return;
+    await setPref(kWorkProfileSessionPrefKey, value);
+  }
+
   Future<void> refreshFromDb() async {
     await loadFromDb();
     notifyListeners();

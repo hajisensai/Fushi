@@ -19,6 +19,8 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
@@ -683,9 +685,12 @@ class LapisSetupResult {
 /// 本地仓库——设置页据此照常配置本地 Anki（供开关关闭时使用）。零调用点改动：查词/阅读器/
 /// 视频所有制卡入口都读本 provider，故一处切换即全量改道。
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
+  // 反馈 kEFPY4cuKZ：本机制卡的牌组 / 笔记类型 / 字段映射跟着打开作品的作品级配置走
+  // （[WorkScopedAnkiSettingsStore]）。替对端 / 浏览器扩展制卡（[hostMiningAnkiRepositoryProvider]
+  // 等）走自己的设置来源，不叠本机作品会话。
   final BaseAnkiRepository local = ref
       .watch(platformServicesProvider)
-      .createAnkiRepository();
+      .createAnkiRepository(settingsStore: WorkScopedAnkiSettingsStore());
   final bool mineToServer = ref.watch(
     appProvider.select((AppModel m) => m.mineToServerEnabled),
   );
@@ -741,10 +746,21 @@ BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
     inner: repo,
     miner: () => _readSrsMiner(ref),
     onCardsAdded: () => revision.state++,
-    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
-    openNote: (String noteId) async =>
-        await SrsAppHost.current?.openNote(noteId) ?? false,
+    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。作品会话期间
+    // 卡在作品配置的复习副本里，编辑页套那份副本打开。
+    openNote: (String noteId) => _openSrsNote(ref, noteId),
   );
+}
+
+Future<bool> _openSrsNote(Ref ref, String noteId) async {
+  if (WorkProfileScope.instance.active != null) {
+    final AppModel app = ref.read(appProvider);
+    final Future<bool> Function(SrsMiner, String)? open =
+        app.srsProfileNoteOpener;
+    final SrsMiner? miner = await _readSrsMiner(ref);
+    return open != null && miner != null && await open(miner, noteId);
+  }
+  return await SrsAppHost.current?.openNote(noteId) ?? false;
 }
 
 /// [repo] 的重排快照目录名：装饰链里有 SRS 层（挖词目标 = Fushi 复习）时用复习的
@@ -778,6 +794,20 @@ String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
 Future<SrsMiner?> _readSrsMiner(Ref ref) async {
   try {
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
+    // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
+    // 绑定的就是激活配置时没有会话，走下面的激活副本。
+    final WorkProfileSession? session = WorkProfileScope.instance.active;
+    if (session != null) {
+      final AppModel app = ref.read(appProvider);
+      return ref
+          .read(srsProfileStoresProvider)
+          .minerFor(
+            profileUid: await app.database.profileUidOf(session.profileId),
+            destination: app.srsMiningDestination,
+            fallbackRolloverHour: () => app.statDayResetHour,
+          );
+    }
     final SrsDbStore? store = await ref.read(srsStoreProvider.future);
     final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
     if (store == null || media == null) return null;
@@ -869,6 +899,13 @@ AnkiAutoRepositionWiring withAnkiAutoReposition(
 
 final ankiViewModelProvider = StateNotifierProvider<AnkiViewModel, AnkiUiState>(
   (ref) {
+    // 反馈 kEFPY4cuKZ：作品级配置会话装上 / 撤下后 Anki 设置的生效值换了一份（见
+    // [WorkScopedAnkiSettingsStore]），丢掉缓存的设置快照重读。
+    void onWorkScopeChanged() => ref.invalidateSelf();
+    WorkProfileScope.instance.addListener(onWorkScopeChanged);
+    ref.onDispose(
+      () => WorkProfileScope.instance.removeListener(onWorkScopeChanged),
+    );
     return AnkiViewModel(ref.watch(ankiRepositoryProvider));
   },
 );

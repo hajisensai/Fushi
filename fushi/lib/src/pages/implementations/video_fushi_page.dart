@@ -3891,6 +3891,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           languageTag: languageTag,
           mediaType: ProfileMediaKind.video,
         );
+    // 反馈 kEFPY4cuKZ：字幕样式随作品级配置走。会话与视频加载并行解析，加载那边可能已经按
+    // 全局样式解码过一次（_subtitleStyle），会话就绪后按生效值重取。
+    if (!mounted) return;
+    setState(() {
+      _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
+    });
   }
 
   /// TODO-1213：切换加载阶段并刷新加载态 UI（mounted 守卫）。离开「下载字幕」阶段时

@@ -4402,6 +4402,13 @@ class AppModel with ChangeNotifier {
       _srsCardFontFamilies = await srsCardFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
+      // 反馈 kEFPY4cuKZ：作品会话只活在主进程内存里——上次进程被杀时发布的会话已经不存在，
+      // 先清掉，再把此后的会话变化发布给 `:popup` 进程 / 悬浮词典（[kWorkProfileSessionPrefKey]）。
+      _publishWorkProfileSession();
+      WorkProfileScope.instance.addListener(_publishWorkProfileSession);
+      WorkProfileScope.instance.writeRevision.addListener(
+        _publishWorkProfileSession,
+      );
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
@@ -4836,6 +4843,12 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
+      // 反馈 kEFPY4cuKZ：主进程正打开一部带作品级配置的作品时，本进程的查词 / 制卡 / 主题
+      // 按同一份作品配置生效（镜像进本 isolate 的 [WorkProfileScope]）。
+      _isDictionaryPopupProcess = true;
+      WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
+      await mirrorMainProcessWorkSession();
+
       debugPrint('[Fushi-popup] init: DONE');
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
@@ -4907,7 +4920,8 @@ class AppModel with ChangeNotifier {
   /// Android app 外查词（`:popup` 进程）热复用前的跨进程对账：常驻进程只在冷启动
   /// 装载一次状态，主进程之后的改动它都看不见。三件事：
   ///
-  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）。
+  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）；变过时顺带按主进程
+  ///    发布的作品会话重新镜像（[mirrorMainProcessWorkSession]）。
   /// 2. 词典元数据（顺序 / 启用 / 折叠 / 改名 / 增删）：住在 `dictionary_metadata`
   ///    表、不抬 `prefs_version`，以前只在冷启动读一次——主进程「词典管理」改完，
   ///    app 外查词要杀进程才生效（BUG-3662）。变了就照 [reloadDictionariesFromDb]
@@ -4918,6 +4932,8 @@ class AppModel with ChangeNotifier {
   /// （[invalidateAnkiStateAfterPrefsChange]）。
   Future<bool> refreshForWarmDictionaryPopup() async {
     final bool prefsChanged = await refreshPrefCacheIfChanged();
+    // 主进程发布的作品会话随 `prefs_version` 一起变：偏好变过才可能要换镜像。
+    if (prefsChanged) await mirrorMainProcessWorkSession();
     if (await dictRepo.reloadMetadataIfChangedInDb()) {
       await _rebuildDictPathsCacheAsync();
       dictRepo.clearDictionaryResultsCache();
@@ -9745,9 +9761,74 @@ class AppModel with ChangeNotifier {
     await ReaderFushiSource.instance.refreshPreferencesFromDb();
     await ReaderFushiSource.readerSettings?.refreshFromDb();
     prefsRepo.notifyWorkProfileScopeChanged();
+    // 主题键（[ThemeNotifier.isProfileThemePrefKey]）的生效值换了一份：重建主题。
+    themeNotifier.onWorkProfileScopeChanged();
+    // 弹窗进程不承载 App 界面字体 / 有声书悬浮字幕（那些只在主进程里装配）。
+    if (_isDictionaryPopupProcess) return;
+    // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
+    await refreshAppFont();
     if (audiobookSession.isActive && showFloatingLyric) {
       await audiobookSession.applyFloatingLyricStyle();
     }
+  }
+
+  /// 本实例跑在 Android `:popup` 进程 / 悬浮词典 engine（[initialiseForDictionaryPopup]）里。
+  bool _isDictionaryPopupProcess = false;
+
+  /// 主进程：最近一次发布的作品会话（[kWorkProfileSessionPrefKey] 的值）。
+  String? _publishedWorkSession;
+
+  /// 主进程：发布串行化（两次发布的写入不能乱序落库）。
+  Future<void> _workSessionPublish = Future<void>.value();
+
+  /// 主进程把当前生效的作品会话（配置 id + 会话内写入次数）写进共享偏好表，`:popup` 进程 /
+  /// 悬浮词典下一次查词时经 `prefs_version` 看到并镜像。值没变就不写。
+  void _publishWorkProfileSession() {
+    final WorkProfileScope scope = WorkProfileScope.instance;
+    final WorkProfileSession? session = scope.active;
+    final String value = session == null
+        ? ''
+        : '${session.profileId}:${scope.writeRevision.value}';
+    if (value == _publishedWorkSession) return;
+    _publishedWorkSession = value;
+    _workSessionPublish = _workSessionPublish
+        .then((_) => prefsRepo.setWorkProfileSession(value))
+        .catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('publishWorkProfileSession', e, stack);
+        });
+  }
+
+  /// 主进程最近一次发布的作品会话已落库时（测试 / 诊断用）。
+  @visibleForTesting
+  Future<void> get workProfileSessionPublished => _workSessionPublish;
+
+  /// 弹窗进程镜像主进程作品会话用的持有者。
+  final Object _mainProcessWorkSessionOwner = Object();
+
+  /// 弹窗进程：已镜像的发布值（null = 还没镜像过）。
+  String? _mirroredWorkSession;
+
+  /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
+  Future<void> mirrorMainProcessWorkSession() async {
+    final String published = prefsRepo.workProfileSession;
+    if (published == _mirroredWorkSession) return;
+    _mirroredWorkSession = published;
+    final int? profileId = parseWorkProfileSessionProfileId(published);
+    if (profileId == null) {
+      WorkProfileScope.instance.leave(_mainProcessWorkSessionOwner);
+    } else {
+      await WorkProfileScope.instance.enterProfile(
+        owner: _mainProcessWorkSessionOwner,
+        repository: ProfileRepository(
+          _database,
+          platformServices.createAnkiRepository(),
+        ),
+        resolveProfileId: () async => profileId,
+      );
+    }
+    await _workProfileScopeReload;
   }
 
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
