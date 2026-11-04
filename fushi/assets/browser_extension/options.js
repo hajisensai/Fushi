@@ -64,7 +64,8 @@ const settingDefaults = Object.freeze({
   videoShortcutRateUp: true,
   videoShortcutSeekBack: true,
   videoShortcutSeekForward: true,
-  videoShortcutHoldSpeed: true,
+  // 裸键 E：默认关（video-shortcuts.js DEFAULT_OFF），旧总开关 videoShortcutsEnabled 不把它带开。
+  videoShortcutHoldSpeed: false,
 });
 const toggleIds = Object.freeze({
   shiftHoverLookup: 'shiftHoverLookup',
@@ -237,7 +238,7 @@ async function loadSettings() {
     if (typeof value !== 'boolean' && key === 'subtitlePauseOnLookup') {
       value = saved.subtitleHoverPause;
     }
-    if (typeof value !== 'boolean' && shortcutKeys.includes(key)) {
+    if (typeof value !== 'boolean' && shortcutKeys.includes(key) && settingDefaults[key] !== false) {
       value = saved.videoShortcutsEnabled;
     }
     // 纯黑没写过：旧「纯黑」预设用户缺省开（与 theme.js pureBlackFrom 同律，显示与生效一致）。

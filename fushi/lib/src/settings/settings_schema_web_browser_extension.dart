@@ -978,6 +978,17 @@ const List<(String, String, String, String)> kWebBrowserVideoShortcuts =
       ),
     ];
 
+/// 无存量时默认**关**的快捷键动作（`video-shortcuts.js` DEFAULT_OFF / options.js
+/// settingDefaults 同一份）：裸字母键在任意网页都会和站点自己的快捷键撞，默认接管等于替所有
+/// 带视频的网页改键。旧总开关 `videoShortcutsEnabled` 早于这些动作，不把它们顺带打开。
+const Set<String> kWebBrowserVideoShortcutsDefaultOff = <String>{'hold-speed'};
+
+/// 快捷键开关没有显式布尔值时的缺省（`video-shortcuts.js` bindingDefault）。
+bool webBrowserShortcutEnabledDefault(String action, Object? legacyEnabled) {
+  if (kWebBrowserVideoShortcutsDefaultOff.contains(action)) return false;
+  return legacyEnabled is bool ? legacyEnabled : true;
+}
+
 /// 快退 / 快进秒数（`video-shortcuts.js` SEEK_SECONDS_SETTING / _OPTIONS / _DEFAULT）：存字符串。
 const String kWebBrowserSeekSecondsSetting = 'videoSeekSeconds';
 const List<String> kWebBrowserSeekSecondsOptions = <String>[
@@ -1236,7 +1247,11 @@ SettingsCustomItem _shortcutRow(String action, String key, String label) =>
         return AdaptiveSettingsSwitchActionRow(
           title: _x('${label}_title'),
           icon: FushiIcons.keyboard,
-          value: _readBool(c, key, legacy is bool ? legacy : true),
+          value: _readBool(
+            c,
+            key,
+            webBrowserShortcutEnabledDefault(action, legacy),
+          ),
           onChanged: (bool v) =>
               unawaited(_write(c, <String, Object?>{key: v})),
           actions: <Widget>[
