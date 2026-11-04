@@ -38,6 +38,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4102](bugs/BUG-4102-srs-mining-no-background-queue.md) | ✅ | ✅ | 挖词目标 = Fushi 复习时没有后台制卡队列：每张卡都同步写完才返回 |
+| [BUG-4102](bugs/BUG-4102-popup-header-meta-resize-observer-loop.md) | ✅ | ✅ | 查词弹窗词头元数据列 ResizeObserver 同步写布局：每次弹窗变宽都报 loop 错误灌满错误日志，且逐词条强制回流 |
+| [BUG-4102](bugs/BUG-4102-webdav-href-raw-non-ascii.md) | ✅ | ✅ | WebDAV 同步根 PROPFIND href 含裸日文字符时 Uri.decodeFull 抛 Illegal percent encoding |
+| [BUG-4102](bugs/BUG-4102-srs-rated-chip-lingers.md) | ✅ | ✅ | srs-rated-chip-lingers |
+| [BUG-4102](bugs/BUG-4102-source-jump-target-no-highlight.md) | ✅ | ✅ | 卡片来源回跳落点不高亮且回看横幅下正文底部被挡 |
+| [BUG-4102](bugs/BUG-4102-ios-metrickit-oversized-crash-drops-stack.md) | ✅ | ✅ | iOS 崩溃诊断调用树超 256 KB 时丢掉崩溃线程与机型 / 构建号 |
 | [BUG-4101](bugs/BUG-4101-windows-webview-creation-error-controller-type.md) | ✅ | ✅ | Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次 |
 | [BUG-4100](bugs/BUG-4100-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
 | [BUG-4099](bugs/BUG-4099-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |

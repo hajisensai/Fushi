@@ -486,7 +486,7 @@ class WebDavOps {
         if (cleaned.endsWith('/')) {
           cleaned = cleaned.substring(0, cleaned.length - 1);
         }
-        displayName = Uri.decodeFull(cleaned.split('/').last);
+        displayName = readableDavSegment(cleaned.split('/').last);
       }
 
       final String? etag = etagPattern.firstMatch(block)?.group(1)?.trim();
@@ -513,9 +513,89 @@ class WebDavOps {
   /// `%`、`#`、`?` 解码出来就成了 URL 分隔符：`Uri.parse` 会把 `#1/` 当片段、把 `?` 后当查询，
   /// 请求打到截断后的路径（BUG-3576：复习同步写入者目录名 `<deviceId>#<化身号>`，第二轮起
   /// PROPFIND 404）。这三个字符解码后重新转义，其余保持原样。
-  static String decodedDavHref(String rawHref) => Uri.decodeFull(
-    rawHref,
-  ).replaceAll('%', '%25').replaceAll('#', '%23').replaceAll('?', '%3F');
+  ///
+  /// 解码是**逐个合法 `%XX` 转义**做的，不走 [Uri.decodeFull]：后者遇到任何裸非 ASCII 字符
+  /// 或不成对的 `%` 就整串抛 `ArgumentError: Illegal percent encoding in URI`。有的 WebDAV
+  /// 服务端把 href 里的日文 / 中文原样吐出来（未百分号编码），列同步根时只要有一本这种书，
+  /// 整个 PROPFIND 回包解析失败、根目录清理与对比差异全挂（BUG-4102，反馈 N9pbmAMEHZ）。
+  /// 这里裸字符原样保留（[buildRequest] 的 [Uri.parse] 会把它编码回去），不成对的 `%` 当字面
+  /// `%`（转成 `%25`），解出来不是合法 UTF-8 的转义串保持原转义不动——都保证 href 原样当
+  /// URL 用时仍指向服务端那条资源。
+  static String decodedDavHref(String rawHref) =>
+      _lenientDavDecode(rawHref, reescapeDelimiters: true);
+
+  /// [decodedDavHref] 产出的 href 末段还原成可读名字（PROPFIND 没带 `displayname` 时的
+  /// 回退）：`%25` / `%23` / `%3F` 解回 `%` / `#` / `?`，与原先 `Uri.decodeFull` 的结果一致，
+  /// 但同样不因裸非 ASCII 字符或非法转义抛错。
+  static String readableDavSegment(String segment) =>
+      _lenientDavDecode(segment, reescapeDelimiters: false);
+
+  static bool _isHexDigit(int c) =>
+      (c >= 0x30 && c <= 0x39) ||
+      (c >= 0x41 && c <= 0x46) ||
+      (c >= 0x61 && c <= 0x66);
+
+  /// 单趟宽松解码：连续的合法 `%XX` 收成一串字节按 UTF-8 解；解不出来就保留原转义文本。
+  /// [reescapeDelimiters] 为 true 时，解出（或原样出现）的 `%` `#` `?` 重新转义成
+  /// `%25` `%23` `%3F`，结果可直接交给 [Uri.parse]。
+  static String _lenientDavDecode(
+    String input, {
+    required bool reescapeDelimiters,
+  }) {
+    final StringBuffer out = StringBuffer();
+    void writeDecodedChar(int codeUnit) {
+      if (reescapeDelimiters) {
+        switch (codeUnit) {
+          case 0x25: // %
+            out.write('%25');
+            return;
+          case 0x23: // #
+            out.write('%23');
+            return;
+          case 0x3F: // ?
+            out.write('%3F');
+            return;
+        }
+      }
+      out.writeCharCode(codeUnit);
+    }
+
+    int i = 0;
+    final int n = input.length;
+    while (i < n) {
+      final int c = input.codeUnitAt(i);
+      if (c == 0x25 &&
+          i + 2 < n &&
+          _isHexDigit(input.codeUnitAt(i + 1)) &&
+          _isHexDigit(input.codeUnitAt(i + 2))) {
+        final int start = i;
+        final List<int> bytes = <int>[];
+        while (i + 2 < n &&
+            input.codeUnitAt(i) == 0x25 &&
+            _isHexDigit(input.codeUnitAt(i + 1)) &&
+            _isHexDigit(input.codeUnitAt(i + 2))) {
+          bytes.add(int.parse(input.substring(i + 1, i + 3), radix: 16));
+          i += 3;
+        }
+        final String decoded;
+        try {
+          decoded = utf8.decode(bytes);
+        } on FormatException {
+          // 不是合法 UTF-8：保留服务端原转义（它本就是合法 URL 片段）。
+          out.write(input.substring(start, i));
+          continue;
+        }
+        for (final int unit in decoded.codeUnits) {
+          writeDecodedChar(unit);
+        }
+        continue;
+      }
+      // 裸字符（含不成对的 `%`、裸非 ASCII）原样当字面字符。
+      writeDecodedChar(c);
+      i++;
+    }
+    return out.toString();
+  }
 
   String resolveHref(String href, String basePath) {
     final baseUri = Uri.parse(basePath);

@@ -18,6 +18,11 @@ void main() {
     'lib/src/pages/implementations/home_page.dart',
   ).readAsStringSync();
   final String main = File('lib/main.dart').readAsStringSync();
+  // 共享选中真值的声明已移到 models/home_tab.dart（路由层页面背景读它，不反向
+  // import 整个首页实现，反馈 DYI1IOZxSM）。
+  final String homeTab = File(
+    'lib/src/models/home_tab.dart',
+  ).readAsStringSync();
 
   test(
     'macOS routes through the native shell before the size-class switch',
@@ -136,7 +141,7 @@ void main() {
 
   test('tab selection is unified through homeShellTabNotifier (HomeTab)', () {
     expect(
-      home,
+      homeTab,
       contains('ValueNotifier<HomeTab> homeShellTabNotifier'),
       reason:
           'the shared shell selection is a HomeTab notifier, not an int '
