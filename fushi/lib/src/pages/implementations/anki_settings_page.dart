@@ -303,6 +303,22 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 title: t.srs_mining_target_srs,
                 children: <Widget>[
                   ..._buildSrsMiningRows(),
+                  // 后台制卡（反馈 Rl00Di264R）：制卡入队立即返回，卡片在后台依次写进
+                  // 复习。装饰链每次制卡现读这个偏好，改完即生效。
+                  SettingsSearchTarget(
+                    id: 'card_creation.srs.background_mining',
+                    child: AdaptiveSettingsSwitchRow(
+                      icon: FushiIcons.checklist,
+                      showIcon: true,
+                      title: t.srs_mining_background_title,
+                      subtitle: t.srs_mining_background_hint,
+                      value: appModel.srsMiningBackground,
+                      onChanged: (bool v) async {
+                        await appModel.setSrsMiningBackground(v);
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
                   // 切到 Fushi 复习之前排队等发往 Anki 的卡：有才显示。
                   const SettingsSearchTarget(
                     id: 'card_creation.anki.pending_mines',

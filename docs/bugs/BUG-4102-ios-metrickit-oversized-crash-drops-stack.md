@@ -1,0 +1,16 @@
+## BUG-4102 · iOS 崩溃诊断调用树超 256 KB 时丢掉崩溃线程与机型 / 构建号
+- **报告**：2026-11-05，来自 iPhone18,3 / iOS 27.2 的闪退报告分诊：`n5OctGeoZv`、`203OplWhew`、`HGELrYwLzJ`、`-gRMoCHExn`、`qST-r751jz`（3.3.0-debug.23469 / 23480）。
+- **真实性**：✅ 真 bug（诊断链路丢证据，不是闪退本身）。
+  - 现象：这台机器的日志里 34 条 `Process.iosCrashDiagnostic` 中有 4 条只剩 `app=3.3.0(null) os=null device=null exceptionType=10 code=0 signal=6 / vm region: `，没有崩溃线程（`203OplWhew` 的首条就是这种）。
+  - 根因：`fushi/ios/Runner/AppDelegate.swift` `FushiCrashDiagnostics.didReceive` 在 `jsonRepresentation()` 超过 256 KB 时**整棵调用树全丢**，只写一份手拼的元数据，而那份元数据没有 `appBuildVersion` / `osVersion` / `deviceType`。超限的几乎都是内存耗尽类崩溃（几十条线程各一棵调用树），正是最需要崩溃线程的那一类。
+  - 同一处摘要（`fushi/lib/src/diagnostics/previous_exit_log.dart` `summarizeMetricKitCrash`）另有两点让符号化做不成：只摘 12 帧，abort 的头三帧固定是 libsystem，Runner 帧常截在 FFI 入口之前；不带镜像 UUID，拿 dSYM 时对不上是哪次构建。CI 也不存 iOS dSYM（BUG-4075 证据缺口 ①）。
+- **[x] ① 已修复** —
+  - `AppDelegate.swift`：超限先 `attributedThreadOnly` 只留崩溃线程（`threadAttributed == true`）的调用树并记 `callStacksDropped`；只剩崩溃线程仍超限才退到元数据，兜底元数据补上 `appBuildVersion` / `osVersion` / `deviceType` / `platformArchitecture`（取自 `MXDiagnostic.metaData`）。
+  - `previous_exit_log.dart`：崩溃线程摘 32 帧（`kMetricKitMaxFrames`）；按镜像列出 `binary uuids`；`vm region` 为空不写；明写 `call stack tree dropped: N bytes` / `other threads dropped: N`。
+  - `.github/workflows/release-desktop.yml`：未签名 Release 构建与 TestFlight 签名归档两份 dSYM 各按发布序号存成 artifact（`ios-dsyms-unsigned-<seq>` / `ios-dsyms-testflight-<seq>`，保留 90 天，`continue-on-error`，不进 Release 资产）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/diagnostics/previous_exit_log_test.dart` 组「BUG-4102：MetricKit 摘要」：只留崩溃线程的载荷摘出第 20 帧、镜像 UUID、丢掉的线程数且不写空 `vm region`；只剩元数据时带构建号 / 系统 / 机型、明写调用树被丢；原生兜底元数据写全 Dart 读的每个键、且先瘦身再兜底（读 `AppDelegate.swift` 源码的契约守卫）。
+  - `fushi/test/build/ios_dsym_artifact_guard_test.dart`：两条出包路径的 dSYM artifact 存在、按序号命名、在各自构建之后、不叫 `desktop-artifacts-*`。
+- **备注**：
+  - 这 5 份报告的闪退本身是 BUG-4013 / BUG-4075 那一族（内存 / 地址空间耗尽：JavaScriptCore EXC_BREAKPOINT 于 WebKit 规则编译队列、`Runner+偏移` 的 Rust abort、liblangid / libswiftCore abort、Dart `Out of Memory` 于 `SrsCore._utf8` 与 `initUiKitView` 的创建参数编码），23469 / 23480 都早于 BUG-4013 修复（PR #2834 合并点序号 23591），本 PR 不改它们的行为。
+  - Swift 改动本机（Windows）未编译，靠 PR 的 iOS 构建确认；`Release-iphoneos/*.dSYM` 路径按 Flutter 的 `SYMROOT=build/ios` 推断，未在 runner 上实测（`if-no-files-found: warn`）。
