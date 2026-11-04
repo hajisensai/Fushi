@@ -409,6 +409,7 @@ import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/extension_profile_api.dart'
     show ExtensionProfileApi, ExtensionRequestServices;
 import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
@@ -4404,6 +4405,7 @@ class AppModel with ChangeNotifier {
       _srsCardFonts = srsCardFonts;
       _srsCardFontFamilies = await srsCardFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
+      WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
@@ -8893,6 +8895,9 @@ class AppModel with ChangeNotifier {
     overrideMaximumTerms: overrideMaximumTerms,
     useCache: useCache,
     allowRemoteLookup: allowRemoteLookup,
+    // 反馈 kEFPY4cuKZ：本机查词在打开的作品带着作品级配置时按那份配置的词典过滤。
+    // 替对端 / 浏览器扩展查词不走这个入口，不受本机作品会话影响。
+    profileView: WorkProfileScope.instance.lookupView,
   );
 
   /// [searchDictionary] 加上原文自带的振假名（[rubySpans]，以 [searchTerm] 为坐标系）：
@@ -8918,6 +8923,7 @@ class AppModel with ChangeNotifier {
           searchWithWildcards: searchWithWildcards,
           overrideMaximumTerms: overrideMaximumTerms,
           rubySpans: rubySpans,
+          profileView: WorkProfileScope.instance.lookupView,
         );
 
   /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
@@ -9719,6 +9725,32 @@ class AppModel with ChangeNotifier {
   FushiAudioHandler? get audioHandler => audioCtrl.audioHandler;
 
   Future<void> initialiseAudioHandler() => audioCtrl.initialiseHandler();
+
+  // ── 作品级配置会话（反馈 kEFPY4cuKZ） ─────────────────────────────────
+
+  Future<void> _workProfileScopeReload = Future<void>.value();
+
+  /// 最近一次作品级配置会话变化后的缓存重读完成时（进入作品的入口等它再读阅读器设置）。
+  Future<void> get workProfileScopeSettled => _workProfileScopeReload;
+
+  /// [WorkProfileScope] 装上 / 撤下会话：按串行顺序重读按偏好建的内存缓存。全局偏好表从未
+  /// 被改动，这里只是让缓存改看「全局 + 当前会话」的叠加结果（离开作品 = 叠加层没了）。
+  void _onWorkProfileScopeChanged() {
+    _workProfileScopeReload = _workProfileScopeReload
+        .then((_) => _reloadForWorkProfileScope())
+        .catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('workProfileScopeReload', e, stack);
+        });
+  }
+
+  Future<void> _reloadForWorkProfileScope() async {
+    await ReaderFushiSource.instance.refreshPreferencesFromDb();
+    await ReaderFushiSource.readerSettings?.refreshFromDb();
+    prefsRepo.notifyWorkProfileScopeChanged();
+    if (audiobookSession.isActive && showFloatingLyric) {
+      await audiobookSession.applyFloatingLyricStyle();
+    }
+  }
 
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
 

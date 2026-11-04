@@ -124,6 +124,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
@@ -3687,6 +3688,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
+    WorkProfileScope.instance.leave(this);
     _studyCoverWatch.dispose();
     _pageCurlDrag = null;
     _pageCurl?.dispose();

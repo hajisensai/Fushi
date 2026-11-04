@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -371,8 +372,19 @@ class PreferencesRepository extends ChangeNotifier
     miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
   }
 
-  Map<String, String> get prefsSnapshot =>
-      Map<String, String>.unmodifiable(_prefCache);
+  Map<String, String> get prefsSnapshot => Map<String, String>.unmodifiable(
+    _readOnly
+        ? _prefCache
+        : WorkProfileScope.instance.effectivePrefs(_prefCache),
+  );
+
+  /// 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，作品级键（阅读样式 / 悬浮字幕样式）
+  /// 的读写改走 [WorkProfileScope] 的会话覆盖层，全局偏好不动。只读视图不参与。
+  bool _workScoped(String key) =>
+      !_readOnly && WorkProfileScope.instance.overrides(key);
+
+  /// 作品级配置会话装上 / 撤下后通知监听者重读（偏好值本身由 getter 动态解析）。
+  void notifyWorkProfileScopeChanged() => notifyListeners();
 
   Future<void> refreshFromDb() async {
     await loadFromDb();
@@ -381,7 +393,9 @@ class PreferencesRepository extends ChangeNotifier
 
   @override
   dynamic getPref(String key, {dynamic defaultValue}) {
-    final raw = _prefCache[key];
+    final raw = _workScoped(key)
+        ? WorkProfileScope.instance.scopedRaw(key)
+        : _prefCache[key];
     if (raw == null) {
       return defaultValue;
     }
@@ -392,6 +406,10 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setPref(String key, dynamic value) async {
     _ensureWritable('setPref');
     final String strVal = PrefCodec.encode(value);
+    if (_workScoped(key)) {
+      await WorkProfileScope.instance.write(key, strVal);
+      return;
+    }
     _prefCache[key] = strVal;
     // [FushiDatabase.setPref] also bumps the persisted prefs-version (TODO-855)
     // for any key other than the version key itself; no explicit bump needed
@@ -414,8 +432,17 @@ class PreferencesRepository extends ChangeNotifier
       for (final MapEntry<String, dynamic> e in values.entries)
         e.key: PrefCodec.encode(e.value),
     };
+    final Map<String, String> scoped = <String, String>{
+      for (final MapEntry<String, String> e in encoded.entries)
+        if (_workScoped(e.key)) e.key: e.value,
+    };
+    encoded.removeWhere((String key, String _) => scoped.containsKey(key));
     _prefCache.addAll(encoded);
-    await _db.setPrefs(encoded);
+    await Future.wait(<Future<void>>[
+      if (encoded.isNotEmpty) _db.setPrefs(encoded),
+      for (final MapEntry<String, String> e in scoped.entries)
+        WorkProfileScope.instance.write(e.key, e.value),
+    ]);
   }
 
   /// 只在持久化原值仍匹配快照时提交更新。耗时迁移在事务外准备文件，
@@ -466,7 +493,9 @@ class PreferencesRepository extends ChangeNotifier
     return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
   }
 
-  bool containsKey(String key) => _prefCache.containsKey(key);
+  bool containsKey(String key) => _workScoped(key)
+      ? WorkProfileScope.instance.scopedRaw(key) != null
+      : _prefCache.containsKey(key);
 
   // ── player preferences ───────────────────────────────────────────────
 
