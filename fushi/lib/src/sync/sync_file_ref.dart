@@ -22,11 +22,26 @@ class SyncFileRef {
 /// 某本书远端文件夹里 progress / statistics / audioBook 元数据三件套的句柄集
 /// （与 [SyncBackendFileTrioMixin] 的「三件套」同指；条目缺失 = 远端尚无该文件）。
 class SyncFileTrio {
-  const SyncFileTrio({this.progress, this.statistics, this.audioBook});
+  const SyncFileTrio({
+    this.progress,
+    this.statistics,
+    this.audioBook,
+    this.fileNames,
+  });
 
   final SyncFileRef? progress;
   final SyncFileRef? statistics;
   final SyncFileRef? audioBook;
+
+  /// 得出这组三件套的那次列举里，书文件夹下**全部**文件（非文件夹）的名字；
+  /// `null` = 列举方没给出完整清单（测试替身 / 分页没取完），调用方要自己再列。
+  ///
+  /// jHQpTfjrNB：三件套本来就是从一次整目录列举里挑出来的，旧形状只留下三个
+  /// 句柄、把其余文件名丢掉，于是同一轮里补传书文件（`.epub` / sidecar 在不在）和
+  /// 有声书包阶段（`.fushiaudio` 在不在）又各自对同一个文件夹重列 / 逐个探针——
+  /// 没有快照的后端（WebDAV / OneDrive / FTP / SFTP）每本书每轮多付 1–3 次往返。
+  /// 名字与三件套同源（同一次回包），不引入任何需要被信任的中间结论。
+  final Set<String>? fileNames;
 }
 
 /// 单本书云同步的方向判定（[SyncManager] 内部决策结果，不落盘）。

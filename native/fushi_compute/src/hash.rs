@@ -82,7 +82,9 @@ impl Ed2kState {
         let blue: [u8; 16] = if self.chunks == 1 {
             self.first.expect("one full chunk recorded")
         } else {
-            std::mem::replace(&mut self.blue, Md4::new()).finalize().into()
+            std::mem::replace(&mut self.blue, Md4::new())
+                .finalize()
+                .into()
         };
         (red, Some(blue))
     }
@@ -350,11 +352,7 @@ pub fn hash53(bytes: &[u8]) -> u64 {
         v = (v << 8) | b as u64;
     }
     v &= (1u64 << 53) - 1;
-    if v == 0 {
-        1
-    } else {
-        v
-    }
+    if v == 0 { 1 } else { v }
 }
 
 /// 批量 [hash53]：第 `i` 项写进 `out[i]`。
@@ -565,7 +563,13 @@ mod tests {
         let offsets = [0u64, name.len() as u64];
         let mut out = [0u8; 16];
         let st = unsafe {
-            ffc_hash_uuid_v5_batch(ns.as_ptr(), name.as_ptr(), offsets.as_ptr(), 1, out.as_mut_ptr())
+            ffc_hash_uuid_v5_batch(
+                ns.as_ptr(),
+                name.as_ptr(),
+                offsets.as_ptr(),
+                1,
+                out.as_mut_ptr(),
+            )
         };
         assert_eq!(st, status::OK);
         assert_eq!(hex(&out), "2ed6657de927568b95e12665a8aea6a2");
@@ -585,7 +589,10 @@ mod tests {
         assert_eq!(st, status::OK);
         let mut digits = [0u8; 20];
         for smaller in 0..nonce {
-            assert!(!leading_zero_bits(&pow_digest(prefix, decimal(smaller, &mut digits)), 8));
+            assert!(!leading_zero_bits(
+                &pow_digest(prefix, decimal(smaller, &mut digits)),
+                8
+            ));
         }
         let text = nonce.to_string();
         let ok = unsafe {
@@ -614,7 +621,10 @@ mod tests {
             assert_eq!(ffc_hash_ed2k_update(st, b"abc".as_ptr(), 3), status::OK);
             let mut out = [0u8; 32];
             let mut alt = -1;
-            assert_eq!(ffc_hash_ed2k_finish(st, out.as_mut_ptr(), &mut alt), status::OK);
+            assert_eq!(
+                ffc_hash_ed2k_finish(st, out.as_mut_ptr(), &mut alt),
+                status::OK
+            );
             assert_eq!(alt, 0);
             assert_eq!(hex(&out[..16]), "a448017aaf21d8525fc10ae87aa6729d");
             assert_eq!(

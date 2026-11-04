@@ -113,6 +113,16 @@ const int kTranscodeSegmentSeconds = 6;
 /// mpegts 格式时放行」的表里；playlist（`hls.m3u8`）本就带扩展名。
 const String kTranscodeSegmentPathSuffix = 'hlsseg.ts';
 
+/// 纯函数：源文件平均码率（bps）= 体积 × 8 ÷ 时长；任一项缺失 / 非正返回 null。
+///
+/// 用的是**整文件**平均值（含音轨、字幕、容器开销），正好是原画直传时链路要搬的
+/// 字节速率——client「自动」档据此判断这条链路能不能直传原片。
+int? averageBitrateBps({required int? sizeBytes, required int? durationMs}) {
+  if (sizeBytes == null || durationMs == null) return null;
+  if (sizeBytes <= 0 || durationMs <= 0) return null;
+  return (sizeBytes * 8 * 1000) ~/ durationMs;
+}
+
 /// 音频目标码率（bps）：AAC 立体声 128 kbps，够用且在弱网里只占总带宽的零头。
 const int kTranscodeAudioBitrate = 128000;
 

@@ -6,16 +6,19 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::sync2::tests::{review, tempdir, Bucket, Device, DAY, P};
+use super::sync2::tests::{Bucket, DAY, Device, P, review, tempdir};
 use crate::store::SrsCore;
 
 fn unzstd(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
     let file = std::fs::File::open(&path).unwrap();
     let mut out = Vec::new();
-    ruzstd::decoding::StreamingDecoder::new(file).unwrap().read_to_end(&mut out).unwrap();
+    ruzstd::decoding::StreamingDecoder::new(file)
+        .unwrap()
+        .read_to_end(&mut out)
+        .unwrap();
     out
 }
 
@@ -26,7 +29,9 @@ fn dump(d: &Device) -> Value {
     let mut out = serde_json::Map::new();
     for t in tables.iter().skip(1) {
         let name = t[0].as_str();
-        let cols = d.rows(&format!("SELECT name FROM pragma_table_xinfo('{name}') ORDER BY cid"));
+        let cols = d.rows(&format!(
+            "SELECT name FROM pragma_table_xinfo('{name}') ORDER BY cid"
+        ));
         let cols: Vec<String> = cols.iter().skip(1).map(|r| r[0].clone()).collect();
         let ids = id_cols.get(name).copied().unwrap_or(&[]);
         let sel: Vec<String> = cols
@@ -36,7 +41,10 @@ fn dump(d: &Device) -> Value {
                 format!("CASE typeof({v}) WHEN 'blob' THEN 'b:' || hex({v}) WHEN 'null' THEN 'n' ELSE substr(typeof({v}), 1, 1) || ':' || {v} END")
             })
             .collect();
-        let rows = d.rows(&format!("SELECT {} FROM \"{name}\" -- ids:text", sel.join(", ")));
+        let rows = d.rows(&format!(
+            "SELECT {} FROM \"{name}\" -- ids:text",
+            sel.join(", ")
+        ));
         let mut rows: Vec<Vec<String>> = rows.into_iter().skip(1).collect();
         if name == "sync2_ops" {
             expand_payloads(d, &cols, &mut rows);
@@ -53,15 +61,26 @@ fn expand_payloads(d: &Device, cols: &[String], rows: &mut [Vec<String>]) {
     let (dev, seq, payload) = (at("device"), at("seq"), at("payload"));
     let w = d.core.writer().unwrap();
     let mut full: BTreeMap<(Vec<u8>, i64), Vec<u8>> = BTreeMap::new();
-    let mut st = w.prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops").unwrap();
+    let mut st = w
+        .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
+        .unwrap();
     let mut q = st.query([]).unwrap();
     while let Some(r) = q.next().unwrap() {
-        let p = super::sync2::snapshots::unpack_payload(&w, r.get(2).unwrap(), r.get(3).unwrap(), r.get(4).unwrap(), r.get(5).unwrap()).unwrap();
+        let p = super::sync2::snapshots::unpack_payload(
+            &w,
+            r.get(2).unwrap(),
+            r.get(3).unwrap(),
+            r.get(4).unwrap(),
+            r.get(5).unwrap(),
+        )
+        .unwrap();
         full.insert((r.get(0).unwrap(), r.get(1).unwrap()), p);
     }
     let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02X}")).collect::<String>();
     for r in rows.iter_mut() {
-        let device = (0..r[dev].len() / 2 - 1).map(|i| u8::from_str_radix(&r[dev][2 + 2 * i..4 + 2 * i], 16).unwrap()).collect::<Vec<u8>>();
+        let device = (0..r[dev].len() / 2 - 1)
+            .map(|i| u8::from_str_radix(&r[dev][2 + 2 * i..4 + 2 * i], 16).unwrap())
+            .collect::<Vec<u8>>();
         let s: i64 = r[seq][2..].parse().unwrap();
         r[payload] = format!("b:{}", hex(&full[&(device, s)]));
     }
@@ -69,16 +88,33 @@ fn expand_payloads(d: &Device, cols: &[String], rows: &mut [Vec<String>]) {
 
 /// 旧表与新表共有的列上逐行比较。
 fn diff_rows(table: &str, old: &Value, new: &Value) -> Option<String> {
-    let oc: Vec<&str> = old["cols"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect();
-    let nc: Vec<&str> = new["cols"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect();
+    let oc: Vec<&str> = old["cols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap())
+        .collect();
+    let nc: Vec<&str> = new["cols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap())
+        .collect();
     let common: Vec<&str> = oc.iter().copied().filter(|c| nc.contains(c)).collect();
     let pick = |rows: &Value, cols: &[&str]| -> Vec<Vec<String>> {
-        let idx: Vec<usize> = common.iter().map(|c| cols.iter().position(|x| x == c).unwrap()).collect();
+        let idx: Vec<usize> = common
+            .iter()
+            .map(|c| cols.iter().position(|x| x == c).unwrap())
+            .collect();
         let mut out: Vec<Vec<String>> = rows
             .as_array()
             .unwrap()
             .iter()
-            .map(|r| idx.iter().map(|&i| r[i].as_str().unwrap().to_owned()).collect())
+            .map(|r| {
+                idx.iter()
+                    .map(|&i| r[i].as_str().unwrap().to_owned())
+                    .collect()
+            })
             .collect();
         out.sort();
         out
@@ -90,9 +126,13 @@ fn diff_rows(table: &str, old: &Value, new: &Value) -> Option<String> {
     if only_old.is_empty() && only_new.is_empty() {
         return None;
     }
-    Some(format!("{table} {common:?}
+    Some(format!(
+        "{table} {common:?}
   old only: {:?}
-  new only: {:?}", &only_old[..only_old.len().min(3)], &only_new[..only_new.len().min(3)]))
+  new only: {:?}",
+        &only_old[..only_old.len().min(3)],
+        &only_new[..only_new.len().min(3)]
+    ))
 }
 
 /// develop@6486c650c5（schema v8）`transport.rs` 的 `digest` 原样搬来（只把 ID 列换成解码后的文本）：16 桶按 ID
@@ -100,9 +140,11 @@ fn diff_rows(table: &str, old: &Value, new: &Value) -> Option<String> {
 fn legacy_v8_digest(d: &Device, profile: &str) -> String {
     let w = d.core.writer().unwrap();
     let mut buckets: Vec<blake3::Hasher> = (0..16).map(|_| blake3::Hasher::new()).collect();
-    for (table, body, tag) in
-        [("srs_entities", "kind || payload_json", b'e'), ("srs_field_edits", "json", b'f'), ("srs_review_logs", "json", b'l')]
-    {
+    for (table, body, tag) in [
+        ("srs_entities", "kind || payload_json", b'e'),
+        ("srs_field_edits", "json", b'f'),
+        ("srs_review_logs", "json", b'l'),
+    ] {
         let mut stmt = w
             .prepare(&format!(
                 "SELECT srs_idt(id) AS i, {body} FROM {table} WHERE profile_uid = srs_id(?1) ORDER BY i"
@@ -145,13 +187,24 @@ fn upgrades_row_for_row(ver: &str) {
     let dir = tempdir::new(&format!("{ver}-up"));
     let path = dir.0.join("srs.db");
     std::fs::write(&path, unzstd(&format!("srs_{ver}.db.zst"))).unwrap();
-    let vectors: Value = serde_json::from_slice(&unzstd(&format!("srs_{ver}_vectors.json.zst"))).unwrap();
-    let a = Device { core: SrsCore::open(&path).unwrap(), _dir: tempdir::new("unused") };
-    assert_eq!(a.rows("SELECT value FROM srs_meta WHERE key = 'schema'")[1][0], crate::store::schema::SCHEMA_VERSION.to_string());
+    let vectors: Value =
+        serde_json::from_slice(&unzstd(&format!("srs_{ver}_vectors.json.zst"))).unwrap();
+    let a = Device {
+        core: SrsCore::open(&path).unwrap(),
+        _dir: tempdir::new("unused"),
+    };
+    assert_eq!(
+        a.rows("SELECT value FROM srs_meta WHERE key = 'schema'")[1][0],
+        crate::store::schema::SCHEMA_VERSION.to_string()
+    );
 
     // ID 已编码：每张表的 UUID 都成了 16 字节 BLOB，非 UUID 的旧 ID 还是文本。
-    let blobs: i64 = a.rows("SELECT COUNT(*) FROM srs_review_logs WHERE typeof(id) = 'blob'")[1][0].parse().unwrap();
-    let texts: i64 = a.rows("SELECT COUNT(*) FROM srs_review_logs WHERE typeof(id) = 'text'")[1][0].parse().unwrap();
+    let blobs: i64 = a.rows("SELECT COUNT(*) FROM srs_review_logs WHERE typeof(id) = 'blob'")[1][0]
+        .parse()
+        .unwrap();
+    let texts: i64 = a.rows("SELECT COUNT(*) FROM srs_review_logs WHERE typeof(id) = 'text'")[1][0]
+        .parse()
+        .unwrap();
     assert!(blobs > 0 && texts > 0, "blobs={blobs} texts={texts}");
 
     let old = vectors["tables"].as_object().unwrap();
@@ -159,17 +212,33 @@ fn upgrades_row_for_row(ver: &str) {
     let mut diffs = Vec::new();
     // srs_meta 里只有版本号变、多一条一次性整理的记录（store/compact.rs），别的键值不变。
     let meta = |t: &Value| -> Value {
-        let rows: Vec<&Value> =
-            t["rows"].as_array().unwrap().iter().filter(|r| !["t:schema", "t:compact_last"].contains(&r[0].as_str().unwrap())).collect();
+        let rows: Vec<&Value> = t["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| !["t:schema", "t:compact_last"].contains(&r[0].as_str().unwrap()))
+            .collect();
         json!({"cols": t["cols"], "rows": rows})
     };
     for (table, o) in old {
-        let n = new.get(table).unwrap_or_else(|| panic!("table {table} gone after upgrade"));
-        let (o, n) = if table == "srs_meta" { (&meta(o), &meta(n)) } else { (o, n) };
+        let n = new
+            .get(table)
+            .unwrap_or_else(|| panic!("table {table} gone after upgrade"));
+        let (o, n) = if table == "srs_meta" {
+            (&meta(o), &meta(n))
+        } else {
+            (o, n)
+        };
         diffs.extend(diff_rows(table, o, n));
     }
-    assert!(diffs.is_empty(), "{}", diffs.join("
-"));
+    assert!(
+        diffs.is_empty(),
+        "{}",
+        diffs.join(
+            "
+"
+        )
+    );
     let got = a.core.sync2_digest(P).unwrap();
     if ver == "v8" {
         // v12 把摘要换成按 blake3(id) 分 4096 桶的可增减和（sync2/digest.rs 文件头：「与旧格式不能比」，域分隔
@@ -177,9 +246,15 @@ fn upgrades_row_for_row(ver: &str) {
         // 使然。所以分两步钉死：① 用旧算法对升级后的数据重算，必须与 v8 实现当时算出的根逐位相同——摘要的全部输入
         // （实体 `kind || payload_json`、修改记录 `json`、日志 `json`，按 ID 文本）无损；② 升级后由触发器维护的桶表
         // 求出的根等于对同样数据从头扫描算的根——v14 的桶表全量重建没有漏行或多算。版本向量部分逐字相同。
-        assert_eq!(legacy_v8_digest(&a, P), vectors["digest"]["digest"].as_str().unwrap());
+        assert_eq!(
+            legacy_v8_digest(&a, P),
+            vectors["digest"]["digest"].as_str().unwrap()
+        );
         let w = a.core.writer().unwrap();
-        assert_eq!(got["digest"].as_str().unwrap(), super::sync2::digest::root_by_scan(&w, P).unwrap());
+        assert_eq!(
+            got["digest"].as_str().unwrap(),
+            super::sync2::digest::root_by_scan(&w, P).unwrap()
+        );
         drop(w);
         assert_eq!(got["vv"], vectors["digest"]["vv"]);
     } else {
@@ -196,12 +271,17 @@ fn upgrades_row_for_row(ver: &str) {
         c.sync(&mut bucket, "fresh", t);
     }
     let got = c.rows("SELECT srs_idt(id) AS id, json FROM srs_review_logs ORDER BY srs_idt(id)");
-    assert_eq!(json!(got[1..]), json!(vectors["fresh_logs"].as_array().unwrap()[1..]));
+    assert_eq!(
+        json!(got[1..]),
+        json!(vectors["fresh_logs"].as_array().unwrap()[1..])
+    );
 
     // 升级后照常作答：新日志按 BLOB 存，读回来是原文本。
     let card = "0193a1b2-0004-7000-8000-000000000001";
     let log = "0193a1b2-0005-7000-8000-00000000ffff";
     a.apply(t + DAY, vec![review(log, card, t + DAY, 3, "review")]);
-    let got = a.rows(&format!("SELECT typeof(id), srs_idt(card_id) FROM srs_review_logs WHERE id = srs_id('{log}')"));
+    let got = a.rows(&format!(
+        "SELECT typeof(id), srs_idt(card_id) FROM srs_review_logs WHERE id = srs_id('{log}')"
+    ));
     assert_eq!(got[1], vec!["blob".to_owned(), card.to_owned()]);
 }

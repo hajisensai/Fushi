@@ -7,8 +7,8 @@
 //!   pointycastle 实现逐字节一致（同一钥匙同一消息恒同一签名），验签也接受 high-s。
 
 use p256::ecdsa::{
-    signature::{Signer, Verifier},
     Signature, SigningKey, VerifyingKey,
+    signature::{Signer, Verifier},
 };
 
 use crate::{guard, status};
@@ -117,7 +117,10 @@ mod tests {
         let mut point = [0u8; 65];
         let mut sig = [0u8; 64];
         unsafe {
-            assert_eq!(ffc_crypto_p256_public_key(d.as_ptr(), point.as_mut_ptr()), status::OK);
+            assert_eq!(
+                ffc_crypto_p256_public_key(d.as_ptr(), point.as_mut_ptr()),
+                status::OK
+            );
             assert_eq!(
                 ffc_crypto_p256_sign_sha256(d.as_ptr(), b"hi".as_ptr(), 2, sig.as_mut_ptr()),
                 status::OK

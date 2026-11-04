@@ -25,14 +25,29 @@ pub const TABLES: &[Table] = &[
     Table {
         name: "srs_field_edits",
         columns: &[
-            "id", "profile_uid", "entity_kind", "entity_id", "field_key", "writer_id", "seq", "json",
+            "id",
+            "profile_uid",
+            "entity_kind",
+            "entity_id",
+            "field_key",
+            "writer_id",
+            "seq",
+            "json",
         ],
     },
     Table {
         name: "srs_review_logs",
         columns: &[
-            "id", "profile_uid", "card_id", "kind", "rating", "occurred_at", "review_type", "origin",
-            "duration_ms", "json",
+            "id",
+            "profile_uid",
+            "card_id",
+            "kind",
+            "rating",
+            "occurred_at",
+            "review_type",
+            "origin",
+            "duration_ms",
+            "json",
         ],
     },
     Table {
@@ -41,7 +56,13 @@ pub const TABLES: &[Table] = &[
     },
     Table {
         name: "srs_event_local",
-        columns: &["event_id", "profile_uid", "outbox_seq", "server_time", "received_at"],
+        columns: &[
+            "event_id",
+            "profile_uid",
+            "outbox_seq",
+            "server_time",
+            "received_at",
+        ],
     },
     Table {
         name: "srs_local_state",
@@ -54,17 +75,47 @@ pub const TABLES: &[Table] = &[
     Table {
         name: "srs_notes_cache",
         columns: &[
-            "id", "profile_uid", "note_type_id", "guid", "created_at", "deck_id", "deleted_at",
-            "term_key", "reading_key", "sort_field", "tags_json", "pending_decision", "updated_at",
+            "id",
+            "profile_uid",
+            "note_type_id",
+            "guid",
+            "created_at",
+            "deck_id",
+            "deleted_at",
+            "term_key",
+            "reading_key",
+            "sort_field",
+            "tags_json",
+            "pending_decision",
+            "updated_at",
         ],
     },
     Table {
         name: "srs_cards_cache",
         columns: &[
-            "id", "profile_uid", "note_id", "template_id", "cloze_ord", "deck_id", "suspended",
-            "buried_until_day", "flag", "hidden", "queue", "due_day", "due_at", "scheduled_days",
-            "reps", "lapses", "stability", "difficulty", "last_reviewed_at", "last_log_id",
-            "scheduler", "note_created_at", "new_position",
+            "id",
+            "profile_uid",
+            "note_id",
+            "template_id",
+            "cloze_ord",
+            "deck_id",
+            "suspended",
+            "buried_until_day",
+            "flag",
+            "hidden",
+            "queue",
+            "due_day",
+            "due_at",
+            "scheduled_days",
+            "reps",
+            "lapses",
+            "stability",
+            "difficulty",
+            "last_reviewed_at",
+            "last_log_id",
+            "scheduler",
+            "note_created_at",
+            "new_position",
         ],
     },
 ];
@@ -265,7 +316,8 @@ CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_kind_time ON srs_review_l
 "#;
 
 /// V13：统计页与 AnkiConnect 直接由内核读缓存表（store/bulk.rs）要的两组列，只有 Rust 读写（Drift 不声明）。
-/// - `srs_notes_cache.source_kind` / `source_title`：笔记出处（`SrsSourceRef` 的 kind 与原样 title，没有 = 空串）。
+/// - `srs_notes_cache.source_kind` / `source_title`：笔记出处（`SrsSourceRef` 的 kind 与原样 title；没有出处时按
+///   Fushi 制卡标签认，[super::caches::source_from_tags]，缓存修订号 9 起；都没有 = 空串）。
 ///   统计页的「制卡来源」以前为了这两个值把整库笔记连同全部修改记录物化一遍（`allNoteViews`）。老库加列留空，
 ///   由 Dart 侧缓存修订号 7 的升级步让内核重算全部笔记缓存填满。
 /// - `anki_id`（笔记缓存与卡片缓存）：AnkiConnect 的 53 位数字 id（`SrsIds.ankiNumericId` = `hash53("anki-id/" +
@@ -273,11 +325,23 @@ CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_kind_time ON srs_review_l
 ///   写缓存行时一并算（store/caches.rs），老行在本步回填（[backfill_anki_ids]）。
 /// 编号 10–12 留给其他阶段；本步按「列在不在」判断，可重放。
 const V13_NOTES: [(&str, &str); 3] = [
-    ("source_kind", "ALTER TABLE srs_notes_cache ADD COLUMN source_kind TEXT NOT NULL DEFAULT '';"),
-    ("source_title", "ALTER TABLE srs_notes_cache ADD COLUMN source_title TEXT NOT NULL DEFAULT '';"),
-    ("anki_id", "ALTER TABLE srs_notes_cache ADD COLUMN anki_id INTEGER NOT NULL DEFAULT 0;"),
+    (
+        "source_kind",
+        "ALTER TABLE srs_notes_cache ADD COLUMN source_kind TEXT NOT NULL DEFAULT '';",
+    ),
+    (
+        "source_title",
+        "ALTER TABLE srs_notes_cache ADD COLUMN source_title TEXT NOT NULL DEFAULT '';",
+    ),
+    (
+        "anki_id",
+        "ALTER TABLE srs_notes_cache ADD COLUMN anki_id INTEGER NOT NULL DEFAULT 0;",
+    ),
 ];
-const V13_CARDS: (&str, &str) = ("anki_id", "ALTER TABLE srs_cards_cache ADD COLUMN anki_id INTEGER NOT NULL DEFAULT 0;");
+const V13_CARDS: (&str, &str) = (
+    "anki_id",
+    "ALTER TABLE srs_cards_cache ADD COLUMN anki_id INTEGER NOT NULL DEFAULT 0;",
+);
 const V13_INDEXES: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_anki_id ON srs_notes_cache (profile_uid, anki_id);
 CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_anki_id ON srs_cards_cache (profile_uid, anki_id);
@@ -291,7 +355,10 @@ CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_anki_id ON srs_cards_cache (profi
 ///   [super::caches::backfill_dupe_norms]，不重算整行与卡片）；新写的行一律非 NULL（首字段为空 = 空串）。
 /// - 按 (profile, dupe_norm) 建未删除笔记的部分索引：查重 WHERE 必须带 `deleted_at IS NULL` 才用得上。
 /// 按「列在不在」判断，可重放。
-const V15_NOTES: (&str, &str) = ("dupe_norm", "ALTER TABLE srs_notes_cache ADD COLUMN dupe_norm TEXT NULL;");
+const V15_NOTES: (&str, &str) = (
+    "dupe_norm",
+    "ALTER TABLE srs_notes_cache ADD COLUMN dupe_norm TEXT NULL;",
+);
 const V15_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_dupe ON srs_notes_cache (profile_uid, dupe_norm)      WHERE deleted_at IS NULL;";
 
 /// V16：去掉两条整表复制级的冗余索引（2026-10-30 磁盘占用，10 万卡库合计约 120 MB）。
@@ -334,16 +401,23 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
     for table in ["srs_notes_cache", "srs_cards_cache"] {
         let ids: Vec<String> = {
             let mut stmt = c
-                .prepare(&format!("SELECT srs_idt(id) AS id FROM {table} WHERE anki_id = 0"))
+                .prepare(&format!(
+                    "SELECT srs_idt(id) AS id FROM {table} WHERE anki_id = 0"
+                ))
                 .map_err(|e| e.to_string())?;
-            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
         };
         let mut up = c
-            .prepare(&format!("UPDATE {table} SET anki_id = ?1 WHERE id = srs_id(?2)"))
+            .prepare(&format!(
+                "UPDATE {table} SET anki_id = ?1 WHERE id = srs_id(?2)"
+            ))
             .map_err(|e| e.to_string())?;
         for id in &ids {
-            up.execute(rusqlite::params![anki_numeric_id(id), id]).map_err(|e| e.to_string())?;
+            up.execute(rusqlite::params![anki_numeric_id(id), id])
+                .map_err(|e| e.to_string())?;
         }
     }
     Ok(())
@@ -361,12 +435,20 @@ const UPGRADE_MARGIN: u64 = 64 << 20;
 /// 写到一半磁盘满、整个事务回滚、每次打开都白写一遍。
 pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Result<(), String> {
     let Some(free) = free else { return Ok(()) };
-    let has_meta = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'srs_meta'", [], |_| Ok(())).is_ok();
+    let has_meta = c
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'srs_meta'",
+            [],
+            |_| Ok(()),
+        )
+        .is_ok();
     if !has_meta {
         return Ok(());
     }
     let current: i64 = c
-        .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get::<_, String>(0))
+        .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+            r.get::<_, String>(0)
+        })
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -374,11 +456,18 @@ pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Resul
         return Ok(());
     }
     let pragma = |name: &str| -> Result<u64, String> {
-        c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).map(|v| v.max(0) as u64).map_err(|e| e.to_string())
+        c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0))
+            .map(|v| v.max(0) as u64)
+            .map_err(|e| e.to_string())
     };
-    let live = pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
+    let live =
+        pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
     // v18 之后的步骤（v19 去掉合成写入者）不重建整表：只改几百行、改完更小，WAL 里只多这些页，余量就够。
-    let need = if current >= 18 { UPGRADE_MARGIN } else { live.saturating_mul(2).saturating_add(UPGRADE_MARGIN) };
+    let need = if current >= 18 {
+        UPGRADE_MARGIN
+    } else {
+        live.saturating_mul(2).saturating_add(UPGRADE_MARGIN)
+    };
     if free < need {
         return Err(format!(
             "{UPGRADE_NO_SPACE}{}",
@@ -456,7 +545,8 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     }
     if current < 5 {
         // V5：同步 v2 的事实表与元数据（store/sync2/schema.rs）。旧表不动：它们从此是 ops 的投影。
-        tx.execute_batch(super::sync2::schema::V5).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V5)
+            .map_err(|e| e.to_string())?;
         super::sync2::snapshots::ensure_columns(&tx)?;
     }
     if current < 6 {
@@ -471,12 +561,14 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?
             > 0;
         if !has {
-            tx.execute_batch(super::sync2::schema::V6).map_err(|e| e.to_string())?;
+            tx.execute_batch(super::sync2::schema::V6)
+                .map_err(|e| e.to_string())?;
         }
     }
     if current < 7 {
         // V7：MediaAt 操作的投影（媒体对账不再列目录，store/sync2/media.rs）。
-        tx.execute_batch(super::sync2::schema::V7).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V7)
+            .map_err(|e| e.to_string())?;
     }
     if current < 8 {
         let has: bool = tx
@@ -497,7 +589,8 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 10 {
         // V10：同步 v2 寄存器改「因果优先」+ 段 / head 转发（store/sync2/schema.rs、mvr.rs、relay.rs）。建表都是
         // IF NOT EXISTS，重建是日志的确定性函数：重放这一步结果相同。
-        tx.execute_batch(super::sync2::schema::V10).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V10)
+            .map_err(|e| e.to_string())?;
         super::sync2::mvr::rebuild(&tx)?;
     }
     if current < 12 {
@@ -525,7 +618,8 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         super::sync2::digest::install(&tx)?;
         super::sync2::digest::rebuild(&tx)?;
         // 同在 V14：旧段 / 旧转发件的删除改两段式（sync2/transport.rs `pending_deletes`、sync2/relay.rs）。
-        tx.execute_batch(super::sync2::schema::V14_RELAY_GONE).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V14_RELAY_GONE)
+            .map_err(|e| e.to_string())?;
     }
     if current < 15 {
         if !has_column(&tx, "srs_notes_cache", V15_NOTES.0)? {
@@ -540,30 +634,36 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         super::sync2::snapshots::migrate(&tx)?;
         // 腾出来的页只进空闲链表：打开时整理一次文件（store/compact.rs，事务外做）。
         // 新建的库没有可整理的页。
-        if current > 0 { tx.execute(
+        if current > 0 {
+            tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '16') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
-        .map_err(|e| e.to_string())?; }
+        .map_err(|e| e.to_string())?;
+        }
     }
     if current < 17 {
         // V17：ID 列存 16 字节 BLOB（store/ids.rs）。整表重建，腾出的页同样留给打开时的整理。
         super::ids::migrate(&tx)?;
         // 新建的库没有可整理的页。
-        if current > 0 { tx.execute(
+        if current > 0 {
+            tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '17') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
-        .map_err(|e| e.to_string())?; }
+        .map_err(|e| e.to_string())?;
+        }
     }
     if current < 18 {
         // V18：两张投影表的 `json` 改成生成列，磁盘上只存去掉与列重复的键的 `jslim`（store/slim.rs）。
         super::slim::migrate(&tx)?;
-        if current > 0 { tx.execute(
+        if current > 0 {
+            tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '18') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
-        .map_err(|e| e.to_string())?; }
+        .map_err(|e| e.to_string())?;
+        }
     }
     if current < 19 {
         // V19：因果上下文里去掉合成写入者 `sync2:`（BUG-3959，store/sync2/mod.rs [super::sync2::strip_synthetic_writers]）。
@@ -573,7 +673,8 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     }
     if current < 20 {
         // V20：收段会话的待刷新缓存（store/sync2/schema.rs [super::sync2::schema::V20_CACHE_PENDING]）。只建表，可重放。
-        tx.execute_batch(super::sync2::schema::V20_CACHE_PENDING).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V20_CACHE_PENDING)
+            .map_err(|e| e.to_string())?;
     }
     if current < 21 {
         // V21：操作日志载荷按 zstd 压缩（store/sync2/snapshots.rs [super::sync2::snapshots::pack_payload]）。只加 `pz` 列
@@ -582,7 +683,8 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     }
     if current < 22 {
         // V22：新设备收段通道的进度表（store/sync2/schema.rs [super::sync2::schema::V22_BOOT]）。只建表，可重放。
-        tx.execute_batch(super::sync2::schema::V22_BOOT).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V22_BOOT)
+            .map_err(|e| e.to_string())?;
     }
     if current < 23 {
         // V23：重传登记分两类（store/sync2/schema.rs [super::sync2::schema::migrate_v23]）。只加列，可重放。
@@ -591,7 +693,8 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 24 {
         // V24：存量重复流收敛作业（store/sync2/dedup.rs）。建表，给已启用 v2 的 profile 各排一次作业（作业自己推进，
         // 结束时排文件整理）。可重放。
-        tx.execute_batch(super::sync2::schema::V24_DEDUP).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::schema::V24_DEDUP)
+            .map_err(|e| e.to_string())?;
         tx.execute_batch(
             "INSERT OR IGNORE INTO sync2_dedup (profile_uid, phase, cur_dev, cur_seq) SELECT profile_uid, 0, x'', 0 FROM sync2_self;",
         )
@@ -620,12 +723,20 @@ mod tests {
     ];
 
     fn indexes(c: &rusqlite::Connection) -> Vec<String> {
-        let mut stmt = c.prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name").unwrap();
-        stmt.query_map([], |r| r.get::<_, String>(0)).unwrap().map(Result::unwrap).collect()
+        let mut stmt = c
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
+            .unwrap();
+        stmt.query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
     }
 
     fn version(c: &rusqlite::Connection) -> String {
-        c.query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get(0)).unwrap()
+        c.query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+            r.get(0)
+        })
+        .unwrap()
     }
 
     /// v14 的库升到 v15：加 `dupe_norm` 列（老行 NULL，等 Dart 缓存修订号 8 的升级步补）与查重部分索引；
@@ -644,7 +755,13 @@ mod tests {
         migrate(&mut c).unwrap();
         assert!(has_column(&c, "srs_notes_cache", "dupe_norm").unwrap());
         assert!(indexes(&c).contains(&"idx_srs_notes_cache_dupe".to_owned()));
-        let v: Option<String> = c.query_row("SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'", [], |r| r.get(0)).unwrap();
+        let v: Option<String> = c
+            .query_row(
+                "SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v, None, "old rows wait for the backfill");
         assert_eq!(version(&c), SCHEMA_VERSION.to_string());
         c.execute_batch("UPDATE srs_notes_cache SET dupe_norm = 'x'; UPDATE srs_meta SET value = '14' WHERE key = 'schema';")
@@ -652,7 +769,13 @@ mod tests {
         let before = indexes(&c);
         migrate(&mut c).unwrap();
         assert_eq!(indexes(&c), before);
-        let v: String = c.query_row("SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'", [], |r| r.get(0)).unwrap();
+        let v: String = c
+            .query_row(
+                "SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v, "x");
         assert_eq!(version(&c), SCHEMA_VERSION.to_string());
     }
@@ -667,7 +790,8 @@ mod tests {
         for i in V9_INDEXES {
             c.execute_batch(&format!("DROP INDEX {i}")).unwrap();
         }
-        c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", []).unwrap();
+        c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", [])
+            .unwrap();
         migrate(&mut c).unwrap();
         let after = indexes(&c);
         for i in V9_INDEXES {
@@ -675,7 +799,8 @@ mod tests {
         }
         assert_eq!(version(&c), SCHEMA_VERSION.to_string());
         // 中途崩溃重放：索引已在、版本号还是 8。
-        c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", []).unwrap();
+        c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", [])
+            .unwrap();
         migrate(&mut c).unwrap();
         assert_eq!(indexes(&c), after);
         assert_eq!(version(&c), SCHEMA_VERSION.to_string());
@@ -696,7 +821,10 @@ mod tests {
         let path = dir.join("srs.db");
         let _ = std::fs::remove_file(&path);
         let mut c = rusqlite::Connection::open(&path).unwrap();
-        c.execute_batch("PRAGMA journal_mode = WAL; PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456;").unwrap();
+        c.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456;",
+        )
+        .unwrap();
         migrate(&mut c).unwrap();
         let (cards, decks, logs) = (100_000usize, 40usize, 300_000usize);
         let today: i64 = 20_000;
@@ -727,7 +855,9 @@ mod tests {
                         _ => "relearning",
                     };
                     let due_day = (q == "review").then(|| today - 400 + (rnd() % 800) as i64);
-                    let due_at = q.ends_with("learning").then(|| now - 3_600_000 + (rnd() % 7_200_000) as i64);
+                    let due_at = q
+                        .ends_with("learning")
+                        .then(|| now - 3_600_000 + (rnd() % 7_200_000) as i64);
                     let freq = (rnd() % 3 != 0).then(|| (rnd() % 50_000) as i64);
                     let pos = (rnd() % 2 == 0).then(|| i as i64);
                     ins.execute(rusqlite::params![
@@ -782,7 +912,10 @@ mod tests {
             ];
             let filter = decks.map_or(String::new(), |d| {
                 args.extend(d.iter().map(|s| Value::Text(s.clone())));
-                format!(" AND deck_id IN ({})", vec!["srs_id(?)"; d.len()].join(", "))
+                format!(
+                    " AND deck_id IN ({})",
+                    vec!["srs_id(?)"; d.len()].join(", ")
+                )
             });
             (
                 format!(
@@ -795,7 +928,11 @@ mod tests {
                 args,
             )
         };
-        let pick = |cond: &str, order: &str, extra: Vec<Value>, order_vars: Vec<Value>| -> (String, Vec<Value>) {
+        let pick = |cond: &str,
+                    order: &str,
+                    extra: Vec<Value>,
+                    order_vars: Vec<Value>|
+         -> (String, Vec<Value>) {
             let mut args = vec![Value::Text("p".into()), Value::Integer(today)];
             args.extend(sub.iter().map(|s| Value::Text(s.clone())));
             args.extend(extra);
@@ -815,7 +952,12 @@ mod tests {
                 vec![],
                 vec![],
             );
-            let new_pos = pick("queue = 'new'", "new_position IS NULL, new_position, note_created_at, id", vec![], vec![]);
+            let new_pos = pick(
+                "queue = 'new'",
+                "new_position IS NULL, new_position, note_created_at, id",
+                vec![],
+                vec![],
+            );
             let learning = pick(
                 "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?",
                 "COALESCE(due_at, 0), id",
@@ -852,8 +994,16 @@ mod tests {
                 ("nextCard 新卡(按位置)", new_pos.clone(), new_pos),
                 ("nextCard 学习卡", learning.clone(), learning),
                 ("nextCard 复习候选", review.clone(), review),
-                ("计数 子树5个牌组", tally("profile_uid", Some(&sub)), tally("profile_uid", Some(&sub))),
-                ("计数 全部牌组", tally("profile_uid", None), tally("+profile_uid", None)),
+                (
+                    "计数 子树5个牌组",
+                    tally("profile_uid", Some(&sub)),
+                    tally("profile_uid", Some(&sub)),
+                ),
+                (
+                    "计数 全部牌组",
+                    tally("profile_uid", None),
+                    tally("+profile_uid", None),
+                ),
                 ("计数上下文 30天日志", logs30.clone(), logs30),
                 ("计数上下文 今天日志", today_logs.clone(), today_logs),
             ]
@@ -864,7 +1014,11 @@ mod tests {
             let runs = 20;
             let t0 = std::time::Instant::now();
             for _ in 0..runs {
-                rows = stmt.query(rusqlite::params_from_iter(args.iter())).unwrap().mapped(|_| Ok(())).count();
+                rows = stmt
+                    .query(rusqlite::params_from_iter(args.iter()))
+                    .unwrap()
+                    .mapped(|_| Ok(()))
+                    .count();
             }
             (t0.elapsed().as_secs_f64() * 1000.0 / runs as f64, rows)
         };

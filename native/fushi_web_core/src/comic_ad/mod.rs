@@ -146,14 +146,16 @@ pub fn detect_batch(images: &[&[u8]], rules: &ComicAdRules) -> Vec<ComicAdVerdic
     let results = std::sync::Mutex::new(&mut out);
     std::thread::scope(|s| {
         for _ in 0..workers {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if i >= images.len() {
-                    break;
-                }
-                let verdict = analyze_isolated(images[i], rules);
-                if let Ok(mut guard) = results.lock() {
-                    guard[i] = verdict;
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if i >= images.len() {
+                        break;
+                    }
+                    let verdict = analyze_isolated(images[i], rules);
+                    if let Ok(mut guard) = results.lock() {
+                        guard[i] = verdict;
+                    }
                 }
             });
         }

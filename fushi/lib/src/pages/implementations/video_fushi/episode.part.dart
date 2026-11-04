@@ -232,6 +232,8 @@ extension _VideoEpisode on _VideoFushiPageState {
           // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
           initialSubtitleListVisible: _subtitleListVisible.value,
           initialFullscreen: plan.handOverNativeFullscreen,
+          // cehHSgF04K：沉浸锁定随集常驻（手动换集与自动连播同一条路径）。
+          initialImmersiveLocked: _immersiveLocked.value,
           sourceReviewSession: _sourceReviewSession,
         ),
       );

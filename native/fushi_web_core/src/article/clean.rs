@@ -660,8 +660,9 @@ mod tests {
         cleaner.feed(&doc.select("body").nodes()[0]);
         let c = cleaner.finish();
         assert_eq!(c.images, vec!["https://example.com/i/1.jpg".to_owned()]);
-        assert!(c
-            .xhtml
-            .contains("<img src=\"fushi-web-image:0\" alt=\"挿絵\"/>"));
+        assert!(
+            c.xhtml
+                .contains("<img src=\"fushi-web-image:0\" alt=\"挿絵\"/>")
+        );
     }
 }

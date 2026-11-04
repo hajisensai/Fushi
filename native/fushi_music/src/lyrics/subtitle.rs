@@ -2,7 +2,7 @@
 //!
 //! 多行 cue：第一行是正文，其后各行当翻译（双语歌词字幕的常见形态）。
 
-use super::markup::{strip_tags, tokenize, unescape, Tok};
+use super::markup::{Tok, strip_tags, tokenize, unescape};
 use super::model::*;
 use super::time::clock;
 
@@ -15,9 +15,9 @@ fn parse_arrow(line: &str) -> Option<(i64, i64)> {
 }
 
 pub fn looks_like_srt(text: &str) -> bool {
-    text.lines().take(50).any(|l| {
-        l.contains("-->") && parse_arrow(l).is_some()
-    })
+    text.lines()
+        .take(50)
+        .any(|l| l.contains("-->") && parse_arrow(l).is_some())
 }
 
 /// 去掉 SRT 里的 ASS 风格覆盖块 `{\an8}`。
@@ -72,7 +72,11 @@ pub fn parse_vtt(text: &str, duration_ms: Option<i64>) -> Timeline {
     for block in text.split("\n\n") {
         let mut lines = block.lines().peekable();
         let first = lines.peek().map(|l| l.trim()).unwrap_or("");
-        if first.starts_with("WEBVTT") || first.starts_with("NOTE") || first == "STYLE" || first == "REGION" {
+        if first.starts_with("WEBVTT")
+            || first.starts_with("NOTE")
+            || first == "STYLE"
+            || first == "REGION"
+        {
             continue;
         }
         let mut timing = None;
@@ -84,7 +88,9 @@ pub fn parse_vtt(text: &str, duration_ms: Option<i64>) -> Timeline {
         }
         let Some((start, end)) = timing else { continue };
         let payload: Vec<&str> = lines.map(str::trim).filter(|l| !l.is_empty()).collect();
-        let Some(main) = payload.first() else { continue };
+        let Some(main) = payload.first() else {
+            continue;
+        };
         let (mut line, voice, timed) = vtt_payload(main, start, end);
         if timed {
             quality = TimingQuality::Word;
@@ -109,7 +115,11 @@ pub fn parse_vtt(text: &str, duration_ms: Option<i64>) -> Timeline {
 
 /// 一行 VTT 正文 → (行, 声部, 是否带 cue 内时间戳)。
 fn vtt_payload(s: &str, start: i64, end: i64) -> (Line, Option<String>, bool) {
-    let mut line = Line { start_ms: start, end_ms: end, ..Line::default() };
+    let mut line = Line {
+        start_ms: start,
+        end_ms: end,
+        ..Line::default()
+    };
     let mut voice = None;
     let mut timed = false;
     let mut seg_start = start;
@@ -147,7 +157,8 @@ fn vtt_payload(s: &str, start: i64, end: i64) -> (Line, Option<String>, bool) {
                     "/ruby" => {
                         in_ruby = false;
                         if !ruby_base.is_empty() {
-                            let mut syl = Syllable::new(std::mem::take(&mut ruby_base), seg_start, 0);
+                            let mut syl =
+                                Syllable::new(std::mem::take(&mut ruby_base), seg_start, 0);
                             let r = std::mem::take(&mut ruby_text);
                             syl.ruby = (!r.trim().is_empty()).then(|| r.trim().to_owned());
                             line.syllables.push(syl);
@@ -183,7 +194,11 @@ fn push_text(line: &mut Line, txt: &str, start: i64) {
 }
 
 pub fn looks_like_sami(text: &str) -> bool {
-    let head: String = text.chars().take(4096).collect::<String>().to_ascii_lowercase();
+    let head: String = text
+        .chars()
+        .take(4096)
+        .collect::<String>()
+        .to_ascii_lowercase();
     head.contains("<sami") || head.contains("<sync")
 }
 
@@ -196,7 +211,9 @@ pub fn parse_sami(text: &str, duration_ms: Option<i64>) -> Timeline {
     let mut search = 0;
     while let Some(p) = lower[search..].find("<sync") {
         let at = search + p;
-        let Some(close) = lower[at..].find('>') else { break };
+        let Some(close) = lower[at..].find('>') else {
+            break;
+        };
         let tag = &lower[at..at + close];
         let start = attr_value(tag, "start").and_then(|v| v.parse::<i64>().ok());
         let body_start = at + close + 1;
@@ -217,8 +234,10 @@ pub fn parse_sami(text: &str, duration_ms: Option<i64>) -> Timeline {
         let body = &text[b0..b1];
         let mut line: Option<Line> = None;
         for (class, content) in sami_paragraphs(body) {
-            let txt = unescape(&strip_tags(&content.replace("<br>", "\n").replace("<BR>", "\n")))
-                .replace('\u{a0}', " ");
+            let txt = unescape(&strip_tags(
+                &content.replace("<br>", "\n").replace("<BR>", "\n"),
+            ))
+            .replace('\u{a0}', " ");
             let txt = txt.trim();
             if txt.is_empty() {
                 continue;
@@ -250,11 +269,16 @@ pub fn parse_sami(text: &str, duration_ms: Option<i64>) -> Timeline {
 
 fn attr_value(tag: &str, key: &str) -> Option<String> {
     let i = tag.find(key)?;
-    let rest = tag[i + key.len()..].trim_start().strip_prefix('=')?.trim_start();
+    let rest = tag[i + key.len()..]
+        .trim_start()
+        .strip_prefix('=')?
+        .trim_start();
     let v: String = if let Some(r) = rest.strip_prefix('"') {
         r.chars().take_while(|&c| c != '"').collect()
     } else {
-        rest.chars().take_while(|c| !c.is_whitespace() && *c != '>').collect()
+        rest.chars()
+            .take_while(|c| !c.is_whitespace() && *c != '>')
+            .collect()
     };
     Some(v)
 }
@@ -273,13 +297,12 @@ fn sami_paragraphs(body: &str) -> Vec<(String, String)> {
             idx = at + 2;
             continue;
         }
-        let Some(close) = lower[at..].find('>') else { break };
+        let Some(close) = lower[at..].find('>') else {
+            break;
+        };
         let class = attr_value(&lower[at..at + close], "class").unwrap_or_default();
         let c0 = at + close + 1;
-        let c1 = lower[c0..]
-            .find("<p")
-            .map(|q| c0 + q)
-            .unwrap_or(body.len());
+        let c1 = lower[c0..].find("<p").map(|q| c0 + q).unwrap_or(body.len());
         let content = body[c0..c1].replace("</P>", "").replace("</p>", "");
         out.push((class, content));
         found = true;
@@ -293,15 +316,22 @@ fn sami_paragraphs(body: &str) -> Vec<(String, String)> {
 
 fn sami_class_langs(text: &str) -> Vec<(String, String)> {
     let lower = text.to_ascii_lowercase();
-    let Some(s0) = lower.find("<style") else { return Vec::new() };
-    let s1 = lower[s0..].find("</style").map(|e| s0 + e).unwrap_or(lower.len());
+    let Some(s0) = lower.find("<style") else {
+        return Vec::new();
+    };
+    let s1 = lower[s0..]
+        .find("</style")
+        .map(|e| s0 + e)
+        .unwrap_or(lower.len());
     let style = &lower[s0..s1];
     let mut out = Vec::new();
     let mut rest = style;
     while let Some(dot) = rest.find('.') {
         let after = &rest[dot + 1..];
         let Some(open) = after.find('{') else { break };
-        let Some(close) = after[open..].find('}') else { break };
+        let Some(close) = after[open..].find('}') else {
+            break;
+        };
         let class = after[..open].trim().to_owned();
         let body = &after[open + 1..open + close];
         if let Some(lp) = body.find("lang") {
@@ -327,7 +357,10 @@ mod tests {
 
     #[test]
     fn srt_two_lines_become_translation() {
-        let t = parse_srt("1\n00:00:01,000 --> 00:00:03,500\n<i>Hello</i>\n你好\n\n2\n00:00:04,000 --> 00:00:05,000\n{\\an8}Bye\n", None);
+        let t = parse_srt(
+            "1\n00:00:01,000 --> 00:00:03,500\n<i>Hello</i>\n你好\n\n2\n00:00:04,000 --> 00:00:05,000\n{\\an8}Bye\n",
+            None,
+        );
         assert_eq!(t.lines.len(), 2);
         assert_eq!(t.lines[0].text(), "Hello");
         assert_eq!(t.lines[0].translations[0].1, "你好");
@@ -344,8 +377,20 @@ mod tests {
         assert_eq!(t.timing_quality, TimingQuality::Word);
         let l = &t.lines[0];
         assert_eq!(t.agents[l.agent.unwrap()].id, "Alice");
-        let s: Vec<_> = l.syllables.iter().map(|s| (s.text.as_str(), s.start_ms, s.ruby.as_deref())).collect();
-        assert_eq!(s, vec![("Hel", 1000, None), ("lo ", 1500, None), ("世", 2000, Some("せ")), ("界", 2500, None)]);
+        let s: Vec<_> = l
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.start_ms, s.ruby.as_deref()))
+            .collect();
+        assert_eq!(
+            s,
+            vec![
+                ("Hel", 1000, None),
+                ("lo ", 1500, None),
+                ("世", 2000, Some("せ")),
+                ("界", 2500, None)
+            ]
+        );
     }
 
     #[test]
@@ -359,7 +404,10 @@ mod tests {
         );
         assert_eq!(t.lines.len(), 2);
         assert_eq!((t.lines[0].start_ms, t.lines[0].end_ms), (1000, 3000));
-        assert_eq!(t.lines[0].translations, vec![("en-us".to_string(), "Hello".to_string())]);
+        assert_eq!(
+            t.lines[0].translations,
+            vec![("en-us".to_string(), "Hello".to_string())]
+        );
         assert_eq!(t.lines[1].end_ms, 6000);
     }
 }

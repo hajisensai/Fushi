@@ -20,6 +20,8 @@ import 'package:fushi/src/media/video/disc/disc_session_remote.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
+import 'package:fushi/src/media/video/video_specs_display.dart'
+    show formatBitrate;
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'dart:convert' show jsonEncode, utf8;
@@ -367,6 +369,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
+import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -748,6 +751,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     this.initialFullscreen = false,
+    this.initialImmersiveLocked = false,
     this.openBlurayMenu = false,
     this.discLaunchCover,
     this.discLaunchOrigin,
@@ -776,6 +780,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        remoteInfo = info,
        remoteClient = client,
        initialFullscreen = false,
+       initialImmersiveLocked = false,
        openBlurayMenu = false,
        discLaunchCover = null,
        discLaunchOrigin = null,
@@ -813,6 +818,13 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 保持连播全屏沉浸不被换集打断。仅本地 pushReplacement 换集在换集前处于全屏时置真
   /// （见 [_VideoEpisode._switchEpisode]）；首开 / 远端恒 false。
   final bool initialFullscreen;
+
+  /// 作为「从沉浸锁定态换集 / 连播而来」的新页打开：首帧起就处于沉浸锁定
+  /// （cehHSgF04K）。本地换集是 pushReplacement 新页，锁定态是页面局部状态
+  /// （[_VideoFushiPageState._immersiveLocked]），不交接就随旧页一起丢——自动连播
+  /// 每进一集都把用户踢出沉浸。仅本地换集（[_VideoEpisode._switchEpisode]）置真；
+  /// 远端 / 网页换集原地换流、页面不换，锁定态天然保留。
+  final bool initialImmersiveLocked;
 
   /// Open the disc-authored menu, without loading the representative title.
   final bool openBlurayMenu;
@@ -860,6 +872,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
+    bool initialImmersiveLocked = false,
     bool openBlurayMenu = false,
     ImageProvider? discLaunchCover,
     Rect? discLaunchOrigin,
@@ -878,6 +891,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialEpisodeIndex: initialEpisodeIndex,
       initialSubtitleListVisible: initialSubtitleListVisible,
       initialFullscreen: initialFullscreen,
+      initialImmersiveLocked: initialImmersiveLocked,
       openBlurayMenu: openBlurayMenu,
       discLaunchCover: discLaunchCover,
       discLaunchOrigin: discLaunchOrigin,
@@ -3662,6 +3676,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 上次没写完的「看完再制卡」列表：进页就把角标亮出来（best-effort）。
     unawaited(_refreshStagedMineCount());
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
+    // cehHSgF04K：换集 / 连播交接沉浸锁定态。必须在下面订阅 [_immersiveLocked] 之前
+    // 赋值——控制条可见性由订阅派生，首帧就按锁定态算（不弹控制条、不先闪一下）。
+    _immersiveLocked.value = widget.initialImmersiveLocked;
     // 小窗能力探测 + 系统画中画进出回程（见 mini_window.part.dart）。放 initState
     // 是因为入口按钮的显隐必须在首帧就定下来，不能在用户眼皮底下冒出来。
     _initMiniWindowSupport();
@@ -4827,12 +4844,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
         // host url / 文件已删 → 不在此解析，落回下方 host 默认分支。
       }
+      // 反馈 1QkmT2vVTm：后端默认字幕「列不列」与「挂不挂」分开——有持久化选择时
+      // 照样下载登记成菜单行（起播后再取，不拖慢起播），只是不挂到播放上。
+      final bool hasPreresolvedCues =
+          client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty;
+      final RemoteBackendDefaultSubtitlePlan backendDefaultPlan =
+          planRemoteBackendDefaultSubtitle(
+            backendOffersDefault: urls.subtitleUrl != null,
+            selectionRestored: subtitleResolved,
+            hasPreresolvedCues: hasPreresolvedCues,
+          );
       // TODO-1000：YouTube 等预解析好 cue（timedtext→AudioCue）时直接用，跳过
       // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
       if (subtitleResolved) {
         // 已由持久化选择解析：跳过默认字幕分支。
-      } else if (client is UrlStreamVideoClient &&
-          client.preresolvedCues.isNotEmpty) {
+      } else if (hasPreresolvedCues) {
         cues = client.preresolvedCues;
         // TODO-1302：登记 YouTube 字幕轨。预解析 cue 直接注入 overlay，但既不是 host
         // 外挂字幕（不写 _remoteSubtitlePath）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks
@@ -4842,7 +4868,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // ==null 时保留 _currentSubtitleSource（见其 setState），故此处赋值在 load 后仍生效；
         // 关闭走既有 _clearRemoteSubtitle（置 null）。
         _currentSubtitleSource = _kYoutubeCaptionsSource;
-      } else if (urls.subtitleUrl != null) {
+      } else if (backendDefaultPlan == RemoteBackendDefaultSubtitlePlan.apply) {
         // TODO-1213：进入「正在下载字幕…」阶段（host 若回调 onProgress 则显确定性进度）。
         _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
         // host 默认字幕**下载失败不等于播放失败**：此前这一段没有局部 try/catch，
@@ -4853,23 +4879,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // 保持空、字幕菜单如实显示无字幕，视频照常起播；加载阶段由 _applyLoad
         // 接着推进（buffering → 首帧）。
         try {
-          final Directory temp = await getTemporaryDirectory();
-          final File subtitle = File(
-            p.join(
-              temp.path,
-              _remoteSubtitleTempFileName(
-                '${info.id}_ep$index',
-                urls.subtitleFileName,
-              ),
-            ),
-          );
-          // 与取流同一个主机侧集序号：合集连播里 [index] 是合集内位置，每个成员
-          // 在主机上都是单视频（恒 0）；传 [index] 主机必回 404，第 2 集起永远
-          // 拿不到主机选定的外挂字幕（反馈 XmUBLYR1Ut，BUG-3615 漏的客户端一半）。
-          await client.getRemoteVideoSubtitle(
-            info.id,
-            subtitle,
-            episodeIndex: streamEpisodeIndex,
+          final File subtitle = await _downloadRemoteBackendDefaultSubtitle(
+            client,
+            info,
+            index: index,
+            streamEpisodeIndex: streamEpisodeIndex,
+            fileName: urls.subtitleFileName,
             onProgress: (double progress) {
               // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
               if (!mounted) return;
@@ -4913,6 +4928,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _startRemotePlaybackSession(client, info, initialPositionMs);
         // 互联「自动」画质档：新的一条流，重新开始观察网况（换集与换档都经这里）。
         _restartAdaptiveQuality();
+        if (backendDefaultPlan == RemoteBackendDefaultSubtitlePlan.listOnly) {
+          unawaited(
+            _listRemoteBackendDefaultSubtitle(
+              client,
+              info,
+              index: index,
+              streamEpisodeIndex: streamEpisodeIndex,
+              fileName: urls.subtitleFileName,
+              seq: seq,
+            ),
+          );
+        }
       }
       if (restoredPrimarySource != null && mounted) {
         // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
@@ -5042,8 +5069,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
   String get _speedPrefKey => 'video_speed_$_activeBookUid';
 
-  /// per-book 播放音量偏好 key（音量记忆，播放列表按整张 video book 共享）。
-  String get _volumePrefKey => 'video_volume_$_activeBookUid';
+  /// 播放音量偏好的写入 key（音量记忆）：作为播放列表合集某一集打开时写**系列级**
+  /// 键、全系列共享，单视频写本条目键（[videoVolumeWriteKey]，cehHSgF04K）。
+  String get _volumePrefKey => videoVolumeWriteKey(
+    bookUid: _activeBookUid,
+    collectionId: widget.playlistCollectionId,
+  );
 
   /// 读 per-book 持久化倍速（无则 1.0）。
   double _readPersistedSpeed() {
@@ -5053,12 +5084,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return v.clamp(0.25, 4.0);
   }
 
-  /// 读 per-book 持久化音量（无则 100）。
+  /// 读持久化音量（无则 100）：系列键优先、回退本条目键（[videoVolumeReadKeys]）。
   double _readPersistedVolume() {
-    final Object? raw = appModel.prefsRepo.getPref(
-      _volumePrefKey,
-      defaultValue: 100.0,
-    );
+    Object? raw;
+    for (final String key in videoVolumeReadKeys(
+      bookUid: _activeBookUid,
+      collectionId: widget.playlistCollectionId,
+    )) {
+      raw = appModel.prefsRepo.getPref(key);
+      if (raw != null) break;
+    }
     final double v = raw is num
         ? raw.toDouble()
         : double.tryParse(raw?.toString() ?? '') ?? 100.0;
@@ -6591,6 +6626,74 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String _safeFileName(String input) =>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
+  /// 把后端这一集的默认外挂字幕下到临时目录（起播挂字幕与「只登记成菜单行」共用）。
+  ///
+  /// 与取流同一个主机侧集序号 [streamEpisodeIndex]：合集连播里 [index] 是合集内
+  /// 位置，每个成员在主机上都是单视频（恒 0）；传 [index] 主机必回 404，第 2 集起
+  /// 永远拿不到主机选定的外挂字幕（反馈 XmUBLYR1Ut，BUG-3615 漏的客户端一半）。
+  Future<File> _downloadRemoteBackendDefaultSubtitle(
+    RemoteVideoClient client,
+    RemoteVideoInfo info, {
+    required int index,
+    required int streamEpisodeIndex,
+    required String? fileName,
+    void Function(double progress)? onProgress,
+  }) async {
+    final Directory temp = await getTemporaryDirectory();
+    final File subtitle = File(
+      p.join(
+        temp.path,
+        _remoteSubtitleTempFileName('${info.id}_ep$index', fileName),
+      ),
+    );
+    await client.getRemoteVideoSubtitle(
+      info.id,
+      subtitle,
+      episodeIndex: streamEpisodeIndex,
+      onProgress: onProgress,
+    );
+    return subtitle;
+  }
+
+  /// 用户这一集已有别的字幕选择时，起播后把后端默认字幕下好、登记成菜单里的
+  /// 「服务端字幕」行（[RemoteBackendDefaultSubtitlePlan.listOnly]），不挂到播放上。
+  ///
+  /// 反馈 1QkmT2vVTm：此前这种情况根本不下载，`_remoteSubtitlePath` 留空，host 上的
+  /// 日语字幕从菜单消失、选不回来。失败只留痕（菜单如实没有这一行），换集作废。
+  Future<void> _listRemoteBackendDefaultSubtitle(
+    RemoteVideoClient client,
+    RemoteVideoInfo info, {
+    required int index,
+    required int streamEpisodeIndex,
+    required String? fileName,
+    required int seq,
+  }) async {
+    try {
+      final File subtitle = await _downloadRemoteBackendDefaultSubtitle(
+        client,
+        info,
+        index: index,
+        streamEpisodeIndex: streamEpisodeIndex,
+        fileName: fileName,
+      );
+      final List<AudioCue> cues = await _loadExternalSubtitleCues(
+        subtitle.path,
+        info.id,
+      );
+      if (seq != _episodeLoadSeq || !mounted) return;
+      if (cues.isEmpty) {
+        debugPrint(
+          '[VideoFushiPage] remote default subtitle not listed: '
+          'no cues parsed from ${p.basename(subtitle.path)}',
+        );
+        return;
+      }
+      _rebuild(() => _remoteSubtitlePath = subtitle.path);
+    } catch (e) {
+      debugPrint('[VideoFushiPage] remote default subtitle listing failed: $e');
+    }
+  }
+
   String _remoteSubtitleTempFileName(String videoId, String? hostFileName) {
     final String fallback = 'fushi_remote_${_safeFileName(videoId)}.srt';
     if (hostFileName == null || hostFileName.trim().isEmpty) return fallback;
@@ -7826,7 +7929,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       screen: screen,
       controller: _popup,
       wrapContent: _wrapPopupHoverProbe,
-      onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) {
+      onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans, String _) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
         // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一
         // 真实视口空间），直接复用，无需任何缩放换算。

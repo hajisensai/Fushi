@@ -191,6 +191,12 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             streamUrlId,
             episodeIndex,
           );
+      // 源文件平均码率：client「自动」档拿它和实测链路带宽比，决定原画直传还是转码
+      // （反馈 uaBRMzK_WM）。只在本机能转码时才算——转不了就没有可选的，client 也
+      // 不会去比。蓝光标题的 `file` 是 `.mpls`，大小不代表视频，不报。
+      final int? sourceBitrate = _videoTranscodeEnabled && disc == null
+          ? await _sourceBitrateOf(file, knownDurationMs: transcodeDurationMs)
+          : null;
       return jsonResponse(<String, dynamic>{
         // 蓝光标题给 EDL（各段地址都是 host 的 http(s) URL）：旧 client 不认
         // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
@@ -210,6 +216,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         // 自动档（局域网里就是不转码），若只回 `transcoded: false`，它就永远无从得知
         // 画质档可不可选，画质菜单会一直不出现。
         'transcodeAvailable': _videoTranscodeEnabled,
+        'sourceBitrate': ?sourceBitrate,
         // 既有字段语义（BUG-2590）：false = 流不是源容器原样，内嵌字幕不能指望
         // libmpv 自绘。转码把容器整个换掉了，必须如实报 false。
         'streamIsOriginalContainer': transcodeProfile == null,
@@ -975,6 +982,35 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   bool get _videoTranscodeEnabled =>
       readInterconnectTranscodeEnabled(_prefs) && transcodeAvailable();
 
+  /// [file] 的平均码率（bps，体积 × 8 ÷ 时长）；探不出时长返回 null。
+  ///
+  /// [knownDurationMs] 是本次请求已经为转码探过的时长，有就不再跑 ffprobe。结果按
+  /// 「路径 + 大小 + 修改时间」缓存，缓存上限 [_kSourceBitrateCacheCap] 条（满了整表
+  /// 清掉重来：只是省一次 ffprobe 的缓存，不值得 LRU）。
+  Future<int?> _sourceBitrateOf(File file, {int? knownDurationMs}) async {
+    final FileStat stat;
+    try {
+      stat = await file.stat();
+    } on FileSystemException {
+      return null;
+    }
+    if (stat.type != FileSystemEntityType.file) return null;
+    final String key =
+        '${file.path}|${stat.size}|${stat.modified.millisecondsSinceEpoch}';
+    if (_sourceBitrateCache.containsKey(key)) return _sourceBitrateCache[key];
+    final int? durationMs =
+        knownDurationMs ?? await probeVideoDurationMs(file.path);
+    final int? bitrate = averageBitrateBps(
+      sizeBytes: stat.size,
+      durationMs: durationMs,
+    );
+    if (_sourceBitrateCache.length >= _kSourceBitrateCacheCap) {
+      _sourceBitrateCache.clear();
+    }
+    _sourceBitrateCache[key] = bitrate;
+    return bitrate;
+  }
+
   /// 转码 HLS 的三条子路径：playlist / 初始化段 / 分段。
   ///
   /// 共用一次 token 校验与文件反查。token 里没有画质档 = 这条流当初就没按转码签发，
@@ -1216,6 +1252,9 @@ const int _maxVideoStreamTokens = 128;
 
 /// 蓝光加密段转发：解密回环在这么久里一个字节都没给出就截断本次响应。
 const Duration _kBlurayClipStallTimeout = Duration(seconds: 60);
+
+/// [FushiSyncServer._sourceBitrateOf] 缓存的条数上限。
+const int _kSourceBitrateCacheCap = 512;
 
 /// 光盘标题制卡抽帧用的低清转码档（制卡 GIF / 截图只要小图，见 `miningVideoUrl`）。
 const VideoTranscodeProfile _kDiscMiningTranscodeProfile =

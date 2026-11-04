@@ -587,11 +587,7 @@ fn composite_glyph(
 
 #[inline]
 fn sign(flag: u8, base: i32) -> i32 {
-    if flag & 1 != 0 {
-        base
-    } else {
-        -base
-    }
+    if flag & 1 != 0 { base } else { -base }
 }
 
 fn triplet_decode(flags: &[u8], g: &mut Reader, pts: &mut Vec<(i32, i32, bool)>) -> R<()> {
@@ -1133,8 +1129,14 @@ mod tests {
         let mut plain = 0u32;
         let mut head = 0u32;
         unsafe {
-            assert_eq!(ffc_font_table_checksum(data.as_ptr(), data.len(), 0, &mut plain), 0);
-            assert_eq!(ffc_font_table_checksum(data.as_ptr(), data.len(), 1, &mut head), 0);
+            assert_eq!(
+                ffc_font_table_checksum(data.as_ptr(), data.len(), 0, &mut plain),
+                0
+            );
+            assert_eq!(
+                ffc_font_table_checksum(data.as_ptr(), data.len(), 1, &mut head),
+                0
+            );
         }
         assert_eq!(plain, checksum(&data));
         let mut zeroed = data.clone();

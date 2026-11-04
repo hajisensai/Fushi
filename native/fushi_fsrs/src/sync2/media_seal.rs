@@ -63,7 +63,12 @@ fn read_full(r: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
 }
 
 /// 把 [r] 的明文流式封成新格式写进 [w]。
-pub fn seal_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, aad: &[u8]) -> Result<Sealed, String> {
+pub fn seal_stream(
+    key: &CollectionKey,
+    r: &mut impl Read,
+    w: &mut impl Write,
+    aad: &[u8],
+) -> Result<Sealed, String> {
     let mut prefix = [0u8; PREFIX_LEN];
     getrandom::fill(&mut prefix).map_err(|e| e.to_string())?;
     let mut ad = Vec::with_capacity(HEADER_LEN + aad.len());
@@ -83,7 +88,13 @@ pub fn seal_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, a
         sha.update(&buf[..n]);
         total += n as u64;
         let ct = cipher
-            .encrypt(&nonce(&prefix, i, last), Payload { msg: &buf[..n], aad: &ad })
+            .encrypt(
+                &nonce(&prefix, i, last),
+                Payload {
+                    msg: &buf[..n],
+                    aad: &ad,
+                },
+            )
             .map_err(|_| "media seal failed".to_owned())?;
         w.write_all(&ct).map_err(|e| e.to_string())?;
         if last {
@@ -92,7 +103,10 @@ pub fn seal_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, a
         i = i.checked_add(1).ok_or("media too large")?;
     }
     w.flush().map_err(|e| e.to_string())?;
-    Ok(Sealed { plain_len: total, sha256: sha.finalize().into() })
+    Ok(Sealed {
+        plain_len: total,
+        sha256: sha.finalize().into(),
+    })
 }
 
 /// 解不开的原因。媒体对账（Dart `srsSyncMedia`）据此决定要不要怪位置上那份对象：只有「对象本身坏了」才记可疑、
@@ -155,10 +169,22 @@ fn open_chunked(
     loop {
         let n = read_full(r, &mut buf).map_err(|e| OpenError::Io(e.to_string()))?;
         let last = n < buf.len();
-        let pt = cipher.decrypt(&nonce(&prefix, i, last), Payload { msg: &buf[..n], aad: &ad }).map_err(|_| {
-            // 第一块：密钥 / 名字还没被证明是对的。之后：前面的块已证明了，坏的是对象。
-            if i == 0 { OpenError::Unauthenticated } else { OpenError::Corrupt }
-        })?;
+        let pt = cipher
+            .decrypt(
+                &nonce(&prefix, i, last),
+                Payload {
+                    msg: &buf[..n],
+                    aad: &ad,
+                },
+            )
+            .map_err(|_| {
+                // 第一块：密钥 / 名字还没被证明是对的。之后：前面的块已证明了，坏的是对象。
+                if i == 0 {
+                    OpenError::Unauthenticated
+                } else {
+                    OpenError::Corrupt
+                }
+            })?;
         sha.update(&pt);
         total += pt.len() as u64;
         w.write_all(&pt).map_err(|e| OpenError::Io(e.to_string()))?;
@@ -168,11 +194,19 @@ fn open_chunked(
         i = i.checked_add(1).ok_or(OpenError::Corrupt)?;
     }
     w.flush().map_err(|e| OpenError::Io(e.to_string()))?;
-    Ok(Sealed { plain_len: total, sha256: sha.finalize().into() })
+    Ok(Sealed {
+        plain_len: total,
+        sha256: sha.finalize().into(),
+    })
 }
 
 /// 流式解封：边读边解边写 [w]。失败时 [w] 里可能已有部分明文，调用方丢弃。
-pub fn open_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, aad: &[u8]) -> Result<Sealed, OpenError> {
+pub fn open_stream(
+    key: &CollectionKey,
+    r: &mut impl Read,
+    w: &mut impl Write,
+    aad: &[u8],
+) -> Result<Sealed, OpenError> {
     let mut head = [0u8; HEADER_LEN];
     let n = read_full(r, &mut head).map_err(|e| OpenError::Io(e.to_string()))?;
     if n < HEADER_LEN || &head[..4] != MEDIA_MAGIC {
@@ -188,7 +222,8 @@ pub fn open_v1(key: &CollectionKey, sealed: &[u8], aad: &[u8]) -> Option<Vec<u8>
 
 /// 内存里封（小内容）。输出与 [seal_stream] 同格式。
 pub fn seal_bytes(key: &CollectionKey, plain: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
-    let mut out = Vec::with_capacity(HEADER_LEN + plain.len() + (plain.len() / MEDIA_CHUNK + 1) * TAG_LEN);
+    let mut out =
+        Vec::with_capacity(HEADER_LEN + plain.len() + (plain.len() / MEDIA_CHUNK + 1) * TAG_LEN);
     seal_stream(key, &mut io::Cursor::new(plain), &mut out, aad)?;
     Ok(out)
 }
@@ -201,15 +236,26 @@ pub fn open_bytes(key: &CollectionKey, sealed: &[u8], aad: &[u8]) -> Result<Vec<
 }
 
 /// 文件到文件地封：[src] 明文 → [dst] 新格式（先写同目录临时文件再改名，读者看不到半截）。
-pub fn seal_file(key: &CollectionKey, src: &Path, dst: &Path, aad: &[u8]) -> Result<Sealed, String> {
+pub fn seal_file(
+    key: &CollectionKey,
+    src: &Path,
+    dst: &Path,
+    aad: &[u8],
+) -> Result<Sealed, String> {
     let file = File::open(src).map_err(|e| format!("open {}: {e}", src.display()))?;
     let mut r = io::BufReader::with_capacity(MEDIA_CHUNK, file);
     write_atomically(dst, |w| seal_stream(key, &mut r, w, aad))
 }
 
 /// 文件到文件地解：解不开不留下 [dst]，也不留临时文件。
-pub fn open_file(key: &CollectionKey, src: &Path, dst: &Path, aad: &[u8]) -> Result<Sealed, OpenError> {
-    let file = File::open(src).map_err(|e| OpenError::Io(format!("open {}: {e}", src.display())))?;
+pub fn open_file(
+    key: &CollectionKey,
+    src: &Path,
+    dst: &Path,
+    aad: &[u8],
+) -> Result<Sealed, OpenError> {
+    let file =
+        File::open(src).map_err(|e| OpenError::Io(format!("open {}: {e}", src.display())))?;
     let mut r = io::BufReader::with_capacity(MEDIA_CHUNK, file);
     write_atomically(dst, |w| open_stream(key, &mut r, w, aad))
 }
@@ -221,8 +267,14 @@ fn write_atomically<E: From<String>>(
 ) -> Result<Sealed, E> {
     let mut rnd = [0u8; 6];
     getrandom::fill(&mut rnd).map_err(|e| e.to_string())?;
-    let mut name = dst.file_name().ok_or_else(|| "bad destination".to_owned())?.to_os_string();
-    name.push(format!(".part-{}", rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()));
+    let mut name = dst
+        .file_name()
+        .ok_or_else(|| "bad destination".to_owned())?
+        .to_os_string();
+    name.push(format!(
+        ".part-{}",
+        rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    ));
     let tmp = dst.with_file_name(name);
     let file = File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
     let mut out = TempOut(io::BufWriter::with_capacity(MEDIA_CHUNK, file));
@@ -233,7 +285,9 @@ fn write_atomically<E: From<String>>(
     });
     drop(out);
     let renamed = done.and_then(|s| {
-        std::fs::rename(&tmp, dst).map(|_| s).map_err(|e| E::from(format!("rename to {}: {e}", dst.display())))
+        std::fs::rename(&tmp, dst)
+            .map(|_| s)
+            .map_err(|e| E::from(format!("rename to {}: {e}", dst.display())))
     });
     if renamed.is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -263,12 +317,28 @@ mod tests {
 
     #[test]
     fn round_trips_every_length_around_chunk_boundaries() {
-        for len in [0, 1, MEDIA_CHUNK - 1, MEDIA_CHUNK, MEDIA_CHUNK + 1, 3 * MEDIA_CHUNK, 3 * MEDIA_CHUNK + 17] {
+        for len in [
+            0,
+            1,
+            MEDIA_CHUNK - 1,
+            MEDIA_CHUNK,
+            MEDIA_CHUNK + 1,
+            3 * MEDIA_CHUNK,
+            3 * MEDIA_CHUNK + 17,
+        ] {
             let plain: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
             let sealed = seal_bytes(&key(), &plain, b"aad").unwrap();
             assert_eq!(&sealed[..4], MEDIA_MAGIC);
-            assert_eq!(sealed.len(), HEADER_LEN + len + (len / MEDIA_CHUNK + 1) * TAG_LEN, "len {len}");
-            assert_eq!(open_bytes(&key(), &sealed, b"aad").unwrap(), plain, "len {len}");
+            assert_eq!(
+                sealed.len(),
+                HEADER_LEN + len + (len / MEDIA_CHUNK + 1) * TAG_LEN,
+                "len {len}"
+            );
+            assert_eq!(
+                open_bytes(&key(), &sealed, b"aad").unwrap(),
+                plain,
+                "len {len}"
+            );
         }
     }
 
@@ -294,7 +364,10 @@ mod tests {
             ("swapped chunks", &swapped),
             ("edited header", &edited),
         ] {
-            assert!(open_bytes(&key(), bytes, b"aad").is_err(), "{what} must not open");
+            assert!(
+                open_bytes(&key(), bytes, b"aad").is_err(),
+                "{what} must not open"
+            );
         }
         assert!(open_bytes(&key(), &sealed, b"other").is_err());
         assert!(open_bytes(&CollectionKey([8u8; 32]), &sealed, b"aad").is_err());
@@ -308,21 +381,57 @@ mod tests {
         let sealed = seal_bytes(&key(), &plain, b"aad").unwrap();
         let ct = MEDIA_CHUNK + TAG_LEN;
         let open = |b: &[u8], k: &CollectionKey, aad: &[u8]| open_bytes(k, b, aad).unwrap_err();
-        assert_eq!(open(&sealed, &CollectionKey([8u8; 32]), b"aad"), OpenError::Unauthenticated, "wrong key");
-        assert_eq!(open(&sealed, &key(), b"other"), OpenError::Unauthenticated, "wrong name");
+        assert_eq!(
+            open(&sealed, &CollectionKey([8u8; 32]), b"aad"),
+            OpenError::Unauthenticated,
+            "wrong key"
+        );
+        assert_eq!(
+            open(&sealed, &key(), b"other"),
+            OpenError::Unauthenticated,
+            "wrong name"
+        );
         let mut first = sealed.clone();
         first[HEADER_LEN + 3] ^= 1;
-        assert_eq!(open(&first, &key(), b"aad"), OpenError::Unauthenticated, "first chunk edited");
+        assert_eq!(
+            open(&first, &key(), b"aad"),
+            OpenError::Unauthenticated,
+            "first chunk edited"
+        );
         let mut later = sealed.clone();
         later[HEADER_LEN + 2 * ct + 3] ^= 1;
-        assert_eq!(open(&later, &key(), b"aad"), OpenError::Corrupt, "later chunk edited");
-        assert_eq!(open(&sealed[..sealed.len() - 3], &key(), b"aad"), OpenError::Corrupt, "truncated");
-        assert_eq!(open(&sealed[..HEADER_LEN + 2 * ct], &key(), b"aad"), OpenError::Corrupt, "cut at a boundary");
+        assert_eq!(
+            open(&later, &key(), b"aad"),
+            OpenError::Corrupt,
+            "later chunk edited"
+        );
+        assert_eq!(
+            open(&sealed[..sealed.len() - 3], &key(), b"aad"),
+            OpenError::Corrupt,
+            "truncated"
+        );
+        assert_eq!(
+            open(&sealed[..HEADER_LEN + 2 * ct], &key(), b"aad"),
+            OpenError::Corrupt,
+            "cut at a boundary"
+        );
         let mut size = sealed.clone();
         size[4..8].copy_from_slice(&0u32.to_le_bytes());
-        assert_eq!(open(&size, &key(), b"aad"), OpenError::Corrupt, "bad chunk size");
-        assert_eq!(open(&[], &key(), b"aad"), OpenError::Corrupt, "empty placeholder");
-        assert_eq!(open(&sealed[..10], &key(), b"aad"), OpenError::Corrupt, "shorter than any envelope");
+        assert_eq!(
+            open(&size, &key(), b"aad"),
+            OpenError::Corrupt,
+            "bad chunk size"
+        );
+        assert_eq!(
+            open(&[], &key(), b"aad"),
+            OpenError::Corrupt,
+            "empty placeholder"
+        );
+        assert_eq!(
+            open(&sealed[..10], &key(), b"aad"),
+            OpenError::Corrupt,
+            "shorter than any envelope"
+        );
         // 本机读写失败不是对象的错。
         let missing = std::env::temp_dir().join("fushi_media_seal_no_such_file");
         assert!(matches!(
@@ -337,7 +446,10 @@ mod tests {
     fn v1_envelopes_open_only_through_the_migrator() {
         let plain = b"old media".repeat(1000);
         let v1 = key().seal(&plain, b"aad");
-        assert_eq!(open_bytes(&key(), &v1, b"aad").unwrap_err(), OpenError::Corrupt);
+        assert_eq!(
+            open_bytes(&key(), &v1, b"aad").unwrap_err(),
+            OpenError::Corrupt
+        );
         assert_eq!(open_v1(&key(), &v1, b"aad").unwrap(), plain);
         assert!(open_v1(&key(), &v1, b"other").is_none());
         assert!(open_v1(&CollectionKey([8u8; 32]), &v1, b"aad").is_none());
@@ -352,13 +464,22 @@ mod tests {
         std::fs::write(&src, &plain).unwrap();
         let s = seal_file(&key(), &src, &sealed, b"aad").unwrap();
         let want: [u8; 32] = Sha256::digest(&plain).into();
-        assert_eq!(s, Sealed { plain_len: plain.len() as u64, sha256: want });
+        assert_eq!(
+            s,
+            Sealed {
+                plain_len: plain.len() as u64,
+                sha256: want
+            }
+        );
         assert_eq!(open_file(&key(), &sealed, &back, b"aad").unwrap(), s);
         assert_eq!(std::fs::read(&back).unwrap(), plain);
         // 解不开：不留目标、不留临时文件。
         std::fs::remove_file(&back).unwrap();
         assert!(open_file(&key(), &sealed, &back, b"wrong").is_err());
-        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
         assert_eq!(left.len(), 2, "{left:?}");
         std::fs::remove_dir_all(&dir).unwrap();
     }

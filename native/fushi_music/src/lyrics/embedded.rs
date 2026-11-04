@@ -24,14 +24,21 @@ pub enum Embedded {
     /// 文本（可能是 LRC）：(来源键, 文本)。
     Text { key: String, text: String },
     /// ID3v2 SYLT（毫秒制）：(语言, 事件)。
-    Sylt { language: String, events: Vec<(u32, String)> },
+    Sylt {
+        language: String,
+        events: Vec<(u32, String)>,
+    },
 }
 
 pub fn read(path: &Path) -> Result<Vec<Embedded>, String> {
     let mut out = Vec::new();
     let tagged = Probe::open(path)
         .map_err(|e| e.to_string())?
-        .options(ParseOptions::new().read_properties(false).read_cover_art(false))
+        .options(
+            ParseOptions::new()
+                .read_properties(false)
+                .read_cover_art(false),
+        )
         .guess_file_type()
         .map_err(|e| e.to_string())?
         .read()
@@ -41,7 +48,11 @@ pub fn read(path: &Path) -> Result<Vec<Embedded>, String> {
         for key in [&ItemKey::Lyrics, &unsynced] {
             for v in tag.get_strings(key) {
                 let v = v.trim_matches('\0');
-                if !v.trim().is_empty() && !out.iter().any(|e| matches!(e, Embedded::Text { text, .. } if text == v)) {
+                if !v.trim().is_empty()
+                    && !out
+                        .iter()
+                        .any(|e| matches!(e, Embedded::Text { text, .. } if text == v))
+                {
                     out.push(Embedded::Text {
                         key: match key {
                             ItemKey::Lyrics => "lyrics".to_owned(),
@@ -53,26 +64,43 @@ pub fn read(path: &Path) -> Result<Vec<Embedded>, String> {
             }
         }
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if ext == "mp3" {
         if let Ok(f) = File::open(path) {
             let mut r = BufReader::new(f);
-            if let Ok(mpeg) = MpegFile::read_from(&mut r, ParseOptions::new().read_properties(false).read_cover_art(false)) {
+            if let Ok(mpeg) = MpegFile::read_from(
+                &mut r,
+                ParseOptions::new()
+                    .read_properties(false)
+                    .read_cover_art(false),
+            ) {
                 if let Some(id3) = mpeg.id3v2() {
                     for frame in id3 {
                         let Frame::Binary(bin) = frame else { continue };
                         if frame.id_str() != "SYLT" {
                             continue;
                         }
-                        let Ok(sylt) = SynchronizedTextFrame::parse(&bin.data, frame.flags()) else { continue };
+                        let Ok(sylt) = SynchronizedTextFrame::parse(&bin.data, frame.flags())
+                        else {
+                            continue;
+                        };
                         if sylt.timestamp_format != TimestampFormat::MS {
                             continue;
                         }
-                        if !matches!(sylt.content_type, SyncTextContentType::Lyrics | SyncTextContentType::TextTranscription) {
+                        if !matches!(
+                            sylt.content_type,
+                            SyncTextContentType::Lyrics | SyncTextContentType::TextTranscription
+                        ) {
                             continue;
                         }
                         out.push(Embedded::Sylt {
-                            language: String::from_utf8_lossy(&sylt.language).trim_matches('\0').to_owned(),
+                            language: String::from_utf8_lossy(&sylt.language)
+                                .trim_matches('\0')
+                                .to_owned(),
                             events: sylt.content,
                         });
                     }
@@ -84,7 +112,11 @@ pub fn read(path: &Path) -> Result<Vec<Embedded>, String> {
 }
 
 /// SYLT 事件 → 时间轴：事件文本以换行开头（或上一事件以换行结尾）= 新行；每个事件一个音节。
-pub fn sylt_timeline(language: &str, events: &[(u32, String)], duration_ms: Option<i64>) -> Timeline {
+pub fn sylt_timeline(
+    language: &str,
+    events: &[(u32, String)],
+    duration_ms: Option<i64>,
+) -> Timeline {
     let mut t = Timeline::new("sylt", TimingQuality::Word);
     t.meta.language = (!language.is_empty() && language != "XXX").then(|| language.to_owned());
     let mut cur = Line::default();

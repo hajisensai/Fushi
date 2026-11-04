@@ -7,37 +7,64 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
 
-use super::{applied_vv, in_savepoint, insert_op, load_op, observe_remote, project, replay_cards, replay_touched, sql, Local, Touched};
+use super::{
+    Local, Touched, applied_vv, in_savepoint, insert_op, load_op, observe_remote, project,
+    replay_cards, replay_touched, sql,
+};
 use crate::store::SrsCore;
 use crate::sync2::codec::{Reader, ZstdWindow};
 use crate::sync2::hlc::{Hlc, MAX_AHEAD_MS};
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
 use crate::sync2::op::{Body, Op};
-use crate::sync2::segment::{self, chain_next, Chain, Head, CHAIN_ZERO};
+use crate::sync2::segment::{self, CHAIN_ZERO, Chain, Head, chain_next};
 use crate::sync2::vv::{OpId, Vv};
 
-fn chain_at(conn: &Connection, profile: &str, device: &Id, seq: u64) -> Result<Option<Chain>, String> {
+fn chain_at(
+    conn: &Connection,
+    profile: &str,
+    device: &Id,
+    seq: u64,
+) -> Result<Option<Chain>, String> {
     if seq == 0 {
         return Ok(Some(CHAIN_ZERO));
     }
-    conn.prepare_cached("SELECT chain FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
-        .map_err(sql)?
-        .query_row(params![profile, device.0.to_vec(), seq as i64], |r| r.get::<_, Vec<u8>>(0))
-        .optional()
-        .map_err(sql)?
-        .map(|b| b.try_into().map_err(|_| "bad chain".to_string()))
-        .transpose()
+    conn.prepare_cached(
+        "SELECT chain FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
+    )
+    .map_err(sql)?
+    .query_row(params![profile, device.0.to_vec(), seq as i64], |r| {
+        r.get::<_, Vec<u8>>(0)
+    })
+    .optional()
+    .map_err(sql)?
+    .map(|b| b.try_into().map_err(|_| "bad chain".to_string()))
+    .transpose()
 }
 
 //// 本机 seq 闭区间 [first, last] 的操作逐条喂进切段器（不把整段攒在内存里）。
-fn split_seq_range(conn: &Connection, local: &Local, first: u64, last: u64) -> Result<Vec<(u64, u64, u64)>, String> {
+fn split_seq_range(
+    conn: &Connection,
+    local: &Local,
+    first: u64,
+    last: u64,
+) -> Result<Vec<(u64, u64, u64)>, String> {
     let mut s = segment::Splitter::new();
     for seq in first..=last {
-        s.push(load_op(conn, &local.profile, &OpId { device: local.device, seq })?.ok_or("missing local op")?);
+        s.push(
+            load_op(
+                conn,
+                &local.profile,
+                &OpId {
+                    device: local.device,
+                    seq,
+                },
+            )?
+            .ok_or("missing local op")?,
+        );
     }
     Ok(s.finish())
 }
@@ -73,7 +100,10 @@ fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, Str
             .map_err(sql)?;
         }
     }
-    Ok(segments_of(conn, local)?.into_iter().map(|(a, b, _)| (a, b)).collect())
+    Ok(segments_of(conn, local)?
+        .into_iter()
+        .map(|(a, b, _)| (a, b))
+        .collect())
 }
 
 /// 分层合并（设计 §7.1）：每轮同步切出的小段按体积分层（[COMPACT_BASE] 起每 [COMPACT_FANOUT] 倍一层），同层相邻
@@ -116,14 +146,23 @@ pub(super) fn compaction_plan(segs: &[(u64, u64, u64)]) -> Vec<CompactGroup> {
             flush(&mut stack, &mut merges);
             continue;
         }
-        stack.push(CompactGroup { segs: vec![(a, b)], bytes });
+        stack.push(CompactGroup {
+            segs: vec![(a, b)],
+            bytes,
+        });
         while stack.len() >= COMPACT_FANOUT {
             let n = stack.len();
             let t = compact_tier(stack[n - 1].bytes);
-            if !stack[n - COMPACT_FANOUT..].iter().all(|g| compact_tier(g.bytes) == t) {
+            if !stack[n - COMPACT_FANOUT..]
+                .iter()
+                .all(|g| compact_tier(g.bytes) == t)
+            {
                 break;
             }
-            let mut merged = CompactGroup { segs: Vec::new(), bytes: 0 };
+            let mut merged = CompactGroup {
+                segs: Vec::new(),
+                bytes: 0,
+            };
             for g in stack.drain(n - COMPACT_FANOUT..) {
                 merged.segs.extend(g.segs);
                 merged.bytes += g.bytes;
@@ -144,7 +183,10 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
     let mut segs = segments_of(conn, local)?;
     // 升级前切的老段：补算体积（一次性；之后的段切的时候就记下了）。
     for s in segs.iter_mut().filter(|s| s.2 == 0) {
-        let est: u64 = split_seq_range(conn, local, s.0, s.1)?.iter().map(|x| x.2).sum();
+        let est: u64 = split_seq_range(conn, local, s.0, s.1)?
+            .iter()
+            .map(|x| x.2)
+            .sum();
         s.2 = est.max(1);
         conn.execute(
             "UPDATE sync2_segments SET bytes = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2 AND first = ?3",
@@ -153,9 +195,13 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
         .map_err(sql)?;
     }
     let locations: Vec<(String, u64)> = conn
-        .prepare_cached("SELECT location, uploaded FROM sync2_locations WHERE profile_uid = srs_id(?1)")
+        .prepare_cached(
+            "SELECT location, uploaded FROM sync2_locations WHERE profile_uid = srs_id(?1)",
+        )
         .map_err(sql)?
-        .query_map([&local.profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))
+        .query_map([&local.profile], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
+        })
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
@@ -166,8 +212,14 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
             continue;
         }
         for (a, b) in &group.segs {
-            let tag = segment::chain_tag(&chain_at(conn, &local.profile, &local.device, *b)?.ok_or("missing chain")?);
-            let name = format!("devices/{}/{}", local.device.text(), segment::segment_file_name(*a, *b, &tag));
+            let tag = segment::chain_tag(
+                &chain_at(conn, &local.profile, &local.device, *b)?.ok_or("missing chain")?,
+            );
+            let name = format!(
+                "devices/{}/{}",
+                local.device.text(),
+                segment::segment_file_name(*a, *b, &tag)
+            );
             for (loc, uploaded) in &locations {
                 if *uploaded >= *b {
                     conn.prepare_cached(
@@ -224,7 +276,13 @@ pub(crate) const OBSOLETE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 /// 两段式（集成审查【中】）：这里只给清单、**不**从待删表移除。以前取出即删记录，而 Dart 之后才上传 head、最后才删
 /// 文件——head 上传或删除中途抛错，这批旧段就永远没人再删。现在记录留到 Dart 删成功后发 `obsolete_ack`
 /// （[SrsCore::sync2_obsolete_ack]）才移除；没 ack 的下一轮照样再给（删除对已不在的文件幂等）。
-fn stamp_obsolete(conn: &Connection, local: &Local, location: &str, gen: u64, now: i64) -> Result<(), String> {
+fn stamp_obsolete(
+    conn: &Connection,
+    local: &Local,
+    location: &str,
+    gen: u64,
+    now: i64,
+) -> Result<(), String> {
     conn.prepare_cached(
         "UPDATE sync2_obsolete SET since_gen = ?3, since_at = ?4 WHERE profile_uid = srs_id(?1) AND location = ?2 AND since_gen IS NULL",
     )
@@ -236,7 +294,13 @@ fn stamp_obsolete(conn: &Connection, local: &Local, location: &str, gen: u64, no
 
 /// [location] 上此刻该删、还没确认删掉的文件：过了代号与宽限期的旧小段（[gen] = 本机在这个位置上最新的 head 代号），
 /// 加上转发清理（relay.rs `sync2_relay_ack`）留下的被取代的旧转发件 / 旧转发 head。只读，不改表。
-pub(crate) fn pending_deletes(conn: &Connection, profile: &str, location: &str, gen: u64, now: i64) -> Result<Vec<String>, String> {
+pub(crate) fn pending_deletes(
+    conn: &Connection,
+    profile: &str,
+    location: &str,
+    gen: u64,
+    now: i64,
+) -> Result<Vec<String>, String> {
     let mut names: Vec<String> = conn
         .prepare_cached(
             "SELECT name FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 AND since_gen + ?3 <= ?4 AND since_at + ?5 <= ?6 \
@@ -303,7 +367,9 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
 /// 一台设备的 head 是否已记下（[record_head] 这一次是空操作）。
 fn head_recorded(c: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
     let gen: Option<i64> = c
-        .prepare_cached("SELECT head_gen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
+        .prepare_cached(
+            "SELECT head_gen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2",
+        )
         .map_err(sql)?
         .query_row(params![profile, h.device.0.to_vec()], |r| r.get(0))
         .optional()
@@ -312,7 +378,13 @@ fn head_recorded(c: &Connection, profile: &str, h: &Head) -> Result<bool, String
 }
 
 /// 这台设备在 `seq` 闭区间 [a, b] 的操作是否全在因果缓冲里（按主键区间数，不把整台设备的缓冲读进内存，审查 S-6）。
-fn pending_covers(c: &Connection, profile: &str, device: &Id, a: u64, b: u64) -> Result<bool, String> {
+fn pending_covers(
+    c: &Connection,
+    profile: &str,
+    device: &Id,
+    a: u64,
+    b: u64,
+) -> Result<bool, String> {
     let n: i64 = c
         .prepare_cached("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq BETWEEN ?3 AND ?4")
         .map_err(sql)?
@@ -326,9 +398,19 @@ fn fork_key(profile: &str) -> String {
     format!("sync2_fork_at/{profile}")
 }
 
-pub(crate) fn recorded_fork(c: &Connection, profile: &str, device: &Id) -> Result<Option<u64>, String> {
-    let v: Option<String> =
-        c.query_row("SELECT value FROM srs_meta WHERE key = ?1", [fork_key(profile)], |r| r.get(0)).optional().map_err(sql)?;
+pub(crate) fn recorded_fork(
+    c: &Connection,
+    profile: &str,
+    device: &Id,
+) -> Result<Option<u64>, String> {
+    let v: Option<String> = c
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = ?1",
+            [fork_key(profile)],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(sql)?;
     Ok(v.and_then(|v| {
         let (d, k) = v.split_once(':')?;
         (d == device.text()).then(|| k.parse().ok()).flatten()
@@ -345,17 +427,24 @@ fn record_fork(c: &Connection, profile: &str, device: &Id, k: u64) -> Result<(),
 }
 
 fn clear_fork(c: &Connection, profile: &str) -> Result<(), String> {
-    c.execute("DELETE FROM srs_meta WHERE key = ?1", [fork_key(profile)]).map_err(sql)?;
+    c.execute("DELETE FROM srs_meta WHERE key = ?1", [fork_key(profile)])
+        .map_err(sql)?;
     Ok(())
 }
 
 /// 本机身份分叉时要拉的本机身份的段（审查 S-12）：head 里的段按 seq 升序，前面与本机链值相同的是共同前缀（链值是
 /// 哈希链，一旦分开就不会再相同，可以二分）。只拉第一处不同的前一段起（段名里的链值只有 4 字节，多拉一段让收段时
 /// 逐条比完整链值兜住标签碰撞）。
-fn own_fork_files(c: &Connection, profile: &str, local: &Local, h: &Head) -> Result<Vec<String>, String> {
+fn own_fork_files(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    h: &Head,
+) -> Result<Vec<String>, String> {
     let same = |i: usize| -> Result<bool, String> {
         let (_, b, tag) = &h.segments[i];
-        Ok(chain_at(c, profile, &local.device, *b)?.is_some_and(|ours| segment::chain_tag(&ours) == *tag))
+        Ok(chain_at(c, profile, &local.device, *b)?
+            .is_some_and(|ours| segment::chain_tag(&ours) == *tag))
     };
     let (mut lo, mut hi) = (0usize, h.segments.len());
     while lo < hi {
@@ -369,12 +458,24 @@ fn own_fork_files(c: &Connection, profile: &str, local: &Local, h: &Head) -> Res
     let from = lo.saturating_sub(1);
     Ok(h.segments[from..]
         .iter()
-        .map(|(a, b, t)| format!("devices/{}/{}", h.device.text(), segment::segment_file_name(*a, *b, t)))
+        .map(|(a, b, t)| {
+            format!(
+                "devices/{}/{}",
+                h.device.text(),
+                segment::segment_file_name(*a, *b, t)
+            )
+        })
         .collect())
 }
 
 /// 看 head（[SrsCore::sync2_plan_at]）。[write] 为假时 [c] 是读连接：要记东西就返回 None（调用方进写锁重来）。
-fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>, write: bool) -> Result<Option<Value>, String> {
+fn plan(
+    c: &Connection,
+    profile: &str,
+    heads: &[Vec<u8>],
+    location: Option<&str>,
+    write: bool,
+) -> Result<Option<Value>, String> {
     let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
     let mut fetch = Vec::new();
     let mut rejected = Vec::new();
@@ -444,7 +545,11 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
         let mut files: Vec<String> = Vec::new();
         for (a, b, t) in &h.segments {
             if *b > applied && !pending_covers(c, profile, &h.device, (*a).max(applied + 1), *b)? {
-                files.push(format!("devices/{}/{}", h.device.text(), segment::segment_file_name(*a, *b, t)));
+                files.push(format!(
+                    "devices/{}/{}",
+                    h.device.text(),
+                    segment::segment_file_name(*a, *b, t)
+                ));
             }
         }
         if !files.is_empty() {
@@ -466,7 +571,10 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
     for (device, names) in relay {
         let dir = format!("devices/{}", device.text());
         let extra: Vec<String> = names.into_iter().map(|n| format!("{dir}/{n}")).collect();
-        match fetch.iter_mut().find(|f| f["device"] == json!(device.text()) && f["own"] == json!(false)) {
+        match fetch
+            .iter_mut()
+            .find(|f| f["device"] == json!(device.text()) && f["own"] == json!(false))
+        {
             Some(f) => {
                 let files = f["files"].as_array_mut().ok_or("plan: files")?;
                 for p in extra {
@@ -484,7 +592,9 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
         || cache_is_pending(c, profile)?
         || super::channel::active(c, profile)?
         || (fork && known_fork.is_some());
-    Ok(Some(json!({"fetch": fetch, "fork": fork, "rejected": rejected, "finishPending": finish, "needsUpgrade": needs_upgrade})))
+    Ok(Some(
+        json!({"fetch": fetch, "fork": fork, "rejected": rejected, "finishPending": finish, "needsUpgrade": needs_upgrade}),
+    ))
 }
 
 /// 一条等着投递的远端操作：本轮刚收的（已解码），或在缓冲表里的（内存里只有链值，轮到它才从表里读出解码）。
@@ -524,17 +634,21 @@ const DELIVERY_HELD_BYTES: usize = 16 * 1024 * 1024;
 const DELIVERY_HELD_BYTES: usize = 2 * 1024;
 
 fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
-    c.prepare_cached("UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = srs_id(?1) AND device = ?2")
-        .map_err(sql)?
-        .execute(params![profile, device.0.to_vec()])
-        .map_err(sql)?;
+    c.prepare_cached(
+        "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = srs_id(?1) AND device = ?2",
+    )
+    .map_err(sql)?
+    .execute(params![profile, device.0.to_vec()])
+    .map_err(sql)?;
     Ok(())
 }
 
 /// 删一行缓冲；返回删掉的行数。
 fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<i64, String> {
     let n = c
-        .prepare_cached("DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
+        .prepare_cached(
+            "DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
+        )
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64])
         .map_err(sql)?;
@@ -606,7 +720,13 @@ pub(crate) fn bump_delivery_epoch() {
 impl Delivery {
     /// 等着的操作条数（缓冲表 + 本轮刚收、还没写进去的）= 这一片收尾后缓冲表的行数（不再每片 COUNT(*)）。
     fn pending(&self) -> i64 {
-        self.stored_rows + self.queues.values().flat_map(|q| q.values()).filter(|h| !h.stored).count() as i64
+        self.stored_rows
+            + self
+                .queues
+                .values()
+                .flat_map(|q| q.values())
+                .filter(|h| !h.stored)
+                .count() as i64
     }
 
     /// 内存里的队列项数（测试断言分窗上限用）。
@@ -640,7 +760,11 @@ impl Delivery {
             .map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
-            let device = Id(r.get::<_, Vec<u8>>(0).map_err(sql)?.try_into().map_err(|_| "bad device")?);
+            let device = Id(r
+                .get::<_, Vec<u8>>(0)
+                .map_err(sql)?
+                .try_into()
+                .map_err(|_| "bad device")?);
             stored_rows += r.get::<_, i64>(1).map_err(sql)?;
             queues.insert(device, BTreeMap::new());
             loaded.insert(device, 0);
@@ -668,18 +792,32 @@ impl Delivery {
                 continue;
             }
             // 缓冲表里已有同一 (设备, seq) 的以它为准（与原先 INSERT OR IGNORE 一样）。
-            if let std::collections::btree_map::Entry::Vacant(v) =
-                self.queues.entry(op.id.device).or_default().entry(op.id.seq)
+            if let std::collections::btree_map::Entry::Vacant(v) = self
+                .queues
+                .entry(op.id.device)
+                .or_default()
+                .entry(op.id.seq)
             {
                 self.held += held_bytes(&op);
-                v.insert(Held { op: Some(op), chain, stored: false });
+                v.insert(Held {
+                    op: Some(op),
+                    chain,
+                    stored: false,
+                });
             }
         }
     }
 
     /// 投完能投的（预算用完就停在这里，[budget] 记下截停）；还在等的操作超过 [DELIVERY_HELD_BYTES] 就写进
     /// 缓冲表、内存里只留链值。
-    fn drain(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
+    fn drain(
+        &mut self,
+        c: &Connection,
+        profile: &str,
+        now: i64,
+        t: &mut Touched,
+        budget: &mut CommitBudget<'_>,
+    ) -> Result<(), String> {
         self.deliver_ready(c, profile, now, t, budget)?;
         if self.held > DELIVERY_HELD_BYTES {
             self.spill(c, profile)?;
@@ -709,8 +847,14 @@ impl Delivery {
             if q.len() <= DELIVERY_WINDOW {
                 continue;
             }
-            debug_assert!(q.values().all(|h| h.stored), "trim before every queued op is stored");
-            let cut = *q.keys().nth(DELIVERY_WINDOW - 1).expect("longer than the window");
+            debug_assert!(
+                q.values().all(|h| h.stored),
+                "trim before every queued op is stored"
+            );
+            let cut = *q
+                .keys()
+                .nth(DELIVERY_WINDOW - 1)
+                .expect("longer than the window");
             let upto = self.loaded.get(device).map_or(cut, |&l| l.min(cut));
             for (_, held) in q.split_off(&(upto + 1)) {
                 self.held -= held.op.as_ref().map_or(0, held_bytes);
@@ -729,21 +873,38 @@ impl Delivery {
         loaded: &mut BTreeMap<Id, u64>,
         mem: &mut usize,
     ) -> Result<(), String> {
-        let Some(&from) = loaded.get(device) else { return Ok(()) };
+        let Some(&from) = loaded.get(device) else {
+            return Ok(());
+        };
         let mut stmt = c
             .prepare_cached(
                 "SELECT seq, chain FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq > ?3 ORDER BY seq LIMIT ?4",
             )
             .map_err(sql)?;
-        let mut rows = stmt.query(params![profile, device.0.to_vec(), from as i64, DELIVERY_WINDOW as i64]).map_err(sql)?;
+        let mut rows = stmt
+            .query(params![
+                profile,
+                device.0.to_vec(),
+                from as i64,
+                DELIVERY_WINDOW as i64
+            ])
+            .map_err(sql)?;
         let mut n = 0usize;
         let mut last = from;
         while let Some(r) = rows.next().map_err(sql)? {
             let seq = r.get::<_, i64>(0).map_err(sql)? as u64;
-            let chain: Chain = r.get::<_, Vec<u8>>(1).map_err(sql)?.try_into().map_err(|_| "bad chain")?;
+            let chain: Chain = r
+                .get::<_, Vec<u8>>(1)
+                .map_err(sql)?
+                .try_into()
+                .map_err(|_| "bad chain")?;
             match q.entry(seq) {
                 std::collections::btree_map::Entry::Vacant(v) => {
-                    v.insert(Held { op: None, chain, stored: true });
+                    v.insert(Held {
+                        op: None,
+                        chain,
+                        stored: true,
+                    });
                 }
                 std::collections::btree_map::Entry::Occupied(mut o) => {
                     let h = o.get_mut();
@@ -765,8 +926,29 @@ impl Delivery {
         Ok(())
     }
 
-    fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
-        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, channel, retired, .. } = self;
+    fn deliver_ready(
+        &mut self,
+        c: &Connection,
+        profile: &str,
+        now: i64,
+        t: &mut Touched,
+        budget: &mut CommitBudget<'_>,
+    ) -> Result<(), String> {
+        let Delivery {
+            vv,
+            queues,
+            loaded,
+            stored_rows,
+            chains,
+            applied,
+            forked,
+            held: mem,
+            seen,
+            ahead,
+            channel,
+            retired,
+            ..
+        } = self;
         let mut dropped: Vec<Id> = Vec::new();
         'all: loop {
             let mut progress = false;
@@ -779,7 +961,9 @@ impl Delivery {
                             continue;
                         }
                     }
-                    let Some(mut entry) = q.first_entry() else { break };
+                    let Some(mut entry) = q.first_entry() else {
+                        break;
+                    };
                     let seq = *entry.key();
                     let have = vv.get(device);
                     if seq <= have {
@@ -819,7 +1003,11 @@ impl Delivery {
                                 params![profile, device.0.to_vec(), seq as i64],
                             )
                             .map_err(sql)? as i64;
-                        *mem -= q.values().filter_map(|h| h.op.as_ref()).map(held_bytes).sum::<usize>();
+                        *mem -= q
+                            .values()
+                            .filter_map(|h| h.op.as_ref())
+                            .map(held_bytes)
+                            .sum::<usize>();
                         q.clear();
                         loaded.remove(device);
                         dropped.push(*device);
@@ -875,7 +1063,13 @@ impl Delivery {
         if let Some(ch) = self.channel.as_mut() {
             ch.checkpoint(c, profile)?;
         }
-        observe_remote(c, profile, self.seen.take(), &std::mem::take(&mut self.ahead), now)?;
+        observe_remote(
+            c,
+            profile,
+            self.seen.take(),
+            &std::mem::take(&mut self.ahead),
+            now,
+        )?;
         for (device, chain) in std::mem::take(&mut self.chains) {
             c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2")
                 .map_err(sql)?
@@ -896,7 +1090,14 @@ impl Delivery {
 }
 
 /// 写进缓冲表；返回新增的行数（同一 (设备, seq) 已在表里 = 0，以表里的为准）。
-fn store_pending(c: &Connection, profile: &str, device: &Id, seq: u64, op: &Op, chain: &Chain) -> Result<i64, String> {
+fn store_pending(
+    c: &Connection,
+    profile: &str,
+    device: &Id,
+    seq: u64,
+    op: &Op,
+    chain: &Chain,
+) -> Result<i64, String> {
     let n = c
         .prepare_cached("INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
         .map_err(sql)?
@@ -938,12 +1139,22 @@ const BOOTSTRAP_SLICE: std::time::Duration = std::time::Duration::from_millis(10
 impl<'a> CommitBudget<'a> {
     /// 不切片：一次做完（一次收完的 [SrsCore::sync2_ingest]、[SrsCore::sync2_ingest_batch]、导入）。
     pub fn unlimited() -> CommitBudget<'static> {
-        CommitBudget { left: usize::MAX, deadline: None, yield_to: None, floor: 0, stopped: false, stretchable: false }
+        CommitBudget {
+            left: usize::MAX,
+            deadline: None,
+            yield_to: None,
+            floor: 0,
+            stopped: false,
+            stretchable: false,
+        }
     }
 
     /// 一片：最长 [COMMIT_SLICE]，[yield_to] 置位就提前收。
     pub fn slice(yield_to: &'a std::sync::atomic::AtomicBool) -> CommitBudget<'a> {
-        CommitBudget { stretchable: true, ..CommitBudget::slice_within(yield_to, COMMIT_SLICE) }
+        CommitBudget {
+            stretchable: true,
+            ..CommitBudget::slice_within(yield_to, COMMIT_SLICE)
+        }
     }
 
     /// 默认片（[CommitBudget::slice]）的时间上限改成 [max]（从开片算起）；另给了时间或条数的片不动。
@@ -954,7 +1165,10 @@ impl<'a> CommitBudget<'a> {
     }
 
     /// 一片，时间上限另给（测试用：给得很长，切点就只来自让出请求）。
-    pub fn slice_within(yield_to: &'a std::sync::atomic::AtomicBool, max: std::time::Duration) -> CommitBudget<'a> {
+    pub fn slice_within(
+        yield_to: &'a std::sync::atomic::AtomicBool,
+        max: std::time::Duration,
+    ) -> CommitBudget<'a> {
         CommitBudget {
             left: usize::MAX,
             deadline: Some(std::time::Instant::now() + max),
@@ -981,7 +1195,14 @@ impl<'a> CommitBudget<'a> {
 
     /// 按条数切的一片（测试用：切点确定）。
     pub fn ops(n: usize) -> CommitBudget<'static> {
-        CommitBudget { left: n.max(1), deadline: None, yield_to: None, floor: 0, stopped: false, stretchable: false }
+        CommitBudget {
+            left: n.max(1),
+            deadline: None,
+            yield_to: None,
+            floor: 0,
+            stopped: false,
+            stretchable: false,
+        }
     }
 
     /// 一次处理了 [n] 条（收段通道折一个分区，channel.rs）：按 [n] 条扣，扣完再看是否还能接着做。
@@ -998,8 +1219,12 @@ impl<'a> CommitBudget<'a> {
             return false;
         }
         let over = self.floor == 0
-            && (self.deadline.is_some_and(|d| std::time::Instant::now() >= d)
-                || self.yield_to.is_some_and(|y| y.load(std::sync::atomic::Ordering::Relaxed)));
+            && (self
+                .deadline
+                .is_some_and(|d| std::time::Instant::now() >= d)
+                || self
+                    .yield_to
+                    .is_some_and(|y| y.load(std::sync::atomic::Ordering::Relaxed)));
         if self.left == 0 || over {
             self.stopped = true;
             return false;
@@ -1164,9 +1389,13 @@ fn prepare_ingest<'a>(
     let mut items: Vec<PreparedSegment> = Vec::with_capacity(segments.len());
     for (index, bytes) in segments.iter().enumerate() {
         match segment::peek_header(bytes) {
-            Ok(h) if h.collection == local.collection => {
-                items.push(PreparedSegment { header: h, index, public: None, outcome: Outcome::Unknown, consumed: 0 })
-            }
+            Ok(h) if h.collection == local.collection => items.push(PreparedSegment {
+                header: h,
+                index,
+                public: None,
+                outcome: Outcome::Unknown,
+                consumed: 0,
+            }),
             Ok(_) => {}
             Err(e) => peek_errors.push(e.to_string()),
         }
@@ -1209,7 +1438,13 @@ fn device_public(c: &Connection, profile: &str, device: &Id) -> Result<Option<[u
 }
 
 /// 验一段：签名 → 解密 → 解压 → 解码 → 重算链。[budget] 是还能留的已解码字节，留下的从里面扣。
-fn verify_segment(bytes: &[u8], header: &segment::SegmentHeader, public: Option<[u8; 32]>, key: Option<&CollectionKey>, budget: &mut u64) -> Outcome {
+fn verify_segment(
+    bytes: &[u8],
+    header: &segment::SegmentHeader,
+    public: Option<[u8; 32]>,
+    key: Option<&CollectionKey>,
+    budget: &mut u64,
+) -> Outcome {
     let Some(public) = public else {
         return Outcome::Unknown;
     };
@@ -1245,19 +1480,35 @@ impl PreparedIngest<'_> {
         let ck = self.key.map(CollectionKey);
         let mut budget = PREPARED_RAW_BUDGET;
         for item in &mut self.items {
-            item.outcome = verify_segment(&self.segments[item.index], &item.header, item.public, ck.as_ref(), &mut budget);
+            item.outcome = verify_segment(
+                &self.segments[item.index],
+                &item.header,
+                item.public,
+                ck.as_ref(),
+                &mut budget,
+            );
         }
     }
 }
 
 /// 预处理之后本机身份（公钥 / 集合）变了：还没投完的段（从 [PreparedIngest::next] 起，截在中间的那段整段重来——
 /// 已投的操作再来一遍只比链、不重复应用）按当时的身份在锁内重新预处理（[c] 已持写锁）。
-fn reprepare_under_lock(c: &Connection, profile: &str, local: &Local, p: &mut PreparedIngest<'_>) -> Result<(), String> {
-    let rest: Vec<Vec<u8>> = p.items[p.next..].iter().map(|s| p.segments[s.index].clone()).collect();
+fn reprepare_under_lock(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    p: &mut PreparedIngest<'_>,
+) -> Result<(), String> {
+    let rest: Vec<Vec<u8>> = p.items[p.next..]
+        .iter()
+        .map(|s| p.segments[s.index].clone())
+        .collect();
     let mut fresh = prepare_ingest(c, profile, local, std::borrow::Cow::Owned(rest), p.key)?;
     fresh.verify();
     // 段头读不出的报错与段无关，还没报的照旧排在最前。
-    fresh.peek_errors.splice(0..0, std::mem::take(&mut p.peek_errors));
+    fresh
+        .peek_errors
+        .splice(0..0, std::mem::take(&mut p.peek_errors));
     *p = fresh;
     Ok(())
 }
@@ -1294,7 +1545,12 @@ fn deliver_prepared(
     }
     errors.append(&mut prepared.peek_errors);
     let ck = prepared.key.map(CollectionKey);
-    let PreparedIngest { segments, items, next, .. } = prepared;
+    let PreparedIngest {
+        segments,
+        items,
+        next,
+        ..
+    } = prepared;
     let mut delivery = Delivery::resume(cached.take(), c, profile)?;
     if channel && delivery.channel.is_none() {
         // 重新载入的队列（或第一片）：通道还在追加阶段就接着追加（别处做完过通道 = None，按逐条投递）。
@@ -1306,7 +1562,11 @@ fn deliver_prepared(
         let item = &mut items[*next];
         let header = item.header.clone();
         let bytes = &segments[item.index];
-        let public = if header.device == local.device { Some(local.key.public()) } else { device_public(c, profile, &header.device)? };
+        let public = if header.device == local.device {
+            Some(local.key.public())
+        } else {
+            device_public(c, profile, &header.device)?
+        };
         if public != item.public {
             // 重验得到整段，已处理的前缀在下面跳过。
             item.outcome = verify_segment(bytes, &header, public, ck.as_ref(), &mut { u64::MAX });
@@ -1317,7 +1577,10 @@ fn deliver_prepared(
         }
         let public = match &item.outcome {
             Outcome::Unknown => {
-                errors.push(format!("segment from unknown device {}", header.device.text()));
+                errors.push(format!(
+                    "segment from unknown device {}",
+                    header.device.text()
+                ));
                 *next += 1;
                 continue;
             }
@@ -1326,7 +1589,9 @@ fn deliver_prepared(
                 *next += 1;
                 continue;
             }
-            Outcome::Ops(_) | Outcome::Deferred | Outcome::Later => public.ok_or("verified segment without a public key")?,
+            Outcome::Ops(_) | Outcome::Deferred | Outcome::Later => {
+                public.ok_or("verified segment without a public key")?
+            }
         };
         if header.device != local.device && item.consumed == 0 {
             // 签名与链都已验过：还有位置缺这台设备的这个段就留下原文，之后原样转发过去（relay.rs）。
@@ -1353,24 +1618,26 @@ fn deliver_prepared(
             // 留下的操作（从队首取走），或（Deferred）重开流式解、跳过已处理的前缀：签名、链在预处理里都已对上，
             // 这一遍与校验那一遍逐字节相同。
             let reopened;
-            let mut ops: Box<dyn Iterator<Item = Result<(Op, Chain), String>> + '_> = match &mut item.outcome {
-                Outcome::Ops(q) => Box::new(std::iter::from_fn(move || q.pop_front().map(Ok))),
-                _ => {
-                    reopened = segment::open_verified(bytes, &public, ck.as_ref()).map_err(stream_err)?;
-                    let mut chain = header.prev_chain;
-                    Box::new(
-                        reopened
-                            .ops()
-                            .map_err(stream_err)?
-                            .map(move |op| {
-                                let op = op.map_err(stream_err)?;
-                                chain = chain_next(&chain, &op);
-                                Ok((op, chain))
-                            })
-                            .skip(consumed),
-                    )
-                }
-            };
+            let mut ops: Box<dyn Iterator<Item = Result<(Op, Chain), String>> + '_> =
+                match &mut item.outcome {
+                    Outcome::Ops(q) => Box::new(std::iter::from_fn(move || q.pop_front().map(Ok))),
+                    _ => {
+                        reopened = segment::open_verified(bytes, &public, ck.as_ref())
+                            .map_err(stream_err)?;
+                        let mut chain = header.prev_chain;
+                        Box::new(
+                            reopened
+                                .ops()
+                                .map_err(stream_err)?
+                                .map(move |op| {
+                                    let op = op.map_err(stream_err)?;
+                                    chain = chain_next(&chain, &op);
+                                    Ok((op, chain))
+                                })
+                                .skip(consumed),
+                        )
+                    }
+                };
             if header.device == local.device {
                 // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
                 loop {
@@ -1453,7 +1720,11 @@ fn ingest_result(
     let pending: i64 = match pending {
         Some(n) => n,
         None => c
-            .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
+                [profile],
+                |r| r.get(0),
+            )
             .map_err(sql)?,
     };
     Ok(json!({
@@ -1476,10 +1747,18 @@ fn ingest_result(
 /// `_absorbProjection`：每条落库的事件、每个变化的实体各 +1），这里按 [result] 的 `marks.landed` 与 `changed` 条数
 /// 同样推进后写下，并把写下的值放进结果的 `localRevision`（Dart 以它为准，内存与库里的一致）。[local_state] 为 None
 /// （测试、旧调用方）就不写，结果原样返回。
-fn persist_local_state(c: &Connection, profile: &str, local_state: Option<&str>, result: String) -> Result<String, String> {
-    let Some(local) = local_state else { return Ok(result) };
+fn persist_local_state(
+    c: &Connection,
+    profile: &str,
+    local_state: Option<&str>,
+    result: String,
+) -> Result<String, String> {
+    let Some(local) = local_state else {
+        return Ok(result);
+    };
     let mut r: Value = serde_json::from_str(&result).map_err(|e| e.to_string())?;
-    let mut state: Value = serde_json::from_str(local).map_err(|e| format!("sync2 ingest: bad localState: {e}"))?;
+    let mut state: Value =
+        serde_json::from_str(local).map_err(|e| format!("sync2 ingest: bad localState: {e}"))?;
     let landed = r["marks"]["landed"].as_i64().unwrap_or(0);
     let changed = r["changed"].as_array().map_or(0, |a| a.len() as i64);
     let revision = state.get("revision").and_then(Value::as_i64).unwrap_or(0) + landed + changed;
@@ -1503,7 +1782,11 @@ fn persist_local_state(c: &Connection, profile: &str, local_state: Option<&str>,
 /// 在几百片里各被重放一遍（每遍的日志还越来越多），近平方级（100 万次复习收齐 199 s，全量重放只要 29 s）。
 /// 现在每张卡在一次收段会话里只在收尾重放一遍。片与片之间投影行里是作者算的结果（远端日志自带）：追赶单台设备时
 /// 它就等于重放结果，只有真并发交错的卡在收尾前短暂显示作者结果。
-pub(crate) fn defer_replay(c: &Connection, profile: &str, cards: &BTreeSet<String>) -> Result<(), String> {
+pub(crate) fn defer_replay(
+    c: &Connection,
+    profile: &str,
+    cards: &BTreeSet<String>,
+) -> Result<(), String> {
     let mut stmt = c
         .prepare_cached("INSERT OR IGNORE INTO sync2_replay_pending (profile_uid, card_id) VALUES (srs_id(?1), srs_id(?2))")
         .map_err(sql)?;
@@ -1518,7 +1801,11 @@ const REPLAY_PENDING_CHUNK: usize = 512;
 
 /// 重放待重放集合里的卡，做到 [budget] 用完（每张卡算一份）。返回（日志被改写的卡, 是否还有没放的）。重放是
 /// 全部日志的纯函数，所以与当场逐片重放的结果逐字节相同（tests_replay_pending.rs 对拍）。
-pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>) -> Result<(BTreeSet<String>, bool), String> {
+pub(crate) fn replay_pending(
+    c: &Connection,
+    profile: &str,
+    budget: &mut CommitBudget<'_>,
+) -> Result<(BTreeSet<String>, bool), String> {
     let mut changed = BTreeSet::new();
     loop {
         let ids: Vec<String> = c
@@ -1554,7 +1841,12 @@ pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitB
 
 /// 待重放集合非空（收段会话没收尾就被打断过）。
 pub(crate) fn replay_is_pending(c: &Connection, profile: &str) -> Result<bool, String> {
-    c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_replay_pending WHERE profile_uid = srs_id(?1))", [profile], |r| r.get(0)).map_err(sql)
+    c.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync2_replay_pending WHERE profile_uid = srs_id(?1))",
+        [profile],
+        |r| r.get(0),
+    )
+    .map_err(sql)
 }
 
 /// 待刷新缓存的种类（`sync2_cache_pending.kind`）：取的时候按这个序，笔记类型与笔记先于卡。
@@ -1582,17 +1874,27 @@ pub(crate) fn defer_cache_refresh(
     let mut later: Vec<(i64, String)> = Vec::new();
     if split {
         now.note_types = dirty.note_types;
-        let mut note_row = c.prepare_cached("SELECT EXISTS(SELECT 1 FROM srs_notes_cache WHERE id = srs_id(?1))").map_err(sql)?;
+        let mut note_row = c
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM srs_notes_cache WHERE id = srs_id(?1))")
+            .map_err(sql)?;
         for id in dirty.notes {
-            if note_row.query_row([&id], |r| r.get::<_, bool>(0)).map_err(sql)? {
+            if note_row
+                .query_row([&id], |r| r.get::<_, bool>(0))
+                .map_err(sql)?
+            {
                 now.notes.insert(id);
             } else {
                 later.push((CACHE_NOTE, id));
             }
         }
-        let mut card_row = c.prepare_cached("SELECT EXISTS(SELECT 1 FROM srs_cards_cache WHERE id = srs_id(?1))").map_err(sql)?;
+        let mut card_row = c
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM srs_cards_cache WHERE id = srs_id(?1))")
+            .map_err(sql)?;
         for id in dirty.cards {
-            if card_row.query_row([&id], |r| r.get::<_, bool>(0)).map_err(sql)? {
+            if card_row
+                .query_row([&id], |r| r.get::<_, bool>(0))
+                .map_err(sql)?
+            {
                 now.cards.insert(id);
             } else {
                 later.push((CACHE_CARD, id));
@@ -1614,7 +1916,11 @@ pub(crate) fn defer_cache_refresh(
 
 /// 从待刷新集合取出至多 [limit] 个实体（笔记类型、笔记、卡的顺序）并删掉，返回要刷新的部分与是否还有剩下的。
 /// 调用方在同一个 savepoint 里接着刷新（ffi.rs 分发器），刷新失败就连同删除一起回滚。
-pub(crate) fn take_cache_pending(c: &Connection, profile: &str, limit: usize) -> Result<(crate::store::caches::Dirty, bool), String> {
+pub(crate) fn take_cache_pending(
+    c: &Connection,
+    profile: &str,
+    limit: usize,
+) -> Result<(crate::store::caches::Dirty, bool), String> {
     let rows: Vec<(i64, String)> = c
         .prepare_cached(
             "SELECT kind, srs_idt(entity_id) AS entity_id FROM sync2_cache_pending WHERE profile_uid = srs_id(?1) ORDER BY kind, entity_id LIMIT ?2",
@@ -1644,7 +1950,11 @@ pub(crate) fn take_cache_pending(c: &Connection, profile: &str, limit: usize) ->
 /// 事件算的）从待刷新集合里去掉，不在之后的卡块里再算一遍（新设备收齐时笔记与它的卡全都在待刷新集合里，原来每张
 /// 卡算两遍：真实库收尾 87 s 里约 30 s）。卡块刷新还会顺带重算它的后继闭包（继承它历史的卡，caches.rs
 /// `successor_closure`），笔记刷新不会：闭包里这一块没刷到的卡补进待刷新集合，结果与逐块刷相同。
-pub(crate) fn settle_refreshed_cards(c: &Connection, profile: &str, written: &[String]) -> Result<(), String> {
+pub(crate) fn settle_refreshed_cards(
+    c: &Connection,
+    profile: &str,
+    written: &[String],
+) -> Result<(), String> {
     let mut covered: BTreeSet<String> = BTreeSet::new();
     for chunk in written.chunks(400) {
         let q = format!(
@@ -1667,7 +1977,15 @@ pub(crate) fn settle_refreshed_cards(c: &Connection, profile: &str, written: &[S
         .into_iter()
         .filter(|s| !refreshed.contains(s.as_str()))
         .collect();
-    defer_cache_refresh(c, profile, crate::store::caches::Dirty { cards: rest, ..Default::default() }, false)?;
+    defer_cache_refresh(
+        c,
+        profile,
+        crate::store::caches::Dirty {
+            cards: rest,
+            ..Default::default()
+        },
+        false,
+    )?;
     let mut del = c
         .prepare_cached("DELETE FROM sync2_cache_pending WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity_id = srs_id(?3)")
         .map_err(sql)?;
@@ -1679,19 +1997,37 @@ pub(crate) fn settle_refreshed_cards(c: &Connection, profile: &str, written: &[S
 
 /// 待刷新集合非空（收段会话没收尾就被打断过）。
 pub(crate) fn cache_is_pending(c: &Connection, profile: &str) -> Result<bool, String> {
-    c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_cache_pending WHERE profile_uid = srs_id(?1))", [profile], |r| r.get(0)).map_err(sql)
+    c.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync2_cache_pending WHERE profile_uid = srs_id(?1))",
+        [profile],
+        |r| r.get(0),
+    )
+    .map_err(sql)
 }
 
 // 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
 /// （内容不变），旧身份冻结在 [keep]（之后它的远端操作按普通设备收）。
-pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &mut Touched) -> Result<(), String> {
+pub(crate) fn rotate(
+    conn: &Connection,
+    profile: &str,
+    keep: u64,
+    now: i64,
+    t: &mut Touched,
+) -> Result<(), String> {
     let old = Local::load(conn, profile)?.ok_or("no sync2 identity")?;
     clear_fork(conn, profile)?;
     bump_delivery_epoch();
     let top = old.next_seq - 1;
     let mut moved: Vec<Op> = Vec::new();
     for seq in keep + 1..=top {
-        if let Some(op) = load_op(conn, profile, &OpId { device: old.device, seq })? {
+        if let Some(op) = load_op(
+            conn,
+            profile,
+            &OpId {
+                device: old.device,
+                seq,
+            },
+        )? {
             moved.push(op);
         }
     }
@@ -1729,12 +2065,20 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     )
     .map_err(sql)?;
     // 各位置的上传进度记的是本机身份的 seq：新身份从 1 开始，进度归零（否则新段会被当成已传过）。
-    conn.execute("UPDATE sync2_locations SET uploaded = 0 WHERE profile_uid = srs_id(?1)", [profile]).map_err(sql)?;
+    conn.execute(
+        "UPDATE sync2_locations SET uploaded = 0 WHERE profile_uid = srs_id(?1)",
+        [profile],
+    )
+    .map_err(sql)?;
     let migrated = old.migrated;
     let mut fresh = Local::create(conn, profile, now)?;
     fresh.clock.last = old.clock.last;
     if migrated {
-        conn.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = srs_id(?1)", params![profile, now]).map_err(sql)?;
+        conn.execute(
+            "UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = srs_id(?1)",
+            params![profile, now],
+        )
+        .map_err(sql)?;
         fresh.migrated = true;
     }
     let mut applied = applied_vv(conn, profile)?;
@@ -1750,7 +2094,10 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
         }
         let seq = fresh.next_seq;
         let re = Op {
-            id: OpId { device: fresh.device, seq },
+            id: OpId {
+                device: fresh.device,
+                seq,
+            },
             hlc: fresh.clock.tick(op.hlc.wall.max(now)),
             deps: Arc::new(deps),
             kind: op.kind,
@@ -1785,7 +2132,12 @@ pub const ACK_ONLY_HEAD_MS: i64 = 10 * 60 * 1000;
 /// [SrsCore::sync2_head_if_changed] 的结果。
 pub enum HeadWrite {
     /// 写了新 head：`(相对路径, 字节, 代号, 可删的旧小段)`。
-    Written { path: String, bytes: Vec<u8>, gen: u64, obsolete: Vec<String> },
+    Written {
+        path: String,
+        bytes: Vec<u8>,
+        gen: u64,
+        obsolete: Vec<String>,
+    },
     /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head；[obsolete] 是此刻仍待删的文件（上一轮
     /// 删到一半失败、还没 `obsolete_ack` 的那些照样给出）。
     Unchanged { path: String, obsolete: Vec<String> },
@@ -1890,7 +2242,12 @@ impl SrsCore {
             let cuts = segments_of(c, &local)?;
             let uploaded = uploaded_of(c, profile, location)?;
             let ck = key.map(CollectionKey);
-            let mut batch = OutboxBatch { files: Vec::new(), segments: Vec::new(), upto: uploaded, more: false };
+            let mut batch = OutboxBatch {
+                files: Vec::new(),
+                segments: Vec::new(),
+                upto: uploaded,
+                more: false,
+            };
             let mut bytes_total: u64 = 0;
             // 清除（§10.5）改写过的本机段：已经传过也要重传（同名覆盖；链值不变，名字不变）。
             let rewrites: BTreeSet<u64> = c
@@ -1906,21 +2263,42 @@ impl SrsCore {
                 }
                 if !batch.files.is_empty() {
                     // 体积未知（0，不该出现：合并前已补算）按满段算，宁可这一批少带一段。
-                    let est = if estimate == 0 { segment::SEGMENT_TARGET_BYTES } else { estimate };
-                    if batch.files.len() >= max_segments || bytes_total.saturating_add(est) > max_bytes {
+                    let est = if estimate == 0 {
+                        segment::SEGMENT_TARGET_BYTES
+                    } else {
+                        estimate
+                    };
+                    if batch.files.len() >= max_segments
+                        || bytes_total.saturating_add(est) > max_bytes
+                    {
                         batch.more = true;
                         break;
                     }
                 }
                 let mut ops = Vec::with_capacity((last - first + 1) as usize);
                 for seq in first..=last {
-                    ops.push(load_op(c, profile, &OpId { device: local.device, seq })?.ok_or("missing local op")?);
+                    ops.push(
+                        load_op(
+                            c,
+                            profile,
+                            &OpId {
+                                device: local.device,
+                                seq,
+                            },
+                        )?
+                        .ok_or("missing local op")?,
+                    );
                 }
-                let prev = chain_at(c, profile, &local.device, first - 1)?.ok_or("missing chain")?;
-                let (h, bytes) = segment::pack(local.collection, &ops, prev, &local.key, ck.as_ref())?;
+                let prev =
+                    chain_at(c, profile, &local.device, first - 1)?.ok_or("missing chain")?;
+                let (h, bytes) =
+                    segment::pack(local.collection, &ops, prev, &local.key, ck.as_ref())?;
                 drop(ops);
                 bytes_total += bytes.len() as u64;
-                batch.files.push((format!("devices/{}/{}", local.device.text(), h.file_name()), bytes));
+                batch.files.push((
+                    format!("devices/{}/{}", local.device.text(), h.file_name()),
+                    bytes,
+                ));
                 batch.segments.push((first, last));
                 batch.upto = batch.upto.max(last);
             }
@@ -1932,14 +2310,26 @@ impl SrsCore {
     /// 的本机段不在里面的，登记成「要重传」，这一轮发件照当前切法补传（同名、同内容；读者照常验签验链）。位置上的段
     /// 被误删、上传静默丢失、或旧版本写 head 时引用了从没传上去的合并段（见 [Self::sync2_head_if_changed]），都由作者
     /// 在下一轮自己补上，不靠读者无限期「下一轮再来」。列目录最终一致时可能多传几个已在的段，同名覆盖无害。返回登记数。
-    pub fn sync2_audit_own(&self, profile: &str, location: &str, present: &BTreeSet<String>) -> Result<usize, String> {
+    pub fn sync2_audit_own(
+        &self,
+        profile: &str,
+        location: &str,
+        present: &BTreeSet<String>,
+    ) -> Result<usize, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let Some(local) = Local::load(c, profile)? else { return Ok(0) };
+            let Some(local) = Local::load(c, profile)? else {
+                return Ok(0);
+            };
             let uploaded = uploaded_of(c, profile, location)?;
             let mut n = 0;
-            for (a, b, _) in segments_of(c, &local)?.into_iter().filter(|s| s.1 <= uploaded) {
-                let tag = segment::chain_tag(&chain_at(c, profile, &local.device, b)?.ok_or("missing chain")?);
+            for (a, b, _) in segments_of(c, &local)?
+                .into_iter()
+                .filter(|s| s.1 <= uploaded)
+            {
+                let tag = segment::chain_tag(
+                    &chain_at(c, profile, &local.device, b)?.ok_or("missing chain")?,
+                );
                 if present.contains(&segment::segment_file_name(a, b, &tag)) {
                     continue;
                 }
@@ -1957,13 +2347,22 @@ impl SrsCore {
     /// 水位推进到「水位之后首尾相接、全部已确认」的最后一段（水位的含义不变：seq ≤ 它的本机段都在该位置上）。
     /// 返回 `(这一批的段是否仍是当前切法, 新水位)`；前者为假 = 发件与确认之间段被合并改切过（只会是别的位置的
     /// 发件并发跑了合并），没对上的段不算数、下一批照当前切法重发。
-    pub fn sync2_outbox_ack(&self, profile: &str, location: &str, segments: &[(u64, u64)]) -> Result<(bool, u64), String> {
+    pub fn sync2_outbox_ack(
+        &self,
+        profile: &str,
+        location: &str,
+        segments: &[(u64, u64)],
+    ) -> Result<(bool, u64), String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let current = segments_of(c, &local)?;
             let live: BTreeSet<(u64, u64)> = current.iter().map(|&(a, b, _)| (a, b)).collect();
-            let acked: BTreeSet<(u64, u64)> = segments.iter().copied().filter(|s| live.contains(s)).collect();
+            let acked: BTreeSet<(u64, u64)> = segments
+                .iter()
+                .copied()
+                .filter(|s| live.contains(s))
+                .collect();
             for (first, _) in &acked {
                 c.prepare_cached("DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first = ?3")
                     .map_err(sql)?
@@ -1991,9 +2390,20 @@ impl SrsCore {
     }
 
     /// 写 head（段都传完之后）：[upto] = 已传到该位置的最大 seq。返回 `(相对路径, 字节, gen)`。
-    pub fn sync2_head(&self, profile: &str, location: &str, upto: u64, now: i64) -> Result<(String, Vec<u8>, u64, Vec<String>), String> {
+    pub fn sync2_head(
+        &self,
+        profile: &str,
+        location: &str,
+        upto: u64,
+        now: i64,
+    ) -> Result<(String, Vec<u8>, u64, Vec<String>), String> {
         match self.sync2_head_if_changed(profile, location, upto, now, None)? {
-            HeadWrite::Written { path, bytes, gen, obsolete } => Ok((path, bytes, gen, obsolete)),
+            HeadWrite::Written {
+                path,
+                bytes,
+                gen,
+                obsolete,
+            } => Ok((path, bytes, gen, obsolete)),
             HeadWrite::Unchanged { .. } => Err("sync2_head: unexpected unchanged".to_owned()),
             HeadWrite::Recut => Err("sync2_head: recut".to_owned()),
         }
@@ -2017,10 +2427,16 @@ impl SrsCore {
     ) -> Result<HeadWrite, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let mut local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            let mut local =
+                Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut cuts: Vec<(u64, u64, String)> = Vec::new();
-            for (a, b) in cut_segments(c, &local)?.into_iter().filter(|(_, b)| *b <= upto) {
-                let tag = segment::chain_tag(&chain_at(c, profile, &local.device, b)?.ok_or("missing chain")?);
+            for (a, b) in cut_segments(c, &local)?
+                .into_iter()
+                .filter(|(_, b)| *b <= upto)
+            {
+                let tag = segment::chain_tag(
+                    &chain_at(c, profile, &local.device, b)?.ok_or("missing chain")?,
+                );
                 cuts.push((a, b, tag));
             }
             let seq = cuts.last().map_or(0, |x| x.1);
@@ -2048,7 +2464,11 @@ impl SrsCore {
             let mut ack = applied_vv(c, profile)?;
             ack.set(local.device, 0);
             let digest: Option<String> = c
-                .query_row("SELECT value FROM srs_meta WHERE key = ?1", [format!("sync2_digest/{profile}")], |r| r.get(0))
+                .query_row(
+                    "SELECT value FROM srs_meta WHERE key = ?1",
+                    [format!("sync2_digest/{profile}")],
+                    |r| r.get(0),
+                )
                 .optional()
                 .map_err(sql)?;
             let mut head = Head {
@@ -2078,19 +2498,30 @@ impl SrsCore {
             let sig_key = format!("sync2_head_sig/{profile}/{location}");
             if let Some(max_age) = skip_unchanged_ms {
                 let last: Option<String> = c
-                    .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&sig_key], |r| r.get(0))
+                    .query_row(
+                        "SELECT value FROM srs_meta WHERE key = ?1",
+                        [&sig_key],
+                        |r| r.get(0),
+                    )
                     .optional()
                     .map_err(sql)?;
                 // 值形如 `<内容签名>|<写出时刻>|<head 路径>|<不含 ack / 摘要的签名>`（老版本写的没有第 4 段）。
                 if let Some(last) = last {
                     let mut parts = last.splitn(4, '|');
-                    if let (Some(s), Some(at), Some(path)) = (parts.next(), parts.next(), parts.next()) {
+                    if let (Some(s), Some(at), Some(path)) =
+                        (parts.next(), parts.next(), parts.next())
+                    {
                         let core = parts.next();
-                        let age = at.parse::<i64>().ok().filter(|at| now >= *at).map(|at| now - at);
+                        let age = at
+                            .parse::<i64>()
+                            .ok()
+                            .filter(|at| now >= *at)
+                            .map(|at| now - at);
                         let fresh = age.is_some_and(|a| a < max_age);
                         // 只有 ack / 摘要变了：等到 [ACK_ONLY_HEAD_MS] 再写（期间新段照样触发写 head）。别的设备只拿 ack
                         // 显示进度，旧段删除也不再等 ack（S-5）。
-                        let ack_only_fresh = core == Some(core_sig.as_str()) && age.is_some_and(|a| a < ACK_ONLY_HEAD_MS.min(max_age));
+                        let ack_only_fresh = core == Some(core_sig.as_str())
+                            && age.is_some_and(|a| a < ACK_ONLY_HEAD_MS.min(max_age));
                         if (s == sig && fresh) || ack_only_fresh {
                             let gen: i64 = c
                                 .query_row(
@@ -2101,8 +2532,12 @@ impl SrsCore {
                                 .optional()
                                 .map_err(sql)?
                                 .unwrap_or(0);
-                            let obsolete = pending_deletes(c, profile, location, gen.max(0) as u64, now)?;
-                            return Ok(HeadWrite::Unchanged { path: path.to_owned(), obsolete });
+                            let obsolete =
+                                pending_deletes(c, profile, location, gen.max(0) as u64, now)?;
+                            return Ok(HeadWrite::Unchanged {
+                                path: path.to_owned(),
+                                obsolete,
+                            });
                         }
                     }
                 }
@@ -2128,13 +2563,23 @@ impl SrsCore {
             // 只给清单，删成功后 Dart 发 `obsolete_ack` 才移除记录（两段式，见 [stamp_obsolete]）。
             stamp_obsolete(c, &local, location, head.gen, now)?;
             let obsolete = pending_deletes(c, profile, location, head.gen, now)?;
-            Ok(HeadWrite::Written { path, bytes, gen: head.gen, obsolete })
+            Ok(HeadWrite::Written {
+                path,
+                bytes,
+                gen: head.gen,
+                obsolete,
+            })
         })
     }
 
     /// 确认 [location] 上这些文件（`sync2_head` / `sync2_relay_ack` 给的待删清单里的相对路径）已经删掉（或在归档
     /// 位置上按策略不删）：从待删记录里移除。没被确认的下一轮照样再给。返回移除的记录数。
-    pub fn sync2_obsolete_ack(&self, profile: &str, location: &str, deleted: &[String]) -> Result<usize, String> {
+    pub fn sync2_obsolete_ack(
+        &self,
+        profile: &str,
+        location: &str,
+        deleted: &[String],
+    ) -> Result<usize, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let mut n = 0;
@@ -2162,18 +2607,30 @@ impl SrsCore {
 
     /// 同 [Self::sync2_plan]，[location] 给出时（这些 head 所在位置的进度身份，与发件同一个）还记下这个位置上有
     /// 谁的哪些段：别的位置缺、只在这里有最新 head 的设备的段也列进要拉的（只为转发，relay.rs）。
-    pub fn sync2_plan_at(&self, profile: &str, heads: &[Vec<u8>], location: Option<&str>) -> Result<Value, String> {
+    pub fn sync2_plan_at(
+        &self,
+        profile: &str,
+        heads: &[Vec<u8>],
+        location: Option<&str>,
+    ) -> Result<Value, String> {
         // 先在读连接上算（审查 S-8）：空轮（head 都没变）什么都不用记，不拿写锁；要记新设备 / 新 head 才进写连接重算。
         if let Some(v) = self.sync2_plan_read_only(profile, heads, location)? {
             return Ok(v);
         }
         let w = self.writer()?;
-        in_savepoint(&w, |c| Ok(plan(c, profile, heads, location, true)?.expect("writable plan always answers")))
+        in_savepoint(&w, |c| {
+            Ok(plan(c, profile, heads, location, true)?.expect("writable plan always answers"))
+        })
     }
 
     /// [Self::sync2_plan_at] 的只读一半：只在读连接（已提交快照）上算；要往库里记东西（第一次见的设备、更新的 head、
     /// 这个位置上的 head 变了）时返回 None，调用方进写锁再调 [Self::sync2_plan_at]。
-    pub fn sync2_plan_read_only(&self, profile: &str, heads: &[Vec<u8>], location: Option<&str>) -> Result<Option<Value>, String> {
+    pub fn sync2_plan_read_only(
+        &self,
+        profile: &str,
+        heads: &[Vec<u8>],
+        location: Option<&str>,
+    ) -> Result<Option<Value>, String> {
         let r = self.reader()?;
         plan(&r, profile, heads, location, false)
     }
@@ -2185,8 +2642,15 @@ impl SrsCore {
     /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
     /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。解码与验签在写锁外
     /// （[SrsCore::sync2_ingest_prepare]），写锁里只投递。
-    pub fn sync2_ingest(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
-        let mut prepared = self.prepare_unlocked(profile, std::borrow::Cow::Borrowed(segments), key)?;
+    pub fn sync2_ingest(
+        &self,
+        profile: &str,
+        segments: &[Vec<u8>],
+        key: Option<[u8; 32]>,
+        now: i64,
+    ) -> Result<String, String> {
+        let mut prepared =
+            self.prepare_unlocked(profile, std::borrow::Cow::Borrowed(segments), key)?;
         let w = self.writer()?;
         // 会话外投递：新设备收段通道没做完就先按片做完（各片自己提交），之后逐条投递（channel.rs `settle`）。
         self.settle_channel_on(&w, profile)?;
@@ -2213,7 +2677,17 @@ impl SrsCore {
                 rotate(c, profile, k, now, &mut t)?;
             }
             let replayed = replay_touched(c, &t)?;
-            ingest_result(c, profile, t, replayed, applied_n, errors, fork_at.is_some(), false, None)
+            ingest_result(
+                c,
+                profile,
+                t,
+                replayed,
+                applied_n,
+                errors,
+                fork_at.is_some(),
+                false,
+                None,
+            )
         })
     }
 
@@ -2226,11 +2700,17 @@ impl SrsCore {
     ) -> Result<PreparedIngest<'a>, String> {
         let mut prepared = {
             let r = self.reader()?;
-            let local = Local::load(&r, profile)?.ok_or("sync2 not initialised for this profile")?;
+            let local =
+                Local::load(&r, profile)?.ok_or("sync2 not initialised for this profile")?;
             prepare_ingest(&r, profile, &local, segments, key)?
         };
         #[cfg(test)]
-        if let Some(hook) = self.ingest_prepare_hook.lock().map_err(|_| "hook poisoned")?.as_ref() {
+        if let Some(hook) = self
+            .ingest_prepare_hook
+            .lock()
+            .map_err(|_| "hook poisoned")?
+            .as_ref()
+        {
             hook();
         }
         prepared.verify();
@@ -2256,7 +2736,15 @@ impl SrsCore {
         } else {
             self.recheck_channel_live(&w)?;
         }
-        let session = IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None, bootstrap, channel };
+        let session = IngestSession {
+            profile: profile.to_owned(),
+            device: local.device,
+            fork_at,
+            prepared: None,
+            delivery: None,
+            bootstrap,
+            channel,
+        };
         let mut phase = self.ingest_phase()?;
         self.set_ingest_phase(&mut phase, IngestPhase::Open(session));
         // Dart 据 `channel` 记下「开 Drift 事务前先 `channel_settle`」（srs_db_store.dart `_transactionOrReload`）。
@@ -2284,7 +2772,13 @@ impl SrsCore {
     }
 
     /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + 不切片的 [SrsCore::sync2_ingest_commit] 连着做）。
-    pub fn sync2_ingest_batch(&self, profile: &str, segments: Vec<Vec<u8>>, key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+    pub fn sync2_ingest_batch(
+        &self,
+        profile: &str,
+        segments: Vec<Vec<u8>>,
+        key: Option<[u8; 32]>,
+        now: i64,
+    ) -> Result<String, String> {
         self.sync2_ingest_prepare(profile, segments, key)?;
         self.sync2_ingest_commit(profile, now, CommitBudget::unlimited())
     }
@@ -2294,12 +2788,20 @@ impl SrsCore {
     /// 出错作废会话（与 [SrsCore::sync2_ingest_commit] 出错相同）。
     ///
     /// [segments] 按所有权交进来、由会话持有到投递（不复制，审查 S-9）。
-    pub fn sync2_ingest_prepare(&self, profile: &str, segments: Vec<Vec<u8>>, key: Option<[u8; 32]>) -> Result<Value, String> {
+    pub fn sync2_ingest_prepare(
+        &self,
+        profile: &str,
+        segments: Vec<Vec<u8>>,
+        key: Option<[u8; 32]>,
+    ) -> Result<Value, String> {
         let device = self.session_device(profile)?;
         let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Owned(segments), key);
         let mut guard = self.ingest_phase()?;
         // 预处理期间会话被换过（重开 / 删 profile）：这一批不属于现在的会话。
-        if !guard.session().is_some_and(|s| s.profile == profile && s.device == device) {
+        if !guard
+            .session()
+            .is_some_and(|s| s.profile == profile && s.device == device)
+        {
             return Err("sync2 ingest: no ingest session for this profile".to_owned());
         }
         match prepared {
@@ -2329,7 +2831,12 @@ impl SrsCore {
     /// 写锁里只剩比链、因果投递、落库、重放；预处理之后某台设备的公钥变了，那一段按当时的公钥在锁内重验。
     /// 返回 `more` 为真 = 这一片被截停，剩下的留在会话里，再调一次接着投（两次之间别的写入可以插进来）。
     /// 会话期间本机身份变了（别处换过身份）就作废会话并报错：之后的本机段已不能按同一身份比链。
-    pub fn sync2_ingest_commit(&self, profile: &str, now: i64, budget: CommitBudget<'_>) -> Result<String, String> {
+    pub fn sync2_ingest_commit(
+        &self,
+        profile: &str,
+        now: i64,
+        budget: CommitBudget<'_>,
+    ) -> Result<String, String> {
         self.sync2_ingest_commit_persisting(profile, now, budget, None)
     }
 
@@ -2344,7 +2851,8 @@ impl SrsCore {
         budget: CommitBudget<'_>,
         local_state: Option<&str>,
     ) -> Result<String, String> {
-        self.sync2_ingest_commit_cached(profile, now, budget, local_state, None).map(|(r, _)| r)
+        self.sync2_ingest_commit_cached(profile, now, budget, local_state, None)
+            .map(|(r, _)| r)
     }
 
     /// 同 [Self::sync2_ingest_commit_persisting]；给了缓存配置 [cache]（分发器）就在这一片的同一笔事务里把本机已有
@@ -2359,14 +2867,16 @@ impl SrsCore {
     ) -> Result<(String, crate::store::caches::Written), String> {
         let out = self.ingest_commit_slice(profile, now, budget, local_state, cache);
         // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
-        self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         out
     }
 
     /// 有别的写入在等写锁：正在投的那一片（[SrsCore::sync2_ingest_commit]）尽快收。不拿任何连接锁，从等锁的
     /// 那一侧（Dart 的写入排队）直接调。
     pub fn sync2_ingest_yield(&self) {
-        self.ingest_yield.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// 让出请求的标志（[CommitBudget::slice] 读它）。
@@ -2399,7 +2909,9 @@ impl SrsCore {
         let out = in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             if local.device != device {
-                return Err("sync2 ingest: local identity changed during the ingest session".to_owned());
+                return Err(
+                    "sync2 ingest: local identity changed during the ingest session".to_owned(),
+                );
             }
             let mut t = Touched::default();
             let mut errors = Vec::new();
@@ -2422,12 +2934,28 @@ impl SrsCore {
                 record_fork(c, profile, &local.device, k)?;
             }
             #[cfg(test)]
-            if let Some(hook) = self.ingest_commit_hook.lock().map_err(|_| "hook poisoned")?.as_ref() {
+            if let Some(hook) = self
+                .ingest_commit_hook
+                .lock()
+                .map_err(|_| "hook poisoned")?
+                .as_ref()
+            {
                 hook(self);
             }
-            let r = ingest_result(c, profile, t, BTreeSet::new(), applied_n, errors, false, !done, Some(pending))?;
+            let r = ingest_result(
+                c,
+                profile,
+                t,
+                BTreeSet::new(),
+                applied_n,
+                errors,
+                false,
+                !done,
+                Some(pending),
+            )?;
             // 本机已有缓存行的当场刷新，新实体推迟到收尾（[defer_cache_refresh]），都在这一片的事务里。
-            let projection: serde_json::Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
+            let projection: serde_json::Value =
+                serde_json::from_str(&r).map_err(|e| e.to_string())?;
             let dirty = crate::store::caches::Dirty::of_projection(&projection);
             let now_dirty = defer_cache_refresh(c, profile, dirty, cache.is_some())?;
             let written = match cache {
@@ -2464,7 +2992,12 @@ impl SrsCore {
 
     /// 同 [Self::sync2_ingest_finish]，重放按 [budget] 切片：返回 `more` 为真 = 待重放集合还没放完，调用方放开
     /// 写锁后用 [Self::sync2_replay_pending] 接着放（会话已在这一次收掉）。
-    pub fn sync2_ingest_finish_within(&self, profile: &str, now: i64, budget: CommitBudget<'_>) -> Result<String, String> {
+    pub fn sync2_ingest_finish_within(
+        &self,
+        profile: &str,
+        now: i64,
+        budget: CommitBudget<'_>,
+    ) -> Result<String, String> {
         self.sync2_ingest_finish_persisting(profile, now, budget, None)
     }
 
@@ -2482,7 +3015,9 @@ impl SrsCore {
             return Err("sync2 ingest: no ingest session for this profile".to_owned());
         }
         // 会话在这一次收掉；之后到重放 / 缓存收完都是收尾阶段（出错就回到没有会话）。
-        let IngestPhase::Open(session) = self.set_ingest_phase(&mut guard, IngestPhase::Draining(profile.to_owned())) else {
+        let IngestPhase::Open(session) =
+            self.set_ingest_phase(&mut guard, IngestPhase::Draining(profile.to_owned()))
+        else {
             unreachable!("checked above")
         };
         // 换身份（会话里找到了分叉点）要在全部远端操作都投进投影之后：收段通道先按片做完（各片自己提交，channel.rs
@@ -2490,7 +3025,8 @@ impl SrsCore {
         if session.fork_at.is_some() {
             let settled = self.settle_channel_on(&w, profile);
             if let Err(e) = settled {
-                self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+                self.ingest_yield
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 self.set_ingest_phase(&mut guard, IngestPhase::Idle);
                 return Err(e);
             }
@@ -2501,7 +3037,9 @@ impl SrsCore {
             let fork_at = session.fork_at.filter(|_| local.device == session.device);
             if let Some(k) = fork_at {
                 if super::channel::active(c, profile)? {
-                    return Err("sync2 ingest: bootstrap channel not settled before rotating".to_owned());
+                    return Err(
+                        "sync2 ingest: bootstrap channel not settled before rotating".to_owned(),
+                    );
                 }
                 rotate(c, profile, k, now, &mut t)?;
             }
@@ -2510,12 +3048,27 @@ impl SrsCore {
             // 收段通道：折叠 + 逐条，按 [budget] 切；做完才重放（重放读完整的日志投影）。
             let (folded, ct) = super::channel::advance(c, profile, &mut budget)?;
             super::channel::absorb(&mut t, ct);
-            let (replayed, more) = if folded { replay_pending(c, profile, &mut budget)? } else { (BTreeSet::new(), true) };
-            let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), fork_at.is_some(), more, None)?;
+            let (replayed, more) = if folded {
+                replay_pending(c, profile, &mut budget)?
+            } else {
+                (BTreeSet::new(), true)
+            };
+            let r = ingest_result(
+                c,
+                profile,
+                t,
+                replayed,
+                0,
+                Vec::new(),
+                fork_at.is_some(),
+                more,
+                None,
+            )?;
             let drained = !more && !cache_is_pending(c, profile)?;
             Ok((persist_local_state(c, profile, local_state, r)?, drained))
         });
-        self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         match out {
             Ok((r, drained)) => {
                 if drained {
@@ -2532,21 +3085,35 @@ impl SrsCore {
 
     /// 接着重放待重放集合（[Self::sync2_ingest_finish_within] 返回 `more`，或上一次会话没收尾就被打断）：做到
     /// [budget] 用完。返回与收段同形，`more` 为真就再调。
-    pub fn sync2_replay_pending(&self, profile: &str, budget: CommitBudget<'_>) -> Result<String, String> {
+    pub fn sync2_replay_pending(
+        &self,
+        profile: &str,
+        budget: CommitBudget<'_>,
+    ) -> Result<String, String> {
         self.sync2_replay_pending_persisting(profile, budget, None)
     }
 
     /// 同 [Self::sync2_replay_pending]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
-    pub fn sync2_replay_pending_persisting(&self, profile: &str, mut budget: CommitBudget<'_>, local_state: Option<&str>) -> Result<String, String> {
+    pub fn sync2_replay_pending_persisting(
+        &self,
+        profile: &str,
+        mut budget: CommitBudget<'_>,
+        local_state: Option<&str>,
+    ) -> Result<String, String> {
         let w = self.writer()?;
         let out = in_savepoint(&w, |c| {
             // 收尾被切片：收段通道还没做完就接着做（channel.rs），做完再重放。
             let (folded, t) = super::channel::advance(c, profile, &mut budget)?;
-            let (replayed, more) = if folded { replay_pending(c, profile, &mut budget)? } else { (BTreeSet::new(), true) };
+            let (replayed, more) = if folded {
+                replay_pending(c, profile, &mut budget)?
+            } else {
+                (BTreeSet::new(), true)
+            };
             let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), false, more, None)?;
             persist_local_state(c, profile, local_state, r)
         });
-        self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         out
     }
 
@@ -2568,7 +3135,12 @@ impl SrsCore {
     pub fn sync2_digest_buckets(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(sql)?;
-        let out = (|| Ok::<_, String>((super::digest::buckets(&r, profile)?, applied_vv(&r, profile)?)))();
+        let out = (|| {
+            Ok::<_, String>((
+                super::digest::buckets(&r, profile)?,
+                applied_vv(&r, profile)?,
+            ))
+        })();
         r.execute_batch("COMMIT").map_err(sql)?;
         let (b, vv) = out?;
         Ok(json!({
@@ -2585,22 +3157,38 @@ impl SrsCore {
     /// 算并记下状态摘要（写进 head，§4.5）。桶表由触发器增量维护（digest.rs），这里只读 4096 个桶求根；给了
     /// [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`；摘要变化只在
     /// head 里推迟发布，见 transport.rs `ACK_ONLY_HEAD_MS`）。
-    pub fn sync2_digest_due(&self, profile: &str, now: i64, min_interval_ms: Option<i64>) -> Result<Value, String> {
+    pub fn sync2_digest_due(
+        &self,
+        profile: &str,
+        now: i64,
+        min_interval_ms: Option<i64>,
+    ) -> Result<Value, String> {
         let key = format!("sync2_digest/{profile}");
         let at_key = format!("sync2_digest_at/{profile}");
         if let Some(interval) = min_interval_ms {
             let r = self.reader()?;
             let vv = applied_vv(&r, profile)?;
-            let prev: Option<String> =
-                r.query_row("SELECT value FROM srs_meta WHERE key = ?1", [&key], |x| x.get(0)).optional().map_err(sql)?;
+            let prev: Option<String> = r
+                .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&key], |x| {
+                    x.get(0)
+                })
+                .optional()
+                .map_err(sql)?;
             let last_at: i64 = r
-                .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&at_key], |x| x.get::<_, String>(0))
+                .query_row(
+                    "SELECT value FROM srs_meta WHERE key = ?1",
+                    [&at_key],
+                    |x| x.get::<_, String>(0),
+                )
                 .optional()
                 .map_err(sql)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0);
             let tag = format!("{}{}", super::digest::VV_PREFIX, vv.hash_hex());
-            let same_vv = prev.as_deref().and_then(|p| p.split_once('@')).is_some_and(|(_, v)| v == tag);
+            let same_vv = prev
+                .as_deref()
+                .and_then(|p| p.split_once('@'))
+                .is_some_and(|(_, v)| v == tag);
             if same_vv || now - last_at < interval {
                 return Ok(json!({"skipped": true}));
             }
@@ -2610,7 +3198,9 @@ impl SrsCore {
         let (d, vv) = {
             let r = self.reader()?;
             r.execute_batch("BEGIN").map_err(sql)?;
-            let out = (|| Ok::<_, String>((super::digest::root(&r, profile)?, applied_vv(&r, profile)?)))();
+            let out = (|| {
+                Ok::<_, String>((super::digest::root(&r, profile)?, applied_vv(&r, profile)?))
+            })();
             r.execute_batch("COMMIT").map_err(sql)?;
             out?
         };
@@ -2632,9 +3222,15 @@ impl SrsCore {
     pub fn sync2_status(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let local = Local::load(&r, profile)?;
-        let Some(local) = local else { return Ok(json!({"enabled": false})) };
+        let Some(local) = local else {
+            return Ok(json!({"enabled": false}));
+        };
         let mine: Option<String> = r
-            .query_row("SELECT value FROM srs_meta WHERE key = ?1", [format!("sync2_digest/{profile}")], |x| x.get(0))
+            .query_row(
+                "SELECT value FROM srs_meta WHERE key = ?1",
+                [format!("sync2_digest/{profile}")],
+                |x| x.get(0),
+            )
             .optional()
             .map_err(sql)?;
         let (extras, self_info) = super::devices::status_extras(&r, profile, &local)?;
@@ -2669,16 +3265,26 @@ impl SrsCore {
                 "warning": x.get::<_, Option<String>>(7).map_err(sql)?,
                 "digestMismatch": same_vv_mismatch,
             });
-            if let (Some(m), Some(Value::Object(x))) = (row.as_object_mut(), extras.get(&hex_id(&dev))) {
+            if let (Some(m), Some(Value::Object(x))) =
+                (row.as_object_mut(), extras.get(&hex_id(&dev)))
+            {
                 m.extend(x.clone());
             }
             devices.push(row);
         }
         let pending: i64 = r
-            .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |x| x.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
+                [profile],
+                |x| x.get(0),
+            )
             .map_err(sql)?;
         let ops: i64 = r
-            .query_row("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id(?1)", [profile], |x| x.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id(?1)",
+                [profile],
+                |x| x.get(0),
+            )
             .map_err(sql)?;
         let locations: Vec<Value> = r
             .prepare("SELECT location, uploaded, head_gen, last_ok FROM sync2_locations WHERE profile_uid = srs_id(?1)")
@@ -2705,7 +3311,9 @@ impl SrsCore {
 }
 
 fn hex_id(b: &[u8]) -> String {
-    <[u8; 16]>::try_from(b).map(|a| Id(a).text()).unwrap_or_else(|_| hex(b))
+    <[u8; 16]>::try_from(b)
+        .map(|a| Id(a).text())
+        .unwrap_or_else(|_| hex(b))
 }
 
 /// `.fushisrs`（设计 §10.4）：一个集合的全部操作（每台设备从 seq 1 起的完整前缀 + 每条的链值）与各设备公钥，
@@ -2731,11 +3339,21 @@ impl ExportSource<'_> {
     fn refill(&mut self) -> Result<bool, String> {
         self.buf.clear();
         self.pos = 0;
-        let mut w = crate::sync2::codec::Writer { buf: std::mem::take(&mut self.buf) };
+        let mut w = crate::sync2::codec::Writer {
+            buf: std::mem::take(&mut self.buf),
+        };
         loop {
             if let Some((device, next, top)) = self.cur.as_mut() {
                 if *next <= *top {
-                    let op = load_op(self.c, self.profile, &OpId { device: *device, seq: *next })?.ok_or("missing op in export")?;
+                    let op = load_op(
+                        self.c,
+                        self.profile,
+                        &OpId {
+                            device: *device,
+                            seq: *next,
+                        },
+                    )?
+                    .ok_or("missing op in export")?;
                     w.bytes(&op.encode());
                     *next += 1;
                     break;
@@ -2784,7 +3402,11 @@ impl std::io::Read for ExportSource<'_> {
 
 /// `.fushisrs` 的一项（按出现顺序）：一台设备的抬头，接着是它从 seq 1 起的 `count` 条操作。
 enum ExportItem {
-    Device { device: Id, public: Vec<u8>, count: u64 },
+    Device {
+        device: Id,
+        public: Vec<u8>,
+        count: u64,
+    },
     Op(Op),
 }
 
@@ -2800,7 +3422,11 @@ struct ExportReader<'s> {
 impl<'s> ExportReader<'s> {
     fn open(bytes: &'s [u8]) -> Result<ExportReader<'s>, String> {
         let mut window = ZstdWindow::new(bytes).map_err(|e| e.to_string())?;
-        if window.parse(|r| r.raw(8).map(<[u8]>::to_vec)).map_err(|e| e.to_string())? != EXPORT_MAGIC {
+        if window
+            .parse(|r| r.raw(8).map(<[u8]>::to_vec))
+            .map_err(|e| e.to_string())?
+            != EXPORT_MAGIC
+        {
             return Err("not a .fushisrs file".into());
         }
         if window.parse(|r| r.u8()).map_err(|e| e.to_string())? != 1 {
@@ -2808,7 +3434,12 @@ impl<'s> ExportReader<'s> {
         }
         let collection = window.parse(Id::read).map_err(|e| e.to_string())?;
         let devices_left = window.parse(|r| r.uv()).map_err(|e| e.to_string())?;
-        Ok(ExportReader { window, collection, devices_left, cur: None })
+        Ok(ExportReader {
+            window,
+            collection,
+            devices_left,
+            cur: None,
+        })
     }
 
     fn next_item(&mut self) -> Result<Option<ExportItem>, String> {
@@ -2835,7 +3466,11 @@ impl<'s> ExportReader<'s> {
             .parse(|r| Ok((Id::read(r)?, r.bytes()?.to_vec(), r.uv()?)))
             .map_err(|e| e.to_string())?;
         self.cur = Some((device, 1, count));
-        Ok(Some(ExportItem::Device { device, public, count }))
+        Ok(Some(ExportItem::Device {
+            device,
+            public,
+            count,
+        }))
     }
 }
 
@@ -2873,7 +3508,8 @@ impl SrsCore {
                 error: None,
             };
             let mut out = Vec::new();
-            let mut compressor = ruzstd::encoding::FrameCompressor::new(ruzstd::encoding::CompressionLevel::Fastest);
+            let mut compressor =
+                ruzstd::encoding::FrameCompressor::new(ruzstd::encoding::CompressionLevel::Fastest);
             compressor.set_source(&mut source);
             compressor.set_drain(&mut out);
             compressor.compress();
@@ -2910,14 +3546,20 @@ impl SrsCore {
             let mut own: Option<(u64, u64, bool, Chain)> = None; // (包里条数, k, 仍然对得上, 链)
             while let Some(item) = reader.next_item()? {
                 match item {
-                    ExportItem::Device { device, public, count } => {
+                    ExportItem::Device {
+                        device,
+                        public,
+                        count,
+                    } => {
                         if device == local.device {
                             own = Some((count, 0, true, CHAIN_ZERO));
                         }
                         runs.push((device, public));
                     }
                     ExportItem::Op(op) => {
-                        if let Some((_, k, matching, chain)) = own.as_mut().filter(|_| op.id.device == local.device) {
+                        if let Some((_, k, matching, chain)) =
+                            own.as_mut().filter(|_| op.id.device == local.device)
+                        {
                             if *matching {
                                 *chain = chain_next(chain, &op);
                                 if chain_at(c, profile, &local.device, op.id.seq)? == Some(*chain) {
@@ -2961,7 +3603,13 @@ impl SrsCore {
                         if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
                             delivery.push(std::mem::take(&mut chunk));
                             chunk_raw = 0;
-                            delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
+                            delivery.drain(
+                                c,
+                                profile,
+                                now,
+                                &mut t,
+                                &mut CommitBudget::unlimited(),
+                            )?;
                         }
                     }
                 }
@@ -2971,7 +3619,11 @@ impl SrsCore {
             let applied = delivery.finish(c, profile, now)?;
             let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
-                .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |r| r.get(0))
+                .query_row(
+                    "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
+                    [profile],
+                    |r| r.get(0),
+                )
                 .map_err(sql)?;
             Ok(json!({
                 "marks": t.marks.to_json(),
@@ -3024,7 +3676,10 @@ mod compaction_tests {
         }
         // 满段以下共 tiers 层，每层最多攒 FANOUT - 1 个；体积估计按真实压缩缩小后偶有同层多出一两个。
         let tiers = compact_tier(COMPACT_FULL - 1) as usize + 1;
-        assert!(max_small <= tiers * (COMPACT_FANOUT - 1) + 2, "{max_small} small segments at worst");
+        assert!(
+            max_small <= tiers * (COMPACT_FANOUT - 1) + 2,
+            "{max_small} small segments at worst"
+        );
         let amp = rewritten as f64 / appended as f64;
         eprintln!("max small segments {max_small}, write amplification {amp:.2}");
         assert!(amp <= 6.0, "write amplification {amp}");
@@ -3032,7 +3687,14 @@ mod compaction_tests {
 
     #[test]
     fn full_segments_are_never_merged() {
-        let segs = vec![(1, 10, COMPACT_FULL), (11, 20, 100), (21, 30, COMPACT_FULL), (31, 31, 100), (32, 32, 100), (33, 33, 100)];
+        let segs = vec![
+            (1, 10, COMPACT_FULL),
+            (11, 20, 100),
+            (21, 30, COMPACT_FULL),
+            (31, 31, 100),
+            (32, 32, 100),
+            (33, 33, 100),
+        ];
         assert!(compaction_plan(&segs).is_empty());
         let segs = vec![(1, 1, 100), (2, 2, 100), (3, 3, 100), (4, 4, 100)];
         let plan = compaction_plan(&segs);
@@ -3061,7 +3723,11 @@ mod budget_tests {
         assert_eq!(takes(&mut b, 10_000), 10_000, "stretched default slice");
         let mut b = CommitBudget::slice_within(&flag, Duration::ZERO);
         b.stretch(Duration::from_secs(3600));
-        assert_eq!(takes(&mut b, 10_000), COMMIT_SLICE_MIN_OPS, "explicit time limit is kept");
+        assert_eq!(
+            takes(&mut b, 10_000),
+            COMMIT_SLICE_MIN_OPS,
+            "explicit time limit is kept"
+        );
         let mut b = CommitBudget::ops(5);
         b.stretch(Duration::from_secs(3600));
         assert_eq!(takes(&mut b, 10_000), 5, "explicit op count is kept");
@@ -3069,31 +3735,60 @@ mod budget_tests {
         let mut b = CommitBudget::slice(&flag);
         b.stretch(Duration::from_secs(3600));
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(takes(&mut b, 10_000), COMMIT_SLICE_MIN_OPS, "yield request still ends a stretched slice");
+        assert_eq!(
+            takes(&mut b, 10_000),
+            COMMIT_SLICE_MIN_OPS,
+            "yield request still ends a stretched slice"
+        );
     }
 
     /// 新设备（本机身份没写过复习日志）的收段会话用长片；本机复习过就回到默认片长。
     #[test]
     fn ingest_session_is_a_bootstrap_until_this_device_reviews() {
-        use crate::store::sync2::tests::{deck_entity, edit, review, Device, P};
+        use crate::store::sync2::tests::{Device, P, deck_entity, edit, review};
         const NOW: i64 = 1_700_000_000_000;
         let x = Device::new("bs-slice");
         x.core.sync2_identity(P, NOW).unwrap();
         let bootstrapping = |d: &Device| -> bool {
             d.core.sync2_ingest_begin(P).unwrap();
-            d.core.ingest_phase().unwrap().session().unwrap().bootstrapping()
+            d.core
+                .ingest_phase()
+                .unwrap()
+                .session()
+                .unwrap()
+                .bootstrapping()
         };
         let local = |now: i64, events: Vec<(serde_json::Value, String)>| {
-            let input: Vec<serde_json::Value> = events.into_iter().map(|(e, note)| json!({"e": e, "note": note})).collect();
-            x.core.sync2_apply_local(P, now, &serde_json::Value::Array(input).to_string()).unwrap();
+            let input: Vec<serde_json::Value> = events
+                .into_iter()
+                .map(|(e, note)| json!({"e": e, "note": note}))
+                .collect();
+            x.core
+                .sync2_apply_local(P, now, &serde_json::Value::Array(input).to_string())
+                .unwrap();
         };
         assert!(bootstrapping(&x), "a device that never reviewed");
         let deck = crate::store::sync2::config::default_deck_id(P);
-        local(NOW, vec![(deck_entity(&deck), String::new()), (edit("deck", &deck, "name", json!("D")), String::new())]);
-        assert!(bootstrapping(&x), "local edits alone do not end the bootstrap");
+        local(
+            NOW,
+            vec![
+                (deck_entity(&deck), String::new()),
+                (edit("deck", &deck, "name", json!("D")), String::new()),
+            ],
+        );
+        assert!(
+            bootstrapping(&x),
+            "local edits alone do not end the bootstrap"
+        );
         let note = "0193a1b2-0000-7000-8000-000000000000";
         let card = crate::registers::card_id(note, "t1", 0).unwrap();
-        local(NOW + 1, vec![(review("bs-r", &card, NOW + 1, 3, "learn"), note.to_owned())]);
-        assert!(!bootstrapping(&x), "a device that reviewed uses the default slice");
+        local(
+            NOW + 1,
+            vec![(review("bs-r", &card, NOW + 1, 3, "learn"), note.to_owned())],
+        );
+        assert!(
+            !bootstrapping(&x),
+            "a device that reviewed uses the default slice"
+        );
     }
 }

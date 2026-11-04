@@ -16,7 +16,7 @@
 //!   改动既有符号的签名或语义、或删掉符号才升（v2：有声书 cue 吸附 / 修边 / 余量的三个
 //!   `ffc_signal_cue_*` 迁到上游 crate 后删除，改由 `fcp_*` 提供）。
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod crypto;
 pub mod dart;

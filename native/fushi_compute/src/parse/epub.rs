@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use super::{html5lib, StudyCharState};
+use super::{StudyCharState, html5lib};
 use crate::{guard, status};
 
 // ---------------------------------------------------------------------------
@@ -889,7 +889,11 @@ const SHALLOW_DEPTH: usize = 256;
 /// 深树遍历线程的栈：固定底数 + 每层预算（递归遍历每层一到两帧）。release 下 1 KiB 实测远够；
 /// 未优化构建（`cargo test` 默认 debug）帧大得多，arm64 上 1 KiB 实测栈溢出，所以按 4 KiB 留。
 const DEEP_STACK_BASE: usize = 1 << 20;
-const DEEP_STACK_PER_LEVEL: usize = if cfg!(debug_assertions) { 1 << 12 } else { 1 << 10 };
+const DEEP_STACK_PER_LEVEL: usize = if cfg!(debug_assertions) {
+    1 << 12
+} else {
+    1 << 10
+};
 
 /// 纯 Rust 入口（测试与 FFI 共用）。
 ///
@@ -1002,7 +1006,9 @@ mod tests {
     #[test]
     fn strips_ruby_and_collapses_whitespace() {
         assert_eq!(
-            text("<body><p> 本文<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>  です。</p>\n<p>次</p></body>"),
+            text(
+                "<body><p> 本文<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>  です。</p>\n<p>次</p></body>"
+            ),
             "本文漢字 です。 次"
         );
     }
@@ -1065,7 +1071,11 @@ mod tests {
     fn deep_nesting_does_not_overflow_the_caller_stack() {
         // 旧实现在这种深度上抛 StackOverflowError；这里必须算完而不是让进程崩溃。
         let n = 20_000;
-        let html = format!("<body>{}x{}</body>", "<span>".repeat(n), "</span>".repeat(n));
+        let html = format!(
+            "<body>{}x{}</body>",
+            "<span>".repeat(n),
+            "</span>".repeat(n)
+        );
         let all = flags::TEXT
             | flags::RUBY
             | flags::ANCHORS

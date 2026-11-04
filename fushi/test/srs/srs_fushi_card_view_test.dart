@@ -15,6 +15,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_defs_scroll_window.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -350,16 +351,86 @@ void main() {
           .height,
       1234,
     );
-    // 超过上限：改为一屏高、WebView 内部滚动。
-    faces.last.onContentHeight!(kSrsDefsMaxInlineHeight + 1);
+    expect(faces.last.pageWindow?.top, isNull);
+  });
+
+  // BUG-4038（反馈 1b5vbu96Ts）：释义超过纹理上限后旧实现把平台视图改成一屏高、指望页内
+  // 滚动，可平台视图不认领纵向拖，触屏上页内永远停在顶部——主词典余文和下面的词典全看不到。
+  // 现在释义区仍按内容高度占位、只由外层滚动；平台视图是一段窗口，跟着外层滚动换位置，
+  // 页内滚动位置由宿主钉成同一个值。
+  testWidgets('释义超过纹理上限：外层一路滚到最后一本词典与来源页脚，窗口跟着换位置', (
+    WidgetTester tester,
+  ) async {
+    final List<SrsCardFace> faces = await pump(tester, answer: true);
+    final SrsCardFace defs = faces.last;
+    // 单一滚动所有者：窄版式释义不认领纵向拖（外层滚）。
+    expect(defs.onContentHeight, isNotNull);
+    final SrsPageWindowLink link = defs.pageWindow!;
+    const double content = 9000;
+    const double lastDict = 300; // 最后一本词典占内容末尾 300px。
+    defs.onContentHeight!(content);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(
-      tester
-          .getSize(find.byKey(const ValueKey<String>('srs-fushi-definitions')))
-          .height,
-      844,
+
+    final Finder box = find.byType(SrsDefsScrollWindow);
+    final Finder frame = find.byKey(
+      const ValueKey<String>('srs-fushi-definitions'),
     );
+    expect(tester.getSize(box).height, content);
+    expect(tester.getSize(frame).height, kSrsDefsMaxInlineHeight);
+    // 进入窗口态时页面就被钉住（窗口从内容顶开始）。
+    expect(link.top, 0);
+
+    final ScrollController scroll = tester
+        .widget<SingleChildScrollView>(
+          find.byKey(const ValueKey<String>('srs-fushi-back-narrow')),
+        )
+        .controller!;
+    // 原始失败路径：把释义末尾（最后一本词典）滚进视口。
+    scroll.jumpTo(scroll.offset + tester.getRect(box).bottom - 844);
+    await tester.pump();
+    await tester.pump();
+    final Rect content0 = tester.getRect(box);
+    final Rect shown = tester.getRect(frame);
+    final Rect last = Rect.fromLTRB(
+      content0.left,
+      content0.bottom - lastDict,
+      content0.right,
+      content0.bottom,
+    );
+    expect(last.top, greaterThanOrEqualTo(0));
+    expect(last.bottom, lessThanOrEqualTo(844));
+    // 最后一本词典落在平台视图里……
+    expect(shown.top, lessThanOrEqualTo(last.top));
+    expect(shown.bottom, greaterThanOrEqualTo(last.bottom));
+    // ……且页面被钉在平台视图所在的那段内容上（页内偏移 = 平台视图在内容里的偏移）。
+    expect(link.top, moreOrLessEquals(shown.top - content0.top, epsilon: 0.5));
+    expect(link.top! + kSrsDefsMaxInlineHeight, greaterThanOrEqualTo(content));
+
+    // 外层继续滚到底：来源页脚露出来，没有滚动死区。
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pump();
+    await tester.pump();
+    final Rect source = tester.getRect(
+      find.byKey(const ValueKey<String>('srs-fushi-source')),
+    );
+    expect(source.top, lessThan(844));
+    expect(source.bottom, greaterThan(0));
+
+    // 滚回顶部：窗口跟回内容顶。
+    scroll.jumpTo(0);
+    await tester.pump();
+    await tester.pump();
+    expect(link.top, 0);
+    expect(tester.getRect(frame).top, tester.getRect(box).top);
+
+    // 内容收回上限以内：退出窗口态，平台视图重新跟内容等高。
+    defs.onContentHeight!(1234);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.getSize(frame).height, 1234);
+    expect(link.top, isNull);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('片段卡原生显示：Picture 是片段播放器，内嵌单词音频出按钮', (WidgetTester tester) async {
@@ -602,6 +673,80 @@ void main() {
     );
     expect(plain.textAlign, TextAlign.start);
     expect(plain.indent, 0);
+  });
+
+  group('正面例句目标词强调（与模板 .fc-front-sentence b 一致，BUG VbJo0Y7S0A）', () {
+    List<SrsInline> boldOf(WidgetTester tester, String key) => tester
+        .widget<SrsRubyText>(find.byKey(ValueKey<String>(key)))
+        .segments
+        .where((SrsInline x) => x.bold)
+        .toList();
+
+    Map<String, String> card(String flag, Map<String, String> extra) =>
+        _fields(<String, String>{
+          'IsSentenceCard': '',
+          'IsWordAndSentenceCard': '',
+          flag: 'x',
+          'MainDefinition': '',
+          'Glossary': '',
+          'LookupSelection': '',
+          'DefinitionMedia': '',
+          ...extra,
+        });
+
+    testWidgets('例句卡：字段里的 <b> 加粗并上目标色，注音去掉', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        fields: card('IsSentenceCard', <String, String>{
+          'Term': 'キャッチ',
+          'Sentence': '空中[くうちゅう]でアタシが<b>キャッチ</b>。',
+        }),
+      );
+      const String key = 'srs-fushi-front-sentence';
+      final SrsRubyText text = tester.widget<SrsRubyText>(
+        find.byKey(const ValueKey<String>(key)),
+      );
+      expect(text.emphasis, isNotNull);
+      expect(boldOf(tester, key).map((SrsInline x) => x.text).join(), 'キャッチ');
+      expect(text.segments.every((SrsInline x) => x.ruby == null), isTrue);
+      expect(text.segments.map((SrsInline x) => x.text).join(), '空中でアタシがキャッチ。');
+    });
+
+    testWidgets('单词 + 例句卡：例句没 <b> 时按词条重新定位并强调', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        fields: card('IsWordAndSentenceCard', <String, String>{
+          'Term': 'キャッチ',
+          'Sentence': '飛んだらアタシがキャッチ。',
+        }),
+      );
+      expect(
+        boldOf(
+          tester,
+          'srs-fushi-front-sentence',
+        ).map((SrsInline x) => x.text).join(),
+        'キャッチ',
+      );
+    });
+
+    testWidgets('听音卡：目标词照旧挖空，不露出', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        fields: card('IsAudioCard', <String, String>{
+          'Term': 'キャッチ',
+          'Sentence': 'アタシが<b>キャッチ</b>。',
+        }),
+      );
+      final SrsRubyText text = tester.widget<SrsRubyText>(
+        find.byKey(const ValueKey<String>('srs-fushi-front-masked')),
+      );
+      final String shown = text.segments.map((SrsInline x) => x.text).join();
+      expect(shown, isNot(contains('キャッチ')));
+      expect(shown, contains('［…］'));
+    });
   });
 
   testWidgets('正面例句：默认居中；选左对齐后左对齐并占满栏宽', (WidgetTester tester) async {
@@ -958,12 +1103,19 @@ void main() {
 
     // 新层解出首帧后撤掉垫底层：留下的就是新层那个实例（不再重建一次从头播）。
     final State<StatefulWidget> fresh = tester.state(images.last);
-    // 文件读取与解码在真实 IO 里回调：让出真实时间后再 pump。
-    for (int i = 0; i < 20 && images.evaluate().length > 1; i++) {
+    // 文件读取与解码是真实 IO，但新层的 completer 是 Image 在假时钟 zone 里 resolve
+    // 出来的：每一步（读字节 → 建 buffer → 解码 → 取帧）完成后的续体排进假 zone 的
+    // 微任务队列，只有 pump 才冲刷——所以既不能在 runAsync 里直接 await 它（会挂死），也
+    // 只能「让出真实时间 + pump」交替推进。以前固定 20 轮 × 50 ms：整批并发跑、机器忙时
+    // 1 秒内走不完这几步，垫底层还没撤就断言，成了看机器负载的伪红。改成按真实时间截止
+    // （与断言无关，只放宽等真实 IO 的预算），解出来就立即停。
+    final Stopwatch waited = Stopwatch()..start();
+    while (images.evaluate().length > 1 &&
+        waited.elapsed < const Duration(seconds: 15)) {
       await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );
-      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump();
     }
     expect(images, findsOneWidget);
     expect(identical(tester.state(images), fresh), isTrue);

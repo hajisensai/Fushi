@@ -8,12 +8,12 @@
 //! - 慢命令只有 `fwc_adblock_finish_sync`（可能要编译引擎），Dart 侧在后台 isolate 调；
 //!   `fwc_adblock_check` 是微秒级、不分配、不回调的热路径，Dart 侧绑成 leaf 调用。
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
 use serde_json::Value;
 
-use super::{catalog, AdblockCore, CHECK_ERROR};
+use super::{AdblockCore, CHECK_ERROR, catalog};
 use crate::ffi_util::{
     bytes_in, clear_last_error, hand_out, panic_message, set_last_error, str_in,
 };

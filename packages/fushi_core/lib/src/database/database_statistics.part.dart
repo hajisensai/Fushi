@@ -147,6 +147,14 @@ mixin _FushiDbStatistics
   Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
       select(readingStatistics).get();
 
+  /// 一本书（按统计行的 `title`）的全部逐日统计行。走 (title, dateKey) 唯一键的
+  /// 前缀，不扫整表——同步每导入 / 导出一本书都要读它一次（jHQpTfjrNB）。
+  Future<List<ReadingStatisticRow>> getReadingStatisticsForTitle(
+    String title,
+  ) => (select(
+    readingStatistics,
+  )..where(($ReadingStatisticsTable t) => t.title.equals(title))).get();
+
   // ── reading hourly logs ─────────────────────────────────────────
   /// 云聚合同步专用：把旧端（不带 format 的 wire 快照）贡献的、无法归因到任何
   /// 写入面的逐时差额累加进 `''`（未区分）桶。普通写入面一律走带 [BookFormat]

@@ -450,6 +450,15 @@ class VideoBookRepository {
   Future<List<MediaCollectionRow>> getAllMediaCollections() =>
       _db.getAllMediaCollections();
 
+  /// 统一合集：全部合集成员行（按 collectionId、sortIndex 有序）。打开播放页时解析
+  /// 「这一集属于哪个系列」用（与视频库折叠归属同一份输入）。
+  Future<List<MediaCollectionItemRow>> getAllCollectionItems() =>
+      _db.getAllCollectionItems();
+
+  /// 按 id 取来源库（视频来源的分组模式决定目录合集是否算系列归属）。
+  Future<MediaSourceRow?> getMediaSourceById(int id) =>
+      _db.getMediaSourceById(id);
+
   /// 合集子篇 → 所属多成员合集 id：属于任一**成员数 ≥2** 合集的视频条目。自动
   /// 刮削据此对子篇**不落作品级海报**、并把海报改落到这个 collectionId 上（判据
   /// 与理由见 [multiMemberCollectionIdByVideoUid]）。

@@ -54,7 +54,9 @@ fn main() {
     };
     let retentions: Vec<f32> = args[3].split(',').map(|r| r.parse().unwrap()).collect();
     let max_cards: usize = args[4].parse().unwrap();
-    println!("user\tretention\tcards\tgood_p10\tgood_p50\tgood_p90\tgood_1day_frac\thard_p50\tagain_p50");
+    println!(
+        "user\tretention\tcards\tgood_p10\tgood_p50\tgood_p90\tgood_1day_frac\thard_p50\tagain_p50"
+    );
     for file in &args[5..] {
         let path = Path::new(file);
         let user = path.file_stem().unwrap().to_string_lossy().into_owned();
@@ -64,7 +66,12 @@ fn main() {
         for chunk in inputs.chunks(65_536) {
             runtime.replay(chunk, false).unwrap();
         }
-        let last_day = rows.iter().filter(|r| r.ease != 0).map(|r| r.day_offset).max().unwrap();
+        let last_day = rows
+            .iter()
+            .filter(|r| r.ease != 0)
+            .map(|r| r.day_offset)
+            .max()
+            .unwrap();
         // 每张卡最后一条有评分的复习与它之前那段间隔：假设下一次作答在「上一次 + 上一段间隔
         // （至少 1 天）」，但不早于全局最后一天（运行时要求时间不倒退）。
         let mut last: HashMap<i64, (usize, i64)> = HashMap::new();
@@ -72,7 +79,11 @@ fn main() {
             if row.ease == 0 {
                 continue;
             }
-            let gap = if row.elapsed_days > 0 { row.elapsed_days } else { 1 };
+            let gap = if row.elapsed_days > 0 {
+                row.elapsed_days
+            } else {
+                1
+            };
             last.insert(row.card_id, (index, gap));
         }
         let mut cards: Vec<(i64, (usize, i64))> = last.into_iter().collect();
@@ -90,7 +101,12 @@ fn main() {
                 answer.current_elapsed_seconds = Some((due - row.day_offset) * 86_400);
                 answer.card_type = Some(2);
                 let r = runtime.forecast(&answer, &[1, 3], &horizons).unwrap();
-                let fmt = |s: &[f32]| s.iter().map(|v| format!("{v:.3}")).collect::<Vec<_>>().join(" ");
+                let fmt = |s: &[f32]| {
+                    s.iter()
+                        .map(|v| format!("{v:.3}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
                 println!("# {user} card {card} again: {}", fmt(&r[..9]));
                 println!("# {user} card {card} good:  {}", fmt(&r[9..]));
             }

@@ -120,9 +120,11 @@ mod tests {
             let t = r["action"]["type"].as_str().unwrap();
             assert!(t == "block" || t == "ignore-previous-rules", "{r}");
         }
-        assert!(!rules
-            .iter()
-            .any(|r| r["trigger"]["url-filter"].as_str().unwrap().contains("pop")));
+        assert!(
+            !rules
+                .iter()
+                .any(|r| r["trigger"]["url-filter"].as_str().unwrap().contains("pop"))
+        );
     }
 
     #[test]
@@ -135,8 +137,10 @@ mod tests {
         assert!(ignores >= 1);
         let capped = export(&[LIST.to_string()], ignores).unwrap();
         assert_eq!(capped.len(), ignores);
-        assert!(capped
-            .iter()
-            .all(|r| r["action"]["type"] == "ignore-previous-rules"));
+        assert!(
+            capped
+                .iter()
+                .all(|r| r["action"]["type"] == "ignore-previous-rules")
+        );
     }
 }

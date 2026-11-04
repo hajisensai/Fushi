@@ -37,10 +37,12 @@ struct Event {
 }
 
 fn events(text: &str) -> Vec<Event> {
-    let mut fmt: Vec<String> = ["layer", "start", "end", "style", "name", "marginl", "marginr", "marginv", "effect", "text"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mut fmt: Vec<String> = [
+        "layer", "start", "end", "style", "name", "marginl", "marginr", "marginv", "effect", "text",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     let mut in_events = false;
     let mut out = Vec::new();
     for raw in text.lines() {
@@ -53,7 +55,10 @@ fn events(text: &str) -> Vec<Event> {
             continue;
         }
         if let Some(f) = l.strip_prefix("Format:") {
-            fmt = f.split(',').map(|s| s.trim().to_ascii_lowercase()).collect();
+            fmt = f
+                .split(',')
+                .map(|s| s.trim().to_ascii_lowercase())
+                .collect();
             continue;
         }
         let (comment, body) = if let Some(b) = l.strip_prefix("Dialogue:") {
@@ -65,17 +70,29 @@ fn events(text: &str) -> Vec<Event> {
         };
         let parts: Vec<&str> = body.splitn(fmt.len(), ',').collect();
         let get = |name: &str| -> &str {
-            fmt.iter().position(|f| f == name).and_then(|i| parts.get(i)).map(|s| s.trim()).unwrap_or("")
+            fmt.iter()
+                .position(|f| f == name)
+                .and_then(|i| parts.get(i))
+                .map(|s| s.trim())
+                .unwrap_or("")
         };
-        let text_idx = fmt.iter().position(|f| f == "text").unwrap_or(fmt.len() - 1);
-        let (Some(start), Some(end)) = (clock(get("start")), clock(get("end"))) else { continue };
+        let text_idx = fmt
+            .iter()
+            .position(|f| f == "text")
+            .unwrap_or(fmt.len() - 1);
+        let (Some(start), Some(end)) = (clock(get("start")), clock(get("end"))) else {
+            continue;
+        };
         out.push(Event {
             comment,
             start,
             end,
             style: get("style").to_owned(),
             effect: get("effect").to_owned(),
-            text: parts.get(text_idx).map(|s| s.to_string()).unwrap_or_default(),
+            text: parts
+                .get(text_idx)
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
         });
     }
     out
@@ -91,11 +108,12 @@ fn karaoke_syllables(text: &str, start: i64, end: i64) -> (Vec<Syllable>, bool) 
     let mut buf = String::new();
     let mut kt_next: Option<i64> = None;
 
-    let flush = |out: &mut Vec<Syllable>, buf: &mut String, pending: &mut Option<(i64, i64, Fill)>| {
-        let txt = std::mem::take(buf);
-        let (s, d, fill) = pending.take().unwrap_or((start, 0, Fill::Sweep));
-        push_syllable(out, &txt, s, s + d, fill);
-    };
+    let flush =
+        |out: &mut Vec<Syllable>, buf: &mut String, pending: &mut Option<(i64, i64, Fill)>| {
+            let txt = std::mem::take(buf);
+            let (s, d, fill) = pending.take().unwrap_or((start, 0, Fill::Sweep));
+            push_syllable(out, &txt, s, s + d, fill);
+        };
 
     let mut rest = text;
     while !rest.is_empty() {
@@ -123,7 +141,9 @@ fn karaoke_syllables(text: &str, start: i64, end: i64) -> (Vec<Syllable>, bool) 
                     (None, "")
                 };
                 if let Some(fill) = kind {
-                    let Ok(cs) = val.trim().parse::<i64>() else { continue };
+                    let Ok(cs) = val.trim().parse::<i64>() else {
+                        continue;
+                    };
                     has_k = true;
                     if pending.is_some() || !buf.is_empty() {
                         flush(&mut out, &mut buf, &mut pending);
@@ -138,7 +158,10 @@ fn karaoke_syllables(text: &str, start: i64, end: i64) -> (Vec<Syllable>, bool) 
             rest = &r[close + 1..];
             continue;
         }
-        if let Some(r) = rest.strip_prefix("\\N").or_else(|| rest.strip_prefix("\\n")) {
+        if let Some(r) = rest
+            .strip_prefix("\\N")
+            .or_else(|| rest.strip_prefix("\\n"))
+        {
             buf.push(' ');
             rest = r;
             continue;
@@ -205,13 +228,16 @@ fn visible_text(text: &str) -> String {
         }
     }
     out.push_str(rest);
-    out.replace("\\N", " ").replace("\\n", " ").replace("\\h", " ")
+    out.replace("\\N", " ")
+        .replace("\\n", " ")
+        .replace("\\h", " ")
 }
 
 /// 文本里有 `\p<n>`（n ≥ 1）矢量绘图模式。`\pos` / `\pbo` 不算。
 fn has_drawing(text: &str) -> bool {
     let b = text.as_bytes();
-    b.windows(3).any(|w| w[0] == b'\\' && w[1] == b'p' && (b'1'..=b'9').contains(&w[2]))
+    b.windows(3)
+        .any(|w| w[0] == b'\\' && w[1] == b'p' && (b'1'..=b'9').contains(&w[2]))
 }
 
 /// 这份 ASS 有没有结构化之后会丢的特效（设计 §6.3「检测到特效标签自动推荐原样渲染」）。
@@ -224,7 +250,9 @@ fn has_effects(evs: &[Event]) -> bool {
         return true;
     }
     let dialogue = || evs.iter().filter(|e| !e.comment);
-    if dialogue().any(|e| EFFECT_TAGS.iter().any(|tag| e.text.contains(tag)) || has_drawing(&e.text)) {
+    if dialogue()
+        .any(|e| EFFECT_TAGS.iter().any(|tag| e.text.contains(tag)) || has_drawing(&e.text))
+    {
         return true;
     }
     dialogue()
@@ -275,7 +303,11 @@ pub fn prepare_raw(bytes: &[u8]) -> RawScript {
         (0, y) => (if y == 1024 { 1280 } else { (y * 4 / 3).max(1) }, y),
         (x, y) => (x, y),
     };
-    RawScript { text, play_res_x, play_res_y }
+    RawScript {
+        text,
+        play_res_x,
+        play_res_y,
+    }
 }
 
 pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
@@ -341,7 +373,8 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
             .min_by_key(|m| (m.line.start_ms - o.line.start_ms).abs());
         match hit {
             Some(m) if !txt.is_empty() => {
-                let ascii = txt.chars().filter(|c| c.is_ascii()).count() * 10 >= txt.chars().count() * 9;
+                let ascii =
+                    txt.chars().filter(|c| c.is_ascii()).count() * 10 >= txt.chars().count() * 9;
                 let main_ascii = m.line.text().chars().all(|c| c.is_ascii());
                 if ascii && !main_ascii && m.line.romanization.is_none() {
                     m.line.romanization = Some(txt.to_owned());
@@ -376,7 +409,15 @@ Comment: 0,0:00:01.05,0:00:03.00,Romaji,,0,0,0,karaoke,{\\k50}yo{\\k50}zo{\\k50}
         let s: Vec<_> = l
             .syllables
             .iter()
-            .map(|s| (s.text.as_str(), s.start_ms, s.end_ms, s.fill, s.ruby.as_deref()))
+            .map(|s| {
+                (
+                    s.text.as_str(),
+                    s.start_ms,
+                    s.end_ms,
+                    s.fill,
+                    s.ruby.as_deref(),
+                )
+            })
             .collect();
         assert_eq!(
             s,
@@ -391,7 +432,10 @@ Comment: 0,0:00:01.05,0:00:03.00,Romaji,,0,0,0,karaoke,{\\k50}yo{\\k50}zo{\\k50}
 
     #[test]
     fn plain_dialogue_is_line_level() {
-        let t = parse("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,{\\an8}Hello, world\\Nagain\n", None);
+        let t = parse(
+            "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,{\\an8}Hello, world\\Nagain\n",
+            None,
+        );
         assert!(!t.meta.has_effects);
         assert_eq!(t.timing_quality, TimingQuality::Line);
         assert_eq!(t.lines[0].text(), "Hello, world again");
@@ -419,31 +463,53 @@ Comment: 0,0:00:01.05,0:00:03.00,Romaji,,0,0,0,karaoke,{\\k50}yo{\\k50}zo{\\k50}
     #[test]
     fn effect_detection_drawing_org_and_per_glyph_pos() {
         // 矢量绘图（粒子）。
-        let t = parse(&events_of(&["Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\p1}m 0 0 l 10 0 10 10{\\p0}"]), None);
+        let t = parse(
+            &events_of(&[
+                "Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\p1}m 0 0 l 10 0 10 10{\\p0}",
+            ]),
+            None,
+        );
         assert!(t.meta.has_effects);
         // `\pos` 不是绘图；零星标牌不算特效。
-        let t = parse(&events_of(&["Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\pos(10,10)}Sign text"]), None);
+        let t = parse(
+            &events_of(&["Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\pos(10,10)}Sign text"]),
+            None,
+        );
         assert!(!t.meta.has_effects);
         // `\org` 旋转中心。
-        let t = parse(&events_of(&["Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\org(1,1)\\frz10}x"]), None);
+        let t = parse(
+            &events_of(&["Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\org(1,1)\\frz10}x"]),
+            None,
+        );
         assert!(t.meta.has_effects);
         // 逐字定位：8 条单字 `\pos` 事件（templater 不标 fx 的产物）。
         let chars = ["夜", "空", "に", "輝", "く", "星", "の", "歌"];
         let glyphs: Vec<String> = (0..8)
-            .map(|i| format!("Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{{\\pos({},20)}}{}", 10 + i * 20, chars[i]))
+            .map(|i| {
+                format!(
+                    "Dialogue: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{{\\pos({},20)}}{}",
+                    10 + i * 20,
+                    chars[i]
+                )
+            })
             .collect();
         let refs: Vec<&str> = glyphs.iter().map(String::as_str).collect();
         assert!(parse(&events_of(&refs), None).meta.has_effects);
         // 7 条不够。
         assert!(!parse(&events_of(&refs[..7]), None).meta.has_effects);
         // 注释掉的特效行不算。
-        let t = parse(&events_of(&["Comment: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\t(\\fscx120)}x"]), None);
+        let t = parse(
+            &events_of(&["Comment: 0,0:00:01.00,0:00:02.00,D,,0,0,0,,{\\t(\\fscx120)}x"]),
+            None,
+        );
         assert!(!t.meta.has_effects);
     }
 
     #[test]
     fn prepare_raw_decodes_and_fills_play_res() {
-        let r = prepare_raw("\u{FEFF}[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n\n[Events]\n".as_bytes());
+        let r = prepare_raw(
+            "\u{FEFF}[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n\n[Events]\n".as_bytes(),
+        );
         assert_eq!((r.play_res_x, r.play_res_y), (1920, 1080));
         assert!(r.text.starts_with("[Script Info]"));
         let r = prepare_raw(b"[Script Info]\nTitle: x\n");

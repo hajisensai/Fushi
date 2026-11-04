@@ -383,8 +383,9 @@ void main() {
       MangaDownloadJobStatus.running,
     );
 
-    // CBZ 字节进度 → 任务行 pages_done/pages_total 记字节 → 内联面板进度条 +
-    // 「x / y」文案（面板 + 当前卷 subtitle 两处一致）。
+    // CBZ 字节进度（BUG-4025：只进内存、不写页列）→ 内联面板进度条 +
+    // 「下载中 512.0 KB/1.0 MB」文案（面板 + 当前卷 subtitle 两处一致），
+    // 绝不显示成「第 524288 / 1048576 页」。
     s.downloaders[0].ctrl.add(
       const MokuroMoeVolumeDownloadEvent(
         stage: MokuroMoeDownloadStage.downloadingCbz,
@@ -392,7 +393,11 @@ void main() {
         totalBytes: 1024 * 1024,
       ),
     );
-    final String progressText = t.manga_ocr_wizard_page_progress(
+    final String progressText = t.manga_chapter_download_status_downloading(
+      done: '512.0 KB',
+      total: '1.0 MB',
+    );
+    final String bytesAsPages = t.manga_ocr_wizard_page_progress(
       done: 512 * 1024,
       total: 1024 * 1024,
     );
@@ -411,7 +416,13 @@ void main() {
       0.5,
     );
     expect(find.textContaining(progressText), findsNWidgets(2));
+    expect(find.textContaining(bytesAsPages), findsNothing);
     expect(find.textContaining(t.download_status_queued), findsNothing);
+    final MangaDownloadJobRow downloading = (await db.getMangaDownloadJob(
+      jobId,
+    ))!;
+    expect(downloading.pagesDone, 0, reason: '字节不得写进页列');
+    expect(downloading.pagesTotal, 0, reason: '字节不得写进页列');
 
     // 完成 → 该卷标 ✓（不可再选）；面板随任务收尾收起；计数 +1。
     s.downloaders[0].ctrl.add(_doneEvent);

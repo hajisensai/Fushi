@@ -17,14 +17,14 @@ use std::io::{BufRead, Write};
 use anki::collection::CollectionBuilder;
 use anki::prelude::*;
 use anki::search::SearchNode;
-use anki::text::strip_html_preserving_media_filenames;
 use anki::sync::collection::normal::SyncActionRequired;
-use anki::sync::login::{sync_login, SyncAuth};
+use anki::sync::login::{SyncAuth, sync_login};
 use anki::sync::media::progress::MediaSyncProgress;
+use anki::text::strip_html_preserving_media_filenames;
 use anki_proto::notes::note_fields_check_response::State as NoteFieldsState;
 use reqwest::Url;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -107,7 +107,9 @@ fn auth(hkey: String, endpoint: &Option<String>) -> Result<SyncAuth> {
 }
 
 fn open(path: &str) -> Result<Collection> {
-    CollectionBuilder::new(path).with_desktop_media_paths().build()
+    CollectionBuilder::new(path)
+        .with_desktop_media_paths()
+        .build()
 }
 
 impl State {
@@ -171,7 +173,10 @@ fn find_notes(c: &mut Collection, notetype: &str, first: &str) -> Result<Value> 
     let nt = c
         .get_notetype_by_name(notetype)?
         .or_not_found(notetype.to_string())?;
-    if strip_html_preserving_media_filenames(first).trim().is_empty() {
+    if strip_html_preserving_media_filenames(first)
+        .trim()
+        .is_empty()
+    {
         return Ok(json!({"notes": []}));
     }
     let mut ids = c.search_notes_unordered(SearchNode::Duplicates {

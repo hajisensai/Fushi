@@ -1,6 +1,7 @@
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart'
     show videoAudioAlbumFolderPath;
 
@@ -65,4 +66,49 @@ Map<String, int> applyVideoFolderCollectionPolicy({
     );
   }
   return result;
+}
+
+/// 单个本地视频的「系列上下文」：作为哪个合集的一集打开（剧集面板 / 上下集 / 连播），
+/// null = 不属于任何合集（散片）。
+///
+/// 与视频库折叠归属**同一判据**：原始主归属（成员行里最小的 collectionId，即
+/// `getPrimaryCollectionIdByEntry`）经 [applyVideoFolderCollectionPolicy] 修正，且合集行
+/// 必须还在。视频页继续观看 / 卡片按这张映射归组，所以从任何入口打开同一集都落到同一个
+/// 系列上下文（GBDddvjDsj / BUG-4024：侧边栏「继续观看」等入口此前不带合集 id，
+/// 进播放页没有剧集列表）。
+Future<int?> resolveVideoPlaylistCollectionId({
+  required VideoBookRepository repo,
+  required String bookUid,
+}) async {
+  final VideoBookRow? book = await repo.getByBookUid(bookUid);
+  if (book == null) return null;
+  final String videoType = MediaKind.video.dbValue;
+  final List<MediaCollectionItemRow> items = <MediaCollectionItemRow>[
+    for (final MediaCollectionItemRow item
+        in await repo.getAllCollectionItems())
+      if (item.mediaType == videoType && item.entryKey == bookUid) item,
+  ];
+  if (items.isEmpty) return null;
+  final String key = MediaKind.video.compositeKey(bookUid);
+  int rawPrimary = items.first.collectionId;
+  for (final MediaCollectionItemRow item in items) {
+    if (item.collectionId < rawPrimary) rawPrimary = item.collectionId;
+  }
+  final List<MediaCollectionRow> collections = await repo
+      .getAllMediaCollections();
+  final int? sourceId = book.sourceId;
+  final MediaSourceRow? source = sourceId == null
+      ? null
+      : await repo.getMediaSourceById(sourceId);
+  final int? resolved = applyVideoFolderCollectionPolicy(
+    primary: <String, int>{key: rawPrimary},
+    collections: collections,
+    items: items,
+    books: <VideoBookRow>[book],
+    sources: <MediaSourceRow>[if (source != null) source],
+  )[key];
+  if (resolved == null) return null;
+  return collections.any((MediaCollectionRow c) => c.id == resolved)
+      ? resolved
+      : null;
 }
