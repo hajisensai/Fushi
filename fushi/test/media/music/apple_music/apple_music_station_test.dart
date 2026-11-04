@@ -580,6 +580,50 @@ void main() {
       expect(engine.canSkipPrevious, isTrue);
     });
 
+    test('a new queue after a station plays the new queue as given', () async {
+      await engine.playQueue(<MusicPlayItem>[_station]);
+      backend.controller.add(MusicBackendNowPlayingChanged(_song('1')));
+      await _settle();
+      backend.log.clear();
+
+      await engine.playQueue(<MusicPlayItem>[
+        _local('a'),
+        _local('b'),
+        _local('c'),
+      ]);
+      expect(backend.log, <String>['open:a+b']);
+      expect(engine.current?.trackUid, 'a');
+      expect(engine.externalQueue, isFalse);
+      expect(engine.queue.map((MusicPlayItem i) => i.trackUid), <String>[
+        'a',
+        'b',
+        'c',
+      ]);
+      expect(engine.externalQueueSource, isNull);
+    });
+
+    test('a second station replaces the first, not the reverse', () async {
+      final MusicPlayItem station2 = appleMusicStationPlayItem(
+        stationId: 'ra.1000000001',
+        storefront: 'JP',
+        name: 'Other Station',
+        coverUrl: 'https://img/station2.jpg',
+      );
+      await engine.playQueue(<MusicPlayItem>[_station, _local('x')]);
+      backend.controller.add(MusicBackendNowPlayingChanged(_song('1')));
+      await _settle();
+      backend.log.clear();
+
+      await engine.playQueue(<MusicPlayItem>[station2]);
+      expect(backend.log, <String>['open:${station2.trackUid}+null']);
+      expect(engine.current?.trackUid, station2.trackUid);
+      expect(engine.queue.single.trackUid, station2.trackUid);
+
+      backend.controller.add(MusicBackendNowPlayingChanged(_song('9')));
+      await _settle();
+      expect(engine.externalQueueSource?.trackUid, station2.trackUid);
+    });
+
     test('now-playing reported while opening is applied after open', () async {
       final Completer<void> gate = Completer<void>();
       backend.openGate = gate;

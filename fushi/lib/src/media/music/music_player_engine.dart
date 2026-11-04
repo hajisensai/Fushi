@@ -536,6 +536,9 @@ class MusicPlayerEngine extends ChangeNotifier {
   }) async {
     if (items.isEmpty) return;
     final int start = startIndex.clamp(0, items.length - 1);
+    // 自管队列的原项记录（电台在旧队列第几格）只对旧队列有意义：整队替换前丢掉，否则
+    // [_openCurrent] 里的 [_restoreExternalRoot] 会拿旧下标把旧电台写进新队列。
+    _clearExternalRoot();
     _original = List<MusicPlayItem>.of(items);
     _context = context;
     _source = source;
@@ -851,9 +854,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     _queue = const <MusicPlayItem>[];
     _original = const <MusicPlayItem>[];
     _index = -1;
-    _externalRoot = null;
-    _externalRootIndex = -1;
-    _externalStartPending = false;
+    _clearExternalRoot();
     _pendingExternalNowPlaying = null;
     _source = null;
     _playing = false;
@@ -1000,13 +1001,18 @@ class MusicPlayerEngine extends ChangeNotifier {
     if (o >= 0) _original = List<MusicPlayItem>.of(_original)..[o] = to;
   }
 
+  /// 丢掉自管队列的原项记录（不动队列）：队列整个换掉 / 清空时用。
+  void _clearExternalRoot() {
+    _externalRoot = null;
+    _externalRootIndex = -1;
+    _externalStartPending = false;
+  }
+
   /// 自管队列的那一格换回原项（电台），清掉记录。
   void _restoreExternalRoot() {
     final MusicPlayItem? root = _externalRoot;
     final int i = _externalRootIndex;
-    _externalRoot = null;
-    _externalRootIndex = -1;
-    _externalStartPending = false;
+    _clearExternalRoot();
     if (root == null || i < 0 || i >= _queue.length) return;
     final MusicPlayItem slot = _queue[i];
     if (slot.trackUid != root.trackUid) _replaceSlot(i, slot, root);

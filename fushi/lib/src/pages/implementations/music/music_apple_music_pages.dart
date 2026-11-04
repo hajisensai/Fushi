@@ -31,6 +31,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -617,7 +618,7 @@ class _AppleMusicHomeViewState extends State<AppleMusicHomeView> {
             _GenreChips(catalog: catalog, genres: genres),
       ),
     ];
-    return RefreshIndicator(
+    return FushiRefreshIndicator(
       onRefresh: () async => setState(_loadAll),
       child: FushiEntranceScope(
         child: ListView.builder(
