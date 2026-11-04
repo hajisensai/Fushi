@@ -6,11 +6,12 @@ import Foundation
 
 /// 主 app 与 FushiWidgets 扩展共用（两个 target 都编译本文件）。
 ///
-/// 数据流：Dart（`fushi/lib/src/platform/home_widgets/`）把快照写成
-/// `<App Group>/home_widgets/snapshot.json`，封面缩略图写在同目录 `covers/`，
-/// 然后经 `app.fushi/home_widgets` 通道让原生 `WidgetCenter.reloadAllTimelines()`。
-/// 所有用户可见文字都由 Dart 按 **app 内语言** 预先排好（与图标快捷菜单同一原则），
-/// 扩展这边只负责排版，不做任何文案、换算或推断。
+/// 数据流：Dart 的 `WidgetSnapshotSource` → `WidgetSnapshotPublisher`（与 Android **同一份**
+/// JSON、同一个 `app.fushi.reader/widgets` 通道的 `updateSnapshot`）→ 主 app 里的
+/// `FushiWidgetSnapshotSink`（FushiHomeWidgets.swift）把 `cover` 指向的本机封面缩略后拷进
+/// `<App Group>/home_widgets/covers/`、改写成相对路径，整份写成 `home_widgets/snapshot.json`，
+/// 再 `WidgetCenter.reloadAllTimelines()`。契约见 docs/agent/android-widgets.md。
+/// 所有用户可见文字都由 Dart 按 **app 内语言** 预先排好（`labels`），扩展只负责排版。
 enum FushiAppGroup {
   /// iOS：Info.plist `FushiAppGroup` = `$(FUSHI_APP_GROUP)`（xcconfig 里定义）。
   ///
@@ -52,92 +53,321 @@ enum FushiAppGroup {
   /// 快照里的相对路径（`covers/abc.jpg`）→ 绝对 URL；越出目录的路径一律拒绝。
   static func resolve(_ relative: String?) -> URL? {
     guard let relative, !relative.isEmpty, !relative.contains(".."),
-      let base = widgetsDirectory
+      !relative.hasPrefix("/"), let base = widgetsDirectory
     else { return nil }
     return base.appendingPathComponent(relative)
   }
 }
 
-/// `snapshot.json` 的形状。字段与 Dart `HomeWidgetSnapshot.toJson` 一一对应，
-/// 改字段两边一起改（契约测试 `fushi/test/platform/home_widgets/home_widget_snapshot_test.dart`）。
-struct FushiWidgetSnapshot: Codable {
-  static let currentVersion = 1
+/// `snapshot.json` 的形状 = Dart `buildWidgetSnapshot()`（fushi/lib/src/platform/widget_snapshot.dart）
+/// 的输出，只解码 Apple 小组件用到的字段；其余字段（Android 专用的 downloads / onDeck…）
+/// 忽略。所有字段都按「可能缺」解码：Dart 侧新增 / 删减字段不会让整份快照解不出来。
+/// 唯一例外是 `v`：契约版本对不上就当没有快照（显示「打开 Fushi」占位）。
+struct FushiWidgetSnapshot: Decodable {
+  /// 与 Dart `kWidgetSnapshotVersion` 一致。
+  static let currentVersion = 2
 
   var v: Int
-  /// 生成时刻（毫秒）。
-  var at: Double
+  /// 统计日 key（`yyyy-MM-dd`）。
+  var day: String
+  /// 生成时刻（epoch 毫秒）。
+  var generatedAt: Double
   var labels: [String: String]
+  var privacy: Privacy
+  var modules: [String: Bool]
+  /// 书架（按最近活动倒序，第一张就是「继续」）。
+  var shelf: [Media]
+  var today: Today?
+  var month: Month?
+  var streak: Streak?
   var srs: Srs?
-  var study: Study?
-  var `continue`: [ContinueItem]
-  var word: Word?
-  var audiobook: ContinueItem?
+  var vocab: [Vocab]
+  var nowPlaying: NowPlaying?
 
-  struct Srs: Codable {
-    /// 现在起的逐小时预排：`at` 起显示 `due` / `caption`。第一项就是「现在」。
-    var timeline: [SrsEntry]
-    var newCount: Int
-    var learning: Int
-    var review: Int
-    var url: String
+  struct Privacy: Decodable {
+    var hideTitles: Bool
+    var hideDefinitions: Bool
+
+    init(hideTitles: Bool = false, hideDefinitions: Bool = false) {
+      self.hideTitles = hideTitles
+      self.hideDefinitions = hideDefinitions
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      hideTitles = c.bool("hideTitles")
+      hideDefinitions = c.bool("hideDefinitions")
+    }
   }
 
-  struct SrsEntry: Codable {
-    var at: Double
-    var due: Int
-    var caption: String
-    /// 锁屏内联用的整句，如「复习 48 张」。
-    var inline: String
-  }
-
-  struct Study: Codable {
-    var today: StudyDay
-    /// 过了零点该显示的样子（今天学过 → 连续天数保留、今日清零；没学 → 连续中断）。
-    var tomorrow: StudyDay
-    /// 下一个本地零点（毫秒），timeline 在这里切到 `tomorrow`。
-    var midnightAt: Double
-    /// 近 16 周 × 7 天，每格 0…4 档；最后一格是今天（-1 = 今天还没学）。
-    var heat: [Int]
-    var weekValue: String
-    var weekCaption: String
-    var cardsValue: String
-    var cardsCaption: String
-    var url: String
-  }
-
-  struct StudyDay: Codable {
-    var streak: Int
-    var streakCaption: String
-    var todayLine: String
-    /// 近 7 天强度 0…1；最后一格是今天，-1 = 今天还没学（画虚线框）。
-    var last7: [Double]
-  }
-
-  struct ContinueItem: Codable, Hashable {
-    /// `book` / `manga` / `video` / `audiobook` / `game`（Dart `HomeWidgetItemKind`）
+  struct Media: Decodable, Hashable {
+    /// `book` / `manga` / `video`（Dart `WidgetMediaKind.wire`）。
     var kind: String
     var id: String
     var title: String
     var subtitle: String
-    /// 0…1；无法计算进度时为 nil（不画进度条）。
-    var progress: Double?
-    var progressLabel: String?
-    var cover: String?
-    var url: String
+    /// 0…1；0 = 没有进度（不画进度条）。
+    var progress: Double
+    /// App Group 里的相对路径（主 app 已改写）；空串 = 没有封面。
+    var cover: String
+    /// 「63%」之类；没有进度为空串。
+    var position: String
+    /// 「还需 2 小时」之类；估不出来为空串。
+    var remaining: String
+
+    init(
+      kind: String, id: String, title: String, subtitle: String = "", progress: Double = 0,
+      cover: String = "", position: String = "", remaining: String = ""
+    ) {
+      self.kind = kind
+      self.id = id
+      self.title = title
+      self.subtitle = subtitle
+      self.progress = progress
+      self.cover = cover
+      self.position = position
+      self.remaining = remaining
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      kind = c.string("kind")
+      id = c.string("id")
+      title = c.string("title")
+      subtitle = c.string("subtitle")
+      progress = c.double("progress")
+      cover = c.string("cover")
+      position = c.string("position")
+      remaining = c.string("remaining")
+    }
+
+    /// 点卡片打开的深链（与 Dart `WidgetContinueLink.toUri()` 同形）。
+    var link: String { FushiLinks.continueItem(kind: kind, id: id) }
   }
 
-  struct Word: Codable {
+  struct Today: Decodable {
+    /// 今日沉浸时长（已格式化）。
+    var time: String
+    var chars: String
+    var streak: Int
+
+    init(time: String, chars: String, streak: Int) {
+      self.time = time
+      self.chars = chars
+      self.streak = streak
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      time = c.string("time")
+      chars = c.string("chars")
+      streak = c.int("streak")
+    }
+  }
+
+  struct Month: Decodable {
+    /// 最近 35 天每天的沉浸分钟数，最旧 → 今天。
+    var minutes: [Int]
+    var time: String
+    var activeDays: Int
+    /// `minutes[0]` 那天的 ISO 星期（周一 = 1）。
+    var firstWeekday: Int
+
+    init(minutes: [Int], time: String, activeDays: Int, firstWeekday: Int) {
+      self.minutes = minutes
+      self.time = time
+      self.activeDays = activeDays
+      self.firstWeekday = firstWeekday
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      minutes = (try? c.decode([Int].self, forKey: AnyKey("minutes"))) ?? []
+      time = c.string("time")
+      activeDays = c.int("activeDays")
+      firstWeekday = max(1, min(7, c.int("firstWeekday", default: 1)))
+    }
+  }
+
+  struct Streak: Decodable {
+    var current: Int
+    var longest: Int
+    /// 最近 7 天是否有沉浸活动，最旧 → 今天。
+    var week: [Bool]
+
+    init(current: Int, longest: Int, week: [Bool]) {
+      self.current = current
+      self.longest = longest
+      self.week = week
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      current = c.int("current")
+      longest = c.int("longest")
+      week = (try? c.decode([Bool].self, forKey: AnyKey("week"))) ?? []
+    }
+  }
+
+  struct Srs: Decodable {
+    /// `fushi` / `anki` / `none`。只有 `fushi` 时带计数（两个 provider 的数永不混）。
+    var provider: String
+    var due: Int
+    var newCount: Int
+    var learn: Int
+    var review: Int
+    var reviewedToday: Int
+
+    var enabled: Bool { provider == "fushi" }
+
+    init(
+      provider: String, due: Int = 0, newCount: Int = 0, learn: Int = 0, review: Int = 0,
+      reviewedToday: Int = 0
+    ) {
+      self.provider = provider
+      self.due = due
+      self.newCount = newCount
+      self.learn = learn
+      self.review = review
+      self.reviewedToday = reviewedToday
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      provider = c.string("provider", default: "none")
+      due = c.int("due")
+      newCount = c.int("new")
+      learn = c.int("learn")
+      review = c.int("review")
+      reviewedToday = c.int("reviewedToday")
+    }
+  }
+
+  struct Vocab: Decodable, Hashable {
     var term: String
-    /// 只取卡片自带的读音字段；没有就是 nil，扩展不显示（不做自动注音）。
-    var reading: String?
-    var meaning: String
-    var sentence: String?
-    var source: String?
-    var url: String
+    /// 卡片 / 收藏自带的读音字段；没有就是空串，扩展不显示（不做自动注音）。
+    var reading: String
+    /// 已去 HTML 的纯文本释义。
+    var definition: String
+    var sentence: String
+    var source: String
+
+    init(term: String, reading: String = "", definition: String = "", sentence: String = "", source: String = "") {
+      self.term = term
+      self.reading = reading
+      self.definition = definition
+      self.sentence = sentence
+      self.source = source
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      term = c.string("term")
+      reading = c.string("reading")
+      definition = c.string("definition")
+      sentence = c.string("sentence")
+      source = c.string("source")
+    }
+
+    var link: String { FushiLinks.lookupWord(term) }
+  }
+
+  struct NowPlaying: Decodable {
+    /// `music` / `audiobook`。
+    var kind: String
+    var title: String
+    var subtitle: String
+    var cover: String
+    var positionMs: Double
+    var durationMs: Double
+    var playing: Bool
+    /// 点主体打开的深链（Dart 给好的：音乐 `fushi://widget/music/now`，有声书 continue）。
+    var link: String
+
+    init(
+      kind: String, title: String, subtitle: String = "", cover: String = "", positionMs: Double = 0,
+      durationMs: Double = 0, playing: Bool = false, link: String
+    ) {
+      self.kind = kind
+      self.title = title
+      self.subtitle = subtitle
+      self.cover = cover
+      self.positionMs = positionMs
+      self.durationMs = durationMs
+      self.playing = playing
+      self.link = link
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      kind = c.string("kind", default: "music")
+      title = c.string("title")
+      subtitle = c.string("subtitle")
+      cover = c.string("cover")
+      positionMs = c.double("positionMs")
+      durationMs = c.double("durationMs")
+      playing = c.bool("playing")
+      link = c.string("link", default: FushiLinks.open)
+    }
+
+    var progress: Double { durationMs > 0 ? min(max(positionMs / durationMs, 0), 1) : 0 }
+  }
+
+  init(
+    day: String, generatedAt: Double, labels: [String: String] = [:], privacy: Privacy = Privacy(),
+    modules: [String: Bool] = [:], shelf: [Media] = [], today: Today? = nil, month: Month? = nil,
+    streak: Streak? = nil, srs: Srs? = nil, vocab: [Vocab] = [], nowPlaying: NowPlaying? = nil
+  ) {
+    v = Self.currentVersion
+    self.day = day
+    self.generatedAt = generatedAt
+    self.labels = labels
+    self.privacy = privacy
+    self.modules = modules
+    self.shelf = shelf
+    self.today = today
+    self.month = month
+    self.streak = streak
+    self.srs = srs
+    self.vocab = vocab
+    self.nowPlaying = nowPlaying
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: AnyKey.self)
+    v = c.int("v", default: -1)
+    day = c.string("day")
+    generatedAt = c.double("generatedAt")
+    labels = (try? c.decode([String: String].self, forKey: AnyKey("labels"))) ?? [:]
+    privacy = (try? c.decode(Privacy.self, forKey: AnyKey("privacy"))) ?? Privacy()
+    modules = (try? c.decode([String: Bool].self, forKey: AnyKey("modules"))) ?? [:]
+    shelf = (try? c.decode([Media].self, forKey: AnyKey("shelf"))) ?? []
+    today = try? c.decode(Today.self, forKey: AnyKey("today"))
+    month = try? c.decode(Month.self, forKey: AnyKey("month"))
+    streak = try? c.decode(Streak.self, forKey: AnyKey("streak"))
+    srs = try? c.decode(Srs.self, forKey: AnyKey("srs"))
+    vocab = (try? c.decode([Vocab].self, forKey: AnyKey("vocab"))) ?? []
+    nowPlaying = try? c.decode(NowPlaying.self, forKey: AnyKey("nowPlaying"))
   }
 
   func label(_ key: String, _ fallback: String) -> String {
-    labels[key] ?? fallback
+    if let value = labels[key], !value.isEmpty { return value }
+    return fallback
+  }
+
+  /// 模块关着 = false；快照没带该键时按开着处理。
+  func moduleEnabled(_ key: String) -> Bool { modules[key] ?? true }
+
+  /// 隐私开关打开时标题换成种类名（与 Android 同口径）。
+  func displayTitle(_ media: Media) -> String {
+    privacy.hideTitles ? label("kind_\(media.kind)", media.kind) : media.title
+  }
+
+  /// 「今日一词」：按统计日在最近的词里轮换（同一天固定同一个词）。
+  var wordOfTheDay: Vocab? {
+    guard !vocab.isEmpty else { return nil }
+    let seed = day.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7fff_ffff }
+    return vocab[seed % vocab.count]
   }
 
   static func load() -> FushiWidgetSnapshot? {
@@ -148,5 +378,67 @@ struct FushiWidgetSnapshot: Codable {
       snapshot.v == currentVersion
     else { return nil }
     return snapshot
+  }
+}
+
+/// 与 Dart `WidgetLink`（fushi/lib/src/platform/widget_links.dart）同一套 `fushi://widget/...`
+/// 语法；查词入口复用图标快捷菜单的 `fushi://shortcut/lookup`（Dart `AppShortcut`）。
+enum FushiLinks {
+  static let open = "fushi://widget/open"
+  static let review = "fushi://widget/srs"
+  static let stats = "fushi://widget/stats"
+  static let cardSettings = "fushi://widget/settings/cards"
+  static let lookup = "fushi://shortcut/lookup"
+  static let cameraLookup = "fushi://widget/camera_lookup"
+  static let clipboardLookup = "fushi://widget/clipboard_lookup"
+  static let musicPlayer = "fushi://widget/music/now"
+  /// 控制中心「接着听」后台续播不成时的落点：书籍 tab（有声书挂在书籍下面）。
+  static let booksTab = "fushi://widget/tab/books"
+
+  static func continueItem(kind: String, id: String) -> String {
+    var components = URLComponents()
+    components.scheme = "fushi"
+    components.host = "widget"
+    components.path = "/continue"
+    components.queryItems = [URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "id", value: id)]
+    return components.string ?? open
+  }
+
+  static func lookupWord(_ word: String) -> String {
+    var components = URLComponents()
+    components.scheme = "fushi"
+    components.host = "widget"
+    components.path = "/lookup"
+    components.queryItems = [URLQueryItem(name: "word", value: word)]
+    return components.string ?? lookup
+  }
+}
+
+/// 宽松解码用的字符串键 + 带默认值的取值（键缺 / 类型不对都回默认值）。
+struct AnyKey: CodingKey {
+  var stringValue: String
+  var intValue: Int? { nil }
+  init(_ string: String) { stringValue = string }
+  init?(stringValue: String) { self.stringValue = stringValue }
+  init?(intValue: Int) { return nil }
+}
+
+extension KeyedDecodingContainer where K == AnyKey {
+  func string(_ key: String, default value: String = "") -> String {
+    (try? decodeIfPresent(String.self, forKey: AnyKey(key))) ?? value
+  }
+
+  func int(_ key: String, default value: Int = 0) -> Int {
+    if let v = try? decodeIfPresent(Int.self, forKey: AnyKey(key)) { return v }
+    if let v = try? decodeIfPresent(Double.self, forKey: AnyKey(key)) { return Int(v) }
+    return value
+  }
+
+  func double(_ key: String, default value: Double = 0) -> Double {
+    (try? decodeIfPresent(Double.self, forKey: AnyKey(key))) ?? value
+  }
+
+  func bool(_ key: String, default value: Bool = false) -> Bool {
+    (try? decodeIfPresent(Bool.self, forKey: AnyKey(key))) ?? value
   }
 }

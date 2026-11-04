@@ -11,27 +11,15 @@ struct FushiWidgetEntry: TimelineEntry {
   let date: Date
   let snapshot: FushiWidgetSnapshot?
 
-  /// 该时刻应显示的复习计数：取 `at <= date` 的最后一项。
-  var srs: FushiWidgetSnapshot.SrsEntry? {
-    guard let timeline = snapshot?.srs?.timeline, !timeline.isEmpty else { return nil }
-    let ms = date.timeIntervalSince1970 * 1000
-    return timeline.last(where: { $0.at <= ms }) ?? timeline.first
-  }
-
   /// 快照里 Dart 预翻译好的文案（跟随 app 语言）；没有快照时用英文兜底。
   func label(_ key: String, _ fallback: String) -> String {
     snapshot?.label(key, fallback) ?? fallback
   }
-
-  /// 过了快照里记的零点就换成 `tomorrow`。
-  var studyDay: FushiWidgetSnapshot.StudyDay? {
-    guard let study = snapshot?.study else { return nil }
-    return date.timeIntervalSince1970 * 1000 >= study.midnightAt ? study.tomorrow : study.today
-  }
 }
 
-/// 所有小组件共用一份快照；timeline 节点 = 现在 + 复习逐小时预排 + 下一个零点。
-/// 这样不开 app，待复习数也会随卡片到期上涨、连续天数会在零点换日。
+/// 所有小组件共用一份快照（与 Android Glance 同一份 JSON）。数据变化时 app 主动
+/// `reloadAllTimelines()`，这里不轮询；只让系统隔几小时再来要一次，读回 app 期间可能已经
+/// 写下的新快照。
 struct FushiSnapshotProvider: TimelineProvider {
   func placeholder(in context: Context) -> FushiWidgetEntry {
     FushiWidgetEntry(date: Date(), snapshot: FushiWidgetPreview.snapshot)
@@ -44,22 +32,8 @@ struct FushiSnapshotProvider: TimelineProvider {
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<FushiWidgetEntry>) -> Void) {
     let now = Date()
-    let snapshot = FushiWidgetSnapshot.load()
-    var dates: Set<Date> = [now]
-    let horizon = now.addingTimeInterval(24 * 3600)
-    if let timeline = snapshot?.srs?.timeline {
-      for item in timeline {
-        let date = Date(timeIntervalSince1970: item.at / 1000)
-        if date > now && date <= horizon { dates.insert(date) }
-      }
-    }
-    if let midnight = snapshot?.study?.midnightAt {
-      let date = Date(timeIntervalSince1970: midnight / 1000)
-      if date > now && date <= horizon { dates.insert(date) }
-    }
-    let entries = dates.sorted().map { FushiWidgetEntry(date: $0, snapshot: snapshot) }
-    // 预排用完就让系统再来要一次；数据变化时 app 会主动 reload，不靠这里轮询。
-    completion(Timeline(entries: entries, policy: .after(horizon)))
+    let entry = FushiWidgetEntry(date: now, snapshot: FushiWidgetSnapshot.load())
+    completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(6 * 3600))))
   }
 }
 
@@ -68,29 +42,20 @@ enum FushiWidgetPreview {
   static var snapshot: FushiWidgetSnapshot {
     let now = Date().timeIntervalSince1970 * 1000
     return FushiWidgetSnapshot(
-      v: FushiWidgetSnapshot.currentVersion,
-      at: now,
-      labels: [:],
-      srs: .init(
-        timeline: [.init(at: now, due: 48, caption: "≈ 9 min", inline: "48 reviews")],
-        newCount: 12, learning: 6, review: 30, url: "fushi://srs/review"),
-      study: .init(
-        today: .init(
-          streak: 17, streakCaption: "day streak", todayLine: "42 min today",
-          last7: [0.35, 0.7, 0.5, 0.9, 0.6, 1, -1]),
-        tomorrow: .init(
-          streak: 17, streakCaption: "day streak", todayLine: "", last7: [0.7, 0.5, 0.9, 0.6, 1, 1, -1]),
-        midnightAt: now + 24 * 3600 * 1000,
-        heat: (0..<112).map { ($0 * 7 + 3) % 5 },
-        weekValue: "5.2 h", weekCaption: "this week", cardsValue: "86", cardsCaption: "cards",
-        url: "fushi://stats"),
-      continue: [
-        .init(
-          kind: "book", id: "preview", title: "Book", subtitle: "Chapter 4", progress: 0.63,
-          progressLabel: "63%", cover: nil, url: "fushi://"),
+      day: "2026-01-01",
+      generatedAt: now,
+      shelf: [
+        .init(kind: "book", id: "preview", title: "Book", subtitle: "Author", progress: 0.63, position: "63%")
       ],
-      word: nil,
-      audiobook: nil)
+      today: .init(time: "42 min", chars: "8,400", streak: 17),
+      month: .init(
+        minutes: (0..<35).map { ($0 * 37 + 11) % 90 }, time: "21 h", activeDays: 29, firstWeekday: 1),
+      streak: .init(current: 17, longest: 40, week: [true, true, false, true, true, true, false]),
+      srs: .init(provider: "fushi", due: 48, newCount: 12, learn: 6, review: 30, reviewedToday: 20),
+      vocab: [.init(term: "言葉", definition: "word; language")],
+      nowPlaying: .init(
+        kind: "audiobook", title: "Audiobook", subtitle: "Author", positionMs: 30, durationMs: 100,
+        link: FushiLinks.open))
   }
 }
 
@@ -120,6 +85,7 @@ struct FushiWidgetTag: View {
 }
 
 struct FushiCoverImage: View {
+  /// App Group 里的相对路径；空串 / nil = 没有封面。
   let path: String?
   let kind: String
   var cornerRadius: CGFloat = 8
@@ -188,16 +154,20 @@ struct FushiEmptyState: View {
         .foregroundStyle(FushiPalette.accent)
         .widgetAccentable()
       Group {
-        if let text = snapshot?.labels["empty"] { Text(text) } else { Text(FushiGallery.empty) }
+        if let text = snapshot?.labels["openToSetUp"], !text.isEmpty {
+          Text(text)
+        } else {
+          Text(FushiGallery.empty)
+        }
       }
-        .font(.caption)
-        .multilineTextAlignment(.center)
-        .foregroundStyle(.secondary)
+      .font(.caption)
+      .multilineTextAlignment(.center)
+      .foregroundStyle(.secondary)
     }
   }
 }
 
-/// App Group 里的封面 PNG → SwiftUI Image（iOS UIImage / macOS NSImage）。
+/// App Group 里的封面缩略图 → SwiftUI Image（iOS UIImage / macOS NSImage）。
 enum FushiPlatformImage {
   static func load(_ path: String?) -> Image? {
     guard let url = FushiAppGroup.resolve(path) else { return nil }

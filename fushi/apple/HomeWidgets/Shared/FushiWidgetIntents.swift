@@ -68,9 +68,10 @@ enum FushiIntentRelay {
     }
   }
 
-  /// 主屏「接着听」/ 控制中心「接着听」。app 进程活着且会话还在（例如有声书刚暂停、
-  /// 在后台）就直接后台续播；不行就把 app 带到前台，经 `url`（`fushi://widget/resume_audiobook`）
-  /// 走与点击条目相同的打开路径——不在后台硬起一个没有界面的 Flutter 引擎。
+  /// 主屏「接着听」/ 控制中心「接着听」。app 进程活着且会话还在（例如有声书 / 音乐刚暂停、
+  /// 在后台）就直接后台续播（Dart `resume` 动作，`kind` = 快照 `nowPlaying.kind`，控制中心为
+  /// nil）；不行就把 app 带到前台打开 `url`（小组件：`nowPlaying.link`，与点主体同一落地；
+  /// 控制中心：书籍 tab）——不在后台硬起一个没有界面的 Flutter 引擎。
   ///
   /// `AudioPlaybackIntent` 的 `perform()` 由系统放进 app 进程执行；前台续接的一致性
   /// （`ForegroundContinuableIntent`）只能在主 app 里声明，见 [FushiIntentRelay.continueInForeground]。
@@ -79,14 +80,20 @@ enum FushiIntentRelay {
     static var title: LocalizedStringResource { "Resume audiobook" }
     static var isDiscoverable: Bool { false }
 
+    @Parameter(title: "Kind")
+    var kind: String?
+
     @Parameter(title: "Link")
     var url: String
 
     init() {}
-    init(url: String) { self.url = url }
+    init(kind: String?, url: String) {
+      self.kind = kind
+      self.url = url
+    }
 
     func perform() async throws -> some IntentResult {
-      if await FushiIntentRelay.send("resumeAudiobook", url) {
+      if await FushiIntentRelay.send("resume", kind) {
         return .result()
       }
       if let makeError = FushiIntentRelay.continueInForeground {

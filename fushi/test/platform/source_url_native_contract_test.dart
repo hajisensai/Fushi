@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
+import 'package:fushi/src/platform/source_url_channel.dart';
+
 void main() {
   test(
     'Android routes source links to the existing singleTask main activity',
@@ -68,10 +70,10 @@ void main() {
       expect(delegate, contains('open urls: [URL]'));
       expect(delegate, contains('app.fushi.reader/source_urls/stream'));
       expect(delegate, contains('sourceUrlChannel.setStreamHandler(self)'));
-      expect(
-        delegate,
-        contains('pendingSourceUrls.append(url.absoluteString)'),
-      );
+      // open urls 把认得的 host 交给 deliverUrl；deliverUrl 在 Dart 订阅前排队。
+      expect(delegate, contains('deliverUrl(url.absoluteString)'));
+      expect(delegate, contains('func deliverUrl(_ url: String)'));
+      expect(delegate, contains('pendingSourceUrls.append(url)'));
       expect(delegate, contains('let pending = pendingSourceUrls'));
       expect(delegate, contains('pendingSourceUrls.removeAll()'));
       expect(
@@ -81,6 +83,25 @@ void main() {
       expect(delegate, contains('sourceUrlEventSink = nil'));
     },
   );
+
+  test('macOS routes exactly the hosts Dart listens for (no silent drift)', () {
+    final String delegate = File(
+      'macos/Runner/AppDelegate.swift',
+    ).readAsStringSync();
+    final RegExpMatch? match = RegExp(
+      r'static let fushiRoutedUrlHosts: Set<String> = \[([^\]]*)\]',
+    ).firstMatch(delegate);
+    expect(match, isNotNull, reason: 'fushiRoutedUrlHosts literal not found');
+    final Set<String> native = RegExp(r'"([a-z_]+)"')
+        .allMatches(match!.group(1)!)
+        .map((RegExpMatch m) => m.group(1)!)
+        .toSet();
+    expect(native, SourceUrlChannel.routedHosts);
+    // 每个 host 都真有 Dart 落地：卡片出处 / 小组件 / 快捷方式 / 查词。
+    expect(SourceUrlChannel.isRoutedUrl('fushi://widget/srs'), isTrue);
+    expect(SourceUrlChannel.isRoutedUrl('fushi://source/x'), isTrue);
+    expect(SourceUrlChannel.isRoutedUrl('fushi://auth/callback'), isFalse);
+  });
 
   test(
     'iOS keeps its shared callback channel for cold and warm source links',

@@ -2,7 +2,7 @@ import Foundation
 
 /// 小组件库 / 控制中心里显示的组件名与说明。它们由系统按**系统语言**渲染（app 还没运行、
 /// 拿不到 Dart 的文案），所以走扩展自带的 `Localizable.xcstrings`（17 种语言与 app 对齐）；
-/// 组件内的文字则来自快照里 Dart 预翻译的 `labels`，跟随 app 语言。
+/// 组件内的文字则来自快照里 Dart 预翻译的 `labels`（与 Android 同一份快照），跟随 app 语言。
 ///
 /// 用 `LocalizedStringResource` 而不是 `String`：控制中心控件的 `displayName` 只收它，
 /// 而且它由系统在渲染进程里按当时的系统语言解析。
@@ -12,7 +12,7 @@ enum FushiGallery {
   }
   static var srsDescription: LocalizedStringResource {
     LocalizedStringResource("widget.srs.description",
-      defaultValue: "Cards due now, and how the count grows through the day.")
+      defaultValue: "Cards due today, split into new, learning and review.")
   }
   static var studyName: LocalizedStringResource {
     LocalizedStringResource("widget.study.name", defaultValue: "Study streak")
@@ -25,26 +25,26 @@ enum FushiGallery {
   }
   static var continueDescription: LocalizedStringResource {
     LocalizedStringResource("widget.continue.description",
-      defaultValue: "Pick up books, videos and games where you left off.")
+      defaultValue: "Pick up books, manga and videos where you left off.")
   }
   static var wordName: LocalizedStringResource {
     LocalizedStringResource("widget.word.name", defaultValue: "Word of the day")
   }
   static var wordDescription: LocalizedStringResource {
     LocalizedStringResource("widget.word.description",
-      defaultValue: "A card from your own deck, with the sentence you saved it from.")
+      defaultValue: "A word you recently saved or made a card from, with its sentence.")
   }
   static var heatmapName: LocalizedStringResource {
     LocalizedStringResource("widget.heatmap.name", defaultValue: "Study heatmap")
   }
   static var heatmapDescription: LocalizedStringResource {
-    LocalizedStringResource("widget.heatmap.description", defaultValue: "Sixteen weeks of study time at a glance.")
+    LocalizedStringResource("widget.heatmap.description", defaultValue: "The last five weeks of study time at a glance.")
   }
   static var audiobookName: LocalizedStringResource {
     LocalizedStringResource("widget.audiobook.name", defaultValue: "Resume listening")
   }
   static var audiobookDescription: LocalizedStringResource {
-    LocalizedStringResource("widget.audiobook.description", defaultValue: "Resume your audiobook with one tap.")
+    LocalizedStringResource("widget.audiobook.description", defaultValue: "Resume your audiobook or music with one tap.")
   }
   static var lookupName: LocalizedStringResource {
     LocalizedStringResource("widget.lookup.name", defaultValue: "Look up")

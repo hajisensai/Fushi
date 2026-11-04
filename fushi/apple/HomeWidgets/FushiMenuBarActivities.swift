@@ -67,8 +67,14 @@
       refresh()
     }
 
-    func end(id: String, after linger: Double) {
+    /// [finalTask] 非 nil：先换成最终内容（转录完成），再按 [linger] 收掉——与 iOS 的
+    /// `activity.end(ActivityContent(final), …)` 同口径，一步完成。
+    func end(id: String, after linger: Double, finalTask: FushiTaskContent? = nil) {
       pendingEnds.removeValue(forKey: id)?.cancel()
+      if let finalTask, task?.id == id {
+        task?.state = finalTask
+        refresh()
+      }
       guard linger > 0 else {
         remove(id: id)
         return

@@ -2,6 +2,9 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
+// 所有组件吃同一份快照（Dart `buildWidgetSnapshot()`，与 Android Glance 相同），文案取
+// `labels`（键见 Dart `kWidgetLabelKeys`），点按一律走 `fushi://widget/...`（[FushiLinks]）。
+
 // MARK: - 1 今日复习（小 + 锁屏圆形 / 内联）
 
 struct FushiSrsWidget: Widget {
@@ -23,52 +26,66 @@ struct FushiSrsView: View {
   private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
   var body: some View {
-    if let srs = entry.snapshot?.srs, let now = entry.srs {
-      content(srs: srs, now: now).widgetURL(srs.url.fushiURL)
+    if let snapshot = entry.snapshot, let srs = snapshot.srs {
+      if srs.enabled && snapshot.moduleEnabled("srs") {
+        content(srs: srs).widgetURL(FushiLinks.review.fushiURL)
+      } else {
+        // 复习去向是 Anki / 没开内置复习：Fushi 这边没有计数（两个 provider 的数永不混）。
+        VStack(spacing: 6) {
+          Image(systemName: "rectangle.stack").font(.title2).foregroundStyle(FushiPalette.accent)
+          Text(entry.label("srsOff", "Reviews are off"))
+            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .widgetURL(FushiLinks.cardSettings.fushiURL)
+      }
     } else {
       FushiEmptyState(snapshot: entry.snapshot)
     }
   }
 
   @ViewBuilder
-  private func content(srs: FushiWidgetSnapshot.Srs, now: FushiWidgetSnapshot.SrsEntry) -> some View {
+  private func content(srs: FushiWidgetSnapshot.Srs) -> some View {
+    let label = entry.label
     switch family {
     #if os(iOS)
       case .accessoryInline:
-        Label(now.inline, systemImage: "rectangle.stack")
+        Label("\(label("srsDue", "Due")) \(srs.due)", systemImage: "rectangle.stack")
       case .accessoryCircular:
-        let total = max(srs.newCount + srs.learning + srs.review, 1)
-        Gauge(value: Double(min(now.due, total)), in: 0...Double(total)) {
+        let total = max(srs.due + srs.reviewedToday, 1)
+        Gauge(value: Double(min(srs.reviewedToday, total)), in: 0...Double(total)) {
           Image(systemName: "rectangle.stack")
         } currentValueLabel: {
-          Text("\(now.due)")
+          Text("\(srs.due)")
         }
         .gaugeStyle(.accessoryCircularCapacity)
         .widgetAccentable()
     #endif
     default:
-      let label = entry.label
       VStack(alignment: .leading, spacing: 0) {
-        FushiWidgetTag(text: label("srs_title", "Reviews"))
+        FushiWidgetTag(text: label("providerFushi", "Reviews"))
         Spacer(minLength: 6)
-        Text("\(now.due)")
+        Text("\(srs.due)")
           .font(.system(size: 44, weight: .bold, design: .rounded))
           .foregroundStyle(FushiPalette.accent)
           .widgetAccentable()
           .minimumScaleFactor(0.6)
           .lineLimit(1)
-        Text(now.caption)
-          .font(.caption2)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
+        Text(
+          srs.due == 0
+            ? label("allCaughtUp", "All caught up")
+            : "\(label("reviewedToday", "Reviewed today")) \(srs.reviewedToday)"
+        )
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
         Spacer(minLength: 8)
-        FushiSrsSplitBar(newCount: srs.newCount, learning: srs.learning, review: srs.review)
+        FushiSrsSplitBar(newCount: srs.newCount, learning: srs.learn, review: srs.review)
         HStack {
-          Text("\(label("srs_new", "New")) \(srs.newCount)")
+          Text("\(label("srsNew", "New")) \(srs.newCount)")
           Spacer()
-          Text("\(label("srs_learning", "Learn")) \(srs.learning)")
+          Text("\(label("srsLearn", "Learn")) \(srs.learn)")
           Spacer()
-          Text("\(label("srs_review", "Review")) \(srs.review)")
+          Text("\(label("srsDue", "Review")) \(srs.review)")
         }
         .font(.system(size: 9))
         .foregroundStyle(.secondary)
@@ -123,63 +140,66 @@ struct FushiStudyView: View {
   private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
   var body: some View {
-    if let study = entry.snapshot?.study, let day = entry.studyDay {
+    if let snapshot = entry.snapshot, let streak = snapshot.streak {
       Group {
         #if os(iOS)
           if family == .accessoryCircular {
             ZStack {
               AccessoryWidgetBackground()
               VStack(spacing: 0) {
-                Text("\(day.streak)").font(.system(size: 22, weight: .bold, design: .rounded))
-                Text(entry.label("streak_unit", "days")).font(.system(size: 9))
+                Text("\(streak.current)").font(.system(size: 22, weight: .bold, design: .rounded))
+                Text(entry.label("streakDays", "days")).font(.system(size: 9))
               }
             }
           } else {
-            small(day: day)
+            small(snapshot: snapshot, streak: streak)
           }
         #else
-          small(day: day)
+          small(snapshot: snapshot, streak: streak)
         #endif
       }
-      .widgetURL(study.url.fushiURL)
+      .widgetURL(FushiLinks.stats.fushiURL)
     } else {
       FushiEmptyState(snapshot: entry.snapshot)
     }
   }
 
-  private func small(day: FushiWidgetSnapshot.StudyDay) -> some View {
+  private func small(snapshot: FushiWidgetSnapshot, streak: FushiWidgetSnapshot.Streak) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      FushiWidgetTag(text: entry.snapshot?.label("study_title", "Study") ?? "Study")
+      FushiWidgetTag(text: entry.label("streak", "Streak"))
       Spacer(minLength: 4)
       HStack(alignment: .firstTextBaseline, spacing: 3) {
-        Text("\(day.streak)")
+        Text("\(streak.current)")
           .font(.system(size: 40, weight: .bold, design: .rounded))
           .foregroundStyle(FushiPalette.study)
           .widgetAccentable()
-        Text(entry.snapshot?.label("streak_unit", "days") ?? "days")
+        Text(entry.label("streakDays", "days"))
           .font(.subheadline.weight(.semibold))
       }
-      Text(day.streakCaption).font(.caption2).foregroundStyle(.secondary)
+      Text("\(entry.label("longest", "Longest")) \(streak.longest)")
+        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
       Spacer(minLength: 6)
       HStack(spacing: 4) {
-        ForEach(Array(day.last7.enumerated()), id: \.offset) { _, value in
-          if value < 0 {
+        ForEach(Array(streak.week.enumerated()), id: \.offset) { _, active in
+          if active {
             RoundedRectangle(cornerRadius: 4)
-              .strokeBorder(FushiPalette.study, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-              .frame(height: 16)
-          } else {
-            RoundedRectangle(cornerRadius: 4)
-              .fill(FushiPalette.study.opacity(0.15 + 0.85 * value))
+              .fill(FushiPalette.study)
               .frame(height: 16)
               .widgetAccentable()
+          } else {
+            RoundedRectangle(cornerRadius: 4)
+              .strokeBorder(FushiPalette.study.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+              .frame(height: 16)
           }
         }
       }
-      Text(day.todayLine)
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .padding(.top, 5)
-        .lineLimit(1)
+      if let today = snapshot.today {
+        Text("\(entry.label("today", "Today")) \(today.time)")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+          .padding(.top, 5)
+          .lineLimit(1)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -206,67 +226,79 @@ struct FushiContinueView: View {
   private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
   var body: some View {
-    let items = entry.snapshot?.continue ?? []
-    if let first = items.first {
-      switch family {
-      #if os(iOS)
-        case .accessoryRectangular:
-          VStack(alignment: .leading, spacing: 2) {
-            Text(first.title).font(.headline).lineLimit(1)
-            Text(first.subtitle).font(.caption).lineLimit(1)
-            if let progress = first.progress {
-              ProgressView(value: progress).tint(.primary)
+    if let snapshot = entry.snapshot {
+      if let first = snapshot.shelf.first {
+        switch family {
+        #if os(iOS)
+          case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 2) {
+              Text(snapshot.displayTitle(first)).font(.headline).lineLimit(1)
+              Text(caption(first)).font(.caption).lineLimit(1)
+              if first.progress > 0 {
+                ProgressView(value: first.progress).tint(.primary)
+              }
             }
-          }
-          .widgetURL(first.url.fushiURL)
-      #endif
-      case .systemLarge:
-        large(items)
-      default:
-        medium(items)
-      }
-    } else if entry.snapshot != nil {
-      VStack(spacing: 6) {
-        Image(systemName: "books.vertical").font(.title2).foregroundStyle(FushiPalette.accent)
-        Text(entry.snapshot?.label("continue_empty", "Nothing in progress") ?? "")
-          .font(.caption).foregroundStyle(.secondary)
+            .widgetURL(first.link.fushiURL)
+        #endif
+        case .systemLarge:
+          large(snapshot)
+        default:
+          medium(snapshot)
+        }
+      } else {
+        VStack(spacing: 6) {
+          Image(systemName: "books.vertical").font(.title2).foregroundStyle(FushiPalette.accent)
+          Text(entry.label("continueEmpty", "Nothing in progress"))
+            .font(.caption).foregroundStyle(.secondary)
+        }
       }
     } else {
       FushiEmptyState(snapshot: nil)
     }
   }
 
-  private var title: String { entry.snapshot?.label("continue_title", "Continue") ?? "Continue" }
+  private var title: String { entry.label("resume", "Continue") }
 
-  private func medium(_ items: [FushiWidgetSnapshot.ContinueItem]) -> some View {
-    let main = items[0]
-    let side = Array(items.dropFirst().prefix(2))
+  /// 副标题行：作者；没有作者时退到进度 / 剩余时间。
+  private func caption(_ item: FushiWidgetSnapshot.Media) -> String {
+    if !item.subtitle.isEmpty { return item.subtitle }
+    return detail(item)
+  }
+
+  /// 进度行：「63% · 还需 2 小时」，没有就空串。
+  private func detail(_ item: FushiWidgetSnapshot.Media) -> String {
+    [item.position, item.remaining].filter { !$0.isEmpty }.joined(separator: " · ")
+  }
+
+  private func medium(_ snapshot: FushiWidgetSnapshot) -> some View {
+    let main = snapshot.shelf[0]
+    let side = Array(snapshot.shelf.dropFirst().prefix(2))
     return HStack(spacing: 12) {
-      Link(destination: main.url.fushiURL ?? URL(string: "fushi://")!) {
+      Link(destination: main.link.fushiURL ?? URL(string: FushiLinks.open)!) {
         FushiCoverImage(path: main.cover, kind: main.kind)
           .frame(width: 84)
       }
       VStack(alignment: .leading, spacing: 3) {
         FushiWidgetTag(text: title)
-        Link(destination: main.url.fushiURL ?? URL(string: "fushi://")!) {
+        Link(destination: main.link.fushiURL ?? URL(string: FushiLinks.open)!) {
           VStack(alignment: .leading, spacing: 2) {
-            Text(main.title).font(.subheadline.weight(.bold)).lineLimit(1)
-            Text(main.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            if let progress = main.progress {
-              FushiProgressBar(value: progress).padding(.top, 3)
+            Text(snapshot.displayTitle(main)).font(.subheadline.weight(.bold)).lineLimit(1)
+            Text(caption(main)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if main.progress > 0 {
+              FushiProgressBar(value: main.progress).padding(.top, 3)
             }
           }
         }
         Spacer(minLength: 4)
         HStack(spacing: 8) {
           ForEach(side, id: \.self) { item in
-            Link(destination: item.url.fushiURL ?? URL(string: "fushi://")!) {
+            Link(destination: item.link.fushiURL ?? URL(string: FushiLinks.open)!) {
               HStack(spacing: 6) {
                 FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 5)
                   .frame(width: item.kind == "video" ? 44 : 24, height: 32)
                 VStack(alignment: .leading, spacing: 0) {
-                  Text(item.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
-                  Text(item.progressLabel ?? item.subtitle)
+                  Text(snapshot.displayTitle(item)).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                  Text(detail(item).isEmpty ? item.subtitle : detail(item))
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 }
               }
@@ -278,12 +310,12 @@ struct FushiContinueView: View {
     }
   }
 
-  private func large(_ items: [FushiWidgetSnapshot.ContinueItem]) -> some View {
-    let main = items[0]
-    let rest = Array(items.dropFirst().prefix(3))
+  private func large(_ snapshot: FushiWidgetSnapshot) -> some View {
+    let main = snapshot.shelf[0]
+    let rest = Array(snapshot.shelf.dropFirst().prefix(3))
     return VStack(alignment: .leading, spacing: 8) {
       FushiWidgetTag(text: title)
-      Link(destination: main.url.fushiURL ?? URL(string: "fushi://")!) {
+      Link(destination: main.link.fushiURL ?? URL(string: FushiLinks.open)!) {
         ZStack(alignment: .bottomLeading) {
           FushiCoverImage(path: main.cover, kind: main.kind, cornerRadius: 14)
             .frame(maxWidth: .infinity)
@@ -291,8 +323,8 @@ struct FushiContinueView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
           HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 1) {
-              Text(main.title).font(.headline).foregroundStyle(.white).lineLimit(1)
-              Text(main.subtitle).font(.caption).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
+              Text(snapshot.displayTitle(main)).font(.headline).foregroundStyle(.white).lineLimit(1)
+              Text(caption(main)).font(.caption).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
             }
             Spacer()
             Image(systemName: "play.fill")
@@ -306,20 +338,20 @@ struct FushiContinueView: View {
         // 高度钉在整个 ZStack 上：渐变层是贪婪的，只钉封面会把卡片撑高、封面浮在中间。
         .frame(height: 128)
       }
-      if let progress = main.progress { FushiProgressBar(value: progress, height: 4) }
+      if main.progress > 0 { FushiProgressBar(value: main.progress, height: 4) }
       VStack(spacing: 7) {
         ForEach(rest, id: \.self) { item in
-          Link(destination: item.url.fushiURL ?? URL(string: "fushi://")!) {
+          Link(destination: item.link.fushiURL ?? URL(string: FushiLinks.open)!) {
             HStack(spacing: 10) {
               FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 5)
                 .frame(width: 30, height: 42)
               VStack(alignment: .leading, spacing: 1) {
-                Text(item.title).font(.footnote.weight(.semibold)).lineLimit(1)
+                Text(snapshot.displayTitle(item)).font(.footnote.weight(.semibold)).lineLimit(1)
                 Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
               }
               Spacer()
-              if let label = item.progressLabel {
-                Text(label).font(.caption).foregroundStyle(.secondary)
+              if !item.position.isEmpty {
+                Text(item.position).font(.caption).foregroundStyle(.secondary)
               }
             }
           }
@@ -347,34 +379,40 @@ struct FushiWordView: View {
   let entry: FushiWidgetEntry
 
   var body: some View {
-    if let word = entry.snapshot?.word {
-      VStack(alignment: .leading, spacing: 2) {
-        FushiWidgetTag(text: entry.snapshot?.label("word_title", "Word of the day") ?? "")
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-          Text(word.term).font(.system(size: 30, weight: .bold, design: .serif)).lineLimit(1)
-            .minimumScaleFactor(0.6)
-          // 只显示卡片自带的读音字段；没有就不显示（不做自动注音）。
-          if let reading = word.reading, !reading.isEmpty {
-            Text(reading).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+    if let snapshot = entry.snapshot {
+      if let word = snapshot.wordOfTheDay {
+        VStack(alignment: .leading, spacing: 2) {
+          FushiWidgetTag(text: entry.label("vocabTitle", "Vocabulary"))
+          HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(word.term).font(.system(size: 30, weight: .bold, design: .serif)).lineLimit(1)
+              .minimumScaleFactor(0.6)
+            // 只显示卡片 / 收藏自带的读音字段；没有就不显示（不做自动注音）。
+            if !word.reading.isEmpty && word.reading != word.term {
+              Text(word.reading).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            }
+          }
+          .padding(.top, 4)
+          if !snapshot.privacy.hideDefinitions {
+            Text(word.definition).font(.footnote).lineLimit(2)
+            Spacer(minLength: 2)
+            if !word.sentence.isEmpty {
+              Text(word.source.isEmpty ? word.sentence : "\(word.sentence) — \(word.source)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+          } else {
+            Spacer(minLength: 2)
           }
         }
-        .padding(.top, 4)
-        Text(word.meaning).font(.footnote).lineLimit(2)
-        Spacer(minLength: 2)
-        if let sentence = word.sentence {
-          Text(word.source.map { "\(sentence) — \($0)" } ?? sentence)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .widgetURL(word.link.fushiURL)
+      } else {
+        VStack(spacing: 6) {
+          Image(systemName: "character.book.closed").font(.title2).foregroundStyle(FushiPalette.accent)
+          Text(entry.label("noVocab", "Words you save will show up here"))
+            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .widgetURL(word.url.fushiURL)
-    } else if entry.snapshot != nil {
-      VStack(spacing: 6) {
-        Image(systemName: "character.book.closed").font(.title2).foregroundStyle(FushiPalette.accent)
-        Text(entry.snapshot?.label("word_empty", "Make a card to see it here") ?? "")
-          .font(.caption).foregroundStyle(.secondary)
       }
     } else {
       FushiEmptyState(snapshot: nil)
@@ -399,20 +437,20 @@ struct FushiHeatmapView: View {
   let entry: FushiWidgetEntry
 
   var body: some View {
-    if let study = entry.snapshot?.study {
+    if let snapshot = entry.snapshot, let month = snapshot.month {
       HStack(spacing: 14) {
         VStack(alignment: .leading, spacing: 8) {
-          FushiWidgetTag(text: entry.snapshot?.label("heat_title", "Last 16 weeks") ?? "")
-          FushiHeatGrid(cells: study.heat)
+          FushiWidgetTag(text: entry.label("recentDays", "Last 35 days"))
+          FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
         }
         VStack(alignment: .leading) {
-          stat(study.weekValue, study.weekCaption)
+          stat(month.time, entry.label("thisMonth", "This month"))
           Spacer()
-          stat(study.cardsValue, study.cardsCaption)
+          stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
         }
         .frame(width: 76, alignment: .leading)
       }
-      .widgetURL(study.url.fushiURL)
+      .widgetURL(FushiLinks.stats.fushiURL)
     } else {
       FushiEmptyState(snapshot: entry.snapshot)
     }
@@ -426,11 +464,24 @@ struct FushiHeatmapView: View {
   }
 }
 
+/// 一列一周（周一在上），最旧 → 今天；首列按 `firstWeekday` 留空，对齐星期。
 struct FushiHeatGrid: View {
+  /// 每天 0…4 档。
   let cells: [Int]
+  /// `cells[0]` 的 ISO 星期（周一 = 1）。
+  let firstWeekday: Int
+
+  /// 分钟数 → 0…4 档：0 = 没学；其余按本窗口最大值四等分（只是颜色深浅，不是统计数字）。
+  static func levels(_ minutes: [Int]) -> [Int] {
+    let peak = minutes.max() ?? 0
+    guard peak > 0 else { return minutes.map { _ in 0 } }
+    return minutes.map { m in m <= 0 ? 0 : min(4, Int(ceil(Double(m) * 4 / Double(peak)))) }
+  }
 
   var body: some View {
-    let columns = max((cells.count + 6) / 7, 1)
+    let lead = max(0, min(6, firstWeekday - 1))
+    let total = lead + cells.count
+    let columns = max((total + 6) / 7, 1)
     GeometryReader { proxy in
       let gap: CGFloat = 3
       let side = min(
@@ -440,8 +491,9 @@ struct FushiHeatGrid: View {
         ForEach(0..<columns, id: \.self) { column in
           VStack(spacing: gap) {
             ForEach(0..<7, id: \.self) { row in
-              let index = column * 7 + row
-              cell(index < cells.count ? cells[index] : 0).frame(width: side, height: side)
+              let index = column * 7 + row - lead
+              cell(index >= 0 && index < cells.count ? cells[index] : nil)
+                .frame(width: side, height: side)
             }
           }
         }
@@ -450,16 +502,17 @@ struct FushiHeatGrid: View {
   }
 
   @ViewBuilder
-  private func cell(_ level: Int) -> some View {
-    if level < 0 {
-      RoundedRectangle(cornerRadius: 2.5)
-        .strokeBorder(FushiPalette.study, style: StrokeStyle(lineWidth: 1, dash: [2, 1.5]))
-    } else if level == 0 {
-      RoundedRectangle(cornerRadius: 2.5).fill(.quaternary)
+  private func cell(_ level: Int?) -> some View {
+    if let level {
+      if level == 0 {
+        RoundedRectangle(cornerRadius: 2.5).fill(.quaternary)
+      } else {
+        RoundedRectangle(cornerRadius: 2.5)
+          .fill(FushiPalette.study.opacity(0.25 + 0.1875 * Double(min(level, 4))))
+          .widgetAccentable()
+      }
     } else {
-      RoundedRectangle(cornerRadius: 2.5)
-        .fill(FushiPalette.study.opacity(0.25 + 0.1875 * Double(min(level, 4))))
-        .widgetAccentable()
+      Color.clear
     }
   }
 }
@@ -477,22 +530,23 @@ struct FushiAudiobookWidget: Widget {
   }
 }
 
+/// 快照的 `nowPlaying`：正在 / 最近播放的有声书或音乐。
 struct FushiAudiobookView: View {
   let entry: FushiWidgetEntry
 
-  /// iOS：App Intent 在后台直接续播（会话还在时），否则带到前台；macOS 没有后台续播的
-  /// 意义（app 在 Dock 里常驻），直接走深链。
+  /// iOS：App Intent 在后台直接续播（会话还在时），否则带到前台打开 `link`；macOS 没有后台
+  /// 续播的意义（app 在 Dock 里常驻），直接走深链。
   @ViewBuilder
-  private func resumeButton(_ book: FushiWidgetSnapshot.ContinueItem) -> some View {
-    let label = Label(entry.label("listen_resume", "Resume"), systemImage: "play.fill")
+  private func resumeButton(_ item: FushiWidgetSnapshot.NowPlaying) -> some View {
+    let label = Label(entry.label("play", "Play"), systemImage: "play.fill")
       .font(.caption.weight(.semibold))
     #if os(iOS)
-      Button(intent: FushiResumeAudiobookIntent(url: book.url)) { label }
+      Button(intent: FushiResumeAudiobookIntent(kind: item.kind, url: item.link)) { label }
         .buttonStyle(.borderedProminent)
         .tint(FushiPalette.listen)
         .widgetAccentable()
     #else
-      Link(destination: URL(string: FushiLinks.resumeListening)!) {
+      Link(destination: item.link.fushiURL ?? URL(string: FushiLinks.open)!) {
         label
           .foregroundStyle(.white)
           .padding(.horizontal, 10)
@@ -504,23 +558,36 @@ struct FushiAudiobookView: View {
   }
 
   var body: some View {
-    if let book = entry.snapshot?.audiobook {
-      VStack(alignment: .leading, spacing: 0) {
-        FushiCoverImage(path: book.cover, kind: "audiobook", cornerRadius: 12)
-          .frame(width: 54, height: 54)
-        Spacer(minLength: 6)
-        Text(book.title).font(.footnote.weight(.bold)).lineLimit(2)
-        Text(book.progressLabel ?? book.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-        Spacer(minLength: 6)
-        resumeButton(book)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .widgetURL(book.url.fushiURL)
-    } else if entry.snapshot != nil {
-      VStack(spacing: 6) {
-        Image(systemName: "headphones").font(.title2).foregroundStyle(FushiPalette.listen)
-        Text(entry.snapshot?.label("listen_empty", "No audiobook yet") ?? "")
-          .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+    if let snapshot = entry.snapshot {
+      if let item = snapshot.nowPlaying {
+        VStack(alignment: .leading, spacing: 0) {
+          FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 12)
+            .frame(width: 54, height: 54)
+          Spacer(minLength: 6)
+          Text(snapshot.privacy.hideTitles ? entry.label("kind_\(item.kind)", item.kind) : item.title)
+            .font(.footnote.weight(.bold)).lineLimit(2)
+          if item.progress > 0 {
+            FushiProgressBar(value: item.progress, tint: FushiPalette.listen, height: 3).padding(.vertical, 3)
+          } else {
+            Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+          }
+          Spacer(minLength: 6)
+          if item.playing {
+            Label(entry.label("nowPlaying", "Now playing"), systemImage: "waveform")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(FushiPalette.listen)
+          } else {
+            resumeButton(item)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .widgetURL(item.link.fushiURL)
+      } else {
+        VStack(spacing: 6) {
+          Image(systemName: "headphones").font(.title2).foregroundStyle(FushiPalette.listen)
+          Text(entry.label("nothingPlaying", "Nothing playing"))
+            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
       }
     } else {
       FushiEmptyState(snapshot: nil)
@@ -544,17 +611,13 @@ struct FushiLookupWidget: Widget {
 struct FushiLookupView: View {
   let entry: FushiWidgetEntry
 
-  private func label(_ key: String, _ fallback: String) -> String {
-    entry.snapshot?.label(key, fallback) ?? fallback
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      FushiWidgetTag(text: label("lookup_title", "Look up"))
+      FushiWidgetTag(text: entry.label("lookUp", "Look up"))
       Link(destination: URL(string: FushiLinks.lookup)!) {
         HStack(spacing: 6) {
           Image(systemName: "magnifyingglass")
-          Text(label("lookup_hint", "Type or paste")).lineLimit(1)
+          Text(entry.label("lookupHint", "Type or paste")).lineLimit(1)
           Spacer(minLength: 0)
         }
         .font(.footnote)
@@ -565,8 +628,8 @@ struct FushiLookupView: View {
       }
       Spacer(minLength: 0)
       HStack(spacing: 8) {
-        tile(FushiLinks.cameraLookup, "camera", label("lookup_camera", "Camera"))
-        tile(FushiLinks.clipboardLookup, "doc.on.clipboard", label("lookup_clipboard", "Clipboard"))
+        tile(FushiLinks.cameraLookup, "camera", entry.label("lookupCamera", "Camera"))
+        tile(FushiLinks.clipboardLookup, "doc.on.clipboard", entry.label("lookupClipboard", "Clipboard"))
       }
     }
   }
@@ -595,13 +658,4 @@ enum FushiFamilies {
     static let study: [WidgetFamily] = [.systemSmall]
     static let continueList: [WidgetFamily] = [.systemMedium, .systemLarge]
   #endif
-}
-
-/// 与 Dart `HomeWidgetLink` 对齐的深链。
-enum FushiLinks {
-  static let lookup = "fushi://shortcut/lookup"
-  static let cameraLookup = "fushi://widget/camera_lookup"
-  static let clipboardLookup = "fushi://widget/clipboard_lookup"
-  static let review = "fushi://srs/review"
-  static let resumeListening = "fushi://widget/resume_audiobook"
 }

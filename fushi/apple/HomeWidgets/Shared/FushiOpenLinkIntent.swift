@@ -16,11 +16,21 @@ import Foundation
     @Parameter(title: "Link")
     var url: String
 
+    /// true：先试着在 app 里续播（Dart `resume`），续不上再打开 [url]（macOS 的「接着听」控件）。
+    @Parameter(title: "Resume playback", default: false)
+    var resume: Bool
+
     init() {}
-    init(url: String) { self.url = url }
+    init(url: String, resume: Bool = false) {
+      self.url = url
+      self.resume = resume
+    }
 
     @MainActor
     func perform() async throws -> some IntentResult {
+      if resume, await FushiIntentRelay.send("resume", nil) {
+        return .result()
+      }
       await FushiIntentRelay.openInForeground(url)
       return .result()
     }

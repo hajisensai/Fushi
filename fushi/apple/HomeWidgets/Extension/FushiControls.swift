@@ -55,11 +55,11 @@ struct FushiResumeListeningControl: ControlWidget {
 
   #if os(iOS)
     private var resumeIntent: FushiResumeAudiobookIntent {
-      FushiResumeAudiobookIntent(url: FushiLinks.resumeListening)
+      FushiResumeAudiobookIntent(kind: nil, url: FushiLinks.booksTab)
     }
   #else
     private var resumeIntent: FushiOpenLinkIntent {
-      FushiOpenLinkIntent(url: FushiLinks.resumeListening)
+      FushiOpenLinkIntent(url: FushiLinks.booksTab, resume: true)
     }
   #endif
 }

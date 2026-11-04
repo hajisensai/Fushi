@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 /// macOS source links from Launch Services, including links queued during launch.
 ///
 /// Besides card-source links it carries the home-widget / menu-bar links
-/// ([routedHosts]: review, stats, continue, widget actions, shortcut, lookup);
+/// ([routedHosts]: `fushi://widget/...` widget links, shortcut, lookup);
 /// main.dart routes every event through `handleIncomingUrl`.
 ///
 /// Android uses ReceiveIntent, iOS uses IosUrlEventChannel and Windows uses the
@@ -25,13 +25,11 @@ class SourceUrlChannel {
   static Stream<String> get urls => _urls;
 
   /// `fushi://` hosts that macOS hands to Dart on this stream (mirrored by
-  /// `FushiRoutedUrlHosts` in macos/Runner/AppDelegate.swift). OAuth / AnkiMobile
-  /// callbacks are not here: they stay with their own plugins.
+  /// `fushiRoutedUrlHosts` in macos/Runner/AppDelegate.swift; the two are kept
+  /// equal by source_url_native_contract_test). OAuth / AnkiMobile callbacks are
+  /// not here: they stay with their own plugins.
   static const Set<String> routedHosts = <String>{
     'source',
-    'srs',
-    'stats',
-    'continue',
     'widget',
     'shortcut',
     'lookup',

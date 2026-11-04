@@ -7,103 +7,103 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تابع كتابك الصوتي بنقرة واحدة."
+            "value": "تابع كتابك الصوتي أو موسيقاك بنقرة واحدة."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hörbuch mit einem Tipp fortsetzen."
+            "value": "Hörbuch oder Musik mit einem Tipp fortsetzen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resume your audiobook with one tap."
+            "value": "Resume your audiobook or music with one tap."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Retoma tu audiolibro con un toque."
+            "value": "Retoma tu audiolibro o tu música con un toque."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reprenez votre livre audio d’un geste."
+            "value": "Reprenez votre livre audio ou votre musique d'un toucher."
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lanjutkan buku audio dengan satu ketukan."
+            "value": "Lanjutkan buku audio atau musikmu dengan sekali ketuk."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Riprendi l’audiolibro con un tocco."
+            "value": "Riprendi il tuo audiolibro o la tua musica con un tocco."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワンタップでオーディオブックの続きを再生。"
+            "value": "オーディオブックや音楽をワンタップで再開。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "한 번에 오디오북을 이어 듣기."
+            "value": "오디오북이나 음악을 한 번에 이어서 재생하세요."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ga met één tik verder met je luisterboek."
+            "value": "Ga met één tik verder met je luisterboek of muziek."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Retome seu audiolivro com um toque."
+            "value": "Retome seu audiolivro ou sua música com um toque."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Продолжите аудиокнигу одним касанием."
+            "value": "Продолжайте аудиокнигу или музыку одним касанием."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ฟังหนังสือเสียงต่อได้ในแตะเดียว"
+            "value": "เล่นหนังสือเสียงหรือเพลงต่อได้ในแตะเดียว"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sesli kitabına tek dokunuşla devam et."
+            "value": "Sesli kitabını ya da müziğini tek dokunuşla sürdür."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nghe tiếp sách nói chỉ với một chạm."
+            "value": "Tiếp tục sách nói hoặc nhạc chỉ với một chạm."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一键接着听有声书。"
+            "value": "一键继续播放有声书或音乐。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "一鍵繼續聽有聲書。"
+            "value": "一鍵繼續播放有聲書或音樂。"
           }
         }
       }
@@ -328,103 +328,103 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تابع الكتب والفيديوهات والألعاب من حيث توقفت."
+            "value": "تابع الكتب والمانغا والفيديوهات من حيث توقفت."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bücher, Videos und Spiele dort fortsetzen, wo du aufgehört hast."
+            "value": "Bücher, Manga und Videos dort fortsetzen, wo du aufgehört hast."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pick up books, videos and games where you left off."
+            "value": "Pick up books, manga and videos where you left off."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Retoma libros, vídeos y juegos donde los dejaste."
+            "value": "Retoma libros, manga y vídeos donde los dejaste."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reprenez livres, vidéos et jeux là où vous les avez laissés."
+            "value": "Reprenez livres, mangas et vidéos là où vous vous êtes arrêté."
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lanjutkan buku, video, dan game dari terakhir kali."
+            "value": "Lanjutkan buku, manga, dan video dari terakhir kali."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Riprendi libri, video e giochi da dove eri rimasto."
+            "value": "Riprendi libri, manga e video da dove avevi lasciato."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "本・動画・ゲームを前回の続きから。"
+            "value": "本・マンガ・動画を前回の続きから。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "책, 영상, 게임을 멈춘 곳부터 이어서."
+            "value": "책, 만화, 동영상을 멈춘 곳부터 이어 보세요."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ga verder met boeken, video’s en games waar je was gebleven."
+            "value": "Ga verder met boeken, manga en video's waar je gebleven was."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Retome livros, vídeos e jogos de onde parou."
+            "value": "Continue livros, mangás e vídeos de onde parou."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Продолжайте книги, видео и игры с того места, где остановились."
+            "value": "Продолжайте книги, мангу и видео с того места, где остановились."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "อ่านหนังสือ ดูวิดีโอ และเล่นเกมต่อจากที่ค้างไว้"
+            "value": "อ่านหนังสือ มังงะ และดูวิดีโอต่อจากที่ค้างไว้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kitaplara, videolara ve oyunlara kaldığın yerden devam et."
+            "value": "Kitaplara, mangalara ve videolara kaldığın yerden devam et."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tiếp tục sách, video và trò chơi từ chỗ đã dừng."
+            "value": "Tiếp tục sách, manga và video từ chỗ bạn dừng lại."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从上次停下的地方接着读书、看视频、玩游戏。"
+            "value": "从上次停下的地方继续书籍、漫画和视频。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "從上次停下的地方繼續讀書、看影片、玩遊戲。"
+            "value": "從上次停下的地方繼續書籍、漫畫和影片。"
           }
         }
       }
@@ -649,103 +649,103 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "ستة عشر أسبوعًا من وقت الدراسة في لمحة."
+            "value": "وقت الدراسة في آخر خمسة أسابيع في لمحة."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sechzehn Wochen Lernzeit auf einen Blick."
+            "value": "Die Lernzeit der letzten fünf Wochen auf einen Blick."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sixteen weeks of study time at a glance."
+            "value": "The last five weeks of study time at a glance."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dieciséis semanas de estudio de un vistazo."
+            "value": "Tu tiempo de estudio de las últimas cinco semanas de un vistazo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seize semaines de temps d’étude en un coup d’œil."
+            "value": "Votre temps d'étude des cinq dernières semaines en un coup d'œil."
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Waktu belajar 16 minggu dalam sekali lihat."
+            "value": "Waktu belajar lima minggu terakhir dalam sekilas."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sedici settimane di studio a colpo d’occhio."
+            "value": "Il tempo di studio delle ultime cinque settimane a colpo d'occhio."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "直近 16 週間の学習時間をひと目で。"
+            "value": "直近 5 週間の学習時間がひと目でわかります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "최근 16주 학습 시간을 한눈에."
+            "value": "최근 5주간의 학습 시간을 한눈에 확인하세요."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zestien weken studietijd in één oogopslag."
+            "value": "Je studietijd van de afgelopen vijf weken in één oogopslag."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dezesseis semanas de estudo num relance."
+            "value": "Seu tempo de estudo das últimas cinco semanas num relance."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шестнадцать недель занятий одним взглядом."
+            "value": "Время занятий за последние пять недель с одного взгляда."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เวลาเรียน 16 สัปดาห์ในพริบตา"
+            "value": "เวลาเรียนในห้าสัปดาห์ล่าสุดแบบดูได้ในพริบตา"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "On altı haftalık çalışma süresi bir bakışta."
+            "value": "Son beş haftanın çalışma süresi bir bakışta."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mười sáu tuần học tập trong nháy mắt."
+            "value": "Thời gian học trong năm tuần gần nhất, xem nhanh trong nháy mắt."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一眼看完最近 16 周的学习时长。"
+            "value": "一眼看清最近 5 周的学习时长。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "一眼看完最近 16 週的學習時長。"
+            "value": "一眼看清最近 5 週的學習時長。"
           }
         }
       }
@@ -1184,103 +1184,103 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "البطاقات المستحقة الآن وكيف يزداد عددها خلال اليوم."
+            "value": "البطاقات المستحقة اليوم، مقسّمة إلى جديدة وقيد التعلّم ومراجعة."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jetzt fällige Karten und wie viele heute noch dazukommen."
+            "value": "Heute fällige Karten, aufgeteilt in neu, lernen und wiederholen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cards due now, and how the count grows through the day."
+            "value": "Cards due today, split into new, learning and review."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tarjetas pendientes ahora y cuántas se suman durante el día."
+            "value": "Tarjetas pendientes hoy, divididas en nuevas, en aprendizaje y repaso."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cartes à réviser maintenant et celles qui arrivent dans la journée."
+            "value": "Cartes à réviser aujourd'hui, réparties en nouvelles, en apprentissage et révision."
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kartu yang jatuh tempo sekarang dan yang menyusul hari ini."
+            "value": "Kartu yang jatuh tempo hari ini, dibagi menjadi baru, belajar, dan ulasan."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Carte da ripassare ora e quante se ne aggiungono in giornata."
+            "value": "Schede da ripassare oggi, divise in nuove, in apprendimento e ripasso."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "今すぐ復習するカードと、今日この後に増える枚数。"
+            "value": "今日の復習カード（新規・学習中・復習の内訳）。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지금 복습할 카드와 오늘 남은 시간 동안 늘어날 수."
+            "value": "오늘 복습할 카드(새 카드·학습 중·복습)."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kaarten die nu klaarstaan en hoeveel er vandaag nog bijkomen."
+            "value": "Kaarten die vandaag aan de beurt zijn, verdeeld in nieuw, leren en herhalen."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cartões pendentes agora e quantos chegam ao longo do dia."
+            "value": "Cartões para hoje, divididos em novos, em aprendizado e revisão."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Карточки к повторению сейчас и сколько добавится за день."
+            "value": "Карточки на сегодня: новые, изучаемые и на повторение."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "การ์ดที่ถึงกำหนดตอนนี้ และจำนวนที่จะเพิ่มระหว่างวัน"
+            "value": "การ์ดที่ถึงกำหนดวันนี้ แยกเป็นใหม่ กำลังเรียน และทบทวน"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Şimdi tekrar edilecek kartlar ve gün içinde eklenecekler."
+            "value": "Bugün vadesi gelen kartlar; yeni, öğreniliyor ve tekrar olarak ayrılmış."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thẻ cần ôn ngay và số thẻ sẽ đến hạn trong ngày."
+            "value": "Thẻ đến hạn hôm nay, chia thành mới, đang học và ôn tập."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "现在该复习的卡片，以及今天剩下时间里还会到期多少。"
+            "value": "今天待复习的卡片，按新卡、学习中、复习分开显示。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "現在該複習的卡片，以及今天稍後還會到期多少。"
+            "value": "今天待複習的卡片，按新卡、學習中、複習分開顯示。"
           }
         }
       }
@@ -1612,103 +1612,103 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "بطاقة من مجموعتك مع الجملة التي حفظتها منها."
+            "value": "كلمة حفظتها أو صنعت منها بطاقة مؤخرًا، مع جملتها."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eine Karte aus deinem Stapel mit dem Satz, aus dem du sie gespeichert hast."
+            "value": "Ein Wort, das du kürzlich gespeichert oder zu einer Karte gemacht hast, mit seinem Satz."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A card from your own deck, with the sentence you saved it from."
+            "value": "A word you recently saved or made a card from, with its sentence."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Una tarjeta de tu mazo con la frase de la que la guardaste."
+            "value": "Una palabra que guardaste o convertiste en tarjeta hace poco, con su frase."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Une carte de votre paquet, avec la phrase d’origine."
+            "value": "Un mot que vous avez récemment enregistré ou transformé en carte, avec sa phrase."
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Satu kartu dari dek Anda beserta kalimat asalnya."
+            "value": "Kata yang baru saja kamu simpan atau jadikan kartu, beserta kalimatnya."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Una carta del tuo mazzo con la frase da cui l’hai salvata."
+            "value": "Una parola che hai salvato o trasformato in scheda di recente, con la sua frase."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "自分のデッキから 1 枚、保存したときの例文つき。"
+            "value": "最近保存した・カードにした単語を、その例文と一緒に。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "내 덱에서 고른 카드 한 장과 저장할 때의 예문."
+            "value": "최근 저장했거나 카드로 만든 단어와 그 문장."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Een kaart uit je eigen stapel, met de zin waaruit je hem bewaarde."
+            "value": "Een woord dat je onlangs hebt bewaard of tot kaart hebt gemaakt, met de zin erbij."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Um cartão do seu baralho, com a frase de onde você o salvou."
+            "value": "Uma palavra que você salvou ou transformou em cartão recentemente, com a frase."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Карточка из вашей колоды с исходным предложением."
+            "value": "Слово, которое вы недавно сохранили или превратили в карточку, вместе с предложением."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "การ์ดจากเด็คของคุณ พร้อมประโยคที่บันทึกไว้"
+            "value": "คำที่คุณเพิ่งบันทึกหรือทำเป็นการ์ด พร้อมประโยคของคำนั้น"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Destenden bir kart ve kaydettiğin cümle."
+            "value": "Yakın zamanda kaydettiğin ya da karta dönüştürdüğün bir kelime, cümlesiyle birlikte."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Một thẻ trong bộ thẻ của bạn kèm câu gốc."
+            "value": "Một từ bạn vừa lưu hoặc tạo thẻ, kèm câu chứa nó."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从你自己的卡组里挑一张，附上当时的例句。"
+            "value": "最近收藏或制卡的一个词，附带它的原句。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "從你自己的卡組裡挑一張，附上當時的例句。"
+            "value": "最近收藏或製卡的一個詞，附帶它的原句。"
           }
         }
       }
