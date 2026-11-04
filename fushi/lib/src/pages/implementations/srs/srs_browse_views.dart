@@ -1064,7 +1064,7 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
 
 // ================================================================ 健康条
 
-/// 健康条的计数（-1 = 没算出来 / 语法不支持，那一项不显示）。
+/// 健康条的计数：全部按**笔记**数（-1 = 没算出来 / 语法不支持，那一项不显示）。
 class SrsBrowseHealthCounts {
   const SrsBrowseHealthCounts({
     required this.emptyField,
@@ -1078,49 +1078,50 @@ class SrsBrowseHealthCounts {
   final int hard;
   final int dupes;
 
-  int get problems =>
-      (emptyField < 0 ? 0 : emptyField) + (missingAudio < 0 ? 0 : missingAudio);
-
-  bool get isEmpty => problems == 0 && hard <= 0 && dupes <= 0;
+  bool get isEmpty =>
+      emptyField <= 0 && missingAudio <= 0 && hard <= 0 && dupes <= 0;
 }
 
-/// 健康条（宽屏）：几项计数，点「查看」换成对应条件，「修复」交给浏览页。
+/// 健康条（宽屏）：几项按笔记计的问题，每项只有「查看」——把对应条件作为查询积木套到列表上，
+/// 用户看过再自己选中处理（批量删除 / 补音频都走选择后的批量操作），这里不做任何写入。
 class SrsBrowseHealthBar extends StatelessWidget {
   const SrsBrowseHealthBar({
     super.key,
     required this.counts,
-    required this.onViewProblems,
+    required this.onViewEmptyField,
+    required this.onViewMissingAudio,
     required this.onViewHard,
     required this.onViewDupes,
-    required this.onFix,
   });
 
   final SrsBrowseHealthCounts counts;
-  final VoidCallback onViewProblems;
+  final VoidCallback onViewEmptyField;
+  final VoidCallback onViewMissingAudio;
   final VoidCallback onViewHard;
   final VoidCallback onViewDupes;
-
-  /// null = 没有可修的（问题卡为 0）。
-  final VoidCallback? onFix;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsBrowseHealthCounts c = counts;
     final List<Widget> items = <Widget>[
-      if (c.problems > 0)
+      if (c.emptyField > 0)
         _item(
           context,
-          keyName: 'problems',
+          keyName: 'empty',
           tone: FushiStatusTone.error,
           icon: FushiIcons.warning,
-          text: t.srs_browse_health_problems(
-            n: c.problems,
-            e: c.emptyField < 0 ? 0 : c.emptyField,
-            a: c.missingAudio < 0 ? 0 : c.missingAudio,
-          ),
-          onView: onViewProblems,
-          onFix: onFix,
+          text: t.srs_browse_health_empty_notes(n: c.emptyField),
+          onView: onViewEmptyField,
+        ),
+      if (c.missingAudio > 0)
+        _item(
+          context,
+          keyName: 'audio',
+          tone: FushiStatusTone.warning,
+          icon: FushiIcons.warning,
+          text: t.srs_browse_health_missing_audio_notes(n: c.missingAudio),
+          onView: onViewMissingAudio,
         ),
       if (c.hard > 0)
         _item(
@@ -1128,7 +1129,7 @@ class SrsBrowseHealthBar extends StatelessWidget {
           keyName: 'hard',
           tone: FushiStatusTone.warning,
           icon: FushiIcons.speed,
-          text: t.srs_browse_health_hard(n: c.hard),
+          text: t.srs_browse_health_hard_notes(n: c.hard),
           onView: onViewHard,
         ),
       if (c.dupes > 0)
@@ -1137,7 +1138,7 @@ class SrsBrowseHealthBar extends StatelessWidget {
           keyName: 'dupes',
           tone: FushiStatusTone.warning,
           icon: FushiIcons.copyAll,
-          text: t.srs_browse_health_dupes(n: c.dupes),
+          text: t.srs_browse_health_dupe_notes(n: c.dupes),
           onView: onViewDupes,
         ),
     ];
@@ -1166,7 +1167,6 @@ class SrsBrowseHealthBar extends StatelessWidget {
     required IconData icon,
     required String text,
     required VoidCallback onView,
-    VoidCallback? onFix,
   }) {
     final Color color = fushiStatusColor(context, tone);
     return FushiCard(
@@ -1190,12 +1190,6 @@ class SrsBrowseHealthBar extends StatelessWidget {
             onPressed: onView,
             child: Text(t.srs_browse_health_view),
           ),
-          if (onFix != null)
-            FushiFilledButton.tonal(
-              key: ValueKey<String>('srs-browse-health-$keyName-fix'),
-              onPressed: onFix,
-              child: Text(t.srs_browse_health_fix),
-            ),
         ],
       ),
     );

@@ -26,7 +26,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -51,11 +50,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
-import 'package:fushi/src/srs/srs_word_audio_backfill.dart';
-import 'package:fushi/src/srs/srs_word_audio_backfill_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -376,14 +371,14 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           ),
         for (int i = 0; i < _savedViews.length; i++)
           ('saved-$i', _savedViews[i].query),
-        ('health-hard', 'prop:lapses>=4'),
-        ('health-dupes', 'is:dupe'),
       ];
-      // 「一键修复」按笔记删 / 补音频（[_fixProblems] 用笔记模式查询）：这两项固定数笔记，确认框里的数字
-      // 与实际动到的笔记同口径，不随列表的卡片 / 笔记模式变。
+      // 健康条四项一律按笔记数（文案也写「N 条笔记」），不随列表的卡片 / 笔记模式变：
+      // 多卡笔记不会被数成好几份。健康条只把条件套到列表上，不做写入。
       final List<(String, String)> noteQueries = <(String, String)>[
         ('health-empty', kSrsBrowseHealthEmptyQuery),
         if (fushi != null) ('health-audio', srsBrowseMissingAudioQuery(fushi)),
+        ('health-hard', kSrsBrowseHealthHardQuery),
+        ('health-dupes', kSrsBrowseHealthDupesQuery),
       ];
       final List<int> counts = await session.counts(<String>[
         for (final (String, String) q in queries) q.$2,
@@ -1034,125 +1029,6 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _revision++;
     _detailRevision.value = _revision;
     await _refresh();
-  }
-
-  // ------------------------------------------------------------------ 健康条修复
-
-  /// 修复问题卡：确认后删掉主字段为空的笔记、给缺音频的 Fushi 卡片补单词音频（逐张取音频的进度对话框）；
-  /// 两步合成撤销栈的一步（删笔记可恢复、补的音频按条件写回空值）。
-  Future<void> _fixProblems() async {
-    final SrsDbStore? store = await readSrsStore(ref);
-    final SrsBrowseSession? session = _session;
-    final SrsBrowseHealthCounts? health = _health;
-    if (store == null || session == null || health == null || _busy) return;
-    final String? fushi = _fushiNoteTypeName;
-    final int empty = math.max(0, health.emptyField);
-    final int audio = math.max(0, health.missingAudio);
-    final bool ok = await _focusOwnership.guardOverlay(
-      () => showFushiConfirmDialog(
-        context: context,
-        title: t.srs_browse_health_fix_title,
-        message: t.srs_browse_health_fix_confirm(e: empty, a: audio),
-        confirmLabel: t.srs_browse_health_fix,
-        cancelLabel: t.cancel,
-        icon: FushiIcons.warning,
-        destructive: empty > 0,
-      ),
-    );
-    if (!ok || !mounted) return;
-    final List<SrsBatchRevert> reverts = <SrsBatchRevert>[];
-    setState(() => _busy = true);
-    try {
-      if (empty > 0) {
-        final SrsBrowseResult r = await session.query(
-          query: kSrsBrowseHealthEmptyQuery,
-          mode: SrsBrowseMode.notes,
-        );
-        final SrsBrowseTargets targets = await r.targets(await r.ids());
-        final SrsBatchOutcome out = await srsBatchDeleteNotes(
-          store,
-          targets.noteIds,
-        );
-        if (out.revert != null) reverts.add(out.revert!);
-      }
-      if (audio > 0 && fushi != null && mounted) {
-        final SrsBrowseResult r = await session.query(
-          query: srsBrowseMissingAudioQuery(fushi),
-          mode: SrsBrowseMode.notes,
-        );
-        final SrsBrowseTargets targets = await r.targets(await r.ids());
-        await _backfillAudio(store, targets.noteIds, reverts);
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsBrowse.healthFix', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
-    } finally {
-      if (reverts.isNotEmpty) {
-        _undo.add(
-          _UndoEntry((SrsDbStore s) async {
-            int blocked = 0;
-            for (final SrsBatchRevert r in reverts.reversed) {
-              blocked += await r(s);
-            }
-            return blocked;
-          }),
-        );
-      }
-      if (mounted) setState(() => _busy = false);
-    }
-    await _afterWrite();
-  }
-
-  /// 补单词音频：沿用牌组菜单的进度对话框与取音频链路，写入换成条件写（每张一个可撤销的计划）。
-  Future<void> _backfillAudio(
-    SrsDbStore store,
-    List<String> noteIds,
-    List<SrsBatchRevert> reverts,
-  ) async {
-    final AppModel app = ref.read(appProvider);
-    final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
-    if (media == null || !mounted) return;
-    final SrsMiner miner = SrsMiner(store: store, media: media);
-    final SrsWordAudioBackfillFields fields =
-        SrsWordAudioBackfillFields.forProfile(store.profileUid);
-    final SrsWordAudioBackfillController controller =
-        SrsWordAudioBackfillController(
-          scan: () async => srsWordAudioBackfillCandidates(<SrsNoteView>[
-            for (final SrsNoteView? n in (await store.notes(noteIds)).values)
-              ?n,
-          ], fields),
-          deps: SrsWordAudioBackfillDeps(
-            fetch: srsMiningWordAudioFetcher(app, miner),
-            write: (String noteId, String value) async {
-              final SrsNoteFieldApplied applied = await srsApplyNoteFieldPlan(
-                store,
-                await srsPlanSetField(
-                  store,
-                  <String>[noteId],
-                  FushiCardFields.termAudio,
-                  value,
-                ),
-              );
-              final SrsBatchRevert? revert = applied.outcome.revert;
-              if (revert != null) reverts.add(revert);
-            },
-          ),
-        );
-    final Future<void> run = controller.start();
-    try {
-      await _focusOwnership.guardOverlay(
-        () => showAppDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext dialogContext) =>
-              SrsWordAudioBackfillDialog(controller: controller),
-        ),
-      );
-      controller.cancel();
-      await run;
-    } finally {
-      controller.dispose();
-    }
   }
 
   // ------------------------------------------------------------------ 选择
@@ -2038,22 +1914,13 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         if (wide && health != null)
           SrsBrowseHealthBar(
             counts: health,
-            onViewProblems: () => _applyView(
-              srsBrowseQuickViewQuery(
-                SrsBrowseQuickView.problems,
-                fushiNoteTypeName: _fushiNoteTypeName,
-              ),
-            ),
-            onViewHard: () => _applyView(
-              srsBrowseQuickViewQuery(
-                SrsBrowseQuickView.hard,
-                fushiNoteTypeName: _fushiNoteTypeName,
-              ),
-            ),
-            onViewDupes: () => _applyView('is:dupe'),
-            onFix: health.problems > 0
-                ? () => srsRunLogged('SrsBrowse.healthFix', _fixProblems)
-                : null,
+            onViewEmptyField: () => _applyView(kSrsBrowseHealthEmptyQuery),
+            onViewMissingAudio: () {
+              final String? fushi = _fushiNoteTypeName;
+              if (fushi != null) _applyView(srsBrowseMissingAudioQuery(fushi));
+            },
+            onViewHard: () => _applyView(kSrsBrowseHealthHardQuery),
+            onViewDupes: () => _applyView(kSrsBrowseHealthDupesQuery),
           ),
         Row(
           spacing: tokens.spacing.gap,

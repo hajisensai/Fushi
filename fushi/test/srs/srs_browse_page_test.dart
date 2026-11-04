@@ -736,7 +736,7 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('健康条一键修复：确认框的数字 = 实际删掉的笔记数（多卡笔记按笔记数），撤销整步恢复', (
+  testWidgets('健康条：按笔记计数（多卡笔记算一条），「查看」只把条件套成积木、不删任何笔记', (
     WidgetTester tester,
   ) async {
     _expectNativeSearch();
@@ -771,32 +771,29 @@ void main() {
     );
     await _pump(tester, store: store, size: const Size(1300, 900));
 
-    final Finder fix = find.byKey(
-      const ValueKey<String>('srs-browse-health-problems-fix'),
-    );
-    expect(fix, findsOneWidget);
-    await tester.tap(fix);
-    await _settle(tester, rounds: 4);
+    // 列表是卡片模式，健康条照样按笔记数：1 条，不是卡片数。
+    expect(find.text(t.srs_browse_health_empty_notes(n: 1)), findsOneWidget);
     expect(
-      find.text(t.srs_browse_health_fix_confirm(e: 1, a: 0)),
-      findsOneWidget,
+      find.byKey(const ValueKey<String>('srs-browse-health-empty-fix')),
+      findsNothing,
     );
-    await tester.tap(find.text(t.srs_browse_health_fix).last);
-    await _settle(tester);
     expect(
-      <String>[
-        for (final SrsNoteCacheRow n in (await tester.runAsync(
-          store.listNotes,
-        ))!)
-          n.id,
-      ],
-      <String>[keep],
+      find.byKey(const ValueKey<String>('srs-browse-chip-0')),
+      findsNothing,
     );
+    expect(_row('食べる'), findsOneWidget);
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+      find.byKey(const ValueKey<String>('srs-browse-health-empty-view')),
     );
-    await _settle(tester);
+    await _settle(tester, rounds: 4);
+    // 套成一块积木（用户可以自己删掉），列表只剩主字段为空的那条。
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-chip-0')),
+      findsOneWidget,
+    );
+    expect(_row('食べる'), findsNothing);
+    // 没有任何写入：两条笔记都还在。
     expect(
       <String>{
         for (final SrsNoteCacheRow n in (await tester.runAsync(
