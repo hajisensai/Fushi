@@ -20,9 +20,6 @@ import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/ops/op_routes.dart';
 
-/// 对话存档与操作记录保留多久（spec D3 / D5）。
-const Duration kAiAgentHistoryRetention = Duration(days: 30);
-
 /// 「AI 助手」当前可用的提供商；null = 未指派（不发任何请求，引导去设置）。
 AiProviderConfig? resolveAiAgentProvider(AiSettingsSource settings) => settings
     .aiFeatureAssignments
@@ -488,11 +485,7 @@ class AiAgentController extends ChangeNotifier
   Future<void> _pruneOnce() async {
     if (_pruned) return;
     _pruned = true;
-    await database.pruneAiAgentHistory(
-      before: _clock()
-          .subtract(kAiAgentHistoryRetention)
-          .millisecondsSinceEpoch,
-    );
+    await pruneAiAgentArchive(database, now: _clock());
   }
 
   String _newSessionId() {

@@ -7,6 +7,8 @@ import 'package:drift/native.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart'
+    show kAiAgentHistoryRetention;
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
@@ -744,6 +746,74 @@ void main() {
         reason: '续接读回整场对话',
       );
       await sessions.dispose();
+    });
+  });
+
+  group('ServerAgentHistoryPruner', () {
+    late FushiDatabase db;
+    late DateTime now;
+
+    setUp(() {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      now = DateTime.utc(2026, 11, 5);
+    });
+
+    tearDown(() => db.close());
+
+    Future<void> archived(String id, Duration age) =>
+        db.saveAiAgentSessionSnapshot(
+          id: id,
+          title: id,
+          scene: 'remote',
+          payloadJson: '{"entries":[]}',
+          totalTokens: 0,
+          createdAt: 1,
+          updatedAt: now.subtract(age).millisecondsSinceEpoch,
+          profileUid: '',
+          originPeerId: 'phone',
+        );
+
+    Future<List<String>> ids() async => <String>[
+      for (final AiAgentSessionSummary s
+          in await db.listAiAgentSessionSummaries())
+        s.id,
+    ];
+
+    test('起来先清一次：超过保留期（30 天）的远端会话删掉，期内的留着', () async {
+      expect(kAiAgentHistoryRetention, const Duration(days: 30));
+      await archived('old', const Duration(days: 31));
+      await archived('fresh', const Duration(days: 29));
+      final ServerAgentHistoryPruner pruner = ServerAgentHistoryPruner(
+        db,
+        clock: () => now,
+      );
+      addTearDown(pruner.stop);
+      await pruner.start();
+      expect(await ids(), <String>['fresh']);
+    });
+
+    test('常驻不重启：之后按周期再清；stop 后不再清', () async {
+      await archived('fresh', const Duration(days: 1));
+      final ServerAgentHistoryPruner pruner = ServerAgentHistoryPruner(
+        db,
+        clock: () => now,
+        every: const Duration(milliseconds: 10),
+      );
+      addTearDown(pruner.stop);
+      await pruner.start();
+      expect(await ids(), <String>['fresh']);
+
+      // 过了一个月：同一个进程里那场也到期了。
+      now = now.add(const Duration(days: 30));
+      for (int i = 0; i < 200 && (await ids()).isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(await ids(), isEmpty);
+
+      pruner.stop();
+      await archived('later', const Duration(days: 40));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await ids(), <String>['later'], reason: 'stop 之后定时器不再跑');
     });
   });
 }

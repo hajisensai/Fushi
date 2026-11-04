@@ -5,7 +5,9 @@ export 'package:fushi_engine/ai/agent/agent_session_archive.dart'
         AgentLiveSessions,
         DatabaseAgentSessionHistory,
         aiAgentSessionTitleOf,
+        kAiAgentHistoryRetention,
         kAiAgentRemoteScene,
+        pruneAiAgentArchive,
         saveAiAgentSessionArchive;
 
 /// app 进程里正打开着的 AI 助手会话（本机 AI 页 `AiAgentController` + 互联 host 替

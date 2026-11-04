@@ -19,6 +19,19 @@ import 'package:fushi_engine/ai/agent/agent_session.dart';
 /// 互联 host 替已配对设备跑的远端会话存进对话存档时的场景名。
 const String kAiAgentRemoteScene = 'remote';
 
+/// 对话存档与操作记录保留多久（spec D3 / D5）。app 本机 AI 页、app 当互联 host、
+/// `fushi_server` 当互联 host 三处同一个值（各端 UI 上写的「保留 30 天」就是它）。
+const Duration kAiAgentHistoryRetention = Duration(days: 30);
+
+/// 删掉 [now] 往前超过 [kAiAgentHistoryRetention] 的会话存档与操作记录
+/// （[FushiDatabase.pruneAiAgentHistory]）。返回删掉的行数合计。
+Future<int> pruneAiAgentArchive(
+  FushiDatabase database, {
+  required DateTime now,
+}) => database.pruneAiAgentHistory(
+  before: now.subtract(kAiAgentHistoryRetention).millisecondsSinceEpoch,
+);
+
 /// 一场会话的默认标题：首条用户消息的摘要（[aiAgentSessionAutoTitle]）。还没有
 /// 用户消息时退到第一条条目的文字。
 String aiAgentSessionTitleOf(AgentSession session) {
