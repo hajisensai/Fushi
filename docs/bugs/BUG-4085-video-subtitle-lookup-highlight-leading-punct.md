@@ -1,4 +1,4 @@
-## BUG-4078 · 视频字幕查词高亮落在句首括号上，没覆盖真正查到的词
+## BUG-4085 · 视频字幕查词高亮落在句首括号上，没覆盖真正查到的词
 - **报告**：2026-11-04（应用内反馈 jjurI3uaT0，Windows；同时段 nvXct9coD5 截图同现象：点「（茜）記事 ちっちゃ！」的「（」，高亮亮在「（」上）
 - **真实性**：✅ 真 bug。`fushi/lib/src/media/video/subtitle_transcript_text.dart` `subtitleTranscriptLookupSpan`（修复前 :812-818）起点只跳前导空白、不跳前导标点，点「（」时 `span.start` 停在「（」、`term` 以「（」开头。查词时 `searchDictionary` → `normalizeSearchTerm`（`fushi/lib/src/models/app_model.dart:546`）用 `^[\p{P}\p{S}]+` 剥掉句首「（」，引擎回报的 matchedRunes 以剥离串「茜）…」为坐标；高亮却锚在 `span.start`、长度用 matchedRunes（`fushi/lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart:98-104`），于是亮出的是「（」、真正查到的「茜」没盖住。远程视频页（`video_remote_page.dart:1155`）、串流字幕、SRS 卡片查词同用这一函数，同病。剪贴板面板 BUG-773 修过同一错位，视频路径没接上。
 - **[x] ① 已修复** — 句首标点剥离的正则与 `leadingPunctuationStripUnits` 挪到 `fushi/lib/src/lookup/lookup_edge_punctuation.dart`（单一真相，`AppModel._punctuationRegex` 直接引用它，app_model re-export 函数）；`subtitleTranscriptLookupSpan`（:824-844）在跳空白后再按同一正则跳句首标点字位，空白 / 标点交替时反复跳到不动为止（`trim()` 在剥标点之前，只剥一轮会让起点停在「（ 茜」的空格上）；整段空白 / 标点返回 `(start: -1, term: '')`，不白暂停、不弹空浮层。送进引擎的查询串与修复前引擎实际匹配的串一致，变的只有高亮锚点。

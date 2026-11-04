@@ -1,4 +1,4 @@
-## BUG-4078 · 高级制卡在挖词目标为 Fushi 复习时仍列 Anki 牌组、所选牌组不生效
+## BUG-4087 · 高级制卡在挖词目标为 Fushi 复习时仍列 Anki 牌组、所选牌组不生效
 - **报告**：2026-11-04（用户：应用内反馈 0h0e_6fqhY，Android）
 - **真实性**：✅ 真 bug。两处根因：
   - `fushi/lib/src/anki/advanced_mining_deck_section.dart:74`（`loadAdvancedMiningDeckSection`）只读 `ankiRepositoryProvider.loadSettings()` 的 `availableDecks` / `selectedDeckId`，不看挖词目标；目标是 Fushi 复习（`srsMiningToReviewProvider`）时对话框列的仍是 Anki 卡组，按钮写「制卡到 <Anki 卡组>」。

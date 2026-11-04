@@ -1,4 +1,4 @@
-## BUG-4081 · Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位
+## BUG-4100 · Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位
 - **报告**：2026-11-05（PR #2844 审查反馈：浏览页选中 Kaishi 1.5k 入门卡组 / 从 Anki 导入的卡型的卡片时，右侧预览区整块空白；同一张卡在复习页能正常显示）
 - **真实性**：⚠️ 已登记、**根因未定位**，尚未在本机复现，不判真伪。现象只出现在走整面 WebView 的 Anki 卡型（Kaishi 不是内置 Fushi 卡片，`SrsRenderedCard.fushiCardDefinitions == null`，按 BUG-4059 的判据预览走 `srsCardFaceBuilderProvider` → `SrsWebCardFace`）。嫌疑点（均未证实）：
   1. `fushi/lib/src/pages/implementations/srs/srs_card_face.dart` 的下发链路里有几处静默 `return`，任何一处命中都会让这一面不上屏且不留痕：`_flush` 开头 `if (!_ready || doc == null) return;`（外壳未就绪时只等 onLoadStop 重放，若外壳就绪回调没再来就永远空白）；`evaluate(...).then` 里 `if (generation != _generation) return;`；`result == false` 分支 `if (_reloadedShell) return;`（外壳已重载过一次后页面再次不是外壳，直接放弃，既不重载也不记日志）。

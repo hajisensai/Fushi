@@ -6,7 +6,7 @@ import 'package:fushi_engine/tts/providers/azure_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
 
-/// 反馈 zK7AJLTl3q / BUG-4078：微软翻译朗读走的是翻译 App 的非官方通道，
+/// 反馈 zK7AJLTl3q / BUG-4089：微软翻译朗读走的是翻译 App 的非官方通道，
 /// 编辑页必须写明「非官方、可能失效」；官方接口与本机引擎不显示这条。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

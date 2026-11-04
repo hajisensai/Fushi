@@ -262,7 +262,7 @@ void main() {
           r'\frz12\frx3\fry4\fax0.1\fay0.2\org(10,10)\fscx120\fscy90'
           r'\fade(255,0,255,0,100,200,300)\u1\s1',
         ),
-        // 斜体 \i 不在白名单（BUG-4078）：日文排版没有斜体。
+        // 斜体 \i 不在白名单（BUG-4091）：日文排版没有斜体。
         r'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,'
         r'{\an7\fad(120,80)\1c&HFFFFFF&\3c&H000000&\4c&H202020&'
         r'\fnNoto Serif\fs60\b1\bord2.5\shad1\blur0.6\be1}セリフ',
@@ -285,7 +285,7 @@ void main() {
       ).single;
     }
 
-    test(r'BUG-4078：英文强调词的斜体 {\i1}That{\i0} song. 不让整行日语变斜', () {
+    test(r'BUG-4091：英文强调词的斜体 {\i1}That{\i0} song. 不让整行日语变斜', () {
       expect(
         renderWithText(r'{\i1}That{\i0} song.'),
         'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,あの曲。',
@@ -294,7 +294,7 @@ void main() {
       expect(renderWithText(r'{\i1}That song.'), isNot(contains(r'\i1')));
     });
 
-    test(r'BUG-4078：行中被同名标签改掉 / 被 \r 复位的行首标签只是词级强调，不继承', () {
+    test(r'BUG-4091：行中被同名标签改掉 / 被 \r 复位的行首标签只是词级强调，不继承', () {
       expect(
         renderWithText(r'{\an8\b1}That{\b0} song.'),
         r'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,{\an8}あの曲。',
@@ -314,7 +314,7 @@ void main() {
       );
     });
 
-    test('BUG-4078：继承到 Italic=-1 的样式时显式 \\i0', () {
+    test('BUG-4091：继承到 Italic=-1 的样式时显式 \\i0', () {
       final String ass =
           _withExtraEvent(
             '0,0:00:20.00,0:00:22.00,Thoughts,,0,0,0,,That song.',
