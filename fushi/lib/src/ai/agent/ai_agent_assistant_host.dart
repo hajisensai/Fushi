@@ -53,6 +53,7 @@ AgentAssistantHost createAppAgentAssistantHost(AppModel appModel) {
     allowPeers: () => appModel.prefsRepo.aiAgentForPeers,
     settings: appModel.prefsRepo,
     database: appModel.database,
+    live: appAgentLiveSessions,
     invoker: () {
       final OpContext? ctx = appOpContext;
       if (ctx == null || !appModel.isInitialised) return null;
@@ -72,13 +73,18 @@ AgentAssistantHost createAppAgentAssistantHost(AppModel appModel) {
 ///   AI 指派、调本机操作目录，比配对本身给的权限多（配对只给读库 / 进度同步），不能
 ///   默认放行；
 /// - [settings]：解析「AI 助手」指派，没指派 → `no_provider`，不发任何请求；
-/// - [invoker]：本机操作目录；null（app 还没初始化完）→ `not_ready`。
+/// - [invoker]：本机操作目录；null（app 还没初始化完）→ `not_ready`；
+/// - [live]：进程里正打开着的会话（与本机 AI 页共用 [appAgentLiveSessions]）。
+///
+/// 远端会话按发起设备存进本机对话存档（[DatabaseAgentSessionHistory]，BUG-4067）：
+/// 发起的设备能经互联列出 / 续接它们，本机 AI 页的会话列表也列（标「来自 X」）。
 AgentAssistantHost createAgentAssistantHostWith({
   required bool Function() aiModuleEnabled,
   required bool Function() allowPeers,
   required AiSettingsSource settings,
   required FushiDatabase database,
   required OpInvoker? Function() invoker,
+  AgentLiveSessions? live,
   AgentLlm Function(AiProviderConfig provider)? llmFactory,
   DateTime Function()? clock,
 }) {
@@ -102,12 +108,8 @@ AgentAssistantHost createAgentAssistantHostWith({
             .where((FushiOp op) => !op.inProcessOnly)
             .length ??
         0,
-    persist: (AgentSession session) => saveAiAgentSessionArchive(
-      database,
-      session,
-      scene: kAiAgentRemoteScene,
-      now: (clock ?? DateTime.now)(),
-    ),
+    history: DatabaseAgentSessionHistory(database, clock: clock),
+    live: live,
     open: (String locale) async {
       final AiProviderConfig? provider = resolveAiAgentProvider(settings);
       final OpInvoker? ops = invoker();

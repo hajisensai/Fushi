@@ -46,8 +46,13 @@ impl Hlc {
 
     pub fn read_time(r: &mut Reader<'_>, device: Id) -> DResult<Hlc> {
         let wall = r.iv()?;
-        let logical = u32::try_from(r.uv()?).map_err(|_| super::codec::DecodeError("hlc logical"))?;
-        Ok(Hlc { wall, logical, device })
+        let logical =
+            u32::try_from(r.uv()?).map_err(|_| super::codec::DecodeError("hlc logical"))?;
+        Ok(Hlc {
+            wall,
+            logical,
+            device,
+        })
     }
 }
 
@@ -67,15 +72,30 @@ pub struct Observed {
 
 impl Clock {
     pub fn new(device: Id) -> Self {
-        Clock { device, last: Hlc { wall: 0, logical: 0, device } }
+        Clock {
+            device,
+            last: Hlc {
+                wall: 0,
+                logical: 0,
+                device,
+            },
+        }
     }
 
     /// 发出一条本机操作。
     pub fn tick(&mut self, now_ms: i64) -> Hlc {
         let next = if now_ms > self.last.wall {
-            Hlc { wall: now_ms, logical: 0, device: self.device }
+            Hlc {
+                wall: now_ms,
+                logical: 0,
+                device: self.device,
+            }
         } else {
-            Hlc { wall: self.last.wall, logical: self.last.logical.saturating_add(1), device: self.device }
+            Hlc {
+                wall: self.last.wall,
+                logical: self.last.logical.saturating_add(1),
+                device: self.device,
+            }
         };
         self.last = next;
         next
@@ -96,7 +116,11 @@ impl Clock {
         } else {
             0
         };
-        self.last = Hlc { wall, logical, device: self.device };
+        self.last = Hlc {
+            wall,
+            logical,
+            device: self.device,
+        };
         Observed { ahead: false }
     }
 
@@ -108,7 +132,11 @@ impl Clock {
             return Observed { ahead: true };
         }
         if (remote.wall, remote.logical) > (self.last.wall, self.last.logical) {
-            self.last = Hlc { wall: remote.wall, logical: remote.logical, device: self.device };
+            self.last = Hlc {
+                wall: remote.wall,
+                logical: remote.logical,
+                device: self.device,
+            };
         }
         Observed { ahead: false }
     }
@@ -131,28 +159,50 @@ mod tests {
     fn observe_follows_causality_but_not_a_clock_far_in_the_future() {
         let mut c = Clock::new(Id([1; 16]));
         c.tick(1000);
-        let remote = Hlc { wall: 5000, logical: 7, device: Id([2; 16]) };
+        let remote = Hlc {
+            wall: 5000,
+            logical: 7,
+            device: Id([2; 16]),
+        };
         assert_eq!(c.observe(remote, 1000), Observed { ahead: false });
         let next = c.tick(1000);
         assert!(next > remote);
 
-        let future = Hlc { wall: 1000 + MAX_AHEAD_MS + 1, logical: 0, device: Id([2; 16]) };
+        let future = Hlc {
+            wall: 1000 + MAX_AHEAD_MS + 1,
+            logical: 0,
+            device: Id([2; 16]),
+        };
         assert_eq!(c.observe(future, 1000), Observed { ahead: true });
         assert!(c.tick(1000) < future);
     }
 
     #[test]
     fn absorb_is_idempotent_and_the_next_tick_follows_the_remote() {
-        let remote = Hlc { wall: 5000, logical: 7, device: Id([2; 16]) };
+        let remote = Hlc {
+            wall: 5000,
+            logical: 7,
+            device: Id([2; 16]),
+        };
         let mut once = Clock::new(Id([1; 16]));
         once.absorb(remote, 1000);
         let mut twice = Clock::new(Id([1; 16]));
-        twice.absorb(Hlc { wall: 4000, ..remote }, 1000);
+        twice.absorb(
+            Hlc {
+                wall: 4000,
+                ..remote
+            },
+            1000,
+        );
         twice.absorb(remote, 1000);
         twice.absorb(remote, 1000);
         assert_eq!(once.last, twice.last);
         assert!(once.tick(1000) > remote);
-        let future = Hlc { wall: 1000 + MAX_AHEAD_MS + 1, logical: 0, device: Id([2; 16]) };
+        let future = Hlc {
+            wall: 1000 + MAX_AHEAD_MS + 1,
+            logical: 0,
+            device: Id([2; 16]),
+        };
         assert_eq!(twice.absorb(future, 1000), Observed { ahead: true });
         assert!(twice.tick(1000) < future);
     }

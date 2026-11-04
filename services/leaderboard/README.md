@@ -166,6 +166,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/v1/feedback/mine?cursor&limit` | 签名 | 本账户提交过的反馈（跨设备找回工单）→ `{items, next}`，摘要同 status，按创建时间倒序游标分页（limit 默认 30、上限 50） |
 | GET | `/v1/feedback/:id` | ticket 或同账户签名 | 详情 + 处理时间线 |
 | POST | `/v1/feedback/:id/messages` `{body}` | ticket 或同账户签名·写 | 反馈人追加说明（已结案会重新打开） |
+| DELETE | `/v1/feedback/:id/messages/:mid` | ticket 或同账户签名·写 | 反馈人删除自己的一条追加说明；非本人 / 状态事件 / 不存在 404 `not_found`，其后开发者已回复 409 `dev_replied`；带状态的那条只清空正文；不回退累计计数；单条反馈每小时 20 次 |
 | POST | `/v1/feedback/:id/close` | ticket 或同账户签名·写 | 反馈人标记完成（open / in_progress → closed） |
 | GET | `/v1/feedback/:id/attachments/:slot` | ticket 或同账户签名 | 取回自己的截图（日志 / 视频不回传） |
 | PUT / DELETE | `/v1/feedback/:id/push` `{token, lang?}` | `X-Fushi-Ticket` | 登记 / 注销本条反馈的 APNs 设备令牌（iOS 推送，见下「APNs 推送」）。每条 ≤ 5 个（满了挤掉最旧的），按令牌 SHA-256 去重；已结案 409 `feedback_closed`；单条反馈每小时 20 次 |

@@ -128,6 +128,9 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
+export 'package:fushi/src/lookup/lookup_edge_punctuation.dart'
+    show leadingPunctuationStripUnits;
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -158,6 +161,10 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart'
+    show GoogleLensDisclosureScene, hasGoogleLensDisclosure;
+import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
+    show MangaStreamOcrSetup, prepareMangaStreamOcr;
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -409,10 +416,12 @@ import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/extension_profile_api.dart'
     show ExtensionProfileApi, ExtensionRequestServices;
 import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
+import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -567,12 +576,8 @@ String normalizeSearchTerm(
 ///
 /// 与 [normalizeSearchTerm] 共用同一 [punctuationRegex]（单一真相）：只取句首分支
 /// （`match.start == 0` 的命中）；只有句尾标点时命中不在句首，返回 0。
-@visibleForTesting
-int leadingPunctuationStripUnits(String raw, RegExp punctuationRegex) {
-  if (raw.isEmpty) return 0;
-  final Match? m = punctuationRegex.firstMatch(raw);
-  return (m != null && m.start == 0) ? m.end : 0;
-}
+///
+/// 实现与正则住在 `lookup/lookup_edge_punctuation.dart`（取词层也要用），此处 re-export。
 
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
 /// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
@@ -2509,10 +2514,7 @@ class AppModel with ChangeNotifier {
   static RegExp get _emojiRegex =>
       _emojiRegexInstance ??= RegExp(RemoveEmoji().getRegexString());
 
-  static final RegExp _punctuationRegex = RegExp(
-    r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$',
-    unicode: true,
-  );
+  static final RegExp _punctuationRegex = lookupEdgePunctuationRegex;
   static final RegExp _loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
@@ -4404,6 +4406,7 @@ class AppModel with ChangeNotifier {
       _srsCardFonts = srsCardFonts;
       _srsCardFontFamilies = await srsCardFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
+      WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
@@ -8893,6 +8896,11 @@ class AppModel with ChangeNotifier {
     overrideMaximumTerms: overrideMaximumTerms,
     useCache: useCache,
     allowRemoteLookup: allowRemoteLookup,
+    // 反馈 kEFPY4cuKZ：本机查词在打开的作品带着作品级配置时按那份配置的词典过滤。
+    // 这是**本机**查词入口。替对端 / 浏览器扩展 / Yomitan API 查词的
+    // [_AppModelRemoteLookupService] 一律直接调 [_searchDictionaryInLanguage]（按请求方
+    // 所选配置的视图或 live 设置），不经这里，所以本机作品会话不会漏给它们。
+    profileView: WorkProfileScope.instance.lookupView,
   );
 
   /// [searchDictionary] 加上原文自带的振假名（[rubySpans]，以 [searchTerm] 为坐标系）：
@@ -8918,6 +8926,7 @@ class AppModel with ChangeNotifier {
           searchWithWildcards: searchWithWildcards,
           overrideMaximumTerms: overrideMaximumTerms,
           rubySpans: rubySpans,
+          profileView: WorkProfileScope.instance.lookupView,
         );
 
   /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
@@ -9720,6 +9729,32 @@ class AppModel with ChangeNotifier {
 
   Future<void> initialiseAudioHandler() => audioCtrl.initialiseHandler();
 
+  // ── 作品级配置会话（反馈 kEFPY4cuKZ） ─────────────────────────────────
+
+  Future<void> _workProfileScopeReload = Future<void>.value();
+
+  /// 最近一次作品级配置会话变化后的缓存重读完成时（进入作品的入口等它再读阅读器设置）。
+  Future<void> get workProfileScopeSettled => _workProfileScopeReload;
+
+  /// [WorkProfileScope] 装上 / 撤下会话：按串行顺序重读按偏好建的内存缓存。全局偏好表从未
+  /// 被改动，这里只是让缓存改看「全局 + 当前会话」的叠加结果（离开作品 = 叠加层没了）。
+  void _onWorkProfileScopeChanged() {
+    _workProfileScopeReload = _workProfileScopeReload
+        .then((_) => _reloadForWorkProfileScope())
+        .catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('workProfileScopeReload', e, stack);
+        });
+  }
+
+  Future<void> _reloadForWorkProfileScope() async {
+    await ReaderFushiSource.instance.refreshPreferencesFromDb();
+    await ReaderFushiSource.readerSettings?.refreshFromDb();
+    prefsRepo.notifyWorkProfileScopeChanged();
+    if (audiobookSession.isActive && showFloatingLyric) {
+      await audiobookSession.applyFloatingLyricStyle();
+    }
+  }
+
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
 
   /// app 级（无 reader）悬浮窗样式：M3E 配色取当前 app 明暗下的配色方案。reader
@@ -10287,6 +10322,8 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_extensionImageOcr?.close());
+    _extensionImageOcr = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -10442,6 +10479,12 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
+  // 挖词目标 = Fushi 复习时的「后台制卡」（透传 prefsRepo）。可空读同上：装饰链每次制卡
+  // 现读它，prefs 未装配时按关（同步写入，现状）。
+  bool get srsMiningBackground => _prefsRepo?.srsMiningBackground ?? false;
+  Future<void> setSrsMiningBackground(bool value) =>
+      prefsRepo.setSrsMiningBackground(value: value);
+
   // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
   HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
       decodeHomeDashboardPanelModes(
@@ -10457,6 +10500,16 @@ class AppModel with ChangeNotifier {
       panel: mode,
     }),
   );
+
+  // 复习卡片浏览器的保存视图（JSON，透传 prefsRepo）。可空读：prefs 未装配 = 没有。
+  String get srsBrowseSavedViews => _prefsRepo?.srsBrowseSavedViews ?? '';
+  Future<void> setSrsBrowseSavedViews(String json) =>
+      prefsRepo.setSrsBrowseSavedViews(json);
+
+  // 复习卡片浏览器表格选的列（透传 prefsRepo）。可空读：prefs 未装配 = 默认列。
+  String get srsBrowseTableColumns => _prefsRepo?.srsBrowseTableColumns ?? '';
+  Future<void> setSrsBrowseTableColumns(String columns) =>
+      prefsRepo.setSrsBrowseTableColumns(columns);
 
   // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
   // 词频聚合不是卡面自己的设置，跟随查词的「词频聚合」叠上去（见
@@ -10736,6 +10789,40 @@ class AppModel with ChangeNotifier {
   int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
+
+  // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
+  int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
+  Future<void> setStudyGoalDailyMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyMinutes(value);
+  int get studyGoalDailyReadingMinutes =>
+      prefsRepo.studyGoalDailyReadingMinutes;
+  Future<void> setStudyGoalDailyReadingMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyReadingMinutes(value);
+  int get studyGoalDailyListeningMinutes =>
+      prefsRepo.studyGoalDailyListeningMinutes;
+  Future<void> setStudyGoalDailyListeningMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyListeningMinutes(value);
+  int get studyGoalDailyVideoMinutes => prefsRepo.studyGoalDailyVideoMinutes;
+  Future<void> setStudyGoalDailyVideoMinutes(int value) =>
+      prefsRepo.setStudyGoalDailyVideoMinutes(value);
+  int get srsGoalDailyReviews => prefsRepo.srsGoalDailyReviews;
+  Future<void> setSrsGoalDailyReviews(int value) =>
+      prefsRepo.setSrsGoalDailyReviews(value);
+  int get miningGoalDailyCards => prefsRepo.miningGoalDailyCards;
+  Future<void> setMiningGoalDailyCards(int value) =>
+      prefsRepo.setMiningGoalDailyCards(value);
+
+  // Android 桌面小组件的默认隐私（设备本地）。
+  bool get widgetPrivacyHideTitles => prefsRepo.widgetPrivacyHideTitles;
+  Future<void> setWidgetPrivacyHideTitles(bool value) =>
+      prefsRepo.setWidgetPrivacyHideTitles(value);
+  bool get widgetPrivacyHideDefinitions =>
+      prefsRepo.widgetPrivacyHideDefinitions;
+  Future<void> setWidgetPrivacyHideDefinitions(bool value) =>
+      prefsRepo.setWidgetPrivacyHideDefinitions(value);
+  bool get widgetPrivacyHideProfile => prefsRepo.widgetPrivacyHideProfile;
+  Future<void> setWidgetPrivacyHideProfile(bool value) =>
+      prefsRepo.setWidgetPrivacyHideProfile(value);
 
   /// v92 阅读空闲门（分钟 / Duration 两种形态；阅读器建 StudyClock 时取后者）。
   /// 偏好层未就绪（精简初始化路径 / 测试 harness）时回落默认 10 分钟——阅读器
@@ -11416,7 +11503,46 @@ class AppModel with ChangeNotifier {
               repository: FavoriteSentenceRepository(database),
               request: request,
             ),
+        // canvas 渲染的网页阅读器（BookWalker 等）抓图取词：与漫画 / 视频暂停帧同一套 OCR。
+        imageOcr: (Uint8List image) =>
+            _ensureExtensionImageOcr().recognize(image),
       );
+
+  /// 浏览器扩展 / app 内浏览器抓图取词的识别会话（懒建，设置变了自动换会话；
+  /// [dispose] 时关掉，释放模型 isolate 与临时目录）。
+  ExtensionImageOcrService? _extensionImageOcr;
+
+  ExtensionImageOcrService _ensureExtensionImageOcr() =>
+      _extensionImageOcr ??= ExtensionImageOcrService(
+        prepare: _prepareExtensionImageOcr,
+        configKey: () =>
+            '$mangaOcrEnginePreference|$mangaOcrLocalModel|'
+            '$mangaOcrLensLanguage|$mangaOcrIgnoreFurigana',
+      );
+
+  /// 抓图取词的引擎解析：与漫画在线直读同一口径（引擎偏好 / 本机模型），但用户此刻
+  /// 在浏览器里、不在 app 里——不弹任何框：Lens 只在本机已同意过上传漫画页面时才用
+  /// （网页阅读器的内容就是漫画 / 书页），不做大模型重读。
+  ///
+  /// 引擎装配要一个能拿到 `ProviderContainer` 的 context（同
+  /// [_autoOcrDownloadedMangaChapter]）；app 还没起完时抛错，这次请求失败、下次重探。
+  Future<MangaStreamOcrSetup> _prepareExtensionImageOcr(String workDirPath) {
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null) {
+      throw StateError('No navigator context to assemble OCR engines');
+    }
+    return prepareMangaStreamOcr(
+      imageDirPath: workDirPath,
+      engines: MangaOcrWizardEngines.resolve(
+        context: context,
+        db: database,
+      ).withoutAiRefinement(),
+      preference: MangaOcrEnginePreferenceKey.fromKey(mangaOcrEnginePreference),
+      lensLanguage: mangaOcrLensLanguage,
+      confirmLensUpload: () =>
+          hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.mangaPages),
+    );
+  }
 
   FushiApiServerManager _ensureYomitanManager() {
     final FushiApiServerManager? existing = _yomitanServerManager;
@@ -12431,6 +12557,7 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
         message: reason,
         detail: outcome.errorDetail,
         errorKind: RemoteMineErrorKind.transient,
+        errorCode: outcome.errorCode,
       );
     case MineResult.success:
       final String? warn = outcome.audioWarning;
@@ -13128,29 +13255,21 @@ class _AppModelRemoteLookupService
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
     // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
     // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
-    // 不带语言的旧请求仍走公开的 [AppModel.searchDictionary]（行为与此前逐字相同）。
-    // 按配置视图查（反馈 biLEesNqWb）一律走 [_searchDictionaryInLanguage]：公开的
-    // searchDictionary 只认 App 当前生效的设置。
-    final ProfileSettingsView? view = _view;
-    final DictionarySearchResult source =
-        language == null && rubySpans.isEmpty && view == null
-        ? await _appModel.searchDictionary(
-            searchTerm: term,
-            searchWithWildcards: wildcards,
-            overrideMaximumTerms: maximumTerms,
-            useCache: true,
-            allowRemoteLookup: false,
-          )
-        : await _appModel._searchDictionaryInLanguage(
-            searchTerm: term,
-            searchWithWildcards: wildcards,
-            overrideMaximumTerms: maximumTerms,
-            useCache: true,
-            allowRemoteLookup: false,
-            lookupLanguage: language,
-            rubySpans: rubySpans,
-            profileView: view,
-          );
+    // 一律走 [_searchDictionaryInLanguage]，不走公开的 [AppModel.searchDictionary]：后者
+    // 是本机查词入口，会叠上本机打开作品的作品级配置（[WorkProfileScope.lookupView]，
+    // 反馈 kEFPY4cuKZ）。替对端查词只按请求方所选配置的视图（反馈 biLEesNqWb）查，
+    // 没选配置（[_view] 为 null）就按 App 的 live 设置——带不带 language 都是同一套词典。
+    final DictionarySearchResult source = await _appModel
+        ._searchDictionaryInLanguage(
+          searchTerm: term,
+          searchWithWildcards: wildcards,
+          overrideMaximumTerms: maximumTerms,
+          useCache: true,
+          allowRemoteLookup: false,
+          lookupLanguage: language,
+          rubySpans: rubySpans,
+          profileView: _view,
+        );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
     // 但不能把本地历史/页面滚动位置的对象别名暴露给远端 record/full-result 调用方。

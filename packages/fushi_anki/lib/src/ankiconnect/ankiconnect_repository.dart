@@ -478,9 +478,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         titleTag: context.bookTitleTag,
         // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
         collectionTag: context.collectionTag,
-        // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
-        // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
-        charPositionTag: context.charPositionTag,
       );
 
       // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -807,7 +804,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
       try {
@@ -1284,6 +1280,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   @override
   bool get supportsDeckReposition => true;
 
+  /// 问这台 AnkiConnect 有没有可用的原生 `scheduling.repositionNewCards`。
+  /// `api.describe` 带整份 schema（几百 KB），走长任务预算。
+  @override
+  Future<bool> probeDeckReposition() async {
+    final AnkiConnectService service = await _getLongTaskService();
+    return service.supportsNativeRepositionNewCards();
+  }
+
   @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
     // 整牌组规模：`cardsInfo` 每张卡都带渲染好的问答 HTML，实测一批 200 张就有
@@ -1297,11 +1301,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final List<int> ids = await service.findCards(query);
     if (ids.isEmpty) return const <AnkiCardInfo>[];
     final List<AnkiCardInfo> cards = await service.cardsInfo(ids);
-    // 搜索串已经限定 is:new，这里再按 type 二次校验：查询与写回之间用户可能
-    // 刚学了几张，复习卡的 due 是日期，绝不能当位置写。
+    // 搜索串已经限定 is:new 且排除暂停 / 搁置，这里再按 type + queue 二次校验：
+    // 查询与写回之间用户可能刚学了几张（复习卡的 due 是日期，绝不能当位置写），
+    // 或刚暂停 / 搁置了几张（原生接口对它们回 invalidState，圈进计划就是必败）。
     return <AnkiCardInfo>[
       for (final AnkiCardInfo c in cards)
-        if (c.isNew) c,
+        if (c.isNew && c.queue == 0) c,
     ];
   }
 
@@ -1316,13 +1321,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
     final AnkiConnectService service = await _getLongTaskService();
-    final List<AnkiConnectBatchResult> results = await service.setCardsDueMany(
-      updates,
-    );
+    // 写之前当场再确认一次能力：新版 AnkiConnect（26.10.11.0 起）的旧协议禁止写
+    // `due`，没有原生接口就一张都不写——绝不退回 `setSpecificValueOfCard`。
+    if (!await service.supportsNativeRepositionNewCards()) {
+      throw const AnkiRepositionUnsupportedException();
+    }
+    final List<AnkiConnectBatchResult> results = await service
+        .repositionNewCards(updates);
     final Map<int, String> failures = <int, String>{};
     int written = 0;
     for (int i = 0; i < results.length; i++) {
-      final String? failure = ankiSetSpecificValueFailure(results[i]);
+      final String? failure = results[i].error;
       if (failure != null) {
         failures[updates[i].cardId] = failure;
       } else {

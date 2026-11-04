@@ -409,7 +409,7 @@ void main() {
       expect(source, contains('applyAppProxySync(client)'));
       // createAppHttpIoClient / createAppDio 都必须复用 createAppHttpClient，
       // 而不是各自 new 一个裸的。
-      expect(source, contains('IOClient(createAppHttpClient('));
+      expect(source, matches(RegExp(r'IOClient\(\s*createAppHttpClient\(')));
       expect(source, contains('createAppHttpClient(connectionTimeout:'));
     });
   });

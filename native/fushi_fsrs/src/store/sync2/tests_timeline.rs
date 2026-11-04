@@ -1,9 +1,9 @@
 //! 时间线恢复按「那一刻的状态」还原每类寄存器（BUG：恢复后笔记类型模板变空）。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::super::tests::{deck_entity, edit, Device, P};
-use super::{target_cut, value_at, RestoreTarget};
+use super::super::tests::{Device, P, deck_entity, edit};
+use super::{RestoreTarget, target_cut, value_at};
 use crate::sync2::op::EntKind;
 
 const T0: i64 = 1_700_000_000_000;
@@ -23,14 +23,20 @@ fn stored(d: &Device, kind: &str, id: &str) -> Vec<String> {
 
 fn note_type_view(d: &Device, id: &str, payload: &Value, builtin: &Value) -> Value {
     let rows = stored(d, "notetype", id);
-    let es: Vec<crate::registers::StoredEdit<'_>> = rows.iter().map(|r| (r.as_str(), None, None)).collect();
+    let es: Vec<crate::registers::StoredEdit<'_>> =
+        rows.iter().map(|r| (r.as_str(), None, None)).collect();
     crate::registers::note_type_view_of(payload, &es, builtin).unwrap()
 }
 
 fn note_fields(d: &Device, id: &str) -> Value {
     let rows = stored(d, "note", id);
-    let es: Vec<crate::registers::StoredEdit<'_>> = rows.iter().map(|r| (r.as_str(), None, None)).collect();
-    let v = crate::registers::note_view_of(&json!({"createdAt": 1, "guid": id, "noteTypeId": "NT"}), &es).unwrap();
+    let es: Vec<crate::registers::StoredEdit<'_>> =
+        rows.iter().map(|r| (r.as_str(), None, None)).collect();
+    let v = crate::registers::note_view_of(
+        &json!({"createdAt": 1, "guid": id, "noteTypeId": "NT"}),
+        &es,
+    )
+    .unwrap();
     v["f"].clone()
 }
 
@@ -40,7 +46,10 @@ fn list<'v>(v: &'v Value, has: &str) -> &'v Vec<Value> {
         .unwrap()
         .values()
         .filter_map(Value::as_array)
-        .find(|a| a.first().is_some_and(|x| x.get(has).is_some()) && (has != "ord" || a.first().is_some_and(|x| x.get("front").is_none())))
+        .find(|a| {
+            a.first().is_some_and(|x| x.get(has).is_some())
+                && (has != "ord" || a.first().is_some_and(|x| x.get("front").is_none()))
+        })
         .unwrap_or_else(|| panic!("no list with {has} in {v}"))
 }
 
@@ -57,12 +66,19 @@ fn templates(v: &Value) -> Vec<(String, String, String, String)> {
 fn fields(v: &Value) -> Vec<(String, String)> {
     list(v, "ord")
         .iter()
-        .map(|f| (f["id"].as_str().unwrap_or_default().to_owned(), f["name"].as_str().unwrap_or_default().to_owned()))
+        .map(|f| {
+            (
+                f["id"].as_str().unwrap_or_default().to_owned(),
+                f["name"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
         .collect()
 }
 
 fn restore(d: &Device, t: i64, now: i64) {
-    d.core.sync2_restore(P, &RestoreTarget::At(t), false, now).unwrap();
+    d.core
+        .sync2_restore(P, &RestoreTarget::At(t), false, now)
+        .unwrap();
 }
 
 /// 用户现场：内置笔记类型（没有身份记录、模板 / CSS 跟随代码）在还原点之后才被改过模板与 CSS。修复前「那一刻
@@ -79,18 +95,38 @@ fn restore_returns_an_edited_builtin_template_to_the_code_default() {
         "termFieldId": "f1",
     });
     let payload = json!({"builtin": "lapis", "ntKind": "standard"});
-    a.apply(T0, vec![entity("note", "N1", json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}))]);
+    a.apply(
+        T0,
+        vec![entity(
+            "note",
+            "N1",
+            json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+        )],
+    );
     let before = note_type_view(&a, "NT", &payload, &builtin);
     let t1 = T0 + 500;
     a.apply(
         T0 + 1000,
         vec![
-            edit("notetype", "NT", "tmplDef/t1", json!({"name": "Card 1", "ord": 0, "front": "custom front", "back": "custom back"})),
+            edit(
+                "notetype",
+                "NT",
+                "tmplDef/t1",
+                json!({"name": "Card 1", "ord": 0, "front": "custom front", "back": "custom back"}),
+            ),
             edit("notetype", "NT", "css", json!(".card { color: red }")),
-            edit("notetype", "NT", "fieldDef/f1", json!({"name": "Word", "ord": 0})),
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/f1",
+                json!({"name": "Word", "ord": 0}),
+            ),
         ],
     );
-    assert_eq!(templates(&note_type_view(&a, "NT", &payload, &builtin))[0].2, "custom front");
+    assert_eq!(
+        templates(&note_type_view(&a, "NT", &payload, &builtin))[0].2,
+        "custom front"
+    );
     restore(&a, t1, T0 + 2000);
     let after = note_type_view(&a, "NT", &payload, &builtin);
     assert_eq!(templates(&after), templates(&before), "{after}");
@@ -108,12 +144,25 @@ fn restore_drops_map_entries_added_after_the_moment() {
     a.apply(
         T0,
         vec![
-            entity("notetype", "NT", json!({"createdAt": 1, "ntKind": "standard"})),
+            entity(
+                "notetype",
+                "NT",
+                json!({"createdAt": 1, "ntKind": "standard"}),
+            ),
             edit("notetype", "NT", "name", json!("Mine")),
-            edit("notetype", "NT", "fieldDef/f1", json!({"name": "Word", "ord": 0})),
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/f1",
+                json!({"name": "Word", "ord": 0}),
+            ),
             edit("notetype", "NT", "tmplDef/t1", tpl("{{fld:f1}}")),
             edit("notetype", "NT", "css", json!("old css")),
-            entity("note", "N1", json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"})),
+            entity(
+                "note",
+                "N1",
+                json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+            ),
             edit("note", "N1", "f/f1", json!("孤児院")),
         ],
     );
@@ -125,8 +174,18 @@ fn restore_drops_map_entries_added_after_the_moment() {
         T0 + 1000,
         vec![
             edit("notetype", "NT", "tmplDef/t1", tpl("changed")),
-            edit("notetype", "NT", "tmplDef/t2", json!({"name": "裏", "ord": 1, "front": "x", "back": "y"})),
-            edit("notetype", "NT", "fieldDef/f2", json!({"name": "Meaning", "ord": 1})),
+            edit(
+                "notetype",
+                "NT",
+                "tmplDef/t2",
+                json!({"name": "裏", "ord": 1, "front": "x", "back": "y"}),
+            ),
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/f2",
+                json!({"name": "Meaning", "ord": 1}),
+            ),
             edit("notetype", "NT", "fieldDesc/f1", json!("what goes here")),
             edit("notetype", "NT", "css", json!("new css")),
             edit("note", "N1", "f/f2", json!("meaning")),
@@ -145,14 +204,32 @@ fn restore_drops_map_entries_added_after_the_moment() {
 #[test]
 fn restore_of_a_card_flag_first_set_later_returns_the_inherited_value() {
     let a = Device::new("tl-card");
-    a.apply(T0, vec![edit("card", "C1", "suspended", json!(true)), edit("card", "C2", "historyFrom/C1", json!(true))]);
+    a.apply(
+        T0,
+        vec![
+            edit("card", "C1", "suspended", json!(true)),
+            edit("card", "C2", "historyFrom/C1", json!(true)),
+        ],
+    );
     let t1 = T0 + 500;
-    a.apply(T0 + 1000, vec![edit("card", "C2", "suspended", json!(false)), edit("card", "C2", "flag", json!(3))]);
+    a.apply(
+        T0 + 1000,
+        vec![
+            edit("card", "C2", "suspended", json!(false)),
+            edit("card", "C2", "flag", json!(3)),
+        ],
+    );
     restore(&a, t1, T0 + 2000);
     let w = a.core.writer().unwrap();
-    assert_eq!(value_at(&w, P, EntKind::Card, "C2", "suspended", None).unwrap(), Some(json!(true)));
+    assert_eq!(
+        value_at(&w, P, EntKind::Card, "C2", "suspended", None).unwrap(),
+        Some(json!(true))
+    );
     // 血统里也没有的键：写回 null（= 未设）。
-    assert_eq!(value_at(&w, P, EntKind::Card, "C2", "flag", None).unwrap(), Some(Value::Null));
+    assert_eq!(
+        value_at(&w, P, EntKind::Card, "C2", "flag", None).unwrap(),
+        Some(Value::Null)
+    );
 }
 
 /// 同类排查的总回归：每类实体 × 每类键（标量 / 对象 / 带子键的映射；之前就有的、之后才有的）恢复后，
@@ -167,15 +244,38 @@ fn restore_brings_every_register_back_to_the_moment() {
             deck_entity(&deck),
             edit("deck", &deck, "name", json!("Default")),
             edit("deck", &deck, "limits", json!({"new": 20, "review": 200})),
-            edit("deck", &deck, "steps", json!({"learn": [1, 10], "relearn": [10]})),
+            edit(
+                "deck",
+                &deck,
+                "steps",
+                json!({"learn": [1, 10], "relearn": [10]}),
+            ),
             edit("deck", &deck, "retention", json!(0.9)),
-            entity("notetype", "NT", json!({"createdAt": 1, "ntKind": "standard"})),
+            entity(
+                "notetype",
+                "NT",
+                json!({"createdAt": 1, "ntKind": "standard"}),
+            ),
             edit("notetype", "NT", "name", json!("Mine")),
-            edit("notetype", "NT", "fieldDef/f1", json!({"name": "Word", "ord": 0})),
-            edit("notetype", "NT", "tmplDef/t1", json!({"name": "Card 1", "ord": 0, "front": "{{fld:f1}}", "back": "b"})),
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/f1",
+                json!({"name": "Word", "ord": 0}),
+            ),
+            edit(
+                "notetype",
+                "NT",
+                "tmplDef/t1",
+                json!({"name": "Card 1", "ord": 0, "front": "{{fld:f1}}", "back": "b"}),
+            ),
             edit("notetype", "NT", "css", json!("css")),
             edit("notetype", "NT", "termField", json!("f1")),
-            entity("note", "N1", json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"})),
+            entity(
+                "note",
+                "N1",
+                json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+            ),
             edit("note", "N1", "f/f1", json!("v1")),
             edit("note", "N1", "tags", json!(["a"])),
             edit("card", "C1", "flag", json!(1)),
@@ -190,10 +290,30 @@ fn restore_brings_every_register_back_to_the_moment() {
             edit("deck", &deck, "maxInterval", json!(30)),
             edit("deck", &deck, "collapsed", json!(true)),
             edit("notetype", "NT", "name", json!("Other")),
-            edit("notetype", "NT", "fieldDef/f1", json!({"name": "Term", "ord": 0})),
-            edit("notetype", "NT", "fieldDef/f2", json!({"name": "New", "ord": 1})),
-            edit("notetype", "NT", "tmplDef/t1", json!({"name": "Card 1", "ord": 0, "front": "", "back": ""})),
-            edit("notetype", "NT", "tmplDef/t2", json!({"name": "Card 2", "ord": 1, "front": "x", "back": "y"})),
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/f1",
+                json!({"name": "Term", "ord": 0}),
+            ),
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/f2",
+                json!({"name": "New", "ord": 1}),
+            ),
+            edit(
+                "notetype",
+                "NT",
+                "tmplDef/t1",
+                json!({"name": "Card 1", "ord": 0, "front": "", "back": ""}),
+            ),
+            edit(
+                "notetype",
+                "NT",
+                "tmplDef/t2",
+                json!({"name": "Card 2", "ord": 1, "front": "x", "back": "y"}),
+            ),
             edit("notetype", "NT", "css", json!("css2")),
             edit("notetype", "NT", "freqField", json!("f2")),
             edit("note", "N1", "f/f1", json!("v2")),
@@ -211,16 +331,35 @@ fn restore_brings_every_register_back_to_the_moment() {
         let target = target_cut(&w, P, &RestoreTarget::At(t1)).unwrap();
         regs.iter()
             .skip(1)
-            .map(|r| value_at(&w, P, EntKind::parse(&r[0]).unwrap(), &r[1], &r[2], Some(&target)).unwrap().unwrap_or(Value::Null))
+            .map(|r| {
+                value_at(
+                    &w,
+                    P,
+                    EntKind::parse(&r[0]).unwrap(),
+                    &r[1],
+                    &r[2],
+                    Some(&target),
+                )
+                .unwrap()
+                .unwrap_or(Value::Null)
+            })
             .collect()
     };
     restore(&a, t1, T0 + 2000);
     let w = a.core.writer().unwrap();
     for (r, want) in regs.iter().skip(1).zip(then) {
-        let got = value_at(&w, P, EntKind::parse(&r[0]).unwrap(), &r[1], &r[2], None).unwrap().unwrap_or(Value::Null);
-        assert!(crate::registers::same_value(&got, &want), "{r:?}: got {got}, want {want}");
+        let got = value_at(&w, P, EntKind::parse(&r[0]).unwrap(), &r[1], &r[2], None)
+            .unwrap()
+            .unwrap_or(Value::Null);
+        assert!(
+            crate::registers::same_value(&got, &want),
+            "{r:?}: got {got}, want {want}"
+        );
     }
-    assert_eq!(super::super::semantics::current_tags(&w, P, "N1").unwrap(), vec!["a".to_owned()]);
+    assert_eq!(
+        super::super::semantics::current_tags(&w, P, "N1").unwrap(),
+        vec!["a".to_owned()]
+    );
 }
 
 /// 旧库（v1）：直接写投影表，再迁移。迁移操作的墙钟是 [mig]，内容本身的旧 HLC 远早于它。
@@ -236,10 +375,42 @@ fn migrated_library(mig: i64) -> Device {
     }
     // (seq, 实体种类, 实体, 键, 值, 旧 HLC 物理时刻, 旧上下文)
     let edits: [(i64, &str, &str, &str, Value, i64, Value); 4] = [
-        (1, "note", "N1", "f/x", json!("legacy v1"), T0 + 100, json!({})),
-        (2, "notetype", "NT", "tmplDef/t1", json!({"name": "表", "ord": 0, "front": "{{fld:x}}", "back": "b"}), T0 + 100, json!({"old": 1})),
-        (3, "note", "N1", "f/x", json!("legacy v2"), T0 + 300, json!({"old": 2})),
-        (4, "note", "N2", "f/x", json!("added later"), T0 + 300, json!({"old": 3})),
+        (
+            1,
+            "note",
+            "N1",
+            "f/x",
+            json!("legacy v1"),
+            T0 + 100,
+            json!({}),
+        ),
+        (
+            2,
+            "notetype",
+            "NT",
+            "tmplDef/t1",
+            json!({"name": "表", "ord": 0, "front": "{{fld:x}}", "back": "b"}),
+            T0 + 100,
+            json!({"old": 1}),
+        ),
+        (
+            3,
+            "note",
+            "N1",
+            "f/x",
+            json!("legacy v2"),
+            T0 + 300,
+            json!({"old": 2}),
+        ),
+        (
+            4,
+            "note",
+            "N2",
+            "f/x",
+            json!("added later"),
+            T0 + 300,
+            json!({"old": 3}),
+        ),
     ];
     for (s, kind, e, f, v, at, ctx) in edits {
         let id = crate::registers::edit_id("old", s);
@@ -275,19 +446,43 @@ fn restore_cuts_migrated_history_at_its_original_time() {
     let mig = T0 + 10_000;
     let a = migrated_library(mig);
     a.apply(mig + 1000, vec![edit("note", "N1", "f/x", json!("native"))]);
-    let plan = |t: i64| a.core.sync2_plan_restore(P, &RestoreTarget::At(t), true, mig + 5000).unwrap();
+    let plan = |t: i64| {
+        a.core
+            .sync2_plan_restore(P, &RestoreTarget::At(t), true, mig + 5000)
+            .unwrap()
+    };
     // 全部旧内容之后、迁移之前：只改回迁移之后本机的那一条，不删、不撤回任何东西。
-    assert_eq!(plan(T0 + 500), json!({"fields": 1, "removed": 0, "reviews": 0, "revived": 0, "tags": 0}));
+    assert_eq!(
+        plan(T0 + 500),
+        json!({"fields": 1, "removed": 0, "reviews": 0, "revived": 0, "tags": 0})
+    );
     // 旧内容中途：N1 改回 legacy v1，N2 那时还没有内容 → 删除；那之后的旧复习撤回。NT 的模板那时已在，不动。
-    assert_eq!(plan(T0 + 200), json!({"fields": 1, "removed": 1, "reviews": 1, "revived": 0, "tags": 0}));
+    assert_eq!(
+        plan(T0 + 200),
+        json!({"fields": 1, "removed": 1, "reviews": 1, "revived": 0, "tags": 0})
+    );
     // 早于一切旧内容：三个实体都还不存在。
     assert_eq!(plan(T0)["removed"], json!(3));
-    a.core.sync2_restore(P, &RestoreTarget::At(T0 + 200), false, mig + 5000).unwrap();
+    a.core
+        .sync2_restore(P, &RestoreTarget::At(T0 + 200), false, mig + 5000)
+        .unwrap();
     let w = a.core.writer().unwrap();
-    assert_eq!(value_at(&w, P, EntKind::Note, "N1", "f/x", None).unwrap(), Some(json!("legacy v1")));
-    assert!(value_at(&w, P, EntKind::Note, "N2", "deleted", None).unwrap().is_some_and(|v| v.is_i64()));
-    assert_eq!(value_at(&w, P, EntKind::Note, "N1", "deleted", None).unwrap(), None);
-    let t1 = value_at(&w, P, EntKind::NoteType, "NT", "tmplDef/t1", None).unwrap().unwrap();
+    assert_eq!(
+        value_at(&w, P, EntKind::Note, "N1", "f/x", None).unwrap(),
+        Some(json!("legacy v1"))
+    );
+    assert!(
+        value_at(&w, P, EntKind::Note, "N2", "deleted", None)
+            .unwrap()
+            .is_some_and(|v| v.is_i64())
+    );
+    assert_eq!(
+        value_at(&w, P, EntKind::Note, "N1", "deleted", None).unwrap(),
+        None
+    );
+    let t1 = value_at(&w, P, EntKind::NoteType, "NT", "tmplDef/t1", None)
+        .unwrap()
+        .unwrap();
     assert_eq!(t1["front"], json!("{{fld:x}}"));
 }
 

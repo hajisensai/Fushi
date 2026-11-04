@@ -19,10 +19,8 @@ import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/local/local_service_process.dart';
 import 'package:fushi_engine/tts/local/local_service_support.dart';
 import 'package:fushi_engine/tts/local/voicevox_local_engine.dart';
-import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
-import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
 import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
@@ -54,13 +52,6 @@ const Duration _kSaveDebounce = Duration(milliseconds: 600);
 
 /// 声音参数旁边存显示名的键后缀（`voice` → `voice_name`）。
 const String _kVoiceNameSuffix = '_name';
-
-/// 非官方在线接口（网页版朗读），编辑页额外提示可能失效。
-const Set<String> _kUnofficialProviders = <String>{
-  EdgeTtsDescriptor.providerId,
-  MicrosoftTranslatorTtsDescriptor.providerId,
-  GoogleTranslateTtsDescriptor.providerId,
-};
 
 /// 参考音频能选的扩展名（GPT-SoVITS 经 librosa / ffmpeg 读，常见格式都认）。
 const Set<String> _kReferenceAudioExtensions = <String>{
@@ -1103,10 +1094,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           child: FushiInlineNotice(
             key: const ValueKey<String>('tts-voice-online-notice'),
             severity: FushiNoticeSeverity.info,
-            message: _kUnofficialProviders.contains(descriptor.id)
-                ? '${t.audiobook_tts_online_notice}\n'
-                      '${t.audiobook_tts_unofficial_notice}'
-                : t.audiobook_tts_online_notice,
+            message: <String>[
+              t.audiobook_tts_online_notice,
+              ?ttsUnofficialNotice(descriptor.id),
+            ].join('\n'),
           ),
         ),
       AdaptiveSettingsSection(

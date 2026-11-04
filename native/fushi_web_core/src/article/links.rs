@@ -212,11 +212,7 @@ fn attr_hint(node: &NodeRef, kind: LinkKind) -> u32 {
         }
         LinkKind::Toc => hay.contains("toc") || hay.contains("catalog") || hay.contains("index"),
     };
-    if hit {
-        50
-    } else {
-        0
-    }
+    if hit { 50 } else { 0 }
 }
 
 /// 末尾那段数字（路径或查询里最后出现的整数）及其位置。

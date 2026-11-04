@@ -176,7 +176,11 @@ impl Line {
         if text.is_empty() {
             return;
         }
-        let lang = if lang.trim().is_empty() { "und" } else { lang.trim() };
+        let lang = if lang.trim().is_empty() {
+            "und"
+        } else {
+            lang.trim()
+        };
         if let Some(slot) = self.translations.iter_mut().find(|(l, _)| l == lang) {
             if slot.1.is_empty() {
                 slot.1 = text.to_owned();
@@ -249,9 +253,8 @@ impl Timeline {
     /// - 行起止收拢成音节的包络；
     /// - 按起点稳定排序（和声行跟着它的主行走：排序键用主行起点）。
     pub fn finalize(&mut self, duration_ms: Option<i64>) {
-        self.lines.retain(|l| {
-            !l.syllables.iter().all(|s| s.text.trim().is_empty())
-        });
+        self.lines
+            .retain(|l| !l.syllables.iter().all(|s| s.text.trim().is_empty()));
         if self.timing_quality == TimingQuality::Unsynced {
             for l in &mut self.lines {
                 l.start_ms = 0;
@@ -315,7 +318,11 @@ pub fn spread_shared_starts(line: &mut Line) {
             j += 1;
         }
         if j - i > 1 {
-            let end = if j < n { line.syllables[j].start_ms } else { line.end_ms };
+            let end = if j < n {
+                line.syllables[j].start_ms
+            } else {
+                line.end_ms
+            };
             if end > start {
                 let weights: Vec<i64> = line.syllables[i..j]
                     .iter()
@@ -361,8 +368,17 @@ fn normalize_syllables(line: &mut Line) {
         }
         cursor = s.start_ms;
     }
-    let first = line.syllables.first().map(|s| s.start_ms).unwrap_or(line_start);
-    let last = line.syllables.iter().map(|s| s.end_ms).max().unwrap_or(line_end);
+    let first = line
+        .syllables
+        .first()
+        .map(|s| s.start_ms)
+        .unwrap_or(line_start);
+    let last = line
+        .syllables
+        .iter()
+        .map(|s| s.end_ms)
+        .max()
+        .unwrap_or(line_end);
     line.start_ms = line_start.min(first);
     line.end_ms = line_end.max(last);
 }

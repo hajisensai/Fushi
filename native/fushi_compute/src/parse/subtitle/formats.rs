@@ -2,7 +2,7 @@
 //! `parseString`）。输入是去掉编码层后的 UTF-16 文本。
 
 use super::dart::*;
-use super::markup::{ass_color_to_argb, parse_markup, strip_html_tags, Markup};
+use super::markup::{Markup, ass_color_to_argb, parse_markup, strip_html_tags};
 
 /// 一条 cue 的解析结果（bookKey / chapterHref / sentenceIndex 等由 Dart 侧按下标补齐）。
 pub struct Cue {
@@ -379,11 +379,7 @@ fn parse_style_row(body: &[u16], cols: &[Vec<u16>]) -> CueStyle {
             return None;
         }
         let v = cells[idx as usize];
-        if v.is_empty() {
-            None
-        } else {
-            Some(v)
-        }
+        if v.is_empty() { None } else { Some(v) }
     };
     let color = |name: &[u8]| {
         cell(name)

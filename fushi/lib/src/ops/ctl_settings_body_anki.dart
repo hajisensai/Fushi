@@ -148,6 +148,16 @@ CtlBodyPage _overviewPage() => CtlBodyPage(
       // 复习模块（默认关）开着时才出现，与页面一致。
       visible: (SettingsContext c) => c.ref.read(srsModuleEnabledProvider),
     ),
+    // 反馈 Rl00Di264R：复习目标的「后台制卡」，与页面「Fushi 复习」分组同一个偏好。
+    SettingsSwitchItem(
+      id: _id('srs_mining_background'),
+      title: t.srs_mining_background_title,
+      subtitle: t.srs_mining_background_hint,
+      value: (SettingsContext c) => c.appModel.srsMiningBackground,
+      onChanged: (SettingsContext c, bool v) =>
+          c.appModel.setSrsMiningBackground(v),
+      visible: (SettingsContext c) => c.ref.read(srsModuleEnabledProvider),
+    ),
   ],
 );
 
@@ -277,7 +287,7 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: 'reposition_preview',
       title: '${t.anki_reposition_title} · ${t.anki_reposition_preview}',
       subtitle: t.anki_reposition_hint,
-      visible: (SettingsContext c) => _vm(c).supportsDeckReposition,
+      visible: (SettingsContext c) => _vm(c).canRepositionDeck,
       cli: SettingsCliAction(
         run: _repositionPreview,
         params: _repositionParams,
@@ -287,7 +297,7 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: 'reposition',
       title: t.anki_reposition_title,
       subtitle: t.anki_reposition_hint,
-      visible: (SettingsContext c) => _vm(c).supportsDeckReposition,
+      visible: (SettingsContext c) => _vm(c).canRepositionDeck,
       cli: SettingsCliAction(
         run: _repositionRun,
         params: _repositionParams,
@@ -298,7 +308,7 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: 'reposition_undo',
       title: t.anki_reposition_undo,
       subtitle: t.anki_reposition_undo_hint(time: ''),
-      visible: (SettingsContext c) => _vm(c).supportsDeckReposition,
+      visible: (SettingsContext c) => _vm(c).canRepositionDeck,
       cli: SettingsCliAction(
         run: _repositionUndo,
         params: <SettingsCliParam>[
@@ -311,9 +321,9 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: _id('reposition_auto'),
       title: t.anki_reposition_auto_title,
       subtitle: t.anki_reposition_auto_hint,
-      visible: (SettingsContext c) => _vm(c).supportsAutoReposition,
+      visible: (SettingsContext c) => _vm(c).canAutoReposition,
       value: (SettingsContext c) =>
-          _vm(c).supportsAutoReposition && _cfg(c).autoRepositionEnabled,
+          _vm(c).canAutoReposition && _cfg(c).autoRepositionEnabled,
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).setAutoRepositionEnabled(v),
     ),
@@ -371,6 +381,19 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       value: (SettingsContext c) => _cfg(c).compactGlossaries,
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateCompactGlossaries(v),
+    ),
+    // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB）：卡片内容，跟「紧凑释义」放一起。id 沿用
+    // 旧名 `tag_char_position`（操作目录 / 设置搜索锚点），toggle 语义同书名标签。
+    SettingsSwitchItem(
+      id: _id('tag_char_position'),
+      title: t.anki_char_position_misc_info,
+      subtitle: t.anki_char_position_misc_info_hint,
+      value: (SettingsContext c) => c.appModel.autoAddCharPositionToTags,
+      onChanged: (SettingsContext c, bool v) {
+        if (c.appModel.autoAddCharPositionToTags != v) {
+          c.appModel.toggleAutoAddCharPositionToTags();
+        }
+      },
     ),
     SettingsSwitchItem(
       id: _id('notice_success'),
@@ -441,7 +464,7 @@ CtlBodyPage _tagsPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateTagNestTitleUnderCategory(v),
     ),
-    // 页面里这两项是 toggle 语义：只在目标值与当前值不同时翻转。
+    // 页面里这一项是 toggle 语义：只在目标值与当前值不同时翻转。
     SettingsSwitchItem(
       id: _id('tag_book_name'),
       title: t.auto_add_book_name_to_tags,
@@ -449,17 +472,6 @@ CtlBodyPage _tagsPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) {
         if (c.appModel.autoAddBookNameToTags != v) {
           c.appModel.toggleAutoAddBookNameToTags();
-        }
-      },
-    ),
-    SettingsSwitchItem(
-      id: _id('tag_char_position'),
-      title: t.auto_add_char_position_to_tags,
-      subtitle: t.auto_add_char_position_to_tags_hint,
-      value: (SettingsContext c) => c.appModel.autoAddCharPositionToTags,
-      onChanged: (SettingsContext c, bool v) {
-        if (c.appModel.autoAddCharPositionToTags != v) {
-          c.appModel.toggleAutoAddCharPositionToTags();
         }
       },
     ),
@@ -1379,7 +1391,20 @@ AnkiDeckRepositionRunner _repositionRunner(SettingsContext c) {
   if (!vm.supportsDeckReposition) {
     throw StateError(t.anki_reposition_unsupported);
   }
+  if (vm.deckRepositionBlockedByBackend) {
+    throw StateError(t.anki_reposition_ankiconnect_unsupported);
+  }
   return vm.deckRepositionRunner;
+}
+
+/// runner 当场探测到后端没有重排能力（[AnkiRepositionUnsupportedException]，一张
+/// 都没写）时，换成用户看得懂的版本提示。
+Future<T> _withRepositionSupport<T>(Future<T> Function() body) async {
+  try {
+    return await body();
+  } on AnkiRepositionUnsupportedException {
+    throw StateError(t.anki_reposition_ankiconnect_unsupported);
+  }
 }
 
 /// 解析并持久化重排选项（页面在点「预览」时同样先落盘），然后算计划。
@@ -1448,14 +1473,16 @@ Future<AnkiRepositionPlan> _planReposition(
     aggregate: aggregate.name,
     rareFirst: rareFirst,
   );
-  final AnkiRepositionPlan? plan = await runner.plan(
-    deckName: deck,
-    settings: vm.settings,
-    options: AnkiRepositionRankOptions(
-      source: source,
-      dictionaries: dictionaries,
-      aggregate: aggregate,
-      rareFirst: rareFirst,
+  final AnkiRepositionPlan? plan = await _withRepositionSupport(
+    () => runner.plan(
+      deckName: deck,
+      settings: vm.settings,
+      options: AnkiRepositionRankOptions(
+        source: source,
+        dictionaries: dictionaries,
+        aggregate: aggregate,
+        rareFirst: rareFirst,
+      ),
     ),
   );
   if (plan == null) throw StateError(t.anki_reposition_unsupported);
@@ -1491,7 +1518,10 @@ Future<Object?> _repositionRun(
       'message': t.anki_reposition_empty,
     };
   }
-  final AnkiRepositionOutcome outcome = await _repositionRunner(c).apply(plan);
+  final AnkiDeckRepositionRunner runner = _repositionRunner(c);
+  final AnkiRepositionOutcome outcome = await _withRepositionSupport(
+    () => runner.apply(plan),
+  );
   return <String, Object?>{
     ..._planSummary(plan),
     'written': outcome.written,
@@ -1513,7 +1543,9 @@ Future<Object?> _repositionUndo(
   if (snapshot == null) {
     throw StateError('牌组「$deck」没有可撤销的重排快照');
   }
-  final AnkiRepositionUndoOutcome outcome = await runner.undo(snapshot);
+  final AnkiRepositionUndoOutcome outcome = await _withRepositionSupport(
+    () => runner.undo(snapshot),
+  );
   return <String, Object?>{
     'deck': deck,
     'restored': outcome.restored,

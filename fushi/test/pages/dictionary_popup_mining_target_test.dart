@@ -8,12 +8,13 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiSettings, BaseAnkiRepository;
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:material_ui/material_ui.dart';
+
+import '../helpers/inert_profile_repository.dart';
 
 ProfileRow _profile(int id, String name) =>
     ProfileRow(id: id, name: name, createdAt: 0, updatedAt: 0);
@@ -66,12 +67,9 @@ class _FakeAnkiRepository implements BaseAnkiRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _FakeProfileRepository implements ProfileRepository {
+class _FakeProfileRepository extends InertProfileRepository {
   _FakeProfileRepository(this._world);
   final _MiningWorld _world;
-
-  @override
-  Future<void> ensureDefaultProfile() async {}
 
   @override
   Future<List<ProfileRow>> getAllProfiles() async {
@@ -81,23 +79,6 @@ class _FakeProfileRepository implements ProfileRepository {
 
   @override
   Future<int> getActiveProfileId() async => _world.activeProfileId;
-
-  @override
-  Future<Map<String, int>> getAllMediaTypeBindings() async =>
-      const <String, int>{};
-
-  @override
-  Future<Map<String, int>> getAllLanguageBindings() async =>
-      const <String, int>{};
-
-  @override
-  Stream<void> watchProfilesChanged() => const Stream<void>.empty();
-
-  @override
-  Future<void> snapshotCurrentSettings(int profileId) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// 与生产同形的接线：配置仓库 watch Anki 仓库，invalidate Anki 仓库会把两个视图
@@ -260,7 +241,8 @@ void main() {
                   showMiningTargetSwitch: show,
                   onClose: () {},
                   onDismiss: () {},
-                  onTextSelected: (String text, Rect rect, List<Object?> _) {},
+                  onTextSelected:
+                      (String text, Rect rect, List<Object?> _, String __) {},
                   onLinkClick: (String query, Rect rect) {},
                   onMineEntry: (Map<String, String> fields) async =>
                       const MinePopupResult(),

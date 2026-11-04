@@ -52,6 +52,73 @@ const List<MediaServerQualityPreset> kInterconnectQualityPresets =
 /// 给出一个糊到需要手动调回去的画面。
 const int kInterconnectAutoQualityPresetIndex = 2;
 
+/// 链路带宽相对所需码率的富余倍数：实测带宽 ≥ 码率 × 1.5 才算「跑得动」。
+///
+/// 探测只有一两秒，测到的是这一刻的吞吐；视频码率本身也有起伏（BD 原盘的峰值远高于
+/// 平均值）。留五成余量，宁可在边缘处多转一次码，也不要起播就卡。
+const double kInterconnectLinkHeadroom = 1.5;
+
+/// 链路探测最多读多少字节（8 MiB）。够把 TCP 慢启动跑过去，又不至于在慢链路上白耗流量。
+const int kInterconnectLinkProbeMaxBytes = 8 * 1024 * 1024;
+
+/// 链路探测从首字节起最多读多久。
+const Duration kInterconnectLinkProbeWindow = Duration(milliseconds: 1500);
+
+/// 样本至少要这么多字节才作数（除非整个文件就这么大、已经读完）：太少的样本里
+/// 全是慢启动，测出来的数严重偏低。
+const int kInterconnectLinkProbeMinBytes = 256 * 1024;
+
+/// 纯函数：一次链路探测样本 → 吞吐（bps）；样本不作数返回 null。
+///
+/// [elapsed] 从**首字节**算起（不含建连与 host 打开文件的延迟——那是一次性的，
+/// 不反映持续吞吐）。[reachedEnd] = 读到了文件末尾：小文件不够
+/// [kInterconnectLinkProbeMinBytes] 也算数，因为整片都已经搬过来了。
+int? interconnectLinkBitsPerSecond({
+  required int bytes,
+  required Duration elapsed,
+  required bool reachedEnd,
+}) {
+  if (bytes <= 0) return null;
+  if (bytes < kInterconnectLinkProbeMinBytes && !reachedEnd) return null;
+  final int micros = elapsed.inMicroseconds < 1000
+      ? 1000
+      : elapsed.inMicroseconds;
+  return (bytes * 8 * 1000000) ~/ micros;
+}
+
+/// 纯函数：「自动」档的起点下标（-1 = 原画直传），按**链路带宽对源码率**决定
+/// （反馈 uaBRMzK_WM：内网应能看 BD 满码率）。
+///
+/// - [privateNetworkHost]：连的是字面量局域网地址，不用测，原画。
+/// - [linkBitsPerSecond] 为 null（没测成：老 host、蓝光段表、探测失败）→ 退回旧的
+///   保守起点 [kInterconnectAutoQualityPresetIndex]。
+/// - 知道源码率且带宽 ≥ 源码率 × [kInterconnectLinkHeadroom] → 原画。经 DDNS 域名、
+///   公网 IPv6、端口映射回家的局域网连接就是靠这一条拿到原画——它们的地址字面上
+///   不是私网，旧判据一律当成公网压到 2 Mbps。
+/// - 否则取带宽撑得住的最高一档（档位码率 × 富余倍数 ≤ 带宽）；一档都撑不住给最低档。
+///
+/// 源码率未知时**不**自动给原画：原片可能是 40 Mbps 的原盘，猜错了就是起播即卡。
+int resolveInterconnectAutoStartIndex({
+  required bool privateNetworkHost,
+  required int? linkBitsPerSecond,
+  required int? sourceBitrate,
+  List<MediaServerQualityPreset> presets = kInterconnectQualityPresets,
+}) {
+  if (privateNetworkHost) return -1;
+  final int? link = linkBitsPerSecond;
+  if (link == null || link <= 0) return kInterconnectAutoQualityPresetIndex;
+  final int? source = sourceBitrate;
+  if (source != null &&
+      source > 0 &&
+      link >= source * kInterconnectLinkHeadroom) {
+    return -1;
+  }
+  for (int i = 0; i < presets.length; i++) {
+    if (presets[i].maxBitrate * kInterconnectLinkHeadroom <= link) return i;
+  }
+  return presets.length - 1;
+}
+
 /// 「自动」档的**起点**：连的是局域网就原画直传，走公网就先压到
 /// [kInterconnectAutoQualityPresetIndex]，之后交给
 /// `AdaptiveQualityController` 按实测网况继续升降。

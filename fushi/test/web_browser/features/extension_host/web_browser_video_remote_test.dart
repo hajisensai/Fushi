@@ -1,9 +1,12 @@
 import 'dart:convert';
 
 import 'package:drift/native.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart'
+    show InAppWebViewController;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_remote.dart';
+import 'package:fushi/src/web_browser/features/page_visibility/web_browser_page_visibility_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -84,6 +87,7 @@ void main() {
         },
         register: host.register,
         unregister: host.unregister,
+        controlledBinding: host.controlledBinding,
         mineImmersion: (ImmersionMinePayload payload) async {
           mined.add(payload);
           return const RemoteMineResult(result: 'success');
@@ -182,6 +186,83 @@ void main() {
       pages['b']!.hasVideo = false;
       await remote.poll();
       expect((await connect())['available'], isFalse);
+    });
+
+    test('remoteControlledTabId 只认真被手机控制的那一页：登记了不算（BUG-4084）', () async {
+      final List<String?> seen = <String?>[];
+      remote.remoteControlledTabId.addListener(
+        () => seen.add(remote.remoteControlledTabId.value),
+      );
+      // 前台页有视频、已登记，但没有手机控制端：不是遥控页。
+      await activate(tabA);
+      expect(remote.binding, isNotNull);
+      expect(remote.remoteControlledTabId.value, isNull);
+
+      // 手机连上：控制的正是这一页。
+      await connect();
+      expect(remote.remoteControlledTabId.value, 'a');
+
+      // 原生播放器盖上来接管手机：这一页不再被控制；它关掉后手机回来。
+      final VideoRemotePlaybackBinding native = _nativeBinding();
+      host.register(native);
+      expect(remote.remoteControlledTabId.value, isNull);
+      host.unregister(native);
+      expect(remote.remoteControlledTabId.value, 'a');
+
+      // 手机断开：不再是遥控页。
+      await host.releaseController();
+      expect(remote.remoteControlledTabId.value, isNull);
+
+      // 有手机时切标签 / 页面没视频了：跟着会话走。
+      await connect();
+      remote.tabDeactivated(tabA);
+      expect(remote.remoteControlledTabId.value, isNull);
+      await activate(tabB);
+      expect(remote.remoteControlledTabId.value, 'b');
+      pages['b']!.hasVideo = false;
+      await remote.poll();
+      expect(remote.remoteControlledTabId.value, isNull);
+      expect(seen, <String?>['a', null, 'a', null, 'a', null, 'b', null]);
+    });
+
+    test('被播放页盖住：已登记但没手机控制端的页照样按住并隐藏，有控制端才豁免（BUG-4084）', () async {
+      final List<String> log = <String>[];
+      final WebBrowserPageVisibilityFeature
+      visibility = WebBrowserPageVisibilityFeature(
+        remoteControlledTabId: remote.remoteControlledTabId,
+        setHidden: (InAppWebViewController c, {required bool hidden}) async =>
+            log.add(
+              '${(c as _FakeController).name}:'
+              '${hidden ? 'hide' : 'show'}',
+            ),
+        runScript: (InAppWebViewController c, String source) async => log.add(
+          '${(c as _FakeController).name}:'
+          '${source == kWebBrowserCoverHoldMediaScript ? 'hold' : 'release'}',
+        ),
+      );
+      addTearDown(visibility.dispose);
+      final _FakeController ca = _FakeController('a');
+      visibility.onWebViewCreated(tabA, ca);
+      await visibility.onLoadStop(tabA, ca, tabA.url);
+
+      // Netflix 首页：前台页预告片在播 → 登记了遥控绑定，但没有手机。
+      await activate(tabA);
+      expect(remote.binding, isNotNull);
+      visibility.onPlaybackCoverChanged(covered: true);
+      await pumpEventQueue();
+      expect(log, <String>['a:hold', 'a:hide']);
+
+      // 手机连上来控制这一页：恢复它（遥控要靠页面回话）。
+      log.clear();
+      await connect();
+      await pumpEventQueue();
+      expect(log, <String>['a:show', 'a:release']);
+
+      // 手机断开：还盖着，随即再按住并隐藏。
+      log.clear();
+      await host.releaseController();
+      await pumpEventQueue();
+      expect(log, <String>['a:hold', 'a:hide']);
     });
 
     test('同一标签页换到别的视频（videoKey 变）= 新会话', () async {
@@ -469,6 +550,7 @@ void main() {
           runtime: remote.ports.runtime,
           register: host.register,
           unregister: host.unregister,
+          controlledBinding: host.controlledBinding,
           mineImmersion: (ImmersionMinePayload payload) async =>
               RemoteMineResult(result: outcomes.removeAt(0)),
           miningPads: () => (headPadMs: 0, tailPadMs: 0),
@@ -556,6 +638,11 @@ VideoRemotePlaybackBinding _nativeBinding() => VideoRemotePlaybackBinding(
   addListener: (_) {},
   removeListener: (_) {},
 );
+
+class _FakeController extends Fake implements InAppWebViewController {
+  _FakeController(this.name);
+  final String name;
+}
 
 /// 假页面：subtitle-panel.js 的 `fushiRemote*` / 侧栏消息的最小实现。
 class _FakePage {

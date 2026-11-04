@@ -255,7 +255,20 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     super.dispose();
   }
 
+  /// 测试用：不经真 WebView 挂上控制器（桩 WebView 没有控制器），以覆盖回收时的摘除。
+  @visibleForTesting
+  void debugAttachController(InAppWebViewController controller) {
+    _controller = controller;
+    _tab.attachController(controller);
+  }
+
   void _detachController() {
+    if (_controller != null) {
+      // 控制器随 WebView 作废：持有它的功能（页面可见性等）在这里撒手，别对死控制器发命令。
+      for (final WebBrowserFeature f in widget.host.features) {
+        _guardFeature(f, 'onWebViewDisposed', () => f.onWebViewDisposed(_tab));
+      }
+    }
     _controller = null;
     // 摘控制器会 notify 壳；dispose 期间壳可能正在重建，推迟到帧后。
     final WebBrowserTab tab = _tab;

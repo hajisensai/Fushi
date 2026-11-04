@@ -28,9 +28,21 @@ function extract(pattern, what) {
 const childFn = extract(
   /function entryHeaderChildByClass\(parent, className\) \{[\s\S]*?\n\}/,
   'entryHeaderChildByClass');
+const measureFn = extract(
+  /function measureEntryHeaderMetaStacked\(header\) \{[\s\S]*?\n\}/,
+  'measureEntryHeaderMetaStacked');
+const batchFn = extract(
+  /function updateEntryHeaderMetaLayouts\(headers\) \{[\s\S]*?\n\}/,
+  'updateEntryHeaderMetaLayouts');
 const updateFn = extract(
   /function updateEntryHeaderMetaLayout\(header\) \{[\s\S]*?\n\}/,
   'updateEntryHeaderMetaLayout');
+const flushFn = extract(
+  /function flushEntryHeaderMetaLayout\(\) \{[\s\S]*?\n\}/,
+  'flushEntryHeaderMetaLayout');
+const observeFn = extract(
+  /function observeEntryHeaderMetaLayout\(header\) \{[\s\S]*?\n\}/,
+  'observeEntryHeaderMetaLayout');
 
 class FakeClassList {
   constructor(names) { this._set = new Set(names); }
@@ -57,7 +69,7 @@ const context = {
   getComputedStyle: (e) => e.style,
 };
 vm.createContext(context);
-vm.runInContext(`${childFn}\n${updateFn}\nthis.update = updateEntryHeaderMetaLayout;`, context);
+vm.runInContext(`${childFn}\n${measureFn}\n${batchFn}\n${updateFn}\nthis.update = updateEntryHeaderMetaLayout;\nthis.updateAll = updateEntryHeaderMetaLayouts;`, context);
 
 // M3E 词头：行 gap 12、左簇 gap 12、元数据列 16px → 14em = 224。
 function buildHeader({ row, headword, buttons }) {
@@ -132,5 +144,68 @@ assert.ok(!/needsScroll/.test(headerFn),
   'createEntryHeader 不能再按 needsScroll 决定是否套 .expression-scroll');
 assert.ok(/const expressionScroll = el\('div', \{ className: 'expression-scroll' \}\);\s*expressionScroll\.appendChild\(expressionSpan\);\s*headerMain\.appendChild\(expressionScroll\);/
   .test(headerFn), '词头必须无条件套进 .expression-scroll 再挂进左簇');
+
+// BUG-4102（反馈 3op205DyWN）①：一批 header 先全部量完再统一写类。旧实现逐个
+// 「读宽 → 写类」交替，后一个 header 的读会把前一个的写强制同步回流（N 个词条 N 次回流）。
+// 这里给假元素的读 / 写打点，断言整批里没有任何一次读落在写之后。
+{
+  const log = [];
+  const tracked = [];
+  for (let i = 0; i < 4; i++) {
+    const h = buildHeader({ row: 360, headword: 168, buttons: 176 });
+    const width = h.clientWidth;
+    Object.defineProperty(h, 'clientWidth', { get: () => { log.push('read'); return width; } });
+    const list = h.classList;
+    const origToggle = list.toggle.bind(list);
+    list.toggle = (n, force) => { log.push('write'); origToggle(n, force); };
+    tracked.push(h);
+  }
+  context.updateAll(tracked);
+  assert.ok(tracked.every(stacked), '整批 header 都应挂上 .meta-stacked');
+  const firstWrite = log.indexOf('write');
+  assert.ok(firstWrite > 0, `应有写入，实得 ${log}`);
+  assert.ok(log.slice(firstWrite).every((x) => x === 'write'),
+    `写之后不能再读（会强制同步回流），实得 ${log}`);
+  // 已是目标状态的 header 不再写（不白白作废样式）。
+  log.length = 0;
+  context.updateAll(tracked);
+  assert.ok(!log.includes('write'), `状态没变不应再写，实得 ${log}`);
+}
+
+// BUG-4102 ②：ResizeObserver 回调里**不得**同步写类——会改被观察的 .entry-header 自身
+// 尺寸，浏览器每次都抛「ResizeObserver loop completed with undelivered notifications」，
+// 经 window.onerror 桥灌满错误日志。回调只登记，写挪到下一帧 rAF。
+{
+  const rafQueue = [];
+  let observerCallback = null;
+  const roContext = {
+    getComputedStyle: (e) => e.style,
+    requestAnimationFrame: (fn) => { rafQueue.push(fn); return rafQueue.length; },
+    ResizeObserver: class {
+      constructor(cb) { observerCallback = cb; }
+      observe() {}
+    },
+  };
+  vm.createContext(roContext);
+  vm.runInContext(
+    'var __fushiHeaderMetaObserver = null;\nvar __fushiHeaderMetaDirty = new Set();\n'
+    + 'var __fushiHeaderMetaRaf = 0;\n'
+    + `${childFn}\n${measureFn}\n${batchFn}\n${updateFn}\n${flushFn}\n${observeFn}\n`
+    + 'this.observe = observeEntryHeaderMetaLayout;', roContext);
+  const a = buildHeader({ row: 360, headword: 168, buttons: 176 });
+  const b = buildHeader({ row: 360, headword: 168, buttons: 176 });
+  roContext.observe(a);
+  roContext.observe(b);
+  assert.ok(observerCallback, '应建出 ResizeObserver');
+  observerCallback([{ target: a }, { target: a.children[1] }, { target: b }]);
+  assert.strictEqual(stacked(a) || stacked(b), false, 'ResizeObserver 回调里不能同步写类');
+  assert.strictEqual(rafQueue.length, 1, '同一帧的多条记录只排一次 rAF');
+  observerCallback([{ target: b }]);
+  assert.strictEqual(rafQueue.length, 1, 'rAF 已排上时不再重复排');
+  rafQueue.shift()();
+  assert.ok(stacked(a) && stacked(b), '下一帧 rAF 里统一写类');
+  observerCallback([{ target: a }]);
+  assert.strictEqual(rafQueue.length, 1, 'flush 之后新的变化重新排 rAF');
+}
 
 console.log('all assertions passed');

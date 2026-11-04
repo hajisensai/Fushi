@@ -33,6 +33,7 @@ import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 class _ReadyAppModel extends AppModel {
@@ -48,35 +49,14 @@ class _ReadyAppModel extends AppModel {
 
 /// 两份配置（Default 激活中 + Lapis）的配置仓库桩：只答视图模型首装与悬浮球
 /// 「切换配置」要读的几样。
-class _TwoProfilesRepository implements ProfileRepository {
-  @override
-  Future<void> ensureDefaultProfile() async {}
-
-  @override
-  Future<List<ProfileRow>> getAllProfiles() async => const <ProfileRow>[
-    ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
-    ProfileRow(id: 2, name: 'Lapis', createdAt: 0, updatedAt: 0),
-  ];
-
-  @override
-  Future<int> getActiveProfileId() async => 1;
-
-  @override
-  Future<Map<String, int>> getAllMediaTypeBindings() async =>
-      const <String, int>{};
-
-  @override
-  Future<Map<String, int>> getAllLanguageBindings() async =>
-      const <String, int>{};
-
-  @override
-  Stream<void> watchProfilesChanged() => const Stream<void>.empty();
-
-  @override
-  Future<void> snapshotCurrentSettings(int profileId) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+class _TwoProfilesRepository extends InertProfileRepository {
+  _TwoProfilesRepository()
+    : super(
+        profiles: const <ProfileRow>[
+          ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
+          ProfileRow(id: 2, name: 'Lapis', createdAt: 0, updatedAt: 0),
+        ],
+      );
 }
 
 /// 只记下切到了哪份配置的视图模型（真切换要整套 Anki / 偏好重装，不是这里测的）。
@@ -1897,6 +1877,41 @@ void main() {
           expect(called('stopScreenOcr'), isFalse, reason: '查词时冻结层留着');
           // 反馈 Gz7z6Y6Mbr：制卡走带截图卡图的委托，而不是默认的无图路径。
           expect(call.miningHandler, isNotNull);
+        });
+
+        testWidgets('反馈 Eemf0HOZhj：识别分段耗时与点中的那行原文记进诊断日志', (
+          WidgetTester tester,
+        ) async {
+          await startOcr(tester);
+          final ErrorLogEntry timing = ErrorLogService
+              .instance
+              .diagnosticEntries
+              .lastWhere(
+                (ErrorLogEntry e) =>
+                    e.source == 'floating_ball.screen_ocr_timing',
+              );
+          expect(
+            timing.error,
+            allOf(
+              matches(RegExp(r'capture=\d+ms recognize=\d+ms')),
+              contains('image=1920x1080'),
+              contains('png=3B'),
+              contains('lines=1'),
+            ),
+          );
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 350.0,
+            'y': 220.0,
+          });
+          final ErrorLogEntry tap = ErrorLogService.instance.diagnosticEntries
+              .lastWhere(
+                (ErrorLogEntry e) => e.source == 'floating_ball.screen_ocr_tap',
+              );
+          expect(
+            tap.error,
+            'point=(350,220) line=[100,200,500,250] vertical=false '
+            'charIndex=2 text="吾輩は猫"',
+          );
         });
 
         testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {

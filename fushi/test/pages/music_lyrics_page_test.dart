@@ -4,6 +4,9 @@ import 'dart:typed_data';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -16,6 +19,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
@@ -288,6 +292,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     app = _LyricsAppModel(db: db, backend: backend, prefs: prefs, dir: dir);
+    app.shortcutRegistry.loadDefaults(TargetPlatform.windows);
     anki = _RecordingAnki();
     await app.musicSession.engine.playQueue(<MusicPlayItem>[item()]);
     // 暂停态：歌词视图不挂逐帧 Ticker，pumpAndSettle 能停下来。
@@ -326,6 +331,18 @@ void main() {
     expect(row.offsetMs, 100);
 
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // BUG-4084 追加（用户 2026-11-05）：音乐播放页也是「播放页」，盖住浏览器时浏览页要让
+  // 网页停下。
+  testWidgets('音乐播放页把自己的路由登记成播放页，关掉即撤登记', (WidgetTester tester) async {
+    await pumpPage(tester);
+    final Route<dynamic> route = ModalRoute.of(
+      tester.element(find.byType(MusicLyricsPage)),
+    )!;
+    expect(playbackRouteMarks.isPlayback(route), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(playbackRouteMarks.isPlayback(route), isFalse);
   });
 
   testWidgets('宽屏歌词页有返回键（窄屏顶栏有关闭键，宽屏原本没有退出口）', (WidgetTester tester) async {
@@ -374,6 +391,60 @@ void main() {
     await tester.pump();
     expect(backend.log.last, 'ab:null-null');
     expect(app.musicSession.engine.abLoop, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('与有声书同一套交互：空格播放暂停、点字外 / 中键跳到该行、点字查词', (
+    WidgetTester tester,
+  ) async {
+    await pumpPage(tester);
+    backend.log.clear(); // setUp 里那次暂停不算
+
+    // 空格 = 播放 / 暂停（打开歌词页即可收键，不用先点哪里）。
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(backend.log, <String>['play']);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(backend.log, <String>['play', 'pause']);
+    backend.log.clear();
+
+    final Rect row = tester.getRect(find.bySemanticsLabel('沈むように'));
+    // 点在行内、字形之外（行是整宽的，右端是空白）= 跳到这一行，不查词。
+    await tester.tapAt(row.centerRight - const Offset(4, 0));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(
+      backend.log.where((String l) => l.startsWith('seek:')),
+      hasLength(1),
+    );
+    expect(app.searches, isEmpty, reason: '字外不查词');
+
+    // 中键点在字上 = 跳转（与有声书「点句跳转」同一个绑定），不查词。
+    backend.log.clear();
+    await tester.tapAt(
+      row.centerLeft + const Offset(14, 0),
+      buttons: kMiddleMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(
+      backend.log.where((String l) => l.startsWith('seek:')),
+      hasLength(1),
+    );
+    expect(app.searches, isEmpty, reason: '中键不查词');
+
+    // 左键点在字上 = 查词（从点中的字起查）。
+    backend.log.clear();
+    await tester.tapAt(row.centerLeft + const Offset(14, 0));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(app.searches, isNotEmpty);
+    expect(app.searches.first, startsWith('沈'));
+    expect(
+      backend.log.where((String l) => l.startsWith('seek:')),
+      isEmpty,
+      reason: '点字查词不跳转',
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

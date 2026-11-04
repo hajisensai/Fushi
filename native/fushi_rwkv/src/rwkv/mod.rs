@@ -439,8 +439,12 @@ impl RwkvInference {
         let mut out = Vec::new();
         out.extend_from_slice(SNAPSHOT_MAGIC);
         out.push(precision_code(self.precision()));
-        for map in [&self.warm_up_states.card as &dyn StateMap, &self.warm_up_states.note,
-            &self.warm_up_states.deck, &self.warm_up_states.preset] {
+        for map in [
+            &self.warm_up_states.card as &dyn StateMap,
+            &self.warm_up_states.note,
+            &self.warm_up_states.deck,
+            &self.warm_up_states.preset,
+        ] {
             write_snapshot_state_map(&mut out, map).unwrap();
         }
         if let Some(state) = &self.warm_up_states.global {
@@ -610,9 +614,13 @@ impl RwkvInference {
             let view = self.warm_up_states.state_view(&answer);
             let next = self.model.review(&features, view.as_ref()).next_state;
             drop(view);
-            let query_features: Vec<Vec<f32>> = self.features.with_hypothetical_review(&answer, |state| {
-                queries.iter().map(|query| state.features_for(query)).collect()
-            });
+            let query_features: Vec<Vec<f32>> =
+                self.features.with_hypothetical_review(&answer, |state| {
+                    queries
+                        .iter()
+                        .map(|query| state.features_for(query))
+                        .collect()
+                });
             let state = SrsStateRef {
                 card: Some(&next.card),
                 deck: answer.deck_id.map(|_| &next.deck),
@@ -909,7 +917,11 @@ impl FeatureState {
     /// Fushi: runs `f` on this state as if `input` had been replayed
     /// ([Self::store_review]), then puts back everything that call changed
     /// (ID codes `f` assigns stay, as after any query).
-    fn with_hypothetical_review<R>(&mut self, input: &ReviewInput, f: impl FnOnce(&mut Self) -> R) -> R {
+    fn with_hypothetical_review<R>(
+        &mut self,
+        input: &ReviewInput,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
         let card = input.card_id;
         let scalars = (
             self.first_day_offset,
@@ -1527,12 +1539,19 @@ struct SnapshotReader<'a, R> {
 
 impl<'a, R: io::Read> SnapshotReader<'a, R> {
     fn new(input: &'a mut R, len: u64) -> Self {
-        Self { input, remaining: len, scratch: Vec::new() }
+        Self {
+            input,
+            remaining: len,
+            scratch: Vec::new(),
+        }
     }
 
     fn bytes(&mut self, len: usize) -> io::Result<&[u8]> {
         if len as u64 > self.remaining {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "snapshot ended early"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "snapshot ended early",
+            ));
         }
         self.scratch.resize(len, 0);
         self.input.read_exact(&mut self.scratch)?;
@@ -1542,7 +1561,10 @@ impl<'a, R: io::Read> SnapshotReader<'a, R> {
 
     fn expect_magic(&mut self, magic: &[u8]) -> io::Result<()> {
         if self.bytes(magic.len())? != magic {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "unexpected file magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unexpected file magic",
+            ));
         }
         Ok(())
     }
@@ -1562,7 +1584,10 @@ impl<'a, R: io::Read> SnapshotReader<'a, R> {
     fn count(&mut self, entry_bytes: usize) -> io::Result<usize> {
         let count = self.u32()? as usize;
         if count as u64 > self.remaining / entry_bytes as u64 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "count larger than the data"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "count larger than the data",
+            ));
         }
         Ok(count)
     }
@@ -1570,7 +1595,10 @@ impl<'a, R: io::Read> SnapshotReader<'a, R> {
     fn expect_end(&mut self) -> io::Result<()> {
         let mut trailing = [0];
         if self.remaining != 0 || self.input.read(&mut trailing)? != 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "trailing bytes in file"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "trailing bytes in file",
+            ));
         }
         Ok(())
     }
@@ -2227,11 +2255,7 @@ fn write_u32(out: &mut Vec<u8>, value: u32) {
 }
 
 fn state_cache_optional_i64_len(value: Option<i64>) -> usize {
-    if value.is_some() {
-        9
-    } else {
-        1
-    }
+    if value.is_some() { 9 } else { 1 }
 }
 
 fn state_cache_i64_set_len(count: usize) -> usize {
@@ -2644,7 +2668,10 @@ impl SharedStateMap {
             .values()
             .map(|s| serialized_module_state_len(s))
             .sum::<usize>()
-            + self.packed.as_ref().map_or(0, slots::SlotStore::state_bytes)
+            + self
+                .packed
+                .as_ref()
+                .map_or(0, slots::SlotStore::state_bytes)
     }
 }
 
@@ -2693,7 +2720,12 @@ impl StateMap for SharedStateMap {
     }
     fn put(&mut self, id: i64, state: ModuleState) {
         match &state.packed {
-            Some(bytes) if self.packed.as_ref().is_none_or(|p| p.slot_len() == bytes.len()) => {
+            Some(bytes)
+                if self
+                    .packed
+                    .as_ref()
+                    .is_none_or(|p| p.slot_len() == bytes.len()) =>
+            {
                 self.packed
                     .get_or_insert_with(|| slots::SlotStore::new(bytes.len()))
                     .get_or_insert(id)
@@ -4977,9 +5009,11 @@ fn bonus_gate_in_place(
     v: &[f32],
     g: &[f32],
 ) {
-    assert!([&*output, r, bonus, k, v, g]
-        .iter()
-        .all(|values| values.len() == D_MODEL));
+    assert!(
+        [&*output, r, bonus, k, v, g]
+            .iter()
+            .all(|values| values.len() == D_MODEL)
+    );
 
     #[cfg(target_arch = "aarch64")]
     // SAFETY: aarch64 guarantees NEON support, and every length was checked

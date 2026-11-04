@@ -231,7 +231,9 @@ mod tests {
             assert!(valid_id(ok), "{ok}");
         }
         // 结尾的点（Windows 规范化成另一个 id 的目录）、连续点、首尾非字母数字一律拒。
-        for bad in ["foo.", "foo..bar", ".foo", "-foo", "foo-", "foo_", "a", "Foo"] {
+        for bad in [
+            "foo.", "foo..bar", ".foo", "-foo", "foo-", "foo_", "a", "Foo",
+        ] {
             assert!(!valid_id(bad), "{bad}");
         }
     }

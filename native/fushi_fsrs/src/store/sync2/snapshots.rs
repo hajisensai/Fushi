@@ -13,7 +13,7 @@
 //!
 //! 快照行从不删除（只增，几份）。
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use super::{canonical, sql};
@@ -27,7 +27,10 @@ pub const V16: &str = "CREATE TABLE IF NOT EXISTS sync2_snapshots (hash TEXT NOT
 const MIN_BODY: usize = 64;
 
 fn hash_of(body: &str) -> String {
-    blake3::hash(body.as_bytes()).as_bytes()[..16].iter().map(|b| format!("{b:02x}")).collect()
+    blake3::hash(body.as_bytes()).as_bytes()[..16]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// 存一份快照原文，返回它的哈希（已有就不写）。
@@ -77,7 +80,10 @@ fn compress(stored: Vec<u8>) -> Result<(Vec<u8>, i64), String> {
         if cell.is_none() {
             *cell = Some(zstd::bulk::Compressor::new(PZ_LEVEL).map_err(|e| e.to_string())?);
         }
-        cell.as_mut().expect("compressor").compress(&stored).map_err(|e| e.to_string())
+        cell.as_mut()
+            .expect("compressor")
+            .compress(&stored)
+            .map_err(|e| e.to_string())
     })?;
     if (z.len() + 4) * 8 > stored.len() * 7 {
         return Ok((stored, PZ_RAW));
@@ -92,14 +98,19 @@ fn decompress(stored: Vec<u8>, pz: i64) -> Result<Vec<u8>, String> {
     match pz {
         PZ_RAW => Ok(stored),
         PZ_ZSTD => {
-            let n = stored.get(..4).ok_or("compressed payload without its length")?;
+            let n = stored
+                .get(..4)
+                .ok_or("compressed payload without its length")?;
             let n = u32::from_le_bytes(n.try_into().expect("4 bytes")) as usize;
             let out = ZD.with(|cell| -> Result<Vec<u8>, String> {
                 let mut cell = cell.borrow_mut();
                 if cell.is_none() {
                     *cell = Some(zstd::bulk::Decompressor::new().map_err(|e| e.to_string())?);
                 }
-                cell.as_mut().expect("decompressor").decompress(&stored[4..], n).map_err(|e| format!("bad compressed payload: {e}"))
+                cell.as_mut()
+                    .expect("decompressor")
+                    .decompress(&stored[4..], n)
+                    .map_err(|e| format!("bad compressed payload: {e}"))
             })?;
             if out.len() != n {
                 return Err("compressed payload length mismatch".to_owned());
@@ -121,22 +132,42 @@ pub(crate) struct Packed {
 pub(crate) fn pack_payload(c: &Connection, kind: u16, payload: &[u8]) -> Result<Packed, String> {
     let (stored, sc, sc_at) = strip_snapshot(c, kind, payload)?;
     let (bytes, pz) = compress(stored)?;
-    Ok(Packed { bytes, sc, sc_at, pz })
+    Ok(Packed {
+        bytes,
+        sc,
+        sc_at,
+        pz,
+    })
 }
 
 /// [pack_payload] 的逆：解压，再在 `sc_at` 处拼回快照原文。读 `sync2_ops.payload` 的地方一律经它。
-pub(crate) fn unpack_payload(c: &Connection, stored: Vec<u8>, sc: Option<String>, at: Option<i64>, pz: i64) -> Result<Vec<u8>, String> {
+pub(crate) fn unpack_payload(
+    c: &Connection,
+    stored: Vec<u8>,
+    sc: Option<String>,
+    at: Option<i64>,
+    pz: i64,
+) -> Result<Vec<u8>, String> {
     splice_snapshot(c, decompress(stored, pz)?, sc, at)
 }
 
 /// 剪掉快照原文后的形态：(载荷, `sc`, `sc_at`)。只有带快照原文的日志操作会被剪。
-fn strip_snapshot(c: &Connection, kind: u16, payload: &[u8]) -> Result<(Vec<u8>, Option<String>, Option<i64>), String> {
+fn strip_snapshot(
+    c: &Connection,
+    kind: u16,
+    payload: &[u8],
+) -> Result<(Vec<u8>, Option<String>, Option<i64>), String> {
     let unchanged = || Ok((payload.to_vec(), None, None));
     if kind != op::KIND_LOG || !contains(payload, b"\"sc\":{") {
         return unchanged();
     }
-    let Ok(Body::Log(l)) = Body::decode(kind, payload) else { return unchanged() };
-    let Some(sc) = serde_json::from_str::<Value>(&l.extra).ok().and_then(|v| v.get(SNAPSHOT_KEY).filter(|x| x.is_object()).cloned()) else {
+    let Ok(Body::Log(l)) = Body::decode(kind, payload) else {
+        return unchanged();
+    };
+    let Some(sc) = serde_json::from_str::<Value>(&l.extra)
+        .ok()
+        .and_then(|v| v.get(SNAPSHOT_KEY).filter(|x| x.is_object()).cloned())
+    else {
         return unchanged();
     };
     let body = canonical(&sc);
@@ -144,7 +175,9 @@ fn strip_snapshot(c: &Connection, kind: u16, payload: &[u8]) -> Result<(Vec<u8>,
         return unchanged();
     }
     let needle = format!("\"{SNAPSHOT_KEY}\":{body}");
-    let Some(pos) = find(payload, needle.as_bytes()) else { return unchanged() };
+    let Some(pos) = find(payload, needle.as_bytes()) else {
+        return unchanged();
+    };
     let at = pos + needle.len() - body.len();
     let mut out = Vec::with_capacity(payload.len() - body.len());
     out.extend_from_slice(&payload[..at]);
@@ -153,10 +186,20 @@ fn strip_snapshot(c: &Connection, kind: u16, payload: &[u8]) -> Result<(Vec<u8>,
 }
 
 /// [strip_snapshot] 的逆：在 `sc_at` 处拼回快照原文。
-fn splice_snapshot(c: &Connection, stored: Vec<u8>, sc: Option<String>, at: Option<i64>) -> Result<Vec<u8>, String> {
-    let (Some(h), Some(at)) = (sc, at) else { return Ok(stored) };
+fn splice_snapshot(
+    c: &Connection,
+    stored: Vec<u8>,
+    sc: Option<String>,
+    at: Option<i64>,
+) -> Result<Vec<u8>, String> {
+    let (Some(h), Some(at)) = (sc, at) else {
+        return Ok(stored);
+    };
     let body = body_of(c, &h)?.ok_or_else(|| format!("config snapshot {h} missing"))?;
-    let at = usize::try_from(at).ok().filter(|&a| a <= stored.len()).ok_or("bad snapshot offset")?;
+    let at = usize::try_from(at)
+        .ok()
+        .filter(|&a| a <= stored.len())
+        .ok_or("bad snapshot offset")?;
     let mut out = Vec::with_capacity(stored.len() + body.len());
     out.extend_from_slice(&stored[..at]);
     out.extend_from_slice(body.as_bytes());
@@ -180,18 +223,33 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
 /// 快照表与 `sync2_ops` 的两列引用（可重放；没有 `sync2_ops` 的库什么也不做）。读操作的代码（[super::load_op]）
 /// 要这两列，所以升级阶梯在 v16 之前的步骤里读操作（v10 的寄存器重建等）之前就得先补上——见 store/schema.rs。
 pub(crate) fn ensure_columns(c: &Connection) -> Result<(), String> {
-    let has_ops = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync2_ops'", [], |_| Ok(())).is_ok();
+    let has_ops = c
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync2_ops'",
+            [],
+            |_| Ok(()),
+        )
+        .is_ok();
     if !has_ops {
         return Ok(());
     }
     c.execute_batch(V16).map_err(sql)?;
     // `pz`（v21，载荷压缩）同样在这里补：v21 之前的升级步骤读操作时（[super::load_op]）就要它。
-    for (col, ty) in [("sc", "TEXT NULL"), ("sc_at", "INTEGER NULL"), ("pz", "INTEGER NOT NULL DEFAULT 0")] {
+    for (col, ty) in [
+        ("sc", "TEXT NULL"),
+        ("sc_at", "INTEGER NULL"),
+        ("pz", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
         let has: i64 = c
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = ?1", [col], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = ?1",
+                [col],
+                |r| r.get(0),
+            )
             .map_err(sql)?;
         if has == 0 {
-            c.execute_batch(&format!("ALTER TABLE sync2_ops ADD COLUMN {col} {ty};")).map_err(sql)?;
+            c.execute_batch(&format!("ALTER TABLE sync2_ops ADD COLUMN {col} {ty};"))
+                .map_err(sql)?;
         }
     }
     Ok(())
@@ -212,7 +270,13 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
 pub(crate) fn migrate_paged(c: &Connection, page: usize) -> Result<(usize, usize), String> {
     use rusqlite::types::Value as Sql;
     ensure_columns(c)?;
-    let has_ops = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync2_ops'", [], |_| Ok(())).is_ok();
+    let has_ops = c
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync2_ops'",
+            [],
+            |_| Ok(()),
+        )
+        .is_ok();
     if !has_ops {
         return Ok((0, 0));
     }
@@ -235,7 +299,9 @@ pub(crate) fn migrate_paged(c: &Connection, page: usize) -> Result<(usize, usize
     let mut up = c
         .prepare("UPDATE sync2_ops SET payload = ?4, sc = ?5, sc_at = ?6 WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
         .map_err(sql)?;
-    let row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<(Sql, Sql, i64, Vec<u8>)> { Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)) };
+    let row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<(Sql, Sql, i64, Vec<u8>)> {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+    };
     let mut cursor: Option<(Sql, Sql, i64)> = None;
     let (mut pages, mut widest) = (0usize, 0usize);
     loop {
@@ -256,7 +322,8 @@ pub(crate) fn migrate_paged(c: &Connection, page: usize) -> Result<(usize, usize
             if contains(&payload, b"\"sc\":{") {
                 let (stored, sc, at) = strip_snapshot(c, op::KIND_LOG, &payload)?;
                 if sc.is_some() {
-                    up.execute(params![profile, device, seq, stored, sc, at]).map_err(sql)?;
+                    up.execute(params![profile, device, seq, stored, sc, at])
+                        .map_err(sql)?;
                 }
             }
             cursor = Some((profile, device, seq));
@@ -278,14 +345,28 @@ mod tests {
         c.execute_batch(V16).unwrap();
         let sc = serde_json::json!({"alg": "fsrs", "learn": [60000, 600000], "relearn": [600000], "ret": 0.9, "max": 36500, "fuzz": true});
         let body = canonical(&sc);
-        let raw = [b"\x01\x02prefix\"sc\":".as_slice(), body.as_bytes(), b"}tail\x00".as_slice()].concat();
+        let raw = [
+            b"\x01\x02prefix\"sc\":".as_slice(),
+            body.as_bytes(),
+            b"}tail\x00".as_slice(),
+        ]
+        .concat();
         // 不是日志操作 / 解码不了：原样。
-        assert_eq!(strip_snapshot(&c, op::KIND_EDIT, &raw).unwrap(), (raw.clone(), None, None));
-        assert_eq!(strip_snapshot(&c, op::KIND_LOG, &raw).unwrap(), (raw.clone(), None, None));
+        assert_eq!(
+            strip_snapshot(&c, op::KIND_EDIT, &raw).unwrap(),
+            (raw.clone(), None, None)
+        );
+        assert_eq!(
+            strip_snapshot(&c, op::KIND_LOG, &raw).unwrap(),
+            (raw.clone(), None, None)
+        );
         let at = raw.len() - body.len() - 6;
         let stored = [&raw[..at], &raw[at + body.len()..]].concat();
         let h = intern(&c, &body).unwrap();
-        assert_eq!(unpack_payload(&c, stored, Some(h), Some(at as i64), PZ_RAW).unwrap(), raw);
+        assert_eq!(
+            unpack_payload(&c, stored, Some(h), Some(at as i64), PZ_RAW).unwrap(),
+            raw
+        );
     }
 
     /// 压缩：够长、压得动的存 `[原长][zstd 帧]`，读回逐字节相同；短的 / 压不动的原样。
@@ -293,11 +374,21 @@ mod tests {
     fn payload_compression_round_trips_and_skips_what_does_not_shrink() {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(V16).unwrap();
-        let text = "<div class=\"gloss\">意味：とても長い説明文が続く。</div>".repeat(40).into_bytes();
+        let text = "<div class=\"gloss\">意味：とても長い説明文が続く。</div>"
+            .repeat(40)
+            .into_bytes();
         let p = pack_payload(&c, op::KIND_EDIT, &text).unwrap();
         assert_eq!(p.pz, PZ_ZSTD);
-        assert!(p.bytes.len() * 4 < text.len(), "{} vs {}", p.bytes.len(), text.len());
-        assert_eq!(unpack_payload(&c, p.bytes, p.sc, p.sc_at, p.pz).unwrap(), text);
+        assert!(
+            p.bytes.len() * 4 < text.len(),
+            "{} vs {}",
+            p.bytes.len(),
+            text.len()
+        );
+        assert_eq!(
+            unpack_payload(&c, p.bytes, p.sc, p.sc_at, p.pz).unwrap(),
+            text
+        );
         let short = b"\x01\x02short".to_vec();
         let p = pack_payload(&c, op::KIND_EDIT, &short).unwrap();
         assert_eq!((p.bytes.clone(), p.pz), (short.clone(), PZ_RAW));
@@ -311,7 +402,11 @@ mod tests {
             })
             .collect();
         let p = pack_payload(&c, op::KIND_EDIT, &noise).unwrap();
-        assert_eq!((p.bytes, p.pz), (noise, PZ_RAW), "incompressible bytes are stored as they are");
+        assert_eq!(
+            (p.bytes, p.pz),
+            (noise, PZ_RAW),
+            "incompressible bytes are stored as they are"
+        );
         assert!(unpack_payload(&c, vec![1, 2], None, None, PZ_ZSTD).is_err());
         assert!(unpack_payload(&c, vec![], None, None, 7).is_err());
     }

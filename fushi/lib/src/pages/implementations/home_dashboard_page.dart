@@ -36,6 +36,8 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
+import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
+export 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
 import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
@@ -77,15 +79,16 @@ import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/misc/dashboard_remote_continue_feed.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart';
+import 'package:fushi/src/utils/misc/dashboard_server_continue_gates.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart'
     show AudiobookshelfServerConfig;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
@@ -119,27 +122,6 @@ import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
-
-/// 首页「继续」区是否收这本书：与书架读完筛选 / hero 计数同一判据
-/// [classifyShelfReadStatus]（`EpubBooks.completedAt` 优先于进度）。
-///
-/// BUG-2918：阅读器落库的位置是末页**首个可见字符**，读到最后一页 position 也
-/// 永远 < duration；旧判据只看 `0 < position < duration`，读完（含阅读器自动
-/// 写入的 completedAt）的书仍以四舍五入出的 100% 留在「继续」区。
-/// [completedBookKeys] 的键是 bookKey（standalone SRT 等无 bookKey 的条目回退
-/// mediaIdentifier，查不到即按进度判，与旧行为一致）。
-@visibleForTesting
-bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
-  final String bookKey =
-      ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
-      item.mediaIdentifier;
-  return classifyShelfReadStatus(
-        completed: completedBookKeys.contains(bookKey),
-        position: item.position,
-        duration: item.duration,
-      ) ==
-      ShelfReadStatus.reading;
-}
 
 /// 书合集在首页「继续」区的续读目标下标（[sorted] 已按组内 sortIndex 排好）。
 ///
@@ -178,117 +160,6 @@ double dashboardHeroCoverHeight(double mainColumnWidth) =>
 @visibleForTesting
 double dashboardRowCoverHeight(double mainColumnWidth) =>
     (mainColumnWidth * 0.2).clamp(132.0, 200.0);
-
-/// 「继续」视频竖卡的封面路径：按「作品海报（合集主封面）→ 这一集自己的封面 →
-/// 同合集其它集的封面」顺序取**第一张磁盘上真存在**的（与视频页合集卡
-/// `_collectionRowCoverProvider` 同口径：自有封面不在就借成员的）。
-///
-/// 反馈 5CTpiVJ7-v：此前只认 `海报 ?? 这一集封面` 一个候选，合集主封面指向的
-/// 文件不在（换盘 / 清缓存 / 刮削改过路径）或这一集还没抽帧时，主角卡与横滑卡
-/// 直接掉成「图标 + 名字」占位，而视频页同一部作品照样有封面。全部候选都不存在
-/// 返回 null（调用方画占位）。
-///
-/// [exists] 是 async：候选可能落在网络盘（rclone / SMB 挂载）上，挂载端目录缓存
-/// 过期时一次 stat 要逐级重列目录、单次数秒。旧实现在 build 里同步 `existsSync`，
-/// 读有声书时统计表每几秒一写就触发首页重建 → 主 isolate 冻结数秒，同 isolate 上
-/// 的互联 host 端点（含 `/api/ping`）与 UI 一起卡死（BUG-3756）。
-///
-/// [collectionCovers] 是合集自有层的候选（自有封面 → 原盘竖版盘面图，按
-/// `collectionOwnCoverCandidates` 的顺序），取第一张存在的。
-@visibleForTesting
-Future<String?> dashboardVideoCoverPath({
-  required Iterable<String?> collectionCovers,
-  required String? ownCover,
-  Iterable<String?> memberCovers = const <String?>[],
-  required Future<bool> Function(String path) exists,
-}) async {
-  Future<bool> usable(String? path) async =>
-      path != null && path.isNotEmpty && await exists(path);
-  for (final String? path in collectionCovers) {
-    if (await usable(path)) return path;
-  }
-  if (await usable(ownCover)) return ownCover;
-  // 逐个惰性取：找到第一张存在的就停。
-  for (final String? path in memberCovers) {
-    if (await usable(path)) return path;
-  }
-  return null;
-}
-
-/// 「继续」视频卡的进度（[dashboardVideoContinueProgress] 的结果）。
-///
-/// - [fraction]：封面底部进度条（0..1）；null = 不画。
-/// - [episode]：集数角标「第 N 集」（1 起）；null = 不是多集。
-/// - [percent]：单视频百分比角标（知道总时长时）。
-/// - [positionMs]：前两者都给不出时退回「看到的时间点」角标。
-typedef DashboardVideoProgress = ({
-  double? fraction,
-  int? episode,
-  int? percent,
-  int? positionMs,
-});
-
-/// 首页「继续」视频卡的进度口径（反馈「小说有进度显示，视频缺了进度显示」）。
-///
-/// 此前只有单行多集播放列表画进度（[videoWatchFraction]：看到第几集），合集里的
-/// 某一集与单视频一律不画——`VideoBooks` 不存总时长，算不出百分比。现在：
-/// - 单行多集播放列表（[playlistEpisodeCount] ≥ 2）：角标「第 N 集」，进度条仍是
-///   集粒度（`currentEpisode / 集数`）；
-/// - 合集里的一集（[collectionEpisode] 非空）：角标「第 N 集」，进度条是这一集
-///   看到哪（[durationMs] 已知时）；
-/// - 单视频：[durationMs] 已知 → 进度条 + 百分比角标，否则角标退回看到的时间点。
-///
-/// [durationMs] 来自视频规格探测缓存（`VideoFileSpecs`），流媒体 / 没探测过的
-/// 文件为 null。纯函数，单测直接覆盖各分支。
-@visibleForTesting
-DashboardVideoProgress dashboardVideoContinueProgress({
-  required bool completed,
-  required int positionMs,
-  required int? durationMs,
-  required int currentEpisode,
-  required int playlistEpisodeCount,
-  int? collectionEpisode,
-  int collectionEpisodeCount = 0,
-}) {
-  final int? total = durationMs;
-  final double? inEpisode = total != null && total > 0 && positionMs > 0
-      ? (positionMs / total).clamp(0.0, 1.0)
-      : null;
-  if (playlistEpisodeCount >= 2) {
-    return (
-      fraction: videoWatchFraction(
-        completed: completed,
-        currentEpisode: currentEpisode,
-        episodeCount: playlistEpisodeCount,
-      ),
-      episode: currentEpisode.clamp(0, playlistEpisodeCount - 1) + 1,
-      percent: null,
-      positionMs: null,
-    );
-  }
-  if (collectionEpisode != null && collectionEpisodeCount >= 2) {
-    return (
-      fraction: inEpisode,
-      episode: collectionEpisode,
-      percent: null,
-      positionMs: null,
-    );
-  }
-  if (inEpisode != null) {
-    return (
-      fraction: inEpisode,
-      episode: null,
-      percent: (inEpisode * 100).round(),
-      positionMs: null,
-    );
-  }
-  return (
-    fraction: null,
-    episode: null,
-    percent: null,
-    positionMs: positionMs > 0 ? positionMs : null,
-  );
-}
 
 /// 首页浮动工具栏起始侧的头像胶囊（2026-10 精简：左上角原「首页」标题胶囊换成
 /// 头像）。头像来源只有现成的一处——排行榜账户头像（[LeaderboardAvatar]，本
@@ -1503,6 +1374,10 @@ class _HomeDashboardPageState
         }
       }
       if (!mounted) return;
+      // 桌面小组件「继续」读同一份结果（不另发互联请求、不另写一套过滤）。
+      RemoteContinueFeed.of(
+        appModel.database,
+      ).publish(continueCandidates, deviceName: deviceName);
       setState(() {
         _remoteContinue = continueCandidates;
         _appliedRemoteBooks = remoteBooks;
@@ -1522,19 +1397,7 @@ class _HomeDashboardPageState
   ///   默认关）。
   /// 各自还要所属模块开着（视频模块关着不问媒体服务器，书模块关着不问 ABS）。
   ({bool mediaServers, bool audiobookshelf, String signature})
-  _serverContinueGates(AppModel appModel) {
-    final bool ready = appModel.isPreferencesReady;
-    final ModuleVisibility visibility = appModel.moduleVisibility;
-    final bool media =
-        ready &&
-        appModel.prefsRepo.jellyfinShowInLibrary &&
-        visibility.isEnabled(ModuleId.video);
-    final bool abs =
-        ready &&
-        appModel.prefsRepo.audiobookshelfShowInHome &&
-        visibility.isEnabled(ModuleId.books);
-    return (mediaServers: media, audiobookshelf: abs, signature: '$media|$abs');
-  }
+  _serverContinueGates(AppModel appModel) => serverContinueGates(appModel);
 
   /// 取用户自配服务器上进行中的条目，到达后 setState 混进「继续」。失败静默：
   /// 离线 / 令牌失效的服务器只是不贡献条目（各服务器独立吞错，互不拖累）。
@@ -1703,6 +1566,7 @@ class _HomeDashboardPageState
   /// 取图器），回到纯本地视图。没有远端状态时不动 UI。
   void _clearRemoteDashboardData() {
     if (!mounted) return;
+    RemoteContinueFeed.of(ref.read(appProvider).database).clear();
     final bool hasRemoteState =
         _remoteContinue.isNotEmpty ||
         _remoteDeviceName != null ||
@@ -1882,11 +1746,6 @@ class _HomeDashboardPageState
             // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
             // SizedBox.shrink），没有更新的日子首页不多一块空卡。
             UpdatesDashboardBanner(service: appModel.updateFeedService),
-            // 常规同步 / 复习同步在跑时的进度条；没在跑时零高度、不留空白。
-            SyncProgressBanner(
-              key: const ValueKey<String>('home-sync-progress'),
-              margin: EdgeInsets.only(bottom: tokens.spacing.card),
-            ),
             // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
             if (appModel.isMigrationReadonly) ...<Widget>[
               _MigrationReadonlyBanner(appModel: appModel),

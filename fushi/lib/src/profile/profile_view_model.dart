@@ -12,6 +12,8 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 
 /// Serializes Profile application with temporary draft persistence.
@@ -167,7 +169,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._onProfileApplied,
     this._profileDraftCoordinator, {
     ProfileDeletionCascade? deletionCascade,
+    Future<void> Function()? onWorkScopeSettled,
   }) : _deletionCascade = deletionCascade,
+       _onWorkScopeSettled = onWorkScopeSettled ?? _noWorkScopeReload,
        super(
          ProfileUiState(
            pendingProfile: _profileDraftCoordinator.pendingSwitchTarget.value,
@@ -215,6 +219,11 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   final Future<void> Function() _onProfileApplied;
   final ProfileDraftCoordinator _profileDraftCoordinator;
 
+  /// 作品级配置会话变化后，等 App 按新会话重读完内存缓存（`AppModel.workProfileScopeSettled`）。
+  final Future<void> Function() _onWorkScopeSettled;
+
+  static Future<void> _noWorkScopeReload() async {}
+
   /// 删 Profile 时连带清理的、主库外键级联管不到的数据（复习数据在 srs.db）；null = 不清（测试）。
   final ProfileDeletionCascade? _deletionCascade;
 
@@ -253,82 +262,84 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     } finally {
       _loaded.complete();
     }
+    await _restoreLegacyBindingFallback();
   }
 
-  /// TODO-2936：解析绑定（book 级 > 语言级 > 媒体类型级 > 当前激活）并在结果与当前激活
-  /// 不同时切换。各媒体入口（阅读器 / 视频 / 漫画开页、gal launch/attach、浏览
-  /// 器扩展查词）共用的非致命入口：失败只记日志，绝不打断调用方的加载/查词链。
-  /// [languageTag]：该条目的**内容语言**原始串（`EpubBooks.language` /
-  /// `VideoBooks.language` / `Galgames.language` 等列的值），由 repository 归一。
-  /// 拿不到就不传——绝不要拿全局默认内容语言来填（理由见 [ProfileRepository.
-  /// resolveProfileId] 的文档）。
+  /// 反馈 kEFPY4cuKZ：进入一部作品（阅读器 / 视频 / 漫画开页、gal hook 会话开始）。
   ///
-  /// [restoreFallback]：没有绑定命中时，是否回到「绑定切换前用户自己选的配置」。
-  /// 只有**打开一个具体条目**的入口（阅读器 / 视频 / 漫画开页、从库里启动 gal）
-  /// 传 true——换了条目，上一个条目的绑定配置才该退场。浏览器扩展查词、附着任意
-  /// 外部窗口这类旁路活动传 false：它们与正在看的条目并存，无绑定时绝不能把条目
-  /// 背后的配置换掉、也不能消费回退点（否则阅读器开着时在浏览器查一次词，书的
-  /// 词典 / 阅读器设置 / Anki 就全换成别的配置）。必填，逼每个新入口显式表态。
-  Future<void> autoApplyBinding({
+  /// 解析绑定（book 级 > 语言级 > 媒体类型级，见 [ProfileRepository.resolveBoundProfileId]），
+  /// 命中且不是激活配置时，把那份配置作为**会话作用域的覆盖层**装进 [WorkProfileScope]：
+  /// 阅读样式、有声书悬浮字幕样式、查词词典按它生效，App 的激活配置与全局偏好一概不动。
+  /// 没命中（或命中的就是激活配置）时撤掉 [owner] 之前的那层。离开作品调
+  /// [leaveWorkSession]；没有页面生命周期的会话传 [endWhen]（每次 `listenable` 通知时问
+  /// `ended`，为 true 即离开）。
+  ///
+  /// [languageTag]：该条目的**内容语言**原始串，由 repository 归一；拿不到就不传——绝不要
+  /// 拿全局默认内容语言来填（理由见 [ProfileRepository.resolveProfileId] 的文档）。
+  ///
+  /// 非致命：失败只记日志（并按「无绑定」撤层），绝不打断调用方的加载链。返回时按新会话
+  /// 重读的阅读器 / 偏好缓存已就绪（[_onWorkScopeSettled]）。
+  Future<void> enterWorkSession({
+    required Object owner,
     String? bookUid,
     String? languageTag,
     required ProfileMediaKind mediaType,
-    required bool restoreFallback,
+    ({Listenable listenable, bool Function() ended})? endWhen,
   }) async {
+    final WorkProfileScope scope = WorkProfileScope.instance;
+    scope.begin(owner);
+    WorkProfileSession? session;
     try {
-      // 读回退点 / 读激活 id / 写回退点 / 切换必须是一个原子操作：中间隔着 await，
-      // 并发的另一趟会读到旧状态（例如把刚记下的回退点清掉）。与手动切换 / 草稿
-      // 保存同一把锁；只有真的切换时才作废在飞的草稿。
-      await _profileDraftCoordinator._runProfileMutation(
-        (_ProfileDraftMutation mutation) => _applyBindingLocked(
-          mutation,
-          bookUid: bookUid,
-          languageTag: languageTag,
-          mediaType: mediaType,
-          restoreFallback: restoreFallback,
-        ),
+      final int? boundId = await _repo.resolveBoundProfileId(
+        bookUid: bookUid,
+        languageTag: languageTag,
+        mediaType: mediaType,
       );
+      if (boundId != null && boundId != await _repo.getActiveProfileId()) {
+        final ProfileSettingsView? view = await _repo.loadSettingsView(boundId);
+        if (view != null) {
+          final ProfileRepository repo = _repo;
+          session = WorkProfileSession(
+            owner: owner,
+            view: view,
+            writer: repo.writeWorkScopedPref,
+          );
+        }
+      }
     } catch (e, st) {
       debugPrint(
-        '[profile] auto-apply "${mediaType.dbValue}" binding failed '
+        '[profile] work session "${mediaType.dbValue}" binding failed '
         '(non-fatal): $e\n$st',
       );
     }
+    if (!scope.install(owner, session)) return;
+    if (endWhen != null) {
+      scope.leaveWhen(owner, endWhen.listenable, endWhen.ended);
+    }
+    await _onWorkScopeSettled();
   }
 
-  /// [autoApplyBinding] 的锁内本体；只能在 [ProfileDraftCoordinator] 的配置变更
-  /// 锁里调用。
-  Future<void> _applyBindingLocked(
-    _ProfileDraftMutation mutation, {
-    required String? bookUid,
-    required String? languageTag,
-    required ProfileMediaKind mediaType,
-    required bool restoreFallback,
-  }) async {
-    final int? boundId = await _repo.resolveBoundProfileId(
-      bookUid: bookUid,
-      languageTag: languageTag,
-      mediaType: mediaType,
-    );
-    final int currentActiveId = await _repo.getActiveProfileId();
+  /// 离开 [owner] 进入的作品：撤掉它的作品级配置覆盖层（全局配置本来就没动过）。
+  void leaveWorkSession(Object owner) => WorkProfileScope.instance.leave(owner);
+
+  /// 旧版「绑定直接切换激活配置」留下的回退点：升级前停在某部作品的绑定配置上的用户，
+  /// 激活配置还是那部作品的配置。启动时一次性回到他们自己选的那份，并清掉回退点——此后
+  /// 作品级配置只是会话覆盖层，不再产生回退点。
+  Future<void> _restoreLegacyBindingFallback() async {
     final int? fallbackId = await _repo.getFallbackProfileId();
-    if (boundId != null) {
-      if (boundId == currentActiveId) return;
-      // 绑定只是「这本书临时用」：第一次离开用户自己选的配置时记下它，之后
-      // 无绑定的条目才有地方回去（否则切过去的绑定配置就成了新的默认）。
-      if (fallbackId == null) {
-        await _repo.setFallbackProfileId(currentActiveId);
+    if (fallbackId == null) return;
+    await _profileDraftCoordinator._runProfileMutation((
+      _ProfileDraftMutation mutation,
+    ) async {
+      final int? current = await _repo.getFallbackProfileId();
+      if (current == null) return;
+      await _repo.setFallbackProfileId(null);
+      final List<ProfileRow> profiles = await _repo.getAllProfiles();
+      final bool exists = profiles.any((ProfileRow p) => p.id == current);
+      if (exists && current != await _repo.getActiveProfileId()) {
+        await _switchLocked(mutation, current);
       }
-      await _switchLocked(mutation, boundId);
-      return;
-    }
-    if (!restoreFallback || fallbackId == null) return;
-    await _repo.setFallbackProfileId(null);
-    final List<ProfileRow> profiles = await _repo.getAllProfiles();
-    final bool stillExists = profiles.any((ProfileRow p) => p.id == fallbackId);
-    if (stillExists && fallbackId != currentActiveId) {
-      await _switchLocked(mutation, fallbackId);
-    }
+    });
   }
 
   /// 用户手动切换：这是新的「自己选的配置」，作废绑定留下的回退点。清回退点与
@@ -611,11 +622,17 @@ final profileViewModelProvider =
         await ReaderFushiSource.readerSettings?.refreshFromDb();
       }
 
+      // 游戏会话的进入在启动之后才发起，那时本 provider 可能已因切配置重建、本 ref 已失效，
+      // 所以经容器（比单个 provider 活得长）去取 App。取值仍是用到时才取：构建视图模型
+      // 不顺带建 AppModel——只看配置列表的宿主（查词弹窗顶栏的制卡目标按钮等）不依赖它。
+      final ProviderContainer container = ref.container;
       return ProfileViewModel(
         repo,
         onApplied,
         profileDraftCoordinator,
         deletionCascade: srsProfileCleanupFor(ref),
+        onWorkScopeSettled: () =>
+            container.read(appProvider).workProfileScopeSettled,
       );
     });
 

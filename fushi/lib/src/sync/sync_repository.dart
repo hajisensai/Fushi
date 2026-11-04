@@ -1891,6 +1891,10 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // Android 桌面小组件的默认隐私：描述这台设备的桌面。
+    PreferencesRepository.widgetPrivacyHideTitlesKey,
+    PreferencesRepository.widgetPrivacyHideDefinitionsKey,
+    PreferencesRepository.widgetPrivacyHideProfileKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
@@ -2011,9 +2015,15 @@ class SyncRepository {
     'ai_feature_providers',
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
     'ai_key_health',
+    // 联网搜索后端：JSON 内含 Brave API key，SearXNG 地址也可能是本机实例。
+    'ai_web_search',
+    // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
+    'ai_web_search_page_fetch',
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
     'ai_agent_for_peers',
+    // AI 助手在本机还是远端执行：远端指的是这台设备配对的执行设备，换台设备没有意义。
+    'ai_agent_executor',
     // 外部 AI 访问（MCP）的开关与配对令牌摘要：授权的是这台机器上的 MCP 客户端，
     // 漂过去会让另一台设备静默对外开放、或让旧令牌在新设备上生效。
     'ai_mcp_enabled',

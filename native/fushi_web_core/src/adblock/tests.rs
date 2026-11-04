@@ -88,11 +88,13 @@ fn defaults_subscribe_whole_catalog_and_are_enabled() {
     assert_eq!(s["enabled"], true);
     assert_eq!(s["status"], "idle");
     assert_eq!(s["lists"].as_array().unwrap().len(), catalog::CATALOG.len());
-    assert!(s["lists"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|l| l["enabled"] == true));
+    assert!(
+        s["lists"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["enabled"] == true)
+    );
     // 引擎没就绪：一律放行。
     assert_eq!(
         core.check("https://ads.example.com/x.js", PAGE, PAGE, SCRIPT),
@@ -349,20 +351,23 @@ fn unsubscribing_evicts_cache_and_rebuilds() {
     );
     // 未知 id 忽略。
     let s = core.set_list_enabled("nope", true);
-    assert!(s["lists"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|l| l["id"] != "nope"));
+    assert!(
+        s["lists"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["id"] != "nope")
+    );
 }
 
 #[test]
 fn ingest_outside_a_sync_is_rejected() {
     let dir = TempDir::new("ingest");
     let core = open(&dir);
-    assert!(core
-        .ingest("easylist", 200, LIST.as_bytes(), None, None, None)
-        .is_err());
+    assert!(
+        core.ingest("easylist", 200, LIST.as_bytes(), None, None, None)
+            .is_err()
+    );
 }
 
 #[test]
@@ -382,14 +387,16 @@ fn cosmetic_payload_and_generic_minus_exceptions() {
     assert_eq!(on_other, br#"[".generic-ad"]"#);
     // 白名单 / 关闭：空载荷。
     core.set_allowlist("example.com");
-    assert!(core
-        .cosmetic("https://example.com/page", "https://example.com/")
-        .is_empty());
+    assert!(
+        core.cosmetic("https://example.com/page", "https://example.com/")
+            .is_empty()
+    );
     core.set_allowlist("");
     core.set_enabled(false);
-    assert!(core
-        .generic("https://other.test/", "", "generic-ad", "")
-        .is_empty());
+    assert!(
+        core.generic("https://other.test/", "", "generic-ad", "")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -400,9 +407,11 @@ fn content_blockers_only_when_requested() {
     let raw = core.content_blockers();
     let rules: Vec<Value> = serde_json::from_slice(&raw).unwrap();
     assert!(rules.iter().any(|r| r["action"]["type"] == "block"));
-    assert!(rules
-        .iter()
-        .all(|r| r["action"]["type"] != "css-display-none"));
+    assert!(
+        rules
+            .iter()
+            .all(|r| r["action"]["type"] != "css-display-none")
+    );
 
     let dir2 = TempDir::new("nocb");
     let core2 = open(&dir2);

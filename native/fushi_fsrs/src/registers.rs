@@ -21,13 +21,12 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 use serde_json::value::RawValue;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha1::{Digest, Sha1};
 
-use crate::history::{parse_hlc, NONE_I64};
-use crate::ordering::{cmp_utf16, SortKey};
+use crate::history::{NONE_I64, parse_hlc};
+use crate::ordering::{SortKey, cmp_utf16};
 use crate::style_dedup::same_field_text;
-
 
 /// 修改记录 ID 的 UUIDv5 命名空间（Dart `srsNamespace`，冻结）。
 const SRS_NAMESPACE: &str = "6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13";
@@ -236,10 +235,18 @@ fn parse_edit<'a>(
         (None, _) => (stored, "", None),
     };
     let w: WireEdit<'a> = serde_json::from_str(json).map_err(|e| format!("bad field edit: {e}"))?;
-    let col = |v: Option<Cow<'a, str>>, key: &str, pick: fn(&'a EditCols) -> &'a str| -> Option<Cow<'a, str>> {
-        v.or_else(|| cols.filter(|_| !absent.split(',').any(|a| a == key)).map(|c| Cow::Borrowed(pick(c))))
+    let col = |v: Option<Cow<'a, str>>,
+               key: &str,
+               pick: fn(&'a EditCols) -> &'a str|
+     -> Option<Cow<'a, str>> {
+        v.or_else(|| {
+            cols.filter(|_| !absent.split(',').any(|a| a == key))
+                .map(|c| Cow::Borrowed(pick(c)))
+        })
     };
-    let need = |v: Option<Cow<'a, str>>, key: &str| v.ok_or_else(|| format!("bad field edit: missing field `{key}`"));
+    let need = |v: Option<Cow<'a, str>>, key: &str| {
+        v.ok_or_else(|| format!("bad field edit: missing field `{key}`"))
+    };
     // p 解出来用不到：瘦存里缺了不补，原文缺照旧报错。
     need(col(w._p, "p", |c| &c.id), "p")?;
     let k = col(w.k, "k", |c| &c.k);
@@ -248,12 +255,15 @@ fn parse_edit<'a>(
     let wr = need(col(w.w, "w", |c| &c.w), "w")?;
     let seq = match w.s {
         Some(s) => s,
-        None => cols.filter(|_| !absent.split(',').any(|a| a == "s")).map(|c| c.s).ok_or("bad field edit: missing field `s`")?,
+        None => cols
+            .filter(|_| !absent.split(',').any(|a| a == "s"))
+            .map(|c| c.s)
+            .ok_or("bad field edit: missing field `s`")?,
     };
     let given_id: Option<Cow<'a, str>> = match w.id {
-        Some(raw) if raw.get().starts_with('"') => {
-            Some(Cow::Owned(serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?))
-        }
+        Some(raw) if raw.get().starts_with('"') => Some(Cow::Owned(
+            serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?,
+        )),
         Some(_) => None,
         None => col(None, "id", |c| &c.id),
     };
@@ -716,7 +726,10 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         }
         if let Some(id) = r.key.strip_prefix("fieldDef/") {
             let mut d = field_def(id, ent.value(&r.key))?;
-            if let Some((_, _, current)) = legacy_names.iter().find(|(lid, legacy, _)| lid == id && *legacy == d.name) {
+            if let Some((_, _, current)) = legacy_names
+                .iter()
+                .find(|(lid, legacy, _)| lid == id && *legacy == d.name)
+            {
                 d.name = current.clone();
             }
             edited_fields.push(d.clone());
@@ -826,7 +839,12 @@ fn effective_frequency_field(explicit: Option<&str>, fields: &[FieldDef]) -> Opt
     // `FrequencyRank` 是 Fushi 卡片 2026-10-29 起的字段名（旧名 `FreqSort`），回导 Fushi 导出的包时认它。
     fields
         .iter()
-        .find(|f| matches!(f.name.trim().to_lowercase().as_str(), "freqsort" | "frequencyrank"))
+        .find(|f| {
+            matches!(
+                f.name.trim().to_lowercase().as_str(),
+                "freqsort" | "frequencyrank"
+            )
+        })
         .map(|f| f.id.clone())
 }
 
@@ -1076,7 +1094,12 @@ pub fn materialize(
         let mut out = Vec::with_capacity(n);
         for i in from..from + n {
             let s = servers[i];
-            out.push(parse_edit(item(i)?, (s != NONE_I64).then_some(s), None, &ns)?);
+            out.push(parse_edit(
+                item(i)?,
+                (s != NONE_I64).then_some(s),
+                None,
+                &ns,
+            )?);
         }
         at.set(from + n);
         Ok(out)
@@ -1158,20 +1181,37 @@ pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>, Option<&'a EditCols>);
 
 fn parse_stored<'a>(edits: &[StoredEdit<'a>]) -> Result<Vec<Edit<'a>>, String> {
     let ns = uuid_bytes(SRS_NAMESPACE);
-    edits.iter().map(|(j, s, c)| parse_edit(j, *s, *c, &ns)).collect()
+    edits
+        .iter()
+        .map(|(j, s, c)| parse_edit(j, *s, *c, &ns))
+        .collect()
 }
 
 /// 落库裁剪（[land]，与 `materialize` 的 `land` 组同一个判据）：前 [existing] 条是已有的，其余依次到达。
 /// 返回每条到达的落不落、以及删掉了谁（下标指向全部项）。
-pub(crate) fn land_stored(edits: &[StoredEdit<'_>], existing: usize) -> Result<(Vec<bool>, Vec<Vec<usize>>), String> {
+pub(crate) fn land_stored(
+    edits: &[StoredEdit<'_>],
+    existing: usize,
+) -> Result<(Vec<bool>, Vec<Vec<usize>>), String> {
     let parsed = parse_stored(edits)?;
     let v = land(&parsed, existing);
-    let landed = v["l"].as_array().map(|a| a.iter().map(|x| x.as_u64() == Some(1)).collect()).unwrap_or_default();
+    let landed = v["l"]
+        .as_array()
+        .map(|a| a.iter().map(|x| x.as_u64() == Some(1)).collect())
+        .unwrap_or_default();
     let deleted = v["d"]
         .as_array()
         .map(|a| {
             a.iter()
-                .map(|d| d.as_array().map(|x| x.iter().filter_map(|i| i.as_u64().map(|i| i as usize)).collect()).unwrap_or_default())
+                .map(|d| {
+                    d.as_array()
+                        .map(|x| {
+                            x.iter()
+                                .filter_map(|i| i.as_u64().map(|i| i as usize))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -1195,7 +1235,11 @@ pub(crate) fn note_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<
 
 /// 笔记类型的物化视图（与 `materialize` 的 `notetype` 组同一份，键见 [note_type_view]）；[builtin] 是内置
 /// 类型的代码默认值（不是内置类型 = null）。
-pub(crate) fn note_type_view_of(payload: &Value, edits: &[StoredEdit<'_>], builtin: &Value) -> Result<Value, String> {
+pub(crate) fn note_type_view_of(
+    payload: &Value,
+    edits: &[StoredEdit<'_>],
+    builtin: &Value,
+) -> Result<Value, String> {
     let parsed = parse_stored(edits)?;
     let ent = Entity::build(&parsed);
     note_type_view(&ent, payload, builtin)
@@ -1208,7 +1252,10 @@ pub(crate) fn card_id(note_id: &str, template_id: &str, cloze_ord: i64) -> Resul
     if hex.len() != 32 || !hex.iter().all(u8::is_ascii_hexdigit) {
         return Err(format!("not a uuid: {note_id}"));
     }
-    Ok(uuid_v5(&uuid_bytes(note_id), &format!("{template_id}/{cloze_ord}")))
+    Ok(uuid_v5(
+        &uuid_bytes(note_id),
+        &format!("{template_id}/{cloze_ord}"),
+    ))
 }
 
 /// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。
@@ -1225,17 +1272,31 @@ pub(crate) fn registers_report(edits: &[StoredEdit<'_>]) -> Result<Value, String
     let parsed = parse_stored(edits)?;
     let ent = Entity::build(&parsed);
     let ids = |xs: &[usize]| -> Vec<&str> { xs.iter().map(|&i| parsed[i].id.as_str()).collect() };
-    let regs: Vec<Value> =
-        ent.regs.iter().map(|r| json!([r.key, ids(&r.live), r.conflicted, ids(&r.visible_losers)])).collect();
+    let regs: Vec<Value> = ent
+        .regs
+        .iter()
+        .map(|r| json!([r.key, ids(&r.live), r.conflicted, ids(&r.visible_losers)]))
+        .collect();
     Ok(json!({"regs": regs, "concurrentWithDelete": ids(&ent.concurrent_with_delete())}))
 }
 
 /// 浏览（store/browse.rs）：一条笔记各字段的生效原文（`f/<字段 id>` 键；非字符串记成空串，与 Dart 浏览按需读同值），
 /// 以及各寄存器生效记录 HLC 物理时刻的最大值（Dart `srsEditsModifiedAt` 去掉创建时刻那一项；没有记录 = None）。
 /// [edits] 只给部分字段键时，最后改动时刻只对这些键成立（调用方只在给全部记录时用它）。
-pub(crate) fn note_browse_values(edits: &[StoredEdit<'_>]) -> Result<(Vec<(String, String)>, Option<i64>), String> {
+pub(crate) fn note_browse_values(
+    edits: &[StoredEdit<'_>],
+) -> Result<(Vec<(String, String)>, Option<i64>), String> {
+    note_browse_detail(edits).map(|(values, modified, _)| (values, modified))
+}
+
+/// [note_browse_values] 再加出处寄存器（`source`，`SrsSourceRef.toJson()`；没有 = null，与笔记物化 `note_view` 的
+/// `s` 同值）。[edits] 不含 `source` 键的记录时出处恒为 null。
+pub(crate) fn note_browse_detail(
+    edits: &[StoredEdit<'_>],
+) -> Result<(Vec<(String, String)>, Option<i64>, Value), String> {
     let parsed = parse_stored(edits)?;
     let ent = Entity::build(&parsed);
+    let source = ent.value("source").clone();
     let mut values = Vec::new();
     let mut modified: Option<i64> = None;
     for r in &ent.regs {
@@ -1243,12 +1304,16 @@ pub(crate) fn note_browse_values(edits: &[StoredEdit<'_>]) -> Result<(Vec<(Strin
         if let Some(e) = winner {
             modified = Some(modified.map_or(e.physical, |m| m.max(e.physical)));
         }
-        if let Some(id) = r.key.strip_prefix("f/").filter(|_| winner.is_some_and(|e| !e.value.is_null())) {
+        if let Some(id) = r
+            .key
+            .strip_prefix("f/")
+            .filter(|_| winner.is_some_and(|e| !e.value.is_null()))
+        {
             let v = winner.and_then(|e| e.value.as_str()).unwrap_or("");
             values.push((id.to_owned(), v.to_owned()));
         }
     }
-    Ok((values, modified))
+    Ok((values, modified, source))
 }
 
 /// 一组卡的血统与标志（store/caches.rs 的血统查询、缓存刷新用）：[cards] 是 (卡 ID, 它的修改记录)，
@@ -1267,7 +1332,14 @@ pub(crate) fn card_lineage_flags(
     let v = cards_group(&parsed, &counts, want)?;
     let mut out = Vec::with_capacity(want.len());
     for w in v["w"].as_array().cloned().unwrap_or_default() {
-        let lineage = w["l"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+        let lineage = w["l"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
         out.push((lineage, w["f"].clone()));
     }
     Ok(out)
@@ -1283,25 +1355,47 @@ mod tests {
     /// 批量组）对拍；那层 Dart 包装生产不再用、已删（L-5），这里直接测内核：血统、标志、每张输入卡的寄存器。
     #[test]
     fn card_lineage_vectors_match_the_old_dart_implementation() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/card_lineage_vectors.json");
-        let vectors: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/card_lineage_vectors.json"
+        );
+        let vectors: Vec<Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(vectors.len(), 300);
         let mut multi = 0;
         for v in &vectors {
             let server = v["server"].as_object().cloned().unwrap_or_default();
             let mut texts: Vec<(String, Vec<String>)> = Vec::new();
             for (id, items) in v["cards"].as_object().unwrap() {
-                texts.push((id.clone(), items.as_array().unwrap().iter().map(|j| j.as_str().unwrap().to_owned()).collect()));
+                texts.push((
+                    id.clone(),
+                    items
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|j| j.as_str().unwrap().to_owned())
+                        .collect(),
+                ));
             }
             let id_of = |j: &str| -> Option<String> {
-                serde_json::from_str::<Value>(j).ok().and_then(|x| x.get("id").and_then(Value::as_str).map(str::to_owned))
+                serde_json::from_str::<Value>(j)
+                    .ok()
+                    .and_then(|x| x.get("id").and_then(Value::as_str).map(str::to_owned))
             };
             let cards: Vec<(String, Vec<StoredEdit<'_>>)> = texts
                 .iter()
                 .map(|(id, items)| {
                     let edits = items
                         .iter()
-                        .map(|j| (j.as_str(), id_of(j).and_then(|e| server.get(&e)).and_then(Value::as_i64), None))
+                        .map(|j| {
+                            (
+                                j.as_str(),
+                                id_of(j)
+                                    .and_then(|e| server.get(&e))
+                                    .and_then(Value::as_i64),
+                                None,
+                            )
+                        })
                         .collect();
                     (id.clone(), edits)
                 })
@@ -1339,7 +1433,13 @@ mod tests {
             for (k, (id, items)) in texts.iter().enumerate() {
                 let ids: Vec<Option<String>> = items.iter().map(|j| id_of(j)).collect();
                 let by = |xs: &Value| -> Value {
-                    Value::Array(xs.as_array().unwrap().iter().map(|i| json!(ids[i.as_u64().unwrap() as usize])).collect())
+                    Value::Array(
+                        xs.as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|i| json!(ids[i.as_u64().unwrap() as usize]))
+                            .collect(),
+                    )
                 };
                 let list: Vec<Value> = got["r"][k]["r"]
                     .as_array()
@@ -1379,10 +1479,22 @@ mod tests {
         };
         let edits = [
             // 旧版本调序：整份快照，名字是旧默认名。
-            edit(1, "fieldDef/a", json!({"name": "Expression", "ord": 1, "ankiNum": 11})),
-            edit(2, "fieldDef/b", json!({"name": "Picture", "ord": 0, "ankiNum": 12})),
+            edit(
+                1,
+                "fieldDef/a",
+                json!({"name": "Expression", "ord": 1, "ankiNum": 11}),
+            ),
+            edit(
+                2,
+                "fieldDef/b",
+                json!({"name": "Picture", "ord": 0, "ankiNum": 12}),
+            ),
             // 用户真改过名。
-            edit(3, "fieldDef/c", json!({"name": "我的来源", "ord": 2, "ankiNum": 13})),
+            edit(
+                3,
+                "fieldDef/c",
+                json!({"name": "我的来源", "ord": 2, "ankiNum": 13}),
+            ),
         ];
         let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None, None)).collect();
         let builtin = json!({
@@ -1397,7 +1509,12 @@ mod tests {
         let payload = json!({"ankiNum": 1, "ntKind": "standard", "builtin": "fushi_card"});
         let v = note_type_view_of(&payload, &stored, &builtin).unwrap();
         let names = |key: &str| -> Vec<String> {
-            v[key].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap().to_owned()).collect()
+            v[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["name"].as_str().unwrap().to_owned())
+                .collect()
         };
         // 顺序跟快照（Media 调到最前），名字是新默认名；真改过的保留。
         assert_eq!(names("fs"), vec!["Media", "Term", "我的来源"]);

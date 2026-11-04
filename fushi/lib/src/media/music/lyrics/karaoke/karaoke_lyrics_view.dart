@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -21,6 +22,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_appearance.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_line_layout.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_progress.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -68,6 +71,7 @@ class KaraokeLyricsView extends StatefulWidget {
     this.onSeek,
     this.onLookup,
     this.tapLooksUp = false,
+    this.isSeekPointer,
   });
 
   final LyricTimeline timeline;
@@ -83,8 +87,13 @@ class KaraokeLyricsView extends StatefulWidget {
   final ValueChanged<int>? onSeek;
   final ValueChanged<KaraokeLookupHit>? onLookup;
 
-  /// true = 点按音节也查词（点在字外仍是跳转）。
+  /// true = 点按音节也查词（点在字外仍是跳转）。与有声书歌词模式同一套手势：
+  /// 点字查词、点行内字外跳到这一句、[isSeekPointer] 认的鼠标键（默认中键）点行跳转。
   final bool tapLooksUp;
+
+  /// 这次鼠标按下（Flutter 按钮位掩码）是不是「跳到点中的这一行」。null = 只有点按
+  /// 跳转。命中即派发并认领这次按下（[dispatchClaimedMouseAction]，外层不再派发）。
+  final bool Function(int buttons)? isSeekPointer;
 
   @override
   State<KaraokeLyricsView> createState() => _KaraokeLyricsViewState();
@@ -384,6 +393,19 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
     return null;
   }
 
+  void _onRowPointerDown(int row, PointerDownEvent event) {
+    final bool Function(int buttons)? isSeek = widget.isSeekPointer;
+    final ValueChanged<int>? onSeek = widget.onSeek;
+    if (isSeek == null || onSeek == null || !widget.timeline.isSynced) return;
+    if (event.kind != PointerDeviceKind.mouse || !isSeek(event.buttons)) {
+      return;
+    }
+    dispatchClaimedMouseAction(event, () {
+      onSeek(_seekPositionOf(_rows[row].main));
+      return true;
+    });
+  }
+
   void _onRowTap(BuildContext rowContext, int row, Offset local) {
     if (widget.tapLooksUp && widget.onLookup != null) {
       final KaraokeLookupHit? hit = _hitAt(rowContext, row, local);
@@ -480,25 +502,29 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
             1.0,
           );
     Widget row = Builder(
-      builder: (BuildContext rowContext) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapUp: (TapUpDetails d) => _onRowTap(rowContext, i, d.localPosition),
-        onLongPressStart: (LongPressStartDetails d) =>
-            _lookupAt(rowContext, i, d.localPosition),
-        child: Semantics(
-          label: layout.main.line.text,
-          button: synced,
-          child: CustomPaint(
-            size: layout.size,
-            painter: _KaraokeRowPainter(
-              layout: layout,
-              active: isCurrent,
-              position: isCurrent ? _position : null,
-              offsetMs: widget.offsetMs,
-              motion: _motion,
-              lineLevelSweep: widget.appearance.lineLevelSweep,
-              liftPx: widget.appearance.liftPx,
-              sungStatic: !synced,
+      builder: (BuildContext rowContext) => Listener(
+        onPointerDown: (PointerDownEvent e) => _onRowPointerDown(i, e),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (TapUpDetails d) =>
+              _onRowTap(rowContext, i, d.localPosition),
+          onLongPressStart: (LongPressStartDetails d) =>
+              _lookupAt(rowContext, i, d.localPosition),
+          child: Semantics(
+            label: layout.main.line.text,
+            button: synced,
+            child: CustomPaint(
+              size: layout.size,
+              painter: _KaraokeRowPainter(
+                layout: layout,
+                active: isCurrent,
+                position: isCurrent ? _position : null,
+                offsetMs: widget.offsetMs,
+                motion: _motion,
+                lineLevelSweep: widget.appearance.lineLevelSweep,
+                liftPx: widget.appearance.liftPx,
+                sungStatic: !synced,
+              ),
             ),
           ),
         ),

@@ -55,6 +55,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamResolver, resolveMusicPluginStream;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -66,6 +67,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
@@ -319,8 +321,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
+    _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     _clock.dispose();
     super.dispose();
@@ -901,6 +913,17 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     // 2026-10-30「视频、小说、漫画、音乐都要占满」）。配色取封面主题的表面色，
     // 只用来托窗口按钮的柔光；macOS 红绿灯收不起，不上报，保持原来的叠放。
     page = _TitleBarScope(child: page);
+    // 播放控制键（空格 / K / N / P / Shift+←→ / 媒体键）与曲库页同一份执行体；autofocus
+    // 让打开歌词页即能收键（页内没有别的控件持焦时主焦点落在这里）。
+    page = Focus(
+      autofocus: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) => handleMusicShortcutKey(
+        event,
+        registry: appModel.shortcutRegistry,
+        engine: _engine,
+      ),
+      child: page,
+    );
     if (apple) {
       page = FushiAppleDarkTier(child: page);
     } else {
@@ -1746,6 +1769,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       offsetMs: _offsetMs,
       onSeek: (int ms) => unawaited(_engine.seek(Duration(milliseconds: ms))),
       onLookup: (KaraokeLookupHit hit) => unawaited(_onLookup(hit)),
+      // 与有声书歌词模式同一套手势（用户 2026-11-02「正常设计就该一点就是查词」「不要做成
+      // 不同模块交互方式都不一样」）：点字查词、点行内字外跳到这一句、中键（与有声书
+      // 共用「点句跳转」绑定）点行跳转；长按仍查词。
+      tapLooksUp: true,
+      isSeekPointer: (int buttons) =>
+          isMusicLyricsSeekPointer(appModel.shortcutRegistry, buttons),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     return Column(

@@ -56,7 +56,12 @@ impl Weights {
                 shape.push(dim);
             }
             let values = match kind {
-                0 => f32s(cursor.bytes(len.checked_mul(4).ok_or_else(|| invalid("tensor is too large"))?)?),
+                0 => f32s(
+                    cursor.bytes(
+                        len.checked_mul(4)
+                            .ok_or_else(|| invalid("tensor is too large"))?,
+                    )?,
+                ),
                 1 => {
                     if rank != 2 {
                         return Err(invalid(format!("int8 tensor {name} is not 2-D")));
@@ -77,7 +82,10 @@ impl Weights {
             if values.iter().any(|value| !value.is_finite()) {
                 return Err(invalid(format!("tensor {name} has non-finite values")));
             }
-            if tensors.insert(name.clone(), Tensor { shape, values }).is_some() {
+            if tensors
+                .insert(name.clone(), Tensor { shape, values })
+                .is_some()
+            {
                 return Err(invalid(format!("duplicate tensor {name}")));
             }
         }

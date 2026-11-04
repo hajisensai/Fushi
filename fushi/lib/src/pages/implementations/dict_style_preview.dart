@@ -90,7 +90,9 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   /// 用 `toggle` 而非 `add`：主题来回切时要能摘除（与真弹窗同款）。
   Future<void> _pushTheme() async {
     final InAppWebViewController? controller = _controller;
-    if (controller == null || !_ready) return;
+    // 反馈 63DhJLTAHW 日志：_bootstrap 的 evaluateJavascript 往返期间用户已离开词典样式页，
+    // 续体再读 `Theme.of(context)` 就是 State.context 的空断言（UncaughtZone）。
+    if (!mounted || controller == null || !_ready) return;
     final String? themeVariablesJs = widget.themeVariablesJs;
     if (themeVariablesJs != null) {
       if (_pushedThemeVariablesJs == themeVariablesJs) return;
@@ -129,7 +131,7 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   /// 拖滑块时那是一帧一跳。
   Future<void> _pushStyles() async {
     final InAppWebViewController? controller = _controller;
-    if (controller == null || !_ready) return;
+    if (!mounted || controller == null || !_ready) return;
     await controller.evaluateJavascript(
       source:
           '''
@@ -148,7 +150,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   /// `--background-color` 在 popup.css 里根本没有定义值，整页透明。
   Future<void> _bootstrap() async {
     final InAppWebViewController? controller = _controller;
-    if (controller == null) return;
+    // onLoadStop 可能在本页已卸载后才到（平台 WebView 的加载回调不随 widget 生命周期撤销）。
+    if (!mounted || controller == null) return;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     await controller.evaluateJavascript(
       source:
@@ -166,8 +169,11 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         window.renderPopup();
       ''',
     );
+    // 每个 await 之后都可能已卸载：后面两步都读 widget / context。
+    if (!mounted) return;
     _ready = true;
     await _pushTheme();
+    if (!mounted) return;
     await _pushStyles();
   }
 

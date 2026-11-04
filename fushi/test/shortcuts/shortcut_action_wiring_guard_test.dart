@@ -92,8 +92,8 @@ void main() {
       // `resolveKeyboard(event, scope: ShortcutScope.webBrowser)` 后按动作派发
       // （新建 / 关闭标签页、地址栏、页内查找、缩放…），未命中再兜底 universal。
       'lib/src/pages/implementations/fushi_web_browser_page.dart',
-      // 音乐（ShortcutScope.music）的执行体：曲库页 _handleKey → dispatchMusicShortcut。
-      'lib/src/pages/implementations/music/music_library_page.dart',
+      // 音乐（ShortcutScope.music）的执行体：曲库页 / 歌词页 → dispatchMusicShortcut。
+      'lib/src/pages/implementations/music/music_shortcuts.dart',
       // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
       // _handleGamepadButton → _executeShortcut。
       'lib/src/pages/implementations/srs/srs_review_page.dart',

@@ -563,10 +563,23 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// 本后端能不能读某卡组的新卡并改写它们的队列位置。
   ///
   /// **后端不对称（有意）**：只有 AnkiConnect 有卡片级读写（`findCards` /
-  /// `cardsInfo` / `setSpecificValueOfCard`）。AnkiDroid ContentProvider 与
+  /// `cardsInfo` / 原生 `scheduling.repositionNewCards`）。AnkiDroid ContentProvider 与
   /// AnkiMobile 的 URL scheme 都没有改 `due` 的接口；互联「制卡到已配对设备」
   /// 也没有对应端点。这些后端默认 false，UI 据此把入口置灰并说明原因。
+  ///
+  /// 这是**静态**能力（后端类型）。后端类型支持、但连着的那一端此刻能不能真写，
+  /// 由 [probeDeckReposition] 探测。
   bool get supportsDeckReposition => false;
+
+  /// 探测重排此刻真能不能用（一次网络往返的后端会真问一次）。
+  ///
+  /// * true / false = 明确结论；
+  /// * 抛异常 = 下不了结论（后端不可达），调用方按「未知」处理，别记成不支持。
+  ///
+  /// 默认 = 静态能力 [supportsDeckReposition]。AnkiConnect 覆盖成问
+  /// `api.describe` 有没有原生 `scheduling.repositionNewCards`：新版 AnkiConnect
+  /// 不再允许直接写 `due`，没有原生接口就不能重排。
+  Future<bool> probeDeckReposition() async => supportsDeckReposition;
 
   /// 制卡后要不要自动重排新卡（「制卡后自动按词频重排」开关与调度器只对它为 true 的后端生效）。
   ///
@@ -609,10 +622,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String bookTag = AnkiNoteComposer.bookTag;
   static const String videoTag = AnkiNoteComposer.videoTag;
   static const String gameTag = AnkiNoteComposer.gameTag;
-  static const String charPositionTagPrefix =
-      AnkiNoteComposer.charPositionTagPrefix;
-  static String? formatCharPositionTag(int? absoluteChars) =>
-      AnkiNoteComposer.formatCharPositionTag(absoluteChars);
+
   static String previewFromFieldValue(String value, {int maxLen = 60}) =>
       AnkiNoteComposer.previewFromFieldValue(value, maxLen: maxLen);
   static String? sanitizeTitleTag(String? title) =>

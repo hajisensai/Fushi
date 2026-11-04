@@ -334,7 +334,7 @@ void main() {
   test('存量库（缓存修订号 1、投影表为空）打开时补齐', () async {
     await scenario();
     final List<String> want = await projectionRows(db);
-    expect(await cacheRev(), '8');
+    expect(await cacheRev(), '${SrsDbStore.currentCacheRevision}');
     await db.customStatement('DELETE FROM srs_stat_reviews');
     await db.customStatement(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
@@ -343,7 +343,7 @@ void main() {
 
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '8');
+    expect(await cacheRev(), '${SrsDbStore.currentCacheRevision}');
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
 
@@ -355,7 +355,7 @@ void main() {
     );
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '8');
+    expect(await cacheRev(), '${SrsDbStore.currentCacheRevision}');
   });
 
   test('统计读取路径不读复习日志表（大量日志：240 条笔记 × 2 卡 × 4 条）', () async {

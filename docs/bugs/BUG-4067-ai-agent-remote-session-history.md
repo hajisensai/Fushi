@@ -1,0 +1,21 @@
+## BUG-4067 · 远端执行的 AI 助手会话没有历史记录，host 端也看不到
+- **报告**：2026-11-04（开发者反馈 jXx3Fovkc0「缺少历史记录，而且服务端那边应该也可以看历史记录」，Android 手机，截图是 AI 助手浮层「在 https://192.168.1.30:38765 上执行」）
+- **真实性**：✅ 现象属实，是**刻意的产品边界 + 缺协议**（当时的定位如下）：
+  - 手机端：本机没配 AI 时整场会话交给互联 host 跑（`fushi/lib/src/pages/implementations/ai_agent_page.dart` `_resolveAiAgentConversation`）。远端会话 `RemoteAiAgentSession.sessionLibrary` 恒为 null（`fushi/lib/src/ai/agent/remote_ai_agent_session.dart:107`），页头 / 侧栏的「会话」按钮按 `library != null` 才出现（`ai_agent_page.dart:360-366`、`_sessionsButton`）——所以截图里没有历史入口。互联 host 协议（`packages/fushi_engine/lib/sync/assistant/agent_assistant_host.dart` 文件头）只有「快照 + 动作」，**没有列会话 / 取历史会话 / 续接**的命令，手机侧无从显示。
+  - host 是桌面 app：远端会话**会**存档（`fushi/lib/src/ai/agent/ai_agent_assistant_host.dart:105` `persist` → scene `remote`），但本机会话列表**刻意排除** `remote` 场景（`fushi/lib/src/ai/agent/ai_agent_session_archive.dart` `kAiAgentLocalLibraryExcludedScenes`，注释「这些会话属于发起的那台设备」，`ai_agent_controller.dart:347-351`），只在「AI 操作记录」页按会话配标题。
+  - host 是 `fushi_server`：`createServerAgentAssistantHost`（`packages/fushi_server/lib/src/agent_host.dart:278`）**不传 `persist`**，会话本身不落库（写操作的记账 `ai_agent_actions` 有）；服务端管理页 `packages/fushi_server/lib/src/admin/web_ui.dart` 没有任何 AI 助手 / 操作记录页面。
+- **需要拍板**：
+  - A. 手机端能看远端历史：给互联 assistant 协议加 `sessions`（列出本设备发起的 remote 会话，按配对设备身份过滤）/ `session`（取一场的条目快照）/ 可选 `resume`；手机远端会话出现「会话」按钮。要定：只读还是允许续接；按哪个身份过滤（配对 token / 设备 id）。
+  - B. host 端能看：桌面 app 的会话列表是否也列 `remote` 场景（标「来自 设备 X」）——这与现有「属于发起设备」的隐私边界相反；`fushi_server` 是否补 `persist` + 管理页「AI 助手记录」页（服务端库已有同一张 `ai_agent_sessions` 表结构可复用）。
+  - A / B 可以只做其一或都做；B 里的服务端落库是 A 在服务端成立的前提。
+- **拍板（2026-11-04）**：A + B 都做，并在 AI 助手界面上加「本地 AI / 远端 AI」切换。
+- **[x] ① 已修复**（根因：协议没有会话历史命令、存档不记发起设备、服务端不存档）：
+  - 存档按**发起设备**归属：`ai_agent_sessions` 加 `origin_peer_id`（schema v144，`packages/fushi_core/lib/src/database/tables.dart` `AiAgentSessions.originPeerId`），首次落库盖戳之后不改；存量会话一律空串（认不出设备，不列给任何设备）。
+  - 互联协议加会话历史（`packages/fushi_engine/lib/sync/assistant/host_assistant_routes.dart`）：`GET/PATCH/DELETE /api/assistant/history[/<sid>]` + `POST /api/assistant/sessions {resume}`；能力位 `agentHistory: 1` 做版本协商，老 host 不宣告、手机就不发；只认 per-peer 口令（`fushi_sync_server.dart` 把鉴权结果作 `HostAssistantCaller` 传下去），共享口令 403，别的设备的会话一律 404。
+  - `AgentAssistantHost`（`agent_assistant_host.dart`）实现 `HostAssistantHistoryProvider`：按发起设备列 / 续接（`AgentSession.fromJson` 读回整场接着说）/ 改名 / 删除；同一场会话一个进程只许一处打开（`AgentLiveSessions`，app 进程与本机 AI 页共用），同一台设备重开会接管遗孤连接，别处开着回 409 `in_use`。
+  - A：手机 `RemoteAiAgentSession` 在 host 宣告历史且用 per-peer 口令时同时是会话库（`sessionLibrary` 不再恒 null），「会话」按钮出现，界面与本机列表同一套。
+  - B：桌面 app 会话列表不再排除 `remote` 场景，标「来自 X」，可续接；`fushi_server` 的 agent host 接上同一份 `DatabaseAgentSessionHistory` 落库，管理页加「AI 助手」页（`/api/admin/ai/sessions[/<id>]`，只读、不回工具参数原文）。
+  - 切换：AI 助手浮层 / 侧栏 / 整页顶栏在「本机配了 AI 且有已配对的下载执行设备」时出切换按钮，选择记在设备本地偏好 `ai_agent_executor`。
+- **[x] ② 自动化测试**：`packages/fushi_engine/test/sync/assistant/agent_session_history_test.dart`（归属 / 403 / 404 / 续接 / in_use / 接管 / 删除不写回 / 路由 / 老装配）、`fushi/test/sync/app_agent_assistant_host_test.dart`（真 FushiSyncServer 端到端：列 / 续接 / 改名 / 删除、共享口令与老 host 兼容）、`fushi/test/database/migration_v144_ai_agent_session_origin_test.dart`、`fushi/test/ai/agent/ai_agent_controller_test.dart`（host 端列出并标设备、占用锁）、`fushi/test/pages/ai_agent_sessions_test.dart` / `ai_agent_executor_switch_test.dart`（UI）、`packages/fushi_server/test/agent_host_test.dart` / `admin_ai_sessions_test.dart`（服务端落库与管理页）。
+- **未做**：真机 / 模拟器复测（本轮按安排不做）。
+- **备注**：截图里的执行设备只显示 URL、看不出是桌面 app 还是 fushi_server（两者默认端口都是 38765）。

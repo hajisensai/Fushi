@@ -1094,7 +1094,11 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       charOffset,
     );
     final String span = lookupSpan.term;
-    final String term = span.isNotEmpty ? span : text.trim();
+    // 整行入口（charOffset 0：控制卡「制卡」/ 键盘查词）才回落整行；点在句尾标点 /
+    // 空白上（取词层判为「无可查的词」）不查，免得点「！」弹出整行句首的词。
+    final String term = span.isNotEmpty
+        ? span
+        : (charOffset == 0 ? text.trim() : '');
     if (term.isEmpty) return;
     // 换词：旧词的高亮先撤掉，新词查完再按匹配长度画。
     if (_lookupHighlight != null) setState(() => _lookupHighlight = null);
@@ -1705,13 +1709,14 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         screen: screen,
         controller: _popup,
         // 嵌套查词共用同一个电脑端上下文：只压子层，不再 lookupBegin。
-        onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
-            pushNestedPopup(
-              query: text,
-              selectionRect: rect,
-              controller: _popup,
-              rubySpans: rubySpans,
-            ),
+        onPush:
+            (String text, Rect rect, List<FushiRubySpan> rubySpans, String _) =>
+                pushNestedPopup(
+                  query: text,
+                  selectionRect: rect,
+                  controller: _popup,
+                  rubySpans: rubySpans,
+                ),
         onPop: _popAt,
         autoReadOnNavigate: true,
       );

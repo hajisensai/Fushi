@@ -33,6 +33,7 @@ workspace:
   - packages/fushi_dictionary
   - packages/fushi_engine
   - packages/fushi_ffi_view
+  - packages/fushi_launch_presence
   - packages/fushi_music
   - packages/fushi_server
   - packages/fushi_p2p
@@ -167,7 +168,7 @@ dependency_overrides:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 8ecd20618855210ac4c5ae19229560c39be18ee2
+      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
   # fushi_asr_onnx_ffi（仅无头 fushi_server 依赖）把 archive 钉成 ^4.0.0，本仓其余
   # 全部钉 ^3.6.1；pub workspace 只解析一次，两者无法共存。
   #

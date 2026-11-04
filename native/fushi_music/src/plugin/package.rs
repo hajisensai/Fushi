@@ -38,7 +38,8 @@ pub fn check_rel_path(p: &str) -> Result<(), String> {
         || p.contains('\\')
         || p.contains(':')
         || p.chars().any(|c| c.is_control())
-        || p.split('/').any(|seg| seg.is_empty() || seg == "." || seg == "..");
+        || p.split('/')
+            .any(|seg| seg.is_empty() || seg == "." || seg == "..");
     if bad {
         Err(format!("包内路径不合法：{p:?}"))
     } else {
@@ -96,8 +97,15 @@ fn verify(mut all: BTreeMap<String, Vec<u8>>) -> Result<VerifiedPackage, String>
     let listing: FilesJson =
         serde_json::from_slice(&files_raw).map_err(|e| format!("files.json 解析失败：{e}"))?;
     if listing.files.len() != all.len() || all.keys().any(|k| !listing.files.contains_key(k)) {
-        let extra: Vec<&String> = all.keys().filter(|k| !listing.files.contains_key(*k)).collect();
-        let missing: Vec<&String> = listing.files.keys().filter(|k| !all.contains_key(*k)).collect();
+        let extra: Vec<&String> = all
+            .keys()
+            .filter(|k| !listing.files.contains_key(*k))
+            .collect();
+        let missing: Vec<&String> = listing
+            .files
+            .keys()
+            .filter(|k| !all.contains_key(*k))
+            .collect();
         return Err(format!(
             "files.json 与包内文件不一致（未登记：{extra:?}；缺失：{missing:?}）"
         ));
@@ -113,8 +121,8 @@ fn verify(mut all: BTreeMap<String, Vec<u8>>) -> Result<VerifiedPackage, String>
     let signer = match &signature_raw {
         None => None,
         Some(raw) => {
-            let sig: SignatureJson = serde_json::from_slice(raw)
-                .map_err(|e| format!("signature.json 解析失败：{e}"))?;
+            let sig: SignatureJson =
+                serde_json::from_slice(raw).map_err(|e| format!("signature.json 解析失败：{e}"))?;
             let key_bytes: [u8; 32] = BASE64
                 .decode(sig.public_key.as_bytes())
                 .ok()
@@ -161,7 +169,9 @@ pub fn inspect_zip(bytes: &[u8]) -> Result<VerifiedPackage, String> {
     let mut all = BTreeMap::new();
     let mut total = 0u64;
     for i in 0..zip.len() {
-        let mut entry = zip.by_index(i).map_err(|e| format!("读 zip 条目失败：{e}"))?;
+        let mut entry = zip
+            .by_index(i)
+            .map_err(|e| format!("读 zip 条目失败：{e}"))?;
         if entry.is_dir() {
             continue;
         }
@@ -245,8 +255,7 @@ pub fn install_zip(
 /// 从已安装目录加载并重新校验（只读 files.json 登记的文件 + 两个元文件）。
 pub fn load_dir(dir: &Path) -> Result<VerifiedPackage, String> {
     let read = |p: PathBuf| -> Result<Vec<u8>, String> {
-        let meta =
-            fs::symlink_metadata(&p).map_err(|e| format!("读 {} 失败：{e}", p.display()))?;
+        let meta = fs::symlink_metadata(&p).map_err(|e| format!("读 {} 失败：{e}", p.display()))?;
         if !meta.is_file() {
             return Err(format!("{} 不是普通文件", p.display()));
         }
@@ -341,7 +350,10 @@ pub(crate) mod tests {
         let m = manifest_with(&["lyrics"], &[], &[]);
         let key = SigningKey::from_bytes(&[7u8; 32]);
         let zip = build_zip(
-            &[("manifest.json", m.as_bytes()), ("main.js", b"module.exports={}")],
+            &[
+                ("manifest.json", m.as_bytes()),
+                ("main.js", b"module.exports={}"),
+            ],
             Sign::Good(&key),
             None,
         );
@@ -389,7 +401,11 @@ pub(crate) mod tests {
             None,
         );
         assert_eq!(inspect_zip(&zip).err().unwrap(), "签名校验失败");
-        let mut zip = build_zip(&[("manifest.json", m.as_bytes()), ("main.js", b"x")], Sign::None, None);
+        let mut zip = build_zip(
+            &[("manifest.json", m.as_bytes()), ("main.js", b"x")],
+            Sign::None,
+            None,
+        );
         zip.truncate(zip.len() / 2);
         assert!(inspect_zip(&zip).is_err());
     }

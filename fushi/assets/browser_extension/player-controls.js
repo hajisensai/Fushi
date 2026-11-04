@@ -247,8 +247,18 @@
     return d >= MIN_VIDEO_SEC;
   }
 
+  // 视口坐标 (x, y) 是否落在视频画面矩形内（通用悬浮按钮的显隐判据，见 onPointer）。
+  function pointInVideo(v, x, y) {
+    if (!v || typeof v.getBoundingClientRect !== 'function') return false;
+    if (typeof x !== 'number' || typeof y !== 'number' || !isFinite(x) || !isFinite(y)) return false;
+    var r = v.getBoundingClientRect();
+    if (!r || !(r.right > r.left) || !(r.bottom > r.top)) return false;
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
   var api = {
     SETTING_KEY: SETTING_KEY,
+    pointInVideo: pointInVideo,
     BTN_ID: BTN_ID,
     MENU_ID: MENU_ID,
     siteOf: siteOf,
@@ -1172,17 +1182,24 @@
   window.addEventListener('resize', scheduleReplace);
   window.addEventListener('scroll', scheduleReplace, { capture: true, passive: true });
 
-  // 通用悬浮按钮的显隐跟鼠标：在视频画面上才出现，与站点控件一个作息。
-  document.addEventListener('pointerover', function (e) {
+  // 通用悬浮按钮的显隐跟指针：落在视频画面上才出现，与站点控件一个作息。
+  // 判据是**几何**（指针坐标在正片矩形内），不是 DOM 包含：几乎所有播放器都在 <video> 上
+  // 盖一层控件 / 手势层，它们是 <video> 父容器的兄弟而不是后代（m.youtube.com 的 plasma
+  // 播放器：video 独占 .html5-video-container，触控层全在它外面），按 DOM 包含判，指针
+  // 永远「不在视频上」，按钮永远 opacity 0（反馈 Mb6qKIhwEm：安卓上看不到换字幕的按钮）。
+  // 触屏没有悬停：pointerover 在手指按下时带坐标触发，点一下画面即出现，点画面外即淡出。
+  function onPointer(e) {
     if (!btnEl || !btnEl.classList.contains('is-floating')) return;
-    var v = videoEl();
     var t = e.target;
-    var inside = !!(v && t && (t === v || (btnEl.contains && btnEl.contains(t)) ||
-      (v.parentNode && v.parentNode.contains && v.parentNode.contains(t))));
+    var inside = !!((t && btnEl.contains && btnEl.contains(t)) ||
+      pointInVideo(videoEl(), e.clientX, e.clientY));
     if (inside === st.hoverVideo) return;
     st.hoverVideo = inside;
     placeFloatingButton();
-  }, true);
+  }
+  document.addEventListener('pointerover', onPointer, true);
+  // 同一层覆盖元素里移动不会再触发 pointerover（控件层常比画面大），移动也要判一次。
+  document.addEventListener('pointermove', onPointer, { capture: true, passive: true });
 
   // 站点 SPA 导航 / 控件重建后补挂。轮询是这里最省心的形态：YouTube 的
   // yt-navigate-finish 只在 YouTube 有，Netflix 的控件行是 React 随时重建的，

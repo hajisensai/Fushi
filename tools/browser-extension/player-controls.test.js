@@ -739,3 +739,50 @@ test('悬浮按钮：贴正片右上角（不是第一个 <video>），坐标按
   assert.strictEqual(btn.style.left, (1000 - 48 - 8 - 30) + 'px');
   assert.strictEqual(btn.style.top, (100 + 8 - 20) + 'px');
 });
+
+// 反馈 Mb6qKIhwEm：m.youtube.com（安卓应用内浏览器）的 plasma 播放器没有 .ytp-right-controls，
+// 走通用悬浮按钮；它的 <video> 独占 .html5-video-container，触控 / 控件层是容器的兄弟。
+// 旧判据「target 在 video.parentNode 里」在这种结构下永远为假，按钮永远 opacity 0。
+test('悬浮按钮：指针落在画面上就出现——盖在 <video> 上的控件层（不是 video 父容器的后代）也算', () => {
+  const t = load({ hostname: 'm.youtube.com', site: 'none' });
+  // plasma 播放器：.html5-video-player > .html5-video-container > video，控件层是容器的兄弟；
+  // 没有 .ytp-right-controls。
+  t.video.parentNode.removeChild(t.rightControls);
+  t.video.parentNode.removeChild(t.video);
+  const container = makeEl('div');
+  container.className = 'html5-video-container';
+  container.appendChild(t.video);
+  const controlsLayer = makeEl('div');
+  controlsLayer.className = 'player-controls-background';
+  const player = makeEl('div');
+  player.className = 'html5-video-player';
+  player.appendChild(container);
+  player.appendChild(controlsLayer);
+  t.body.appendChild(player);
+  t.tick();
+  const btn = t.button();
+  assert.ok(btn && btn.classList.contains('is-floating'), 'm.youtube.com 无控制栏锚点，退回悬浮按钮');
+  assert.notStrictEqual(btn.dataset.visible, '1', '初始不显示');
+
+  t.fire('pointerover', { target: controlsLayer, clientX: 640, clientY: 360, pointerType: 'touch' });
+  assert.strictEqual(btn.dataset.visible, '1', '点到画面上的控件层：按钮出现');
+
+  t.fire('pointerover', { target: t.body, clientX: 640, clientY: 900, pointerType: 'touch' });
+  assert.strictEqual(btn.dataset.visible, '', '点到画面外：按钮淡出');
+
+  // 同一层控件里移动进画面（不会再有 pointerover）：pointermove 也要判。
+  t.fire('pointermove', { target: t.body, clientX: 100, clientY: 100, pointerType: 'mouse' });
+  assert.strictEqual(btn.dataset.visible, '1');
+});
+
+test('pointInVideo：只认画面矩形内的有限坐标', () => {
+  const v = { getBoundingClientRect: () => ({ left: 10, right: 110, top: 20, bottom: 80 }) };
+  assert.ok(PC.pointInVideo(v, 10, 20));
+  assert.ok(PC.pointInVideo(v, 60, 50));
+  assert.ok(!PC.pointInVideo(v, 9, 50));
+  assert.ok(!PC.pointInVideo(v, 60, 81));
+  assert.ok(!PC.pointInVideo(v, NaN, 50));
+  assert.ok(!PC.pointInVideo(v, undefined, 50));
+  assert.ok(!PC.pointInVideo({ getBoundingClientRect: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }, 0, 0));
+  assert.ok(!PC.pointInVideo(null, 1, 1));
+});

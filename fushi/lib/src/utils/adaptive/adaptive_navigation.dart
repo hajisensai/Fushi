@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiCapsuleScale;
+    show FushiCapsuleScale, kFushiFloatingCapsuleScale;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiWavyLinearProgress;
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
@@ -211,6 +211,47 @@ const double kMaterialNavRailFloatingInset =
 
 /// MD3 悬浮 rail 面板圆角（M3E 大容器 28）。
 const double _kMaterialRailPanelRadius = 28;
+
+/// MD3 悬浮胶囊的高度：按「选中多边形 40 + 缝 2 + 标签实际行高」加上下各
+/// [_kCapsuleVerticalPadding] 算，跟随（钳到 1.3 的）文字缩放；标签隐藏时只
+/// 剩药丸，取 [kAdaptiveNavBarContentHeight]（64）。此前用 64 的最小高 +
+/// IntrinsicHeight，Windows 上标签字体行高偏大时下半截被胶囊圆角裁掉
+/// （2026-10-06 用户截图）。
+double materialNavBarCapsuleHeight(
+  BuildContext context, {
+  required bool showLabels,
+}) {
+  if (!showLabels) return kAdaptiveNavBarContentHeight;
+  final TextStyle style =
+      (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
+        fontWeight: FontWeight.w600,
+      );
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: 'Ag国', style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
+    maxLines: 1,
+  )..layout();
+  final double labelHeight = painter.height;
+  painter.dispose();
+  return math.max(
+    kAdaptiveNavBarContentHeight,
+    (2 * _kCapsuleVerticalPadding +
+            _kMaterialBarLabeledShapeSize +
+            _kMaterialBarLabelGap +
+            labelHeight)
+        .ceilToDouble(),
+  );
+}
+
+/// MD3 悬浮底栏右侧 FAB 的实际边长（胶囊同高、再经 [FushiCapsuleScale] 缩放）。
+/// 给叠在它上方的外壳按钮（首页「后台任务」小环钮）对齐中线用。
+double materialNavBarFabExtent(
+  BuildContext context, {
+  required bool showLabels,
+}) =>
+    materialNavBarCapsuleHeight(context, showLabels: showLabels) *
+    kFushiFloatingCapsuleScale;
 
 /// MD3 悬浮底栏离屏幕底边的距离：浮在手势区之上，最少 12。
 double _materialNavBarBottomMargin(BuildContext context) =>
@@ -679,7 +720,10 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final bool currentValid = currentIndex >= 0 && currentIndex < items.length;
-    final double capsuleHeight = _materialCapsuleHeight(context);
+    final double capsuleHeight = materialNavBarCapsuleHeight(
+      context,
+      showLabels: showLabels,
+    );
     // BUG-3064：FAB 那一项（查词）选中时同样随下滑收起——胶囊里没有当前项可
     // 留，整条胶囊让位（M3E 浮动工具栏滚走、FAB 留下），回滚 / 焦点进入再展开。
     // 此前这里直接不收起，查词页往下滑底栏纹丝不动。
@@ -709,35 +753,6 @@ class _MaterialNavCluster extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-
-  /// MD3 悬浮胶囊的高度：按「选中多边形 40 + 缝 2 + 标签实际行高」加上下各
-  /// [_kCapsuleVerticalPadding] 算，跟随（钳到 1.3 的）文字缩放；标签隐藏时只
-  /// 剩药丸，取 [kAdaptiveNavBarContentHeight]（64）。此前用 64 的最小高 +
-  /// IntrinsicHeight，Windows 上标签字体行高偏大时下半截被胶囊圆角裁掉
-  /// （2026-10-06 用户截图）。
-  double _materialCapsuleHeight(BuildContext context) {
-    if (!showLabels) return kAdaptiveNavBarContentHeight;
-    final TextStyle style =
-        (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
-          fontWeight: FontWeight.w600,
-        );
-    final TextPainter painter = TextPainter(
-      text: TextSpan(text: 'Ag国', style: style),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
-      maxLines: 1,
-    )..layout();
-    final double labelHeight = painter.height;
-    painter.dispose();
-    return math.max(
-      kAdaptiveNavBarContentHeight,
-      (2 * _kCapsuleVerticalPadding +
-              _kMaterialBarLabeledShapeSize +
-              _kMaterialBarLabelGap +
-              labelHeight)
-          .ceilToDouble(),
     );
   }
 
@@ -1276,7 +1291,7 @@ class _MaterialFloatingBar extends StatefulWidget {
     this.fabLeading = false,
   });
 
-  /// 胶囊高（[_MaterialNavCluster._materialCapsuleHeight]）；FAB 与之同高。
+  /// 胶囊高（[materialNavBarCapsuleHeight]）；FAB 与之同高。
   final double height;
 
   final bool minimized;

@@ -41,9 +41,11 @@ pub const INT_COLUMNS: usize = 12;
 pub enum FloatColumn {
     Stability = 0,
     Difficulty = 1,
+    /// 此刻的 FSRS 可提取度（0..1；浏览会话按牌组的排程配置现算，store/browse.rs）。
+    Retrievability = 2,
 }
 
-pub const FLOAT_COLUMNS: usize = 2;
+pub const FLOAT_COLUMNS: usize = 3;
 
 pub const DUE_NONE: i64 = i64::MIN;
 
@@ -235,7 +237,9 @@ impl Corpus {
         };
         if !str_ok(&note_type)
             || !str_ok(&schema_names)
-            || !schema_alias.iter().all(|&a| a == NO_ALIAS || (a as usize) < n_str)
+            || !schema_alias
+                .iter()
+                .all(|&a| a == NO_ALIAS || (a as usize) < n_str)
             || !str_ok(&tag)
             || !str_ok(&card_deck)
             || !str_ok(&card_tpl)
@@ -264,13 +268,17 @@ impl Corpus {
         let mut name_ids: Vec<u32> = schema_names.clone();
         name_ids.sort_unstable();
         name_ids.dedup();
-        let str_of = |i: u32| text[str_off[i as usize] as usize..str_off[i as usize + 1] as usize].to_owned();
+        let str_of = |i: u32| {
+            text[str_off[i as usize] as usize..str_off[i as usize + 1] as usize].to_owned()
+        };
         let mut aliases: Vec<Vec<String>> = vec![Vec::new(); name_ids.len()];
         for (&n, &a) in schema_names.iter().zip(&schema_alias) {
             if a == NO_ALIAS {
                 continue;
             }
-            let k = name_ids.binary_search(&n).map_err(|_| "schema name missing")?;
+            let k = name_ids
+                .binary_search(&n)
+                .map_err(|_| "schema name missing")?;
             let alias = str_of(a);
             if !aliases[k].contains(&alias) {
                 aliases[k].push(alias);
@@ -350,11 +358,15 @@ impl Corpus {
     /// 笔记下标。字段值随后用 [`Corpus::attach`] 补上。
     pub fn push_note(&mut self, type_name: u32, schema: u32, tags: &[u32]) -> Result<u32, String> {
         let n_str = (self.str_off.len() - 1) as u32;
-        if schema as usize + 1 >= self.schema_off.len() || type_name >= n_str || tags.iter().any(|&t| t >= n_str) {
+        if schema as usize + 1 >= self.schema_off.len()
+            || type_name >= n_str
+            || tags.iter().any(|&t| t >= n_str)
+        {
             return Err("bad note".into());
         }
         let note = u32::try_from(self.note_type.len()).map_err(|_| "too many notes")?;
-        let range = self.schema_off[schema as usize] as usize..self.schema_off[schema as usize + 1] as usize;
+        let range = self.schema_off[schema as usize] as usize
+            ..self.schema_off[schema as usize + 1] as usize;
         for k in range {
             self.field_name.push(self.schema_names[k]);
             self.field_alias.push(self.schema_alias[k]);
@@ -365,10 +377,12 @@ impl Corpus {
             });
             self.stripped.push(OnceCell::new());
         }
-        self.note_field_off.push(u32::try_from(self.field_name.len()).map_err(|_| "too many fields")?);
+        self.note_field_off
+            .push(u32::try_from(self.field_name.len()).map_err(|_| "too many fields")?);
         self.note_type.push(type_name);
         self.tag.extend_from_slice(tags);
-        self.note_tag_off.push(u32::try_from(self.tag.len()).map_err(|_| "too many tags")?);
+        self.note_tag_off
+            .push(u32::try_from(self.tag.len()).map_err(|_| "too many tags")?);
         self.note_dead.push(false);
         self.joined.push(OnceCell::new());
         self.tags_joined.push(OnceCell::new());
@@ -657,7 +671,9 @@ impl Corpus {
             return Err(SearchError::internal("field values not uploaded"));
         }
         self.prestrip(&compiled);
-        let all: Vec<u32> = (0..self.card_count() as u32).filter(|&i| !self.card_dead[i as usize]).collect();
+        let all: Vec<u32> = (0..self.card_count() as u32)
+            .filter(|&i| !self.card_dead[i as usize])
+            .collect();
         let hits = self.eval(&compiled, all)?;
         out.fill(0);
         for &i in &hits {
@@ -769,8 +785,9 @@ impl Corpus {
             Compiled::FieldRegex { name, value } => {
                 let mut names = StrMemo::new(name);
                 self.by_note(cand, |n| {
-                    self.fields(n)
-                        .any(|f| self.field_name_matches(&mut names, f) && value.is_match(self.value(f)))
+                    self.fields(n).any(|f| {
+                        self.field_name_matches(&mut names, f) && value.is_match(self.value(f))
+                    })
                 })
             }
             Compiled::Deck(None) => cand,
@@ -849,6 +866,14 @@ impl Corpus {
                     .filter(|&i| ids.contains(&col[i as usize]))
                     .collect()
             }
+            Compiled::HasMedia(audio) => self.by_note(cand, |n| {
+                let text = self.joined(n);
+                if *audio {
+                    text.contains("[sound:")
+                } else {
+                    has_img_tag(text)
+                }
+            }),
         })
     }
 
@@ -866,11 +891,17 @@ impl Corpus {
 
 fn collect_columns(node: &Compiled, mask: &mut (u32, u32)) {
     match node {
-        Compiled::And(c) | Compiled::Or(c) => c.iter().for_each(|child| collect_columns(child, mask)),
+        Compiled::And(c) | Compiled::Or(c) => {
+            c.iter().for_each(|child| collect_columns(child, mask))
+        }
         Compiled::Not(c) => collect_columns(c, mask),
         Compiled::State(_) => mask.0 |= 1 << IntColumn::State as u32,
-        Compiled::IntEq(col, _) | Compiled::IntProp(col, ..) | Compiled::IdIn(col, _) => mask.0 |= 1 << *col as u32,
-        Compiled::WithinDays(col, _) => mask.0 |= (1 << *col as u32) | (1 << IntColumn::Today as u32),
+        Compiled::IntEq(col, _) | Compiled::IntProp(col, ..) | Compiled::IdIn(col, _) => {
+            mask.0 |= 1 << *col as u32
+        }
+        Compiled::WithinDays(col, _) => {
+            mask.0 |= (1 << *col as u32) | (1 << IntColumn::Today as u32)
+        }
         Compiled::FloatProp(col, ..) => mask.1 |= 1 << *col as u32,
         _ => {}
     }
@@ -888,7 +919,7 @@ fn collect_needs<'c>(node: &'c Compiled, names: &mut Vec<&'c Regex>) -> bool {
             all
         }
         Compiled::Not(c) => collect_needs(c, names),
-        Compiled::Text(_) | Compiled::Regex(_) => true,
+        Compiled::Text(_) | Compiled::Regex(_) | Compiled::HasMedia(_) => true,
         Compiled::Field { name, .. } | Compiled::FieldRegex { name, .. } => {
             names.push(name);
             false
@@ -900,7 +931,9 @@ fn collect_needs<'c>(node: &'c Compiled, names: &mut Vec<&'c Regex>) -> bool {
 /// `字段名:值`（比较去 HTML 后的值）的字段名正则。
 fn collect_stripped_names<'c>(node: &'c Compiled, names: &mut Vec<&'c Regex>) {
     match node {
-        Compiled::And(c) | Compiled::Or(c) => c.iter().for_each(|child| collect_stripped_names(child, names)),
+        Compiled::And(c) | Compiled::Or(c) => c
+            .iter()
+            .for_each(|child| collect_stripped_names(child, names)),
         Compiled::Not(c) => collect_stripped_names(c, names),
         Compiled::Field { name, .. } => names.push(name),
         _ => {}
@@ -1002,6 +1035,24 @@ pub enum Node {
     Cid {
         v: Vec<i64>,
     },
+    /// `rated:N[:E]`：要复习记录，只在浏览会话里求值（store/browse.rs 先换成 `cid`）。
+    Rated {
+        d: i64,
+        #[serde(default)]
+        e: Option<i64>,
+    },
+    /// `is:emptyfield`：同上（浏览会话换成 `nid`）。
+    Emptyfield,
+    /// `is:dupe`：同上。
+    Dupe,
+    /// `src:…`：同上。
+    Src {
+        v: String,
+    },
+    /// `has:audio` / `has:image`：任一字段原文含 `[sound:` / `<img`。
+    Has {
+        v: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1060,8 +1111,14 @@ enum Compiled {
     Not(Box<Compiled>),
     Text(Regex),
     Regex(Regex),
-    Field { name: Regex, value: Regex },
-    FieldRegex { name: Regex, value: Regex },
+    Field {
+        name: Regex,
+        value: Regex,
+    },
+    FieldRegex {
+        name: Regex,
+        value: Regex,
+    },
     Deck(Option<Regex>),
     NoteType(Regex),
     TagNone,
@@ -1073,6 +1130,8 @@ enum Compiled {
     IntProp(IntColumn, Cmp, i64),
     FloatProp(FloatColumn, Cmp, f64),
     IdIn(IntColumn, HashSet<i64>),
+    /// true = `[sound:`，false = `<img`。
+    HasMedia(bool),
 }
 
 fn glob_re(source: &str) -> Result<Regex, SearchError> {
@@ -1183,11 +1242,22 @@ fn compile(node: &Node) -> Result<Compiled, SearchError> {
                 }
                 (None, "s") => Compiled::FloatProp(FloatColumn::Stability, cmp, *v),
                 (None, "d") => Compiled::FloatProp(FloatColumn::Difficulty, cmp, *v),
+                (None, "r") => Compiled::FloatProp(FloatColumn::Retrievability, cmp, *v),
                 _ => return Err(SearchError::internal(format!("bad prop {p}"))),
             }
         }
         Node::Nid { v } => Compiled::IdIn(IntColumn::NoteId, v.iter().copied().collect()),
         Node::Cid { v } => Compiled::IdIn(IntColumn::CardId, v.iter().copied().collect()),
+        Node::Has { v } => Compiled::HasMedia(match v.as_str() {
+            "audio" => true,
+            "image" => false,
+            _ => return Err(SearchError::internal(format!("bad has:{v}"))),
+        }),
+        Node::Rated { .. } | Node::Emptyfield | Node::Dupe | Node::Src { .. } => {
+            return Err(SearchError::internal(
+                "rated: / is:emptyfield / is:dupe / src: need the browse session",
+            ));
+        }
     })
 }
 
@@ -1311,6 +1381,19 @@ fn match_ci(html: &str, at: usize, pat: &str) -> Option<usize> {
     Some(at + end)
 }
 
+/// 有没有 `<img` 标签（不区分大小写；`img` 后面是空白、`>` 或 `/`）。
+pub(crate) fn has_img_tag(html: &str) -> bool {
+    let mut from = 0;
+    while let Some(e) = find_ci(html, from, "img") {
+        match html[e..].chars().next() {
+            Some(c) if c.is_whitespace() || c == '>' || c == '/' => return true,
+            None => return false,
+            _ => from = e,
+        }
+    }
+    false
+}
+
 /// `html[from..]` 里第一个 `<` + 不区分大小写的 `pat` 的终点。
 fn find_ci(html: &str, from: usize, pat: &str) -> Option<usize> {
     let bytes = html.as_bytes();
@@ -1381,9 +1464,11 @@ pub(crate) fn is_dart_trim_space(c: char) -> bool {
 pub fn dupe_norm(field: &str) -> String {
     // 样式去重规范形（style_dedup.rs，与字段寄存器同一份）：引用行在之后的去 HTML 里整个被删掉，
     // 这里只放一个最短的占位标签（不算 SHA-1）。
-    strip_html(&crate::style_dedup::dedup_styles_with(field, &|_| "<link>".to_owned()))
-        .trim_matches(is_dart_trim_space)
-        .to_owned()
+    strip_html(&crate::style_dedup::dedup_styles_with(field, &|_| {
+        "<link>".to_owned()
+    }))
+    .trim_matches(is_dart_trim_space)
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -1398,10 +1483,16 @@ mod tests {
     /// `FFSRS_SEARCH_VECTORS_FROM` 跑本测试，会先把它压成 fixture。
     #[test]
     fn kernel_vectors_from_the_dart_search_tests() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/search_kernel_vectors.json.zst");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/search_kernel_vectors.json.zst"
+        );
         if let Ok(src) = std::env::var("FFSRS_SEARCH_VECTORS_FROM") {
             let raw = std::fs::read(src).unwrap();
-            let frame = ruzstd::encoding::compress_to_vec(raw.as_slice(), ruzstd::encoding::CompressionLevel::Fastest);
+            let frame = ruzstd::encoding::compress_to_vec(
+                raw.as_slice(),
+                ruzstd::encoding::CompressionLevel::Fastest,
+            );
             std::fs::write(path, frame).unwrap();
         }
         let frame = std::fs::read(path).unwrap();
@@ -1409,21 +1500,42 @@ mod tests {
         let mut raw = Vec::new();
         std::io::Read::read_to_end(&mut decoder, &mut raw).unwrap();
         let sessions: Vec<serde_json::Value> = serde_json::from_slice(&raw).unwrap();
-        let u32s = |v: &serde_json::Value| -> Vec<u32> { v.as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect() };
+        let u32s = |v: &serde_json::Value| -> Vec<u32> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_u64().unwrap() as u32)
+                .collect()
+        };
         let (mut matches, mut errors) = (0usize, 0usize);
         for (k, s) in sessions.iter().enumerate() {
-            let mut c = Corpus::new(s["text"].as_str().unwrap().as_bytes(), &u32s(&s["layout"])).unwrap();
+            let mut c =
+                Corpus::new(s["text"].as_str().unwrap().as_bytes(), &u32s(&s["layout"])).unwrap();
             for st in s["steps"].as_array().unwrap() {
                 match st["op"].as_str().unwrap() {
                     "attach" => {
-                        let _ = c.attach(st["text"].as_str().unwrap().to_owned(), &u32s(&st["fields"]), &u32s(&st["spans"]));
+                        let _ = c.attach(
+                            st["text"].as_str().unwrap().to_owned(),
+                            &u32s(&st["fields"]),
+                            &u32s(&st["spans"]),
+                        );
                     }
                     "ints" => {
-                        let data: Vec<i64> = st["data"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+                        let data: Vec<i64> = st["data"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|x| x.as_i64().unwrap())
+                            .collect();
                         let _ = c.set_ints(st["col"].as_u64().unwrap() as usize, &data);
                     }
                     "floats" => {
-                        let data: Vec<f64> = st["data"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap_or(f64::NAN)).collect();
+                        let data: Vec<f64> = st["data"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|x| x.as_f64().unwrap_or(f64::NAN))
+                            .collect();
                         let _ = c.set_floats(st["col"].as_u64().unwrap() as usize, &data);
                     }
                     "match" => {
@@ -1431,7 +1543,9 @@ mod tests {
                         let mut out = vec![0u8; c.card_count()];
                         let got = c.search(q, &mut out);
                         if let Some(kind) = st.get("err").and_then(|e| e.as_str()) {
-                            let e = got.err().unwrap_or_else(|| panic!("session {k}: expected {kind} error for {q}"));
+                            let e = got.err().unwrap_or_else(|| {
+                                panic!("session {k}: expected {kind} error for {q}")
+                            });
                             assert_eq!(e.kind, kind, "session {k}: {q}");
                             errors += 1;
                         } else {
@@ -1457,13 +1571,22 @@ mod tests {
         // search_engine_differences_test 的「Rust regex 不支持的 → 语法错误」与 anki_search_test 的不合法 `re:`
         // 在这里直接测编译。
         assert_eq!(errors, 0);
-        for v in ["a(?=b)", "a(?!b)", "(?<=a)b", r"(a)\1", r"(?<n>a)\k<n>", "[^]", "(abc"] {
+        for v in [
+            "a(?=b)",
+            "a(?!b)",
+            "(?<=a)b",
+            r"(a)\1",
+            r"(?<n>a)\k<n>",
+            "[^]",
+            "(abc",
+        ] {
             let q = serde_json::json!({"t": "re", "v": v, "at": format!("re:{v}")}).to_string();
-            let e = Corpus::columns_used(&q).err().unwrap_or_else(|| panic!("{v} must not compile"));
+            let e = Corpus::columns_used(&q)
+                .err()
+                .unwrap_or_else(|| panic!("{v} must not compile"));
             assert_eq!(e.kind, "syntax", "{v}");
         }
     }
-
 
     /// 测试语料：每条笔记一个字段排布；[joined_layout] 为 true 时按 Dart 补传全部字段的形状上传
     /// （同一笔记的字段紧挨着、隔 0x1f），否则每个字段值单独一块（走拼接缓存）。
@@ -1477,8 +1600,15 @@ mod tests {
             strs.push(s.to_owned());
             (strs.len() - 1) as u32
         };
-        let (mut nt, mut ns, mut so, mut sn, mut sa, mut nto, mut tags) =
-            (vec![], vec![], vec![0u32], vec![], vec![], vec![0u32], vec![]);
+        let (mut nt, mut ns, mut so, mut sn, mut sa, mut nto, mut tags) = (
+            vec![],
+            vec![],
+            vec![0u32],
+            vec![],
+            vec![],
+            vec![0u32],
+            vec![],
+        );
         for (k, (ty, fields, ts)) in notes.iter().enumerate() {
             nt.push(id(ty, &mut strs));
             // 测试里 `名字|别名` 表示带别名的字段。
@@ -1531,7 +1661,8 @@ mod tests {
                     spans.push(vals.len() as u32);
                     fids.push(f);
                 } else {
-                    c.set_values(&[f], v.as_bytes(), &[0, v.len() as u32]).unwrap();
+                    c.set_values(&[f], v.as_bytes(), &[0, v.len() as u32])
+                        .unwrap();
                 }
                 f += 1;
             }
@@ -1567,23 +1698,47 @@ mod tests {
         for joined_layout in [false, true] {
             let c = corpus_with(
                 &[
-                    ("Fushi Card", &[("Term|Expression", "<b>食べる</b>"), ("Media|Picture", "x")], &[]),
+                    (
+                        "Fushi Card",
+                        &[("Term|Expression", "<b>食べる</b>"), ("Media|Picture", "x")],
+                        &[],
+                    ),
                     ("Lapis", &[("Expression", "食べる"), ("Picture", "")], &[]),
                     ("Mine", &[("Term", "食べる")], &[]),
                 ],
                 &[(0, "D", "C"), (1, "D", "C"), (2, "D", "C")],
                 joined_layout,
             );
-            assert_eq!(hits(&c, json!({"t":"field","f":"Expression","v":"食べる"})), [1, 1, 0]);
-            assert_eq!(hits(&c, json!({"t":"field","f":"expr*","v":"食べる"})), [1, 1, 0]);
-            assert_eq!(hits(&c, json!({"t":"field","f":"Term","v":"食べる"})), [1, 0, 1]);
-            assert_eq!(hits(&c, json!({"t":"fre","f":"expression","v":"べ","at":"x"})), [1, 1, 0]);
-            assert_eq!(hits(&c, json!({"t":"field","f":"Picture","v":"x"})), [1, 0, 0]);
+            assert_eq!(
+                hits(&c, json!({"t":"field","f":"Expression","v":"食べる"})),
+                [1, 1, 0]
+            );
+            assert_eq!(
+                hits(&c, json!({"t":"field","f":"expr*","v":"食べる"})),
+                [1, 1, 0]
+            );
+            assert_eq!(
+                hits(&c, json!({"t":"field","f":"Term","v":"食べる"})),
+                [1, 0, 1]
+            );
+            assert_eq!(
+                hits(&c, json!({"t":"fre","f":"expression","v":"べ","at":"x"})),
+                [1, 1, 0]
+            );
+            assert_eq!(
+                hits(&c, json!({"t":"field","f":"Picture","v":"x"})),
+                [1, 0, 0]
+            );
             // 需求：`Expression:` 要 Expression 列和带别名的 Term 列的值。
             let q = json!({"t":"field","f":"Expression","v":"食べる"}).to_string();
-            let Needs::Names(ids) = c.needs(&q).unwrap() else { panic!("expected names") };
+            let Needs::Names(ids) = c.needs(&q).unwrap() else {
+                panic!("expected names")
+            };
             let names: Vec<&str> = ids.iter().map(|&i| c.s(i)).collect();
-            assert!(names.contains(&"Expression") && names.contains(&"Term"), "{names:?}");
+            assert!(
+                names.contains(&"Expression") && names.contains(&"Term"),
+                "{names:?}"
+            );
         }
     }
 
@@ -1607,7 +1762,10 @@ mod tests {
         use serde_json::json;
         // 未限定字段的文本按 0x1f 连接：不跨字段拼出 "るto"。
         assert_eq!(hits(&c, json!({"t":"text","v":"るto"})), [0, 0, 0]);
-        assert_eq!(hits(&c, json!({"t":"re","v":"る</b>\x1fto","at":"re:x"})), [1, 1, 0]);
+        assert_eq!(
+            hits(&c, json!({"t":"re","v":"る</b>\x1fto","at":"re:x"})),
+            [1, 1, 0]
+        );
         assert_eq!(hits(&c, json!({"t":"text","v":"食べ"})), [1, 1, 0]);
         assert_eq!(hits(&c, json!({"t":"text","v":"STRASSE"})), [0, 0, 0]);
         assert_eq!(hits(&c, json!({"t":"text","v":"STRAẞE"})), [0, 0, 1]);
@@ -1669,11 +1827,65 @@ mod tests {
         assert!(c.set_ints(0, &[1]).is_err());
     }
 
+    /// `prop:r`（可提取度列，没有 = NaN 不命中）、`has:audio` / `has:image`（要全部字段原文）；只有浏览会话求得了
+    /// 的叶子在语料里明确报错。
+    #[test]
+    fn retrievability_and_media_terms() {
+        use serde_json::json;
+        let mut c = corpus(
+            &[
+                ("B", &[("F", "x [sound:a.mp3]")], &[]),
+                ("B", &[("F", "<IMG src=p.png>")], &[]),
+                ("B", &[("F", "<imgx> [sound:")], &[]),
+            ],
+            &[(0, "D", "T"), (1, "D", "T"), (2, "D", "T")],
+        );
+        c.set_floats(FloatColumn::Retrievability as usize, &[0.5, f64::NAN, 0.95])
+            .unwrap();
+        assert_eq!(
+            hits(&c, json!({"t":"prop","p":"r","op":"lt","v":0.9})),
+            [1, 0, 0]
+        );
+        assert_eq!(
+            hits(&c, json!({"t":"prop","p":"r","op":"ge","v":0.5})),
+            [1, 0, 1]
+        );
+        assert_eq!(hits(&c, json!({"t":"has","v":"audio"})), [1, 0, 1]);
+        assert_eq!(hits(&c, json!({"t":"has","v":"image"})), [0, 1, 0]);
+        assert_eq!(
+            Corpus::columns_used(&json!({"t":"prop","p":"r","op":"lt","v":0.9}).to_string())
+                .unwrap(),
+            (0, 4)
+        );
+        assert_eq!(
+            c.needs(&json!({"t":"has","v":"audio"}).to_string())
+                .unwrap(),
+            Needs::All
+        );
+        for q in [
+            json!({"t":"rated","d":1}),
+            json!({"t":"emptyfield"}),
+            json!({"t":"dupe"}),
+            json!({"t":"src","v":"none"}),
+        ] {
+            let mut out = vec![0u8; 3];
+            assert_eq!(
+                c.search(&q.to_string(), &mut out).unwrap_err().kind,
+                "internal",
+                "{q}"
+            );
+        }
+    }
+
     #[test]
     fn values_on_demand() {
         use serde_json::json;
         let notes: &[(&str, &[(&str, &str)], &[&str])] = &[
-            ("Lapis", &[("Expression", "食べる"), ("Glossary", "<i>to eat</i>")], &["n5"]),
+            (
+                "Lapis",
+                &[("Expression", "食べる"), ("Glossary", "<i>to eat</i>")],
+                &["n5"],
+            ),
             ("Basic", &[("Front", "x"), ("Back", "y")], &[]),
         ];
         let cards = &[(0, "D", "T"), (1, "D", "T")];
@@ -1682,11 +1894,25 @@ mod tests {
         let mut layout_only = full_layout_only(notes, cards);
         let mut out = vec![0u8; 2];
         let q = |v: serde_json::Value| v.to_string();
-        assert_eq!(layout_only.needs(&q(json!({"t":"deck","v":"d"}))).unwrap(), Needs::Names(vec![]));
-        assert_eq!(layout_only.search(&q(json!({"t":"tag","v":"n5"})), &mut out).unwrap(), 1);
-        assert_eq!(layout_only.needs(&q(json!({"t":"text","v":"x"}))).unwrap(), Needs::All);
         assert_eq!(
-            layout_only.needs(&q(json!({"t":"re","v":"(","at":"re:("}))).unwrap_err().kind,
+            layout_only.needs(&q(json!({"t":"deck","v":"d"}))).unwrap(),
+            Needs::Names(vec![])
+        );
+        assert_eq!(
+            layout_only
+                .search(&q(json!({"t":"tag","v":"n5"})), &mut out)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            layout_only.needs(&q(json!({"t":"text","v":"x"}))).unwrap(),
+            Needs::All
+        );
+        assert_eq!(
+            layout_only
+                .needs(&q(json!({"t":"re","v":"(","at":"re:("})))
+                .unwrap_err()
+                .kind,
             "syntax"
         );
         let Needs::Names(names) = layout_only
@@ -1699,16 +1925,34 @@ mod tests {
         assert_eq!(named.len(), 2);
         assert!(named.contains(&"Glossary") && named.contains(&"Front"));
         let gq = q(json!({"t":"field","f":"glossary","v":"to eat"}));
-        assert_eq!(layout_only.search(&gq, &mut out).unwrap_err().kind, "internal");
+        assert_eq!(
+            layout_only.search(&gq, &mut out).unwrap_err().kind,
+            "internal"
+        );
         // 只传 Glossary 一列（字段 1）就能求值，结果与全量语料一致。
-        layout_only.set_values(&[1], b"<i>to eat</i>", &[0, 13]).unwrap();
+        layout_only
+            .set_values(&[1], b"<i>to eat</i>", &[0, 13])
+            .unwrap();
         assert_eq!(layout_only.search(&gq, &mut out).unwrap(), 1);
-        assert_eq!(hits(&layout_only, json!({"t":"field","f":"glossary","v":"to eat"})), hits(&full, json!({"t":"field","f":"glossary","v":"to eat"})));
+        assert_eq!(
+            hits(
+                &layout_only,
+                json!({"t":"field","f":"glossary","v":"to eat"})
+            ),
+            hits(&full, json!({"t":"field","f":"glossary","v":"to eat"}))
+        );
         assert!(layout_only.set_values(&[9], b"x", &[0, 1]).is_err());
-        assert!(layout_only.set_values(&[0], "語".as_bytes(), &[0, 1]).is_err());
+        assert!(
+            layout_only
+                .set_values(&[0], "語".as_bytes(), &[0, 1])
+                .is_err()
+        );
     }
 
-    fn full_layout_only(notes: &[(&str, &[(&str, &str)], &[&str])], cards: &[(usize, &str, &str)]) -> Corpus {
+    fn full_layout_only(
+        notes: &[(&str, &[(&str, &str)], &[&str])],
+        cards: &[(usize, &str, &str)],
+    ) -> Corpus {
         let full = corpus(notes, cards);
         Corpus {
             chunks: Vec::new(),
@@ -1729,11 +1973,19 @@ mod tests {
     fn parallel_prestrip_matches_lazy() {
         use serde_json::json;
         let values: Vec<String> = (0..3000)
-            .map(|i| format!("<style>.x{{}}</style><b>w{i}</b> &amp; {}", if i % 7 == 0 { "eat" } else { "run" }))
+            .map(|i| {
+                format!(
+                    "<style>.x{{}}</style><b>w{i}</b> &amp; {}",
+                    if i % 7 == 0 { "eat" } else { "run" }
+                )
+            })
             .collect();
-        let fields: Vec<Vec<(&str, &str)>> = values.iter().map(|v| vec![("G", v.as_str())]).collect();
-        let notes: Vec<(&str, &[(&str, &str)], &[&str])> =
-            fields.iter().map(|f| ("T", f.as_slice(), &[][..])).collect();
+        let fields: Vec<Vec<(&str, &str)>> =
+            values.iter().map(|v| vec![("G", v.as_str())]).collect();
+        let notes: Vec<(&str, &[(&str, &str)], &[&str])> = fields
+            .iter()
+            .map(|f| ("T", f.as_slice(), &[][..]))
+            .collect();
         let cards: Vec<(usize, &str, &str)> = (0..notes.len()).map(|i| (i, "D", "C")).collect();
         let c = corpus(&notes, &cards);
         let got = hits(&c, json!({"t":"field","f":"g","v":"w* & eat"}));
@@ -1756,10 +2008,41 @@ mod tests {
     #[test]
     fn strip_scanner_matches_regex() {
         let atoms = [
-            "<", ">", "!", "-", "--", "<!--", "-->", "style", "STYLE", "\u{17F}tyle", "Style", "script",
-            "SCR\u{130}PT", "scr\u{131}pt", "</style>", "</STYLE>", "</\u{17F}tyle>", "</script>",
-            "</script >", "<style>", "<script>", "<style", "<script", "</", "a", " ", "\n", "語",
-            "\u{212A}", "&amp;", "<b>", "</b>", "x>", "<<", ">>",
+            "<",
+            ">",
+            "!",
+            "-",
+            "--",
+            "<!--",
+            "-->",
+            "style",
+            "STYLE",
+            "\u{17F}tyle",
+            "Style",
+            "script",
+            "SCR\u{130}PT",
+            "scr\u{131}pt",
+            "</style>",
+            "</STYLE>",
+            "</\u{17F}tyle>",
+            "</script>",
+            "</script >",
+            "<style>",
+            "<script>",
+            "<style",
+            "<script",
+            "</",
+            "a",
+            " ",
+            "\n",
+            "語",
+            "\u{212A}",
+            "&amp;",
+            "<b>",
+            "</b>",
+            "x>",
+            "<<",
+            ">>",
         ];
         let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
         let mut next = || {
@@ -1776,7 +2059,9 @@ mod tests {
         .unwrap();
         for _ in 0..300_000 {
             let len = (next() % 24) as usize;
-            let s: String = (0..len).map(|_| atoms[(next() % atoms.len() as u64) as usize]).collect();
+            let s: String = (0..len)
+                .map(|_| atoms[(next() % atoms.len() as u64) as usize])
+                .collect();
             assert_eq!(strip_tags(&s), re.replace_all(&s, "").into_owned(), "{s:?}");
         }
         assert_eq!(strip_tags_regex("<b>x</b>"), "x");

@@ -88,7 +88,65 @@ void main() {
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');
-    expect((jsonDecode(json) as Map)['cacheRev'], 8);
+    expect(
+      (jsonDecode(json) as Map)['cacheRev'],
+      SrsDbStore.currentCacheRevision,
+    );
+  });
+
+  // 反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡（经 Anki 迁进来）没有出处记录，只有制卡标签，
+  // 统计页「制卡来源」以前全归「无出处」。
+  test('没有出处记录的制卡笔记按制卡标签认出处；修订号 8 的老库打开时补齐', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'd',
+      now: () => t,
+    );
+    final String deck = await s.ensureDeckPath('Deck');
+    Future<void> mined(String word, List<String> tags) => s.createNote(
+      noteTypeId: s.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): word,
+      },
+      deckId: deck,
+      tags: tags,
+    );
+    await mined('猫', <String>['fushi', 'video', 'video::ゆるキャン△']);
+    await mined('犬', <String>['hibiki', 'book']);
+    await mined('鳥', <String>['video', 'mine']);
+    List<String> shares(SrsStatsData d) =>
+        d
+            .sourceShares()
+            .map((SrsSourceShare x) => '${x.kind}/${x.title}')
+            .toList()
+          ..sort();
+    final List<String> expected = <String>[
+      '${SrsSourceKind.book}/',
+      '${SrsSourceKind.video}/ゆるキャン△',
+      '/', // 没有制卡标记：不认，仍是「无出处」。
+    ]..sort();
+    expect(shares((await loadSrsStats(s)).data), expected);
+
+    await s.db.customStatement(
+      "UPDATE srs_notes_cache SET source_kind = '', source_title = ''",
+    );
+    await s.db.customStatement(
+      "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 8)",
+    );
+    final SrsDbStore reopened = await SrsDbStore.open(
+      db: s.db,
+      core: s.core,
+      profileUid: kProfile,
+      deviceId: 'd',
+      engine: const FakeFsrsEngine(),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        bootClockMs: () => t,
+        bootId: 'boot-d',
+      ),
+      fallbackRolloverHour: () => 4,
+    );
+    expect(shares((await loadSrsStats(reopened)).data), expected);
   });
 
   test(

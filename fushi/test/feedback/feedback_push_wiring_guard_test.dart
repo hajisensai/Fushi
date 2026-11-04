@@ -80,10 +80,27 @@ void main() {
       );
       expect(probe, isNonNegative);
       expect(wire, greaterThan(probe));
+      // 描述文件没有的项先从 runner 上的副本删掉，再接入（主屏小组件的 App Group 同理）。
+      final String gate = wf.substring(probe, wire);
+      // 逐项对照的通用不变式见 test/build/ios_entitlements_profile_gating_guard_test.dart。
       expect(
-        wf.substring(probe, wire),
-        contains(r'if [ -n "$APS_ENV" ]; then'),
+        gate,
+        contains(
+          "/usr/libexec/PlistBuddy -c 'Delete :aps-environment' "
+          '"\$ENTITLEMENTS_FILE"',
+        ),
       );
+      expect(
+        gate,
+        contains(
+          'if [ "\$WIDGETS" = true ]; then\n'
+          '            WIRE_ENTITLEMENTS=1\n'
+          '          else\n'
+          "            /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' "
+          '"\$ENTITLEMENTS_FILE"',
+        ),
+      );
+      expect(gate, contains(r'if [ "$WIRE_ENTITLEMENTS" = 1 ]; then'));
     });
   });
 }
