@@ -37,9 +37,9 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4011](bugs/BUG-4011-macos-popup-header-button-clipped.md) | — | — | macOS 查词弹窗右上角调节按钮被右边缘裁掉一半 |
-| [BUG-4010](bugs/BUG-4010-dict-render-strange-symbols.md) | — | — | 词典释义里出现奇怪符号 |
-| [BUG-4009](bugs/BUG-4009-shinmeikai-headword-kanji-mark-render.md) | — | — | 新明解国語辞典词头表外字标注渲染异常 |
+| [BUG-4011](bugs/BUG-4011-macos-popup-header-button-clipped.md) | ✅ | ✅ | macOS 查词弹窗右上角调节按钮被右边缘裁掉一半 |
+| [BUG-4010](bugs/BUG-4010-dict-render-strange-symbols.md) | ✅ | ✅ | 词典释义里出现奇怪符号 |
+| [BUG-4009](bugs/BUG-4009-shinmeikai-headword-kanji-mark-render.md) | ✅ | ✅ | 新明解国語辞典词头表外字标注渲染异常 |
 | [BUG-4008](bugs/BUG-4008-linux-lookup-popup-content-invisible.md) | — | — | Linux 查词弹窗词典内容不显示但可点击、可制卡 |
 | [BUG-4007](bugs/BUG-4007-srs-lookup-expanded-bottom-clipped.md) | — | — | 复习卡查词弹窗展开后底部被截断且其他词典消失 |
 | [BUG-4006](bugs/BUG-4006-srs-lookup-popup-flash-below-then-above.md) | — | — | 复习卡查词弹窗先在下方出现再跳到上方 |
