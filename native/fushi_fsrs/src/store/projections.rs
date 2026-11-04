@@ -5,13 +5,14 @@
 //! 血统（自己 + 全部前身的卡 ID）与数字身份仍由 Dart 给出：血统要字段寄存器内核与修改记录预读，与缓存刷新的
 //! `history_states` 同一形态。
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use super::SrsCore;
-use crate::history::{parse_full, Parsed, NONE_I64};
-use crate::projection::{self, Alg, Day, EffLog, RwkvIds, RWKV_ROW};
+use super::{slim, SrsCore};
+use crate::history::{parse_stored, Kind, Log, LogCols, Origin, Outcome, RType, NONE_I64};
+use crate::projection::{self, Alg, Day, EffLog, MemAlg, RwkvIds, RWKV_ROW};
 
 /// [SrsCore::rwkv_replay] 取哪些行（见那里）。
 #[derive(Clone, Copy, Debug, Default)]
@@ -26,7 +27,6 @@ pub struct RwkvRange {
 fn rwkv_divergence(
     groups: &[Vec<String>],
     logs: &LogsByCard,
-    rowids: &HashMap<String, Vec<i64>>,
     touched: &HashSet<String>,
     since: i64,
     day: &Day,
@@ -37,16 +37,8 @@ fn rwkv_divergence(
         if !lineage.iter().any(|c| touched.contains(c)) {
             continue;
         }
-        let mut old: LogsByCard = HashMap::new();
-        for c in lineage {
-            if let (Some(rows), Some(ids)) = (logs.get(c), rowids.get(c)) {
-                let kept: Vec<(String, Option<i64>)> =
-                    rows.iter().zip(ids).filter(|(_, &id)| id <= since).map(|(r, _)| r.clone()).collect();
-                old.insert(c.clone(), kept);
-            }
-        }
-        let (new_rows, new_at, _) = projection::rwkv_card_rows(&effective_of(lineage, logs)?, &zero, day)?;
-        let (old_rows, old_at, _) = projection::rwkv_card_rows(&effective_of(lineage, &old)?, &zero, day)?;
+        let (new_rows, new_at, _) = projection::rwkv_card_rows(&logs.effective(lineage, None), &zero, day)?;
+        let (old_rows, old_at, _) = projection::rwkv_card_rows(&logs.effective(lineage, Some(since)), &zero, day)?;
         let n = new_at.len().max(old_at.len());
         for i in 0..n {
             let same = i < new_at.len()
@@ -68,26 +60,226 @@ fn rwkv_divergence(
     Ok(diverge)
 }
 
-/// 一组卡的全部日志：卡 ID → [(落库 JSON, 服务器时刻)]（同卡内按 rowid）。
-type LogsByCard = HashMap<String, Vec<(String, Option<i64>)>>;
+/// 一条日志在读出时就解析好、只留投影要的字段（选取 [crate::history::select] 的输入与 [EffLog] 的其余字段）。
+///
+/// 不留落库原文：整 profile 扫描（[SrsCore::rwkv_replay]、全部卡的优化器训练集）要把全部日志留到最后才算行，
+/// 35 万条日志时原文连同字符串开销就是两三百 MB，iPhone 同步收尾时与收段叠在一起 OOM（BUG-4004）。
+/// 字符串只留日志 ID 与撤销目标（规范 UUID 存 16 字节，[ScanId]）；写入者 ID 去重存在 [LogsByCard::writers]；
+/// 可空的整数用 [NONE_I64] 表示「没有」（与列模式 `projection::memory_input_columns` 同一约定）。
+struct ScanLog {
+    rowid: i64,
+    id: ScanId,
+    revokes: Option<ScanId>,
+    physical: i64,
+    counter: i64,
+    server_time: i64,
+    anki_id: i64,
+    at: i64,
+    rating: i64,
+    dur: i64,
+    utc_off: i64,
+    res: Option<ScanOutcome>,
+    writer: u32,
+    kind: Kind,
+    origin: Origin,
+    rtype: RType,
+    mem_alg: MemAlg,
+    rating_type: bool,
+    has_result: bool,
+    ts_wall: bool,
+    restore: bool,
+    alg_rwkv: bool,
+}
 
-pub(super) fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
-    let mut logs: LogsByCard = HashMap::with_capacity(cards.len());
+/// 日志 ID：规范小写带连字符的 UUID 存成 16 字节（还原成文本逐字节相同，`ids::pack` / `ids::unpack`），别的原样。
+enum ScanId {
+    Uuid([u8; 16]),
+    Text(Box<str>),
+}
+
+impl ScanId {
+    fn of(s: &str) -> Self {
+        match super::ids::pack(s) {
+            Some(b) => ScanId::Uuid(b),
+            None => ScanId::Text(s.into()),
+        }
+    }
+
+    fn text(&self) -> Cow<'_, str> {
+        match self {
+            ScanId::Uuid(b) => Cow::Owned(super::ids::unpack(b)),
+            ScanId::Text(t) => Cow::Borrowed(t),
+        }
+    }
+}
+
+/// [Outcome] 的紧凑形态（可空整数用 [NONE_I64]，队列一个字节）。
+struct ScanOutcome {
+    due_day: i64,
+    scheduled_days: i64,
+    reps: i64,
+    last_reviewed_at: i64,
+    ease: i64,
+    memory: Option<(f64, f64, f64)>,
+    queue: u8,
+}
+
+fn none_of(v: Option<i64>) -> i64 {
+    v.unwrap_or(NONE_I64)
+}
+
+fn opt_of(v: i64) -> Option<i64> {
+    (v != NONE_I64).then_some(v)
+}
+
+impl ScanOutcome {
+    fn of(o: Outcome) -> Self {
+        ScanOutcome {
+            due_day: none_of(o.due_day),
+            scheduled_days: o.scheduled_days,
+            reps: o.reps,
+            last_reviewed_at: none_of(o.last_reviewed_at),
+            ease: none_of(o.ease),
+            memory: o.memory,
+            // queue_code 只产出 0..=3。
+            queue: o.queue as u8,
+        }
+    }
+
+    fn outcome(&self) -> Outcome {
+        Outcome {
+            queue: self.queue as i64,
+            due_day: opt_of(self.due_day),
+            scheduled_days: self.scheduled_days,
+            reps: self.reps,
+            last_reviewed_at: opt_of(self.last_reviewed_at),
+            memory: self.memory,
+            ease: opt_of(self.ease),
+        }
+    }
+}
+
+impl ScanLog {
+    /// 选取规则看的那一份（写入者借自写入者表；UUID 形态的 ID 当场还原成文本）。
+    fn log<'a>(&'a self, writers: &'a [Box<str>]) -> Log<'a> {
+        Log {
+            id: self.id.text(),
+            writer: Cow::Borrowed(&writers[self.writer as usize]),
+            physical: self.physical,
+            counter: self.counter,
+            server_time: opt_of(self.server_time),
+            kind: self.kind,
+            origin: self.origin,
+            rating_type: self.rating_type,
+            rating: opt_of(self.rating),
+            anki_id: opt_of(self.anki_id),
+            occurred_at: self.at,
+            revokes: self.revokes.as_ref().map(ScanId::text),
+            has_result: self.has_result,
+        }
+    }
+
+    /// 与 [EffLog::of] 同一组字段；`id` 由调用方从 [ScanLog::log] 已还原的文本复制，不再还原第二次。
+    fn eff(&self, id: String, clamped: bool) -> EffLog {
+        EffLog {
+            id,
+            kind: self.kind,
+            rtype: self.rtype,
+            rating: opt_of(self.rating),
+            at: self.at,
+            dur: self.dur,
+            res: self.res.as_ref().map(ScanOutcome::outcome),
+            mem_alg: self.mem_alg,
+            restore: self.restore,
+            time_uncertain: self.ts_wall && clamped,
+            utc_off: self.utc_off,
+            alg_rwkv: self.alg_rwkv,
+        }
+    }
+}
+
+/// 一组卡的全部日志（同卡内按 rowid），读出时已解析成 [ScanLog]。
+#[derive(Default)]
+struct LogsByCard {
+    by_card: HashMap<String, Vec<ScanLog>>,
+    writers: Vec<Box<str>>,
+    writer_ix: HashMap<Box<str>, u32>,
+}
+
+impl LogsByCard {
+    /// 解析一条读出的日志（瘦存 + 列，或原文；与 [crate::history::parse_full] 同一套坏数据判据）并收下。
+    fn push(&mut self, card: String, rowid: i64, stored: &str, server_time: Option<i64>, cols: Option<&LogCols>) -> Result<(), String> {
+        let (log, res, extra) = parse_stored(stored, server_time, cols)?;
+        let writer = match self.writer_ix.get(&*log.writer) {
+            Some(&w) => w,
+            None => {
+                let w = self.writers.len() as u32;
+                let name: Box<str> = log.writer.as_ref().into();
+                self.writers.push(name.clone());
+                self.writer_ix.insert(name, w);
+                w
+            }
+        };
+        let scan = ScanLog {
+            rowid,
+            id: ScanId::of(&log.id),
+            revokes: log.revokes.as_deref().map(ScanId::of),
+            writer,
+            physical: log.physical,
+            counter: log.counter,
+            server_time: none_of(log.server_time),
+            anki_id: none_of(log.anki_id),
+            at: log.occurred_at,
+            rating: none_of(log.rating),
+            dur: extra.dur,
+            utc_off: extra.utc_off,
+            res: res.map(ScanOutcome::of),
+            kind: log.kind,
+            origin: log.origin,
+            rtype: extra.rtype,
+            mem_alg: MemAlg::of(extra.mem_alg),
+            rating_type: log.rating_type,
+            has_result: log.has_result,
+            ts_wall: extra.ts_wall,
+            restore: extra.restore,
+            alg_rwkv: extra.alg_rwkv,
+        };
+        self.by_card.entry(card).or_default().push(scan);
+        Ok(())
+    }
+
+    /// 一份历史（血统里各卡日志之和）的有效日志；[upto] 给了就只看 rowid 不超过它的日志。
+    fn effective(&self, lineage: &[String], upto: Option<i64>) -> Vec<EffLog> {
+        let scans: Vec<&ScanLog> = lineage
+            .iter()
+            .filter_map(|c| self.by_card.get(c))
+            .flatten()
+            .filter(|l| upto.is_none_or(|u| l.rowid <= u))
+            .collect();
+        let logs: Vec<Log<'_>> = scans.iter().map(|l| l.log(&self.writers)).collect();
+        projection::effective_by(&logs, |i, clamped| scans[i].eff(logs[i].id.to_string(), clamped))
+    }
+}
+
+fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
+    let mut logs = LogsByCard::default();
     for chunk in cards.chunks(500) {
         let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
-             LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks}) ORDER BY l.rowid"
+            "SELECT l.rowid, srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l \
+             LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks}) ORDER BY l.rowid",
+            slim::LOG_READ
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
         let mut q = stmt
             .query(rusqlite::params_from_iter(chunk.iter()))
             .map_err(|e| e.to_string())?;
         while let Some(row) = q.next().map_err(|e| e.to_string())? {
-            let card: String = row.get(0).map_err(|e| e.to_string())?;
-            let json: String = row.get(1).map_err(|e| e.to_string())?;
+            let rowid: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let card: String = row.get(1).map_err(|e| e.to_string())?;
             let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-            logs.entry(card).or_default().push((json, st));
+            let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
+            logs.push(card, rowid, &stored, st, cols.as_ref())?;
         }
     }
     Ok(logs)
@@ -125,19 +317,6 @@ pub(super) fn wanted_cards(groups: &[Vec<String>]) -> Vec<&str> {
         }
     }
     wanted
-}
-
-/// 一份历史（血统里各卡日志之和）的有效日志。
-fn effective_of(lineage: &[String], logs: &LogsByCard) -> Result<Vec<EffLog>, String> {
-    let mut parsed: Vec<Parsed<'_>> = Vec::new();
-    for c in lineage {
-        if let Some(rows) = logs.get(c) {
-            for (j, s) in rows {
-                parsed.push(parse_full(j, *s)?);
-            }
-        }
-    }
-    Ok(projection::effective_logs(&parsed))
 }
 
 fn push_i64(out: &mut Vec<u8>, v: i64) {
@@ -197,7 +376,7 @@ impl SrsCore {
         // (时刻, 序列, 前缀长度)；稳定排序保住输入顺序。
         let mut items: Vec<(i64, i64, i64)> = Vec::new();
         for (g, lineage) in groups.iter().enumerate() {
-            let eff = effective_of(lineage, &logs)?;
+            let eff = logs.effective(lineage, None);
             let Some((reviews, card_items)) = projection::optimizer_card(&eff, alg, day)? else {
                 continue;
             };
@@ -247,7 +426,7 @@ impl SrsCore {
         let mut kept_ids: Vec<String> = Vec::new();
         push_i64(&mut head, groups.len() as i64);
         for (g, lineage) in groups.iter().enumerate() {
-            let eff = effective_of(lineage, &logs)?;
+            let eff = logs.effective(lineage, None);
             let card: RwkvIds = [ids[4 * g], ids[4 * g + 1], ids[4 * g + 2], ids[4 * g + 3]];
             let (r, _, kept) = projection::rwkv_card_rows(&eff, &card, day)?;
             rows.extend_from_slice(&r);
@@ -304,7 +483,7 @@ impl SrsCore {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
         let rebase = range.rebase_since;
-        let (groups, count, max_rowid, logs, rowids, strays, tail_rows, touched) = self.read_snapshot(|r| {
+        let (groups, count, max_rowid, logs, strays, tail_rows, touched) = self.read_snapshot(|r| {
             let groups = expand_lineages(r, groups)?;
             let mut member: HashMap<String, Vec<usize>> = HashMap::new();
             for (g, lineage) in groups.iter().enumerate() {
@@ -312,17 +491,17 @@ impl SrsCore {
                     member.entry(c.clone()).or_default().push(g);
                 }
             }
-            let mut stmt = r
-                .prepare_cached(
-                    "SELECT l.rowid, srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
-                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
-                )
-                .map_err(|e| e.to_string())?;
+            // 读 `jslim` 与列（不经生成列 `json` 逐行拼回原文），每条当场解析成紧凑形态（[ScanLog]）。
+            let sql = format!(
+                "SELECT l.rowid, srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l \
+                 LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
+                slim::LOG_READ
+            );
+            let mut stmt = r.prepare_cached(&sql).map_err(|e| e.to_string())?;
             let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
             let mut count = 0i64;
             let mut max_rowid = 0i64;
-            let mut logs: LogsByCard = HashMap::new();
-            let mut rowids: HashMap<String, Vec<i64>> = HashMap::new();
+            let mut logs = LogsByCard::default();
             let mut strays: Vec<String> = Vec::new();
             let mut stray_seen: HashSet<String> = HashSet::new();
             let mut tail_rows = 0i64;
@@ -342,21 +521,18 @@ impl SrsCore {
                     }
                     continue;
                 }
-                let json: String = row.get(2).map_err(|e| e.to_string())?;
-                let st: Option<i64> = row.get(3).map_err(|e| e.to_string())?;
-                if rebase.is_some() {
-                    rowids.entry(card.clone()).or_default().push(rowid);
-                    if in_tail {
-                        touched.insert(card.clone());
-                    }
+                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+                let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
+                if in_tail {
+                    touched.insert(card.clone());
                 }
-                logs.entry(card).or_default().push((json, st));
+                logs.push(card, rowid, &stored, st, cols.as_ref())?;
             }
             drop(q);
-            Ok((groups, count, max_rowid, logs, rowids, strays, tail_rows, touched))
+            Ok((groups, count, max_rowid, logs, strays, tail_rows, touched))
         })?;
         let diverge = match rebase {
-            Some(s) => rwkv_divergence(&groups, &logs, &rowids, &touched, s, day)?,
+            Some(s) => rwkv_divergence(&groups, &logs, &touched, s, day)?,
             None => None,
         };
         // 取行的起点：全量 = 不设限；局部 = rows_from 或分歧时刻（没有分歧 = 一行不取）。
@@ -369,7 +545,7 @@ impl SrsCore {
         let mut entries: Vec<(i64, [u8; RWKV_ROW], i64)> = Vec::new();
         let mut last_at: Option<i64> = None;
         for (g, lineage) in groups.iter().enumerate() {
-            let eff = effective_of(lineage, &logs)?;
+            let eff = logs.effective(lineage, None);
             let card: RwkvIds = [ids[4 * g], ids[4 * g + 1], ids[4 * g + 2], ids[4 * g + 3]];
             let (rows, times, kept) = projection::rwkv_card_rows(&eff, &card, day)?;
             for (k, at) in times.into_iter().enumerate() {
@@ -382,6 +558,8 @@ impl SrsCore {
                 entries.push((at, row, crate::store::schema::anki_numeric_id(&eff[kept[k]].id)));
             }
         }
+        // 日志已算完行：先放掉（整 profile 的日志与输出缓冲不同时在内存里）。
+        drop(logs);
         entries.sort_by_key(|e| e.0);
         let mut out = Vec::with_capacity(56 + entries.len() * (RWKV_ROW + 16));
         push_i64(&mut out, count);

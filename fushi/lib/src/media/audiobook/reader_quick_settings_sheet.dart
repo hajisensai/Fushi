@@ -1347,13 +1347,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             _buildImagePauseSection(widget.controller!),
         ],
       ),
-      // 播放控件布局只作用于 MD3：Apple 设计系统的歌词页不读它，隐藏免得切了
-      // 没反应。
-      if (!isGlassDesign(context))
-        AdaptiveSettingsSection(
-          key: const ValueKey<String>('reader_panel_lyrics_controls'),
-          children: <Widget>[_lyricsControlsStyleRow()],
-        ),
+      // 播放控件布局（新版 / 经典）：MD3 与 Apple 两套设计系统都读它。
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('reader_panel_lyrics_controls'),
+        children: <Widget>[_lyricsControlsStyleRow()],
+      ),
       if (widget.onOpenLyricsControlLayout != null)
         AdaptiveSettingsSection(
           children: <Widget>[
@@ -2946,7 +2944,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// MD3 歌词模式播放控件布局：新版（默认）/ 经典（`lyrics_controls_style`）。
+  /// 歌词模式播放控件布局：新版（默认）/ 经典（`lyrics_controls_style`），MD3 与
+  /// Apple 两套设计系统都适用。
   /// 纯 Flutter 覆盖层布局，写偏好后 source 经 chrome 重建通道让覆盖层重排。
   Widget _lyricsControlsStyleRow() {
     return AdaptiveSettingsSegmentedRow<LyricsControlsStyle>(

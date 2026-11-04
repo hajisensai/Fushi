@@ -14,6 +14,7 @@ import 'package:integration_test/integration_test.dart';
 import 'helpers/library_fixture.dart'
     show openBookViaProductionPath, readyAppModel, seedReaderBook;
 import 'helpers/observe_capture.dart';
+import 'helpers/page_curl_probe.dart';
 import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
@@ -82,6 +83,21 @@ Future<Object?> _cdp(String method, Map<String, dynamic> params) async {
       ReaderFushiPage.debugCallDevToolsProtocol;
   if (call == null) throw StateError('no CDP hook');
   return call(method, params);
+}
+
+bool? _cdpOk;
+
+/// 这个平台的 WebView 能不能走 CDP（iOS / macOS 的 WKWebView 不能）。
+Future<bool> _cdpAvailable() async {
+  final bool? known = _cdpOk;
+  if (known != null) return known;
+  try {
+    await _cdp('Runtime.evaluate', <String, dynamic>{'expression': '1'});
+    _cdpOk = true;
+  } catch (_) {
+    _cdpOk = false;
+  }
+  return _cdpOk!;
 }
 
 const String _positionJs = r'''
@@ -347,12 +363,17 @@ Future<void> _keyChecks(WidgetTester tester, _Report r, String wm) async {
   );
   _stride = ((p1['pagePos'] as num? ?? 0) - (p0['pagePos'] as num? ?? 0))
       .toDouble();
-  final double vw = ((await _js(_configJs))['w'] as num?)?.toDouble() ?? 0;
+  final Map<String, dynamic> viewCfg = await _js(_configJs);
+  final double vw = (viewCfg['w'] as num?)?.toDouble() ?? 0;
+  final double vh = (viewCfg['h'] as num?)?.toDouble() ?? 0;
+  // 一页的步长沿分页轴：横向分栏≈视口宽；iOS WebKit 的竖排分页沿高度方向（≈视口高）。
+  bool onePage(double axis) =>
+      _stride.abs() > axis * 0.5 && _stride.abs() < axis * 1.1;
   r.check(
-    _stride.abs() > vw * 0.5 &&
-        _stride.abs() < vw * 1.1 &&
+    (onePage(vw) || onePage(vh)) &&
         _int(p1['firstChar']) > _int(p0['firstChar']),
-    '$wm: key forward = exactly one page (stride $_stride px, viewport $vw, '
+    '$wm: key forward = exactly one page (stride $_stride px, viewport '
+    '$vw×$vh, '
     '${p0['firstChar']} -> ${p1['firstChar']})',
   );
   r.check(_clean(p1), '$wm: no residue after forward ($p1)');
@@ -408,6 +429,50 @@ Future<void> _dragChecks(
   final double fwd = leftIsForward ? -1 : 1;
   final double fwdStart = leftIsForward ? w * 0.9 : w * 0.1;
   final double backStart = leftIsForward ? w * 0.1 : w * 0.9;
+
+  // 斜拖停在半途（用户视频里的卷法）：纸背不透出镜像正文；拖回起点松手回卷。
+  // 直接驱动卷页控制器（JS 手势转发进来的也是这几个调用），各平台都能跑。
+  final Map<String, dynamic> pd0 = await _settled(tester);
+  final PageCurlController? held = _curl();
+  Map<String, Object?> shading = <String, Object?>{'error': 'no controller'};
+  if (held != null) {
+    final Size view = Size(w, h);
+    final Offset start = Offset(fwdStart, h * 0.85);
+    final PageCurlDrag drag = held.dragStart(
+      position: start,
+      size: view,
+      forward: true,
+      mirror: mirror,
+    );
+    for (int i = 1; i <= 12; i++) {
+      drag.update(start + Offset(fwd * w * 0.45 * i / 12, -h * 0.3 * i / 12));
+      await _pumpFor(tester, const Duration(milliseconds: 32));
+    }
+    await _pumpFor(tester, const Duration(milliseconds: 300));
+    shading = held.visible
+        ? await probePageCurlShading(tester, held, 'curl-shading-$wm')
+        : <String, Object?>{'error': 'curl not visible'};
+    drag.update(start);
+    drag.end(start, 0);
+  }
+  final Map<String, dynamic> pd1 = await _settled(tester);
+  r.evidence['$wm/shading'] = shading;
+  r.check(
+    pageCurlBackShowsMirroredText(shading),
+    '$wm: page back shows the mirrored page text ($shading)',
+  );
+  r.check(
+    pd1['pagePos'] == pd0['pagePos'] && _clean(pd1),
+    '$wm: probe drag curled back ($pd0 -> $pd1)',
+  );
+
+  // 以下是真触摸序列（CDP Input.dispatchTouchEvent）。iOS WKWebView 没有 CDP：
+  // 那里只验上面的控制器驱动，触摸转发链路由 Windows / Android 覆盖。
+  if (!await _cdpAvailable()) {
+    r.evidence['$wm/drag'] = 'skipped: no CDP on this platform';
+    debugPrint('[page-curl] skip $wm: synthetic touch drags (no CDP)');
+    return;
+  }
 
   final Map<String, dynamic> p0 = await _settled(tester);
   final Map<String, dynamic> long = await _drag(
@@ -569,7 +634,8 @@ Future<void> _chapterChecks(
   final String startFile = file;
   int presses = 0;
   Map<String, dynamic> last = <String, dynamic>{};
-  while (presses < 40 && file == startFile) {
+  // 上限按最窄屏（iPhone 竖屏竖排一页约 200 字，这一章 40 多页）留够。
+  while (presses < 150 && file == startFile) {
     await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
     presses++;
     await _pumpFor(tester, const Duration(milliseconds: 200));
@@ -606,7 +672,18 @@ Future<void> _chapterChecks(
   );
   r.check(_clean(prevEnd), '$wm: no residue after chapter back ($prevEnd)');
 
-  // 再前进进下一章，然后在章首做反向拖动 → 回上一章。
+  // 再前进进下一章，然后在章首做反向拖动 → 回上一章（要 CDP 触摸）。
+  if (!await _cdpAvailable()) {
+    r.evidence['$wm/chapter'] = <String, Object?>{
+      'presses': presses,
+      'last': last,
+      'next0': next0,
+      'crossedShot': crossed.path,
+      'prevEnd': prevEnd,
+      'drag': 'skipped: no CDP on this platform',
+    };
+    return;
+  }
   await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
   await _waitFile(tester, file);
   final double w = (cfg['w'] as num).toDouble();

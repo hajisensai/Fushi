@@ -411,20 +411,15 @@ Future<NavPeekFeed> _loadGames({
 
 /// 复习速览的副行：「新卡 3 · 学习中 1 · 到期 20」，只列非零的计数；三个都为
 /// 零（今天已复习完）时为 null。口径与牌组列表 / 首页复习条同一份计数。
-/// 到期那一项与牌组行同一份格式（[SrsReviewCell]）：子树里有 RWKV 牌组时是「FSRS 到期 · RWKV 近 30 天日均」，
-/// 准备中再跟「(准备中)」。
+/// 到期那一项与牌组行同一份格式（[SrsReviewCell]），准备中再跟「(准备中)」。
 String? srsNavPeekCountsLabel({
   required int newCount,
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
-  int? fsrsDue,
-  int? rwkvDailyReviews,
 }) {
-  final String? review = SrsReviewCell.of(
-    reviewCount: reviewCount,
-    fsrsDue: fsrsDue,
-    rwkvDailyReviews: rwkvDailyReviews,
+  final String? review = SrsReviewCell(
+    due: reviewCount,
     pending: reviewPending,
   ).label(omitZero: true);
   final List<String> parts = <String>[
@@ -458,8 +453,6 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
             reviewPending: deck.rwkvPending,
-            fsrsDue: deck.fsrsDue,
-            rwkvDailyReviews: deck.rwkvDailyReviews,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完

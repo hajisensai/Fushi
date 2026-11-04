@@ -1,5 +1,5 @@
 /// RWKV 排程服务：维护「整个 collection 的复习历史回放进 RWKV」这份状态，排队时给候选复习卡打
-/// 此刻的回忆率（RWKV-Instant，[instantRetrievability]）。
+/// 给定时刻的回忆率（RWKV-Instant，[instantRetrievability]：排队给今天结束的时刻，统计给此刻）。
 ///
 /// - 状态由后台 isolate 里的原生 runtime 持有（[RwkvWorker]）；本类只发粗粒度命令。
 /// - **对齐日志，结果始终与全量回放逐位相同**（RWKV 的笔记 / 牌组 / 预设 / 全局状态是多张卡共用的，回放
@@ -39,6 +39,10 @@
 /// - **取数**：回放行（保留评分、card_type、间隔，规则同上游 kuma3，见 native/fushi_rwkv/README.md）、
 ///   日志指纹与尾巴都由 Rust 在 srs.db 上直读算出（native/fushi_fsrs/src/projection.rs、
 ///   src/store/projections.rs），日志不经 Dart；这里只编排。
+/// - **不与同步收段叠在一起**：收段会话（[SrsDbStore.sync2Ingesting]）期间要退回重放的对齐先不做、会话结束
+///   后做一次再报一次「就绪」（[_alignAfterIngest]）；整 profile 的回放（[SrsDbStore.rwkvReplay]）由 store
+///   排在会话之外，分数表的整表重查信号在会话结束时并成一次（[SrsDbStore.rwkvScoresKey]）。两者都随日志总量
+///   线性占内存，叠在一起时 35 万条日志的 iPhone 在收尾里 OOM。
 /// - 没准备好（权重没下载 / 正在恢复或重建 / 出错）时 [instantRetrievability] 返回 null，调用方这一次不出 RWKV
 ///   牌组的复习卡、等就绪（`SrsStudyState.rwkvPending`），不退回按 FSRS-7 存下的到期日排队。
 ///
@@ -903,6 +907,13 @@ class SrsRwkvService implements SrsRwkvScheduling {
       final bool? appended = await _appendNew(backend, done.maxRowId, now);
       if (appended == null) continue;
       if (!appended) {
+        // 正在收段：退回重放要把整个 profile 的日志扫一遍（[SrsDbStore.rwkvReplay]），与收段的投递 / 收尾叠在
+        // 一起会撑爆内存（35 万条日志的 iPhone 收尾 OOM）；收段每一片又都会让这里再来一次。这时先不对齐（RWKV
+        // 牌组的复习卡等着），会话结束后对齐一次（[_alignAfterIngest]）。
+        if (store.sync2Ingesting) {
+          _alignAfterIngest();
+          return false;
+        }
         final bool rebased;
         try {
           rebased = await _rebase(backend, done);
@@ -920,6 +931,31 @@ class SrsRwkvService implements SrsRwkvScheduling {
     }
     unawaited(_recover(null));
     return false;
+  }
+
+  /// 收段会话里推迟的对齐已排上（[_alignAfterIngest]）。
+  bool _alignAfterIngestPending = false;
+
+  /// 会话结束后对齐一次，对齐成了再报一次「就绪」：会话期间拿到「等 RWKV」的复习页 / 牌组列表按这个事件重新
+  /// 排队（它们只在就绪事件上重读）。会话一结束紧接着又开了一场时，[refresh] 会再排一次。
+  void _alignAfterIngest() {
+    if (_alignAfterIngestPending) return;
+    _alignAfterIngestPending = true;
+    unawaited(() async {
+      try {
+        await store.sync2IngestSettled();
+        _alignAfterIngestPending = false;
+        if (_closed) return;
+        if (await refresh() &&
+            !_closed &&
+            _current.phase == SrsRwkvPhase.ready) {
+          _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
+        }
+      } catch (error, stack) {
+        _alignAfterIngestPending = false;
+        _log('RWKV align after sync ingest failed: $error\n$stack');
+      }
+    }());
   }
 
   /// Rust 给出的日志尾巴 → [_NewLog]（kind 与撤销目标都由 `ffsrs_store_rwkv_log_tail` 直接给出）。
@@ -1054,7 +1090,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
   @override
   Future<List<double>?> instantRetrievability(
     List<SrsRwkvCandidate> cards, {
-    required int nowMs,
+    required int atMs,
   }) async {
     if (_current.phase != SrsRwkvPhase.ready) {
       unawaited(start());
@@ -1067,7 +1103,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
       if (cards.isEmpty) return const <double>[];
       final SrsDayContext day = await store.dayContext();
       final SrsDeckTree tree = await store.deckTree();
-      final int today = day.dayIndexOf(nowMs);
+      final int today = day.dayIndexOf(atMs);
       // 「每答几题刷新」：这次排队涉及的牌组里取最小（参数归属的 own 祖先的设置）。
       int refreshEvery = SrsRwkvQueueSettings.maxRefreshEvery;
       for (final String d in <String>{
@@ -1087,7 +1123,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         backend,
         day,
         today,
-        nowMs,
+        atMs,
         refreshEvery: refreshEvery,
       );
       // 卡的数字 id 与「版本」（最后一条有效日志 + 牌组 + 预设：换了任何一个，这张卡的查询行就变了）。
@@ -1120,13 +1156,13 @@ class SrsRwkvService implements SrsRwkvScheduling {
           Uint64List.fromList(<int>[for (final int i in missing) versions[i]]),
           tree,
           day,
-          nowMs,
+          atMs,
         );
         for (int k = 0; k < missing.length; k++) {
           scores[missing[k]] = fresh[k];
         }
       }
-      if (requeryAfterThis) _requeryInBackground(backend, today, nowMs);
+      if (requeryAfterThis) _requeryInBackground(backend, today, atMs);
       return <double>[for (final double v in scores) v];
     } catch (error, stack) {
       _log('RWKV instant retrievability failed: $error\n$stack');
@@ -1168,7 +1204,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     SrsRwkvBackend backend,
     SrsDayContext day,
     int today,
-    int nowMs, {
+    int atMs, {
     required int refreshEvery,
   }) async {
     final String clearKey =
@@ -1178,30 +1214,30 @@ class SrsRwkvService implements SrsRwkvScheduling {
       await _serial(backend.clearScores);
     } else if (requeryKey != _scoresRequeryKey ||
         today != _scoresToday ||
-        nowMs - _scoresAt >= requeryAfter.inMilliseconds ||
-        nowMs < _scoresAt) {
-      await _serial(() => backend.requeryScores(today, nowMs));
+        atMs - _scoresAt >= requeryAfter.inMilliseconds ||
+        atMs < _scoresAt) {
+      await _serial(() => backend.requeryScores(today, atMs));
     } else {
       return _stateChangesSinceRequery >= refreshEvery;
     }
     _scoresClearKey = clearKey;
     _scoresRequeryKey = requeryKey;
     _scoresToday = today;
-    _scoresAt = nowMs;
+    _scoresAt = atMs;
     _stateChangesSinceRequery = 0;
     return false;
   }
 
   /// 后台整表重查（见文件头）：排在本次排队的查询后面，同一个 worker 串行，不与查询交错。
   /// 计数在排进去时清零：重查期间又答的题算下一轮。已有一轮在排队时不再排。
-  void _requeryInBackground(SrsRwkvBackend backend, int today, int nowMs) {
+  void _requeryInBackground(SrsRwkvBackend backend, int today, int atMs) {
     if (_requeryPending) return;
     _requeryPending = true;
     _stateChangesSinceRequery = 0;
     unawaited(
-      _serial(() => backend.requeryScores(today, nowMs))
+      _serial(() => backend.requeryScores(today, atMs))
           .then<void>((_) {
-            if (today == _scoresToday && nowMs > _scoresAt) _scoresAt = nowMs;
+            if (today == _scoresToday && atMs > _scoresAt) _scoresAt = atMs;
           })
           .catchError((Object error) {
             _log('RWKV background requery failed: $error');
@@ -1210,14 +1246,14 @@ class SrsRwkvService implements SrsRwkvScheduling {
     );
   }
 
-  /// 分数表里没有（或版本变了）的卡：读历史、按此刻建查询行，一次原生调用算完并记进表里。
+  /// 分数表里没有（或版本变了）的卡：读历史、按时刻 [atMs] 建查询行，一次原生调用算完并记进表里。
   Future<Float32List> _scoreMissing(
     SrsRwkvBackend backend,
     List<SrsRwkvCandidate> cards,
     Uint64List versions,
     SrsDeckTree tree,
     SrsDayContext day,
-    int nowMs,
+    int atMs,
   ) async {
     final Int64List anchors = Int64List(cards.length);
     final List<SrsRwkvNowCard> now = <SrsRwkvNowCard>[];
@@ -1253,7 +1289,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         ));
       }
     }
-    final RwkvRows rows = srsRwkvNowRows(now, nowMs: nowMs, day: day);
+    final RwkvRows rows = srsRwkvNowRows(now, nowMs: atMs, day: day);
     return _serial(() => backend.updateScores(rows, versions, anchors));
   }
 

@@ -208,6 +208,11 @@ impl Append {
                 seed(c, profile, kind.wire(), &entity.text())?;
                 PART_ONE_BY_ONE
             }
+            // 副本骨架（dedup.rs）：旧戳在这里记进闭包（逐条投递的 `project_body` 同一算法），逐条区里不再记。
+            Body::Duplicate { legacy: Some(l), .. } => {
+                self.note_legacy(c, profile, &op.id.device, op.id.seq, &l)?;
+                PART_ONE_BY_ONE
+            }
             _ => PART_ONE_BY_ONE,
         };
         c.prepare_cached("INSERT INTO sync2_boot_order (profile_uid, part, rank, device, seq) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
@@ -355,6 +360,7 @@ fn advance_into(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>, t:
             match op.body().map_err(|e| e.to_string())? {
                 // 旧修改记录闭包在追加时已记。
                 Body::Edit(e) => super::project_edit_noted(c, profile, &op, &e, now, true, t)?,
+                Body::Duplicate { .. } => {}
                 body => super::project_body(c, profile, &op, body, now, true, t)?,
             }
             b.cursor = rank;

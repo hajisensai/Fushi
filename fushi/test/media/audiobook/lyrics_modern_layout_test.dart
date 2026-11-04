@@ -247,12 +247,16 @@ void main() {
         const Size(1600, 900),
         app(clock: const _StatsClock()),
       );
-      final Finder stats = key('lyrics_modern_stats');
+      final Finder stats = key('lyrics_modern_stats_line');
       expect(stats, findsOneWidget);
-      final String text = tester.widget<Text>(stats).data!;
+      final String text = tester
+          .widgetList<Text>(
+            find.descendant(of: stats, matching: find.byType(Text)),
+          )
+          .map((Text w) => w.data ?? '')
+          .join(' · ');
       expect(text, contains(t.reader_stats_chars_per_hour(n: '7,200')));
-      expect(text, contains('1,234 / 56,789'));
-      expect(text, contains('2.17%'));
+      expect(text, contains('2.2%'));
       expect(text, contains('30:00'));
       // 在进度线上方、浮岛之上（与两端时间同一行）。
       final Rect statsRect = tester.getRect(stats);

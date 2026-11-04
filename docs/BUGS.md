@@ -52,6 +52,12 @@
 | [BUG-4006](bugs/BUG-4006-srs-anki-template-audio-dom-contract.md) | ✅ | ✅ | eggrolls 卡组复习时不播单词音频（卡面外壳不满足 Anki reviewer 的 DOM 契约） |
 | [BUG-4005](bugs/BUG-4005-srs-review-no-rating-feedback.md) | ✅ | ✅ | SRS 评分后没有任何结果提示 |
 | [BUG-4004](bugs/BUG-4004-srs-review-undo-lost-on-reentry.md) | ✅ | ✅ | SRS 退出再进复习页后无法撤销上一次评分 |
+> 共 3608 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4004](bugs/BUG-4004-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
+> 共 3614 条。点号进各自文件。
 > 共 3615 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
@@ -64,6 +70,14 @@
 | [BUG-4006](bugs/BUG-4006-srs-lookup-popup-flash-below-then-above.md) | — | — | 复习卡查词弹窗先在下方出现再跳到上方 |
 | [BUG-4005](bugs/BUG-4005-dict-style-preview-theme-after-unmount.md) | ✅ | ✅ | 离开词典样式页时预览续体读已卸载 context 空断言 |
 | [BUG-4004](bugs/BUG-4004-srs-native-lookup-no-highlight.md) | ✅ | ✅ | 复习卡原生卡面查词后卡面上没有被查词高亮 |
+| [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |
+| [BUG-4010](bugs/BUG-4010-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
+| [BUG-4009](bugs/BUG-4009-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
+| [BUG-4008](bugs/BUG-4008-page-curl-back-bleed-and-manga-letterbox.md) | ✅ | ✅ | page-curl-back-bleed-and-manga-letterbox |
+| [BUG-4007](bugs/BUG-4007-lyrics-window-blank-tail.md) | ✅ | ✅ | 歌词模式自动播放一段后后面的文字空白、拨过去整页刷新 |
+| [BUG-4006](bugs/BUG-4006-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
+| [BUG-4005](bugs/BUG-4005-srs-sync2-alias-dedup.md) | ✅ | ✅ | srs-sync2-alias-dedup |
+| [BUG-4004](bugs/BUG-4004-srs-sync2-head-references-unuploaded-segment.md) | ✅ | ✅ | 复习同步 head 引用了位置上没有的段，读者待应用永久卡住 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |

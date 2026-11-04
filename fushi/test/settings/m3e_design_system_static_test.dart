@@ -1525,7 +1525,7 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
-          <String>{'BorderRadius.circular(', 'fontSize:'},
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },

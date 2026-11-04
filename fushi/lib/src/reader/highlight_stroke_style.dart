@@ -19,6 +19,11 @@ enum HighlightStrokeStyle {
   /// 1em 窄条（历史行为；收藏另有下划线）。
   classic('classic'),
 
+  /// 下划线：画在字的块末端外侧（横排在行下、竖排在列左），不压字；线型 / 离字距离可调。
+  /// 墨水屏把所有高亮都画成这个样式（用户 2026-11-04「基于墨水屏那个出个新的样式，并且
+  /// 墨水屏就是复用这个的，可以调节粗细各种参数」）。
+  underline('underline'),
+
   /// 斜切马克笔：两端平行斜切，收笔端微毛、略积墨。
   marker('marker'),
 
@@ -49,13 +54,36 @@ enum HighlightStrokeStyle {
     return HighlightStrokeStyle.classic;
   }
 
-  /// 「盖住振假名」对这个样式有没有意义（经典恒 1em、半截只涂下半截）。
+  /// 「盖住振假名」对这个样式有没有意义（经典恒 1em、半截只涂下半截、下划线不碰字）。
   bool get supportsCoverRuby =>
       this != HighlightStrokeStyle.classic &&
-      this != HighlightStrokeStyle.under;
+      this != HighlightStrokeStyle.under &&
+      this != HighlightStrokeStyle.underline;
 
   /// 粗细 / 抖动对这个样式有没有意义（经典恒 1em 窄条）。
   bool get isStroke => this != HighlightStrokeStyle.classic;
+}
+
+/// 下划线样式的线型。[wireName] 同时是偏好值与 CSS 变量 `--fushi-mark-<种类>-form` 的值，
+/// 与 JS 的 `UNDERLINE_FORMS` 逐字对应（测试钉住）。
+enum HighlightUnderlineForm {
+  solid('solid'),
+  doubleLine('double'),
+  dashed('dashed'),
+  dotted('dotted'),
+  wavy('wavy');
+
+  const HighlightUnderlineForm(this.wireName);
+
+  final String wireName;
+
+  /// 偏好值 → 线型；未知值回落实线。
+  static HighlightUnderlineForm fromWire(String? value) {
+    for (final HighlightUnderlineForm form in values) {
+      if (form.wireName == value) return form;
+    }
+    return HighlightUnderlineForm.solid;
+  }
 }
 
 /// 阅读器里的四类高亮。每类一套独立的 [HighlightStrokeConfig]。
@@ -85,8 +113,43 @@ enum HighlightKind {
   final String prefPrefix;
 
   /// 这类高亮的默认配置：都从经典开始（不改变任何人的现状）；落笔动画默认开，和设置页的
-  /// 预览一样画出来（经典样式没有笔划，这个开关在选笔触样式之前不起作用）。
-  HighlightStrokeConfig get defaults => const HighlightStrokeConfig();
+  /// 预览一样画出来（经典样式没有笔划，这个开关在选笔触样式之前不起作用）。搜索的下划线
+  /// 默认双线（沿用墨水屏一直以来的「搜索 = 双线」）。
+  HighlightStrokeConfig get defaults => this == HighlightKind.search
+      ? const HighlightStrokeConfig(
+          underlineForm: HighlightUnderlineForm.doubleLine,
+        )
+      : const HighlightStrokeConfig();
+
+  /// 墨水屏下这类高亮没选「下划线」样式时用的下划线：沿用墨水屏一直以来的线式标记——
+  /// 查词 = 粗实线、有声书 = 细实线、搜索 = 双线、收藏 = 实线；线是直的（不抖）。
+  HighlightStrokeConfig get einkDefaults => switch (this) {
+    HighlightKind.lookup => const HighlightStrokeConfig(
+      style: HighlightStrokeStyle.underline,
+      thickness: 1.2,
+      roughness: 0,
+    ),
+    HighlightKind.audio => const HighlightStrokeConfig(
+      style: HighlightStrokeStyle.underline,
+      thickness: 0.85,
+      roughness: 0,
+    ),
+    HighlightKind.search => const HighlightStrokeConfig(
+      style: HighlightStrokeStyle.underline,
+      roughness: 0,
+      underlineForm: HighlightUnderlineForm.doubleLine,
+    ),
+    HighlightKind.favorite => const HighlightStrokeConfig(
+      style: HighlightStrokeStyle.underline,
+      roughness: 0,
+    ),
+  };
+
+  /// 墨水屏下这类高亮实际画成什么：一律下划线。用户给这类选了下划线就用它自己的参数（粗细、
+  /// 线型、离字距离、抖动都可调）；选的是别的样式就用 [einkDefaults]。墨水屏没有落笔动画。
+  HighlightStrokeConfig einkEffective(HighlightStrokeConfig config) =>
+      (config.style == HighlightStrokeStyle.underline ? config : einkDefaults)
+          .copyWith(animate: false);
 }
 
 /// 一类高亮的完整笔触配置。各数值的取值范围见 `kHighlightStroke*` 常量。
@@ -98,6 +161,8 @@ class HighlightStrokeConfig {
     this.coverRuby = false,
     this.roughness = kHighlightStrokeRoughnessDefault,
     this.animate = true,
+    this.underlineForm = HighlightUnderlineForm.solid,
+    this.underlineOffset = kHighlightUnderlineOffsetDefault,
   });
 
   final HighlightStrokeStyle style;
@@ -117,6 +182,12 @@ class HighlightStrokeConfig {
   /// 落笔动画：新出现的高亮沿书写方向画出来（与设置页预览同一套时长与缓动）。
   final bool animate;
 
+  /// 下划线样式的线型。
+  final HighlightUnderlineForm underlineForm;
+
+  /// 下划线离字的距离（em，从 1em 字框的块末端量起）。
+  final double underlineOffset;
+
   HighlightStrokeConfig copyWith({
     HighlightStrokeStyle? style,
     double? thickness,
@@ -124,6 +195,8 @@ class HighlightStrokeConfig {
     bool? coverRuby,
     double? roughness,
     bool? animate,
+    HighlightUnderlineForm? underlineForm,
+    double? underlineOffset,
   }) => HighlightStrokeConfig(
     style: style ?? this.style,
     thickness: thickness ?? this.thickness,
@@ -131,6 +204,8 @@ class HighlightStrokeConfig {
     coverRuby: coverRuby ?? this.coverRuby,
     roughness: roughness ?? this.roughness,
     animate: animate ?? this.animate,
+    underlineForm: underlineForm ?? this.underlineForm,
+    underlineOffset: underlineOffset ?? this.underlineOffset,
   );
 
   @override
@@ -141,19 +216,30 @@ class HighlightStrokeConfig {
       other.opacity == opacity &&
       other.coverRuby == coverRuby &&
       other.roughness == roughness &&
-      other.animate == animate;
+      other.animate == animate &&
+      other.underlineForm == underlineForm &&
+      other.underlineOffset == underlineOffset;
 
   @override
-  int get hashCode =>
-      Object.hash(style, thickness, opacity, coverRuby, roughness, animate);
+  int get hashCode => Object.hash(
+    style,
+    thickness,
+    opacity,
+    coverRuby,
+    roughness,
+    animate,
+    underlineForm,
+    underlineOffset,
+  );
 }
 
 /// 各笔触的自然粗细（em，粗细倍数 1.0 时的笔划厚度）。经典窄条守「一个字高」；笔触样式以
 /// 好看为先，允许超过字高、擦到甚至盖到振假名（用户 2026-10-16 拍板），默认取几乎填满行距
 /// 的粗细。与窄条层 JS 的 `MARK_NATURAL_EM` 逐项相同（测试钉住）。半截荧光只涂字的下半截，
-/// 不在表里。
+/// 不在表里；下划线是一条线，自然粗细只有 0.12em（墨水屏原先的线粗 0.10–0.14em）。
 const Map<HighlightStrokeStyle, double> kHighlightStrokeNaturalEm =
     <HighlightStrokeStyle, double>{
+      HighlightStrokeStyle.underline: 0.12,
       HighlightStrokeStyle.marker: 1.35,
       HighlightStrokeStyle.fluo: 1.3,
       HighlightStrokeStyle.rough: 1.25,
@@ -174,6 +260,11 @@ const double kHighlightStrokeRoughnessMin = 0;
 const double kHighlightStrokeRoughnessMax = 1;
 const double kHighlightStrokeRoughnessDefault = 0.5;
 
+/// 下划线离字距离（em）。默认 0.15em：与墨水屏原先的线位（字框外 0.18em 起）几乎同位。
+const double kHighlightUnderlineOffsetMin = 0;
+const double kHighlightUnderlineOffsetMax = 0.5;
+const double kHighlightUnderlineOffsetDefault = 0.15;
+
 /// 落笔动画里一行的时长：[FushiMotion.micro] + 行长(em) × [FushiMotion.strokeSweepPerEm]。
 /// 正文（JS SMIL，经 [highlightStrokeCssVariables] 下发）与设置页预览同一公式。
 Duration highlightStrokeSweepLineDuration(double lengthEm) =>
@@ -184,7 +275,8 @@ const Duration kHighlightStrokeSweepGap = FushiMotion.staggerStep;
 
 /// 正文 CSS `:root` 里的笔触变量（窄条层 `markConfigs()` 读同名变量）。
 ///
-/// - 墨水屏强制经典：墨水屏把所有高亮改成线式标记、窄条层整层隐藏。
+/// - 墨水屏一律画下划线（[HighlightKind.einkEffective]），线色写死成正文色 [inkColor]
+///   （`-ink` 变量；JS 见到它就不读各组的底色、按不透明的实线画）。
 /// - [darkBackground] 与 [paperColor] 给 JS 画荧光笔拖痕 / 胶带斜纹 / 彩铅颗粒用的「纸色」。
 /// - [motionEnabled]：页面的 `fushiMotionEnabled`（系统「减弱动态效果」/ 墨水屏为 false）。
 ///   为 false 时各类 `-animate` 一律写 0、落笔节奏写 0，JS 不放落笔动画——动画开关与时长的
@@ -194,15 +286,17 @@ String highlightStrokeCssVariables(
   required bool einkMode,
   required bool darkBackground,
   required String paperColor,
+  String inkColor = '#000',
   bool motionEnabled = true,
 }) {
   final bool sweep = motionEnabled && !einkMode;
   final StringBuffer out = StringBuffer();
   for (final HighlightKind kind in HighlightKind.values) {
-    final HighlightStrokeConfig c = configs[kind] ?? kind.defaults;
-    final HighlightStrokeStyle style = einkMode
-        ? HighlightStrokeStyle.classic
-        : c.style;
+    final HighlightStrokeConfig stored = configs[kind] ?? kind.defaults;
+    final HighlightStrokeConfig c = einkMode
+        ? kind.einkEffective(stored)
+        : stored;
+    final HighlightStrokeStyle style = c.style;
     final String p = '  --fushi-mark-${kind.cssName}';
     out
       ..write('$p-style: ${style.wireName};\n')
@@ -218,7 +312,12 @@ String highlightStrokeCssVariables(
       ..write(
         '$p-roughness: ${_n(c.roughness.clamp(kHighlightStrokeRoughnessMin, kHighlightStrokeRoughnessMax))};\n',
       )
-      ..write('$p-animate: ${sweep && c.animate ? 1 : 0};\n');
+      ..write('$p-animate: ${sweep && c.animate ? 1 : 0};\n')
+      ..write('$p-form: ${c.underlineForm.wireName};\n')
+      ..write(
+        '$p-offset: ${_n(c.underlineOffset.clamp(kHighlightUnderlineOffsetMin, kHighlightUnderlineOffsetMax))};\n',
+      );
+    if (einkMode) out.write('$p-ink: $inkColor;\n');
   }
   out
     ..write(
@@ -236,13 +335,15 @@ String highlightStrokeCssVariables(
 }
 
 /// 收藏选了笔触样式时不再画下划线：形状本身就是标记，下划线叠上去像两道。旧 WebView 的
-/// 包裹 span 把下划线写在内联样式上，所以这里要 `!important`。经典样式返回空串。
+/// 包裹 span 把下划线写在内联样式上，所以这里要 `!important`。经典样式返回空串；墨水屏
+/// 下收藏一律画窄条层的下划线笔触（[HighlightKind.einkEffective]），所以同样去掉。
 /// （其余三类高亮本来就没有下划线。）
 String favoriteHighlightUnderlineOverrideCss(
   HighlightStrokeConfig favorite, {
   required bool einkMode,
 }) {
-  if (einkMode || !favorite.style.isStroke) return '';
+  if (!einkMode && !favorite.style.isStroke) return '';
+
   const List<String> colors = <String>[
     'yellow',
     'green',

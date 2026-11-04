@@ -261,21 +261,19 @@ void main() {
         settings: settings,
         einkMode: true,
       );
-      // BUG-3886：墨水屏不再隐藏窄条层——查词 / 当前句 / 搜索的窄条去掉底色、画成外侧
-      // 一条线；收藏的底色窄条隐藏（收藏保留原下划线）。
+      // BUG-3886：墨水屏不隐藏窄条层——四类高亮的线由窄条层画成「下划线」笔触 SVG
+      // （用户 2026-11-04）；底色窄条一律不画。
       final int layer = eink.lastIndexOf('fushi-hl-lanes {');
       expect(
         eink.substring(layer, eink.indexOf('}', layer)),
         isNot(contains('display: none')),
       );
+      expect(eink, contains('--fushi-mark-audio-style: underline;'));
+      expect(eink, isNot(contains('::after {\n  content: \'\' !important;')));
+      final int lane = eink.lastIndexOf('fushi-hl-lane {');
+      expect(lane, greaterThan(layer));
       expect(
-        eink,
-        contains('fushi-hl-lane[data-hl="fushi-sentence-audio"]::after'),
-      );
-      final int fav = eink.indexOf('fushi-hl-lane[data-hl^="fushi-hl-"] {');
-      expect(fav, greaterThan(0));
-      expect(
-        eink.substring(fav, eink.indexOf('}', fav)),
+        eink.substring(lane, eink.indexOf('}', lane)),
         contains('display: none'),
       );
     },
