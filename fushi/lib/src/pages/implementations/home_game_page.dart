@@ -25,8 +25,9 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup, libraryImportChromeButton;
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
-    show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
+    show fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/i18n/strings.g.dart';

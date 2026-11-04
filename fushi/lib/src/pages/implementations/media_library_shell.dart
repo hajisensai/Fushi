@@ -3,8 +3,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
-    show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
+    show fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'

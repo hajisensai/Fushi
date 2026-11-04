@@ -1246,6 +1246,7 @@ class AnotherPopupPart {
       // settings kit（2026-10）：设置模块的共享设计积木（M3E 形状色块 / 胶囊
       // 搜索栏 / 浮动页头 + Apple 分支的 iOS 字号），同「共享原语本身」类。
       'lib/src/settings/settings_kit.dart': kSharedComponentImplementation,
+      'lib/src/settings/settings_kit_core.dart': kSharedComponentImplementation,
       'lib/src/utils/adaptive/adaptive_navigation.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_bottom_action_bar.dart':
@@ -1593,7 +1594,7 @@ class AnotherPopupPart {
         'BorderRadius.circular(',
         'fontSize:',
       },
-      'lib/src/settings/settings_kit.dart': <String>{'fontSize:'},
+      'lib/src/settings/settings_kit_core.dart': <String>{'fontSize:'},
       'lib/src/settings/settings_home_page.dart': <String>{'fontSize:'},
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
