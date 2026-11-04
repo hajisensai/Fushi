@@ -4278,10 +4278,16 @@ class AssDrawingPainter extends CustomPainter {
   final Shadow? shadow;
   final double blurSigma;
 
+  /// 路径坐标 = 盒原点 + **原始**绘图坐标 × 缩放，**不**减包围盒最小角（反馈
+  /// ZjYzWc8Wfz）。libass 实测（ffmpeg `subtitles` 滤镜）：包围盒只决定参与 `\an`
+  /// 对齐的盒**尺寸**，绘图点相对盒左上角按原坐标落笔——
+  /// `{\an7\pos(0,0)\p1}m 500 300 l 700 300 700 500 500 500` 画在 (500,300)–(700,500)，
+  /// `{\an5\pos(960,700)\p1}` 的 100..300 方块画在 (960,700)–(1160,900)。字幕组招牌
+  /// 遮罩几乎都是 `\an7\pos(0,0)` + 画面绝对坐标；此前减掉最小角，遮罩整体朝左上平移
+  /// (minX, minY)，白底盖不住原文、错位成一条白条。路径可以越出盒子（盒子不裁剪）。
   Path buildPath() {
-    double px(double fx) => (fx - shape.minX) * scaleX;
-    double py(double fy) =>
-        (fy - shape.minY + shape.baselineOffsetFraction) * scaleY;
+    double px(double fx) => fx * scaleX;
+    double py(double fy) => (fy + shape.baselineOffsetFraction) * scaleY;
     final Path p = Path()..fillType = PathFillType.nonZero;
     bool open = false;
     for (final SubtitleClipSegment seg in shape.segments) {

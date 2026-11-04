@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3676 条。点号进各自文件。
+> 共 3678 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4080](bugs/BUG-4080-ass-drawing-offset-by-bbox-min.md) | ✅ | ✅ | ASS 矢量绘图遮罩落点减掉了包围盒最小角，与 libass 错位成白条 |
+| [BUG-4079](bugs/BUG-4079-video-panel-scheme-ignores-app-surface.md) | ✅ | ✅ | 播放器面板（字幕轨抽屉等）表面色与自定义主题页面底色不同族 |
 | [BUG-4078](bugs/BUG-4078-video-subtitle-lookup-highlight-leading-punct.md) | ✅ | ✅ | 视频字幕查词高亮落在句首括号上，没覆盖真正查到的词 |
 | [BUG-4077](bugs/BUG-4077-android-startup-scudo-oom-loop-pre-23152.md) | ✅ | ✅ | Android 启动约 6 s 内 Scudo OOM 中止并反复重启（23152 之前的版本） |
 | [BUG-4076](bugs/BUG-4076-desktop-unexpected-exit-no-evidence.md) | 🚧 | 🚧 | 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS） |
