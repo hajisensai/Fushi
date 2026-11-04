@@ -370,6 +370,13 @@ internal fun formatClock(ms: Long): String {
  * class is kept by proguard-rules.pro). The widget runs in the app process, so the service instance
  * exists exactly while audio_service is up. The platform [MediaController] is built directly: the
  * compat one needs a Looper, which a widget callback thread does not have.
+ *
+ * Compatibility layer for an external limit: audio_service exposes neither the service instance
+ * nor the token, and hardcodes `AudioService.class` (so no app subclass can publish it). Connecting
+ * through MediaBrowserCompat instead would BIND_AUTO_CREATE the service on every render. Impact if
+ * the plugin changes the field: [controller] returns null and the buttons fall back to opening the
+ * app. test/platform/now_playing_audio_service_contract_test.dart pins the field and the keep rule
+ * so a plugin upgrade fails there instead. Remove this when audio_service exposes the token.
  */
 internal object NowPlayingControl {
     private const val TAG = "NowPlayingControl"

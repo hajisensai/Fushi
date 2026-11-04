@@ -62,6 +62,49 @@ class ServerContinueFeed {
   /// 当前排队 / 进行中的取数全部结束后完成（没有在跑的取数就立即完成）。
   Future<void> settled() => _tail;
 
+  /// 已结束（成功或失败）的取数轮数。
+  int _completedRounds = 0;
+
+  /// 一轮都还没取完时，等第一轮结束的人挂在这里。
+  Completer<void>? _firstRound;
+
+  void _roundDone() {
+    _completedRounds++;
+    final Completer<void>? waiting = _firstRound;
+    _firstRound = null;
+    waiting?.complete();
+  }
+
+  /// 按 [ServerContinueCandidate.key] 找候选（桌面「接下来」小组件深链用）。
+  ///
+  /// 当前结果里没有时，等的是**取数信号**而不是时序：已取完过至少一轮就等排队 /
+  /// 进行中的取数结束（[settled]）；一轮都没取完（冷启动，首页还没挂载、取数还没
+  /// 开始或还在飞）就等第一轮真正结束。[wait] 只是服务器无响应 / 首页始终没开始
+  /// 取数时的上限，到了就按现有结果判断。
+  Future<ServerContinueCandidate?> findByKey(
+    String key, {
+    Duration wait = const Duration(seconds: 8),
+  }) async {
+    ServerContinueCandidate? find() {
+      for (final ServerContinueCandidate c in _current) {
+        if (c.key == key) return c;
+      }
+      return null;
+    }
+
+    final ServerContinueCandidate? hit = find();
+    if (hit != null) return hit;
+    final Future<void> round = _completedRounds > 0
+        ? _tail
+        : (_firstRound ??= Completer<void>()).future;
+    try {
+      await round.timeout(wait);
+    } on TimeoutException {
+      // 上限到了：按现有结果判断（条目不在 → 调用方落到首页）。
+    }
+    return find();
+  }
+
   bool _isFresh(String gate) {
     final int? at = _fetchedAt;
     return at != null && _gate == gate && _nowMs() - at < ttl.inMilliseconds;
@@ -87,7 +130,9 @@ class ServerContinueFeed {
       if (!_updates.isClosed) _updates.add(null);
       return loaded;
     });
-    _tail = run.then<void>((_) {}, onError: (Object _) {});
+    _tail = run
+        .then<void>((_) {}, onError: (Object _) {})
+        .then<void>((_) => _roundDone());
     return run;
   }
 

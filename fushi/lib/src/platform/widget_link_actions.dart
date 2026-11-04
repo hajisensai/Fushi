@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
@@ -208,32 +206,17 @@ Future<void> openWidgetDownloads() async {
 
 /// 打开「接下来」小组件指向的服务器条目：找到首页「继续」取数留下的同一个候选，
 /// 调它的 `open`（媒体服务器 = 起播，Audiobookshelf = 条目详情页）——与首页点卡
-/// 同一落地，不另发网络请求去认条目。冷启动时首页刚挂载、取数还在飞：最多等
-/// [wait]。条目已不在进行中（或首页的服务器混排被关）返回 false。
+/// 同一落地，不另发网络请求去认条目。冷启动时首页还没挂载 / 取数还在飞：由
+/// [ServerContinueFeed.findByKey] 等第一轮取数真正结束（最多 [wait]）。条目已不在
+/// 进行中（或首页的服务器混排被关）返回 false。
 Future<bool> openWidgetServerItem(
   AppModel appModel,
   WidgetServerLink link, {
   Duration wait = const Duration(seconds: 8),
 }) async {
-  final ServerContinueFeed feed = ServerContinueFeed.of(appModel.database);
-  ServerContinueCandidate? find() {
-    for (final ServerContinueCandidate c in feed.current) {
-      if (c.key == link.key) return c;
-    }
-    return null;
-  }
-
-  ServerContinueCandidate? candidate = find();
-  if (candidate == null) {
-    // 首页的取数要等它挂载后才开始：先给它一个起步的机会，再等这一轮结束。
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    try {
-      await feed.settled().timeout(wait);
-    } on TimeoutException {
-      // 等不到就按现有结果判断。
-    }
-    candidate = find();
-  }
+  final ServerContinueCandidate? candidate = await ServerContinueFeed.of(
+    appModel.database,
+  ).findByKey(link.key, wait: wait);
   final BuildContext? context = appModel.navigatorKey.currentContext;
   if (candidate == null || context == null || !context.mounted) return false;
   await candidate.open(context);
