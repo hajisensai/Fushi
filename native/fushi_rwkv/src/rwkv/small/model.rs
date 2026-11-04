@@ -25,8 +25,8 @@ use std::io;
 use half::f16;
 use rayon::prelude::*;
 
-use super::super::{add_scaled_in_place, dot_product, sigmoid, StatePrecision, CARD_FEATURES};
 use super::super::slots::SlotStore;
+use super::super::{CARD_FEATURES, StatePrecision, add_scaled_in_place, dot_product, sigmoid};
 use super::weights::Weights;
 
 pub(super) const D: usize = 64;
@@ -122,7 +122,13 @@ struct Linear {
 }
 
 impl Linear {
-    fn load(w: &mut Weights, name: &str, output: usize, input: usize, bias: bool) -> io::Result<Self> {
+    fn load(
+        w: &mut Weights,
+        name: &str,
+        output: usize,
+        input: usize,
+        bias: bool,
+    ) -> io::Result<Self> {
         let weight = w.matrix(&format!("{name}.weight"), output, input)?;
         let bias_name = format!("{name}.bias");
         let bias = if bias || w.contains(&bias_name) {
@@ -150,12 +156,20 @@ impl Linear {
     }
 
     /// A low-rank matrix whose rank is read from the file.
-    fn load_rank(w: &mut Weights, name: &str, output: usize, input: usize, rows: bool) -> io::Result<Self> {
+    fn load_rank(
+        w: &mut Weights,
+        name: &str,
+        output: usize,
+        input: usize,
+        rows: bool,
+    ) -> io::Result<Self> {
         let shape = w
             .shape(&format!("{name}.weight"))
             .ok_or_else(|| invalid(format!("missing weight: {name}.weight")))?
             .to_vec();
-        let rank = if rows { shape.first() } else { shape.get(1) }.copied().unwrap_or(0);
+        let rank = if rows { shape.first() } else { shape.get(1) }
+            .copied()
+            .unwrap_or(0);
         if rank == 0 || rank > MAX_LORA_RANK || shape.len() != 2 {
             return Err(invalid(format!("weight {name} has shape {shape:?}")));
         }
@@ -184,7 +198,10 @@ impl Linear {
         debug_assert_eq!(xs.len(), rows * self.input);
         debug_assert_eq!(ys.len(), rows * self.output);
         if self.output < 16 {
-            for (x, y) in xs.chunks_exact(self.input).zip(ys.chunks_exact_mut(self.output)) {
+            for (x, y) in xs
+                .chunks_exact(self.input)
+                .zip(ys.chunks_exact_mut(self.output))
+            {
                 self.apply(x, y);
             }
             return;
@@ -196,7 +213,10 @@ impl Linear {
             }
         }
         for (column, weights) in self.weight_by_input.chunks_exact(self.output).enumerate() {
-            for (x, y) in xs.chunks_exact(self.input).zip(ys.chunks_exact_mut(self.output)) {
+            for (x, y) in xs
+                .chunks_exact(self.input)
+                .zip(ys.chunks_exact_mut(self.output))
+            {
                 let scale = x[column];
                 if scale != 0.0 {
                     add_scaled_in_place(y, weights, scale);
@@ -295,7 +315,14 @@ impl TimeMixer {
     /// Everything of the time mixer that does not need the recurrent
     /// matrix, for a block of rows. `v0` is the stream's layer-0 value of
     /// each row (written by layer 0, read by the later layers).
-    fn prepare_rows(&self, xl: &[V], xs: &[V], v0: &mut [V], out: &mut [Prepared], scratch: &mut Scratch) {
+    fn prepare_rows(
+        &self,
+        xl: &[V],
+        xs: &[V],
+        v0: &mut [V],
+        out: &mut [Prepared],
+        scratch: &mut Scratch,
+    ) {
         let n = xl.len();
         debug_assert!(n <= BLOCK);
         let Scratch {
@@ -334,7 +361,14 @@ impl TimeMixer {
                 }
             }
             Some((first, second)) => {
-                lora_rows(first, second, m(2), &mut tmp[..rows], Activation::None, lora);
+                lora_rows(
+                    first,
+                    second,
+                    m(2),
+                    &mut tmp[..rows],
+                    Activation::None,
+                    lora,
+                );
                 for row in 0..n {
                     for c in 0..D {
                         let i = row * D + c;
@@ -343,9 +377,30 @@ impl TimeMixer {
                 }
             }
         }
-        lora_rows(&self.a_lora.0, &self.a_lora.1, m(4), &mut a[..rows], Activation::None, lora);
-        lora_rows(&self.g_lora.0, &self.g_lora.1, m(5), &mut g[..rows], Activation::Sigmoid, lora);
-        lora_rows(&self.d_lora.0, &self.d_lora.1, m(3), &mut tmp[..rows], Activation::Tanh, lora);
+        lora_rows(
+            &self.a_lora.0,
+            &self.a_lora.1,
+            m(4),
+            &mut a[..rows],
+            Activation::None,
+            lora,
+        );
+        lora_rows(
+            &self.g_lora.0,
+            &self.g_lora.1,
+            m(5),
+            &mut g[..rows],
+            Activation::Sigmoid,
+            lora,
+        );
+        lora_rows(
+            &self.d_lora.0,
+            &self.d_lora.1,
+            m(3),
+            &mut tmp[..rows],
+            Activation::Tanh,
+            lora,
+        );
         for (row, p) in out.iter_mut().enumerate().take(n) {
             let at = row * D;
             p.r.copy_from_slice(&r[at..at + D]);
@@ -358,7 +413,11 @@ impl TimeMixer {
             for h in 0..HEADS {
                 let range = h * K..(h + 1) * K;
                 let src = at + h * K..at + (h + 1) * K;
-                normalize_scaled(&k[src.clone()], sigmoid(k_scale[row * HEADS + h]), &mut p.kk[range.clone()]);
+                normalize_scaled(
+                    &k[src.clone()],
+                    sigmoid(k_scale[row * HEADS + h]),
+                    &mut p.kk[range.clone()],
+                );
                 normalize_scaled(&v[src], sigmoid(v_scale[row * HEADS + h]), &mut p.vv[range]);
             }
         }
@@ -439,7 +498,12 @@ fn softplus(x: f32) -> f32 {
 
 /// `scale * x / max(|x|, 1e-12)` over one head.
 fn normalize_scaled(x: &[f32], scale: f32, out: &mut [f32]) {
-    let norm = x.iter().map(|v| v * v).sum::<f32>().sqrt().max(NORMALIZE_EPS);
+    let norm = x
+        .iter()
+        .map(|v| v * v)
+        .sum::<f32>()
+        .sqrt()
+        .max(NORMALIZE_EPS);
     for (o, v) in out.iter_mut().zip(x) {
         *o = scale * (v / norm);
     }
@@ -464,7 +528,9 @@ impl ChannelMixer {
         }
         let hidden = shape[0];
         if hidden > MAX_CHANNEL_HIDDEN {
-            return Err(invalid(format!("{p}.W_k is wider than {MAX_CHANNEL_HIDDEN}")));
+            return Err(invalid(format!(
+                "{p}.W_k is wider than {MAX_CHANNEL_HIDDEN}"
+            )));
         }
         Ok(Some(Self {
             norm: Norm::load(w, &format!("{p}.layer_norm"), D, LAYER_NORM_EPS, D)?,
@@ -578,7 +644,8 @@ impl SmallNet {
     /// True when the weight file has the small model's tensors (the big
     /// model's file has no power-curve head).
     pub(super) fn is_small(weights: &Weights) -> bool {
-        weights.contains("gru_w_weight") && weights.shape("features2card.3.weight") == Some(&[D, FC][..])
+        weights.contains("gru_w_weight")
+            && weights.shape("features2card.3.weight") == Some(&[D, FC][..])
     }
 
     pub(super) fn load(mut w: Weights) -> io::Result<Self> {
@@ -586,7 +653,10 @@ impl SmallNet {
         let mut streams = Vec::with_capacity(STREAMS);
         for stream in 0..STREAMS {
             let mut layers = Vec::new();
-            while w.contains(&format!("rwkv_modules.{stream}.blocks.{}.time_mixer.W_r.weight", layers.len())) {
+            while w.contains(&format!(
+                "rwkv_modules.{stream}.blocks.{}.time_mixer.W_r.weight",
+                layers.len()
+            )) {
                 let layer = layers.len();
                 let p = format!("rwkv_modules.{stream}.blocks.{layer}");
                 layers.push(Layer {
@@ -595,7 +665,9 @@ impl SmallNet {
                 });
             }
             if layers.is_empty() {
-                return Err(invalid(format!("small model stream {stream} has no layers")));
+                return Err(invalid(format!(
+                    "small model stream {stream} has no layers"
+                )));
             }
             streams.push(layers);
         }
@@ -675,12 +747,17 @@ impl SmallNet {
         for row in 0..n {
             f[row * CARD_FEATURES + ZERO_FEATURE] = 0.0;
         }
-        self.features_0.apply_rows(&f[..n * CARD_FEATURES], &mut hidden[..n * FC]);
+        self.features_0
+            .apply_rows(&f[..n * CARD_FEATURES], &mut hidden[..n * FC]);
         silu(&mut hidden[..n * FC]);
         for row in 0..n {
-            self.features_norm.apply(&hidden[row * FC..(row + 1) * FC], &mut normed[row * FC..(row + 1) * FC]);
+            self.features_norm.apply(
+                &hidden[row * FC..(row + 1) * FC],
+                &mut normed[row * FC..(row + 1) * FC],
+            );
         }
-        self.features_3.apply_rows(&normed[..n * FC], &mut x[..n * D]);
+        self.features_3
+            .apply_rows(&normed[..n * FC], &mut x[..n * D]);
         silu(&mut x[..n * D]);
         for (row, out) in out.iter_mut().enumerate() {
             out.copy_from_slice(&x[row * D..(row + 1) * D]);
@@ -1084,7 +1161,11 @@ impl StreamPlan {
                     let e = self.entity_of_row[row] as usize;
                     if self.stored[e] {
                         let mut shift = [0.0; D];
-                        layout.read_shift(&self.state[e * slot_len..(e + 1) * slot_len], at, &mut shift);
+                        layout.read_shift(
+                            &self.state[e * slot_len..(e + 1) * slot_len],
+                            at,
+                            &mut shift,
+                        );
                         shift
                     } else {
                         xl[row]
@@ -1114,7 +1195,11 @@ pub(super) fn run(
         .enumerate()
         .for_each_init(Scratch::new, |scratch, (block, x)| {
             let start = block * BLOCK * CARD_FEATURES;
-            net.feature_mlp_rows(&rows.features[start..start + x.len() * CARD_FEATURES], x, scratch)
+            net.feature_mlp_rows(
+                &rows.features[start..start + x.len() * CARD_FEATURES],
+                x,
+                scratch,
+            )
         });
 
     let mut plans: Vec<StreamPlan> = (0..STREAMS)
@@ -1262,7 +1347,8 @@ fn scan(
         }
         outputs.push(per_entity);
     }
-    let mut tasks: Vec<(usize, usize, &mut [u8], &mut [HeadV])> = Vec::with_capacity(entities * HEADS);
+    let mut tasks: Vec<(usize, usize, &mut [u8], &mut [HeadV])> =
+        Vec::with_capacity(entities * HEADS);
     let mut outputs: Vec<_> = outputs.into_iter().map(Vec::into_iter).collect();
     for (index, matrix) in matrices.into_iter().enumerate() {
         let (e, h) = (index / HEADS, index % HEADS);
@@ -1364,7 +1450,10 @@ mod tests {
                 );
                 let mut decoded = [0.0f32; K];
                 layout.read_rows(&bytes, &mut decoded);
-                assert_eq!(decoded, stored, "{precision:?}: stored values read back differently");
+                assert_eq!(
+                    decoded, stored,
+                    "{precision:?}: stored values read back differently"
+                );
             }
         }
     }

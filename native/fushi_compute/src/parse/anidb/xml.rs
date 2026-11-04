@@ -21,11 +21,7 @@ pub struct Fail {
 
 /// petitparser `selectFarthest`：位置相同取后者。
 fn farthest(a: Fail, b: Fail) -> Fail {
-    if a.pos <= b.pos {
-        b
-    } else {
-        a
-    }
+    if a.pos <= b.pos { b } else { a }
 }
 
 type R<T> = Result<T, Fail>;

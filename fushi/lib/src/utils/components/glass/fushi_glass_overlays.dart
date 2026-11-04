@@ -3437,12 +3437,47 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
     widget.onSelected?.call(picked.value);
   }
 
+  /// MD3 下带标题的下拉字段：与 [FushiTextFieldControl] 同一条
+  /// [fushiMd3FieldDecoration]（填充式边框，标题浮在填充块内）。
+  ///
+  /// 不经它时 DropdownMenu 落到全局输入框主题的「无描边 OutlineInputBorder」：
+  /// 浮起的标题按描边式骑在边框线上，而填充框根本没有可见描边，标题一半露在
+  /// 填充块上沿外（反馈 jIlpJV-xW4「文字显示不全」的同类）。尾部箭头留空，由
+  /// DropdownMenu 照旧补默认的展开按钮；调用方的 [inputDecorationTheme] 里的
+  /// dense / 内边距先并进来，紧凑行内下拉的尺寸不变。
+  InputDecoration _md3LabelledDecoration(
+    BuildContext context,
+    MenuController controller,
+  ) {
+    final Object? rawTheme = widget.inputDecorationTheme;
+    final InputDecorationThemeData? base = rawTheme is InputDecorationTheme
+        ? rawTheme.data
+        : rawTheme as InputDecorationThemeData?;
+    final InputDecoration decoration = InputDecoration(
+      label: widget.label,
+      hintText: widget.hintText,
+      helperText: widget.helperText,
+      errorText: widget.errorText,
+      prefixIcon: widget.leadingIcon,
+      isDense: base?.isDense,
+      contentPadding: base?.contentPadding,
+    );
+    return fushiMd3FieldDecoration(context, decoration) ?? decoration;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
       // BUG-3359：下拉面板是 OverlayPortal 浮层，滚动通知会冒泡进页面（顶栏跟着
       // 收起、下拉被重建后滚回选中项，列表拨不下去）。截在下拉这一层；锚点是本
       // 下拉自己的输入框，它的横向滚动对页面也没有意义，一并截下。
+      // 带标题时装饰整份由 [_md3LabelledDecoration] 给（label / hint / helper /
+      // error 都在里面）；DropdownMenu 断言 decorationBuilder 与这四个参数互斥。
+      final DropdownMenuDecorationBuilder? decorationBuilder =
+          widget.decorationBuilder ??
+          (widget.label == null ? null : _md3LabelledDecoration);
+      final bool ownDecoration =
+          widget.decorationBuilder == null && decorationBuilder != null;
       final Widget dropdown = DropdownMenu<T>(
         enabled: widget.enabled,
         width: widget.width,
@@ -3451,10 +3486,10 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
         trailingIcon: widget.trailingIcon,
         showTrailingIcon: widget.showTrailingIcon,
         trailingIconFocusNode: widget.trailingIconFocusNode,
-        label: widget.label,
-        hintText: widget.hintText,
-        helperText: widget.helperText,
-        errorText: widget.errorText,
+        label: ownDecoration ? null : widget.label,
+        hintText: ownDecoration ? null : widget.hintText,
+        helperText: ownDecoration ? null : widget.helperText,
+        errorText: ownDecoration ? null : widget.errorText,
         selectedTrailingIcon: widget.selectedTrailingIcon,
         enableFilter: widget.enableFilter,
         enableSearch: widget.enableSearch,
@@ -3462,7 +3497,7 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
         textStyle: widget.textStyle,
         textAlign: widget.textAlign,
         inputDecorationTheme: widget.inputDecorationTheme,
-        decorationBuilder: widget.decorationBuilder,
+        decorationBuilder: decorationBuilder,
         menuStyle: widget.menuStyle,
         controller: widget.controller,
         initialSelection: widget.initialSelection,

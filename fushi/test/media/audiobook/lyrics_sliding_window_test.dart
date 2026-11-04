@@ -106,10 +106,15 @@ void main() {
       '  void _syncLyricsOverlayCue(',
       '    final bool scroll =',
     );
-    final int slide = sync.indexOf('_slideLyricsWindow(forward: true)');
+    final int slide = sync.indexOf(
+      '_slideLyricsWindow(forward: true, anchor: sourceIdx)',
+    );
     final int reload = sync.indexOf('unawaited(_loadLyricsPage())');
     expect(slide, isNonNegative);
-    expect(sync, contains('_slideLyricsWindow(forward: false)'));
+    expect(
+      sync,
+      contains('_slideLyricsWindow(forward: false, anchor: sourceIdx)'),
+    );
     // 章 cue 换章的重载在前面；窗口越界重载必须排在滑动之后。
     expect(
       sync.lastIndexOf('unawaited(_loadLyricsPage())'),
@@ -119,10 +124,92 @@ void main() {
     expect(source, contains("handlerName: 'onLyricsEdge'"));
     final String slideFn = _between(
       source,
-      '  void _slideLyricsWindow({required bool forward}) {',
+      '  bool _slideLyricsWindow({required bool forward, required int anchor}) {',
       '  /// 歌词 WebView 上的 fire-and-forget 求值',
     );
     expect(slideFn, contains('__lyricsSpliceCues'));
     expect(slideFn, contains('LyricsModeHtml.cueRowsHtml('));
+    // 裁剪量统一由纯函数按锚点算（上限对锚点生效），不再在这里只看播放句。
+    expect(slideFn, contains('planLyricsWindowSlide('));
+    expect(slideFn, isNot(contains('lyricsCueAllBookIdx')));
+  });
+
+  // BUG-4004 复审：手动浏览时窗口锚在视口中线句，不在播放句。
+  test(
+    'manual browsing anchors the window on the viewport, not the player',
+    () {
+      final String source = readReaderPageSource();
+      final String sync = _between(
+        source,
+        '  void _syncLyricsOverlayCue(',
+        '    final bool scroll =',
+      );
+      // 浏览中播放推进不滑窗口；播放句走出窗口只摘高亮，不重载（重载会拽走视口）。
+      final int follows = sync.indexOf('final bool follows =');
+      expect(follows, isNonNegative);
+      expect(sync, contains('_lyricsCueWindowUsesAllBookCues && follows'));
+      // BUG-4007 R2：摘高亮的同时照样下发播放态（见 lyrics_play_state_sync_test）。
+      const String clear =
+          'overlaySyncScript(playing: playing, clearCue: true)';
+      expect(sync, contains(clear));
+      expect(
+        sync.indexOf(clear),
+        lessThan(sync.lastIndexOf('unawaited(_loadLyricsPage())')),
+      );
+
+      final String edge = _between(
+        source,
+        "handlerName: 'onLyricsEdge',",
+        'controller.addJavaScriptHandler(',
+      );
+      expect(edge, contains('_lyricsFollowsPlayback(ctrl)'));
+      expect(edge, contains('_lyricsCueIndexOffset + viewRel'));
+      expect(edge, contains('__lyricsEdgeIdle'));
+
+      final String browse = _between(
+        source,
+        "handlerName: 'onLyricsBrowse',",
+        'controller.addJavaScriptHandler(',
+      );
+      expect(browse, contains('_lyricsJsBrowsing = browsing'));
+      expect(browse, contains('_resyncLyricsOverlayToAudio()'));
+    },
+  );
+
+  test('document reports the viewport anchor and browse transitions', () {
+    final String doc = _doc(after: true);
+    expect(
+      doc,
+      contains(
+        "bridge.callHandler('onLyricsEdge', dir, window.__fushiLyricsLoadGeneration,\n"
+        '        _lyViewAnchorIndex());',
+      ),
+    );
+    expect(doc, contains('window.__lyricsEdgeIdle = function(dir)'));
+    expect(
+      doc,
+      contains(
+        "bridge.callHandler('onLyricsBrowse', on, window.__fushiLyricsLoadGeneration);",
+      ),
+    );
+    // 浏览态只经 _lySetBrowsing 写（否则 Dart 收不到进出）。
+    expect(
+      RegExp(r'_lyBrowsing = (true|false);').allMatches(doc).length,
+      0,
+      reason: '浏览态必须只经 _lySetBrowsing 写',
+    );
+    // 拼接锚点优先视口中线句，补偿滚动取第一个仍在文档里的锚点。
+    final String splice = _between(
+      doc,
+      'window.__lyricsSpliceCues = function(',
+      '_lyEdgeWant = 0;',
+    );
+    expect(splice, contains('_lyCueAtCenter()'));
+    expect(splice, contains('if (!anchors[a].isConnected) continue;'));
+    // setCue(-1)：播放句不在窗口里时只摘高亮。
+    expect(
+      doc,
+      contains('if (index < 0 || index >= len) { _currentIdx = -1; return; }'),
+    );
   });
 }

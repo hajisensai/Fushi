@@ -127,6 +127,14 @@ function makeTreeWalker(root, filter) {
       this.currentNode = order[idx < 0 ? 0 : idx + 1] || null;
       return this.currentNode;
     },
+    // 真 TreeWalker 语义：没有前一个时返回 null、currentNode 不动（selection.js 的
+    // getSentence 向前扩句用它）。
+    previousNode() {
+      const idx = order.indexOf(this.currentNode);
+      const prev = idx > 0 ? order[idx - 1] : null;
+      if (prev) this.currentNode = prev;
+      return prev;
+    },
   };
 }
 

@@ -106,7 +106,8 @@ bool isContinuousPlaybackAdvance({
 /// [StudyAccrual.explicit]，只做段生命周期与落库。
 ///
 /// 字幕字数同律：本次会话前就已整段覆盖的 cue 不再计字（[_coverageAtAttach]）；
-/// 会话内回看由 [_countedIndices] 去重。
+/// 会话内回看由 [_countedCues] 去重。停留量与覆盖比对都在字幕时间轴 / 视频时间轴
+/// 之间按 [VideoPlaybackSource.subtitleDelayMs] 换算（9rdFBLEnVg）。
 ///
 /// 不直接依赖 `VideoPlayerController`（其状态读 libmpv，测试宿主无法实例化），
 /// 而经 [VideoPlaybackSource] 接口，因此纯单测可用 fake 验证采集逻辑。
@@ -139,7 +140,12 @@ class VideoWatchTracker {
   final Future<void> Function(String json)? _saveCoverage;
 
   VideoPlaybackSource? _source;
-  final Set<int> _countedIndices = <int>{};
+
+  /// 会话内已计字的句子，按**句子本身**（字幕轴起止 + 文本）去重，不按 cue 下标：
+  /// 中途换字幕源（默认轨 → 外挂文件、换轨、重载）后旧表的下标对新表毫无意义，按
+  /// 下标去重会把新表里同号的句子当成「已计」而漏掉（9rdFBLEnVg）。
+  final Set<({int startMs, int endMs, String text})> _countedCues =
+      <({int startMs, int endMs, String text})>{};
   bool _episodeCompletionReported = false;
 
   @visibleForTesting
@@ -181,7 +187,7 @@ class VideoWatchTracker {
   /// 换集：清空字幕去重集、停留门候选与外部单集完成门闩；本地 book 完成标记仍按
   /// 整本书保持。候选必须一并清：下标指向的是旧集 cue 表。
   void onEpisodeChanged() {
-    _countedIndices.clear();
+    _countedCues.clear();
     _pendingCueIndex = -1;
     _pendingPlayedMs = 0;
     _pendingObservedAt = null;
@@ -314,6 +320,9 @@ class VideoWatchTracker {
   String _pendingCueText = '';
   int? _pendingCueStartMs;
   int? _pendingCueEndMs;
+
+  /// 进句那一刻的字幕调轴：字幕轴 → 视频轴的换算（覆盖快照在视频轴上）。
+  int _pendingCueDelayMs = 0;
   int _pendingLastPosMs = 0;
   int _pendingPlayedMs = 0;
   DateTime? _pendingObservedAt;
@@ -337,7 +346,12 @@ class VideoWatchTracker {
     // 播放源每次通知都是一个采样点（播放态翻转 / seek / 换句）。
     if (_sampler != null) _sample();
     final int idx = s.currentCueIndex;
-    final int? pos = s.positionMs;
+    // 停留量在**字幕时间轴**上量（cue 的起止在这根轴上）。直接拿视频位置去夹 cue
+    // 时间窗，调过轴（外挂字幕的常态）时位置整段落在窗外、夹完恒等于窗端点，推进量
+    // 恒为 0，字幕字数一句都计不上（9rdFBLEnVg）。
+    final int delayMs = s.subtitleDelayMs;
+    final int? videoPos = s.positionMs;
+    final int? pos = videoPos == null ? null : videoPos - delayMs;
     if (idx != _pendingCueIndex) {
       // 换句这一刻先把上一句的停留量结算掉：生产路径上这**就是**上一句能收到的最后
       // 一次通知（见 [_accumulatePending] 的说明）。
@@ -348,11 +362,12 @@ class VideoWatchTracker {
       if (cue != null &&
           text != null &&
           pos != null &&
-          !_countedIndices.contains(idx)) {
+          !_countedCues.contains(_cueKey(cue.startMs, cue.endMs, text))) {
         _pendingCueIndex = idx;
         _pendingCueText = text;
         _pendingCueStartMs = cue.startMs;
         _pendingCueEndMs = cue.endMs;
+        _pendingCueDelayMs = delayMs;
         _pendingLastPosMs = _clampToPendingCue(pos);
         _pendingPlayedMs = 0;
         _pendingObservedAt = debugNowForTesting();
@@ -370,6 +385,13 @@ class VideoWatchTracker {
       _commitPendingIfDwelled();
     }
   }
+
+  /// 会话内去重键（见 [_countedCues]）。缺起止的 cue 以 -1 占位，仍按文本区分。
+  static ({int startMs, int endMs, String text}) _cueKey(
+    int? startMs,
+    int? endMs,
+    String text,
+  ) => (startMs: startMs ?? -1, endMs: endMs ?? -1, text: text);
 
   /// 把 [pos] 夹进候选 cue 的时间窗。换句那一刻 pos 已经落在下一句里，不夹的话会把
   /// 后面的时间算进上一句；跳走同理。
@@ -421,10 +443,16 @@ class VideoWatchTracker {
     )) {
       return;
     }
-    if (!_countedIndices.add(idx)) return;
     final int? start = _pendingCueStartMs;
     final int? end = _pendingCueEndMs;
-    if (start != null && end != null && _coverageAtAttach.covers(start, end)) {
+    if (!_countedCues.add(_cueKey(start, end, _pendingCueText))) return;
+    // 覆盖并集记的是视频时间轴：cue 时间窗先按进句时的调轴换回视频轴再比。
+    if (start != null &&
+        end != null &&
+        _coverageAtAttach.covers(
+          start + _pendingCueDelayMs,
+          end + _pendingCueDelayMs,
+        )) {
       return;
     }
     // 与 EPUB / 漫画 / galgame 同一口径（[countStudyChars]）。此前是裸

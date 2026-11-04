@@ -275,11 +275,13 @@ fn snapshot_round_trips_and_rejects_garbage() {
     assert_eq!(restored.state().tail_next, s.state().tail_next);
     assert!(NovelSession::restore(b"{\"type\":\"other\",\"version\":1}").is_err());
     assert!(NovelSession::restore(b"{nope").is_err());
-    assert!(NovelSession::restore(b"")
-        .unwrap()
-        .state()
-        .chapters
-        .is_empty());
+    assert!(
+        NovelSession::restore(b"")
+            .unwrap()
+            .state()
+            .chapters
+            .is_empty()
+    );
 }
 
 // ── C ABI ────────────────────────────────────────────────────────────────
@@ -342,14 +344,16 @@ fn ffi_session_round_trip() {
         let p = fwc_article_work_key(url.as_ptr(), url.len(), &mut len);
         assert_eq!(take(p, len), b"ncode.syosetu.com/n9669bk");
         let bad_url = "nope";
-        assert!(fwc_article_extract(
-            html.as_ptr(),
-            html.len(),
-            bad_url.as_ptr(),
-            bad_url.len(),
-            &mut len
-        )
-        .is_null());
+        assert!(
+            fwc_article_extract(
+                html.as_ptr(),
+                html.len(),
+                bad_url.as_ptr(),
+                bad_url.len(),
+                &mut len
+            )
+            .is_null()
+        );
     }
 }
 

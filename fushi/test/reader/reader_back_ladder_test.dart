@@ -1,77 +1,34 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 
-/// 阅读器返回阶梯（NJIIDAhIZL）：系统返回在歌词模式下直接退书，Esc 先退歌词。
+/// 阅读器返回阶梯：Esc（globalBack）与系统返回同一条——词典弹窗先关，其余一律退书；
+/// 歌词模式不是一级（系统返回 NJIIDAhIZL，Esc BUG-4026）。
 void main() {
-  ReaderBackStep step(
-    ReaderBackSource source, {
-    bool dictionaryShown = false,
-    bool lyricsMode = false,
-    bool explicitExit = false,
-  }) => resolveReaderBackStep(
-    source: source,
-    dictionaryShown: dictionaryShown,
-    lyricsMode: lyricsMode,
-    explicitExit: explicitExit,
-  );
-
-  group('路由返回（Android 返回键 / 侧滑、iOS 侧滑、根 maybePop）', () {
-    test('歌词模式下直接退书（不再先掀开歌词层）', () {
-      expect(
-        step(ReaderBackSource.route, lyricsMode: true),
-        ReaderBackStep.exitBook,
-      );
-    });
-
-    test('词典弹窗开着先关弹窗——歌词模式下也一样', () {
-      expect(
-        step(ReaderBackSource.route, dictionaryShown: true),
-        ReaderBackStep.closeDictionary,
-      );
-      expect(
-        step(ReaderBackSource.route, dictionaryShown: true, lyricsMode: true),
-        ReaderBackStep.closeDictionary,
-      );
-    });
-
-    test('正文无浮层时退书', () {
-      expect(step(ReaderBackSource.route), ReaderBackStep.exitBook);
-    });
-
-    test('显式退书在途时跳过整条阶梯', () {
-      expect(
-        step(
-          ReaderBackSource.route,
-          dictionaryShown: true,
-          lyricsMode: true,
-          explicitExit: true,
-        ),
-        ReaderBackStep.exitBook,
-      );
-    });
+  test('词典弹窗开着先关弹窗', () {
+    expect(
+      resolveReaderBackStep(dictionaryShown: true),
+      ReaderBackStep.closeDictionary,
+    );
   });
 
-  group('globalBack 快捷键（Esc / Alt+← / 手柄 B）', () {
-    test('歌词模式下先掀开歌词层，留在书里', () {
-      expect(
-        step(ReaderBackSource.shortcut, lyricsMode: true),
-        ReaderBackStep.closeLyrics,
-      );
-    });
+  test('无浮层时退书（歌词模式下也是：一次就回书架，不先掀开歌词层）', () {
+    expect(
+      resolveReaderBackStep(dictionaryShown: false),
+      ReaderBackStep.exitBook,
+    );
+  });
 
-    test('词典弹窗优先于歌词层', () {
-      expect(
-        step(
-          ReaderBackSource.shortcut,
-          dictionaryShown: true,
-          lyricsMode: true,
-        ),
-        ReaderBackStep.closeDictionary,
-      );
-    });
+  test('阶梯只有「关词典」与「退书」两步', () {
+    expect(ReaderBackStep.values, <ReaderBackStep>[
+      ReaderBackStep.closeDictionary,
+      ReaderBackStep.exitBook,
+    ]);
+  });
 
-    test('正文无浮层时退书', () {
-      expect(step(ReaderBackSource.shortcut), ReaderBackStep.exitBook);
-    });
+  test('显式退书在途时跳过整条阶梯', () {
+    expect(
+      resolveReaderBackStep(dictionaryShown: true, explicitExit: true),
+      ReaderBackStep.exitBook,
+    );
   });
 }

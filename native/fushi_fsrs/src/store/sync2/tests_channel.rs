@@ -12,9 +12,9 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{deck_entity, edit, review, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, deck_entity, edit, review};
 
 const T0: i64 = 1_700_000_000_000;
 const DAY: i64 = 86_400_000;
@@ -46,7 +46,16 @@ fn card_of(n: u64) -> String {
 
 /// 旧库里一条笔记字段的旧修改记录（[server] = 旧服务器记下的时刻）。
 #[allow(clippy::too_many_arguments)]
-fn legacy_edit(d: &Device, writer: &str, s: i64, n: u64, key: &str, v: Value, vv: Value, server: Option<i64>) {
+fn legacy_edit(
+    d: &Device,
+    writer: &str,
+    s: i64,
+    n: u64,
+    key: &str,
+    v: Value,
+    vv: Value,
+    server: Option<i64>,
+) {
     let id = crate::registers::edit_id(writer, s);
     let note = note_id(n);
     let j = json!({"ctx": {"vv": vv}, "e": note, "f": key, "hlc": format!("{}:0:{writer}", T0 - 1000 + s), "id": id, "k": "note",
@@ -99,26 +108,110 @@ fn legacy_log(d: &Device, id: &str, n: u64, at: i64, server: Option<i64>) {
 /// 标签（走标签路径，不让笔记变复杂）与几条旧复习日志。
 fn legacy_library(d: &Device) {
     let rows: [(&str, i64, u64, &str, Value, Value, Option<i64>); 6] = [
-        ("old1", 1, 0, "f/fa", json!("legacy a"), json!({}), Some(T0 - 900)),
-        ("old1", 2, 0, "f/fa", json!("legacy a2"), json!({"old1": 1}), None),
-        ("old2", 1, 0, "f/fa", json!("legacy concurrent"), json!({}), Some(T0 - 950)),
-        ("old2", 2, 1, "f/fb", json!("legacy b"), json!({"old1": 2}), None),
-        ("old1", 3, 2, "f/fa", json!("legacy c"), json!({"old1": 2, "old2": 2}), Some(T0 - 800)),
-        ("old2", 3, 2, "deleted", json!(null), json!({"old2": 2}), None),
+        (
+            "old1",
+            1,
+            0,
+            "f/fa",
+            json!("legacy a"),
+            json!({}),
+            Some(T0 - 900),
+        ),
+        (
+            "old1",
+            2,
+            0,
+            "f/fa",
+            json!("legacy a2"),
+            json!({"old1": 1}),
+            None,
+        ),
+        (
+            "old2",
+            1,
+            0,
+            "f/fa",
+            json!("legacy concurrent"),
+            json!({}),
+            Some(T0 - 950),
+        ),
+        (
+            "old2",
+            2,
+            1,
+            "f/fb",
+            json!("legacy b"),
+            json!({"old1": 2}),
+            None,
+        ),
+        (
+            "old1",
+            3,
+            2,
+            "f/fa",
+            json!("legacy c"),
+            json!({"old1": 2, "old2": 2}),
+            Some(T0 - 800),
+        ),
+        (
+            "old2",
+            3,
+            2,
+            "deleted",
+            json!(null),
+            json!({"old2": 2}),
+            None,
+        ),
     ];
     for (writer, s, n, key, v, vv, server) in rows {
         legacy_edit(d, writer, s, n, key, v, vv, server);
     }
-    let synth = format!("{}tags:{}", crate::registers::SYNTHETIC_WRITER_PREFIX, note_id(5));
-    legacy_edit(d, &synth, 1, 5, "tags", json!(["legacy-tag", "t1"]), json!({"old1": 1}), None);
-    legacy_log(d, "0193a1b2-0000-7000-8000-0000000010a1", 1, T0 - 5 * DAY, Some(T0 - 5 * DAY + 10));
-    legacy_log(d, "0193a1b2-0000-7000-8000-0000000010a2", 1, T0 - 2 * DAY, None);
-    legacy_log(d, "0193a1b2-0000-7000-8000-0000000010a3", 4, T0 - 3 * DAY, Some(T0 - 3 * DAY + 10));
+    let synth = format!(
+        "{}tags:{}",
+        crate::registers::SYNTHETIC_WRITER_PREFIX,
+        note_id(5)
+    );
+    legacy_edit(
+        d,
+        &synth,
+        1,
+        5,
+        "tags",
+        json!(["legacy-tag", "t1"]),
+        json!({"old1": 1}),
+        None,
+    );
+    legacy_log(
+        d,
+        "0193a1b2-0000-7000-8000-0000000010a1",
+        1,
+        T0 - 5 * DAY,
+        Some(T0 - 5 * DAY + 10),
+    );
+    legacy_log(
+        d,
+        "0193a1b2-0000-7000-8000-0000000010a2",
+        1,
+        T0 - 2 * DAY,
+        None,
+    );
+    legacy_log(
+        d,
+        "0193a1b2-0000-7000-8000-0000000010a3",
+        4,
+        T0 - 3 * DAY,
+        Some(T0 - 3 * DAY + 10),
+    );
 }
 
 fn local(d: &Device, now: i64, events: Vec<(Value, String)>) {
-    let input: Vec<Value> = events.into_iter().map(|(e, note)| json!({"e": e, "note": note})).collect();
-    d.core.sync2_apply_local(P, now, &Value::Array(input).to_string()).unwrap();
+    let input: Vec<Value> = events
+        .into_iter()
+        .map(|(e, note)| json!({"e": e, "note": note}))
+        .collect();
+    d.core
+        .sync2_apply_local(P, now, &Value::Array(input).to_string())
+        .unwrap();
 }
 
 /// 一个伪随机世界的同步文件夹（全部历史）。
@@ -126,21 +219,53 @@ fn world(seed: u64) -> Bucket {
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     let deck = super::config::default_deck_id(P);
     let deck2 = "0193a1b2-0000-7000-8000-00000000d0c2".to_owned();
-    let devs = [Device::new("ch-a"), Device::new("ch-b"), Device::new("ch-c")];
+    let devs = [
+        Device::new("ch-a"),
+        Device::new("ch-b"),
+        Device::new("ch-c"),
+    ];
     let l1 = Device::new("ch-l1");
     legacy_library(&l1);
     let l2 = Device::copy_of(&l1, "ch-l2");
     // 复制之后各自又写了同一个旧 ID（同一笔记、不同字段）。服务器时刻一边有一边没有。
     legacy_edit(&l1, "old3", 1, 3, "f/fa", json!("l1 copy"), json!({}), None);
-    legacy_edit(&l2, "old3", 1, 3, "f/fb", json!("l2 copy"), json!({}), Some(T0 - 700));
+    legacy_edit(
+        &l2,
+        "old3",
+        1,
+        3,
+        "f/fb",
+        json!("l2 copy"),
+        json!({}),
+        Some(T0 - 700),
+    );
     let mut bucket = Bucket::default();
     let mut setup = vec![
         (deck_entity(&deck), String::new()),
         (edit("deck", &deck, "name", json!("D")), String::new()),
         (deck_entity(&deck2), String::new()),
-        (json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}), String::new()),
-        (edit("notetype", "NT", "fieldDef/fa", json!({"name": "A", "ord": 0})), String::new()),
-        (edit("notetype", "NT", "tmplDef/t1", json!({"name": "C", "ord": 0, "front": "{{A}}"})), String::new()),
+        (
+            json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            String::new(),
+        ),
+        (
+            edit(
+                "notetype",
+                "NT",
+                "fieldDef/fa",
+                json!({"name": "A", "ord": 0}),
+            ),
+            String::new(),
+        ),
+        (
+            edit(
+                "notetype",
+                "NT",
+                "tmplDef/t1",
+                json!({"name": "C", "ord": 0, "front": "{{A}}"}),
+            ),
+            String::new(),
+        ),
     ];
     for n in 0..NOTES {
         let note = note_id(n);
@@ -151,7 +276,14 @@ fn world(seed: u64) -> Bucket {
     l1.core.sync2_migrate(P, T0, Some(3)).unwrap();
     l1.sync(&mut bucket, "loc", T0 + 1);
     devs[0].sync(&mut bucket, "loc", T0 + 1);
-    local(&devs[0], T0 + 1, vec![(edit("note", &note_id(0), "f/fa", json!("over part of l1")), note_id(0))]);
+    local(
+        &devs[0],
+        T0 + 1,
+        vec![(
+            edit("note", &note_id(0), "f/fa", json!("over part of l1")),
+            note_id(0),
+        )],
+    );
     devs[0].sync(&mut bucket, "loc", T0 + 1);
     l1.core.sync2_migrate(P, T0, None).unwrap();
     l1.sync(&mut bucket, "loc", T0 + 1);
@@ -169,31 +301,72 @@ fn world(seed: u64) -> Bucket {
                 let note = note_id(n);
                 let tag = format!("r{round}d{i}k{k}");
                 let e = match rng.below(21) {
-                    0..=6 => edit("note", &note, if rng.below(2) == 0 { "f/fa" } else { "f/fb" }, json!(tag)),
-                    7..=8 => edit("note", &note, "tags", json!([format!("t{}", rng.below(4)), format!("t{}", rng.below(4))])),
-                    9..=12 => review(&tag, &card_of(n), now + k as i64, 1 + rng.below(4) as i64, if round == 0 { "learn" } else { "review" }),
+                    0..=6 => edit(
+                        "note",
+                        &note,
+                        if rng.below(2) == 0 { "f/fa" } else { "f/fb" },
+                        json!(tag),
+                    ),
+                    7..=8 => edit(
+                        "note",
+                        &note,
+                        "tags",
+                        json!([format!("t{}", rng.below(4)), format!("t{}", rng.below(4))]),
+                    ),
+                    9..=12 => review(
+                        &tag,
+                        &card_of(n),
+                        now + k as i64,
+                        1 + rng.below(4) as i64,
+                        if round == 0 { "learn" } else { "review" },
+                    ),
                     13 => edit("note", &note, "deleted", json!(now)),
                     14 => edit("note", &note, "deleted", json!(null)),
                     15 => edit("card", &card_of(n), "flag", json!(rng.below(5))),
-                    16 => edit("card", &card_of(n), "deck", json!(if rng.below(2) == 0 { &deck } else { &deck2 })),
+                    16 => edit(
+                        "card",
+                        &card_of(n),
+                        "deck",
+                        json!(if rng.below(2) == 0 { &deck } else { &deck2 }),
+                    ),
                     17 => edit("deck", &deck2, "name", json!(tag)),
                     18 => edit("card", &card_of(n), "deleted", json!(now)),
                     // 删 / 恢复第二个牌组：移进它的卡在通道里要逐条投。
-                    19 => edit("deck", &deck2, "deleted", if rng.below(2) == 0 { json!(now) } else { json!(null) }),
-                    _ => edit("deck", &deck, "retention", json!(0.8 + rng.below(10) as f64 / 100.0)),
+                    19 => edit(
+                        "deck",
+                        &deck2,
+                        "deleted",
+                        if rng.below(2) == 0 {
+                            json!(now)
+                        } else {
+                            json!(null)
+                        },
+                    ),
+                    _ => edit(
+                        "deck",
+                        &deck,
+                        "retention",
+                        json!(0.8 + rng.below(10) as f64 / 100.0),
+                    ),
                 };
                 ev.push((e, note));
             }
             local(d, now, ev);
             if rng.below(12) == 0 {
-                d.core.sync2_purge(P, "note", &note_id(rng.below(NOTES)), now + 1).unwrap();
+                d.core
+                    .sync2_purge(P, "note", &note_id(rng.below(NOTES)), now + 1)
+                    .unwrap();
             }
         }
         // 只同步一部分设备、顺序随机：留下并发。
         for i in 0..devs.len() {
             if rng.below(3) != 0 {
                 let d = &devs[(i + rng.below(3) as usize) % devs.len()];
-                d.sync(&mut bucket, "loc", T0 + (round + 1) * DAY + 20 * 3_600_000 + i as i64);
+                d.sync(
+                    &mut bucket,
+                    "loc",
+                    T0 + (round + 1) * DAY + 20 * 3_600_000 + i as i64,
+                );
             }
         }
     }
@@ -213,12 +386,18 @@ fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
     tables
         .into_iter()
         .map(|t| {
-            let cols: Vec<String> = d.rows(&format!("SELECT name FROM pragma_table_info('{t}') ORDER BY cid"))[1..]
+            let cols: Vec<String> = d.rows(&format!(
+                "SELECT name FROM pragma_table_info('{t}') ORDER BY cid"
+            ))[1..]
                 .iter()
                 .filter(|r| !(t.ends_with("_cache") && r[0] == "updated_at"))
                 .map(|r| format!("quote({})", r[0]))
                 .collect();
-            let mut rows: Vec<String> = d.rows(&format!("SELECT {} FROM {t}", cols.join(" || '|' || ")))[1..].iter().map(|r| r[0].clone()).collect();
+            let mut rows: Vec<String> = d
+                .rows(&format!("SELECT {} FROM {t}", cols.join(" || '|' || ")))[1..]
+                .iter()
+                .map(|r| r[0].clone())
+                .collect();
             rows.sort();
             (t, rows)
         })
@@ -245,7 +424,11 @@ fn dirty(d: &Device) -> [BTreeSet<String>; 4] {
 
 fn digest_is_consistent(d: &Device) {
     let r = d.core.reader().unwrap();
-    assert_eq!(super::digest::root(&r, P).unwrap(), super::digest::root_by_scan(&r, P).unwrap(), "bucket digest drifted from a full scan");
+    assert_eq!(
+        super::digest::root(&r, P).unwrap(),
+        super::digest::root_by_scan(&r, P).unwrap(),
+        "bucket digest drifted from a full scan"
+    );
 }
 
 /// 经生产分发器发一条 v2 命令。
@@ -268,13 +451,21 @@ fn cmd_err(d: &Device, req: Value) -> String {
 
 /// 文件夹里的 head 与段。
 fn heads_and_segments(b: &Bucket) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
-    let heads = b
-        .0
-        .iter()
-        .filter(|(k, _)| k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some())
-        .map(|(_, v)| v.clone())
-        .collect();
-    let segs = b.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    let heads =
+        b.0.iter()
+            .filter(|(k, _)| {
+                k.rsplit('/')
+                    .next()
+                    .and_then(crate::sync2::segment::parse_head_file_name)
+                    .is_some()
+            })
+            .map(|(_, v)| v.clone())
+            .collect();
+    let segs =
+        b.0.iter()
+            .filter(|(k, _)| k.contains("/seg-"))
+            .map(|(_, v)| v.clone())
+            .collect();
     (heads, segs)
 }
 
@@ -295,7 +486,8 @@ enum Interrupt {
 /// 通道的（阶段, 游标）；没有通道 = None。
 fn boot_state(d: &Device) -> Option<(i64, i64)> {
     let rows = d.rows("SELECT phase, cursor FROM sync2_boot");
-    rows.get(1).map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap()))
+    rows.get(1)
+        .map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap()))
 }
 
 /// 分批会话收完 [b]：每批 [per] 个段，每片 [slice] 条（None = 生产的按时间切）。
@@ -321,9 +513,16 @@ fn session(d: &Device, b: &Bucket, per: usize, slice: Option<u64>, interrupt: In
                 }
                 Interrupt::LocalWrite => {
                     let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}]).to_string();
-                    cmd(d, json!({"op": "apply", "now": NOW}), vec![input.into_bytes()]);
+                    cmd(
+                        d,
+                        json!({"op": "apply", "now": NOW}),
+                        vec![input.into_bytes()],
+                    );
                     let w = d.core.writer().unwrap();
-                    assert!(!super::channel::active(&w, P).unwrap(), "a local write settles the channel first");
+                    assert!(
+                        !super::channel::active(&w, P).unwrap(),
+                        "a local write settles the channel first"
+                    );
                 }
                 _ => {}
             }
@@ -337,11 +536,18 @@ fn session(d: &Device, b: &Bucket, per: usize, slice: Option<u64>, interrupt: In
     // 逐条投递的对照组没有通道，照常收完。
     if interrupt == Interrupt::ReopenWhileMerging && boot_state(d).is_some() {
         while !boot_state(d).is_some_and(|(phase, cursor)| phase == 2 && cursor >= 1) {
-            assert_eq!(r["more"], json!(true), "the channel finished without being caught mid-merge");
+            assert_eq!(
+                r["more"],
+                json!(true),
+                "the channel finished without being caught mid-merge"
+            );
             r = cmd(d, sliced("replay_pending"), vec![]);
         }
         cmd(d, json!({"op": "ingest_begin"}), vec![]);
-        assert!(boot_state(d).is_none(), "the next session settles the channel first");
+        assert!(
+            boot_state(d).is_none(),
+            "the next session settles the channel first"
+        );
         r = cmd(d, sliced("ingest_finish"), vec![]);
     }
     while r["more"] == json!(true) {
@@ -356,7 +562,13 @@ fn add(total: &mut [usize; 4], c: [usize; 4]) {
 }
 
 /// 一个新设备：通道与逐条两路经同一个分批会话收完，一切相同。
-fn compare(seed: u64, per: usize, slice: Option<u64>, interrupt: Interrupt, total: &mut [usize; 4]) {
+fn compare(
+    seed: u64,
+    per: usize,
+    slice: Option<u64>,
+    interrupt: Interrupt,
+    total: &mut [usize; 4],
+) {
     let all = world(seed);
     let x = Device::new("ch-x");
     x.core.sync2_identity(P, NOW).unwrap();
@@ -368,7 +580,13 @@ fn compare(seed: u64, per: usize, slice: Option<u64>, interrupt: Interrupt, tota
     add(total, super::channel::take_coverage());
     super::channel::sequential(|| session(&y, &all, per, slice, interrupt));
     let what = format!("seed {seed}, {per} segments a batch, slice {slice:?}, {interrupt:?}");
-    assert!(x.rows("SELECT COUNT(*) FROM sync2_ops")[1][0].parse::<u64>().unwrap() > 50, "{what}: world too small");
+    assert!(
+        x.rows("SELECT COUNT(*) FROM sync2_ops")[1][0]
+            .parse::<u64>()
+            .unwrap()
+            > 50,
+        "{what}: world too small"
+    );
     assert_same(&x, &y, &what);
     assert_eq!(dirty(&x), dirty(&y), "{what}: study / browse touches");
     digest_is_consistent(&x);
@@ -382,8 +600,19 @@ fn channel_matches_sequential_for_a_new_device() {
         compare(seed, 2, Some(7), Interrupt::None, &mut total);
     }
     compare(6, 100, None, Interrupt::None, &mut total);
-    for (k, name) in ["folded op", "complex op", "landed then dominated", "card moved into a complex deck"].iter().enumerate() {
-        assert!(total[k] > 0, "the random worlds never exercised: {name} ({total:?})");
+    for (k, name) in [
+        "folded op",
+        "complex op",
+        "landed then dominated",
+        "card moved into a complex deck",
+    ]
+    .iter()
+    .enumerate()
+    {
+        assert!(
+            total[k] > 0,
+            "the random worlds never exercised: {name} ({total:?})"
+        );
     }
 }
 
@@ -407,15 +636,27 @@ fn channel_is_only_for_a_fresh_profile() {
     let x = Device::new("ch-fresh");
     x.core.sync2_identity(P, NOW).unwrap();
     let w = x.core.writer().unwrap();
-    assert!(super::channel::begin(&w, P).unwrap(), "a fresh profile opens the channel");
-    assert!(super::channel::begin(&w, P).unwrap(), "an appending channel resumes");
+    assert!(
+        super::channel::begin(&w, P).unwrap(),
+        "a fresh profile opens the channel"
+    );
+    assert!(
+        super::channel::begin(&w, P).unwrap(),
+        "an appending channel resumes"
+    );
     super::channel::settle(&w, P).unwrap();
-    assert!(!super::channel::active(&w, P).unwrap(), "settled channel leaves no rows");
+    assert!(
+        !super::channel::active(&w, P).unwrap(),
+        "settled channel leaves no rows"
+    );
     drop(w);
     let deck = super::config::default_deck_id(P);
     local(&x, NOW, vec![(deck_entity(&deck), String::new())]);
     let w = x.core.writer().unwrap();
-    assert!(!super::channel::begin(&w, P).unwrap(), "a profile with ops delivers one by one");
+    assert!(
+        !super::channel::begin(&w, P).unwrap(),
+        "a profile with ops delivers one by one"
+    );
 }
 
 /// 会话外把通道做完（分发器在本机写入前、`channel_settle`）按片提交：中途失败只丢那一片，已做的留着、下一次接着做，
@@ -433,11 +674,21 @@ fn settling_commits_slice_by_slice_and_resumes_after_a_failure() {
         let begun = cmd(d, json!({"op": "ingest_begin"}), vec![]);
         for chunk in segs.chunks(2) {
             cmd(d, json!({"op": "ingest_prepare"}), chunk.to_vec());
-            while cmd(d, json!({"op": "ingest_commit", "now": NOW, "sliceOps": 7}), vec![])["more"] == json!(true) {}
+            while cmd(
+                d,
+                json!({"op": "ingest_commit", "now": NOW, "sliceOps": 7}),
+                vec![],
+            )["more"]
+                == json!(true)
+            {}
         }
         begun
     };
-    assert_eq!(appended(&x)["channel"], json!(true), "a fresh profile reports the channel to Dart");
+    assert_eq!(
+        appended(&x)["channel"],
+        json!(true),
+        "a fresh profile reports the channel to Dart"
+    );
     assert_eq!(boot_state(&x), Some((0, 0)), "appending");
     // 第三片报错：前两片已提交，通道停在折叠里。
     super::channel::take_settle_slices();
@@ -446,14 +697,30 @@ fn settling_commits_slice_by_slice_and_resumes_after_a_failure() {
     super::channel::fail_settle_at(None);
     assert!(err.contains("injected settle failure"), "{err}");
     let (phase, cursor) = boot_state(&x).expect("the channel is still there");
-    assert!(phase >= 1 && (phase, cursor) != (1, 0), "the committed slices stay done: ({phase}, {cursor})");
-    assert_eq!(cmd(&x, json!({"op": "identity", "now": NOW}), vec![])["channel"], json!(true), "Dart learns the channel at open");
+    assert!(
+        phase >= 1 && (phase, cursor) != (1, 0),
+        "the committed slices stay done: ({phase}, {cursor})"
+    );
+    assert_eq!(
+        cmd(&x, json!({"op": "identity", "now": NOW}), vec![])["channel"],
+        json!(true),
+        "Dart learns the channel at open"
+    );
     // 接着做完（不从头来），之后写连接上没有挂着的事务。
     cmd(&x, json!({"op": "channel_settle"}), vec![]);
     assert!(boot_state(&x).is_none(), "settled");
-    assert!(super::channel::take_settle_slices() > 3, "settling is sliced");
-    assert!(x.core.writer().unwrap().is_autocommit(), "every slice committed");
-    assert_eq!(cmd(&x, json!({"op": "identity", "now": NOW}), vec![])["channel"], json!(false));
+    assert!(
+        super::channel::take_settle_slices() > 3,
+        "settling is sliced"
+    );
+    assert!(
+        x.core.writer().unwrap().is_autocommit(),
+        "every slice committed"
+    );
+    assert_eq!(
+        cmd(&x, json!({"op": "identity", "now": NOW}), vec![])["channel"],
+        json!(false)
+    );
     let mut r = cmd(&x, json!({"op": "ingest_finish", "now": NOW}), vec![]);
     while r["more"] == json!(true) {
         r = cmd(&x, json!({"op": "replay_pending", "now": NOW}), vec![]);

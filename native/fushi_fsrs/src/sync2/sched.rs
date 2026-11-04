@@ -4,10 +4,10 @@
 //! 重放（replay.rs）与评分预览都只走这一份，所以「按钮上显示的间隔」与「合并后重放出来的到期日」
 //! 出自同一段代码、同一套浮点运算。
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::fsrs_det::{Item, Memory, Model, Version};
-use crate::projection::{Day, DAY_MS};
+use crate::projection::{DAY_MS, Day};
 
 const MINUTE_MS: i64 = 60_000;
 
@@ -80,7 +80,11 @@ impl Sched {
             let s = m.get("s")?.as_f64()?;
             let d = m.get("d")?.as_f64()?;
             let sf = m.get("sf").and_then(Value::as_f64).unwrap_or(s);
-            Some(Memory { s: s as f32, d: d as f32, sf: sf as f32 })
+            Some(Memory {
+                s: s as f32,
+                d: d as f32,
+                sf: sf as f32,
+            })
         });
         Sched {
             queue: Queue::parse(v.get("queue").and_then(Value::as_str)),
@@ -92,7 +96,11 @@ impl Sched {
             last_reviewed_at: i("lastReviewedAt"),
             reps: i("reps").unwrap_or(0),
             lapses: i("lapses").unwrap_or(0),
-            scheduler: v.get("scheduler").and_then(Value::as_str).unwrap_or("fushi").to_owned(),
+            scheduler: v
+                .get("scheduler")
+                .and_then(Value::as_str)
+                .unwrap_or("fushi")
+                .to_owned(),
             ease: i("ease"),
         }
     }
@@ -110,7 +118,10 @@ impl Sched {
         m.insert("ivl".into(), json!(self.ivl));
         m.insert("step".into(), json!(self.step));
         if let Some(mem) = self.mem {
-            m.insert("mem".into(), json!({ "s": f32_json(mem.s), "d": f32_json(mem.d), "sf": f32_json(mem.sf) }));
+            m.insert(
+                "mem".into(),
+                json!({ "s": f32_json(mem.s), "d": f32_json(mem.d), "sf": f32_json(mem.sf) }),
+            );
         }
         if let Some(l) = self.last_reviewed_at {
             m.insert("lastReviewedAt".into(), json!(l));
@@ -128,7 +139,11 @@ impl Sched {
 /// f32 按最短往返十进制输出（与 FFI 一贯用 serde 直接序列化 f32 的文本相同；直接 `json!(f32)` 会先展开成
 /// f64 的完整小数）。
 pub fn f32_json(v: f32) -> Value {
-    format!("{v}").parse::<f64>().ok().and_then(serde_json::Number::from_f64).map_or(Value::Null, Value::Number)
+    format!("{v}")
+        .parse::<f64>()
+        .ok()
+        .and_then(serde_json::Number::from_f64)
+        .map_or(Value::Null, Value::Number)
 }
 
 /// 排程用的算法（记忆状态都由 FSRS 算：RWKV 牌组用 FSRS-7）。
@@ -141,7 +156,11 @@ pub enum MemAlg {
 impl MemAlg {
     /// 牌组算法的 wire 值 → 记忆算法（不认识的按回退顺序取 fsrs7，Dart `resolveLocalAlgorithm`）。
     pub fn of_wire(wire: &str) -> MemAlg {
-        if wire == "fsrs6" { MemAlg::Fsrs6 } else { MemAlg::Fsrs7 }
+        if wire == "fsrs6" {
+            MemAlg::Fsrs6
+        } else {
+            MemAlg::Fsrs7
+        }
     }
 
     pub fn version(self) -> Version {
@@ -223,13 +242,20 @@ impl Config {
     /// [Config::to_json] 的逆；缺键或类型不对返回 `None`（这条日志按作者结果照抄，不重算）。
     pub fn from_json(v: &Value) -> Option<Config> {
         let o = v.as_object()?;
-        let f64s = |k: &str| -> Option<Vec<f64>> { o.get(k)?.as_array()?.iter().map(Value::as_f64).collect() };
+        let f64s = |k: &str| -> Option<Vec<f64>> {
+            o.get(k)?.as_array()?.iter().map(Value::as_f64).collect()
+        };
         let alg = match o.get("alg")?.as_str()? {
             "fsrs6" => MemAlg::Fsrs6,
             "fsrs7" => MemAlg::Fsrs7,
             _ => return None,
         };
-        let params: Vec<f32> = o.get("params")?.as_array()?.iter().map(|x| x.as_f64().map(|f| f as f32)).collect::<Option<_>>()?;
+        let params: Vec<f32> = o
+            .get("params")?
+            .as_array()?
+            .iter()
+            .map(|x| x.as_f64().map(|f| f as f32))
+            .collect::<Option<_>>()?;
         Some(Config {
             learn_steps: f64s("ls")?,
             relearn_steps: f64s("rs")?,
@@ -276,7 +302,11 @@ pub fn fuzz_range(interval: f64, minimum: i64, maximum: i64) -> (i64, i64) {
         let v = clampi(round_i(interval), minimum, maximum);
         return (v, v);
     }
-    const RANGES: [(f64, f64, f64); 3] = [(2.5, 7.0, 0.15), (7.0, 20.0, 0.1), (20.0, f64::INFINITY, 0.05)];
+    const RANGES: [(f64, f64, f64); 3] = [
+        (2.5, 7.0, 0.15),
+        (7.0, 20.0, 0.1),
+        (20.0, f64::INFINITY, 0.05),
+    ];
     let mut delta = 1.0;
     for (start, end, factor) in RANGES {
         delta += factor * ((if interval < end { interval } else { end }) - start).max(0.0);
@@ -291,7 +321,11 @@ pub fn fuzz_range(interval: f64, minimum: i64, maximum: i64) -> (i64, i64) {
 
 /// 把 FSRS 给的小数间隔落成整天（Dart `srsConstrainInterval`）。
 pub fn constrain_interval(raw: f64, minimum: i64, cfg: &Config, card_id: &str, reps: i64) -> i64 {
-    let maximum = if cfg.max_interval < minimum { minimum } else { cfg.max_interval };
+    let maximum = if cfg.max_interval < minimum {
+        minimum
+    } else {
+        cfg.max_interval
+    };
     if !cfg.fuzz {
         return clampi(round_i(raw), minimum, maximum);
     }
@@ -326,7 +360,14 @@ fn hard_delay(steps: &[f64], step: i64) -> f64 {
 }
 
 /// 四个评分各自的「这次操作后」结果（Dart `srsPlanAnswer`）。[next] 是 again..easy。
-pub fn plan_answer(card_id: &str, cur: &Sched, now: i64, day: &Day, cfg: &Config, next: &[Item; 4]) -> [Sched; 4] {
+pub fn plan_answer(
+    card_id: &str,
+    cur: &Sched,
+    now: i64,
+    day: &Day,
+    cfg: &Config,
+    next: &[Item; 4],
+) -> [Sched; 4] {
     let today = day.index(now);
     let reps = cur.reps + 1;
     let learning = |queue: Queue, step: i64, delay_min: f64, memory: Memory, lapses: i64| Sched {
@@ -355,7 +396,8 @@ pub fn plan_answer(card_id: &str, cur: &Sched, now: i64, day: &Day, cfg: &Config
         scheduler: cur.scheduler.clone(),
         ease: None,
     };
-    let ivl_of = |raw: f32, minimum: i64| constrain_interval(f64::from(raw), minimum, cfg, card_id, reps);
+    let ivl_of =
+        |raw: f32, minimum: i64| constrain_interval(f64::from(raw), minimum, cfg, card_id, reps);
     let passing = |from_review: bool| -> (i64, i64, i64) {
         let prev = if from_review { cur.ivl } else { 0 };
         let mut hard = ivl_of(next[1].interval, 1);
@@ -393,10 +435,22 @@ pub fn plan_answer(card_id: &str, cur: &Sched, now: i64, day: &Day, cfg: &Config
             let hard = if steps.is_empty() {
                 review_at(ivl_of(next[1].interval, 1), mem(1), cur.lapses)
             } else {
-                learning(Queue::Learning, step, hard_delay(steps, step), mem(1), cur.lapses)
+                learning(
+                    Queue::Learning,
+                    step,
+                    hard_delay(steps, step),
+                    mem(1),
+                    cur.lapses,
+                )
             };
             let good_s = if ((step + 1) as usize) < steps.len() {
-                learning(Queue::Learning, step + 1, steps[(step + 1) as usize], mem(2), cur.lapses)
+                learning(
+                    Queue::Learning,
+                    step + 1,
+                    steps[(step + 1) as usize],
+                    mem(2),
+                    cur.lapses,
+                )
             } else {
                 review_at(good, mem(2), cur.lapses)
             };
@@ -411,7 +465,12 @@ pub fn plan_answer(card_id: &str, cur: &Sched, now: i64, day: &Day, cfg: &Config
                 learning(Queue::Relearning, 0, rsteps[0], mem(0), lapses)
             };
             let (hard, good, easy) = passing(true);
-            [again, review_at(hard, mem(1), cur.lapses), review_at(good, mem(2), cur.lapses), review_at(easy, mem(3), cur.lapses)]
+            [
+                again,
+                review_at(hard, mem(1), cur.lapses),
+                review_at(good, mem(2), cur.lapses),
+                review_at(easy, mem(3), cur.lapses),
+            ]
         }
         Queue::Relearning => {
             let rsteps = &cfg.relearn_steps;
@@ -425,10 +484,22 @@ pub fn plan_answer(card_id: &str, cur: &Sched, now: i64, day: &Day, cfg: &Config
             let hard = if rsteps.is_empty() {
                 review_at(ivl_of(next[1].interval, 1), mem(1), cur.lapses)
             } else {
-                learning(Queue::Relearning, step, hard_delay(rsteps, step), mem(1), cur.lapses)
+                learning(
+                    Queue::Relearning,
+                    step,
+                    hard_delay(rsteps, step),
+                    mem(1),
+                    cur.lapses,
+                )
             };
             let good_s = if ((step + 1) as usize) < rsteps.len() {
-                learning(Queue::Relearning, step + 1, rsteps[(step + 1) as usize], mem(2), cur.lapses)
+                learning(
+                    Queue::Relearning,
+                    step + 1,
+                    rsteps[(step + 1) as usize],
+                    mem(2),
+                    cur.lapses,
+                )
             } else {
                 review_at(good, mem(2), cur.lapses)
             };
@@ -451,24 +522,43 @@ pub fn manual_set_due(cur: &Sched, due_day: i64, today: i64) -> Sched {
 
 /// 「设为新卡」（Dart `srsManualReset`）：只保留排程归属。
 pub fn manual_reset(cur: &Sched) -> Sched {
-    Sched { scheduler: cur.scheduler.clone(), ..Sched::initial() }
+    Sched {
+        scheduler: cur.scheduler.clone(),
+        ..Sched::initial()
+    }
 }
 
 /// handOff / 收回：只改排程归属。
 pub fn hand_off(cur: &Sched, to_anki: bool) -> Sched {
-    Sched { scheduler: if to_anki { "anki" } else { "fushi" }.into(), ..cur.clone() }
+    Sched {
+        scheduler: if to_anki { "anki" } else { "fushi" }.into(),
+        ..cur.clone()
+    }
 }
 
 /// 「立即重排」（Dart `SrsCardOps.reschedule`）：复习卡按当前参数重算到期；条件不满足 = 不变。
-pub fn reschedule(card_id: &str, cur: &Sched, memory: Option<Memory>, model: &Model, cfg: &Config, day: &Day) -> Sched {
-    let (Queue::Review, Some(last), Some(memory)) = (cur.queue, cur.last_reviewed_at, memory) else {
+pub fn reschedule(
+    card_id: &str,
+    cur: &Sched,
+    memory: Option<Memory>,
+    model: &Model,
+    cfg: &Config,
+    day: &Day,
+) -> Sched {
+    let (Queue::Review, Some(last), Some(memory)) = (cur.queue, cur.last_reviewed_at, memory)
+    else {
         return cur.clone();
     };
     let Ok(next) = model.next_states(Some(memory), cfg.desired_retention as f32, 0.0) else {
         return cur.clone();
     };
     let ivl = constrain_interval(f64::from(next[2].interval), 1, cfg, card_id, cur.reps);
-    Sched { due_day: Some(day.index(last) + ivl), ivl, mem: Some(memory), ..cur.clone() }
+    Sched {
+        due_day: Some(day.index(last) + ivl),
+        ivl,
+        mem: Some(memory),
+        ..cur.clone()
+    }
 }
 
 #[cfg(test)]
@@ -494,7 +584,10 @@ mod tests {
     }
 
     fn day() -> Day {
-        Day { utc_offset_min: 0, rollover_hour: 4 }
+        Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        }
     }
 
     #[test]
@@ -510,7 +603,10 @@ mod tests {
         assert_eq!(plan[2].queue, Queue::Learning);
         assert_eq!(plan[2].step, 1);
         assert_eq!(plan[3].queue, Queue::Review);
-        assert!(plan.iter().all(|s| s.reps == 1 && s.last_reviewed_at == Some(now)));
+        assert!(
+            plan.iter()
+                .all(|s| s.reps == 1 && s.last_reviewed_at == Some(now))
+        );
     }
 
     #[test]
@@ -521,13 +617,23 @@ mod tests {
             queue: Queue::Review,
             due_day: Some(10),
             ivl: 10,
-            mem: Some(Memory { s: 10.0, d: 5.0, sf: 8.0 }),
+            mem: Some(Memory {
+                s: 10.0,
+                d: 5.0,
+                sf: 8.0,
+            }),
             last_reviewed_at: Some(0),
             reps: 5,
             ..Sched::initial()
         };
         let now = 10 * DAY_MS + 5 * 3_600_000;
-        let next = model.next_states(cur.mem, 0.8, elapsed_days(MemAlg::Fsrs7, cur.last_reviewed_at, now, &day()) as f32).unwrap();
+        let next = model
+            .next_states(
+                cur.mem,
+                0.8,
+                elapsed_days(MemAlg::Fsrs7, cur.last_reviewed_at, now, &day()) as f32,
+            )
+            .unwrap();
         let p = plan_answer("c", &cur, now, &day(), &cfg, &next);
         assert_eq!(p[0].queue, Queue::Relearning);
         assert_eq!(p[0].lapses, 1);
@@ -539,7 +645,11 @@ mod tests {
         let s = Sched {
             queue: Queue::Review,
             due_day: Some(3),
-            mem: Some(Memory { s: 3.9221, d: 5.5, sf: 3.1 }),
+            mem: Some(Memory {
+                s: 3.9221,
+                d: 5.5,
+                sf: 3.1,
+            }),
             last_reviewed_at: Some(9),
             ease: Some(2500),
             ..Sched::initial()

@@ -38,17 +38,25 @@ final class _FakeRwkv implements SrsRwkvScheduling {
   @override
   bool get ready => true;
 
-  @override
-  Future<List<double>?> instantRetrievability(
-    List<SrsRwkvCandidate> cards, {
-    required int atMs,
-  }) async => <double>[
+  List<double> _scores(List<SrsRwkvCandidate> cards) => <double>[
     for (final SrsRwkvCandidate c in cards)
       ((c.id.codeUnits.fold<int>(0, (int a, int b) => a + b) +
                   (c.lastLogId == null ? 0 : 7)) %
               97) /
           100.0,
   ];
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int atMs,
+  }) async => _scores(cards);
+
+  @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => _scores(cards);
 
   @override
   Future<void> onAnswered(String cardId, SrsReviewLog log) async {}

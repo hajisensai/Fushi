@@ -71,9 +71,16 @@ fn read_smf(b: &[u8]) -> Option<(u16, Vec<(u64, u32)>, Vec<Ev>)> {
                     p += l;
                     match ty {
                         0x51 if l == 3 => {
-                            tempos.push((tick, ((data[0] as u32) << 16) | ((data[1] as u32) << 8) | data[2] as u32));
+                            tempos.push((
+                                tick,
+                                ((data[0] as u32) << 16) | ((data[1] as u32) << 8) | data[2] as u32,
+                            ));
                         }
-                        0x01 | 0x05 => evs.push(Ev { tick, kind: ty, text: data.to_vec() }),
+                        0x01 | 0x05 => evs.push(Ev {
+                            tick,
+                            kind: ty,
+                            text: data.to_vec(),
+                        }),
                         0x2F => break,
                         _ => {}
                     }
@@ -128,11 +135,20 @@ fn tick_to_ms(tick: u64, division: u16, tempos: &[(u64, u32)]) -> i64 {
 
 pub fn parse(b: &[u8], duration_ms: Option<i64>) -> Option<Timeline> {
     let (division, tempos, evs) = read_smf(b)?;
-    let kar = evs.iter().any(|e| e.kind == 0x01 && e.text.first() == Some(&b'@'));
+    let kar = evs
+        .iter()
+        .any(|e| e.kind == 0x01 && e.text.first() == Some(&b'@'));
     let n_text = evs.iter().filter(|e| e.kind == 0x01).count();
     let n_lyric = evs.iter().filter(|e| e.kind == 0x05).count();
-    let use_kind = if kar || (n_text > n_lyric) { 0x01 } else { 0x05 };
-    let mut t = Timeline::new(if kar { "kar" } else { "midi" }, TimingQuality::SyllablePitch);
+    let use_kind = if kar || (n_text > n_lyric) {
+        0x01
+    } else {
+        0x05
+    };
+    let mut t = Timeline::new(
+        if kar { "kar" } else { "midi" },
+        TimingQuality::SyllablePitch,
+    );
     let mut cur = Line::default();
     for e in evs.iter().filter(|e| e.kind == use_kind) {
         let raw = super::text::decode_text(&e.text);
@@ -179,10 +195,18 @@ pub fn parse(b: &[u8], duration_ms: Option<i64>) -> Option<Timeline> {
         if let Some(last) = l.syllables.last_mut() {
             if last.end_ms <= last.start_ms {
                 let cap = last.start_ms + 1000;
-                last.end_ms = next.map(|n| n.min(cap)).unwrap_or(cap).max(last.start_ms + 1);
+                last.end_ms = next
+                    .map(|n| n.min(cap))
+                    .unwrap_or(cap)
+                    .max(last.start_ms + 1);
             }
         }
-        l.end_ms = l.syllables.iter().map(|s| s.end_ms).max().unwrap_or(l.end_ms);
+        l.end_ms = l
+            .syllables
+            .iter()
+            .map(|s| s.end_ms)
+            .max()
+            .unwrap_or(l.end_ms);
     }
     t.finalize(duration_ms);
     Some(t)
@@ -215,7 +239,15 @@ pub fn build_smf(tempo_us: Option<u32>, events: &[(u64, u8, &[u8])]) -> Vec<u8> 
     let mut trk = Vec::new();
     let mut last = 0u64;
     if let Some(tp) = tempo_us {
-        trk.extend_from_slice(&[0x00, 0xFF, 0x51, 0x03, (tp >> 16) as u8, (tp >> 8) as u8, tp as u8]);
+        trk.extend_from_slice(&[
+            0x00,
+            0xFF,
+            0x51,
+            0x03,
+            (tp >> 16) as u8,
+            (tp >> 8) as u8,
+            tp as u8,
+        ]);
     }
     for &(tick, ty, text) in events {
         vlq(tick - last, &mut trk);
@@ -245,20 +277,33 @@ mod tests {
         // 120 BPM（500000 µs）：480 tick = 500 ms。
         let smf = build_smf(
             Some(500_000),
-            &[(0, 1, b"@KMIDI KARAOKE FILE"), (0, 1, b"@TSong"), (480, 1, b"\\Hel"), (720, 1, b"lo"), (960, 1, b"/World")],
+            &[
+                (0, 1, b"@KMIDI KARAOKE FILE"),
+                (0, 1, b"@TSong"),
+                (480, 1, b"\\Hel"),
+                (720, 1, b"lo"),
+                (960, 1, b"/World"),
+            ],
         );
         let t = parse(&smf, None).unwrap();
         assert_eq!(t.meta.format, "kar");
         assert_eq!(t.meta.title.as_deref(), Some("Song"));
         assert_eq!(t.lines.len(), 2);
-        let s: Vec<_> = t.lines[0].syllables.iter().map(|s| (s.text.as_str(), s.start_ms, s.end_ms)).collect();
+        let s: Vec<_> = t.lines[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.start_ms, s.end_ms))
+            .collect();
         assert_eq!(s, vec![("Hel", 500, 750), ("lo", 750, 1000)]);
         assert_eq!(t.lines[1].start_ms, 1000);
     }
 
     #[test]
     fn lyric_meta_events_with_cr() {
-        let smf = build_smf(None, &[(0, 5, b"La "), (240, 5, b"la\r"), (960, 5, b"Next")]);
+        let smf = build_smf(
+            None,
+            &[(0, 5, b"La "), (240, 5, b"la\r"), (960, 5, b"Next")],
+        );
         let t = parse(&smf, None).unwrap();
         assert_eq!(t.meta.format, "midi");
         assert_eq!(t.lines.len(), 2);

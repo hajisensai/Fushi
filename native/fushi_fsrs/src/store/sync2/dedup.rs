@@ -28,8 +28,8 @@
 
 use std::collections::BTreeSet;
 
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
 
 use crate::sync2::codec::Writer;
 use crate::sync2::dvv::Dvv;
@@ -37,7 +37,7 @@ use crate::sync2::id::Id;
 use crate::sync2::op::{self, Body, EditBody, EntKind, LegacyStamp, Op};
 use crate::sync2::vv::OpId;
 
-use super::{edit_row_id, load_op, semantics, snapshots, sql, Touched};
+use super::{Touched, edit_row_id, load_op, semantics, snapshots, sql};
 
 pub(crate) const PHASE_INDEX: i64 = 0;
 pub(crate) const PHASE_MATCH: i64 = 1;
@@ -69,7 +69,15 @@ fn content_key(kind: u16, payload: &[u8]) -> Option<[u8; 16]> {
             w.u8(3);
             w.bytes(payload);
         }
-        Body::Edit(EditBody { kind, entity, key, value, machine, ts, legacy: Some(l) }) => {
+        Body::Edit(EditBody {
+            kind,
+            entity,
+            key,
+            value,
+            machine,
+            ts,
+            legacy: Some(l),
+        }) => {
             if super::is_synthetic_writer(&l.writer) {
                 return None;
             }
@@ -107,11 +115,17 @@ pub(crate) fn verify(mine: &Op, twin: &Op) -> Option<Option<String>> {
         return None;
     }
     if mine.kind != op::KIND_EDIT {
-        return (mine.payload == twin.payload && content_key(mine.kind, &mine.payload).is_some()).then_some(None);
+        return (mine.payload == twin.payload && content_key(mine.kind, &mine.payload).is_some())
+            .then_some(None);
     }
-    let (Ok(Body::Edit(a)), Ok(Body::Edit(b))) = (mine.body(), twin.body()) else { return None };
-    let (Some(la), Some(lb)) = (&a.legacy, &b.legacy) else { return None };
-    if (a.kind, &a.entity, &a.key, &a.value, a.machine, a.ts) != (b.kind, &b.entity, &b.key, &b.value, b.machine, b.ts)
+    let (Ok(Body::Edit(a)), Ok(Body::Edit(b))) = (mine.body(), twin.body()) else {
+        return None;
+    };
+    let (Some(la), Some(lb)) = (&a.legacy, &b.legacy) else {
+        return None;
+    };
+    if (a.kind, &a.entity, &a.key, &a.value, a.machine, a.ts)
+        != (b.kind, &b.entity, &b.key, &b.value, b.machine, b.ts)
         || la.seq != lb.seq
         || la.server_time != lb.server_time
         || super::is_synthetic_writer(&la.writer)
@@ -160,10 +174,23 @@ fn legacy_of(o: &Op) -> Option<LegacyStamp> {
 }
 
 /// 应用一条 [Body::Dedup]（作者 [author] 的 [pairs]）。读者与作者同一个函数；已应用过的（本地已是骨架）跳过，可重放。
-pub(crate) fn apply(c: &Connection, profile: &str, author: &Id, own: &Id, pairs: &[(u64, OpId)], now: i64, t: &mut Touched) -> Result<(), String> {
+pub(crate) fn apply(
+    c: &Connection,
+    profile: &str,
+    author: &Id,
+    own: &Id,
+    pairs: &[(u64, OpId)],
+    now: i64,
+    t: &mut Touched,
+) -> Result<(), String> {
     for (seq, twin) in pairs {
-        let id = OpId { device: *author, seq: *seq };
-        let Some(o) = load_op(c, profile, &id)? else { continue };
+        let id = OpId {
+            device: *author,
+            seq: *seq,
+        };
+        let Some(o) = load_op(c, profile, &id)? else {
+            continue;
+        };
         if o.purged {
             continue;
         }
@@ -178,7 +205,9 @@ pub(crate) fn apply(c: &Connection, profile: &str, author: &Id, own: &Id, pairs:
                     }
                 }
                 let eid = edit_row_id(&o, &e);
-                let twin_eid = load_op(c, profile, twin)?.and_then(|x| legacy_of(&x)).map(|l| crate::registers::edit_id(&l.writer, l.seq));
+                let twin_eid = load_op(c, profile, twin)?
+                    .and_then(|x| legacy_of(&x))
+                    .map(|l| crate::registers::edit_id(&l.writer, l.seq));
                 if twin_eid.as_deref() == Some(eid.as_str()) {
                     // 逐字节相同：行是同一行，只把行 → 操作的映射交给原件。
                     c.prepare_cached("UPDATE sync2_edit_ops SET device = ?3, seq = ?4 WHERE edit_id = srs_id(?1) AND device = ?2 AND seq = ?5")
@@ -187,7 +216,12 @@ pub(crate) fn apply(c: &Connection, profile: &str, author: &Id, own: &Id, pairs:
                         .map_err(sql)?;
                 } else {
                     // 改了名的副本：它自己那一行（并存的第二行）删掉。原件那一行由原件落（已落或之后落）。
-                    if c.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([&eid]).map_err(sql)? > 0 {
+                    if c.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)")
+                        .map_err(sql)?
+                        .execute([&eid])
+                        .map_err(sql)?
+                        > 0
+                    {
                         t.dominated.push(eid.clone());
                         t.marks.edit(e.kind, &ent, &e.key);
                     }
@@ -241,11 +275,13 @@ pub(crate) fn apply(c: &Connection, profile: &str, author: &Id, own: &Id, pairs:
 
 /// 作业状态：(阶段, 游标设备, 游标 seq)。
 fn job(c: &Connection, profile: &str) -> Result<Option<(i64, Vec<u8>, i64)>, String> {
-    c.prepare_cached("SELECT phase, cur_dev, cur_seq FROM sync2_dedup WHERE profile_uid = srs_id(?1)")
-        .map_err(sql)?
-        .query_row([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .optional()
-        .map_err(sql)
+    c.prepare_cached(
+        "SELECT phase, cur_dev, cur_seq FROM sync2_dedup WHERE profile_uid = srs_id(?1)",
+    )
+    .map_err(sql)?
+    .query_row([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    .optional()
+    .map_err(sql)
 }
 
 fn set_job(c: &Connection, profile: &str, phase: i64, dev: &[u8], seq: i64) -> Result<(), String> {
@@ -259,7 +295,15 @@ fn set_job(c: &Connection, profile: &str, phase: i64, dev: &[u8], seq: i64) -> R
 type Row = (Vec<u8>, i64, u16, Vec<u8>);
 
 /// 从 (dev, seq) 之后按 (设备, seq) 读一批候选种类的操作原文。[filter] 是附加的 SQL 条件。
-fn scan(c: &Connection, profile: &str, filter: &str, dev: &[u8], seq: i64, kinds: &str, me: &Id) -> Result<Vec<Row>, String> {
+fn scan(
+    c: &Connection,
+    profile: &str,
+    filter: &str,
+    dev: &[u8],
+    seq: i64,
+    kinds: &str,
+    me: &Id,
+) -> Result<Vec<Row>, String> {
     let q = format!(
         "SELECT device, seq, kind, payload, sc, sc_at, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind IN ({kinds}) AND purged = 0 \
          AND {filter} AND (device, seq) > (?2, ?3) ORDER BY device, seq LIMIT ?5"
@@ -267,9 +311,20 @@ fn scan(c: &Connection, profile: &str, filter: &str, dev: &[u8], seq: i64, kinds
     let raw: Vec<(Vec<u8>, i64, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = c
         .prepare_cached(&q)
         .map_err(sql)?
-        .query_map(params![profile, dev, seq, me.0.to_vec(), STEP_OPS as i64], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
-        })
+        .query_map(
+            params![profile, dev, seq, me.0.to_vec(), STEP_OPS as i64],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
+            },
+        )
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
@@ -286,7 +341,9 @@ const CANDIDATE_KINDS: &str = "1, 2, 3";
 fn step_index(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> Result<(), String> {
     let rows = scan(c, profile, "device < ?4", dev, seq, CANDIDATE_KINDS, me)?;
     for (d, s, k, p) in &rows {
-        let Some(h) = content_key(*k, p) else { continue };
+        let Some(h) = content_key(*k, p) else {
+            continue;
+        };
         c.prepare_cached("INSERT OR IGNORE INTO sync2_dedup_keys (profile_uid, h, device, seq) VALUES (srs_id(?1), ?2, ?3, ?4)")
             .map_err(sql)?
             .execute(params![profile, &h[..], d, s])
@@ -302,7 +359,9 @@ fn step_index(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> R
 fn step_match(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> Result<(), String> {
     let rows = scan(c, profile, "device = ?4", dev, seq, CANDIDATE_KINDS, me)?;
     for (_, s, k, p) in &rows {
-        let Some(h) = content_key(*k, p) else { continue };
+        let Some(h) = content_key(*k, p) else {
+            continue;
+        };
         let found: Option<(Vec<u8>, i64)> = c
             .prepare_cached("SELECT device, seq FROM sync2_dedup_keys WHERE profile_uid = srs_id(?1) AND h = ?2")
             .map_err(sql)?
@@ -310,9 +369,26 @@ fn step_match(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> R
             .optional()
             .map_err(sql)?;
         let Some((td, ts)) = found else { continue };
-        let twin_id = OpId { device: Id(td.as_slice().try_into().map_err(|_| "bad device")?), seq: ts as u64 };
-        let (Some(mine), Some(twin)) = (load_op(c, profile, &OpId { device: *me, seq: *s as u64 })?, load_op(c, profile, &twin_id)?) else { continue };
-        let Some(renamed) = verify(&mine, &twin) else { continue };
+        let twin_id = OpId {
+            device: Id(td.as_slice().try_into().map_err(|_| "bad device")?),
+            seq: ts as u64,
+        };
+        let (Some(mine), Some(twin)) = (
+            load_op(
+                c,
+                profile,
+                &OpId {
+                    device: *me,
+                    seq: *s as u64,
+                },
+            )?,
+            load_op(c, profile, &twin_id)?,
+        ) else {
+            continue;
+        };
+        let Some(renamed) = verify(&mine, &twin) else {
+            continue;
+        };
         let reg = match (&renamed, mine.body()) {
             (Some(_), Ok(Body::Edit(e))) => Some(register_key(&e)),
             _ => None,
@@ -337,9 +413,15 @@ fn step_check(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> R
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
-    let rows = if writers.is_empty() { Vec::new() } else { scan(c, profile, "?4 = ?4", dev, seq, "2", me)? };
+    let rows = if writers.is_empty() {
+        Vec::new()
+    } else {
+        scan(c, profile, "?4 = ?4", dev, seq, "2", me)?
+    };
     for (d, s, k, p) in &rows {
-        let Ok(Body::Edit(e)) = Body::decode(*k, p) else { continue };
+        let Ok(Body::Edit(e)) = Body::decode(*k, p) else {
+            continue;
+        };
         let Some(l) = &e.legacy else { continue };
         if !writers.contains(&l.writer) {
             continue;
@@ -354,10 +436,12 @@ fn step_check(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> R
                 continue;
             }
         }
-        c.prepare_cached("INSERT OR IGNORE INTO sync2_dedup_regs (profile_uid, reg) VALUES (srs_id(?1), ?2)")
-            .map_err(sql)?
-            .execute(params![profile, register_key(&e)])
-            .map_err(sql)?;
+        c.prepare_cached(
+            "INSERT OR IGNORE INTO sync2_dedup_regs (profile_uid, reg) VALUES (srs_id(?1), ?2)",
+        )
+        .map_err(sql)?
+        .execute(params![profile, register_key(&e)])
+        .map_err(sql)?;
     }
     match rows.last() {
         Some((d, s, _, _)) if rows.len() == STEP_OPS => set_job(c, profile, PHASE_CHECK, d, *s),
@@ -374,7 +458,13 @@ fn step_check(c: &Connection, profile: &str, me: &Id, dev: &[u8], seq: i64) -> R
 }
 
 /// 发一条 [Body::Dedup]（游标之后的下一批配对）。没有了 → 作业结束、清表、排一次文件整理。
-fn step_emit(c: &Connection, profile: &str, seq: i64, now: i64, t: &mut Touched) -> Result<u64, String> {
+fn step_emit(
+    c: &Connection,
+    profile: &str,
+    seq: i64,
+    now: i64,
+    t: &mut Touched,
+) -> Result<u64, String> {
     let pairs: Vec<(u64, OpId)> = c
         .prepare_cached("SELECT seq, device, tseq FROM sync2_dedup_pairs WHERE profile_uid = srs_id(?1) AND seq > ?2 ORDER BY seq LIMIT ?3")
         .map_err(sql)?
@@ -386,8 +476,17 @@ fn step_emit(c: &Connection, profile: &str, seq: i64, now: i64, t: &mut Touched)
         })
         .collect::<Result<_, String>>()?;
     let Some(&(last, _)) = pairs.last() else {
-        for table in ["sync2_dedup_keys", "sync2_dedup_pairs", "sync2_dedup_regs", "sync2_dedup"] {
-            c.execute(&format!("DELETE FROM {table} WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)?;
+        for table in [
+            "sync2_dedup_keys",
+            "sync2_dedup_pairs",
+            "sync2_dedup_regs",
+            "sync2_dedup",
+        ] {
+            c.execute(
+                &format!("DELETE FROM {table} WHERE profile_uid = srs_id(?1)"),
+                [profile],
+            )
+            .map_err(sql)?;
         }
         c.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, 'dedup') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -397,7 +496,8 @@ fn step_emit(c: &Connection, profile: &str, seq: i64, now: i64, t: &mut Touched)
         return Ok(0);
     };
     let n = pairs.len() as u64;
-    let mut local = super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    let mut local =
+        super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
     let mut applied = super::applied_vv(c, profile)?;
     let o = super::append_local(c, &mut local, &mut applied, &Body::Dedup { pairs }, now)?;
     super::project(c, profile, &o, now, true, t)?;
@@ -413,8 +513,12 @@ impl crate::store::SrsCore {
         let w = self.writer()?;
         super::in_savepoint(&w, |c| {
             let mut t = Touched::default();
-            let Some((phase, dev, seq)) = job(c, profile)? else { return Ok(json!({"done": true})) };
-            let Some(local) = super::Local::load(c, profile)? else { return Ok(json!({"done": true})) };
+            let Some((phase, dev, seq)) = job(c, profile)? else {
+                return Ok(json!({"done": true}));
+            };
+            let Some(local) = super::Local::load(c, profile)? else {
+                return Ok(json!({"done": true}));
+            };
             if !local.migrated {
                 return Ok(json!({"done": true, "phase": phase}));
             }

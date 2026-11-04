@@ -116,11 +116,7 @@ fn digit_value(unit: u16, radix: u32) -> Option<u32> {
         0x61..=0x7A => u32::from(unit - 0x61) + 10,
         _ => return None,
     };
-    if d < radix {
-        Some(d)
-    } else {
-        None
-    }
+    if d < radix { Some(d) } else { None }
 }
 
 fn parse_radix(digits: &[u16], radix: u32, negative: bool, allow_u64: bool) -> Option<i64> {

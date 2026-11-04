@@ -2869,8 +2869,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           index: i,
           screen: screen,
           controller: _popup,
-          onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
-              pushNestedPopup(
+          onPush:
+              (
+                String text,
+                Rect rect,
+                List<FushiRubySpan> rubySpans,
+                String _,
+              ) => pushNestedPopup(
                 query: text,
                 selectionRect: rect,
                 controller: _popup,

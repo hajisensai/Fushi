@@ -18,7 +18,11 @@ use crate::sync2::sched::{Config, MemAlg};
 pub const SRS_NAMESPACE: &str = "6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13";
 
 pub fn default_deck_id(profile: &str) -> String {
-    Id::v5(&Id::parse(SRS_NAMESPACE).expect("ns"), &format!("{profile}/builtin-deck/default")).text()
+    Id::v5(
+        &Id::parse(SRS_NAMESPACE).expect("ns"),
+        &format!("{profile}/builtin-deck/default"),
+    )
+    .text()
 }
 
 const DEFAULT_LEARN: [f64; 2] = [1.0, 10.0];
@@ -38,7 +42,11 @@ pub struct DeckTree {
 }
 
 /// 某实体的全部落库修改记录（JSON 原文 + S(e)）。
-pub fn edits_of(conn: &Connection, kind: &str, ids: &[String]) -> Result<HashMap<String, Vec<(String, Option<i64>)>>, String> {
+pub fn edits_of(
+    conn: &Connection,
+    kind: &str,
+    ids: &[String],
+) -> Result<HashMap<String, Vec<(String, Option<i64>)>>, String> {
     let mut out: HashMap<String, Vec<(String, Option<i64>)>> = HashMap::new();
     for chunk in ids.chunks(400) {
         let marks = vec!["srs_id(?)"; chunk.len()].join(",");
@@ -55,7 +63,10 @@ pub fn edits_of(conn: &Connection, kind: &str, ids: &[String]) -> Result<HashMap
         let mut q = stmt.query(params.as_slice()).map_err(|e| e.to_string())?;
         while let Some(r) = q.next().map_err(|e| e.to_string())? {
             let id: String = r.get(0).map_err(|e| e.to_string())?;
-            out.entry(id).or_default().push((r.get(1).map_err(|e| e.to_string())?, r.get(2).map_err(|e| e.to_string())?));
+            out.entry(id).or_default().push((
+                r.get(1).map_err(|e| e.to_string())?,
+                r.get(2).map_err(|e| e.to_string())?,
+            ));
         }
     }
     Ok(out)
@@ -92,7 +103,10 @@ impl DeckTree {
             let own = view["own"] == Value::Bool(true);
             decks.insert(id.clone(), DeckNode { parent, own, view });
         }
-        let mut tree = DeckTree { decks, default_deck: default_deck_id(profile) };
+        let mut tree = DeckTree {
+            decks,
+            default_deck: default_deck_id(profile),
+        };
         tree.resolve_parents();
         Ok(tree)
     }
@@ -132,7 +146,11 @@ impl DeckTree {
     }
 
     pub fn effective(&self, deck: &str) -> String {
-        if self.decks.contains_key(deck) { deck.to_owned() } else { self.default_deck.clone() }
+        if self.decks.contains_key(deck) {
+            deck.to_owned()
+        } else {
+            self.default_deck.clone()
+        }
     }
 
     /// 最近一个 own 祖先（顶层恒为 own）。
@@ -156,8 +174,12 @@ impl DeckTree {
         let mut i = 0;
         while i < out.len() {
             let parent = out[i].clone();
-            let mut kids: Vec<String> =
-                self.decks.iter().filter(|(_, d)| d.parent.as_deref() == Some(parent.as_str())).map(|(k, _)| k.clone()).collect();
+            let mut kids: Vec<String> = self
+                .decks
+                .iter()
+                .filter(|(_, d)| d.parent.as_deref() == Some(parent.as_str()))
+                .map(|(k, _)| k.clone())
+                .collect();
             kids.sort();
             out.extend(kids);
             i += 1;
@@ -174,14 +196,19 @@ impl DeckTree {
     /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的旧牌组照旧按每日复习上限截断，新建牌组建时写上 true）。
     pub fn ignores_review_limit(&self, deck: &str) -> bool {
         let id = self.effective(deck);
-        let Some(owner) = self.params_owner(&id) else { return false };
-        Self::owner_uses_rwkv(owner) && owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
+        let Some(owner) = self.params_owner(&id) else {
+            return false;
+        };
+        Self::owner_uses_rwkv(owner)
+            && owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
     }
 
     /// 某牌组复习时实际用的排程配置（`SrsDeckTree.schedulingConfig`）。
     pub fn config(&self, deck: &str) -> Config {
         let id = self.effective(deck);
-        let Some(me) = self.decks.get(&id) else { return Config::default() };
+        let Some(me) = self.decks.get(&id) else {
+            return Config::default();
+        };
         let owner = self.params_owner(&id).unwrap_or(me);
         let alg_wire = owner.view["alg"].as_str().unwrap_or("rwkv");
         let alg = MemAlg::of_wire(alg_wire);
@@ -192,12 +219,27 @@ impl DeckTree {
         let params: Vec<f32> = set
             .get("params")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_f64).map(|x| x as f32).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_f64)
+                    .map(|x| x as f32)
+                    .collect()
+            })
             .unwrap_or_default();
-        let params = if params.len() == alg.param_count() { params } else { Vec::new() };
+        let params = if params.len() == alg.param_count() {
+            params
+        } else {
+            Vec::new()
+        };
         // 没写过步长的 RWKV 牌组不用步长（`SrsDeckView.learnStepsFor`）。
         let rwkv = Self::owner_uses_rwkv(owner);
-        let pick = |v: &Value, default: &[f64]| if rwkv && !v.is_array() { Vec::new() } else { steps(v, default) };
+        let pick = |v: &Value, default: &[f64]| {
+            if rwkv && !v.is_array() {
+                Vec::new()
+            } else {
+                steps(v, default)
+            }
+        };
         Config {
             learn_steps: pick(&me.view["ls"], &DEFAULT_LEARN),
             relearn_steps: pick(&me.view["rs"], &DEFAULT_RELEARN),
@@ -212,23 +254,36 @@ impl DeckTree {
 
 /// `srsSanitizeSteps`：每项 > 0 且 < 1 天；全被剔除用默认。空列表 = 不用步长。不是列表 = 默认。
 fn steps(v: &Value, fallback: &[f64]) -> Vec<f64> {
-    let Some(xs) = v.as_array() else { return fallback.to_vec() };
+    let Some(xs) = v.as_array() else {
+        return fallback.to_vec();
+    };
     if xs.is_empty() {
         return Vec::new();
     }
-    let ok: Vec<f64> = xs.iter().filter_map(Value::as_f64).filter(|&s| s > 0.0 && s < 1440.0).collect();
+    let ok: Vec<f64> = xs
+        .iter()
+        .filter_map(Value::as_f64)
+        .filter(|&s| s > 0.0 && s < 1440.0)
+        .collect();
     if ok.is_empty() { fallback.to_vec() } else { ok }
 }
 
 /// 卡的有效牌组（血统继承的 deck 标志 → 笔记首选牌组 → 默认牌组；不在树里归默认）。
-pub fn card_deck(conn: &Connection, tree: &DeckTree, card: &str, note: Option<&str>) -> Result<String, String> {
+pub fn card_deck(
+    conn: &Connection,
+    tree: &DeckTree,
+    card: &str,
+    note: Option<&str>,
+) -> Result<String, String> {
     // 血统：沿 historyFrom 前身（广度优先，最多 256 张）。先一次取全血统的记录。
     let mut lineage = vec![card.to_owned()];
     let mut i = 0;
     let mut by_card: HashMap<String, Vec<(String, Option<i64>)>> = HashMap::new();
     while i < lineage.len() && lineage.len() < 256 {
         let c = lineage[i].clone();
-        let es = edits_of(conn, "card", std::slice::from_ref(&c))?.remove(&c).unwrap_or_default();
+        let es = edits_of(conn, "card", std::slice::from_ref(&c))?
+            .remove(&c)
+            .unwrap_or_default();
         for p in predecessors(&es) {
             if !lineage.contains(&p) {
                 lineage.push(p);
@@ -239,15 +294,32 @@ pub fn card_deck(conn: &Connection, tree: &DeckTree, card: &str, note: Option<&s
     }
     let note_deck = match note {
         Some(n) => {
-            let es = edits_of(conn, "note", &[n.to_owned()])?.remove(n).unwrap_or_default();
-            register_value(&stored(&es), "deck")?.as_str().map(str::to_owned)
+            let es = edits_of(conn, "note", &[n.to_owned()])?
+                .remove(n)
+                .unwrap_or_default();
+            register_value(&stored(&es), "deck")?
+                .as_str()
+                .map(str::to_owned)
         }
         None => None,
     };
-    let cards: Vec<(String, Vec<crate::registers::StoredEdit<'_>>)> =
-        lineage.iter().map(|c| (c.clone(), stored(by_card.get(c).map(Vec::as_slice).unwrap_or(&[])))).collect();
-    let flags = card_lineage_flags(&cards, &[(card.to_owned(), note_deck, tree.default_deck.clone())])?;
-    let dk = flags.first().and_then(|(_, f)| f["dk"].as_str().map(str::to_owned)).unwrap_or_else(|| tree.default_deck.clone());
+    let cards: Vec<(String, Vec<crate::registers::StoredEdit<'_>>)> = lineage
+        .iter()
+        .map(|c| {
+            (
+                c.clone(),
+                stored(by_card.get(c).map(Vec::as_slice).unwrap_or(&[])),
+            )
+        })
+        .collect();
+    let flags = card_lineage_flags(
+        &cards,
+        &[(card.to_owned(), note_deck, tree.default_deck.clone())],
+    )?;
+    let dk = flags
+        .first()
+        .and_then(|(_, f)| f["dk"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| tree.default_deck.clone());
     Ok(tree.effective(&dk))
 }
 
@@ -266,7 +338,9 @@ pub fn predecessors(edits: &[(String, Option<i64>)]) -> Vec<String> {
     let st = stored(edits);
     let mut out: Vec<String> = keys
         .into_iter()
-        .filter(|k| register_value(&st, &format!("historyFrom/{k}")).is_ok_and(|v| v == Value::Bool(true)))
+        .filter(|k| {
+            register_value(&st, &format!("historyFrom/{k}")).is_ok_and(|v| v == Value::Bool(true))
+        })
         .collect();
     out.sort_by(|a, b| crate::ordering::cmp_utf16(a, b));
     out
@@ -288,7 +362,9 @@ pub fn successors(conn: &Connection, card: &str) -> Result<Vec<String>, String> 
         .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for id in ids {
-        let es = edits_of(conn, "card", std::slice::from_ref(&id))?.remove(&id).unwrap_or_default();
+        let es = edits_of(conn, "card", std::slice::from_ref(&id))?
+            .remove(&id)
+            .unwrap_or_default();
         if register_value(&stored(&es), &key)? == Value::Bool(true) {
             out.push(id);
         }

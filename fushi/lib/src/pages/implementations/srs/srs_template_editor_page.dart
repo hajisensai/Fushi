@@ -19,6 +19,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         AnkiCardSpecialFields,
         AnkiRenderedCard,
         AnkiTemplateError,
+        ankiResolveTypeAnswer,
         renderAnkiCard,
         templateIdsToNames,
         templateNamesToIds;
@@ -79,14 +80,26 @@ SrsTemplatePreview srsRenderTemplatePreview({
   AnkiCardSpecialFields specials = const AnkiCardSpecialFields(),
 }) {
   try {
+    final AnkiRenderedCard card = renderAnkiCard(
+      questionTemplate: front,
+      answerTemplate: back,
+      noteFields: fieldsByName,
+      cardOrd: cardOrd,
+      isCloze: isCloze,
+      specials: specials,
+    );
+    // 与复习页同一处理（SrsDbStore.renderCard）：打字输入答案的标记换成输入框 / 比对占位。
+    final ({String question, String answer}) faces = ankiResolveTypeAnswer(
+      question: card.question,
+      answer: card.answer,
+      fields: fieldsByName,
+      cardOrd: cardOrd,
+    );
     return SrsTemplatePreview(
-      card: renderAnkiCard(
-        questionTemplate: front,
-        answerTemplate: back,
-        noteFields: fieldsByName,
-        cardOrd: cardOrd,
-        isCloze: isCloze,
-        specials: specials,
+      card: AnkiRenderedCard(
+        question: faces.question,
+        answer: faces.answer,
+        isEmpty: card.isEmpty,
       ),
     );
   } on AnkiTemplateError catch (e) {

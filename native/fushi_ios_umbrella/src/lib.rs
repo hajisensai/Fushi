@@ -21,10 +21,10 @@ pub extern crate fushi_rwkv;
 pub extern crate fushi_music;
 // 语料胖核心 fcorp_*（同样有 `ABI_VERSION` / `status`，按 crate 名重新导出、不 glob）。
 pub extern crate fushi_corpus;
-extern crate fushi_web_core;
 extern crate fushi_fsrs;
 extern crate fushi_p2p;
+extern crate fushi_web_core;
 
-pub use fushi_web_core::*;
 pub use fushi_fsrs::*;
 pub use fushi_p2p::*;
+pub use fushi_web_core::*;

@@ -64,7 +64,10 @@ fn main() {
         })
         .collect();
     let mut files: Vec<PathBuf> = if args.len() > 5 {
-        args[5..].iter().map(|u| dir.join(format!("{u}.bin"))).collect()
+        args[5..]
+            .iter()
+            .map(|u| dir.join(format!("{u}.bin")))
+            .collect()
     } else {
         std::fs::read_dir(&dir)
             .unwrap()
@@ -73,7 +76,9 @@ fn main() {
             .collect()
     };
     files.sort_by_key(|p| std::fs::metadata(p).unwrap().len());
-    println!("config\tuser\trows\tscored\tlogloss\tseconds\tpeak_card\tpeak_note\tpeak_user\tnonfinite");
+    println!(
+        "config\tuser\trows\tscored\tlogloss\tseconds\tpeak_card\tpeak_note\tpeak_user\tnonfinite"
+    );
     for file in files {
         let user = file.file_stem().unwrap().to_string_lossy().into_owned();
         let rows = read_rows(&file);

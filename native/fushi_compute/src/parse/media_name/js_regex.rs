@@ -616,8 +616,8 @@ impl JsRegex {
                 units,
             } = &self.first
             {
-                let line_start = start == 0
-                    || (self.multi_line && is_line_terminator(text[start - 1]));
+                let line_start =
+                    start == 0 || (self.multi_line && is_line_terminator(text[start - 1]));
                 let unit_ok = start < text.len() && in_ranges(units, text[start]);
                 if !(unit_ok || (*at_line_start && line_start)) {
                     continue;

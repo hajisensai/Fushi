@@ -42,8 +42,7 @@ pub const STEP_STRIP_IMAGE_LOADING: u32 = 2;
 pub const STEP_BODY_IMAGES: u32 = 4;
 /// 阅读器 head 注入（旧 `injectReaderHead`）。
 pub const STEP_READER_HEAD: u32 = 8;
-const ALL_STEPS: u32 =
-    STEP_XHTML | STEP_STRIP_IMAGE_LOADING | STEP_BODY_IMAGES | STEP_READER_HEAD;
+const ALL_STEPS: u32 = STEP_XHTML | STEP_STRIP_IMAGE_LOADING | STEP_BODY_IMAGES | STEP_READER_HEAD;
 /// 输入是 Dart `String` 编出来的 UTF-8（已解码过的文本，不是磁盘字节）：开头的 U+FEFF 是正文
 /// 的一部分，不当 BOM 去掉。只给单步 String 入口用；生产路径的磁盘字节不置这一位。
 pub const INPUT_IS_TEXT: u32 = 0x100;
@@ -151,7 +150,10 @@ fn changed(step: Cow<'_, [u8]>) -> Option<Vec<u8>> {
 
 #[inline]
 fn find_byte(s: &[u8], from: usize, b: u8) -> Option<usize> {
-    s.get(from..)?.iter().position(|&x| x == b).map(|p| p + from)
+    s.get(from..)?
+        .iter()
+        .position(|&x| x == b)
+        .map(|p| p + from)
 }
 
 /// 跳过一个属性 token：`"…"` / `'…'` 整段，或一个非 `>`、非引号的单元。
@@ -520,7 +522,7 @@ fn next_line_start(s: &[u8], from: usize) -> Option<usize> {
         match s[k] {
             b'\n' | b'\r' => return Some(k + 1),
             0xE2 if s.get(k + 1) == Some(&0x80) && matches!(s.get(k + 2), Some(0xA8 | 0xA9)) => {
-                return Some(k + 3)
+                return Some(k + 3);
             }
             _ => k += 1,
         }
@@ -596,7 +598,10 @@ pub fn sanitize_css_text(s: &[u8]) -> Cow<'_, [u8]> {
                 };
                 match property {
                     b"writing-mode" => {}
-                    b"line-break" | b"word-break" | b"hyphens" | b"text-emphasis-style"
+                    b"line-break"
+                    | b"word-break"
+                    | b"hyphens"
+                    | b"text-emphasis-style"
                     | b"text-emphasis-color" => {
                         decl(buf, b"-webkit-", property, value);
                         buf.push(b'\n');
@@ -676,13 +681,15 @@ pub unsafe extern "C" fn ffc_parse_sanitize_chapter(
     if steps & !ALL_FLAGS != 0 {
         return status::INVALID_ARGUMENT;
     }
-    guard(|| match sanitize_chapter(input, steps, images, head_start, head_end) {
-        Ok(bytes) => {
-            hand_over_bytes(bytes, out_ptr, out_len);
-            status::OK
-        }
-        Err(HeadOrderError) => status::BAD_INPUT,
-    })
+    guard(
+        || match sanitize_chapter(input, steps, images, head_start, head_end) {
+            Ok(bytes) => {
+                hand_over_bytes(bytes, out_ptr, out_len);
+                status::OK
+            }
+            Err(HeadOrderError) => status::BAD_INPUT,
+        },
+    )
 }
 
 /// 书内 CSS 整条链。`flags` 只认 [INPUT_IS_TEXT]；输出由本库分配，调用方用 `ffc_free_bytes`
@@ -732,7 +739,10 @@ mod tests {
     #[test]
     fn self_closing_non_void_expands() {
         assert_eq!(x("<a id=\"t\"/>"), "<a id=\"t\"></a>");
-        assert_eq!(x("<Script src=\"a.js\" />"), "<Script src=\"a.js\"></Script>");
+        assert_eq!(
+            x("<Script src=\"a.js\" />"),
+            "<Script src=\"a.js\"></Script>"
+        );
         assert_eq!(x("<br/><IMG src=a />"), "<br/><IMG src=a />");
         assert_eq!(x("<a href=\"a/>b\"/>"), "<a href=\"a/>b\"></a>");
         assert_eq!(x("<a title=\"open/>"), "<a title=\"open/>");
@@ -755,7 +765,10 @@ mod tests {
             strip("<IMG src='a.png' LOADING='lazy' class='x'/>"),
             "<IMG src='a.png' class='x'/>"
         );
-        assert_eq!(strip("<img src=\"a.png\" loading=lazy>"), "<img src=\"a.png\">");
+        assert_eq!(
+            strip("<img src=\"a.png\" loading=lazy>"),
+            "<img src=\"a.png\">"
+        );
         assert_eq!(strip("<img src=a\u{3000}loading = eager>"), "<img src=a>");
         // 引号内的 loading= 字样与 `>` 不误伤；没有前导空白 / 不是独立属性名的不动。
         for kept in [
@@ -790,18 +803,30 @@ mod tests {
         assert_eq!(css("-epub-a:b;-epub-c:d;"), "a: b;-epub-c:d;");
         assert_eq!(css("x\u{2028}-epub-a:b;"), "x\u{2028}a: b;");
         // Dart trim 认 U+0085，JS `\s` 不认。
-        assert_eq!(css("-epub-\u{85}hyphens\u{85}:x;"), "-webkit-hyphens: x;\nhyphens: x;");
+        assert_eq!(
+            css("-epub-\u{85}hyphens\u{85}:x;"),
+            "-webkit-hyphens: x;\nhyphens: x;"
+        );
     }
 
     #[test]
     fn head_and_body_injection() {
-        let out = sanitize_chapter(b"<html><head></head><body><p/></body></html>", ALL, b"IMG", b"S", b"E")
-            .unwrap();
+        let out = sanitize_chapter(
+            b"<html><head></head><body><p/></body></html>",
+            ALL,
+            b"IMG",
+            b"S",
+            b"E",
+        )
+        .unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "<html><head>\nS\nE\n</head><body>\nIMG\n<p></p></body></html>"
         );
-        assert_eq!(sanitize_chapter(b"<head </head>", ALL, b"", b"S", b"E"), Err(HeadOrderError));
+        assert_eq!(
+            sanitize_chapter(b"<head </head>", ALL, b"", b"S", b"E"),
+            Err(HeadOrderError)
+        );
         let out = sanitize_chapter(b"x", ALL, b"", b"S", b"E").unwrap();
         assert_eq!(out, b"S\nE\nx");
     }
@@ -812,7 +837,8 @@ mod tests {
         assert_eq!(String::from_utf8(out).unwrap(), "\u{FFFD}<\u{FFFD}");
         let out = sanitize_chapter(&[0xEF, 0xBB, 0xBF, b'a'], 0, b"", b"", b"").unwrap();
         assert_eq!(out, b"a");
-        let out = sanitize_chapter(&[0xEF, 0xBB, 0xBF, b'a'], INPUT_IS_TEXT, b"", b"", b"").unwrap();
+        let out =
+            sanitize_chapter(&[0xEF, 0xBB, 0xBF, b'a'], INPUT_IS_TEXT, b"", b"", b"").unwrap();
         assert_eq!(out, [0xEF, 0xBB, 0xBF, b'a']);
     }
 
@@ -823,8 +849,17 @@ mod tests {
         let input = b"<a/>";
         let rc = unsafe {
             ffc_parse_sanitize_chapter(
-                input.as_ptr(), input.len(), STEP_XHTML, std::ptr::null(), 0,
-                std::ptr::null(), 0, std::ptr::null(), 0, &mut ptr, &mut len,
+                input.as_ptr(),
+                input.len(),
+                STEP_XHTML,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                &mut ptr,
+                &mut len,
             )
         };
         assert_eq!(rc, status::OK);
@@ -832,15 +867,33 @@ mod tests {
         crate::ffc_free_bytes(ptr, len);
         let rc = unsafe {
             ffc_parse_sanitize_chapter(
-                input.as_ptr(), input.len(), 16, std::ptr::null(), 0,
-                std::ptr::null(), 0, std::ptr::null(), 0, &mut ptr, &mut len,
+                input.as_ptr(),
+                input.len(),
+                16,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                &mut ptr,
+                &mut len,
             )
         };
         assert_eq!(rc, status::INVALID_ARGUMENT);
         let rc = unsafe {
             ffc_parse_sanitize_chapter(
-                std::ptr::null(), 3, 0, std::ptr::null(), 0,
-                std::ptr::null(), 0, std::ptr::null(), 0, &mut ptr, &mut len,
+                std::ptr::null(),
+                3,
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                &mut ptr,
+                &mut len,
             )
         };
         assert_eq!(rc, status::NULL_ARGUMENT);

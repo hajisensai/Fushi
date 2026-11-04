@@ -1,0 +1,28 @@
+## BUG-4076 · 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS）
+- **报告**：2026-11-04，来自崩溃报告的整批分诊。
+  - Windows：
+    - `24q7Ni3J4G`：退出时正在做 srs migrate，maxRss 2405 MB。
+    - `9BCV3IAkNO`：4 次。
+    - `J5VpC6Lfkc`、`VDMDngIA4W`、`WwuPr8PwDY`、`oe5x8Oib9_`、`VExnEUmnc0`、`bsDs3AQsy0`。
+    - `hnn07qX6F4`：发生在安装器未完成、反复重装的期间。
+  - macOS：
+    - `X-SCadVi2V`。
+    - `_R1qJD0xDB`：退出前 27 s 有一条 Riverpod 的 `Concurrent modification` FlutterError。
+- **真实性**：❌ **未复现，无法定性**。
+  - 这些报告的共同点：
+    - 会话标记停在 `resumed` 或 `inactive`；
+    - 没有 `crash_summary.log` 原生摘要（Windows 的 SEH 摘要和 minidump 都没有记录）；
+    - 没有平台退出记录；
+    - 出事版本都不低于 22838。
+  - 因此它们不属于 BUG-4074 的更新交接误报（那个问题 22838 已修）。
+  - 能产生这种形态的途径有三类，**目前材料无法区分**：
+    - 用户在任务管理器结束进程，或系统注销、关机时强杀；
+    - 安装器强杀第二个实例（`fushi.iss` InitializeSetup 先 `WM_CLOSE` 再强杀，`hnn07qX6F4` 疑似属于这种）；
+    - 栈溢出、堆损坏这类连 SEH 摘要都来不及写的原生故障，`24q7Ni3J4G` 的 2.4 GB maxRss 有这种可能。
+- **[ ] ① 未修复**：没有可定位的根因。不为凑结论而改判定逻辑：降级这类报告会把真正的静默崩溃一起藏掉。
+  - 下一步：如果用户本机有 minidump，在「诊断 → 崩溃转储」上传；
+  - 或者让 Windows 退出路径区分 `WM_ENDSESSION`（注销 / 关机），并把它写进标记，这样可以排除第一类。
+- **[ ] ② 未加自动化测试**：没有根因，无法加。
+- **备注**：
+  - `_R1qJD0xDB` 的 Riverpod `Concurrent modification` 是 FlutterError，不会让进程退出，也没有证据把它和这次退出联系起来，所以没有单独立案。
+  - `24q7Ni3J4G` 的 migrate 高内存与 BUG-4075 的同步内存问题可能同源，属于推测。

@@ -354,7 +354,7 @@ impl<'a> Parser<'a> {
             Partial::String => return self.fail(length, Some(JsonErrorKind::UnterminatedString)),
             Partial::Keyword => return self.fail(length, None),
             Partial::NumberIncomplete => {
-                return self.fail(length, Some(JsonErrorKind::UnterminatedNumberLiteral))
+                return self.fail(length, Some(JsonErrorKind::UnterminatedNumberLiteral));
             }
             // 能收尾的数字只可能是顶层标量（在容器里随后必然因缺括号失败）；它的值不影响
             // 弹幕结果（根不是对象即形状错误），这里放一个占位 int。
@@ -721,11 +721,7 @@ impl<'a> Parser<'a> {
             }
             if exponent_overflow {
                 let value = if double_value == 0.0 || exp_sign < 0 {
-                    if sign < 0 {
-                        -0.0
-                    } else {
-                        0.0
-                    }
+                    if sign < 0 { -0.0 } else { 0.0 }
                 } else if sign < 0 {
                     f64::NEG_INFINITY
                 } else {

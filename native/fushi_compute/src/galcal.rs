@@ -10,7 +10,7 @@
 #![allow(clippy::needless_range_loop)]
 
 use crate::dart::{compare_f64, compare_i64, max_f64, median, round, sort};
-use crate::image::{resize_into, View, INTERP_NEAREST};
+use crate::image::{INTERP_NEAREST, View, resize_into};
 use crate::{guard, status};
 
 unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {

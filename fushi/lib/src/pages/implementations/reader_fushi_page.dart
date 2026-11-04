@@ -76,6 +76,7 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
     show AudiobookSpeedSlider;
+import 'package:fushi/src/media/audiobook/lyrics_cue_window_slide.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lookup_resume_hold.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
@@ -2459,6 +2460,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _lyricsEntryCueIndex = 0;
   int _lyricsCueIndexOffset = 0;
   bool _lyricsCueWindowUsesAllBookCues = false;
+  // 歌词文档 JS 侧的手动浏览态（`onLyricsBrowse` 回报，每份文档从 false 起）。与
+  // 「跟随音频」开关一起决定滑动窗口的锚点：跟随中锚播放句，浏览中锚视口中线句。
+  bool _lyricsJsBrowsing = false;
   List<AudioCue> _lyricsCueList = const [];
 
   // ── 歌词覆盖层（2026-10-04，对齐 Niratan）──────────────────────────────
@@ -4232,22 +4236,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
-                  // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）的
-                  // 阶梯与 Esc 不同（NJIIDAhIZL）：词典弹窗先关；歌词覆盖层**不**拦，
-                  // 系统返回在歌词模式下直接退书回书架。判定单点在
+                  // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）与
+                  // Esc 同一条阶梯：词典弹窗先关；歌词覆盖层**不**拦，歌词模式下直接
+                  // 退书回书架（NJIIDAhIZL / BUG-4026）。判定单点在
                   // [resolveReaderBackStep]；程序化退书（[_exitReaderBook]）带着
                   // [_exitBookRequested] 进来，整条阶梯跳过。
                   switch (resolveReaderBackStep(
-                    source: ReaderBackSource.route,
                     dictionaryShown: isDictionaryShown,
-                    lyricsMode: _lyricsMode,
                     explicitExit: _exitBookRequested,
                   )) {
                     case ReaderBackStep.closeDictionary:
                       clearDictionaryResult();
-                      return;
-                    case ReaderBackStep.closeLyrics:
-                      unawaited(_toggleLyricsMode());
                       return;
                     case ReaderBackStep.exitBook:
                       break;

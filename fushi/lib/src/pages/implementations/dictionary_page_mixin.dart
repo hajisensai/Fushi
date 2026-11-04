@@ -53,6 +53,21 @@ const ValueKey<String> kLookupSearchPlaceholderKey = ValueKey<String>(
   'mixin-popup-loading-placeholder',
 );
 
+/// [DictionaryPageMixin.buildNestedPopupLayer] 的「在释义里点词 → 叠一层子查词」入口。
+///
+/// [rubySpans] 是被点文本上来源自带的振假名；[contextSentence] 是被点处所在的那一句
+/// （selection.js `textSelected` 第 4 参，可为空）。宿主按自己有没有别的例句来源决定
+/// 要不要把它交给 [DictionaryPageMixin.pushNestedPopup]（反馈 TnKWBi4C-9：查词页 /
+/// 独立查词窗没有书 / 视频的当前句，用它；视频等宿主制卡例句仍取自己的当前句）。返回
+/// 命中的字符数（0 = 无结果）。
+typedef NestedPopupPush =
+    Future<int> Function(
+      String text,
+      Rect selectionRect,
+      List<FushiRubySpan> rubySpans,
+      String contextSentence,
+    );
+
 /// Non-generic mixin that consolidates the popup stack management, Anki mining,
 /// and audio auto-read logic shared across PopupDictionaryPage
 /// and HomeDictionaryPage.
@@ -1049,12 +1064,7 @@ mixin DictionaryPageMixin {
     required int index,
     required Size screen,
     required DictionaryPopupController controller,
-    required Future<int> Function(
-      String text,
-      Rect selectionRect,
-      List<FushiRubySpan> rubySpans,
-    )
-    onPush,
+    required NestedPopupPush onPush,
     required void Function(int index) onPop,
     // 词头 / 链接 / 汉字点击原地跳转时是否自动朗读首词条（视频页传 true，与其嵌套
     // 查词的 autoRead 同口径；其余宿主默认 false）。
@@ -1089,12 +1099,7 @@ mixin DictionaryPageMixin {
     required int index,
     required Size screen,
     required DictionaryPopupController controller,
-    required Future<int> Function(
-      String text,
-      Rect selectionRect,
-      List<FushiRubySpan> rubySpans,
-    )
-    onPush,
+    required NestedPopupPush onPush,
     required void Function(int index) onPop,
     required bool autoReadOnNavigate,
     required Widget Function(Widget child)? wrapContent,
@@ -1283,7 +1288,7 @@ mixin DictionaryPageMixin {
           onScrolledToBottom: entry.allLoaded
               ? null
               : () => loadMoreForEntry(entry: entry, controller: controller),
-          onTextSelected: (text, localRect, rubySpans) async {
+          onTextSelected: (text, localRect, rubySpans, contextSentence) async {
             final Rect childRect = localRect == Rect.zero
                 ? entry.selectionRect
                 : popupWordScreenRect(
@@ -1297,7 +1302,12 @@ mixin DictionaryPageMixin {
             // — the mixin family video/首页/texthooker only truncate+onPush before,
             // so the source word was left unmarked). onPush returns the matched
             // char count (0 = no entries -> no highlight, preserving prior look).
-            final int count = await onPush(text, childRect, rubySpans);
+            final int count = await onPush(
+              text,
+              childRect,
+              rubySpans,
+              contextSentence,
+            );
             if (count > 0) {
               final Rect? wordRect = await entry.webViewKey.currentState
                   ?.highlightSelection(count);
@@ -1466,6 +1476,7 @@ mixin DictionaryPageMixin {
     bool reuseWarmSlot = false,
     bool revealWhileSearching = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
@@ -1493,6 +1504,8 @@ mixin DictionaryPageMixin {
       replaceStack: replaceStack,
       visible: revealWhileSearching,
       rubySpans: trimmedRuby,
+      // 反馈 TnKWBi4C-9：点释义正文发起的查词带着被点处那一句，随 entry 同生同灭。
+      contextSentence: contextSentence.trim(),
       // 搜索期占位用与热槽 seed / DictionaryPopupLayer 兜底**同一个**单例：
       // 不传时 entry.result 为 null → 本帧 WebView 的 widget.result 落到
       // `result ?? kPopupSearchingPlaceholderResult` 兜底，但热槽停驻期的 seed

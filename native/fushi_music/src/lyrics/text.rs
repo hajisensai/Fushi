@@ -172,7 +172,10 @@ mod tests {
 
     #[test]
     fn bomless_utf16le() {
-        let b: Vec<u8> = "[00:01.00]hi".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let b: Vec<u8> = "[00:01.00]hi"
+            .encode_utf16()
+            .flat_map(|u| u.to_le_bytes())
+            .collect();
         assert_eq!(decode_text(&b), "[00:01.00]hi");
     }
 

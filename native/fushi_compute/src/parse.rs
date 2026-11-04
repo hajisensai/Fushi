@@ -211,9 +211,21 @@ pub unsafe extern "C" fn ffc_parse_study_char_prefixes(
         return status::NULL_ARGUMENT;
     }
     guard(|| {
-        let text: &[u16] = if len == 0 { &[] } else { std::slice::from_raw_parts(units, len) };
-        let offsets: &[u32] = if n == 0 { &[] } else { std::slice::from_raw_parts(offsets, n) };
-        let out: &mut [u64] = if n == 0 { &mut [] } else { std::slice::from_raw_parts_mut(out, n) };
+        let text: &[u16] = if len == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(units, len)
+        };
+        let offsets: &[u32] = if n == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(offsets, n)
+        };
+        let out: &mut [u64] = if n == 0 {
+            &mut []
+        } else {
+            std::slice::from_raw_parts_mut(out, n)
+        };
         let mut state = StudyCharState::default();
         let mut at = 0usize;
         for (i, &off) in offsets.iter().enumerate() {
@@ -245,14 +257,31 @@ mod tests {
         let offsets: Vec<u32> = vec![0, 4, 5, 10, 18, units.len() as u32];
         let mut out = vec![0u64; offsets.len()];
         let rc = unsafe {
-            ffc_parse_study_char_prefixes(units.as_ptr(), units.len(), offsets.as_ptr(), offsets.len(), out.as_mut_ptr())
+            ffc_parse_study_char_prefixes(
+                units.as_ptr(),
+                units.len(),
+                offsets.as_ptr(),
+                offsets.len(),
+                out.as_mut_ptr(),
+            )
         };
         assert_eq!(rc, status::OK);
-        let want: Vec<u64> = offsets.iter().map(|&o| count_study_chars_utf16(&units[..o as usize])).collect();
+        let want: Vec<u64> = offsets
+            .iter()
+            .map(|&o| count_study_chars_utf16(&units[..o as usize]))
+            .collect();
         assert_eq!(out, want);
         let bad = [3u32, 1];
         let mut out2 = [0u64; 2];
-        let rc = unsafe { ffc_parse_study_char_prefixes(units.as_ptr(), units.len(), bad.as_ptr(), 2, out2.as_mut_ptr()) };
+        let rc = unsafe {
+            ffc_parse_study_char_prefixes(
+                units.as_ptr(),
+                units.len(),
+                bad.as_ptr(),
+                2,
+                out2.as_mut_ptr(),
+            )
+        };
         assert_eq!(rc, status::INVALID_ARGUMENT);
     }
 
@@ -317,14 +346,13 @@ mod tests {
         let units: Vec<u16> = "ab 漢".encode_utf16().collect();
         let mut c = 0u64;
         let mut w = 0u8;
-        let rc = unsafe { ffc_parse_study_chars_utf16(units.as_ptr(), units.len(), &mut c, &mut w) };
+        let rc =
+            unsafe { ffc_parse_study_chars_utf16(units.as_ptr(), units.len(), &mut c, &mut w) };
         assert_eq!(rc, status::OK);
         assert_eq!((c, w), (2, 0));
         let rc = unsafe { ffc_parse_study_chars_utf16(std::ptr::null(), 0, &mut c, &mut w) };
         assert_eq!(rc, status::OK);
-        let rc = unsafe {
-            ffc_parse_study_chars_utf16(std::ptr::null(), 3, &mut c, &mut w)
-        };
+        let rc = unsafe { ffc_parse_study_chars_utf16(std::ptr::null(), 3, &mut c, &mut w) };
         assert_eq!(rc, status::NULL_ARGUMENT);
         assert_eq!(ffc_parse_study_char_class('漢' as u32), 2);
         assert_eq!(ffc_parse_study_char_class(0x110000), 0);

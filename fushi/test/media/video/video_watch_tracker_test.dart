@@ -31,6 +31,8 @@ class _FakeSource extends ChangeNotifier implements VideoPlaybackSource {
   int? durationMs;
   @override
   double speed = 1.0;
+  @override
+  int subtitleDelayMs = 0;
   void emit() => notifyListeners();
 }
 
@@ -347,6 +349,58 @@ void main() {
       src.emit();
       expect(tracker.debugSubtitleChars, 0);
     });
+
+    // 9rdFBLEnVg：外挂字幕几乎总要调轴。cue 起止在字幕轴上，播放器按
+    // `位置 - 调轴` 找当前句；tracker 若拿视频位置去夹 cue 时间窗，位置整段落在窗外，
+    // 推进量恒 0，一句都计不上。按生产节奏（一句只通知两次）驱动。
+    for (final int delayMs in <int>[3000, -3000]) {
+      test('字幕调轴 ${delayMs}ms（外挂字幕）时仍按真实停留计字', () {
+        src.subtitleDelayMs = delayMs;
+        // 字幕轴 10000..14000 这句，在视频轴上于 10000 + delay 处出现。
+        _playCueProductionCadence(
+          src,
+          index: 0,
+          cue: _cue('あいう', startMs: 10000, endMs: 14000),
+          enterPosMs: 10000 + delayMs,
+          watchedMs: 2000,
+        );
+        src.currentCueIndex = 1;
+        src.currentCue = _cue('か', startMs: 20000, endMs: 30000);
+        src.emit();
+        expect(
+          tracker.debugSubtitleChars,
+          3,
+          reason: '停留量必须在字幕时间轴上量，调轴不该让字幕字数归零',
+        );
+      });
+    }
+
+    test('换字幕源后新表同号句子照常计字（去重按句子、不按下标）', () {
+      // 先在默认字幕轨上看完第 0 句。
+      _playCueProductionCadence(
+        src,
+        index: 0,
+        cue: _cue('あいう', startMs: 0, endMs: 4000),
+        enterPosMs: 0,
+        watchedMs: 2000,
+      );
+      src.currentCueIndex = -1;
+      src.currentCue = null;
+      src.emit();
+      expect(tracker.debugSubtitleChars, 3);
+      // 换成外挂字幕文件：新表的第 0 句是另一句话。
+      _playCueProductionCadence(
+        src,
+        index: 0,
+        cue: _cue('かきくけ', startMs: 2000, endMs: 6000),
+        enterPosMs: 2000,
+        watchedMs: 2000,
+      );
+      src.currentCueIndex = -1;
+      src.currentCue = null;
+      src.emit();
+      expect(tracker.debugSubtitleChars, 7, reason: '旧表下标 0 已计不能挡住新表下标 0 的另一句');
+    });
   });
 
   group('shouldCountCueDwell（纯谓词）', () {
@@ -631,6 +685,29 @@ void main() {
       s.src.emit();
       await s.tracker.stop();
       expect(s.tracker.debugSubtitleChars, 2, reason: '只有第二句（未看过）计字');
+    });
+
+    test('覆盖比对按调轴把 cue 换回视频轴（9rdFBLEnVg）', () async {
+      // 视频轴 0..10000 已看过。字幕调轴 +20000：字幕轴 0..4000 这句在视频轴
+      // 20000..24000 播出——没看过，必须计字；旧实现直接拿字幕轴 0..4000 比覆盖，
+      // 误判成「已看过」。
+      final _Session s = await _Session.start(
+        _Coverage(initial: '[[0,10000]]'),
+      );
+      s.src.subtitleDelayMs = 20000;
+      s.src
+        ..currentCueIndex = 0
+        ..currentCue = _cue('ああ', startMs: 0, endMs: 4000)
+        ..positionMs = 20000;
+      s.src.emit();
+      _advanceWall(4000);
+      s.src.positionMs = 24000;
+      s.src
+        ..currentCueIndex = -1
+        ..currentCue = null;
+      s.src.emit();
+      await s.tracker.stop();
+      expect(s.tracker.debugSubtitleChars, 2);
     });
 
     test('从未推进位置（只是开着页面）不落段', () async {
