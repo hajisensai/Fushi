@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart' show ValueListenable, immutable;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -1125,9 +1127,34 @@ Widget fushiRelativeSeekButton(
   );
 }
 
-/// 大号 Expressive 播放键：播放中是圆、暂停时是圆角方（圆角 = 边长 30%），两态
-/// 之间按 default spatial 弹簧形变；按下整体缩 6%（fast spatial）。图标交叉缩放 +
-/// 轻旋转切换。外形是显式 shape，所以 FushiFilledButton 自己的按压变形让位。
+// ---------------------------------------------------------------------------
+// 主播放键外形（MD3 唯一定义）
+// ---------------------------------------------------------------------------
+
+/// MD3 主播放 / 暂停键的 M3 Expressive 多边形：12 瓣「饼干」。视频、有声书、
+/// 音乐等所有主播放键都从这里取，不各写一份（守卫
+/// `test/utils/components/fushi_play_button_shape_test.dart`）。Apple（glass）
+/// 设计系统不用它。
+RoundedPolygon get fushiPlayButtonPolygon => MaterialShapes.cookie12Sided;
+
+/// [fushiPlayButtonPolygon] 的 [OutlinedBorder]（可带描边，墨水屏用）。
+OutlinedBorder fushiPlayButtonBorder({BorderSide side = BorderSide.none}) =>
+    MaterialShapeBorder(shape: fushiPlayButtonPolygon, side: side);
+
+/// 播放态相对暂停态的外形旋转量（圈）：12 瓣对称，转半瓣（1/24 圈）——形状即
+/// 状态又不乱晃。由各播放键的状态弹簧（[FushiSpring]）驱动，减弱动态效果 / 墨水
+/// 屏时弹簧直接跳到终值，不出动画。字形反向转回，始终正立。
+const double kFushiPlayButtonPlayingTurns = 1 / 24;
+
+/// 播放态进度 [t]（0 = 暂停、1 = 播放）对应的外形旋转角（弧度）。
+double fushiPlayButtonRotation(double t) =>
+    t * kFushiPlayButtonPlayingTurns * 2 * math.pi;
+
+/// 大号 Expressive 播放键。MD3：[fushiPlayButtonPolygon] 12 瓣饼干实色主色填充，
+/// 播放态按 default spatial 弹簧转半瓣（[fushiPlayButtonRotation]）。Apple：播放
+/// 中是圆、暂停时是圆角方（圆角 = 边长 30%），两态之间弹簧形变。按下整体缩 6%
+/// （fast spatial）。图标交叉缩放 + 轻旋转切换。外形是显式 shape，所以
+/// FushiFilledButton 自己的按压变形让位。
 class FushiExpressivePlayButton extends StatefulWidget {
   const FushiExpressivePlayButton({
     super.key,
@@ -1182,6 +1209,7 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
     final ColorScheme cs = Theme.of(context).colorScheme;
     final double size = widget.size;
     final bool motion = fushiExpressiveMotionEnabled(context);
+    final bool glass = isGlassDesign(context);
     final Widget icon = AnimatedSwitcher(
       duration: Duration(milliseconds: motion ? 220 : 0),
       switchInCurve: FushiSpringCurve.spatialFast,
@@ -1212,30 +1240,36 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
           ]),
           builder: (BuildContext context, Widget? child) {
             final double pill = _shape.value;
+            final double angle = glass ? 0 : fushiPlayButtonRotation(pill);
+            final Widget button = FushiFilledButton(
+              onPressed: widget.onPressed,
+              style: ButtonStyle(
+                fixedSize: WidgetStatePropertyAll<Size>(Size.square(size)),
+                minimumSize: WidgetStatePropertyAll<Size>(Size.square(size)),
+                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.zero,
+                ),
+                backgroundColor: WidgetStatePropertyAll<Color>(cs.primary),
+                foregroundColor: WidgetStatePropertyAll<Color>(cs.onPrimary),
+                elevation: const WidgetStatePropertyAll<double>(0),
+                animationDuration: Duration.zero,
+                shape: WidgetStatePropertyAll<OutlinedBorder>(
+                  glass
+                      ? FushiMorphBorder(
+                          radius: size * 0.3,
+                          startPill: pill,
+                          endPill: pill,
+                        )
+                      : fushiPlayButtonBorder(),
+                ),
+              ),
+              // 外形随播放态转半瓣，字形反向转回保持正立。旋转层恒在树里
+              // （角度 0 也包），播放态切换不重挂按钮、不丢焦点 / 水波纹。
+              child: Transform.rotate(angle: -angle, child: child),
+            );
             return Transform.scale(
               scale: 1 - 0.06 * _press.value,
-              child: FushiFilledButton(
-                onPressed: widget.onPressed,
-                style: ButtonStyle(
-                  fixedSize: WidgetStatePropertyAll<Size>(Size.square(size)),
-                  minimumSize: WidgetStatePropertyAll<Size>(Size.square(size)),
-                  padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                    EdgeInsets.zero,
-                  ),
-                  backgroundColor: WidgetStatePropertyAll<Color>(cs.primary),
-                  foregroundColor: WidgetStatePropertyAll<Color>(cs.onPrimary),
-                  elevation: const WidgetStatePropertyAll<double>(0),
-                  animationDuration: Duration.zero,
-                  shape: WidgetStatePropertyAll<OutlinedBorder>(
-                    FushiMorphBorder(
-                      radius: size * 0.3,
-                      startPill: pill,
-                      endPill: pill,
-                    ),
-                  ),
-                ),
-                child: child!,
-              ),
+              child: Transform.rotate(angle: angle, child: button),
             );
           },
           child: icon,
