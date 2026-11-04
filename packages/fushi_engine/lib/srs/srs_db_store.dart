@@ -4276,13 +4276,22 @@ class SrsDbStore implements SrsSync2Host {
       cardFlag: d.card.flag,
       cardId: d.card.id,
     );
+    final int cardOrd = d.noteType.isCloze ? d.card.clozeOrd - 1 : tpl.ord;
     final AnkiRenderedCard r = renderAnkiCard(
       questionTemplate: front,
       answerTemplate: back,
       noteFields: fields,
-      cardOrd: d.noteType.isCloze ? d.card.clozeOrd - 1 : tpl.ord,
+      cardOrd: cardOrd,
       isCloze: d.noteType.isCloze,
       specials: specials,
+    );
+    // 「打字输入答案」（`{{type:…}}`）：问题面换成输入框，答案面换成带期望答案的比对占位
+    // （卡面拿到打的字后填比对，见 anki_type_answer.dart）。
+    final ({String question, String answer}) faces = ankiResolveTypeAnswer(
+      question: r.question,
+      answer: r.answer,
+      fields: fields,
+      cardOrd: cardOrd,
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
@@ -4296,8 +4305,8 @@ class SrsDbStore implements SrsSync2Host {
       specials: specials,
     );
     return SrsRenderedCard(
-      question: r.question,
-      answer: r.answer,
+      question: faces.question,
+      answer: faces.answer,
       css: d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,

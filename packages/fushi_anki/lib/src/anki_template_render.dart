@@ -640,8 +640,17 @@ String _applyFilters(
   String fieldName,
   _RenderContext ctx,
 ) {
-  // 最外层是 type: —— 类型答案暂不支持，输出空串（rslib 输出 [[type:…]]）。
-  if (filters.isNotEmpty && filters.last == 'type') return '';
+  // 最外层是 type: —— 与 rslib 一致输出 `[[type:<内层过滤器:>字段名]]`（`{{type:cloze:Text}}` →
+  // `[[type:cloze:Text]]`），由 [ankiResolveTypeAnswer] 换成输入框 / 比对（以前输出空串，
+  // 「打字输入」类型的卡迁进内置复习后变得跟基础卡一样，反馈 DAgSPc8ixN）。
+  if (filters.isNotEmpty && filters.last == 'type') {
+    final List<String> inner = filters
+        .sublist(0, filters.length - 1)
+        .reversed
+        .where((String f) => f.isNotEmpty)
+        .toList();
+    return '[[type:${<String>[...inner, fieldName].join(':')}]]';
+  }
   String current = text;
   for (final String filter in filters) {
     current = _applyFilter(filter, current, fieldName, ctx);
