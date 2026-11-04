@@ -97,6 +97,131 @@ void main() {
     });
   });
 
+  group('「原画」（uaBRMzK_WM）', () {
+    test('互联单列「原画」（它的自动在外网会转码）', () {
+      expect(_backend().offersOriginalQuality, isTrue);
+    });
+
+    test('选「原画」→ 不报档位，无视自适应与公网起点', () {
+      final InterconnectSyncBackend backend = _backend()
+        ..qualityPresetIndex = kRemoteVideoQualityOriginal
+        ..adaptiveQualityIndex = 4;
+      expect(
+        backend.effectiveQualityPreset(hostUrl: 'https://fushi.example.com'),
+        isNull,
+      );
+    });
+
+    test('「原画」哨兵与「自动」不同、且不落在档位下标里', () {
+      expect(kRemoteVideoQualityOriginal, isNot(kRemoteVideoQualityAuto));
+      expect(kRemoteVideoQualityOriginal, lessThan(0));
+    });
+  });
+
+  group('自动档起点：链路带宽对源码率', () {
+    int start({bool lan = false, int? link, int? source}) =>
+        resolveInterconnectAutoStartIndex(
+          privateNetworkHost: lan,
+          linkBitsPerSecond: link,
+          sourceBitrate: source,
+        );
+
+    test('字面量局域网 → 原画，不看带宽', () {
+      expect(start(lan: true), -1);
+      expect(start(lan: true, link: 1000, source: 40000000), -1);
+    });
+
+    test('没测成 → 旧的保守起点（中档）', () {
+      expect(start(), kInterconnectAutoQualityPresetIndex);
+      expect(start(source: 5000000), kInterconnectAutoQualityPresetIndex);
+    });
+
+    test('经域名 / 公网 IPv6 回家：带宽够 BD 原盘 → 原画', () {
+      // 40 Mbps 原盘，千兆内网实测 300 Mbps。
+      expect(start(link: 300000000, source: 40000000), -1);
+    });
+
+    test('带宽够码率但没有 1.5 倍余量 → 不给原画，取撑得住的最高档', () {
+      // 40 Mbps 原盘 / 50 Mbps 链路：50 < 60，原画会卡；8 Mbps × 1.5 = 12 ≤ 50。
+      expect(start(link: 50000000, source: 40000000), 0);
+    });
+
+    test('低码率源在中速链路上直接原画（比转码更清楚也更省 host）', () {
+      // 3 Mbps 的番剧 / 4G 实测 6 Mbps：6 ≥ 4.5。
+      expect(start(link: 6000000, source: 3000000), -1);
+    });
+
+    test('源码率未知不自动给原画', () {
+      expect(start(link: 300000000), 0);
+    });
+
+    test('按带宽逐档挑：档位码率 × 1.5 ≤ 带宽的最高档', () {
+      expect(start(link: 7000000, source: 40000000), 1); // 4 Mbps 档
+      expect(start(link: 3500000, source: 40000000), 2); // 2 Mbps 档
+      expect(start(link: 1600000, source: 40000000), 3); // 1 Mbps 档
+      expect(start(link: 950000, source: 40000000), 4); // 0.6 Mbps 档
+    });
+
+    test('一档都撑不住 → 最低档', () {
+      expect(
+        start(link: 100000, source: 40000000),
+        kInterconnectQualityPresets.length - 1,
+      );
+    });
+  });
+
+  group('链路探测样本折算', () {
+    test('够量的样本按首字节起算的时长折算', () {
+      expect(
+        interconnectLinkBitsPerSecond(
+          bytes: 1000000,
+          elapsed: const Duration(seconds: 1),
+          reachedEnd: false,
+        ),
+        8000000,
+      );
+    });
+
+    test('样本太小（全是慢启动）不作数，除非整个文件已读完', () {
+      expect(
+        interconnectLinkBitsPerSecond(
+          bytes: 1000,
+          elapsed: const Duration(milliseconds: 10),
+          reachedEnd: false,
+        ),
+        isNull,
+      );
+      expect(
+        interconnectLinkBitsPerSecond(
+          bytes: 1000,
+          elapsed: const Duration(milliseconds: 10),
+          reachedEnd: true,
+        ),
+        800000,
+      );
+    });
+
+    test('零字节 / 零时长不崩', () {
+      expect(
+        interconnectLinkBitsPerSecond(
+          bytes: 0,
+          elapsed: Duration.zero,
+          reachedEnd: true,
+        ),
+        isNull,
+      );
+      expect(
+        interconnectLinkBitsPerSecond(
+          bytes: 500,
+          elapsed: Duration.zero,
+          reachedEnd: true,
+        ),
+        4000000,
+        reason: '时长按 1 ms 下限折算',
+      );
+    });
+  });
+
   group('档位表本身', () {
     test('按画质从高到低排，码率严格递减', () {
       for (int i = 1; i < kInterconnectQualityPresets.length; i++) {

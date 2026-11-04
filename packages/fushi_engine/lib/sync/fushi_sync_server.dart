@@ -434,6 +434,10 @@ class FushiSyncServer {
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
 
+  /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
+  /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
+  final Map<String, int?> _sourceBitrateCache = <String, int?>{};
+
   /// 远端原盘的共享会话（`disc_share_routes.dart`）：token 在路径里，按空闲续期。
   late final DiscShareTokenStore _discShares = DiscShareTokenStore(now: _now);
 

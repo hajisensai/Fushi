@@ -20,6 +20,8 @@ import 'package:fushi/src/media/video/disc/disc_session_remote.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
+import 'package:fushi/src/media/video/video_specs_display.dart'
+    show formatBitrate;
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'dart:convert' show jsonEncode, utf8;
@@ -4842,12 +4844,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
         // host url / 文件已删 → 不在此解析，落回下方 host 默认分支。
       }
+      // 反馈 1QkmT2vVTm：后端默认字幕「列不列」与「挂不挂」分开——有持久化选择时
+      // 照样下载登记成菜单行（起播后再取，不拖慢起播），只是不挂到播放上。
+      final bool hasPreresolvedCues =
+          client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty;
+      final RemoteBackendDefaultSubtitlePlan backendDefaultPlan =
+          planRemoteBackendDefaultSubtitle(
+            backendOffersDefault: urls.subtitleUrl != null,
+            selectionRestored: subtitleResolved,
+            hasPreresolvedCues: hasPreresolvedCues,
+          );
       // TODO-1000：YouTube 等预解析好 cue（timedtext→AudioCue）时直接用，跳过
       // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
       if (subtitleResolved) {
         // 已由持久化选择解析：跳过默认字幕分支。
-      } else if (client is UrlStreamVideoClient &&
-          client.preresolvedCues.isNotEmpty) {
+      } else if (hasPreresolvedCues) {
         cues = client.preresolvedCues;
         // TODO-1302：登记 YouTube 字幕轨。预解析 cue 直接注入 overlay，但既不是 host
         // 外挂字幕（不写 _remoteSubtitlePath）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks
@@ -4857,7 +4868,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // ==null 时保留 _currentSubtitleSource（见其 setState），故此处赋值在 load 后仍生效；
         // 关闭走既有 _clearRemoteSubtitle（置 null）。
         _currentSubtitleSource = _kYoutubeCaptionsSource;
-      } else if (urls.subtitleUrl != null) {
+      } else if (backendDefaultPlan == RemoteBackendDefaultSubtitlePlan.apply) {
         // TODO-1213：进入「正在下载字幕…」阶段（host 若回调 onProgress 则显确定性进度）。
         _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
         // host 默认字幕**下载失败不等于播放失败**：此前这一段没有局部 try/catch，
@@ -4868,23 +4879,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // 保持空、字幕菜单如实显示无字幕，视频照常起播；加载阶段由 _applyLoad
         // 接着推进（buffering → 首帧）。
         try {
-          final Directory temp = await getTemporaryDirectory();
-          final File subtitle = File(
-            p.join(
-              temp.path,
-              _remoteSubtitleTempFileName(
-                '${info.id}_ep$index',
-                urls.subtitleFileName,
-              ),
-            ),
-          );
-          // 与取流同一个主机侧集序号：合集连播里 [index] 是合集内位置，每个成员
-          // 在主机上都是单视频（恒 0）；传 [index] 主机必回 404，第 2 集起永远
-          // 拿不到主机选定的外挂字幕（反馈 XmUBLYR1Ut，BUG-3615 漏的客户端一半）。
-          await client.getRemoteVideoSubtitle(
-            info.id,
-            subtitle,
-            episodeIndex: streamEpisodeIndex,
+          final File subtitle = await _downloadRemoteBackendDefaultSubtitle(
+            client,
+            info,
+            index: index,
+            streamEpisodeIndex: streamEpisodeIndex,
+            fileName: urls.subtitleFileName,
             onProgress: (double progress) {
               // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
               if (!mounted) return;
@@ -4928,6 +4928,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _startRemotePlaybackSession(client, info, initialPositionMs);
         // 互联「自动」画质档：新的一条流，重新开始观察网况（换集与换档都经这里）。
         _restartAdaptiveQuality();
+        if (backendDefaultPlan == RemoteBackendDefaultSubtitlePlan.listOnly) {
+          unawaited(
+            _listRemoteBackendDefaultSubtitle(
+              client,
+              info,
+              index: index,
+              streamEpisodeIndex: streamEpisodeIndex,
+              fileName: urls.subtitleFileName,
+              seq: seq,
+            ),
+          );
+        }
       }
       if (restoredPrimarySource != null && mounted) {
         // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
@@ -6613,6 +6625,74 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   String _safeFileName(String input) =>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+
+  /// 把后端这一集的默认外挂字幕下到临时目录（起播挂字幕与「只登记成菜单行」共用）。
+  ///
+  /// 与取流同一个主机侧集序号 [streamEpisodeIndex]：合集连播里 [index] 是合集内
+  /// 位置，每个成员在主机上都是单视频（恒 0）；传 [index] 主机必回 404，第 2 集起
+  /// 永远拿不到主机选定的外挂字幕（反馈 XmUBLYR1Ut，BUG-3615 漏的客户端一半）。
+  Future<File> _downloadRemoteBackendDefaultSubtitle(
+    RemoteVideoClient client,
+    RemoteVideoInfo info, {
+    required int index,
+    required int streamEpisodeIndex,
+    required String? fileName,
+    void Function(double progress)? onProgress,
+  }) async {
+    final Directory temp = await getTemporaryDirectory();
+    final File subtitle = File(
+      p.join(
+        temp.path,
+        _remoteSubtitleTempFileName('${info.id}_ep$index', fileName),
+      ),
+    );
+    await client.getRemoteVideoSubtitle(
+      info.id,
+      subtitle,
+      episodeIndex: streamEpisodeIndex,
+      onProgress: onProgress,
+    );
+    return subtitle;
+  }
+
+  /// 用户这一集已有别的字幕选择时，起播后把后端默认字幕下好、登记成菜单里的
+  /// 「服务端字幕」行（[RemoteBackendDefaultSubtitlePlan.listOnly]），不挂到播放上。
+  ///
+  /// 反馈 1QkmT2vVTm：此前这种情况根本不下载，`_remoteSubtitlePath` 留空，host 上的
+  /// 日语字幕从菜单消失、选不回来。失败只留痕（菜单如实没有这一行），换集作废。
+  Future<void> _listRemoteBackendDefaultSubtitle(
+    RemoteVideoClient client,
+    RemoteVideoInfo info, {
+    required int index,
+    required int streamEpisodeIndex,
+    required String? fileName,
+    required int seq,
+  }) async {
+    try {
+      final File subtitle = await _downloadRemoteBackendDefaultSubtitle(
+        client,
+        info,
+        index: index,
+        streamEpisodeIndex: streamEpisodeIndex,
+        fileName: fileName,
+      );
+      final List<AudioCue> cues = await _loadExternalSubtitleCues(
+        subtitle.path,
+        info.id,
+      );
+      if (seq != _episodeLoadSeq || !mounted) return;
+      if (cues.isEmpty) {
+        debugPrint(
+          '[VideoFushiPage] remote default subtitle not listed: '
+          'no cues parsed from ${p.basename(subtitle.path)}',
+        );
+        return;
+      }
+      _rebuild(() => _remoteSubtitlePath = subtitle.path);
+    } catch (e) {
+      debugPrint('[VideoFushiPage] remote default subtitle listing failed: $e');
+    }
+  }
 
   String _remoteSubtitleTempFileName(String videoId, String? hostFileName) {
     final String fallback = 'fushi_remote_${_safeFileName(videoId)}.srt';
