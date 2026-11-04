@@ -90,6 +90,7 @@ class Plugin:
         status = self.service.status()
         status["button"] = self.paddles.button if self.paddles else DEFAULT_BUTTON
         status["buttonError"] = self.paddles.error if self.paddles else None
+        status["touch"] = self.settings.get("touch") is True
         return status
 
     async def begin_pairing(self, address: str) -> Dict[str, Any]:
@@ -123,7 +124,16 @@ class Plugin:
             return {"ok": False, "error": "button"}
         self.paddles.set_button(button)
         self.settings["button"] = button
+        self._save_settings()
+        return {"ok": True, "button": button}
+
+    async def set_touch(self, enabled: bool) -> Dict[str, Any]:
+        """Tap a character to look it up (off by default)."""
+        self.settings["touch"] = bool(enabled)
+        self._save_settings()
+        return {"ok": True, "touch": self.settings["touch"]}
+
+    def _save_settings(self) -> None:
         os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
         with open(self.settings_path, "w", encoding="utf-8") as f:
             json.dump(self.settings, f)
-        return {"ok": True, "button": button}

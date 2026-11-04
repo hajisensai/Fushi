@@ -16,6 +16,7 @@ import {
   PanelSection,
   PanelSectionRow,
   TextField,
+  ToggleField,
   staticClasses,
 } from "@decky/ui";
 import { addEventListener, callable, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
@@ -31,6 +32,7 @@ type Status = {
   lensUrl: string | null;
   button: string;
   buttonError: string | null;
+  touch: boolean;
 };
 type Result = { ok: boolean; error?: string; detail?: string };
 type FrameInfo = { frameId: string; width: number; height: number };
@@ -42,6 +44,7 @@ const unpair = callable<[], Result>("unpair");
 const captureNow = callable<[], Result & Partial<FrameInfo>>("capture");
 const setButton = callable<[string], Result>("set_button");
 const setLensOpen = callable<[boolean], Result>("set_lens_open");
+const setTouch = callable<[boolean], Result>("set_touch");
 
 const ERRORS: Record<string, string> = {
   unreachable: "Can't reach Fushi at that address. Is it running with Interconnect on?",
@@ -58,6 +61,7 @@ const ERRORS: Record<string, string> = {
 const errorText = (r: Result) => ERRORS[r.error ?? ""] ?? `Error: ${r.error}${r.detail ? ` (${r.detail})` : ""}`;
 
 let lensUrl: string | null = null;
+let touchEnabled = false;
 let pendingFrame: string | null = null;
 let postToLens: ((msg: unknown) => void) | null = null;
 
@@ -117,7 +121,10 @@ const swallow = (evt: GamepadEvent) => {
 function LensRoute() {
   const frame = useRef<HTMLIFrameElement>(null);
   const trap = useRef<HTMLDivElement>(null);
-  const [src] = useState(() => (lensUrl ? `${lensUrl}#frame=${pendingFrame ?? ""}` : null));
+  const [touch] = useState(touchEnabled);
+  const [src] = useState(() =>
+    lensUrl ? `${lensUrl}#frame=${pendingFrame ?? ""}${touch ? "&touch=1" : ""}` : null,
+  );
 
   useEffect(() => {
     const origin = lensUrl ? new URL(lensUrl).origin : "";
@@ -184,7 +191,7 @@ function LensRoute() {
         ref={frame}
         src={src}
         tabIndex={-1}
-        style={{ width: "100%", height: "100%", border: 0, display: "block", pointerEvents: "none" }}
+        style={{ width: "100%", height: "100%", border: 0, display: "block", pointerEvents: touch ? "auto" : "none" }}
         title="Fushi Lens"
       />
     </Focusable>
@@ -203,6 +210,7 @@ function Panel() {
   const refresh = async () => {
     const s = await getStatus();
     lensUrl = s.lensUrl;
+    touchEnabled = s.touch;
     setStatus(s);
   };
   useEffect(() => {
@@ -299,6 +307,14 @@ function Panel() {
             onChange={(o) => run(() => setButton(String(o.data)))}
           />
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Tap to look up"
+            description="Tap a character to look it up, tap outside the popup to close it"
+            checked={status.touch}
+            onChange={(on) => run(() => setTouch(on))}
+          />
+        </PanelSectionRow>
         {status.buttonError && (
           <PanelSectionRow>
             <div style={{ fontSize: "12px", opacity: 0.85 }}>Back buttons unavailable: {status.buttonError}</div>
@@ -325,7 +341,7 @@ function Icon() {
 
 export default definePlugin(() => {
   routerHook.addRoute(ROUTE, LensRoute, { exact: true });
-  getStatus().then((s) => (lensUrl = s.lensUrl));
+  getStatus().then((s) => ((lensUrl = s.lensUrl), (touchEnabled = s.touch)));
   const onFrame = addEventListener<[FrameInfo]>("fushi_lens_frame", (info) => {
     if (!lensUrl) getStatus().then((s) => ((lensUrl = s.lensUrl), openLens(info.frameId)));
     else openLens(info.frameId);

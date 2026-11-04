@@ -198,6 +198,11 @@
     return el;
   }
 
+  // Inside Steam, its top bar overlays the top of the route for a few seconds
+  // after it opens; keep the popup and status out from under it.
+  const TOP_INSET = window.parent !== window ? 48 : 8;
+  if (window.parent !== window) document.documentElement.classList.add('in-steam');
+
   function placePopup() {
     const line = state.lines[state.line];
     if (!line) return;
@@ -206,12 +211,12 @@
     const r = toView(spanRect(line, state.cursor, state.cursor + Math.max(1, state.matchLength)));
     const width = Math.min(620, vw - 24);
     const below = r.top + r.height / 2 < vh / 2;
-    const room = below ? vh - (r.top + r.height) - 18 : r.top - 18;
+    const room = below ? vh - (r.top + r.height) - 18 : r.top - 10 - TOP_INSET;
     const height = Math.max(180, Math.min(vh * 0.62, room));
     const left = Math.max(12, Math.min(vw - width - 12, r.left + r.width / 2 - width / 2));
     const top = below
-      ? Math.min(vh - height - 8, r.top + r.height + 10)
-      : Math.max(8, r.top - height - 10);
+      ? Math.max(TOP_INSET, Math.min(vh - height - 8, r.top + r.height + 10))
+      : Math.max(TOP_INSET, r.top - height - 10);
     Object.assign(popupBox.style, {
       left: left + 'px', top: top + 'px', width: width + 'px', height: height + 'px',
     });
@@ -482,6 +487,61 @@
 
   window.addEventListener('resize', () => { draw(); if (state.popupOpen) placePopup(); });
 
+  // ── touch ────────────────────────────────────────────────────────────
+  // Optional (panel toggle → `touch=1` in the hash; always on when the page is
+  // opened directly in a desktop browser). Tap a character to look it up, tap
+  // outside the popup to close it; the popup itself is used by touch as is.
+
+  const TOUCH_SLOP = 8; // view px: a line box hit area grows by this much
+
+  function contains(r, x, y, pad) {
+    return x >= r.left - pad && x <= r.left + r.width + pad && y >= r.top - pad && y <= r.top + r.height + pad;
+  }
+
+  // The character under a view point: {line, cursor} or null. Inside a line box,
+  // the nearest character wins, so a tap between two glyphs still lands.
+  function hitTest(x, y) {
+    for (let li = 0; li < state.lines.length; li++) {
+      const line = state.lines[li];
+      if (!contains(toView(line.box), x, y, TOUCH_SLOP)) continue;
+      let best = null;
+      let bestDist = Infinity;
+      for (let i = 0; i < line.text.length;) {
+        const next = line.text.codePointAt(i) > 0xffff ? i + 2 : i + 1;
+        if (line.text.slice(i, next).trim()) {
+          const r = toView(spanRect(line, i, next));
+          if (contains(r, x, y, 0)) return { line: li, cursor: i };
+          const dx = x - (r.left + r.width / 2);
+          const dy = y - (r.top + r.height / 2);
+          const dist = dx * dx + dy * dy;
+          if (dist < bestDist) { bestDist = dist; best = i; }
+        }
+        i = next;
+      }
+      if (best !== null) return { line: li, cursor: best };
+    }
+    return null;
+  }
+
+  function touchEnabled() {
+    return window.parent === window || new URLSearchParams(location.hash.slice(1)).get('touch') === '1';
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!touchEnabled()) return;
+    if (popupBox.contains(e.target)) return;
+    const hit = hitTest(e.clientX, e.clientY);
+    if (!hit) {
+      if (state.popupOpen) closePopup();
+      return;
+    }
+    state.line = hit.line;
+    state.cursor = hit.cursor;
+    state.matchLength = 0;
+    draw();
+    lookup();
+  });
+
   // ── frame + OCR ──────────────────────────────────────────────────────
 
   async function loadFrame(frameId) {
@@ -508,6 +568,11 @@
   }
 
   async function start() {
+    if (touchEnabled()) {
+      const hint = document.createElement('span');
+      hint.innerHTML = '<b>☝</b> tap a character';
+      document.getElementById('hints').prepend(hint);
+    }
     const hash = new URLSearchParams(location.hash.slice(1));
     let frameId = hash.get('frame');
     if (!frameId && window.parent === window) {
@@ -523,6 +588,6 @@
     if (id && id !== state.frameId) loadFrame(id);
   });
 
-  window.__fushiLens = { onButton, loadFrame, state };
+  window.__fushiLens = { onButton, loadFrame, state, hitTest };
   start();
 })();

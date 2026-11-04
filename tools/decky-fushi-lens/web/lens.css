@@ -63,6 +63,10 @@ html, body {
   transition: opacity 160ms ease;
 }
 
+.in-steam #status {
+  top: 56px;
+}
+
 #status.shown {
   opacity: 1;
 }
