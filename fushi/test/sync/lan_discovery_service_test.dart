@@ -46,7 +46,7 @@ void main() {
       expect(service.currentDevices, isEmpty);
     });
 
-    // BUG-4078：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
+    // BUG-4116：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
     // 没有 Avahi 守护进程（WSL / 精简安装）时 initialize 抛错，旧实现已把这台未初始化
     // 的 discovery 挂到 _discovery 上，之后 stop / dispose 就抛空检查异常（UncaughtZone）。
     test(
@@ -60,7 +60,7 @@ void main() {
             made.add(d);
             return d;
           },
-          // 构造默认 `Platform.isLinux` 才开 mDNS 兜底（BUG-4081）；这条测的是
+          // 构造默认 `Platform.isLinux` 才开 mDNS 兜底（BUG-4119）；这条测的是
           // 「无兜底」分支，钉死它，免得在 Linux CI 上转去兜底、真绑 UDP 5353。
           mdnsFallbackEnabled: false,
         );
@@ -72,7 +72,7 @@ void main() {
       },
     );
 
-    // 同一 BUG-4078 形状的 Linux 分支：initialize 失败后转去内置 mDNS 兜底，
+    // 同一 BUG-4116 形状的 Linux 分支：initialize 失败后转去内置 mDNS 兜底，
     // 失败的 Avahi browser 照样不能被 stop / dispose 碰到，兜底 socket 随
     // dispose 关掉。transport 注入假的，不碰真实网络。
     test(

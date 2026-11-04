@@ -33,21 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3681 条。点号进各自文件。
+> 共 3721 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4083](bugs/BUG-4083-mpv-cache-on-disk-without-cache-dir.md) | ✅ | ✅ | 每次开网络流 mpv 报 "Failed to create file cache" |
-| [BUG-4082](bugs/BUG-4082-linux-x11-video-software-rendering.md) | ✅ | ✅ | Linux X11（Steam 游戏模式）视频走 mpv 软件渲染、卡顿 |
-| [BUG-4081](bugs/BUG-4081-linux-lan-scan-without-avahi.md) | ✅ | ✅ | linux-lan-scan-without-avahi |
-| [BUG-4080](bugs/BUG-4080-update-cleanup-deletes-shared-temp.md) | ✅ | ✅ | 非 Windows 的更新清理在共享临时目录里删别的程序的文件 |
-| [BUG-4079](bugs/BUG-4079-external-lookup-never-opens-dictionary.md) | ✅ | ✅ | app 外显式查词（深链 / fushi_cli）只排队、不打开查词页 |
-| [BUG-4078](bugs/BUG-4078-lan-discovery-stop-without-avahi.md) | ✅ | ✅ | Linux 无 Avahi 时局域网发现停止抛空检查异常 |
-> 共 3700 条。点号进各自文件。
-> 共 3715 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4121](bugs/BUG-4121-mpv-cache-on-disk-without-cache-dir.md) | ✅ | ✅ | 每次开网络流 mpv 报 "Failed to create file cache" |
+| [BUG-4120](bugs/BUG-4120-linux-x11-video-software-rendering.md) | ✅ | ✅ | Linux X11（Steam 游戏模式）视频走 mpv 软件渲染、卡顿 |
+| [BUG-4119](bugs/BUG-4119-linux-lan-scan-without-avahi.md) | ✅ | ✅ | linux-lan-scan-without-avahi |
+| [BUG-4118](bugs/BUG-4118-update-cleanup-deletes-shared-temp.md) | ✅ | ✅ | 非 Windows 的更新清理在共享临时目录里删别的程序的文件 |
+| [BUG-4117](bugs/BUG-4117-external-lookup-never-opens-dictionary.md) | ✅ | ✅ | app 外显式查词（深链 / fushi_cli）只排队、不打开查词页 |
+| [BUG-4116](bugs/BUG-4116-lan-discovery-stop-without-avahi.md) | ✅ | ✅ | Linux 无 Avahi 时局域网发现停止抛空检查异常 |
 | [BUG-4115](bugs/BUG-4115-immersive-media-pages-window-not-draggable.md) | ✅ | ✅ | Windows 音乐歌词页 / 有声书歌词模式 / 小说阅读器里拖不动窗口 |
 | [BUG-4114](bugs/BUG-4114-webview-windows-frame-pacing.md) | ✅ | ✅ | Windows WebView 纹理桥取帧相位抖动，歌词换句 / 滚轮看着掉帧 |
 | [BUG-4113](bugs/BUG-4113-work-profile-session-partial-scope.md) | ✅ | ✅ | 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置 |

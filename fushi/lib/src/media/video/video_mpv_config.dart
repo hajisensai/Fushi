@@ -842,7 +842,7 @@ bool isNetworkStreamUri(String uri) {
 /// - `cache=yes`：显式确认开启流缓存（media_kit 默认已开，远端流再确认一次）。
 /// - `cache-on-disk=no`：缓存只放内存。media_kit 初始化设了 `cache-on-disk=yes`，但它以
 ///   `config=no` 启动 libmpv、没有 `cache-dir`，mpv 每次开流都报「Failed to create file
-///   cache」再退回内存缓存（BUG-4083）。下面的字节上限本就按内存缓存定的，这里显式钉死。
+///   cache」再退回内存缓存（BUG-4121）。下面的字节上限本就按内存缓存定的，这里显式钉死。
 /// - `demuxer-max-bytes=128MiB`（桌面）：缓存的**真实约束**。mpv 文档明确「cache 开启
 ///   时实际预读量受 demuxer-max-bytes 限制」；默认 32MiB 在 ~40Mbps REMUX 下只够约
 ///   6s，抖动一下就空。提到 128MiB（~40Mbps 约 25s / 典型 15Mbps 约 68s）给足缓冲。
