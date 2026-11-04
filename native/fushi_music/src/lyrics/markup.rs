@@ -4,7 +4,10 @@
 pub enum Tok {
     Text(String),
     /// `<name attrs>`：name 小写；`/name` 为闭合标签。
-    Tag { name: String, attrs: String },
+    Tag {
+        name: String,
+        attrs: String,
+    },
 }
 
 pub fn tokenize(s: &str) -> Vec<Tok> {
@@ -67,7 +70,9 @@ pub fn unescape(s: &str) -> String {
             "apos" => Some('\''),
             "nbsp" => Some('\u{a0}'),
             "lrm" | "rlm" | "zwj" | "zwnj" => Some('\u{0}'),
-            e if e.starts_with("#x") => u32::from_str_radix(&e[2..], 16).ok().and_then(char::from_u32),
+            e if e.starts_with("#x") => u32::from_str_radix(&e[2..], 16)
+                .ok()
+                .and_then(char::from_u32),
             e if e.starts_with('#') => e[1..].parse().ok().and_then(char::from_u32),
             _ => None,
         };

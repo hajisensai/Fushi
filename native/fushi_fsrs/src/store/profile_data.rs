@@ -13,11 +13,11 @@
 //! （回归测试 `every_profile_table_is_purged` 钉住「除 `srs_meta` / `sync2_deps` 外每张表都有 `profile_uid`」）。
 //! 只动本机：远端存储位置上已同步的集合一个字节也不碰（`sync2_locations` 只是本机记的上传进度）。
 
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Map, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Map, Value, json};
 
-use super::sync2::{in_savepoint, sql};
 use super::SrsCore;
+use super::sync2::{in_savepoint, sql};
 use std::sync::atomic::Ordering;
 
 /// `srs_meta` 里一次性存量无主数据扫描的完成标记（值 = 完成时刻毫秒）。
@@ -34,14 +34,21 @@ fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
              ORDER BY m.name",
         )
         .map_err(sql)?;
-    let names = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(sql)?.collect::<Result<Vec<_>, _>>().map_err(sql)?;
+    let names = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(sql)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql)?;
     Ok(names)
 }
 
 /// 用户看得见的规模：未删除的笔记、它们的卡、全部复习记录；外加该 uid 在各表里的总行数。
 fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
-    let count = |q: &str| -> Result<i64, String> { c.query_row(q, [profile], |r| r.get(0)).map_err(sql) };
-    let notes = count("SELECT COUNT(*) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL")?;
+    let count =
+        |q: &str| -> Result<i64, String> { c.query_row(q, [profile], |r| r.get(0)).map_err(sql) };
+    let notes = count(
+        "SELECT COUNT(*) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL",
+    )?;
     let cards = count(
         "SELECT COUNT(*) FROM srs_cards_cache c WHERE c.profile_uid = srs_id(?1) AND EXISTS \
          (SELECT 1 FROM srs_notes_cache n WHERE n.id = c.note_id AND n.deleted_at IS NULL)",
@@ -49,7 +56,9 @@ fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
     let reviews = count("SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = srs_id(?1)")?;
     let mut rows = 0i64;
     for t in profile_tables(c)? {
-        rows += count(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"))?;
+        rows += count(&format!(
+            "SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"
+        ))?;
     }
     Ok(json!({"notes": notes, "cards": cards, "reviews": reviews, "rows": rows}))
 }
@@ -80,7 +89,12 @@ impl SrsCore {
             let mut tables = Map::new();
             let mut deleted = 0i64;
             for t in profile_tables(c)? {
-                let n = c.execute(&format!("DELETE FROM \"{t}\" WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)? as i64;
+                let n = c
+                    .execute(
+                        &format!("DELETE FROM \"{t}\" WHERE profile_uid = srs_id(?1)"),
+                        [profile],
+                    )
+                    .map_err(sql)? as i64;
                 if n > 0 {
                     tables.insert(t, json!(n));
                 }
@@ -88,7 +102,10 @@ impl SrsCore {
             }
             // 按 profile 记的元数据键一律是 `<前缀>/<uid>`（迁移进度、状态摘要…）；uid 是 UUID，不会误伤别的键。
             let meta = c
-                .execute("DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1", [profile])
+                .execute(
+                    "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1",
+                    [profile],
+                )
                 .map_err(sql)? as i64;
             if meta > 0 {
                 tables.insert("srs_meta".into(), json!(meta));
@@ -96,7 +113,10 @@ impl SrsCore {
             // 迁移队列是按需建的表（没迁移过的库里没有它），表清单查询已经把它算进去了；因果上下文跨 profile 共用，
             // 只回收已经没有任何操作引用的。
             let deps = c
-                .execute("DELETE FROM sync2_deps WHERE id NOT IN (SELECT deps FROM sync2_ops)", [])
+                .execute(
+                    "DELETE FROM sync2_deps WHERE id NOT IN (SELECT deps FROM sync2_ops)",
+                    [],
+                )
                 .map_err(sql)? as i64;
             if deps > 0 {
                 tables.insert("sync2_deps".into(), json!(deps));
@@ -118,12 +138,24 @@ impl SrsCore {
             let tables = profile_tables(&r)?;
             let mut uids: Vec<String> = Vec::new();
             if !tables.is_empty() {
-                let union = tables.iter().map(|t| format!("SELECT srs_idt(profile_uid) AS profile_uid FROM \"{t}\"")).collect::<Vec<_>>().join(" UNION ");
+                let union = tables
+                    .iter()
+                    .map(|t| format!("SELECT srs_idt(profile_uid) AS profile_uid FROM \"{t}\""))
+                    .collect::<Vec<_>>()
+                    .join(" UNION ");
                 let mut stmt = r.prepare(&format!("SELECT srs_idt(profile_uid) AS profile_uid FROM ({union}) ORDER BY profile_uid")).map_err(sql)?;
-                uids = stmt.query_map([], |x| x.get::<_, String>(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+                uids = stmt
+                    .query_map([], |x| x.get::<_, String>(0))
+                    .map_err(sql)?
+                    .collect::<Result<_, _>>()
+                    .map_err(sql)?;
             }
             let swept: Option<i64> = r
-                .query_row("SELECT value FROM srs_meta WHERE key = ?1", [ORPHAN_SWEEP_KEY], |x| x.get::<_, String>(0))
+                .query_row(
+                    "SELECT value FROM srs_meta WHERE key = ?1",
+                    [ORPHAN_SWEEP_KEY],
+                    |x| x.get::<_, String>(0),
+                )
                 .optional()
                 .map_err(sql)?
                 .and_then(|v| v.parse().ok());
@@ -148,7 +180,7 @@ impl SrsCore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::sync2::tests::{deck_entity, review, tempdir, P};
+    use crate::store::sync2::tests::{P, deck_entity, review, tempdir};
     use serde_json::json;
 
     const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
@@ -174,7 +206,13 @@ mod tests {
     fn seed(core: &SrsCore, profile: &str, notes: usize, logs: usize) {
         let mut events = vec![deck_entity(&format!("D-{profile}"))];
         for i in 0..logs {
-            events.push(review(&format!("L-{profile}-{i}"), &format!("C-{profile}-0"), 1_700_000_000_000 + i as i64, 3, "learn"));
+            events.push(review(
+                &format!("L-{profile}-{i}"),
+                &format!("C-{profile}-0"),
+                1_700_000_000_000 + i as i64,
+                3,
+                "learn",
+            ));
         }
         let events: Vec<Value> = events
             .into_iter()
@@ -184,7 +222,8 @@ mod tests {
             })
             .collect();
         core.sync2_identity(profile, 1).unwrap();
-        core.sync2_apply_local(profile, 2, &Value::Array(events).to_string()).unwrap();
+        core.sync2_apply_local(profile, 2, &Value::Array(events).to_string())
+            .unwrap();
         core.sync2_digest(profile).unwrap();
         let w = core.writer().unwrap();
         for i in 0..notes {
@@ -200,18 +239,28 @@ mod tests {
             )
             .unwrap();
         }
-        w.execute("INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')", [profile]).unwrap();
+        w.execute(
+            "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')",
+            [profile],
+        )
+        .unwrap();
         w.execute_batch(
             "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (profile_uid UUIDTEXT NOT NULL, pos INTEGER NOT NULL, \
              phase INTEGER NOT NULL, src TEXT NOT NULL, PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;",
         )
         .unwrap();
         w.execute("INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) VALUES (srs_id(?1), 1, 0, 'x')", [profile]).unwrap();
-        w.execute("INSERT INTO srs_meta (key, value) VALUES ('sync2_migrating/' || ?1, '1')", [profile]).unwrap();
+        w.execute(
+            "INSERT INTO srs_meta (key, value) VALUES ('sync2_migrating/' || ?1, '1')",
+            [profile],
+        )
+        .unwrap();
     }
 
     fn rows_of(core: &SrsCore, profile: &str) -> i64 {
-        core.profile_footprint(profile).unwrap()["rows"].as_i64().unwrap()
+        core.profile_footprint(profile).unwrap()["rows"]
+            .as_i64()
+            .unwrap()
     }
 
     /// 回归（8TaOy2i-lL 现象 3）：删一个 profile 后它在每张按 profile 分的表、按 profile 记的元数据里一行不剩；
@@ -223,9 +272,24 @@ mod tests {
         seed(&core, Q, 2, 2);
         let q_before = core.profile_footprint(Q).unwrap();
         let deps_before = count(&core, "SELECT COUNT(*) FROM sync2_deps");
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id('{P}')")) > 0);
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_self WHERE profile_uid = srs_id('{P}')")) == 1);
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")) >= 2);
+        assert!(
+            count(
+                &core,
+                &format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id('{P}')")
+            ) > 0
+        );
+        assert!(
+            count(
+                &core,
+                &format!("SELECT COUNT(*) FROM sync2_self WHERE profile_uid = srs_id('{P}')")
+            ) == 1
+        );
+        assert!(
+            count(
+                &core,
+                &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")
+            ) >= 2
+        );
 
         let out = core.profile_purge(P).unwrap();
         // 删之前的规模：一条笔记已删 → 2 条笔记、2 张卡；4 条复习。
@@ -248,16 +312,38 @@ mod tests {
             .unwrap();
         assert!(every.len() > 25, "{every:?}");
         for t in every {
-            let n: i64 = w.query_row(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"), [P], |r| r.get(0)).unwrap();
+            let n: i64 = w
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"),
+                    [P],
+                    |r| r.get(0),
+                )
+                .unwrap();
             assert_eq!(n, 0, "{t} still has rows of the purged profile");
         }
-        let meta: i64 = w.query_row("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/' || ?1", [P], |r| r.get(0)).unwrap();
+        let meta: i64 = w
+            .query_row(
+                "SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/' || ?1",
+                [P],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(meta, 0);
-        let schema: i64 = w.query_row("SELECT COUNT(*) FROM srs_meta WHERE key = 'schema'", [], |r| r.get(0)).unwrap();
+        let schema: i64 = w
+            .query_row(
+                "SELECT COUNT(*) FROM srs_meta WHERE key = 'schema'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(schema, 1, "library-level meta must survive");
         // 另一个 profile 还在用的因果上下文一个都没少（GC 只回收没人引用的）。
         let dangling: i64 = w
-            .query_row("SELECT COUNT(*) FROM sync2_ops WHERE deps NOT IN (SELECT id FROM sync2_deps)", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sync2_ops WHERE deps NOT IN (SELECT id FROM sync2_deps)",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(dangling, 0);
         drop(w);
@@ -285,9 +371,24 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         let purged = profile_tables(&w).unwrap();
-        let missing: Vec<&String> = all.iter().filter(|t| !purged.contains(t) && !SHARED_TABLES.contains(&t.as_str())).collect();
-        assert!(missing.is_empty(), "tables outside the purge set: {missing:?}");
-        for t in ["srs_entities", "srs_review_logs", "srs_cards_cache", "srs_notes_cache", "srs_stat_reviews", "sync2_ops", "sync2_self", "sync2_media"] {
+        let missing: Vec<&String> = all
+            .iter()
+            .filter(|t| !purged.contains(t) && !SHARED_TABLES.contains(&t.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "tables outside the purge set: {missing:?}"
+        );
+        for t in [
+            "srs_entities",
+            "srs_review_logs",
+            "srs_cards_cache",
+            "srs_notes_cache",
+            "srs_stat_reviews",
+            "sync2_ops",
+            "sync2_self",
+            "sync2_media",
+        ] {
             assert!(purged.iter().any(|x| x == t), "{t} not in purge set");
         }
     }
@@ -296,7 +397,10 @@ mod tests {
     #[test]
     fn profile_uids_lists_every_owner_and_the_sweep_marker() {
         let (core, _d) = open("uids");
-        assert_eq!(core.profile_uids().unwrap(), json!({"uids": [], "orphanSweptAt": null}));
+        assert_eq!(
+            core.profile_uids().unwrap(),
+            json!({"uids": [], "orphanSweptAt": null})
+        );
         seed(&core, P, 1, 1);
         seed(&core, Q, 1, 0);
         let mut want = vec![P, Q];

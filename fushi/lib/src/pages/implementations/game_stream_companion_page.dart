@@ -460,8 +460,9 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
       enableSwipeToClose: false,
       // The panel's lifetime belongs to the stream page.
       onDismiss: () {},
-      onTextSelected: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
-          _send(GameStreamCompanionLookupText(text)),
+      onTextSelected:
+          (String text, Rect rect, List<FushiRubySpan> rubySpans, String _) =>
+              _send(GameStreamCompanionLookupText(text)),
       onLinkClick: (String text, Rect rect) =>
           _send(GameStreamCompanionLookupText(text)),
       onMineEntry: _mine,

@@ -1,8 +1,8 @@
 //! 全 crate 共用的 C ABI 约定：线程局部错误、字节缓冲移交、panic 隔离。
 
 use std::cell::RefCell;
-use std::ffi::{c_char, CString};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ffi::{CString, c_char};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };

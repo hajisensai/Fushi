@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// pumpWidget 过重，沿用本目录 `reader_lyrics_*_static_test` 的源码切片范式）。
 ///
 /// ① 退出不被返回阶梯截胡：阅读器 PopScope 的返回阶梯（`resolveReaderBackStep`，
-///    只先关词典弹窗；歌词层不再拦，NJIIDAhIZL / NaFaJbaAdc）只该拦用户的系统返回。
+///    路由返回只先关词典弹窗；歌词层不再拦，NJIIDAhIZL）只该拦用户的系统返回。
 ///    面板「退出」（chrome.part.dart 的 `onExitReader`）与重导入后正文作废
 ///    （audiobook.part.dart 的 `bodyRebuilt` 分支）是**显式退书**：两处都走
 ///    `_exitReaderBook()`，在 maybePop 在途期间挂 `_exitBookRequested`，PopScope
@@ -37,11 +37,16 @@ void main() {
   }
 
   group('① 显式退书绕过 PopScope 的歌词层拦截', () {
-    test('PopScope 的阶梯以 _exitBookRequested 为显式退书门', () {
+    test('PopScope 走路由来源的阶梯，并以 _exitBookRequested 为显式退书门', () {
       final String popScope = slice(
         read(pagePath),
         'onPopInvokedWithResult:',
         'exitAfterPersist(',
+      );
+      expect(
+        popScope.contains('resolveReaderBackStep('),
+        isTrue,
+        reason: '系统返回必须走单点阶梯（歌词模式直接退书，NJIIDAhIZL）',
       );
       expect(
         popScope.contains('explicitExit: _exitBookRequested'),
@@ -55,19 +60,24 @@ void main() {
       );
     });
 
-    test('globalBack 快捷键走同一条阶梯：歌词模式下 Esc 直接退书（NaFaJbaAdc）', () {
+    test('globalBack 快捷键走同一阶梯，歌词模式下直接退书（BUG-4026）', () {
       final String body = slice(
         read('lib/src/pages/implementations/reader_fushi/caret.part.dart'),
         'case ShortcutAction.globalBack:',
         'case ShortcutAction.readerToggleChrome:',
       );
       expect(body.contains('resolveReaderBackStep('), isTrue);
+      expect(body.contains('_exitWindowFullscreenOrPopReader()'), isTrue);
       expect(
         body.contains('_toggleLyricsMode()'),
         isFalse,
-        reason: 'Esc 不许先掀开歌词层，要一次回书架',
+        reason: 'Esc 不许先掀开歌词层回正文：歌词模式下一次就回书架',
       );
-      expect(body.contains('_exitWindowFullscreenOrPopReader()'), isTrue);
+      expect(
+        RegExp(r'_lyricsMode\b').hasMatch(body),
+        isFalse,
+        reason: 'Esc 的退书判定不看歌词模式（退书也不关歌词层，BUG-785）',
+      );
     });
 
     test('_exitReaderBook 挂旗 → maybePop → finally 撤旗', () {

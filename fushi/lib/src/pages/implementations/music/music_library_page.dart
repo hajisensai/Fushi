@@ -7,7 +7,6 @@ import 'dart:async';
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,6 +34,7 @@ import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicServerBrowser;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
@@ -42,8 +42,6 @@ import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/src/shortcuts/input_binding.dart';
-import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup, libraryImportChromeButton;
@@ -58,7 +56,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/utils.dart';
 
 /// 曲库分区（浏览维度）。格式 / 来源 / 有无逐字歌词是筛选条件，不做成分区（§11.2）。
@@ -86,35 +83,6 @@ String musicLibrarySectionLabel(MusicLibrarySection s) => switch (s) {
   MusicLibrarySection.works => t.music_section_works,
   MusicLibrarySection.playlists => t.music_section_playlists,
 };
-
-/// 音乐页的键盘派发：把按键按 [ShortcutScope.music] 解析成动作并交给引擎。返回是否
-/// 消费。纯逻辑（不依赖页面状态），单测直接喂按键。
-bool dispatchMusicShortcut(ShortcutAction? action, MusicPlayerEngine engine) {
-  switch (action) {
-    case ShortcutAction.musicTogglePlayPause:
-      if (!engine.isActive) return false;
-      unawaited(engine.togglePlayPause());
-      return true;
-    case ShortcutAction.musicNextTrack:
-      if (!engine.isActive) return false;
-      unawaited(engine.skipNext());
-      return true;
-    case ShortcutAction.musicPreviousTrack:
-      if (!engine.isActive) return false;
-      unawaited(engine.skipPrevious());
-      return true;
-    case ShortcutAction.musicSeekForward:
-      if (!engine.isActive) return false;
-      unawaited(engine.seekRelative(const Duration(seconds: 5)));
-      return true;
-    case ShortcutAction.musicSeekBackward:
-      if (!engine.isActive) return false;
-      unawaited(engine.seekRelative(const Duration(seconds: -5)));
-      return true;
-    default:
-      return false;
-  }
-}
 
 /// 生效的来源过滤：指向的插件已不在（被停用 / 卸载）时回到全部来源（`null`）。
 String? _musicEffectiveSourceFilter(
@@ -728,25 +696,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     FushiToast.show(msg: t.music_scan_done(count: count));
   }
 
-  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-    final Set<ModifierKey> modifiers = <ModifierKey>{
-      if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
-      if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
-      if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
-      if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
-    };
-    final ShortcutAction? action = _app.shortcutRegistry.resolveKeyboard(
-      event.logicalKey,
-      modifiers: modifiers,
-      scope: ShortcutScope.music,
-    );
-    return dispatchMusicShortcut(action, _app.musicSession.engine)
-        ? KeyEventResult.handled
-        : KeyEventResult.ignored;
-  }
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) =>
+      handleMusicShortcutKey(
+        event,
+        registry: _app.shortcutRegistry,
+        engine: _app.musicSession.engine,
+      );
 
   void _openAlbum(MusicAlbumRow album) {
     final MusicLibrarySnapshot snap = _snapshot ?? MusicLibrarySnapshot.empty;
@@ -840,11 +795,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                             ),
                             child: hero,
                           ),
-                        // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
-                        SyncProgressBanner(
-                          key: const ValueKey<String>('music-sync-progress'),
-                          margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-                        ),
                         if (_scanning) const FushiLinearProgressIndicator(),
                         Expanded(
                           // 触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 →

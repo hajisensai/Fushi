@@ -35,7 +35,7 @@ use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{params_from_iter, types::Value as Sql, Connection};
+use rusqlite::{Connection, params_from_iter, types::Value as Sql};
 use serde_json::Value;
 
 use crate::projection::Day;
@@ -202,21 +202,30 @@ impl StudyHub {
     /// 在写连接上装触发器（[crate::store::SrsCore::open] 建表 / 升级之后调）。
     pub(crate) fn install(hub: &Arc<StudyHub>, c: &Connection) -> Result<(), String> {
         let h = Arc::clone(hub);
-        c.create_scalar_function("srs_study_touch", 3, FunctionFlags::SQLITE_UTF8, move |ctx| {
-            let kind = ctx.get::<i64>(0)?;
-            // ID 列存编码后的值（store/ids.rs）：这里要文本。
-            let profile = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
-            let id = crate::store::ids::text(ctx.get_raw(2)).unwrap_or_default();
-            let mut t = lock(&h.touched);
-            // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
-            if kind != TOUCH_NOTE {
-                t.study.pending.entry(profile.clone()).or_default().add(kind, id.clone());
-            }
-            if kind != TOUCH_LOG {
-                t.browse.pending.entry(profile).or_default().add(kind, id);
-            }
-            Ok(0i64)
-        })
+        c.create_scalar_function(
+            "srs_study_touch",
+            3,
+            FunctionFlags::SQLITE_UTF8,
+            move |ctx| {
+                let kind = ctx.get::<i64>(0)?;
+                // ID 列存编码后的值（store/ids.rs）：这里要文本。
+                let profile = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
+                let id = crate::store::ids::text(ctx.get_raw(2)).unwrap_or_default();
+                let mut t = lock(&h.touched);
+                // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
+                if kind != TOUCH_NOTE {
+                    t.study
+                        .pending
+                        .entry(profile.clone())
+                        .or_default()
+                        .add(kind, id.clone());
+                }
+                if kind != TOUCH_LOG {
+                    t.browse.pending.entry(profile).or_default().add(kind, id);
+                }
+                Ok(0i64)
+            },
+        )
         .map_err(sql)?;
         c.execute_batch(TRIGGERS).map_err(sql)
     }
@@ -262,7 +271,8 @@ impl StudyHub {
         };
         let ready = if fresh {
             #[cfg(test)]
-            self.builds.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.builds
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             sessions.remove(profile);
             Session::build(c, profile, day, today).map(|s| {
                 sessions.insert(profile.to_owned(), s);
@@ -351,18 +361,34 @@ impl LogState {
     }
 
     /// 整份扫一遍最近 30 天的日志（`idx_srs_review_logs_profile_kind_time` 区间）。
-    pub(crate) fn scan(c: &Connection, profile: &str, day: Day, today: i64) -> Result<LogState, String> {
-        let mut s = LogState { last30: vec![0; 30], ..LogState::default() };
+    pub(crate) fn scan(
+        c: &Connection,
+        profile: &str,
+        day: Day,
+        today: i64,
+    ) -> Result<LogState, String> {
+        let mut s = LogState {
+            last30: vec![0; 30],
+            ..LogState::default()
+        };
         let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
         let mut stmt = c.prepare_cached(LOGS_SQL).map_err(sql)?;
-        let mut q = stmt.query(rusqlite::params![profile, from, today_start]).map_err(sql)?;
+        let mut q = stmt
+            .query(rusqlite::params![profile, from, today_start])
+            .map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             s.fold_row(r, day, today, today_start)?;
         }
         Ok(s)
     }
 
-    fn fold_row(&mut self, r: &rusqlite::Row<'_>, day: Day, today: i64, today_start: i64) -> Result<(), String> {
+    fn fold_row(
+        &mut self,
+        r: &rusqlite::Row<'_>,
+        day: Day,
+        today: i64,
+        today_start: i64,
+    ) -> Result<(), String> {
         let at: i64 = r.get(1).map_err(sql)?;
         let d = day.index(at);
         let slot = d - (today - 29);
@@ -378,7 +404,17 @@ impl LogState {
                 introduced = v["res"]["reps"].as_f64() == Some(1.0);
             }
         }
-        self.apply(id, Fold { slot, card, at, today: today_log, reviewed, introduced });
+        self.apply(
+            id,
+            Fold {
+                slot,
+                card,
+                at,
+                today: today_log,
+                reviewed,
+                introduced,
+            },
+        );
         Ok(())
     }
 
@@ -399,7 +435,9 @@ impl LogState {
     }
 
     fn unapply(&mut self, id: &str) {
-        let Some(f) = self.folded.remove(id) else { return };
+        let Some(f) = self.folded.remove(id) else {
+            return;
+        };
         let dec = |m: &mut HashMap<String, u32>, k: &str| {
             if let Some(n) = m.get_mut(k) {
                 *n -= 1;
@@ -423,7 +461,14 @@ impl LogState {
     }
 
     /// 按 id 重读几条日志：先减掉旧贡献，再按库里的行（不在了 / 不在窗口里 = 没有贡献）加回。
-    fn reread(&mut self, c: &Connection, profile: &str, day: Day, today: i64, ids: &HashSet<String>) -> Result<(), String> {
+    fn reread(
+        &mut self,
+        c: &Connection,
+        profile: &str,
+        day: Day,
+        today: i64,
+        ids: &HashSet<String>,
+    ) -> Result<(), String> {
         let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
         let all: Vec<&String> = ids.iter().collect();
         for chunk in all.chunks(CHUNK) {
@@ -432,7 +477,11 @@ impl LogState {
             }
             let text = logs_by_id_sql(chunk.len());
             let mut stmt = c.prepare_cached(&text).map_err(sql)?;
-            let mut args: Vec<Sql> = vec![Sql::Text(profile.to_owned()), Sql::Integer(from), Sql::Integer(today_start)];
+            let mut args: Vec<Sql> = vec![
+                Sql::Text(profile.to_owned()),
+                Sql::Integer(from),
+                Sql::Integer(today_start),
+            ];
             args.extend(chunk.iter().map(|s| Sql::Text((*s).clone())));
             let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
             while let Some(r) = q.next().map_err(sql)? {
@@ -589,7 +638,9 @@ impl Session {
             logs: LogState::scan(c, profile, day, today)?,
         };
         // `+profile_uid`：整表顺扫比按 profile 前缀索引逐行回表快（一个 profile 通常就是全表）。
-        let mut stmt = c.prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = srs_id(?1)")).map_err(sql)?;
+        let mut stmt = c
+            .prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = srs_id(?1)"))
+            .map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         let mut due: Vec<Vec<(u32, Option<i64>, Option<f64>)>> = Vec::new();
         while let Some(r) = q.next().map_err(sql)? {
@@ -641,13 +692,17 @@ impl Session {
     /// 按 id 重读写过的卡与日志（见文件头）。
     fn reread(&mut self, c: &Connection, profile: &str, dirty: &Dirty) -> Result<(), String> {
         if !dirty.logs.is_empty() {
-            self.logs.reread(c, profile, self.day, self.today, &dirty.logs)?;
+            self.logs
+                .reread(c, profile, self.day, self.today, &dirty.logs)?;
         }
         let all: Vec<&String> = dirty.cards.iter().collect();
         for chunk in all.chunks(CHUNK) {
             let mut fetched: HashMap<u32, Row> = HashMap::new();
             {
-                let text = format!("{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = srs_id(?)", marks(chunk.len()));
+                let text = format!(
+                    "{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = srs_id(?)",
+                    marks(chunk.len())
+                );
                 let mut stmt = c.prepare_cached(&text).map_err(sql)?;
                 let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
                 args.push(Sql::Text(profile.to_owned()));
@@ -671,7 +726,9 @@ impl Session {
                 }
                 if let Some(n) = new {
                     if self.place(card, &n, 1) {
-                        self.decks[n.deck as usize].due.insert(card, n.last, n.stab, &self.ids);
+                        self.decks[n.deck as usize]
+                            .due
+                            .insert(card, n.last, n.stab, &self.ids);
                     }
                 }
                 self.rows[card as usize] = new;
@@ -687,7 +744,11 @@ impl Session {
         let raw = |dq: &DeckQueue| DeckRaw {
             total: dq.total,
             new_avail: dq.new_avail,
-            learn: dq.learning.iter().take_while(|(due, _)| *due <= limit).count() as i64,
+            learn: dq
+                .learning
+                .iter()
+                .take_while(|(due, _)| *due <= limit)
+                .count() as i64,
             due: dq.due.len() as i64,
         };
         let mut out = HashMap::new();
@@ -717,24 +778,39 @@ impl Session {
     pub(crate) fn decks_of(&self, ids: &HashSet<String>) -> HashMap<String, (String, bool)> {
         let mut out = HashMap::new();
         for id in ids {
-            let Some(i) = self.index.get(id.as_str()) else { continue };
+            let Some(i) = self.index.get(id.as_str()) else {
+                continue;
+            };
             if let Some(r) = &self.rows[*i as usize] {
-                out.insert(id.clone(), (self.deck_names[r.deck as usize].to_string(), r.hidden));
+                out.insert(
+                    id.clone(),
+                    (self.deck_names[r.deck as usize].to_string(), r.hidden),
+                );
             }
         }
         out
     }
 
     fn excluded(&self, exclude: &[&str]) -> HashSet<u32> {
-        exclude.iter().filter_map(|e| self.index.get(*e).copied()).collect()
+        exclude
+            .iter()
+            .filter_map(|e| self.index.get(*e).copied())
+            .collect()
     }
 
     /// 子树里按 (COALESCE(due_at, 0), id) 最早、在 [limit] 之前到期的可出学习卡（排除 [exclude]）：(卡, due_at)。
-    pub(crate) fn first_learning(&self, decks: &[&str], limit: i64, exclude: &[&str]) -> Option<(String, Option<i64>)> {
+    pub(crate) fn first_learning(
+        &self,
+        decks: &[&str],
+        limit: i64,
+        exclude: &[&str],
+    ) -> Option<(String, Option<i64>)> {
         let ex = self.excluded(exclude);
         let mut best: Option<&(i64, Arc<str>)> = None;
         for d in decks {
-            let Some(di) = self.deck_index.get(*d) else { continue };
+            let Some(di) = self.deck_index.get(*d) else {
+                continue;
+            };
             let hit = self.decks[*di as usize]
                 .learning
                 .iter()
@@ -753,11 +829,21 @@ impl Session {
     }
 
     /// 几个牌组的到期复习卡里此刻可提取度最低的一张（R 相等按 id；排除 [exclude]）。
-    pub(crate) fn lowest_due(&self, decks: &[&str], now: i64, exclude: &HashSet<&str>) -> Option<DueCand> {
-        let ex: HashSet<u32> = exclude.iter().filter_map(|e| self.index.get(*e).copied()).collect();
+    pub(crate) fn lowest_due(
+        &self,
+        decks: &[&str],
+        now: i64,
+        exclude: &HashSet<&str>,
+    ) -> Option<DueCand> {
+        let ex: HashSet<u32> = exclude
+            .iter()
+            .filter_map(|e| self.index.get(*e).copied())
+            .collect();
         let mut best: Option<(Option<f64>, u32)> = None;
         for d in decks {
-            let Some(di) = self.deck_index.get(*d) else { continue };
+            let Some(di) = self.deck_index.get(*d) else {
+                continue;
+            };
             best = self.decks[*di as usize].due.best(now, &ex, &self.ids, best);
         }
         best.map(|(_, card)| {
@@ -825,7 +911,13 @@ struct Bounds {
     l_max: i64,
 }
 
-const EMPTY: Bounds = Bounds { n: 0, s_min: f64::INFINITY, s_max: f64::NEG_INFINITY, l_min: i64::MAX, l_max: i64::MIN };
+const EMPTY: Bounds = Bounds {
+    n: 0,
+    s_min: f64::INFINITY,
+    s_max: f64::NEG_INFINITY,
+    l_min: i64::MAX,
+    l_max: i64::MIN,
+};
 
 impl Bounds {
     fn of(es: &[Entry]) -> Bounds {
@@ -856,8 +948,16 @@ impl Bounds {
         let t_hi = elapsed(now, self.l_min) / 86_400_000.0;
         let t_lo = elapsed(now, self.l_max) / 86_400_000.0;
         let (d_min, d_max) = (9.0 * self.s_min, 9.0 * self.s_max);
-        let x_hi = if t_hi >= 0.0 { t_hi / d_min } else { t_hi / d_max };
-        let x_lo = if t_lo >= 0.0 { t_lo / d_max } else { t_lo / d_min };
+        let x_hi = if t_hi >= 0.0 {
+            t_hi / d_min
+        } else {
+            t_hi / d_max
+        };
+        let x_lo = if t_lo >= 0.0 {
+            t_lo / d_max
+        } else {
+            t_lo / d_min
+        };
         if !(1.0 + x_lo > 0.0) {
             return f64::NEG_INFINITY;
         }
@@ -1023,7 +1123,13 @@ impl DueIndex {
     }
 
     /// [best]（别的牌组已找到的最低）与这个牌组里的候选合起来最低的那张。
-    fn best(&self, now: i64, ex: &HashSet<u32>, ids: &[Arc<str>], mut best: Option<(Option<f64>, u32)>) -> Option<(Option<f64>, u32)> {
+    fn best(
+        &self,
+        now: i64,
+        ex: &HashSet<u32>,
+        ids: &[Arc<str>],
+        mut best: Option<(Option<f64>, u32)>,
+    ) -> Option<(Option<f64>, u32)> {
         let consider = |k: (Option<f64>, u32), best: &mut Option<(Option<f64>, u32)>| {
             if !ex.contains(&k.1) && best.is_none_or(|b| key_lt(k, b, ids)) {
                 *best = Some(k);

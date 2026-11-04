@@ -280,7 +280,12 @@ class _PlayerPanel extends StatelessWidget {
               wide: true,
               header: false,
             )) ...<Widget>[button, const SizedBox(width: 10)],
-            _MoreButton(onMore: callbacks.onMore),
+            // 经典 Apple 布局没有 ±10 秒键：菜单里的后退 / 前进 10 秒是唯一入口。
+            _MoreButton(
+              key: const ValueKey<String>('lyrics_more_button'),
+              onMore: callbacks.onMore,
+              relativeSeekOnScreen: false,
+            ),
           ],
         ),
       ],
@@ -695,7 +700,13 @@ class _NarrowChrome extends StatelessWidget {
                             alignment: Alignment.centerRight,
                             children: <Widget>[
                               ...toolbar.trailing,
-                              _MoreButton(onMore: callbacks.onMore),
+                              _MoreButton(
+                                key: const ValueKey<String>(
+                                  'lyrics_more_button',
+                                ),
+                                onMore: callbacks.onMore,
+                                relativeSeekOnScreen: false,
+                              ),
                             ],
                           ),
                         ),
@@ -771,6 +782,10 @@ class _NarrowHeaderRow extends StatelessWidget {
           _MoreButton(
             key: const ValueKey<String>('lyrics_more_button'),
             onMore: callbacks.onMore,
+            // 只有新版窄屏带页眉 ⋯：卡片展开时主控摆着 ±10 秒，收起的迷你条没有。
+            relativeSeekOnScreen:
+                data.compactControlsExpanded &&
+                callbacks.onSeekRelative != null,
             diameter: 38,
             iconSize: 18,
             color: Colors.white.withValues(alpha: 0.74),
@@ -1274,6 +1289,7 @@ class _AppleJumpActions extends StatelessWidget {
 class _MoreButton extends StatelessWidget {
   const _MoreButton({
     required this.onMore,
+    required this.relativeSeekOnScreen,
     this.collapsedItems = const <LyricsControlItem>[],
     this.diameter = 34,
     this.iconSize = 19,
@@ -1285,6 +1301,9 @@ class _MoreButton extends StatelessWidget {
 
   /// 新版宽屏右岛收进 ⋯ 的按钮（交给页面排在菜单最前）。
   final List<LyricsControlItem> collapsedItems;
+
+  /// 见 [LyricsMenuAnchor.relativeSeekOnScreen]。
+  final bool relativeSeekOnScreen;
   final double diameter;
   final double iconSize;
   final Color? color;
@@ -1298,13 +1317,12 @@ class _MoreButton extends StatelessWidget {
       color: color,
       tooltip: t.common_more_actions,
       onPressedWithRect: (LyricsMenuAnchor at) => onMore(
-        collapsedItems.isEmpty
-            ? at
-            : LyricsMenuAnchor(
-                rect: at.rect,
-                context: at.context,
-                collapsedItems: collapsedItems,
-              ),
+        LyricsMenuAnchor(
+          rect: at.rect,
+          context: at.context,
+          collapsedItems: collapsedItems,
+          relativeSeekOnScreen: relativeSeekOnScreen,
+        ),
       ),
     );
   }

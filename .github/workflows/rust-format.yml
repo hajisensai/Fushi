@@ -1,0 +1,55 @@
+# Repo-wide `cargo fmt` gate for the Rust crates under native/ (2026-11-04).
+#
+# Rust counterpart of dart-format.yml. The tree was formatted once
+# (tool/rust_format.sh fix, commit listed in .git-blame-ignore-revs) and this
+# gate keeps it that way. Crate discovery, workspace de-duplication and the
+# excluded C/C++ modules live in tool/rust_format.sh; style lives in the
+# repo-root rustfmt.toml. Fix locally with `bash tool/rust_format.sh fix`.
+#
+# Own light workflow: formatting needs only the rustfmt component (cargo fmt
+# reads `cargo metadata --no-deps`, nothing is fetched or built), so a Rust
+# change does not have to wait on a native build to learn it is unformatted.
+name: Rust format
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/**.rs'
+      - 'native/**Cargo.toml'
+      - 'rustfmt.toml'
+      - 'tool/rust_format.sh'
+      - '.github/workflows/rust-format.yml'
+  push:
+    branches: ['develop']
+    paths:
+      - 'native/**.rs'
+      - 'native/**Cargo.toml'
+      - 'rustfmt.toml'
+      - 'tool/rust_format.sh'
+      - '.github/workflows/rust-format.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      # Same toolchain pin as the native-*-gate workflows (Rust 1.95.0), so the
+      # gate and local `cargo fmt` agree on rustfmt's output.
+      - name: Set up Rust (rustfmt only)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+      - name: Check rustfmt
+        shell: bash
+        run: bash tool/rust_format.sh check

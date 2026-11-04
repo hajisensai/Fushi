@@ -27,5 +27,11 @@
 	<!-- app 内浏览器的网页 getUserMedia 摄像头：hardened runtime 下缺这项会被系统静默拒绝。 -->
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<!-- 主屏 / 通知中心小组件的 App Group（与 FushiWidgets 扩展共用快照目录）。CI 的
+	     Developer ID 重签不展开变量，由 tool/apple/macos_widgets_sign.sh 生成展开后的副本。 -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(FUSHI_APP_GROUP)</string>
+	</array>
 </dict>
 </plist>

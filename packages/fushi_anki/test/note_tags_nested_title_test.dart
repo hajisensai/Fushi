@@ -10,7 +10,6 @@ class _TagRepository extends BaseAnkiRepository {
     bool nest = false,
     String? titleTag,
     String? collectionTag,
-    String? charPositionTag,
   }) => buildNoteTags(
     userTags,
     source: source,
@@ -19,7 +18,6 @@ class _TagRepository extends BaseAnkiRepository {
     nestTitleUnderCategory: nest,
     titleTag: titleTag,
     collectionTag: collectionTag,
-    charPositionTag: charPositionTag,
   );
 
   @override
@@ -80,18 +78,8 @@ void main() {
       );
     });
 
-    test('没有来源分类时照旧输出平级作品名；字符位置标签不嵌套', () {
+    test('没有来源分类时照旧输出平级作品名', () {
       expect(repo.tags('', nest: true, titleTag: 'Free'), <String>['Free']);
-      expect(
-        repo.tags(
-          '',
-          source: AnkiMiningSource.book,
-          nest: true,
-          titleTag: 'B',
-          charPositionTag: 'chars_10',
-        ),
-        <String>['book', 'book::B', 'chars_10'],
-      );
     });
 
     test('书名与合集名相同时去重合并', () {

@@ -1009,7 +1009,12 @@ class _SecondaryActions extends StatelessWidget {
               wide: wide,
               tonal: false,
             ),
-            _MoreButton(onMore: callbacks.onMore),
+            // 经典窄屏（行内或挪到进度条两侧）、经典宽屏、新版展开卡：这条工具条
+            // 所在的形态都摆着 ±10 秒键（只要页面给了回调）。
+            _MoreButton(
+              onMore: callbacks.onMore,
+              relativeSeekOnScreen: callbacks.onSeekRelative != null,
+            ),
           ],
         ),
       ),
@@ -1209,6 +1214,7 @@ class _TypographyButton extends StatelessWidget {
 class _MoreButton extends StatelessWidget {
   const _MoreButton({
     required this.onMore,
+    required this.relativeSeekOnScreen,
     this.collapsedItems = const <LyricsControlItem>[],
   });
 
@@ -1216,6 +1222,9 @@ class _MoreButton extends StatelessWidget {
 
   /// 新版宽屏右岛收进 ⋯ 的按钮（交给页面排在菜单最前）。
   final List<LyricsControlItem> collapsedItems;
+
+  /// 见 [LyricsMenuAnchor.relativeSeekOnScreen]。
+  final bool relativeSeekOnScreen;
 
   @override
   Widget build(BuildContext context) {
@@ -1227,13 +1236,12 @@ class _MoreButton extends StatelessWidget {
           final LyricsMenuAnchor? at = _anchorOf(anchor);
           if (at == null) return;
           onMore(
-            collapsedItems.isEmpty
-                ? at
-                : LyricsMenuAnchor(
-                    rect: at.rect,
-                    context: at.context,
-                    collapsedItems: collapsedItems,
-                  ),
+            LyricsMenuAnchor(
+              rect: at.rect,
+              context: at.context,
+              collapsedItems: collapsedItems,
+              relativeSeekOnScreen: relativeSeekOnScreen,
+            ),
           );
         },
         icon: const FushiIcon(FushiIcons.moreHoriz),

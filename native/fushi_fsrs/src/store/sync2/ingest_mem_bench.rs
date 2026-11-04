@@ -11,16 +11,19 @@
 //! 用单独的 target 目录：
 //! `RUSTFLAGS="--cfg srs_probe" CARGO_TARGET_DIR=target/probe cargo test --release --lib bench_ingest_batches -- --ignored --nocapture --test-threads=1`
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::mem_bench::{measure, Mem};
-use super::tests::{deck_entity, edit, review, Bucket, Device, P};
+use super::mem_bench::{Mem, measure};
+use super::tests::{Bucket, Device, P, deck_entity, edit, review};
 
 const T0: i64 = 1_700_000_000_000;
 const DAY: i64 = 86_400_000;
 
 fn env(k: &str, d: usize) -> usize {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 /// 进程工作集与私有提交（MiB）。工作集含 mmap 映射进来的库文件页（干净、可回收），私有提交不含。
@@ -46,13 +49,19 @@ fn process_mem() -> (f64, f64) {
         fn GetCurrentProcess() -> isize;
         fn K32GetProcessMemoryInfo(p: isize, c: *mut Counters, cb: u32) -> i32;
     }
-    let mut c = Counters { cb: std::mem::size_of::<Counters>() as u32, ..Default::default() };
+    let mut c = Counters {
+        cb: std::mem::size_of::<Counters>() as u32,
+        ..Default::default()
+    };
     // SAFETY: 输出结构体是本函数的局部变量，大小如实给出。
     let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) };
     if ok == 0 {
         return (0.0, 0.0);
     }
-    (c.working_set as f64 / 1048576.0, c.private_usage as f64 / 1048576.0)
+    (
+        c.working_set as f64 / 1048576.0,
+        c.private_usage as f64 / 1048576.0,
+    )
 }
 
 #[cfg(not(windows))]
@@ -107,19 +116,42 @@ fn bench_ingest_batches() {
                 if r == 0 {
                     let text = format!("例文{c}：日本語の文章をここに書く。読み方と意味。");
                     input.push(json!({"e": json!({"t": "entity", "x": {"id": note, "p": P, "k": "note", "d": {"createdAt": 1, "guid": note, "noteTypeId": "NT"}}}), "note": note}));
-                    input.push(json!({"e": edit("note", &note, "f/fa", json!(text)), "note": note}));
+                    input
+                        .push(json!({"e": edit("note", &note, "f/fa", json!(text)), "note": note}));
                 }
                 let at = T0 + r as i64 * DAY + c as i64;
-                let e = review(&format!("r{c}-{r}"), &card_id(c), at, 1 + (r as i64 % 4), if r == 0 { "learn" } else { "review" });
+                let e = review(
+                    &format!("r{c}-{r}"),
+                    &card_id(c),
+                    at,
+                    1 + (r as i64 % 4),
+                    if r == 0 { "learn" } else { "review" },
+                );
                 input.push(json!({"e": e, "note": note}));
             }
-            a.core.sync2_apply_local(P, T0 + r as i64 * DAY + from as i64, &Value::Array(input).to_string()).unwrap();
+            a.core
+                .sync2_apply_local(
+                    P,
+                    T0 + r as i64 * DAY + from as i64,
+                    &Value::Array(input).to_string(),
+                )
+                .unwrap();
             a.upload_all(&mut bucket, "loc");
         }
     }
     a.sync(&mut bucket, "loc", now);
-    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
-    let segs: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    let heads: Vec<Vec<u8>> = bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.contains("/head-"))
+        .map(|(_, v)| v.clone())
+        .collect();
+    let segs: Vec<Vec<u8>> = bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.contains("/seg-"))
+        .map(|(_, v)| v.clone())
+        .collect();
     drop(bucket);
     drop(a);
     let bytes: usize = segs.iter().map(Vec::len).sum();
@@ -141,7 +173,11 @@ fn bench_ingest_batches() {
         b.apply(now, vec![review("b-own", &card_id(0), now, 3, "learn")]);
     }
     // 收段期间 Dart（`bulkWrites`）把写连接的自动 checkpoint 阈值调到 16384。
-    b.core.writer().unwrap().execute_batch("PRAGMA wal_autocheckpoint = 16384").unwrap();
+    b.core
+        .writer()
+        .unwrap()
+        .execute_batch("PRAGMA wal_autocheckpoint = 16384")
+        .unwrap();
     let cmd = |mut req: Value, blobs: Vec<Vec<u8>>| -> Value {
         req["profile"] = json!(P);
         req["caches"] = json!({"defaultDeck": deck});
@@ -160,7 +196,8 @@ fn bench_ingest_batches() {
         resident_sqlite += m.sqlite_kept;
         line(&format!("b{i:03} prepare"), &m, "");
         let (stats, m) = measure(|| {
-            let (mut n, mut applied, mut replayed, mut changed, mut cache) = (0usize, 0i64, 0usize, 0usize, 0usize);
+            let (mut n, mut applied, mut replayed, mut changed, mut cache) =
+                (0usize, 0i64, 0usize, 0usize, 0usize);
             let mut pending;
             loop {
                 n += 1;
@@ -193,22 +230,43 @@ fn bench_ingest_batches() {
     }
     let (calls, m) = measure(|| {
         let mut r = cmd(json!({"op": "ingest_finish", "now": now}), vec![]);
-        let mut calls = vec![(len(&r, "replayed"), len(&r["cache"], "cards") + len(&r["cache"], "notes"))];
+        let mut calls = vec![(
+            len(&r, "replayed"),
+            len(&r["cache"], "cards") + len(&r["cache"], "notes"),
+        )];
         while r["more"] == json!(true) {
             r = cmd(json!({"op": "replay_pending"}), vec![]);
-            calls.push((len(&r, "replayed"), len(&r["cache"], "cards") + len(&r["cache"], "notes")));
+            calls.push((
+                len(&r, "replayed"),
+                len(&r["cache"], "cards") + len(&r["cache"], "notes"),
+            ));
         }
         calls
     });
     let max_replayed = calls.iter().map(|c| c.0).max().unwrap_or(0);
     let max_cache = calls.iter().map(|c| c.1).max().unwrap_or(0);
     let total_cache: usize = calls.iter().map(|c| c.1).sum();
-    line("finish", &m, &format!("calls={} max_replayed/call={max_replayed} max_cache_rows/call={max_cache} cache_rows={total_cache}", calls.len()));
+    line(
+        "finish",
+        &m,
+        &format!(
+            "calls={} max_replayed/call={max_replayed} max_cache_rows/call={max_cache} cache_rows={total_cache}",
+            calls.len()
+        ),
+    );
     let (_, m) = measure(|| cmd(json!({"op": "ingest_end"}), vec![]));
     line("end", &m, &format!("slices={slices}"));
     let cached = b.rows("SELECT COUNT(*) FROM srs_cards_cache");
-    assert_eq!(cached[1][0], cards.to_string(), "every card got a cache row");
+    assert_eq!(
+        cached[1][0],
+        cards.to_string(),
+        "every card got a cache row"
+    );
     let logs = b.rows("SELECT COUNT(*) FROM srs_review_logs");
     let own = usize::from(env("SRS_BENCH_STUDIED", 0) != 0);
-    assert_eq!(logs[1][0], (cards * reviews + own).to_string(), "every review log landed");
+    assert_eq!(
+        logs[1][0],
+        (cards * reviews + own).to_string(),
+        "every review log landed"
+    );
 }

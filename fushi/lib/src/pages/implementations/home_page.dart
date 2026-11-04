@@ -1,4 +1,3 @@
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
@@ -40,6 +39,7 @@ import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
+import 'package:fushi/src/sync/background_tasks_indicator.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
@@ -255,15 +255,6 @@ HomeTab homeTabForVisualIndex({
   }
   return tabs[logicalIndex];
 }
-
-/// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
-/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
-/// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
-/// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
-/// 非 macOS 平台不读写它，纯 no-op。
-final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
-  HomeTab.home,
-);
 
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
 /// 根侧栏共用，保证三处标签/图标一致。MD3 侧栏另读 [AdaptiveNavItem.railShape]
@@ -599,6 +590,7 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.videoScrapeControllerResolver = () async =>
         _videoSourceScrapeController;
     appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
+    syncBackgroundTasksListenable.addListener(_onSyncTasksChanged);
 
     // 首页可能被「功能模块」关掉：默认落地改为第一个启用的 tab，不让
     // `_currentTab` 从第一帧起就指向一个隐藏 tab（同 [homeInitialTab] 的理由）。
@@ -615,6 +607,7 @@ class _HomePageState extends BasePageState<HomePage>
     // it only exists under the macOS shell).
     homeShellTabNotifier.value = _currentTab;
     homeShellTabNotifier.addListener(_onShellTabRequested);
+    externalBrowseRequest.addListener(_onExternalBrowseRequest);
     // 「功能模块」可在当前 tab 上被关掉（ctl `/api/admin/modules`、互联下载
     // 配置 / 备份恢复刷新偏好、新手引导写回）：选中身份与共享 notifier 要跟着
     // 落到默认落地 tab，否则桌面标题栏 / macOS 侧栏 / ctl 仍报被关掉的 tab。
@@ -986,8 +979,28 @@ class _HomePageState extends BasePageState<HomePage>
     _revealDictionary(carryingPendingLookup: true, focus: focus);
   }
 
+  /// 本页所在路由：登记成主导航外壳，路由层页面背景跟着当前 tab 换模块背景
+  /// （反馈 DYI1IOZxSM，见 [setFushiPageRouteModuleShell]）。
+  Route<Object?>? _backdropShellRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Route<Object?>? route = ModalRoute.of(context);
+    if (route == _backdropShellRoute) return;
+    if (_backdropShellRoute case final Route<Object?> previous) {
+      setFushiPageRouteModuleShell(previous, false);
+    }
+    _backdropShellRoute = route;
+    if (route != null) setFushiPageRouteModuleShell(route, true);
+  }
+
   @override
   void dispose() {
+    if (_backdropShellRoute case final Route<Object?> route) {
+      setFushiPageRouteModuleShell(route, false);
+    }
+    externalBrowseRequest.removeListener(_onExternalBrowseRequest);
     _webMineBackground?.dispose();
     _appleChrome.dispose();
     _largeTitle.dispose();
@@ -1009,6 +1022,8 @@ class _HomePageState extends BasePageState<HomePage>
     _dictFocusSignal.dispose();
     _videoLibraryRefreshSignal.dispose();
     _videoPendingScrapeChangedSignal.dispose();
+    syncBackgroundTasksListenable.removeListener(_onSyncTasksChanged);
+    _scrapeTaskTick.dispose();
     for (final ScrollController controller in _tabScrollControllers.values) {
       controller.dispose();
     }
@@ -1707,7 +1722,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 不随滚动在「裸大字」与「胶囊」之间切换：否则同样停在顶部的视频页与漫画
   /// 页一个是胶囊、一个是裸大字（2026-10-06 用户截图「标题形态不一致」）。
   Widget _buildShellTitleBar() {
-    _shellActions.shellTrailing = _appleScrapeTaskAction();
+    _shellActions.shellTrailing = _appleBackgroundTasksAction();
     return FushiShellLargeTitleBar(
       title: _shellTitleFor(_visibleTab),
       collapsed:
@@ -1717,47 +1732,61 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// Apple（iOS 26 / macOS 26）下视频源后台补刮任务面板的入口：主操作进导航
-  /// 栏——这里是外壳大标题行右侧的一颗 bar button，带「进行中」角标。页头自带
-  /// 同一颗按钮的 tab（[_tabHeaderHasScrapeEntry]）不另放（同一外壳动作槽里，
-  /// 不画两颗）。外壳大标题行对可见 tab 高度为 0 时（首页 / 复习 / 设置）
-  /// 这颗按钮画不出来，入口退回右下 FAB（见 [_scrapeEntryHostedByChrome]）。
-  /// MD3 返回 null（页面 FAB 并进悬浮底栏 / 桌面右下 FAB）。
-  Widget? _appleScrapeTaskAction() {
+  /// Apple（iOS 26 / macOS 26）下「后台任务」入口：主操作进导航栏——外壳大标题
+  /// 行右侧一颗 bar button，外圈套分段进度环。外壳大标题行对可见 tab 高度为 0 时
+  /// （首页 / 复习 / 设置）这颗按钮画不出来，入口退回右下 FAB（见
+  /// [_backgroundTasksHostedByChrome]）。MD3 返回 null（手机叠在悬浮底栏 FAB
+  /// 上方 / 桌面右下 FAB）。视频库页头自带的补刮按钮是常驻入口（含空闲时看历史），与这颗不冲突。
+  Widget? _appleBackgroundTasksAction() {
     // 标题行高度为 0 时不往里塞按钮（塞了也只会被压扁裁掉），入口是右下 FAB。
     if (!isGlassDesign(context) ||
-        _tabHeaderHasScrapeEntry(_visibleTab) ||
-        _shellTitleFor(_visibleTab) == null) {
+        _shellTitleFor(_visibleTab) == null ||
+        !_hasBackgroundTasks) {
       return null;
     }
-    final VideoSourceScrapeTaskController? controller =
-        _videoScrapeRuntime.currentController;
-    if (controller == null || !controller.isBusy) return null;
-    return FushiBadgeControl(
-      child: FushiIconButton(
-        key: const ValueKey<String>('video-source-background-task-panel'),
-        tooltip: t.video_source_scrape_tasks_open,
-        icon: _scrapeTaskIcon(controller),
-        onTap: () => unawaited(_openVideoSourceScrapeTasks()),
-      ),
+    // 标准 bar button（焦点 / 按压 / 命中区照旧）外叠一圈不接点击的进度环。
+    return ListenableBuilder(
+      listenable: _backgroundTasksListenable,
+      builder: (BuildContext context, _) {
+        final List<BackgroundTask> tasks = _backgroundTasks();
+        return Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            FushiIconButton(
+              key: const ValueKey<String>('video-source-background-task-panel'),
+              tooltip: _backgroundTasksTooltipText(tasks),
+              label: t.video_source_scrape_tasks_open,
+              icon: backgroundTasksIcon(tasks),
+              onTap: () => unawaited(_openBackgroundTasks()),
+            ),
+            IgnorePointer(
+              child: BackgroundTasksGlyph(
+                tasks: tasks,
+                size: 36,
+                showIcon: false,
+                color: appleColorsOf(context).accent,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  /// [tab] 自己的页头就带补刮任务入口：[_buildTabContent] 只给视频库页
-  /// （`VideoLibraryShell`）传了 `onOpenScrapeTasks`，它的页头自带同一颗按钮。
-  static bool _tabHeaderHasScrapeEntry(HomeTab tab) => tab == HomeTab.video;
+  /// 悬停 / 长按气泡：每项一行；入口刚收起的那一拍任务已空时退回入口名。
+  String _backgroundTasksTooltipText(List<BackgroundTask> tasks) =>
+      tasks.isEmpty
+      ? t.video_source_scrape_tasks_open
+      : backgroundTasksTooltip(tasks);
 
-  /// 当前布局下补刮任务入口是否已由外壳的栏 / 页头承载（body 因此不再画右下
+  /// 当前布局下「后台任务」入口是否已由外壳的栏承载（body 因此不再画右下
   /// FAB）。判据与可见 tab 实际渲染的页头同源：外壳大标题行是否有高度
   /// （[_shellTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
-  /// 的那一份）与该 tab 页头是否自带入口。
-  bool _scrapeEntryHostedByChrome({required bool mobileLayout}) =>
-      homeScrapeEntryHostedByChrome(
-        apple: isGlassDesign(context),
-        mobileLayout: mobileLayout,
-        shellTitleVisible: _shellTitleFor(_visibleTab) != null,
-        tabHeaderHasEntry: _tabHeaderHasScrapeEntry(_visibleTab),
-      );
+  /// 的那一份）。
+  bool _backgroundTasksHostedByChrome() => homeBackgroundTasksHostedByChrome(
+    apple: isGlassDesign(context),
+    shellTitleVisible: _shellTitleFor(_visibleTab) != null,
+  );
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
   /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
@@ -1952,9 +1981,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     _inMobileLayout = false;
-    // Apple：补刮任务入口进外壳大标题行（[_appleScrapeTaskAction]）——只在
-    // 可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
-    _shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: false);
+    // Apple：「后台任务」入口进外壳大标题行（[_appleBackgroundTasksAction]）——
+    // 只在可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
+    _shellFabHostedByBar = _backgroundTasksHostedByChrome();
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
     // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
@@ -2223,9 +2252,10 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     _inMobileLayout = true;
-    // MD3 并进悬浮底栏的 FAB；Apple 进外壳大标题行（[_appleScrapeTaskAction]），
-    // 可见 tab 没有那一行时仍画 FAB（同桌面，见 [_scrapeEntryHostedByChrome]）。
-    _shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: true);
+    // MD3 在悬浮底栏 FAB 正上方叠一颗 [FushiFab]（[_buildBackgroundTasksFab]）；
+    // Apple 进外壳大标题行（[_appleBackgroundTasksAction]），可见 tab 没有那一行时仍画
+    // FAB（同桌面，见 [_backgroundTasksHostedByChrome]）。
+    _shellFabHostedByBar = _backgroundTasksHostedByChrome();
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2294,7 +2324,6 @@ class _HomePageState extends BasePageState<HomePage>
             glassSearchIndex: glassSearchIndex,
             showLabels: appModel.navBarLabelsVisible,
             barStyle: appModel.navBarStyle,
-            materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
             // 按下横拖（或长按后拖）选中指示器到目标模块（MD3 悬浮底栏）：落地
@@ -2320,30 +2349,8 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// MD3 移动布局里，外壳内容自己的页面 FAB 并进悬浮底栏右侧那颗 FAB，屏幕上
-  /// 不出现两颗（2026-10-06 用户）。目前外壳里唯一的页面 FAB 是视频源后台补刮
-  /// 任务面板；没有时返回 null，底栏 FAB 用默认的「查词」。
-  AdaptiveNavFab? _shellPageFab() {
-    if (isGlassDesign(context)) return null;
-    final VideoSourceScrapeTaskController? controller =
-        _videoScrapeRuntime.currentController;
-    if (controller == null || !controller.isBusy) return null;
-    return AdaptiveNavFab(
-      icon: _scrapeTaskIcon(controller),
-      label: t.video_source_scrape_tasks_open,
-      onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-    );
-  }
-
-  /// 视频源后台补刮任务面板的图标：进行中 = 同步，等用户确认 = 待处理。
-  IconData _scrapeTaskIcon(VideoSourceScrapeTaskController controller) =>
-      controller.pendingConfirmation == null
-      ? FushiIcons.sync
-      : FushiIcons.pending;
-
-  /// 页面 FAB 是否已由外壳的栏承载、body 不再自己画：MD3 手机布局并进悬浮
-  /// 底栏；Apple 只在可见 tab 确有承载入口的页头时收走（见
-  /// [homeScrapeEntryHostedByChrome]）。
+  /// 「后台任务」入口是否已由外壳的栏承载、body 不再自己画：只有 Apple 在可见
+  /// tab 确有承载入口的大标题行时收走（见 [homeBackgroundTasksHostedByChrome]）。
   bool _shellFabHostedByBar = false;
 
   /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
@@ -3278,6 +3285,28 @@ class _HomePageState extends BasePageState<HomePage>
     ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
+  /// 外部（小组件深链）要求切浏览页签：取走请求并走与应用内端口同一个出口
+  /// [_popToBrowseTab]，而不是裸 [_openBrowseTab]。
+  ///
+  /// [externalBrowseRequest] 是全局 notifier，任何非页面代码都能写；可达性门控与
+  /// 「先回到 home 这一层路由」必须在落地点（这里）判，不能指望每个写入方各自做过。
+  /// 浏览模块关着（「功能模块」隐藏 / iOS 商店合规下 [ModuleId.browse] 不存在）时
+  /// 裸 [_openBrowseTab] 会被 [_selectTab] 静默吞掉；有 pushed route 盖着时只在
+  /// 底下换 tab，用户看不见。小组件那条路径 `runWidgetLink` 已先判模块、退回根路由
+  /// 才写请求，所以这里的门是纵深防御、popUntil 对它是 no-op；去不了就丢弃，与
+  /// `runWidgetLink`「目标模块已关：什么都不做」同口径。
+  void _onExternalBrowseRequest() {
+    final BrowseNavigationRequest? request = externalBrowseRequest.value;
+    if (request == null) return;
+    externalBrowseRequest.value = null;
+    if (!mounted) return;
+    _popToBrowseTab(
+      request.tab,
+      downloadsSection: request.downloadsSection,
+      downloadsWorkFocus: request.downloadsWorkFocus,
+    );
+  }
+
   void _openBrowseTab(
     BrowseTab tab, {
     BrowseDownloadsSection downloadsSection = BrowseDownloadsSection.tasks,
@@ -3577,10 +3606,80 @@ class _HomePageState extends BasePageState<HomePage>
   /// 所以只在这两态翻转时 setState。
   (bool, bool)? _videoScrapeShellState;
 
+  /// 补刮控制器每条通知都 +1，给「后台任务」进度环当 [Listenable]（控制器是
+  /// 引擎侧的 EngineChangeNotifier，不是 Flutter Listenable）。
+  final ValueNotifier<int> _scrapeTaskTick = ValueNotifier<int>(0);
+
+  /// 同步类任务在不在跑；外壳只在这一位翻转时重建（进度本身由入口自己听）。
+  bool _syncTasksActive = hasActiveSyncTasks();
+
+  void _onSyncTasksChanged() {
+    final bool next = hasActiveSyncTasks();
+    if (!mounted || next == _syncTasksActive) return;
+    setState(() => _syncTasksActive = next);
+  }
+
+  /// 「后台任务」入口与明细弹层听的全部数据源。
+  late final Listenable _backgroundTasksListenable = Listenable.merge(
+    <Listenable>[syncBackgroundTasksListenable, _scrapeTaskTick],
+  );
+
+  /// 有没有任何后台任务在跑（决定入口显隐）。
+  bool get _hasBackgroundTasks =>
+      _syncTasksActive ||
+      (_videoScrapeRuntime.currentController?.isBusy ?? false);
+
+  /// 此刻的后台任务：同步类（常规 / 复习）+ 视频源补刮。
+  List<BackgroundTask> _backgroundTasks() {
+    final VideoSourceScrapeTaskController? controller =
+        _videoScrapeRuntime.currentController;
+    return <BackgroundTask>[
+      ...syncBackgroundTasks(),
+      if (controller != null && controller.isBusy)
+        _scrapeBackgroundTask(controller),
+    ];
+  }
+
+  BackgroundTask _scrapeBackgroundTask(
+    VideoSourceScrapeTaskController controller,
+  ) {
+    final VideoSourceScrapeProgress progress = controller.progress;
+    final String phase = controller.isRunning
+        ? videoSourceScrapePhaseLabel(progress.phase)
+        : t.video_source_scrape_phase_scanning;
+    final int total = progress.total;
+    return BackgroundTask(
+      id: 'video-scrape',
+      icon: controller.pendingConfirmation == null
+          ? FushiIcons.manageSearch
+          : FushiIcons.pending,
+      line: controller.isRunning && total > 0
+          ? t.video_source_scrape_progress(
+              phase: phase,
+              current: progress.current,
+              total: total,
+            )
+          : phase,
+      fraction: controller.isRunning && total > 0
+          ? (progress.current / total).clamp(0.0, 1.0)
+          : null,
+      onOpen: () => unawaited(_openVideoSourceScrapeTasks()),
+      openLabel: t.video_library_scrape_pending_banner_action,
+    );
+  }
+
+  Future<void> _openBackgroundTasks() => showBackgroundTasksSheet(
+    context: context,
+    listenable: _backgroundTasksListenable,
+    tasks: _backgroundTasks,
+  );
+
   void _onVideoSourceScrapeTaskChanged() {
     final VideoSourceScrapeTaskController? controller =
         _videoScrapeRuntime.currentController;
     if (!mounted || controller == null) return;
+    // 进度环只重建自己（听这一拍），外壳仍只在两态翻转时重建。
+    _scrapeTaskTick.value++;
     final (bool, bool) next = (
       controller.isBusy,
       controller.pendingConfirmation != null,
@@ -3804,25 +3903,98 @@ class _HomePageState extends BasePageState<HomePage>
             key: ValueKey<HomeTab>(visible),
             child: _buildTabContent(visible),
           ),
-        if (_videoScrapeRuntime.currentController case final controller?)
-          if (controller.isBusy && !_shellFabHostedByBar)
-            Positioned(
-              right: 20,
-              bottom: 20,
-              child: SafeArea(
-                child: FushiGlassFab(
-                  child: FloatingActionButton.small(
-                    key: const ValueKey<String>(
-                      'video-source-background-task-panel',
-                    ),
-                    tooltip: t.video_source_scrape_tasks_open,
-                    onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-                    child: FushiIcon(_scrapeTaskIcon(controller)),
-                  ),
-                ),
-              ),
-            ),
+        // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
+        // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。
+        if (_hasBackgroundTasks && !_shellFabHostedByBar)
+          _buildBackgroundTasksFab(),
       ],
+    );
+  }
+
+  /// 「后台任务」入口的 FAB 形态（外壳的栏没承载时）。
+  ///
+  /// 按钮本体一律是设计系统的 [FushiFab]（MD3 走 M3E 尺寸档与按压形变，Apple
+  /// 走强调色玻璃圆钮）。M3 Expressive 已废弃 Small FAB，[FushiFabSize] 没有
+  /// 小号档，所以手机上叠放的这颗也是标准 FAB。
+  ///
+  /// - MD3 手机：悬浮底栏右侧那颗「查词」FAB 正上方再叠一颗，中线与底栏 FAB
+  ///   对齐；底栏反转时跟着 FAB 翻到起始侧。body 是 `extendBody`，MediaQuery
+  ///   底部 padding 已含底栏高度，所以从它往上留一段间距即可。
+  /// - 其余（桌面、Apple 无标题行的 tab）：右下 FAB。
+  Widget _buildBackgroundTasksFab() {
+    final bool stacked = _inMobileLayout && !isGlassDesign(context);
+    final Widget fab = ListenableBuilder(
+      listenable: _backgroundTasksListenable,
+      builder: (BuildContext context, _) {
+        final List<BackgroundTask> tasks = _backgroundTasks();
+        // 进度环贴着按钮内沿画：边长取 [FushiFab] 在当前设计系统下的实际边长
+        // 再各让 5dp（MD3 56 → 46；Apple 移动 50 → 40、桌面 44 → 34）。
+        final ({double size, double iconSize}) ring = isGlassDesign(context)
+            ? fushiAppleCompact(context)
+                  ? (size: 34, iconSize: 18)
+                  : (size: 40, iconSize: 22)
+            : (
+                size: fushiFabMetrics(FushiFabSize.regular).extent - 10,
+                iconSize: 22,
+              );
+        return FushiFab(
+          key: const ValueKey<String>('video-source-background-task-panel'),
+          // 首页还有底栏的「查词」FAB：不参与路由 Hero，免得同一路由里两颗
+          // FAB 共用默认 heroTag。
+          heroTag: null,
+          tooltip: _backgroundTasksTooltipText(tasks),
+          onPressed: () => unawaited(_openBackgroundTasks()),
+          icon: BackgroundTasksGlyph(
+            tasks: tasks,
+            size: ring.size,
+            iconSize: ring.iconSize,
+          ),
+        );
+      },
+    );
+    // 音乐悬浮条（[MusicFloatingBarHost]）整宽贴在底部 padding 之上、画在正文
+    // 上面：有音乐在播时经 [MusicBarReserve] 把条高并进底部 padding 再定位，
+    // 入口不会被条盖住。Align 只命中按钮本身，其余区域照常点到下面的内容。
+    return Positioned.fill(
+      child: MusicBarReserve(
+        child: Builder(
+          builder: (BuildContext context) {
+            final double bottomInset = MediaQuery.paddingOf(context).bottom;
+            if (!stacked) {
+              return Align(
+                alignment: Alignment.bottomRight,
+                child: Padding(
+                  padding: EdgeInsets.only(right: 20, bottom: 20 + bottomInset),
+                  child: fab,
+                ),
+              );
+            }
+            final double fabExtent = fushiFabMetrics(
+              FushiFabSize.regular,
+            ).extent;
+            final double navFabExtent = materialNavBarFabExtent(
+              context,
+              showLabels: appModel.navBarLabelsVisible,
+            );
+            final double sideInset =
+                kAdaptiveNavFloatingMargin + (navFabExtent - fabExtent) / 2;
+            final bool leading = appModel.reverseNavigationBar;
+            return Align(
+              alignment: leading
+                  ? AlignmentDirectional.bottomStart
+                  : AlignmentDirectional.bottomEnd,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: leading ? sideInset : 0,
+                  end: leading ? 0 : sideInset,
+                  bottom: bottomInset + kAdaptiveNavFloatingMargin,
+                ),
+                child: fab,
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -4295,28 +4467,28 @@ String? homeShellTitleFor(
   };
 }
 
-/// 视频源后台补刮任务入口是否由外壳的栏 / 页头承载（承载时首页 body 不再画
-/// 右下 FAB）。
+/// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页
+/// body 不再画右下 FAB）。
 ///
-/// - MD3：手机布局并进悬浮底栏右侧那颗 FAB（[mobileLayout]）；桌面画右下 FAB。
-/// - Apple（Cupertino）：没有悬浮底栏 FAB 位，入口进导航栏——但**只有**可见
-///   tab 确实渲染了承载它的页头时才收走 FAB：外壳大标题行有高度
-///   （[shellTitleVisible]，右侧动作位画补刮按钮），或该 tab 页头自带同一颗按钮
-///   （[tabHeaderHasEntry]）。首页 / 设置 / 复习的外壳标题行高度为 0，
-///   此前一律收走 FAB 会让后台补刮跑着时既看不到进度也打不开任务面板。
+/// - MD3：从不收走。桌面画右下 FAB；手机画成悬浮底栏 FAB 正上方的一颗小环钮
+///   ——**不顶替**底栏那颗「查词」FAB（2026-11-04 用户「不可接受，多一个栏还差
+///   不多」，选了「小环按钮」方案）。
+/// - Apple（Cupertino）：没有悬浮底栏 FAB 位，入口进导航栏——但**只有**外壳
+///   大标题行有高度（[shellTitleVisible]，右侧动作位画入口）时才收走 FAB。
+///   首页 / 设置 / 复习的外壳标题行高度为 0，此前一律收走 FAB 会让后台任务跑着
+///   时既看不到进度也打不开面板（review of PR #2074）。视频库页头自带的补刮按钮
+///   只管补刮、不显示同步进度，不能再顶替这颗入口。
 @visibleForTesting
-bool homeScrapeEntryHostedByChrome({
+bool homeBackgroundTasksHostedByChrome({
   required bool apple,
-  required bool mobileLayout,
   required bool shellTitleVisible,
-  required bool tabHeaderHasEntry,
 }) {
-  if (!apple) return mobileLayout;
-  return shellTitleVisible || tabHeaderHasEntry;
+  if (!apple) return false;
+  return shellTitleVisible;
 }
 
 /// 首页外壳的动作槽：页头登记的动作之外，再并上外壳自己的尾随动作
-/// （Apple 下的后台补刮任务入口，见 `_appleScrapeTaskAction`）。外壳在每次
+/// （Apple 下的「后台任务」入口，见 `_appleBackgroundTasksAction`）。外壳在每次
 /// 构建标题条时写 [shellTrailing]，标题条读 [actions] 时一起画在标题行右侧。
 class _HomeShellActionsSlot extends FushiShellActionsSlot {
   /// 外壳自己的尾随动作；null = 只有页头登记的那份。

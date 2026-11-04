@@ -32,23 +32,23 @@ pub mod projection;
 pub mod registers;
 pub mod search;
 pub mod store;
-pub mod sync2;
 pub mod style_dedup;
+pub mod sync2;
 
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use fsrs::{
-    CombinedProgressState, ComputeParametersInput, ComputeParametersVersion, FSRSItem, FSRSReview,
-    MemoryState, DEFAULT_PARAMETERS, FSRS, FSRS6_DEFAULT_PARAMETERS,
+    CombinedProgressState, ComputeParametersInput, ComputeParametersVersion, DEFAULT_PARAMETERS,
+    FSRS, FSRS6_DEFAULT_PARAMETERS, FSRSItem, FSRSReview, MemoryState,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
 pub const ABI_VERSION: i32 = 4;
@@ -277,9 +277,7 @@ fn dispatch(req: &Value) -> Result<Value, String> {
             let next = model
                 .next_states_with_elapsed_days(memory, retention, elapsed)
                 .map_err(|e| format!("next_states: {e:?}"))?;
-            let item = |s: &fsrs::ItemState| {
-                json!({ "memory": Memory::from_fsrs(s.memory), "interval": s.interval })
-            };
+            let item = |s: &fsrs::ItemState| json!({ "memory": Memory::from_fsrs(s.memory), "interval": s.interval });
             Ok(json!({
                 "again": item(&next.again),
                 "hard": item(&next.hard),
@@ -291,10 +289,9 @@ fn dispatch(req: &Value) -> Result<Value, String> {
             // 由历史重建记忆状态（铁律 A ②③）。starting = 锚点换算出的起点（可空 = 新卡）。
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             let model = build_model(algorithm, req.get("params"))?;
-            let reviews: Vec<Review> = serde_json::from_value(
-                req.get("reviews").cloned().unwrap_or(Value::Array(vec![])),
-            )
-            .map_err(|e| format!("bad reviews: {e}"))?;
+            let reviews: Vec<Review> =
+                serde_json::from_value(req.get("reviews").cloned().unwrap_or(Value::Array(vec![])))
+                    .map_err(|e| format!("bad reviews: {e}"))?;
             let starting = memory_field(req, "starting")?.map(Memory::to_fsrs);
             if reviews.is_empty() {
                 return Ok(match starting {
@@ -330,22 +327,20 @@ fn dispatch(req: &Value) -> Result<Value, String> {
         "retrievability" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             let model = build_model(algorithm, req.get("params"))?;
-            let memory = memory_field(req, "memory")?
-                .ok_or_else(|| "missing `memory`".to_string())?;
+            let memory =
+                memory_field(req, "memory")?.ok_or_else(|| "missing `memory`".to_string())?;
             let elapsed = f32_field(req, "elapsedDays")?;
-            Ok(json!(model.current_retrievability(memory.to_fsrs(), elapsed)))
+            Ok(json!(
+                model.current_retrievability(memory.to_fsrs(), elapsed)
+            ))
         }
         "next_interval" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             let model = build_model(algorithm, req.get("params"))?;
             let retention = f32_field(req, "desiredRetention")?;
-            let memory = memory_field(req, "memory")?
-                .ok_or_else(|| "missing `memory`".to_string())?;
-            Ok(json!(model.next_interval(
-                Some(memory.s),
-                retention,
-                3
-            )))
+            let memory =
+                memory_field(req, "memory")?.ok_or_else(|| "missing `memory`".to_string())?;
+            Ok(json!(model.next_interval(Some(memory.s), retention, 3)))
         }
         other => Err(format!("unknown op: {other}")),
     }
@@ -374,7 +369,9 @@ fn read_request(request: *const c_char) -> Result<Value, String> {
 /// 通用入口：请求 JSON → 响应 JSON。返回值必须用 [ffsrs_free_string] 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_call(request: *const c_char) -> *mut c_char {
-    let outcome = catch_unwind(AssertUnwindSafe(|| read_request(request).and_then(|r| dispatch(&r))));
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        read_request(request).and_then(|r| dispatch(&r))
+    }));
     respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
 }
 
@@ -493,26 +490,28 @@ fn spawn_watcher(
     cancel_addr: usize,
     progress_addr: usize,
 ) -> thread::JoinHandle<()> {
-    thread::spawn(move || loop {
-        let finished = done.load(Ordering::SeqCst);
-        if let Ok(mut s) = state.lock() {
-            if cancel_addr != 0
-                && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0
-            {
-                s.want_abort = true;
-            }
-            if progress_addr != 0 {
-                let p = progress_addr as *const AtomicI64;
-                unsafe {
-                    (*p).store(s.current() as i64, Ordering::SeqCst);
-                    (*p.add(1)).store(s.total() as i64, Ordering::SeqCst);
+    thread::spawn(move || {
+        loop {
+            let finished = done.load(Ordering::SeqCst);
+            if let Ok(mut s) = state.lock() {
+                if cancel_addr != 0
+                    && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0
+                {
+                    s.want_abort = true;
+                }
+                if progress_addr != 0 {
+                    let p = progress_addr as *const AtomicI64;
+                    unsafe {
+                        (*p).store(s.current() as i64, Ordering::SeqCst);
+                        (*p.add(1)).store(s.total() as i64, Ordering::SeqCst);
+                    }
                 }
             }
+            if finished {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
         }
-        if finished {
-            break;
-        }
-        thread::sleep(Duration::from_millis(50));
     })
 }
 
@@ -719,7 +718,11 @@ pub extern "C" fn ffsrs_search_dupe_norm_batch(
         if (text.is_null() && text_len > 0) || offs.is_null() || out_len.is_null() {
             return None;
         }
-        let text: &[u8] = if text_len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(text, text_len) } };
+        let text: &[u8] = if text_len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(text, text_len) }
+        };
         let text = std::str::from_utf8(text).ok()?;
         let offs = unsafe { std::slice::from_raw_parts(offs, n + 1) };
         let mut header = Vec::with_capacity((n + 1) * 4);
@@ -749,7 +752,11 @@ pub extern "C" fn ffsrs_search_dupe_norm_batch(
 // ---------------------------------------------------------------- 卡片历史（history.rs）
 
 /// 把成功的字节结果交给调用方（[ffsrs_free_bytes] 释放），失败写错误串（[ffsrs_free_string] 释放）。
-fn bytes_out(outcome: std::thread::Result<Result<Vec<u8>, String>>, out_len: *mut usize, error_out: *mut *mut c_char) -> *mut u8 {
+fn bytes_out(
+    outcome: std::thread::Result<Result<Vec<u8>, String>>,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
     match outcome {
         Ok(Ok(bytes)) => {
             let boxed = bytes.into_boxed_slice();
@@ -791,11 +798,21 @@ pub extern "C" fn ffsrs_history_states(
     error_out: *mut *mut c_char,
 ) -> *mut u8 {
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
-        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) || (servers.is_null() && n_logs > 0) {
+        if out_len.is_null()
+            || offs.is_null()
+            || groups.is_null()
+            || (text.is_null() && text_len > 0)
+            || (servers.is_null() && n_logs > 0)
+        {
             return Err("null argument".to_owned());
         }
         let (text, offs, servers, groups) = unsafe {
-            (raw_slice(text, text_len), raw_slice(offs, n_logs + 1), raw_slice(servers, n_logs), raw_slice(groups, n_groups + 1))
+            (
+                raw_slice(text, text_len),
+                raw_slice(offs, n_logs + 1),
+                raw_slice(servers, n_logs),
+                raw_slice(groups, n_groups + 1),
+            )
         };
         history::states_from_json(text, offs, servers, groups)
     }));
@@ -818,7 +835,12 @@ pub extern "C" fn ffsrs_history_select(
     error_out: *mut *mut c_char,
 ) -> *mut u8 {
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
-        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) || (ints.is_null() && n_logs > 0) {
+        if out_len.is_null()
+            || offs.is_null()
+            || groups.is_null()
+            || (text.is_null() && text_len > 0)
+            || (ints.is_null() && n_logs > 0)
+        {
             return Err("null argument".to_owned());
         }
         let (ints, text, offs, groups) = unsafe {
@@ -852,8 +874,12 @@ pub extern "C" fn ffsrs_memory_input(
             return Err("null argument".to_owned());
         }
         let ints = unsafe { raw_slice(ints, n_logs * projection::MEMORY_COLUMN_WORDS) };
-        let day = projection::Day { utc_offset_min: utc_offset_min.into(), rollover_hour: rollover_hour.into() };
-        let m = projection::memory_input_columns(ints, projection::Alg::from_code(alg.into())?, &day)?;
+        let day = projection::Day {
+            utc_offset_min: utc_offset_min.into(),
+            rollover_hour: rollover_hour.into(),
+        };
+        let m =
+            projection::memory_input_columns(ints, projection::Alg::from_code(alg.into())?, &day)?;
         Ok(projection::encode_memory_input(&m))
     }));
     bytes_out(outcome, out_len, error_out)
@@ -875,7 +901,10 @@ pub extern "C" fn ffsrs_rwkv_now_rows(
             return Err("null argument".to_owned());
         }
         let ints = unsafe { raw_slice(ints, n_rows * projection::NOW_ROW_WORDS) };
-        let day = projection::Day { utc_offset_min: utc_offset_min.into(), rollover_hour: rollover_hour.into() };
+        let day = projection::Day {
+            utc_offset_min: utc_offset_min.into(),
+            rollover_hour: rollover_hour.into(),
+        };
         projection::rwkv_now_rows(ints, &day)
     }));
     bytes_out(outcome, out_len, error_out)
@@ -895,11 +924,20 @@ pub extern "C" fn ffsrs_import_equivalent(
     error_out: *mut *mut c_char,
 ) -> *mut u8 {
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
-        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) {
+        if out_len.is_null()
+            || offs.is_null()
+            || groups.is_null()
+            || (text.is_null() && text_len > 0)
+        {
             return Err("null argument".to_owned());
         }
-        let (text, offs, groups) =
-            unsafe { (raw_slice(text, text_len), raw_slice(offs, n_logs + 1), raw_slice(groups, n_groups + 1)) };
+        let (text, offs, groups) = unsafe {
+            (
+                raw_slice(text, text_len),
+                raw_slice(offs, n_logs + 1),
+                raw_slice(groups, n_groups + 1),
+            )
+        };
         history::import_equivalent_any(text, offs, groups)
     }));
     bytes_out(outcome, out_len, error_out)
@@ -932,7 +970,12 @@ pub extern "C" fn ffsrs_materialize(
             return Err("null argument".to_owned());
         }
         let (header, text, offs, servers) = unsafe {
-            (raw_slice(header, header_len), raw_slice(text, text_len), raw_slice(offs, n_items + 1), raw_slice(servers, n_items))
+            (
+                raw_slice(header, header_len),
+                raw_slice(text, text_len),
+                raw_slice(offs, n_items + 1),
+                raw_slice(servers, n_items),
+            )
         };
         registers::materialize(header, text, offs, servers)
     }));
@@ -973,7 +1016,9 @@ mod tests {
     #[test]
     fn next_states_new_card_orders_intervals() {
         for alg in ["fsrs6", "fsrs7"] {
-            let r = call(json!({"op":"next_states","algorithm":alg,"desiredRetention":0.9,"elapsedDays":0}));
+            let r = call(
+                json!({"op":"next_states","algorithm":alg,"desiredRetention":0.9,"elapsedDays":0}),
+            );
             let ok = &r["ok"];
             let again = ok["again"]["interval"].as_f64().unwrap();
             let good = ok["good"]["interval"].as_f64().unwrap();
@@ -988,7 +1033,10 @@ mod tests {
         assert!(r.get("error").is_some());
         let six = call(json!({"op":"defaults","algorithm":"fsrs6"}));
         let r = call(json!({"op":"validate","algorithm":"fsrs7","params":six["ok"]["params"]}));
-        assert!(r.get("error").is_some(), "fsrs6 params must not validate as fsrs7");
+        assert!(
+            r.get("error").is_some(),
+            "fsrs6 params must not validate as fsrs7"
+        );
     }
 
     #[test]
@@ -1001,9 +1049,16 @@ mod tests {
     #[test]
     fn fractional_elapsed_changes_fsrs7_result() {
         let mem = json!({"s":1.0,"d":5.0,"sf":1.0});
-        let a = call(json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.1,"memory":mem}));
-        let b = call(json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.9,"memory":mem}));
-        assert_ne!(a["ok"]["good"]["memory"]["s"], b["ok"]["good"]["memory"]["s"]);
+        let a = call(
+            json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.1,"memory":mem}),
+        );
+        let b = call(
+            json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.9,"memory":mem}),
+        );
+        assert_ne!(
+            a["ok"]["good"]["memory"]["s"],
+            b["ok"]["good"]["memory"]["s"]
+        );
     }
 
     #[test]
@@ -1024,7 +1079,10 @@ mod tests {
                 s.len(),
                 out.as_mut_ptr(),
             );
-            let text = unsafe { CStr::from_ptr(resp) }.to_str().unwrap().to_string();
+            let text = unsafe { CStr::from_ptr(resp) }
+                .to_str()
+                .unwrap()
+                .to_string();
             ffsrs_free_string(resp);
             assert_eq!(text, format!("{{\"ok\":{}}}", s.len()), "{alg}");
             for i in 0..s.len() {
@@ -1049,7 +1107,10 @@ mod tests {
             1,
             out.as_mut_ptr(),
         );
-        let text = unsafe { CStr::from_ptr(resp) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(resp) }
+            .to_str()
+            .unwrap()
+            .to_string();
         ffsrs_free_string(resp);
         assert!(text.contains("error"), "{text}");
         let model = CString::new(json!({"algorithm":"fsrs7"}).to_string()).unwrap();
@@ -1062,7 +1123,10 @@ mod tests {
             1,
             out.as_mut_ptr(),
         );
-        let text = unsafe { CStr::from_ptr(resp) }.to_str().unwrap().to_string();
+        let text = unsafe { CStr::from_ptr(resp) }
+            .to_str()
+            .unwrap()
+            .to_string();
         ffsrs_free_string(resp);
         assert!(text.contains("null buffer"), "{text}");
     }
@@ -1148,14 +1212,34 @@ mod tests {
     fn fit_rejects_malformed_training_sets() {
         let mut p = packed();
         p.item_lengths[1] = 3; // 卡 1 只有 2 次评分
-        assert!(fit("evaluate", &p)["error"].as_str().unwrap().contains("prefix length"));
+        assert!(
+            fit("evaluate", &p)["error"]
+                .as_str()
+                .unwrap()
+                .contains("prefix length")
+        );
         let mut p = packed();
         p.item_cards[0] = 2;
-        assert!(fit("evaluate", &p)["error"].as_str().unwrap().contains("out of range"));
+        assert!(
+            fit("evaluate", &p)["error"]
+                .as_str()
+                .unwrap()
+                .contains("out of range")
+        );
         let mut p = packed();
         p.offsets[2] = 4;
-        assert!(fit("evaluate", &p)["error"].as_str().unwrap().contains("cover"));
-        assert!(fit("nope", &packed())["error"].as_str().unwrap().contains("unknown fit op"));
+        assert!(
+            fit("evaluate", &p)["error"]
+                .as_str()
+                .unwrap()
+                .contains("cover")
+        );
+        assert!(
+            fit("nope", &packed())["error"]
+                .as_str()
+                .unwrap()
+                .contains("unknown fit op")
+        );
         // 数据太少：fsrs-rs 报错或给默认参数，但都不越过 FFI 边界 panic。
         let r = fit("compute_parameters", &packed());
         assert!(r.get("ok").is_some() || r.get("error").is_some());
@@ -1163,7 +1247,9 @@ mod tests {
 
     #[test]
     fn zstd_roundtrip() {
-        let payload: Vec<u8> = (0..50_000u32).flat_map(|i| (i % 251).to_le_bytes()).collect();
+        let payload: Vec<u8> = (0..50_000u32)
+            .flat_map(|i| (i % 251).to_le_bytes())
+            .collect();
         let frame = ruzstd::encoding::compress_to_vec(
             payload.as_slice(),
             ruzstd::encoding::CompressionLevel::Fastest,
@@ -1183,7 +1269,9 @@ mod tests {
     #[test]
     fn zstd_file_roundtrip() {
         // 多个读块（> 1 MB 缓冲）+ 能压缩的内容，与 ffsrs_zstd_decompress 结果逐字节相同。
-        let payload: Vec<u8> = (0..1_500_000u32).flat_map(|i| (i % 4093).to_le_bytes()).collect();
+        let payload: Vec<u8> = (0..1_500_000u32)
+            .flat_map(|i| (i % 4093).to_le_bytes())
+            .collect();
         let frame = ruzstd::encoding::compress_to_vec(
             payload.as_slice(),
             ruzstd::encoding::CompressionLevel::Fastest,

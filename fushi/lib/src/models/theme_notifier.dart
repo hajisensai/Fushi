@@ -11,6 +11,7 @@ import 'package:cupertino_ui/cupertino_ui.dart'
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
@@ -1113,15 +1114,56 @@ class ThemeNotifier extends ChangeNotifier {
     scrim: pageBackdropScrim,
   );
 
-  /// 异步核对偏好里两张图在本机是否还在（每个路径只核一次）；有不在的就重发布快照。
-  Future<void> _verifyPageBackdropImages() async {
-    bool missing = false;
+  /// 各模块单独设的背景（[kPageBackdropModulePresetsPrefKey] +
+  /// [kPageBackdropModuleImagesPrefKey]），图片路径按与全局同一份存在性核对过滤。
+  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() {
+    final Map<HomeTab, PageBackdropPreset> presets =
+        decodePageBackdropModulePresets(
+          _get(kPageBackdropModulePresetsPrefKey),
+        );
+    final Map<HomeTab, PageBackdropModuleImages> images =
+        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
+    return Map<HomeTab, PageBackdropModuleOverride>.unmodifiable(
+      <HomeTab, PageBackdropModuleOverride>{
+        for (final MapEntry<HomeTab, PageBackdropPreset> e in presets.entries)
+          e.key: PageBackdropModuleOverride(
+            preset: e.value,
+            landscapeImagePath: existingPageBackdropImagePath(
+              images[e.key]?.landscape,
+              exists: _pageBackdropImageKnownPresent,
+            ),
+            portraitImagePath: existingPageBackdropImagePath(
+              images[e.key]?.portrait,
+              exists: _pageBackdropImageKnownPresent,
+            ),
+          ),
+      },
+    );
+  }
+
+  /// 偏好里所有背景图路径（全局两张 + 各模块的），供存在性核对。
+  Iterable<String> _storedPageBackdropImagePaths() sync* {
     for (final String key in const <String>[
       kPageBackdropLandscapeImagePrefKey,
       kPageBackdropPortraitImagePrefKey,
     ]) {
       final Object? raw = _get(key);
-      if (raw is! String || raw.isEmpty) continue;
+      if (raw is String && raw.isNotEmpty) yield raw;
+    }
+    for (final PageBackdropModuleImages images
+        in decodePageBackdropModuleImages(
+          _get(kPageBackdropModuleImagesPrefKey),
+        ).values) {
+      if (images.landscape case final String path) yield path;
+      if (images.portrait case final String path) yield path;
+    }
+  }
+
+  /// 异步核对偏好里的背景图（全局 + 各模块）在本机是否还在（每个路径只核一次）；
+  /// 有不在的就重发布快照。
+  Future<void> _verifyPageBackdropImages() async {
+    bool missing = false;
+    for (final String raw in _storedPageBackdropImagePaths().toList()) {
       if (_pageBackdropImagePresence.containsKey(raw)) continue;
       final bool present = await File(raw).exists();
       _pageBackdropImagePresence[raw] = present;
@@ -1130,10 +1172,12 @@ class ThemeNotifier extends ChangeNotifier {
     if (missing) _publishPageBackdrop();
   }
 
-  /// 重读偏好发布快照；生效种子变了就重建主题。
+  /// 重读偏好发布快照；生效种子变了就重建主题。模块单独的设置一并发布（它们
+  /// 不参与取色：配色只跟全局背景图走）。
   void _publishPageBackdrop() {
     final Color? before = pageBackdropAccentSeed;
     pageBackdropSettings.value = _readPageBackdropSettings();
+    pageBackdropModuleOverrides.value = _readPageBackdropModuleOverrides();
     if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
   }
 
@@ -1188,16 +1232,11 @@ class ThemeNotifier extends ChangeNotifier {
     required bool portrait,
   }) async {
     final Directory dir = await pageBackdropImageDirectory();
-    await dir.create(recursive: true);
-    final String name = source.path.split(RegExp(r'[\\/]')).last;
-    final int dot = name.lastIndexOf('.');
-    final String ext = dot > 0 ? name.substring(dot).toLowerCase() : '.img';
-    final String slot = portrait ? 'portrait' : 'landscape';
-    final String target =
-        '${dir.path}${Platform.pathSeparator}$slot-'
-        '${DateTime.now().millisecondsSinceEpoch}$ext';
-    await source.copy(target);
-    _pageBackdropImagePresence[target] = true;
+    final String target = await _copyPageBackdropImage(
+      source,
+      dir,
+      portrait ? 'portrait' : 'landscape',
+    );
     final String key = portrait
         ? kPageBackdropPortraitImagePrefKey
         : kPageBackdropLandscapeImagePrefKey;
@@ -1210,6 +1249,130 @@ class ThemeNotifier extends ChangeNotifier {
       await _set(kPageBackdropAccentIndexPrefKey, 0);
       await refreshPageBackdropSeeds();
     }
+  }
+
+  /// 把 [source] 复制进 [dir]（文件名 `<slot>-<毫秒>.<扩展名>`，每次换图都是新名字），
+  /// 记为存在，返回目标路径。
+  Future<String> _copyPageBackdropImage(
+    File source,
+    Directory dir,
+    String slot,
+  ) async {
+    await dir.create(recursive: true);
+    final String name = source.path.split(RegExp(r'[\\/]')).last;
+    final int dot = name.lastIndexOf('.');
+    final String ext = dot > 0 ? name.substring(dot).toLowerCase() : '.img';
+    final String target =
+        '${dir.path}${Platform.pathSeparator}$slot-'
+        '${DateTime.now().millisecondsSinceEpoch}$ext';
+    await source.copy(target);
+    _pageBackdropImagePresence[target] = true;
+    return target;
+  }
+
+  // ── 按模块单独设置背景（反馈 DYI1IOZxSM）──────────────────────────────
+
+  /// [tab] 单独设的背景；null = 跟随全局。
+  PageBackdropModuleOverride? pageBackdropModuleOverride(HomeTab tab) =>
+      pageBackdropModuleOverrides.value[tab];
+
+  /// 给 [tab] 单独设预设；[preset] 为 null = 恢复跟随全局（连同本模块的图片一起删）。
+  /// 选「自定义图片」但本模块还没有图时由调用方先走 [importPageBackdropModuleImage]。
+  Future<void> setPageBackdropModulePreset(
+    HomeTab tab,
+    PageBackdropPreset? preset,
+  ) async {
+    final Map<HomeTab, PageBackdropPreset> presets =
+        decodePageBackdropModulePresets(
+          _get(kPageBackdropModulePresetsPrefKey),
+        );
+    if (preset == null) {
+      presets.remove(tab);
+      final Map<HomeTab, PageBackdropModuleImages> images =
+          decodePageBackdropModuleImages(
+            _get(kPageBackdropModuleImagesPrefKey),
+          );
+      final PageBackdropModuleImages? removed = images.remove(tab);
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropModulePresets(presets),
+      );
+      if (removed != null) {
+        await _set(
+          kPageBackdropModuleImagesPrefKey,
+          encodePageBackdropModuleImages(images),
+        );
+        final Directory dir = await pageBackdropImageDirectory();
+        await _deleteOwnedPageBackdropImage(removed.landscape, dir);
+        await _deleteOwnedPageBackdropImage(removed.portrait, dir);
+      }
+    } else {
+      presets[tab] = preset;
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropModulePresets(presets),
+      );
+    }
+    _publishPageBackdrop();
+  }
+
+  /// 把用户选的图片复制进 app 数据目录当 [tab] 的背景（[portrait] = 竖屏单独用的
+  /// 那张）。换横屏图同时把这个模块切到「自定义图片」。模块图片不参与取色。
+  Future<void> importPageBackdropModuleImage(
+    HomeTab tab,
+    File source, {
+    required bool portrait,
+  }) async {
+    final Directory dir = await pageBackdropImageDirectory();
+    final String wire = pageBackdropModuleWire(tab);
+    final String target = await _copyPageBackdropImage(
+      source,
+      dir,
+      'module-$wire-${portrait ? 'portrait' : 'landscape'}',
+    );
+    final Map<HomeTab, PageBackdropModuleImages> images =
+        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
+    final PageBackdropModuleImages current =
+        images[tab] ?? (landscape: null, portrait: null);
+    final String? previous = portrait ? current.portrait : current.landscape;
+    images[tab] = portrait
+        ? (landscape: current.landscape, portrait: target)
+        : (landscape: target, portrait: current.portrait);
+    await _set(
+      kPageBackdropModuleImagesPrefKey,
+      encodePageBackdropModuleImages(images),
+    );
+    if (!portrait) {
+      final Map<HomeTab, PageBackdropPreset> presets =
+          decodePageBackdropModulePresets(
+            _get(kPageBackdropModulePresetsPrefKey),
+          );
+      presets[tab] = PageBackdropPreset.custom;
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropModulePresets(presets),
+      );
+    }
+    await _deleteOwnedPageBackdropImage(previous, dir);
+    _publishPageBackdrop();
+  }
+
+  /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
+  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) async {
+    final Map<HomeTab, PageBackdropModuleImages> images =
+        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
+    final PageBackdropModuleImages? current = images[tab];
+    if (current == null || current.portrait == null) return;
+    images[tab] = (landscape: current.landscape, portrait: null);
+    await _set(
+      kPageBackdropModuleImagesPrefKey,
+      encodePageBackdropModuleImages(images),
+    );
+    await _deleteOwnedPageBackdropImage(
+      current.portrait,
+      await pageBackdropImageDirectory(),
+    );
+    _publishPageBackdrop();
   }
 
   /// 去掉竖屏单独的那张图（竖屏回到与横屏共用）。
@@ -1246,7 +1409,8 @@ class ThemeNotifier extends ChangeNotifier {
     }
   }
 
-  /// 按当前横屏图重取候选种子色（没选自定义图片时清空）。先同步套用缓存，再核对
+  /// 按当前横屏图重取候选种子色（没选自定义图片时清空），并异步核对全局与各模块
+  /// 的背景图还在不在。先同步套用缓存，再核对
   /// 文件修改时间 / 大小，变了才在后台重取（与「主题色跟随图标」同一做法）。
   Future<void> refreshPageBackdropSeeds() async {
     final int generation = ++_pageBackdropSeedGeneration;
@@ -1264,6 +1428,8 @@ class ThemeNotifier extends ChangeNotifier {
     final String? path = currentPath();
     if (path == null) {
       clearSeeds();
+      // 全局没有图也要核对各模块单独的图（不在就让那个模块退回全局）。
+      await _verifyPageBackdropImages();
       return;
     }
     // 同步段：先套缓存（冷启动首帧就是缓存里的颜色，不先闪一下原主题）。
@@ -3149,8 +3315,9 @@ ThemeData buildFushiThemeData({
     // 2026-10：M3 2024 版滑块（16 粗轨道 + 竖条拇指 + 拇指两侧留缝 + 尾端停止
     // 点），与下面的 2024 版进度条同一代视觉；RangeSlider 吃同一份主题。墨水屏
     // 保留 2023 版细轨圆钮与原配色（缝与停止点在低分辨率面板上会糊成灰点）。
-    // 自带 SliderTheme 覆写 thumbShape / trackShape 的紧凑滑块（视频音量浮层、
-    // 有声书面板）照旧用它们自己的形状。
+    // 自带 SliderTheme 覆写 thumbShape / trackShape 的紧凑滑块（有声书面板）照旧
+    // 用它们自己的形状；视频音量浮层只按界面缩放改轨道粗细与把手高度，形状沿用
+    // 这份 2024 版（反馈 DYSX-jy-6K）。
     sliderTheme: eink
         ? SliderThemeData(
             thumbColor: cs.primary,

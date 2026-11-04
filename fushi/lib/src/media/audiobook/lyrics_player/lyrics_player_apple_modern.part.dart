@@ -622,6 +622,8 @@ class _AppleModernActionIslandState extends State<_AppleModernActionIsland> {
           key: const ValueKey<String>('lyrics_more_button'),
           onMore: callbacks.onMore,
           collapsedItems: split.collapsed,
+          // 中岛的主控恒带 ±10 秒（只要页面给了回调）。
+          relativeSeekOnScreen: callbacks.onSeekRelative != null,
           diameter: 44,
           iconSize: 20,
         ),

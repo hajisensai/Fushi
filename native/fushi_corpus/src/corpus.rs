@@ -34,10 +34,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::wire::{self, json_str, Reader, Writer, WireError};
+use crate::wire::{self, Reader, WireError, Writer, json_str};
 
 pub const FILE_MAGIC: &[u8; 4] = b"FCRP";
 pub const FILE_VERSION: u32 = 1;
@@ -148,7 +148,17 @@ fn parse_file(bytes: &[u8]) -> Result<ParsedDoc, WireError> {
     if !r.is_empty() {
         return Err(WireError("trailing bytes in file"));
     }
-    Ok(ParsedDoc { kind, key, part, title, fingerprint, normalizer, updated_at, terms, records })
+    Ok(ParsedDoc {
+        kind,
+        key,
+        part,
+        title,
+        fingerprint,
+        normalizer,
+        updated_at,
+        terms,
+        records,
+    })
 }
 
 /// 文档 + 词元 → 文件字节。
@@ -258,8 +268,15 @@ fn read_record(file: &mut File, off: u32) -> std::io::Result<Record> {
             u32::from_le_bytes([c[8], c[9], c[10], c[11]]),
         ));
     }
-    let text = String::from_utf8(text).map_err(|_| std::io::Error::other("invalid utf-8 in record"))?;
-    Ok(Record { section, pos, len, text, tokens })
+    let text =
+        String::from_utf8(text).map_err(|_| std::io::Error::other("invalid utf-8 in record"))?;
+    Ok(Record {
+        section,
+        pos,
+        len,
+        text,
+        tokens,
+    })
 }
 
 /// 句子作为例句的「好用程度」：越小越靠前。太短（一两个字）的没有上下文，太长的读不完。
@@ -293,7 +310,11 @@ impl State {
         let local_terms: Vec<u32> = parsed.terms.iter().map(|t| self.intern(t)).collect();
         for (i, (rec_off, units, locals)) in parsed.records.iter().enumerate() {
             let sid = first + i as u32;
-            self.sentences.push(SentenceMeta { doc: doc_id, rec_off: *rec_off, units: *units });
+            self.sentences.push(SentenceMeta {
+                doc: doc_id,
+                rec_off: *rec_off,
+                units: *units,
+            });
             for &l in locals {
                 self.postings[local_terms[l as usize] as usize].push(sid);
             }
@@ -322,7 +343,8 @@ impl State {
     /// 摘掉一个文档（倒排里它的句子区间整段删掉），返回它的文件路径。
     fn remove(&mut self, doc_id: u32) -> Option<PathBuf> {
         let doc = self.docs.get_mut(doc_id as usize)?.take()?;
-        self.by_identity.remove(&(doc.kind, doc.key.clone(), doc.part));
+        self.by_identity
+            .remove(&(doc.kind, doc.key.clone(), doc.part));
         let lo = doc.first_sentence;
         let hi = doc.first_sentence + doc.sentence_count;
         let mut seen = HashSet::new();
@@ -365,7 +387,10 @@ impl Corpus {
             if ext != FILE_EXT {
                 continue;
             }
-            match fs::read(&path).map_err(|_| WireError("read")).and_then(|b| parse_file(&b)) {
+            match fs::read(&path)
+                .map_err(|_| WireError("read"))
+                .and_then(|b| parse_file(&b))
+            {
                 Ok(parsed) => candidates.push((path, parsed)),
                 Err(_) => {
                     let _ = fs::remove_file(&path);
@@ -375,12 +400,21 @@ impl Corpus {
         }
         // 同一身份多份：保留 updatedAt 最新（并列取文件名大的，即序号新的）。
         candidates.sort_by(|a, b| {
-            (a.1.kind, &a.1.key, a.1.part, a.1.updated_at, &a.0).cmp(&(b.1.kind, &b.1.key, b.1.part, b.1.updated_at, &b.0))
+            (a.1.kind, &a.1.key, a.1.part, a.1.updated_at, &a.0).cmp(&(
+                b.1.kind,
+                &b.1.key,
+                b.1.part,
+                b.1.updated_at,
+                &b.0,
+            ))
         });
         let mut keep: Vec<(PathBuf, ParsedDoc)> = Vec::with_capacity(candidates.len());
         for item in candidates {
             if let Some(last) = keep.last() {
-                if last.1.kind == item.1.kind && last.1.key == item.1.key && last.1.part == item.1.part {
+                if last.1.kind == item.1.kind
+                    && last.1.key == item.1.key
+                    && last.1.part == item.1.part
+                {
                     let stale = keep.pop().unwrap();
                     let _ = fs::remove_file(&stale.0);
                     dropped += 1;
@@ -395,17 +429,27 @@ impl Corpus {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
-        Ok(Corpus { dir: dir.to_path_buf(), state: RwLock::new(state), seq: AtomicU64::new(seed), dropped_on_open: dropped })
+        Ok(Corpus {
+            dir: dir.to_path_buf(),
+            state: RwLock::new(state),
+            seq: AtomicU64::new(seed),
+            dropped_on_open: dropped,
+        })
     }
 
     /// 写入（替换）一个文档。[doc] / [terms] 是 [wire] 里的两份线格式。
     pub fn put(&self, doc_bytes: &[u8], terms_bytes: &[u8]) -> Result<(), PutError> {
         let doc = wire::read_document(doc_bytes).map_err(PutError::BadInput)?;
-        let tokens = wire::read_terms(terms_bytes, doc.sentences.len()).map_err(PutError::BadInput)?;
+        let tokens =
+            wire::read_terms(terms_bytes, doc.sentences.len()).map_err(PutError::BadInput)?;
         let bytes = encode_file(&doc, &tokens);
         let parsed = parse_file(&bytes).map_err(PutError::BadInput)?;
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
-        let stem = format!("{:016x}-{:016x}", identity_hash(doc.kind, doc.key, doc.part), seq);
+        let stem = format!(
+            "{:016x}-{:016x}",
+            identity_hash(doc.kind, doc.key, doc.part),
+            seq
+        );
         let tmp = self.dir.join(format!("{stem}.tmp"));
         let path = self.dir.join(format!("{stem}.{FILE_EXT}"));
         {
@@ -417,7 +461,11 @@ impl Corpus {
         let old = {
             let mut st = self.state.write().unwrap_or_else(|e| e.into_inner());
             let identity = (parsed.kind, parsed.key.clone(), parsed.part);
-            let old = st.by_identity.get(&identity).copied().and_then(|id| st.remove(id));
+            let old = st
+                .by_identity
+                .get(&identity)
+                .copied()
+                .and_then(|id| st.remove(id));
             st.install(parsed, path);
             old
         };
@@ -434,10 +482,14 @@ impl Corpus {
             let ids: Vec<u32> = st
                 .by_identity
                 .iter()
-                .filter(|((k, key2, p), _)| *k == kind && key2 == key && part.is_none_or(|want| want == *p))
+                .filter(|((k, key2, p), _)| {
+                    *k == kind && key2 == key && part.is_none_or(|want| want == *p)
+                })
                 .map(|(_, &id)| id)
                 .collect();
-            ids.into_iter().filter_map(|id| st.remove(id)).collect::<Vec<_>>()
+            ids.into_iter()
+                .filter_map(|id| st.remove(id))
+                .collect::<Vec<_>>()
         };
         let n = paths.len();
         for p in paths {
@@ -456,7 +508,9 @@ impl Corpus {
                 .filter(|((k, _, _), _)| *k < 32 && kind_mask & (1 << k) != 0)
                 .map(|(_, &id)| id)
                 .collect();
-            ids.into_iter().filter_map(|id| st.remove(id)).collect::<Vec<_>>()
+            ids.into_iter()
+                .filter_map(|id| st.remove(id))
+                .collect::<Vec<_>>()
         };
         let n = paths.len();
         for p in paths {
@@ -489,7 +543,10 @@ impl Corpus {
             json_str(&mut out, &d.fingerprint);
             out.push_str(",\"normalizer\":");
             json_str(&mut out, &d.normalizer);
-            out.push_str(&format!(",\"updatedAt\":{},\"sentences\":{}}}", d.updated_at, d.sentence_count));
+            out.push_str(&format!(
+                ",\"updatedAt\":{},\"sentences\":{}}}",
+                d.updated_at, d.sentence_count
+            ));
         }
         out.push(']');
         out
@@ -500,8 +557,12 @@ impl Corpus {
     /// 取回原句重新分词。文档不存在返回 None。
     pub fn export(&self, kind: u8, key: &str, part: i32) -> std::io::Result<Option<Vec<u8>>> {
         let st = self.state.read().unwrap_or_else(|e| e.into_inner());
-        let Some(&id) = st.by_identity.get(&(kind, key.to_owned(), part)) else { return Ok(None) };
-        let Some(doc) = st.docs[id as usize].as_ref() else { return Ok(None) };
+        let Some(&id) = st.by_identity.get(&(kind, key.to_owned(), part)) else {
+            return Ok(None);
+        };
+        let Some(doc) = st.docs[id as usize].as_ref() else {
+            return Ok(None);
+        };
         let mut file = File::open(&doc.path)?;
         let mut w = Writer::default();
         w.u8(doc.kind);
@@ -543,7 +604,11 @@ impl Corpus {
     pub fn query_json(&self, query_bytes: &[u8]) -> Result<String, WireError> {
         let q = wire::read_query(query_bytes)?;
         let st = self.state.read().unwrap_or_else(|e| e.into_inner());
-        let term_set: HashSet<u32> = q.keys.iter().filter_map(|k| st.term_ids.get(*k).copied()).collect();
+        let term_set: HashSet<u32> = q
+            .keys
+            .iter()
+            .filter_map(|k| st.term_ids.get(*k).copied())
+            .collect();
         let mut ids: Vec<u32> = Vec::new();
         for &t in &term_set {
             ids.extend_from_slice(&st.postings[t as usize]);
@@ -554,7 +619,9 @@ impl Corpus {
         let mut by_kind: HashMap<u8, Vec<u32>> = HashMap::new();
         for &sid in &ids {
             let meta = st.sentences[sid as usize];
-            let Some(doc) = st.docs[meta.doc as usize].as_ref() else { continue };
+            let Some(doc) = st.docs[meta.doc as usize].as_ref() else {
+                continue;
+            };
             if doc.kind >= 32 || q.kind_mask & (1 << doc.kind) == 0 {
                 continue;
             }
@@ -571,7 +638,9 @@ impl Corpus {
             grand_total += list.len();
             list.sort_by_key(|&sid| {
                 let meta = st.sentences[sid as usize];
-                let updated = st.docs[meta.doc as usize].as_ref().map_or(0, |d| d.updated_at);
+                let updated = st.docs[meta.doc as usize]
+                    .as_ref()
+                    .map_or(0, |d| d.updated_at);
                 (length_penalty(meta.units), std::cmp::Reverse(updated), sid)
             });
             let total = list.len();
@@ -587,7 +656,9 @@ impl Corpus {
                 if q.per_doc > 0 && used >= q.per_doc {
                     continue;
                 }
-                let Some(doc) = st.docs[meta.doc as usize].as_ref() else { continue };
+                let Some(doc) = st.docs[meta.doc as usize].as_ref() else {
+                    continue;
+                };
                 let file = match files.entry(meta.doc) {
                     std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                     std::collections::hash_map::Entry::Vacant(e) => match File::open(&doc.path) {
@@ -595,19 +666,26 @@ impl Corpus {
                         Err(_) => continue,
                     },
                 };
-                let Ok(record) = read_record(file, meta.rec_off) else { continue };
+                let Ok(record) = read_record(file, meta.rec_off) else {
+                    continue;
+                };
                 if !seen_text.insert(record.text.trim().to_owned()) {
                     continue;
                 }
                 per_doc.insert(meta.doc, used + 1);
-                hits.push(Hit { doc: meta.doc, record });
+                hits.push(Hit {
+                    doc: meta.doc,
+                    record,
+                });
             }
             if !groups.is_empty() {
                 groups.push(',');
             }
             groups.push_str(&format!("{{\"kind\":{kind},\"total\":{total},\"items\":["));
             for (i, hit) in hits.iter().enumerate() {
-                let Some(doc) = st.docs[hit.doc as usize].as_ref() else { continue };
+                let Some(doc) = st.docs[hit.doc as usize].as_ref() else {
+                    continue;
+                };
                 if i > 0 {
                     groups.push(',');
                 }
@@ -623,7 +701,9 @@ impl Corpus {
                 groups.push_str(",\"hl\":[");
                 let mut first = true;
                 for &(start, len, local) in &hit.record.tokens {
-                    let Some(&global) = doc.local_terms.get(local as usize) else { continue };
+                    let Some(&global) = doc.local_terms.get(local as usize) else {
+                        continue;
+                    };
                     if !term_set.contains(&global) {
                         continue;
                     }

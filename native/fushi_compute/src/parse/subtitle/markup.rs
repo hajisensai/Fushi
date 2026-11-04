@@ -461,11 +461,7 @@ fn int_at(s: &[u16], p: usize, neg: bool) -> Option<usize> {
         q += 1;
     }
     let d = count_while(s, q, is_digit);
-    if d == 0 {
-        None
-    } else {
-        Some(q + d)
-    }
+    if d == 0 { None } else { Some(q + d) }
 }
 
 #[inline]

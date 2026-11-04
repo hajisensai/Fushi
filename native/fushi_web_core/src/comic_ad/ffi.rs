@@ -1,8 +1,8 @@
 //! 章末广告页识别的 C ABI（`fwc_comic_ad_*`）。
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use super::{candidate_start, detect_batch, ComicAdRules, ComicAdVerdict};
+use super::{ComicAdRules, ComicAdVerdict, candidate_start, detect_batch};
 use crate::ffi_util::{panic_message, set_last_error};
 
 /// 内置默认规则（最后 10 张、前 3 张不判、彩色占比 0.12、长边缩到 900）。

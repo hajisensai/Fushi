@@ -58,6 +58,30 @@ constexpr wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
 // 守卫 test/platform/exit_watchdog_runner_wait_guard_test.dart 把两者钉在一起。
 constexpr DWORD kPreviousInstanceWaitMs = 20000;
 
+// BUG-4028：安装器替换安装目录期间持有的「请勿启动」门（fushi.iss 的
+// FushiInstallGateMutexName，PrepareToInstall 清场之前建、ssPostInstall 放开）。名字两侧
+// 必须逐字一致，守卫 test/build/windows_installer_launch_gate_guard_test.dart 钉住。
+constexpr wchar_t kInstallInProgressMutex[] = L"FushiInstallInProgressMutex";
+
+// 安装器此刻是否正在替换安装目录。
+//
+// 应用内更新的现场（反馈 umcyzpaebn）：旧实例退出、安装器清场之后，一个由 shell 拉起的
+// 新 fushi.exe 把插件 DLL 映射进来，复制阶段 DeleteFile code 5 → 整包回滚 → 半更新态。
+// 本进程映像（fushi.exe）与静态链接的插件 DLL 在 wWinMain 之前就已映射，只能**立即退出**
+// 让锁随进程消失（安装器的 DeleteFile 自带重试）；等待门放开则会一直占着这些文件，
+// 正好把安装卡死。安装成功后 [Run] / launcher 会把新版拉起来，这次启动不会白丢。
+//
+// 门由安装器建：提权安装时那是管理员令牌建的对象，普通权限 OpenMutexW 会得到
+// ERROR_ACCESS_DENIED——拒绝访问同样说明它存在。
+bool InstallInProgress() {
+  HANDLE gate = ::OpenMutexW(SYNCHRONIZE, FALSE, kInstallInProgressMutex);
+  if (gate != nullptr) {
+    ::CloseHandle(gate);
+    return true;
+  }
+  return ::GetLastError() == ERROR_ACCESS_DENIED;
+}
+
 // 本进程 argv 是否带 [kRestartMarkerArg]（自动重启拉起的新进程）。
 bool HasRestartMarker() {
   int argc = 0;
@@ -246,6 +270,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
   const bool dev_side_by_side = IsDevSideBySideMode();
   const bool test_runner = IsTestRunnerMode() || dev_side_by_side;
+  // BUG-4028：安装器正在替换安装目录 → 立即退出，不碰单实例互斥量、不建引擎。
+  if (!test_runner && InstallInProgress()) {
+    ::OutputDebugStringW(L"Fushi: installer is replacing the app; exiting.\n");
+    return EXIT_SUCCESS;
+  }
   ::fushi::SingleInstanceMutex single_instance_mutex(
       L"FushiSingleInstanceMutex", !test_runner);
   if (!test_runner && !single_instance_mutex.valid()) {
@@ -318,6 +347,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       }
       ::SetForegroundWindow(existing);
     }
+    return EXIT_SUCCESS;
+  }
+
+  // BUG-4028：上面「首实例正在退出 → 等它放开互斥量」最长等 kPreviousInstanceWaitMs，
+  // 应用内更新时等到的正是为安装让路而退出的旧实例——等完安装器多半已经开工。拿到
+  // 单实例所有权后、建引擎之前再看一次门。
+  if (!test_runner && InstallInProgress()) {
+    ::OutputDebugStringW(L"Fushi: installer is replacing the app; exiting.\n");
     return EXIT_SUCCESS;
   }
 

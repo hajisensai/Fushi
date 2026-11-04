@@ -47,11 +47,11 @@ void main() {
   test('manga reader applies the manga media-type binding on open', () {
     final String src = read('lib/src/media/manga/reader/manga_fushi_page.dart');
     expect(
-      src.contains('autoApplyBinding(') &&
+      src.contains('enterWorkSession(') &&
           src.contains('mediaType: ProfileMediaKind.manga'),
       isTrue,
       reason:
-          'MangaFushiPage must call autoApplyBinding(mediaType: '
+          'MangaFushiPage must call enterWorkSession(mediaType: '
           'ProfileMediaKind.manga) on open, else the manga binding row is '
           'dead UI (TODO-2936)',
     );
@@ -65,13 +65,13 @@ void main() {
     ]) {
       final String src = read(path);
       // 判据拆成两段（与上面 manga 那条同形），**不**匹配整串调用字面量：
-      // `autoApplyBinding` 的参数列表会增长（v99 加了 languageTag），一旦多一个
+      // `enterWorkSession` 的参数列表会增长（v99 加了 languageTag），一旦多一个
       // 具名参数或被 dart format 折行，整串字面量就再也匹配不上——那时守卫报的是
       // 「从没应用过绑定」，而真相是「调用还在，只是多了个参数」，把人引向完全
       // 错误的方向。两段式判据钉的是「这个文件确实调了它、且确实是 game 类型」，
       // 参数怎么长都不影响。
       expect(
-        src.contains('autoApplyBinding(') &&
+        src.contains('enterWorkSession(') &&
             src.contains('mediaType: ProfileMediaKind.game'),
         isTrue,
         reason:
@@ -123,7 +123,7 @@ void main() {
     );
     expect(
       RegExp(
-        r'\b(applyProfile|switchProfile|setActiveProfile|autoApplyBinding)\(',
+        r'\b(applyProfile|switchProfile|setActiveProfile|enterWorkSession)\(',
       ).hasMatch(adapter),
       isFalse,
       reason:

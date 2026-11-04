@@ -1,5 +1,6 @@
 // 首页「继续」服务器条目的进程级取数状态：刷新节流、门控签名作废、强制刷新、
 // 浏览器（HTTP 连接）按配置复用与关闭；以及「接下来看」的排序时刻。
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
@@ -129,6 +130,71 @@ void main() {
       );
       await feed.load(gate: 'g', fetch: fetch);
       expect(fetches, 1);
+    });
+  });
+
+  group('ServerContinueFeed.findByKey', () {
+    Future<List<ServerContinueCandidate>> fetchOne() async =>
+        <ServerContinueCandidate>[_c('ep1')];
+    final String key = _c('ep1').key;
+
+    test('cold start: waits for the first round however late the home page '
+        'starts it, instead of betting on a mount delay', () {
+      fakeAsync((FakeAsync async) {
+        final ServerContinueFeed feed = ServerContinueFeed();
+        ServerContinueCandidate? found;
+        bool done = false;
+        feed.findByKey(key).then((ServerContinueCandidate? c) {
+          found = c;
+          done = true;
+        });
+        // 首页晚于旧实现的 600ms 起步窗口才挂载并开始取数。
+        async.elapse(const Duration(seconds: 2));
+        expect(done, isFalse, reason: 'no round has finished yet');
+        feed.load(gate: 'g', fetch: fetchOne);
+        async.flushMicrotasks();
+        expect(done, isTrue);
+        expect(found?.itemId, 'ep1');
+      });
+    });
+
+    test('a failed first round still releases the waiter', () {
+      fakeAsync((FakeAsync async) {
+        final ServerContinueFeed feed = ServerContinueFeed();
+        bool done = false;
+        ServerContinueCandidate? found = _c('sentinel');
+        feed.findByKey(key).then((ServerContinueCandidate? c) {
+          found = c;
+          done = true;
+        });
+        feed
+            .load(gate: 'g', fetch: () async => throw StateError('offline'))
+            .catchError((Object _) => const <ServerContinueCandidate>[]);
+        async.flushMicrotasks();
+        expect(done, isTrue);
+        expect(found, isNull);
+      });
+    });
+
+    test('after a finished round an absent item resolves at once', () async {
+      final ServerContinueFeed feed = ServerContinueFeed();
+      await feed.load(gate: 'g', fetch: fetchOne);
+      expect(await feed.findByKey('missing'), isNull);
+      expect((await feed.findByKey(key))?.itemId, 'ep1');
+    });
+
+    test('the cap only bounds a home page that never fetches', () {
+      fakeAsync((FakeAsync async) {
+        final ServerContinueFeed feed = ServerContinueFeed();
+        bool done = false;
+        feed
+            .findByKey(key, wait: const Duration(seconds: 8))
+            .then((_) => done = true);
+        async.elapse(const Duration(seconds: 7));
+        expect(done, isFalse);
+        async.elapse(const Duration(seconds: 2));
+        expect(done, isTrue);
+      });
     });
   });
 

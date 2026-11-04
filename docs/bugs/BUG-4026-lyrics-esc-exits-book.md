@@ -1,0 +1,7 @@
+## BUG-4026 · 歌词模式按 Esc 先回阅读器、要再按一次才回书架
+- **报告**：2026-11-03（开发者 shishamo 反馈 NaFaJbaAdc，Windows 3.3.0-debug.23261：歌词模式按 Esc 应直接回书架结束阅读，而不是 Esc 先回阅读器再回主界面）
+- **真实性**：✅ 真 bug（行为与预期不符，代码路径确认）。根因在返回阶梯的单点判定 `fushi/lib/src/reader/reader_back_ladder.dart` `resolveReaderBackStep()`：`ReaderBackSource.shortcut`（Esc / Alt+← / 手柄 B 的 `globalBack`）在 `lyricsMode` 时返回 `closeLyrics`，`fushi/lib/src/pages/implementations/reader_fushi/caret.part.dart` 的 `case ShortcutAction.globalBack` 据此走 `_toggleLyricsMode()` 掀开歌词层回正文；只有系统返回（`ReaderBackSource.route`）在歌词模式下直接退书（NJIIDAhIZL）。歌词层上的 × 也早已是直接退书（QvYpZODImz），Esc 是唯一还「先回正文」的入口。
+- **[x] ① 已修复** — 歌词覆盖层不再是返回阶梯的一级：阶梯收成「词典弹窗先关，其余一律退书」，`ReaderBackStep.closeLyrics` / `lyricsMode` 入参 / 两条来源的区分一并删除（两条来源判定已完全相同，留着是死分支）。Esc 与系统返回同一条路；退书不关歌词层，这本书仍记着歌词模式（BUG-785）。想留在书里看正文用歌词层上的「书籍模式」键。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_back_ladder_test.dart`（阶梯只剩两步、无浮层即退书、词典先关、显式退书跳过阶梯）+ `fushi/test/pages/reader_lyrics_exit_and_follow_override_guard_static_test.dart`（源码守卫：`globalBack` 分支走同一阶梯、不调 `_toggleLyricsMode()`、不读 `_lyricsMode`；阅读器整页依赖 WebView，沿用本目录源码切片范式）。
+- **备注**：⚠ 与 2026-11-01 提交 7e543a45de 的既定口径冲突——那次刻意保留了「Esc 先退歌词」（Niratan：Esc 先退歌词再关窗口）。本条按更新的开发者反馈改为 Esc 直接退书，**需用户确认取舍**；若要恢复 Niratan 口径，回退本条提交即可。未做真机键盘复测。
+- **备注（PR #2862）**：PR #2862 独立修了同一条反馈 NaFaJbaAdc（原登记为 BUG-4015），实现与本条相同（阶梯删 `ReaderBackSource` / `closeLyrics`，Esc 与系统返回同一条）；合并 develop 时以本条实现为准，删掉重复的 BUG-4015 登记。该 PR 其余部分（底栏常驻 BUG-4016、合成器换句滚动、歌词模式进度跳转 / 跳转记录 / 跳转刻度）不受影响。

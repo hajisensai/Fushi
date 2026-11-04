@@ -76,6 +76,7 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
     show AudiobookSpeedSlider;
+import 'package:fushi/src/media/audiobook/lyrics_cue_window_slide.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lookup_resume_hold.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
@@ -123,6 +124,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
@@ -345,6 +347,12 @@ bool readerCanOwnFocus(
   required bool caretBusy,
   required bool routeIsCurrent,
 }) {
+  // 任何原因都不能夺走压在本页上面的路由（高级制卡对话框 / 设置 / 菜单）的焦点
+  // （与漫画 / 视频页同一判据）。反馈 IhPv0LqmYU / -RZluBdDUL：高级制卡对话框打开
+  // 期间查词弹窗只是停靠屏外，键盘弹出改视口 → 弹窗 JS resize 重报高度 →
+  // popupRendered；旧判据这一支只看 dictionaryShown，于是把焦点从对话框的句子
+  // 输入框抢回正文，键盘弹出即收回。词典弹窗是原生 WebView 而非路由，不受此限。
+  if (!routeIsCurrent) return false;
   switch (cause) {
     // BUG-1071 ②：词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，指针唤出它时 OS
     // 焦点落在弹窗上。弹窗可见时必须把焦点拉回正文，否则关词典键（Esc / 绑定键）永远
@@ -369,15 +377,16 @@ bool readerCanOwnFocus(
     case FocusReclaimCause.contentReady:
     case FocusReclaimCause.surfaceRemounted:
       if (lyricsMode || !contentReady) return false;
-      return !caretBusy && !dictionaryShown && routeIsCurrent;
+      return !caretBusy && !dictionaryShown;
     // 切窗回前台 / 覆盖层（设置面板等）关闭：与加载无关，歌词态同样要归位，否则
     // 关掉设置面板后歌词模式的 Space / Esc 再次失灵。正文态仍要求内容就绪。
     case FocusReclaimCause.appResumed:
     case FocusReclaimCause.overlayClosed:
       if (!lyricsMode && !contentReady) return false;
       // 光标态 / 弹窗 WebView 持焦期间不抢；上方压着别的路由（设置 / 查词大对话框）
-      // 时不抢（Never break userspace），那些覆盖层关闭时各自的返回点会归还焦点。
-      return !caretBusy && !dictionaryShown && routeIsCurrent;
+      // 时不抢（Never break userspace，见函数开头），那些覆盖层关闭时各自的返回点会
+      // 归还焦点。
+      return !caretBusy && !dictionaryShown;
   }
 }
 
@@ -2459,6 +2468,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _lyricsEntryCueIndex = 0;
   int _lyricsCueIndexOffset = 0;
   bool _lyricsCueWindowUsesAllBookCues = false;
+  // 歌词文档 JS 侧的手动浏览态（`onLyricsBrowse` 回报，每份文档从 false 起）。与
+  // 「跟随音频」开关一起决定滑动窗口的锚点：跟随中锚播放句，浏览中锚视口中线句。
+  bool _lyricsJsBrowsing = false;
   List<AudioCue> _lyricsCueList = const [];
 
   // ── 歌词覆盖层（2026-10-04，对齐 Niratan）──────────────────────────────
@@ -3683,6 +3695,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
+    WorkProfileScope.instance.leave(this);
     _studyCoverWatch.dispose();
     _pageCurlDrag = null;
     _pageCurl?.dispose();
@@ -4233,8 +4247,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
                   // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）与
-                  // Esc 同一条阶梯：词典弹窗先关；歌词覆盖层**不**拦，歌词模式下
-                  // 直接退书回书架（NJIIDAhIZL / NaFaJbaAdc）。判定单点在
+                  // Esc 同一条阶梯：词典弹窗先关；歌词覆盖层**不**拦，歌词模式下直接
+                  // 退书回书架（NJIIDAhIZL / BUG-4026）。判定单点在
                   // [resolveReaderBackStep]；程序化退书（[_exitReaderBook]）带着
                   // [_exitBookRequested] 进来，整条阶梯跳过。
                   switch (resolveReaderBackStep(

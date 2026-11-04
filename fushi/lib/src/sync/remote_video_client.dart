@@ -305,10 +305,22 @@ class MediaServerQualityPreset {
 abstract interface class RemoteVideoQualityLimit {
   List<MediaServerQualityPreset> get qualityPresets;
 
-  /// 当前档在 [qualityPresets] 里的下标；-1 = 自动。
+  /// 菜单里是否单列一项「原画」（[kRemoteVideoQualityOriginal]：显式要求原文件直传、
+  /// 永不转码）。互联要：它的「自动」在外网会转码。Jellyfin / Emby 不要：它们的
+  /// 「自动」本来就是不限码率、能直播放就直播放。
+  bool get offersOriginalQuality;
+
+  /// 当前档在 [qualityPresets] 里的下标；[kRemoteVideoQualityAuto] = 自动，
+  /// [kRemoteVideoQualityOriginal] = 原画（仅 [offersOriginalQuality] 的来源）。
   int get qualityPresetIndex;
   set qualityPresetIndex(int index);
 }
+
+/// [RemoteVideoQualityLimit.qualityPresetIndex] 的「自动」哨兵。
+const int kRemoteVideoQualityAuto = -1;
+
+/// [RemoteVideoQualityLimit.qualityPresetIndex] 的「原画」哨兵（反馈 uaBRMzK_WM）。
+const int kRemoteVideoQualityOriginal = -2;
 
 /// 同一集的一条可播候选（视频源扩展的「线路 / 画质」：一集常给多家 hoster × 多档
 /// 画质，扩展自己排好序）。

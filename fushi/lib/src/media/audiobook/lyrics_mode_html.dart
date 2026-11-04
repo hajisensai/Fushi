@@ -118,6 +118,63 @@ class LyricsModeHtml {
         '${jsonEncode(t.vars)}, ${jsonEncode(t.bodyClasses)});';
   }
 
+  /// Dart → JS 一次歌词层同步的脚本（当前行 / 播放态 / 扫过进度）。
+  ///
+  /// 播放态（`__lyricsSetPlaying`）是 Dart 向 JS 同步播放 / 暂停的唯一入口：JS 的
+  /// `ly-paused` 类与「浏览 4 秒后回到跟随」计时都只按它起停，所以**每次同步都无条件
+  /// 下发**，不依赖当前句是否落在已载窗口里（BUG-4007 R2：手动浏览中播放句被卸出
+  /// 窗口时旧码只摘高亮就返回，JS 的播放态与真实播放态脱节——按播放后卡在浏览态、
+  /// 暂停后 4 秒视口仍被拽回播放句）。
+  ///
+  /// [cue] 为 null 时不给当前行：[clearCue] 为 true 摘掉旧高亮（播放句不在窗口里），
+  /// 为 false 保留原高亮（cue 间隙 / 尚未匹配）。扫过进度只在有当前行时下发。
+  static String overlaySyncScript({
+    required bool playing,
+    ({
+      int index,
+      bool scroll,
+      bool forceReveal,
+      double fraction,
+      double ratePerSec,
+      int sentAtMs,
+    })?
+    cue,
+    bool clearCue = false,
+  }) {
+    final StringBuffer js = StringBuffer();
+    if (cue != null) {
+      js.write(
+        'if(window.__lyricsSetCue)'
+        'window.__lyricsSetCue(${cue.index}, ${cue.scroll});',
+      );
+      // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的 `index===_currentIdx`
+      // 早退会吞掉这次回中 → 打开跟随画面不动。forceReveal 下再显式
+      // __lyricsScrollToCue 强制把当前句居中，绕过早退。
+      if (cue.forceReveal) {
+        js.write(
+          'if(window.__lyricsScrollToCue)'
+          'window.__lyricsScrollToCue(${cue.index});',
+        );
+      }
+    } else if (clearCue) {
+      js.write('if(window.__lyricsSetCue)window.__lyricsSetCue(-1,false);');
+    }
+    js.write(
+      'if(window.__lyricsSetPlaying)window.__lyricsSetPlaying($playing);',
+    );
+    if (cue != null) {
+      // BUG-3777 R2：带上算出 fraction 的墙钟时刻，JS 执行晚了按速率自己补上延迟。
+      js.write(
+        'if(window.__lyricsSetProgress)'
+        'window.__lyricsSetProgress(${cue.index},'
+        '${cue.fraction.toStringAsFixed(4)},'
+        '${cue.ratePerSec.toStringAsFixed(5)},'
+        '${cue.sentAtMs});',
+      );
+    }
+    return js.toString();
+  }
+
   static String _css(Color c) {
     final int r = (c.r * 255.0).round().clamp(0, 255);
     final int g = (c.g * 255.0).round().clamp(0, 255);
@@ -865,20 +922,32 @@ function _lyScheduleResume() {
   if (!_lyPlaying || !_lyBrowsing) return;
   _lyResumeTimer = setTimeout(_lyResume, 4000);
 }
+// 浏览态的唯一写入口：切类名并告诉 Dart（onLyricsBrowse）——Dart 据此决定滑动窗口
+// 锚在播放句（跟随）还是视口中线句（浏览），回到跟随时按播放句重推 / 重开窗口。
+function _lySetBrowsing(on) {
+  if (_lyBrowsing === on) return;
+  _lyBrowsing = on;
+  if (on) document.body.classList.add('ly-browsing');
+  else {
+    clearTimeout(_lyResumeTimer);
+    document.body.classList.remove('ly-browsing');
+  }
+  var bridge = window.flutter_inappwebview;
+  if (!bridge || typeof bridge.callHandler !== 'function') return;
+  try {
+    bridge.callHandler('onLyricsBrowse', on, window.__fushiLyricsLoadGeneration);
+  } catch (e) {}
+}
 function _lyEnterBrowse() {
   if (!_lyThemed() || window.__lyricsCaretActive) return;
   _lyShiftFreeze();
-  if (!_lyBrowsing) {
-    _lyBrowsing = true;
-    document.body.classList.add('ly-browsing');
-  }
+  _lySetBrowsing(true);
   _lyScheduleResume();
 }
 function _lyResume() {
   clearTimeout(_lyResumeTimer);
   if (!_lyBrowsing) return;
-  _lyBrowsing = false;
-  document.body.classList.remove('ly-browsing');
+  _lySetBrowsing(false);
   if (_currentIdx >= 0 && _currentIdx < _cues.length) {
     scrollToCenter(_cues[_currentIdx], 0, true);
   }
@@ -1037,8 +1106,14 @@ function _lyMarkGaps(index, add) {
 
 // ── 滑动窗口（歌词只装整书的一段 cue）──
 // 窗口首 / 末句进入「视口外扩一屏」范围时请 Dart 原地补一段（__lyricsSpliceCues），
-// 不重载文档、不留空白；同一方向在补齐之前只请求一次。
+// 不重载文档、不留空白；同一方向在补齐之前只请求一次。请求带上视口中线句的窗口内
+// 下标：手动浏览时 Dart 以它为锚卸载另一端（窗口常驻有上限，视口内的行不被卸掉）。
 var _lyHasBefore = $hasBeforeJs, _lyHasAfter = $hasAfterJs, _lyEdgeWant = 0;
+function _lyViewAnchorIndex() {
+  if (!__lyricsHasViewport()) return -1;
+  var el = _lyCueAtCenter();
+  return el ? _cues.indexOf(el) : -1;
+}
 function _lyRequestEdge(dir) {
   if (dir > 0 ? !_lyHasAfter : !_lyHasBefore) return;
   var bit = dir > 0 ? 2 : 1;
@@ -1047,9 +1122,13 @@ function _lyRequestEdge(dir) {
   if (!bridge || typeof bridge.callHandler !== 'function') return;
   _lyEdgeWant |= bit;
   try {
-    bridge.callHandler('onLyricsEdge', dir, window.__fushiLyricsLoadGeneration);
+    bridge.callHandler('onLyricsEdge', dir, window.__fushiLyricsLoadGeneration,
+        _lyViewAnchorIndex());
   } catch (e) { _lyEdgeWant &= ~bit; }
 }
+// Dart 这次没有拼接（窗口已到上限且锚点离这一端太远 / 文档未就绪）：复位同向请求位，
+// 下一次首 / 末句进入范围时还能再请求。
+window.__lyricsEdgeIdle = function(dir) { _lyEdgeWant &= ~(dir > 0 ? 2 : 1); };
 
 // 视口附近（上下 / 左右各多算一屏）的行标 .ly-vis，只有它们做过渡（见 CSS）。
 var _lyIo = null;
@@ -1201,7 +1280,9 @@ window.addEventListener('resize', function() {
 // 原地拼接一段 cue（滑动窗口）：先从头 / 尾卸掉 trimHead / trimTail 句（连同它们
 // 与保留段之间的灰显行），再在头部插 prependHtml、尾部插 appendHtml（Dart 端
 // LyricsModeHtml.cueRowsHtml 生成，接缝处的灰显行已含在内），按 DOM 顺序重编号。
-// 拼接前后锚点句（跟随中为当前句，否则视口中线处那句）在屏上的位置不变。
+// 拼接前后锚点句在屏上的位置不变：优先视口中线处那句（用户正看着的行——Dart 按同一
+// 句为锚卸载，它和它前后 kLyricsWindowKeep 句不会被卸掉），中线没有句子时退回当前句。
+// 两者都量好位置，拼接后取第一个仍在文档里的补偿滚动，视口内的行不跳位。
 window.__lyricsSpliceCues = function(prependHtml, appendHtml, trimHead, trimTail, hasBefore, hasAfter) {
   var lc = document.getElementById('lc');
   if (!lc) return;
@@ -1212,8 +1293,12 @@ window.__lyricsSpliceCues = function(prependHtml, appendHtml, trimHead, trimTail
   var caret = window.fushiLyricsCaret;
   var oldCaret = (caret && typeof caret.cueIndex === 'number' &&
       caret.cueIndex >= 0 && caret.cueIndex < len) ? _cues[caret.cueIndex] : null;
-  var anchor = (oldCur && !_lyBrowsing) ? oldCur : _lyCueAtCenter();
-  var before = anchor ? anchor.getBoundingClientRect() : null;
+  var anchors = [];
+  var center = __lyricsHasViewport() ? _lyCueAtCenter() : null;
+  if (center) anchors.push(center);
+  if (oldCur && oldCur !== center) anchors.push(oldCur);
+  var anchorRects = [];
+  for (var a = 0; a < anchors.length; a++) anchorRects.push(anchors[a].getBoundingClientRect());
   var i, n, removed = [];
   if (trimHead > 0) {
     var firstKeep = trimHead < len ? _cues[trimHead] : null;
@@ -1256,10 +1341,13 @@ window.__lyricsSpliceCues = function(prependHtml, appendHtml, trimHead, trimTail
     }
     for (i = 0; i < n; i++) _lyricsFitCue(fresh[i], measured[i], avail, base);
   }
-  if (before && anchor.isConnected) {
-    var after = anchor.getBoundingClientRect();
+  for (a = 0; a < anchors.length; a++) {
+    if (!anchors[a].isConnected) continue;
+    var before = anchorRects[a];
+    var after = anchors[a].getBoundingClientRect();
     var d = __lyricsVertical ? after.left - before.left : after.top - before.top;
     if (Math.abs(d) >= 0.5) _lyricsScrollByAxis(d);
+    break;
   }
   _lyHasBefore = !!hasBefore;
   _lyHasAfter = !!hasAfter;
@@ -1282,6 +1370,8 @@ function setCue(index, scroll) {
     _lySweepReset(_cues[old]);
     _lyMarkGaps(old, false);
   }
+  // index < 0：播放句不在已载窗口里（手动浏览中窗口锚在视口，Dart 不重载）——只摘高亮。
+  if (index < 0 || index >= len) { _currentIdx = -1; return; }
   _lyMarkGaps(index, true);
   for (var i = Math.max(0, index - 3), e = Math.min(len - 1, index + 3); i <= e; i++) {
     var d = Math.abs(i - index);
@@ -1302,11 +1392,7 @@ window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 window.__lyricsScrollToCue = function(index) {
   if (index < 0 || index >= _cues.length) return;
   // 显式回中（跟随 snap / 焦点 caret）同时结束手动浏览态。
-  if (_lyBrowsing) {
-    _lyBrowsing = false;
-    clearTimeout(_lyResumeTimer);
-    document.body.classList.remove('ly-browsing');
-  }
+  _lySetBrowsing(false);
   scrollToCenter(_cues[index], 0, true);
 };
 
@@ -1688,12 +1774,11 @@ function _lyTapEnd(x, y) {
       !window.fushiSelection.getCharacterAtPoint(x, y)) {
     var seekIdx = parseInt(cueEl.getAttribute('data-cue-index'), 10);
     if (!isNaN(seekIdx) && window.flutter_inappwebview) {
-      if (_lyBrowsing) {
-        _lyBrowsing = false;
-        clearTimeout(_lyResumeTimer);
-        document.body.classList.remove('ly-browsing');
-      }
+      // 先回传点句、后退出浏览：Dart 的 onLyricsCueTap 自己回到跟随（以被点的句为
+      // 播放目标），随后的 onLyricsBrowse(false) 就不会抢先按旧播放句重开窗口、让这里
+      // 的窗口内下标失效。
       window.flutter_inappwebview.callHandler('onLyricsCueTap', seekIdx);
+      _lySetBrowsing(false);
     }
     return;
   }

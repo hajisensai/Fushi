@@ -123,6 +123,12 @@ ai:                           # 「AI 下视频」助手会话用的 AI 提供�
   reasoning_effort: "none"    # none / low / medium / high
   allow_insecure_http: false  # 本地推理服务（Ollama / LM Studio）走 http://localhost 时才需要
   web_knowledge: true         # 联网资料（内置维基站）辅助识别作品 / 列系列
+  # web_search:               # 通用联网搜索（可选；省略 = 不联网搜索）。写上即表示同意：
+  #                           # 字幕歌词补齐会抓排名前 3 的结果网页正文交给上面的 AI（按 token 计费）。
+  #                           # 部分 AI 提供商自带联网搜索（有的收费），用那种提供商可以不配置这里
+  #   kind: "searxng"         # searxng / brave
+  #   endpoint: "https://searx.example.org"  # searxng 实例根地址，实例需在 settings.yml 打开 json 格式
+  #   api_key: ""             # brave 的 X-Subscription-Token
 libraries:
   - id: "anime"
     path: "/srv/media/anime"

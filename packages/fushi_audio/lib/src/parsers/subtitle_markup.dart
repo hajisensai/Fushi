@@ -413,9 +413,12 @@ class SubtitleClip {
 /// ASS `\p<n>` 矢量绘图（招牌白底遮罩 / 形状特效）。坐标已按 `2^(n-1)` 缩回脚本像素
 /// 再除以 PlayRes 归一化成分数（与 [SubtitleClip] / [SubtitlePos] 同构，纯 Dart）。
 ///
-/// libass/VSFilter 语义：绘图是一个「字形」，按其**包围盒**参与 `\an` 对齐 / `\pos`
-/// 定位——`{\an7\pos(x,y)\p1}m 100 100 l 200 200` 的包围盒左上角落在 (x,y)，而不是
-/// 绘图坐标原点。故本类同时给出包围盒 [minX]..[maxY]，渲染层据此把路径平移到盒内。
+/// libass 语义（ffmpeg `subtitles` 滤镜实测）：绘图是一个「字形」，其**包围盒尺寸**
+/// （[widthFraction] × [heightFraction]）参与 `\an` 对齐 / `\pos` 定位，但绘图点相对
+/// 该盒左上角按**原坐标**落笔，不减包围盒最小角——`{\an7\pos(0,0)\p1}m 500 300 l
+/// 700 300 700 500 500 500` 画在画面 (500,300)–(700,500)（字幕组招牌遮罩的标准写法）；
+/// `{\an5\pos(960,700)\p1}m 100 100 l 300 100 300 300 100 300` 的盒左上角是 (860,600)、
+/// 方块画在 (960,700)–(1160,900)。
 /// 每个 `m` 起一个子路径，子路径隐式闭合（ASS 绘图恒为填充形状）。
 class SubtitleDrawing {
   final List<SubtitleClipSegment> segments;

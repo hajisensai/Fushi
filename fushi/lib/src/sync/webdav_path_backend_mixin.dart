@@ -84,11 +84,7 @@ mixin WebDavPathBackendMixin on SyncBackend, SyncFolderCache {
         .toList();
 
     // HBK-AUDIT-085: route through the single canonical matcher in sync_utils.
-    return SyncFileTrio(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
+    return syncFileTrioFromFiles(files);
   }
 }
 

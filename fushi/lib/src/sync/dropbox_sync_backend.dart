@@ -298,11 +298,7 @@ class DropboxSyncBackend extends SyncBackend
         )
         .toList();
 
-    return SyncFileTrio(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
+    return syncFileTrioFromFiles(files);
   }
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；

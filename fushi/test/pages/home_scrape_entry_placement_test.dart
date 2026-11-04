@@ -1,77 +1,47 @@
-// 首页视频源后台补刮任务入口的摆放判据（review of PR #2074）。
+// 首页「后台任务」入口（同步 / 复习同步 / 视频源补刮）的摆放判据（review of
+// PR #2074，2026-11-03 并入同步进度后改名）。
 //
 // 回归原样：Apple（Cupertino）下 `_shellFabHostedByBar` 在桌面与移动布局都恒为
-// true，右下补刮 FAB 不再画；替代入口只在外壳大标题行右侧出现——而首页 / 设置 /
+// true，右下 FAB 不再画；替代入口只在外壳大标题行右侧出现——而首页 / 设置 /
 // 浏览器扩展这几个 tab 的外壳大标题行高度为 0（`_shellTitleFor` 返回 null），
-// 按钮根本画不出来。后台补刮跑着时用户既看不到进度也打不开任务面板。
+// 按钮根本画不出来。后台任务跑着时用户既看不到进度也打不开面板。
 //
-// 判据抽成纯函数 [homeScrapeEntryHostedByChrome]，这里逐格钉住；末尾的源码守卫
-// 钉住两套布局都经它赋值、且「标题行可见」与标题条判「有标题」同源。
+// MD3 手机（2026-11-04 用户）：入口不许顶替悬浮底栏的「查词」FAB，而是在它正上方
+// 另叠一颗小环钮——所以 MD3 从不由栏承载，底栏也不再接外壳的页面 FAB。
+//
+// 判据抽成纯函数 [homeBackgroundTasksHostedByChrome]，这里逐格钉住；末尾的源码
+// 守卫钉住两套布局都经它赋值、且「标题行可见」与标题条判「有标题」同源。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 
 void main() {
-  group('homeScrapeEntryHostedByChrome', () {
-    test('Apple：外壳大标题行不可见且页头不带入口（首页 / 设置 / 浏览器扩展）→ 保留 FAB', () {
-      for (final bool mobileLayout in <bool>[false, true]) {
-        expect(
-          homeScrapeEntryHostedByChrome(
-            apple: true,
-            mobileLayout: mobileLayout,
-            shellTitleVisible: false,
-            tabHeaderHasEntry: false,
-          ),
-          isFalse,
-          reason: 'mobileLayout=$mobileLayout：没有页头可承载入口，FAB 不能收走',
-        );
-      }
+  group('homeBackgroundTasksHostedByChrome', () {
+    test('Apple：外壳大标题行不可见（首页 / 设置 / 浏览器扩展）→ 保留 FAB', () {
+      expect(
+        homeBackgroundTasksHostedByChrome(
+          apple: true,
+          shellTitleVisible: false,
+        ),
+        isFalse,
+        reason: '没有标题行可承载入口，FAB 不能收走',
+      );
     });
 
     test('Apple：外壳大标题行可见（库页 / 浏览 / 查词）→ 入口在标题行动作位', () {
-      for (final bool mobileLayout in <bool>[false, true]) {
-        expect(
-          homeScrapeEntryHostedByChrome(
-            apple: true,
-            mobileLayout: mobileLayout,
-            shellTitleVisible: true,
-            tabHeaderHasEntry: false,
-          ),
-          isTrue,
-        );
-      }
-    });
-
-    test('Apple：页头自带入口的 tab（视频库）→ 不再画 FAB', () {
       expect(
-        homeScrapeEntryHostedByChrome(
-          apple: true,
-          mobileLayout: false,
-          shellTitleVisible: true,
-          tabHeaderHasEntry: true,
-        ),
+        homeBackgroundTasksHostedByChrome(apple: true, shellTitleVisible: true),
         isTrue,
       );
     });
 
-    test('MD3：手机并进悬浮底栏，桌面画右下 FAB（与标题行无关）', () {
+    test('MD3：从不由栏承载（手机叠在底栏 FAB 上方，桌面右下），与标题行无关', () {
       for (final bool shellTitleVisible in <bool>[false, true]) {
         expect(
-          homeScrapeEntryHostedByChrome(
+          homeBackgroundTasksHostedByChrome(
             apple: false,
-            mobileLayout: true,
             shellTitleVisible: shellTitleVisible,
-            tabHeaderHasEntry: false,
-          ),
-          isTrue,
-        );
-        expect(
-          homeScrapeEntryHostedByChrome(
-            apple: false,
-            mobileLayout: false,
-            shellTitleVisible: shellTitleVisible,
-            tabHeaderHasEntry: false,
           ),
           isFalse,
         );
@@ -84,18 +54,11 @@ void main() {
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
     expect(
-      src,
-      contains(
-        '_shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: false);',
-      ),
-      reason: '桌面布局',
-    );
-    expect(
-      src,
-      contains(
-        '_shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: true);',
-      ),
-      reason: '移动布局',
+      RegExp(
+        r'_shellFabHostedByBar = _backgroundTasksHostedByChrome\(\);',
+      ).allMatches(src).length,
+      2,
+      reason: '桌面与移动布局各赋值一次',
     );
     expect(
       src,
@@ -107,7 +70,45 @@ void main() {
       isNot(contains('_shellFabHostedByBar = isGlassDesign(context);')),
       reason: '按设计系统一刀切收走 FAB 就是本条回归本身',
     );
-    // 右下 FAB 仍由这一位门控。
-    expect(src, contains('controller.isBusy && !_shellFabHostedByBar'));
+    // 右下 FAB 仍由这一位门控，且同步任务也能点亮它（不只补刮）。
+    expect(src, contains('_hasBackgroundTasks && !_shellFabHostedByBar'));
+    expect(src, contains('_syncTasksActive ||'));
+  });
+
+  test('MD3 手机：入口叠在底栏 FAB 上方，不顶替「查词」FAB', () {
+    final String src = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    expect(
+      src,
+      isNot(contains('materialFab:')),
+      reason: '外壳不再把页面 FAB 塞进悬浮底栏，底栏那颗始终是「查词」',
+    );
+    expect(
+      src,
+      contains('materialNavBarFabExtent('),
+      reason: '叠放的入口中线按底栏 FAB 的实际边长对齐',
+    );
+  });
+
+  test('后台任务入口走设计系统 FushiFab，不画裸 FloatingActionButton', () {
+    final String src = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final int start = src.indexOf('Widget _buildBackgroundTasksFab() {');
+    expect(start, isNonNegative, reason: '入口构建方法不能改名丢失');
+    final int end = src.indexOf('\n  }\n', start);
+    final String body = src.substring(start, end);
+    expect(body, contains('FushiFab('));
+    expect(
+      body,
+      isNot(contains('FloatingActionButton')),
+      reason: '裸 FAB 拿不到 M3E 尺寸档 / 按压形变，Apple 下也不是原生玻璃圆钮',
+    );
+    expect(
+      body,
+      contains('fushiFabMetrics(FushiFabSize.regular)'),
+      reason: '叠放对齐用的边长必须取 FushiFab 自己的尺寸档，不另写死数字',
+    );
   });
 }

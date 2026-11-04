@@ -7,8 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 统计有两条互相独立的通道：聚合快照（sweep，PR#914 已裁）+ per-book
 /// `statistics_*.json`（PR#914 没管）。互联后端**真的实现了**后者
-/// （`InterconnectSyncBackend.updateStatsFile` / `findSyncFileByPrefix(files,
-/// 'statistics_')`），所以「关掉共享统计后 sweep 停了，可每次退出一本书仍把该书统计
+/// （`InterconnectSyncBackend.updateStatsFile` / `syncFileTrioFromFiles` 里的
+/// `findSyncFileByPrefix(files, 'statistics_')`），所以「关掉共享统计后 sweep 停了，可每次退出一本书仍把该书统计
 /// PUT 给互联 host 再 merge 回本地」是真实可达的失败路径，且与 sweep 互相打架
 /// （同一份 per-book 统计，sweep 听互联键、退出书听云键）。
 ///
@@ -119,13 +119,29 @@ void main() {
             '后端的 with 列表里没有它 = 这条通道根本不存在',
       );
 
-      final String mixin = _readSource(
-        'lib/src/sync/webdav_path_backend_mixin.dart',
+      // BUG-4004 之后三件套装配收敛到 sync_utils 的 syncFileTrioFromFiles（各后端
+      // listSyncFiles 与快照 trioFor 的唯一装配点）。链路两跳都钉：mixin 的
+      // listSyncFiles 必须委托给它，它必须把 statistics_ 前缀解进 statistics 槽。
+      final String listSyncFiles = _functionSource(
+        _readSource('lib/src/sync/webdav_path_backend_mixin.dart'),
+        'Future<SyncFileTrio> listSyncFiles(String folderId) async {',
+        '\n  }\n',
       );
       expect(
-        mixin,
-        contains("findSyncFileByPrefix(files, 'statistics_')"),
-        reason: 'mixin 必须把 statistics_ 前缀解成三件套的 statistics 槽',
+        listSyncFiles,
+        contains('return syncFileTrioFromFiles(files);'),
+        reason: 'mixin 的 listSyncFiles 必须走唯一装配点，否则 statistics 槽来源不明',
+      );
+
+      final String assemble = _functionSource(
+        _readSource('lib/src/sync/sync_utils.dart'),
+        'SyncFileTrio syncFileTrioFromFiles(',
+        '\n);\n',
+      );
+      expect(
+        assemble,
+        contains("statistics: findSyncFileByPrefix(files, 'statistics_')"),
+        reason: '装配点必须把 statistics_ 前缀解成三件套的 statistics 槽',
       );
     });
   });

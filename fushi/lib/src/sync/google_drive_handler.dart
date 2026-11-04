@@ -522,15 +522,12 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         q:
             "trashed=false and '$q' in parents "
             "and mimeType!='application/vnd.google-apps.folder'",
-        $fields: 'files(id,name)',
+        $fields: 'nextPageToken,files(id,name)',
       );
 
       final files = list.files?.map(_toSyncFileRef).toList() ?? [];
-      return SyncFileTrio(
-        progress: findSyncFileByPrefix(files, 'progress_'),
-        statistics: findSyncFileByPrefix(files, 'statistics_'),
-        audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-      );
+      // 这里只取第一页：有下一页时文件名清单不完整，不交给调用方当「全部文件」用。
+      return syncFileTrioFromFiles(files, complete: list.nextPageToken == null);
     });
   }
 

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use fushi_rwkv::{
-    ReviewInput, RwkvModel, StatePrecision, MODEL_SHA256, SMALL_MODEL_PACKAGE_SHA256,
+    MODEL_SHA256, ReviewInput, RwkvModel, SMALL_MODEL_PACKAGE_SHA256, StatePrecision,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

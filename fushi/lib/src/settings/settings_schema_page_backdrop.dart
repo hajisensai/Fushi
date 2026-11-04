@@ -4,7 +4,10 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/module_registry.dart' show isHomeTabVisible;
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart'
+    show HomeTab, homeNavItemFor;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -203,6 +206,119 @@ SettingsDestination buildPageBackdropDestination() {
           ),
         ],
       ),
+      // 按模块单独设置（反馈 DYI1IOZxSM）：每个主导航模块一行，点进去选这个模块
+      // 自己的预设 / 图片；没设的模块跟随上面的全局背景。
+      SettingsSection(
+        id: 'appearance.page_backdrop.section.modules',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        liveListenable: (_) => pageBackdropModuleOverrides,
+        title: t.page_backdrop_module_section,
+        footer: t.page_backdrop_module_hint,
+        items: <SettingsItem>[
+          for (final HomeTab tab in HomeTab.values) _moduleEntry(tab),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「按模块设置」里一个模块的入口行。设置 tab 恒在，保证本分组至少一行可见。
+SettingsNavigationItem _moduleEntry(HomeTab tab) {
+  final String wire = pageBackdropModuleWire(tab);
+  return SettingsNavigationItem(
+    id: 'appearance.page_backdrop.module.$wire',
+    title: homeNavItemFor(tab).label,
+    icon: homeNavItemFor(tab).icon,
+    subtitleBuilder: (SettingsContext c) => _moduleSummary(tab),
+    visible: (SettingsContext c) =>
+        isHomeTabVisible(tab, c.appModel.moduleVisibility),
+    child: () => buildPageBackdropModuleDestination(tab),
+  );
+}
+
+String _moduleSummary(HomeTab tab) {
+  final PageBackdropModuleOverride? override =
+      pageBackdropModuleOverrides.value[tab];
+  if (override == null) return t.page_backdrop_module_follow_global;
+  return _presetLabel(override.preset);
+}
+
+/// 一个模块自己的背景子页：预设（多一个「跟随全局」）+ 选了自定义图片时的图片行。
+/// 强度 / 模糊 / 遮罩 / 动效与配色沿用全局，不在这里重复。
+SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
+  final String wire = pageBackdropModuleWire(tab);
+  final String prefix = 'appearance.page_backdrop.module.$wire';
+  PageBackdropModuleOverride? override() =>
+      pageBackdropModuleOverrides.value[tab];
+  return SettingsDestination(
+    id: SettingsDestinationId.appearance,
+    title: homeNavItemFor(tab).label,
+    summary: t.page_backdrop_module_hint,
+    icon: homeNavItemFor(tab).icon,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: '$prefix.section.style',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        liveListenable: (_) => pageBackdropModuleOverrides,
+        title: t.page_backdrop_style,
+        footer: t.page_backdrop_module_hint,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: '$prefix.preset',
+            icon: FushiIcons.pageBackdrop,
+            searchTitle: t.page_backdrop_style,
+            builder: (SettingsContext settingsContext) =>
+                _PageBackdropPresetPicker(
+                  settingsContext: settingsContext,
+                  module: tab,
+                ),
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: '$prefix.section.image',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        liveListenable: (_) => pageBackdropModuleOverrides,
+        title: t.page_backdrop_preset_custom,
+        visible: (_) => override()?.preset == PageBackdropPreset.custom,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: '$prefix.image',
+            title: t.page_backdrop_image,
+            subtitleBuilder: (SettingsContext c) =>
+                override()?.landscapeImagePath == null
+                ? t.page_backdrop_image_empty
+                : t.page_backdrop_image_set,
+            icon: FushiIcons.image,
+            onTap: (SettingsContext c) =>
+                pickPageBackdropImage(c, portrait: false, module: tab),
+          ),
+          SettingsNavigationItem(
+            id: '$prefix.portrait_image',
+            title: t.page_backdrop_portrait_image,
+            subtitleBuilder: (SettingsContext c) =>
+                override()?.portraitImagePath == null
+                ? t.page_backdrop_portrait_image_shared
+                : t.page_backdrop_image_set,
+            icon: FushiIcons.portraitImage,
+            visible: (_) => override()?.landscapeImagePath != null,
+            onTap: (SettingsContext c) =>
+                pickPageBackdropImage(c, portrait: true, module: tab),
+          ),
+          SettingsNavigationItem(
+            id: '$prefix.portrait_image_clear',
+            title: t.page_backdrop_portrait_image_clear,
+            icon: FushiIcons.restart,
+            visible: (_) =>
+                override()?.landscapeImagePath != null &&
+                override()?.portraitImagePath != null,
+            onTap: (SettingsContext c) async {
+              await _theme(c).clearPageBackdropModulePortraitImage(tab);
+              c.refresh();
+            },
+          ),
+        ],
+      ),
     ],
   );
 }
@@ -214,7 +330,8 @@ bool _isShapePreset(ThemeNotifier theme) => switch (theme.pageBackdropPreset) {
   _ => true,
 };
 
-/// 选一张图当背景（[portrait] = 竖屏单独的那张）。取消什么都不做。
+/// 选一张图当背景（[portrait] = 竖屏单独的那张；[module] 非空 = 只给这个模块）。
+/// 取消什么都不做。
 ///
 /// 任何一步失败（选图器的平台异常 / 权限、复制、数据目录、偏好写入）都告诉用户
 /// 并记应用日志——不只是复制时的 [FileSystemException]，否则别的失败会变成
@@ -222,13 +339,21 @@ bool _isShapePreset(ThemeNotifier theme) => switch (theme.pageBackdropPreset) {
 Future<void> pickPageBackdropImage(
   SettingsContext settingsContext, {
   required bool portrait,
+  HomeTab? module,
 }) async {
   try {
     final File? picked = await pickGalleryImageFile();
     if (picked == null) return;
-    await _theme(
-      settingsContext,
-    ).importPageBackdropImage(picked, portrait: portrait);
+    final ThemeNotifier theme = _theme(settingsContext);
+    if (module == null) {
+      await theme.importPageBackdropImage(picked, portrait: portrait);
+    } else {
+      await theme.importPageBackdropModuleImage(
+        module,
+        picked,
+        portrait: portrait,
+      );
+    }
   } catch (error, stack) {
     ErrorLogService.instance.log('page_backdrop.import_image', error, stack);
     final BuildContext ctx = settingsContext.context;
@@ -265,89 +390,173 @@ double _presetRowHeight(BuildContext context, ThemeData theme) {
 
 /// 横向预设缩略图：每张都是真实的背景层按当前配色缩小画出来；选中项圆角变大 +
 /// 描边 + 勾（M3E 形变）。选「自定义图片」还没有图时直接弹选图。
+///
+/// [module] 非空时是某个模块自己的选择器：最前面多一张「跟随全局」（画的是全局
+/// 背景），自定义图片用这个模块自己的图。
 class _PageBackdropPresetPicker extends StatelessWidget {
-  const _PageBackdropPresetPicker({required this.settingsContext});
+  const _PageBackdropPresetPicker({required this.settingsContext, this.module});
 
   final SettingsContext settingsContext;
+  final HomeTab? module;
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<PageBackdropSettings>(
-      valueListenable: pageBackdropSettings,
-      builder:
-          (BuildContext context, PageBackdropSettings settings, Widget? _) {
-            final ThemeData theme = Theme.of(context);
-            final bool apple = isGlassDesign(context);
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(
-                    // 缩略图 70 + 间距 6 + 两行标签：标签行高随系统字号放大，
-                    // 写死 112 在大字号下两行标签会把格子撑出这一行。
-                    height: _presetRowHeight(context, theme),
-                    // 桌面鼠标按住横拖也要能滚（默认 dragDevices 不含鼠标）。
-                    child: HorizontalDragScrollable(
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        itemCount: PageBackdropPreset.values.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 12),
-                        itemBuilder: (BuildContext context, int index) {
-                          final PageBackdropPreset preset =
-                              PageBackdropPreset.values[index];
-                          return _PresetTile(
-                            preset: preset,
-                            settings: settings,
-                            selected: settings.preset == preset,
-                            onTap: () => _select(preset, settings),
-                          );
-                        },
-                      ),
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[
+        pageBackdropSettings,
+        pageBackdropModuleOverrides,
+      ]),
+      builder: (BuildContext context, Widget? _) {
+        final ThemeData theme = Theme.of(context);
+        final bool apple = isGlassDesign(context);
+        final List<_PresetChoice> choices = _choices();
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(
+                // 缩略图 70 + 间距 6 + 两行标签：标签行高随系统字号放大，
+                // 写死 112 在大字号下两行标签会把格子撑出这一行。
+                height: _presetRowHeight(context, theme),
+                // 桌面鼠标按住横拖也要能滚（默认 dragDevices 不含鼠标）。
+                child: HorizontalDragScrollable(
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: choices.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (BuildContext context, int index) {
+                      final _PresetChoice choice = choices[index];
+                      return _PresetTile(
+                        label: choice.label,
+                        preview: choice.preview,
+                        needsImage: choice.needsImage,
+                        selected: choice.selected,
+                        onTap: () => _select(choice),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              if (apple)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: Text(
+                    t.page_backdrop_apple_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  if (apple)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                      child: Text(
-                        t.page_backdrop_apple_hint,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Future<void> _select(
-    PageBackdropPreset preset,
-    PageBackdropSettings settings,
-  ) async {
-    if (preset == PageBackdropPreset.custom &&
-        settings.landscapeImagePath == null) {
-      await pickPageBackdropImage(settingsContext, portrait: false);
+  /// 本选择器的格子：全局选择器是全部预设；模块选择器先是「跟随全局」再是全部预设。
+  List<_PresetChoice> _choices() {
+    final PageBackdropSettings global = pageBackdropSettings.value;
+    final HomeTab? tab = module;
+    if (tab == null) {
+      return <_PresetChoice>[
+        for (final PageBackdropPreset preset in PageBackdropPreset.values)
+          _PresetChoice(
+            preset: preset,
+            label: _presetLabel(preset),
+            preview: global.copyWith(preset: preset),
+            needsImage:
+                preset == PageBackdropPreset.custom &&
+                global.landscapeImagePath == null,
+            selected: global.preset == preset,
+          ),
+      ];
+    }
+    final PageBackdropModuleOverride? override =
+        pageBackdropModuleOverrides.value[tab];
+    return <_PresetChoice>[
+      _PresetChoice(
+        preset: null,
+        label: t.page_backdrop_module_follow_global,
+        preview: global,
+        needsImage: false,
+        selected: override == null,
+      ),
+      for (final PageBackdropPreset preset in PageBackdropPreset.values)
+        _PresetChoice(
+          preset: preset,
+          label: _presetLabel(preset),
+          preview: resolvePageBackdropSettings(
+            global,
+            PageBackdropModuleOverride(
+              preset: preset,
+              landscapeImagePath: override?.landscapeImagePath,
+              portraitImagePath: override?.portraitImagePath,
+            ),
+          ),
+          needsImage:
+              preset == PageBackdropPreset.custom &&
+              override?.landscapeImagePath == null,
+          selected: override?.preset == preset,
+        ),
+    ];
+  }
+
+  Future<void> _select(_PresetChoice choice) async {
+    final ThemeNotifier theme = settingsContext.appModel.themeNotifier;
+    final HomeTab? tab = module;
+    if (choice.needsImage) {
+      await pickPageBackdropImage(
+        settingsContext,
+        portrait: false,
+        module: tab,
+      );
       return;
     }
-    await settingsContext.appModel.themeNotifier.setPageBackdropPreset(preset);
+    if (tab != null) {
+      await theme.setPageBackdropModulePreset(tab, choice.preset);
+    } else if (choice.preset case final PageBackdropPreset preset) {
+      await theme.setPageBackdropPreset(preset);
+    }
     settingsContext.refresh();
   }
 }
 
+/// 选择器里的一格。[preset] 为 null = 模块的「跟随全局」。
+class _PresetChoice {
+  const _PresetChoice({
+    required this.preset,
+    required this.label,
+    required this.preview,
+    required this.needsImage,
+    required this.selected,
+  });
+
+  final PageBackdropPreset? preset;
+  final String label;
+  final PageBackdropSettings preview;
+  final bool needsImage;
+  final bool selected;
+}
+
 class _PresetTile extends StatelessWidget {
   const _PresetTile({
-    required this.preset,
-    required this.settings,
+    required this.label,
+    required this.preview,
+    required this.needsImage,
     required this.selected,
     required this.onTap,
   });
 
-  final PageBackdropPreset preset;
-  final PageBackdropSettings settings;
+  final String label;
+
+  /// 缩略图画的设置（真实背景层缩小）。
+  final PageBackdropSettings preview;
+
+  /// 选「自定义图片」但还没有图：画「加图片」图标，点了直接选图。
+  final bool needsImage;
   final bool selected;
   final VoidCallback onTap;
 
@@ -356,10 +565,6 @@ class _PresetTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    final bool needsImage =
-        preset == PageBackdropPreset.custom &&
-        settings.landscapeImagePath == null;
-    final String label = _presetLabel(preset);
     // M3E 选中形变：小件圆角 → 卡片圆角（取形状分级 token，不手写数字）。
     final BorderRadius radius = selected
         ? FushiM3eShape.cardRadius
@@ -396,10 +601,7 @@ class _PresetTile extends StatelessWidget {
                       if (needsImage)
                         Icon(FushiIcons.addImage, color: cs.onSurfaceVariant)
                       else
-                        PageBackdropLayer(
-                          settings: settings.copyWith(preset: preset),
-                          animate: false,
-                        ),
+                        PageBackdropLayer(settings: preview, animate: false),
                       Positioned(
                         right: 6,
                         top: 6,

@@ -1190,7 +1190,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           dictionaryFontSize: appModel.dictionaryFontSize,
         ),
         overlayWidget: isTop ? buildDictionaryLoading() : null,
-        onTextSelected: (text, localRect, rubySpans) async {
+        onTextSelected: (text, localRect, rubySpans, _) async {
           final childRect = localRect == Rect.zero
               ? item.selectionRect
               : popupWordScreenRect(

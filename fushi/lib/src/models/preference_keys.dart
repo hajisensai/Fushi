@@ -43,6 +43,13 @@ const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 /// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
 const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 
+/// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
+/// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
+/// 设备本地：同意的是这台设备上配的那个后端。
+const String kAiWebSearchPageFetchPref = 'ai_web_search_page_fetch';
+const String kAiWebSearchPageFetchAllow = 'allow';
+const String kAiWebSearchPageFetchDeny = 'deny';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -52,6 +59,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 字符串数组，缺键 = 从没选过）：「高级制卡」卡片字段分区里显示（可编辑）
   // 的 Anki 字段名（反馈 -K86qlwBg6）。缺键时对话框按映射挑释义类字段作默认。
   'advanced_mining_visible_fields',
+  // String（默认 '' = 自动）：AI 助手在哪执行（BUG-4067「本地 AI / 远端 AI」切换）。
+  // 'local' = 本机指派的提供商；'remote' = 「下载执行设备」那台已配对设备；'' = 本机
+  // 配了 AI 就本机、否则远端（升级前的行为）。设备本地：远端指向的是这台设备的配对。
+  'ai_agent_executor',
   // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
@@ -98,6 +109,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // String（JSON）：AI 通用联网搜索后端 `{kind: searxng|brave, endpoint, apiKey}`
+  // （`WebSearchConfig`）。Brave API key 以 base64 `apiKeyB64` 存（与 ai_providers 同
+  // 口径）→ 凭据 + 设备本地。
+  'ai_web_search',
+  // String：见 [kAiWebSearchPageFetchPref]。非凭据，设备本地。
+  kAiWebSearchPageFetchPref,
   // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
   kAnkiSettingsPrefKey,
   'app_locale',
@@ -124,8 +141,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
   'audiobookshelf_show_in_home',
   'auto_add_book_name_to_tags',
-  // bool：小说阅读器制卡时给卡片追加「制卡所在字符数」标签（`chars_12345`，
-  // countStudyChars 口径的全书绝对位置）。默认开。
+  // bool：小说阅读器制卡时把制卡位置（countStudyChars 口径的全书绝对位置）写进
+  // MiscInfo（等价）字段。冻结键名：原语义是 `chars_12345` 标签（反馈 MhQHXQI-sB 改）。
   'auto_add_char_position_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
@@ -437,6 +454,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
   'mining_audio_tail_pad_ms',
+  // int（0 = 关）：桌面小组件的「每日制卡张数」目标（2026-11，Profile 内）。
+  'mining_goal_daily_cards',
   // 封面模式迁到片段默认的一次性标记（历史键名），见
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
@@ -570,6 +589,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'page_backdrop_image_landscape',
   'page_backdrop_image_portrait',
   'page_backdrop_image_scrim',
+  // String（JSON）：按模块单独设的背景（反馈 DYI1IOZxSM）。图片路径表设备本地，
+  // 预设表随 Profile；没出现的模块跟随全局。
+  'page_backdrop_module_images',
+  'page_backdrop_module_presets',
   'page_backdrop_motion',
   'page_backdrop_preset',
   'page_backdrop_seed_cache',
@@ -652,12 +675,20 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
+  // String（JSON 数组 [{name, query}]，SrsBrowseSavedView）：复习卡片浏览器里用户存的视图
+  // （名字 + Anki 搜索语法）。缺省 '' = 没有。非凭据、跨设备（随 Profile / 备份；不进复习同步）。
+  'srs_browse_saved_views',
+  // String（列名逗号连接，SrsBrowseTableColumn.name）：复习卡片浏览器表格模式选了哪些列、按什么顺序。
+  // 缺省 '' = 默认列。非凭据、跨设备（随 Profile / 备份；不进复习同步）。
+  'srs_browse_table_columns',
   // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
   // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
   // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：
   // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
   // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
   'srs_card_appearance',
+  // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
+  'srs_goal_daily_reviews',
   'srs_import_anki_options',
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
@@ -726,6 +757,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。
   // 设备本地键：值是本库自增 id，不进 Profile 快照、不随备份 / 分享出境。
   'stats_legacy_profile_id',
+  // int（0 = 关）：每日学习目标分钟数（沉浸总时长 / 阅读 / 听力 / 视频；Profile 内），
+  // 桌面小组件「目标」卡的数据源。
+  'study_goal_daily_listening_minutes',
+  'study_goal_daily_minutes',
+  'study_goal_daily_reading_minutes',
+  'study_goal_daily_video_minutes',
   // bool，默认 true：自动下载的外挂字幕按视频内嵌字幕轨对时间轴
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',
@@ -973,6 +1010,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
+  // bool（默认 false）：Android 桌面小组件默认隐藏书名 / 视频标题 / 释义 / Profile 名。
+  // 描述这台设备的桌面，设备本地（deviceLocalPrefKeys + ProfileKeys 排除）。
+  'widget_privacy_hide_definitions',
+  'widget_privacy_hide_profile',
+  'widget_privacy_hide_titles',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',
@@ -1041,6 +1083,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // 联网搜索配置 JSON 里的 Brave API key。
+  'ai_web_search',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

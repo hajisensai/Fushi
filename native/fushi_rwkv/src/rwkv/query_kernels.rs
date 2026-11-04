@@ -19,8 +19,8 @@
 
 use std::arch::aarch64::*;
 
-use super::HEADS;
 use super::HEAD_SIZE;
+use super::HEADS;
 
 // The head kernels place one head per vector lane.
 const _: () = assert!(HEADS == 4 && HEAD_SIZE % 16 == 0);

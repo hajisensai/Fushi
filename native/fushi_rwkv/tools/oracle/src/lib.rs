@@ -24,5 +24,9 @@ pub mod scheduler {
     }
 }
 
+// rustfmt::skip: the upstream module is compiled verbatim and only exists in an
+// untracked `./upstream` checkout, so rustfmt must neither open nor reformat it
+// (tool/rust_format.sh formats this crate's own files).
+#[rustfmt::skip]
 #[path = "../upstream/rslib/src/rwkv/mod.rs"]
 pub mod rwkv;

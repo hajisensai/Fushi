@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Dvv {
@@ -43,24 +43,35 @@ impl Dvv {
     }
 
     pub fn parse(text: &str) -> Dvv {
-        serde_json::from_str::<Value>(text).map(|v| Dvv::from_json(&v)).unwrap_or_default()
+        serde_json::from_str::<Value>(text)
+            .map(|v| Dvv::from_json(&v))
+            .unwrap_or_default()
     }
 
     /// Dart `toJson`：vv 键排序；cloud 为空时不输出。
     pub fn to_json(&self) -> Value {
         let mut m = Map::new();
-        m.insert("vv".into(), Value::Object(self.vv.iter().map(|(k, v)| (k.clone(), json!(v))).collect()));
+        m.insert(
+            "vv".into(),
+            Value::Object(self.vv.iter().map(|(k, v)| (k.clone(), json!(v))).collect()),
+        );
         if !self.cloud.is_empty() {
             m.insert(
                 "cloud".into(),
-                Value::Object(self.cloud.iter().map(|(k, s)| (k.clone(), json!(s.iter().collect::<Vec<_>>()))).collect()),
+                Value::Object(
+                    self.cloud
+                        .iter()
+                        .map(|(k, s)| (k.clone(), json!(s.iter().collect::<Vec<_>>())))
+                        .collect(),
+                ),
             );
         }
         Value::Object(m)
     }
 
     pub fn contains(&self, writer: &str, seq: i64) -> bool {
-        seq <= self.vv.get(writer).copied().unwrap_or(0) || self.cloud.get(writer).is_some_and(|s| s.contains(&seq))
+        seq <= self.vv.get(writer).copied().unwrap_or(0)
+            || self.cloud.get(writer).is_some_and(|s| s.contains(&seq))
     }
 
     pub fn add(&mut self, writer: &str, seq: i64) {
@@ -90,7 +101,10 @@ impl Dvv {
             }
         }
         for (k, s) in &other.cloud {
-            self.cloud.entry(k.clone()).or_default().extend(s.iter().copied());
+            self.cloud
+                .entry(k.clone())
+                .or_default()
+                .extend(s.iter().copied());
         }
         self.compact();
     }
@@ -141,7 +155,10 @@ mod tests {
     #[test]
     fn json_shape_and_compaction_match_dart() {
         let d = Dvv::parse(r#"{"vv":{"b":2,"a":1},"cloud":{"a":[2,3,5],"b":[1,9]}}"#);
-        assert_eq!(d.to_json().to_string(), r#"{"cloud":{"a":[5],"b":[9]},"vv":{"a":3,"b":2}}"#);
+        assert_eq!(
+            d.to_json().to_string(),
+            r#"{"cloud":{"a":[5],"b":[9]},"vv":{"a":3,"b":2}}"#
+        );
         assert!(d.contains("a", 3) && d.contains("a", 5) && !d.contains("a", 4));
         let mut e = Dvv::default();
         assert_eq!(e.to_json().to_string(), r#"{"vv":{}}"#);

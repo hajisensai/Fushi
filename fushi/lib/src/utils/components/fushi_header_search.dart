@@ -266,15 +266,24 @@ class FushiHeaderSearchKeys extends StatelessWidget {
         !keyboard.isMetaPressed;
   }
 
+  /// [event] 是否命中当前生效的 [ShortcutAction.librarySearch] 绑定（读用户
+  /// 绑定、裸键在输入框里放行）。页头搜索与常驻搜索框（[FushiSearchFocusKeys]）
+  /// 共用这一份判据。
+  static bool matchesLibrarySearch(BuildContext context, KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    for (final InputBinding binding in _bindings(context)) {
+      if (_matches(binding, event)) return true;
+    }
+    return false;
+  }
+
   KeyEventResult _onKey(BuildContext context, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final FushiHeaderSearchController? search = resolve();
     if (search == null) return KeyEventResult.ignored;
-    for (final InputBinding binding in _bindings(context)) {
-      if (_matches(binding, event)) {
-        search.expand();
-        return KeyEventResult.handled;
-      }
+    if (matchesLibrarySearch(context, event)) {
+      search.expand();
+      return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.escape &&
         search.expanded &&
@@ -287,6 +296,52 @@ class FushiHeaderSearchKeys extends StatelessWidget {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode _, KeyEvent event) => _onKey(context, event),
+      child: child,
+    );
+  }
+}
+
+/// 常驻搜索框（不是页头里可展开的搜索）的搜索快捷键：命中
+/// [ShortcutAction.librarySearch] 的绑定（默认 Ctrl+F / macOS ⌘F 与 `/`）时把焦点
+/// 交给 [focusNode] 并全选 [controller] 里已有的查询。判据与
+/// [FushiHeaderSearchKeys] 同一份（[FushiHeaderSearchKeys.matchesLibrarySearch]）。
+///
+/// 包在页面内容外面：焦点在卡片、按钮或分段上都认。[focusNode] 当前没挂在树上
+/// （搜索框随列表滚出视口被回收）时放行，不吞键。
+class FushiSearchFocusKeys extends StatelessWidget {
+  const FushiSearchFocusKeys({
+    required this.focusNode,
+    required this.child,
+    this.controller,
+    super.key,
+  });
+
+  final FocusNode focusNode;
+  final TextEditingController? controller;
+  final Widget child;
+
+  KeyEventResult _onKey(BuildContext context, KeyEvent event) {
+    if (focusNode.context == null) return KeyEventResult.ignored;
+    if (!FushiHeaderSearchKeys.matchesLibrarySearch(context, event)) {
+      return KeyEventResult.ignored;
+    }
+    focusNode.requestFocus();
+    final TextEditingController? controller = this.controller;
+    if (controller != null) {
+      controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: controller.text.length,
+      );
+    }
+    return KeyEventResult.handled;
   }
 
   @override

@@ -371,8 +371,7 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
             PlatformInAppWebViewController.debugLoggingSettings,
         method: "onCreationError",
         args: [error.toString()]);
-    final void Function(PlatformInAppWebViewController, WebResourceRequest,
-        WebResourceError)? onReceivedError = params.onReceivedError;
+    final onReceivedError = params.onReceivedError;
     if (onReceivedError == null) {
       return;
     }
@@ -381,8 +380,17 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
       type: WebResourceErrorType.UNKNOWN,
       description: '$kInAppWebViewCreationFailedSentinel: $error',
     );
-    onReceivedError(_controller ?? WindowsInAppWebViewController.static(),
-        request, webError);
+    // BUG-4073: 与 onWebViewCreated / 控制器事件分发一致，先经
+    // controllerFromPlatform 转成 app-facing 控制器。app-facing 包装层的回调
+    // 期望 InAppWebViewController，直接传平台控制器会 TypeError，sentinel
+    // 恢复链永远到不了上层。
+    final PlatformInAppWebViewController platformController =
+        _controller ?? WindowsInAppWebViewController.static();
+    onReceivedError(
+        params.controllerFromPlatform?.call(platformController) ??
+            platformController,
+        request,
+        webError);
   }
 
   void _inferInitialSettings(InAppWebViewSettings settings) {

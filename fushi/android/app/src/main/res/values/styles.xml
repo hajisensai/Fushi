@@ -26,4 +26,5 @@
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
+    <style name="WidgetConfigTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
 </resources>

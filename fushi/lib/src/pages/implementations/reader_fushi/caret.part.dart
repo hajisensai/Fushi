@@ -622,8 +622,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         // 两级都在**本页**消费，不再依赖「返回 ignored → 冒泡到最外层硬编码 Esc」
         // 那条隐形链路：那条链路让退书行为与设置页显示的键位对不上（设置页写
         // Ctrl+W，实际 Esc 也能退），也让改键改不动真正生效的那个键。
-        //   歌词覆盖层在场时同样直接退书回书架（反馈 NaFaJbaAdc），不先掀开歌词层；
-        //   与系统返回（PopScope）同一条阶梯，单点在 [resolveReaderBackStep]。
+        //   歌词模式下也一样直接退书回书架（BUG-4026：原先 Esc 先掀开歌词层回正文、
+        //   再按一次才退，与系统返回 / 歌词层 × 不一致）；退书不关歌词层，这本书仍
+        //   记着歌词模式。阶梯单点在 [resolveReaderBackStep]。
         switch (resolveReaderBackStep(dictionaryShown: isDictionaryShown)) {
           case ReaderBackStep.closeDictionary:
             clearDictionaryResult();
@@ -827,6 +828,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
 
   /// Fully leave cursor mode — hide the ring on whichever surface holds it.
   void _exitCaret() {
+    final bool leftLyrics = _caretSurface == CaretSurface.lyrics;
     switch (_caretSurface) {
       case CaretSurface.none:
         return;
@@ -858,6 +860,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
       _caretSurface = CaretSurface.none;
       _caret.popupState = null;
     });
+    // 焦点环在歌词上时滑动窗口锚在焦点环的视口；退出 = 回到跟随，按播放句重推一次
+    // （播放句已不在窗口里时以它为锚重开窗口）。
+    if (leftLyrics) _resyncLyricsOverlayToAudio();
   }
 
   /// Whether [action] is a cursor MOVEMENT that may fire on keyboard auto-repeat
