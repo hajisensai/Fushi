@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// 页面背景的装饰层：按 [PageBackdropSettings] 画一种预设（形状 / 渐变 / 波浪 /
 /// 用户图片）。颜色一律取当前主题的 container 色阶，深浅色与动态取色自动跟随。
@@ -314,27 +314,28 @@ class _PageBackdropLayerState extends State<PageBackdropLayer>
       policy: ResizeImagePolicy.fit,
       allowUpscaling: false,
     );
-    Widget image = Image(
-      image: provider,
-      fit: BoxFit.cover,
-      width: size.width,
-      height: size.height,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.medium,
-      errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-          const SizedBox.shrink(),
-    );
     final double sigma = s.blur.sigma;
-    if (sigma > 0) {
-      image = ImageFiltered(
-        imageFilter: ui.ImageFilter.blur(
-          sigmaX: sigma,
-          sigmaY: sigma,
-          tileMode: TileMode.clamp,
-        ),
-        child: image,
-      );
-    }
+    // 模糊档走预烘焙（[PrebakedBlurImage]）而不是渲染期 ImageFiltered：这层垫在
+    // 每一页底下，渲染期模糊是整屏一次高斯卷积，Impeller 没有 raster cache，页面
+    // 上任何滚动 / 动画的每一帧都要重算；烘焙只在图或视口尺寸变化时做一次，各路由
+    // 同一张图共用一份烘焙结果。
+    final Widget image = sigma > 0
+        ? PrebakedBlurImage(
+            image: provider,
+            sigma: sigma,
+            tileMode: TileMode.clamp,
+          )
+        : Image(
+            image: provider,
+            fit: BoxFit.cover,
+            width: size.width,
+            height: size.height,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+            errorBuilder:
+                (BuildContext context, Object error, StackTrace? stack) =>
+                    const SizedBox.shrink(),
+          );
     final Color surface = cs.surface;
     return Stack(
       fit: StackFit.expand,

@@ -145,10 +145,24 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     if (result == MineResult.notConfigured.name) {
       return const MineOutcome.notConfigured();
     }
+    // 反馈 E52FUMdbR6：请求送到了主机，是主机那边的 Anki 没制成卡。主机回的文案
+    // （如「连不上 AnkiConnect」）原样当失败原因会被读成本机的问题——用户开着
+    // 「制卡到已配对设备」、本机却是 AnkiMobile，根本看不出卡发去了电脑。分类成
+    // [AnkiErrorCode.pairedDeviceMineFailed]，主 app 把原因包进「服务端上的 Anki
+    // 制卡失败：…」；主机侧分类码进诊断日志。
+    final String reason =
+        message ??
+        detail ??
+        'The Fushi Interconnect server failed to create the card.';
+    final String? hostCode = json['errorCode'] as String?;
     return MineOutcome.failure(
-      message ??
-          detail ??
-          'The Fushi Interconnect server failed to create the card.',
+      reason,
+      errorCode: AnkiErrorCode.pairedDeviceMineFailed,
+      error: StateError(
+        'Fushi Interconnect server could not create the card'
+        '${hostCode == null ? '' : ' ($hostCode)'}: '
+        '${detail ?? reason}',
+      ),
     );
   }
 

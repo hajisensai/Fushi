@@ -368,6 +368,41 @@ void main() {
     expect(note.noteTypeId, store.fushiCardNoteTypeId);
   });
 
+  test('落地（反馈 0h0e_6fqhY）：高级制卡选的牌组按全名覆写本次落地，不改偏好；名字对不上回落偏好牌组', () async {
+    final String preferred = await store.createDeck('Mining');
+    final String parent = await store.createDeck('Books');
+    final String child = await store.createDeck('Novel', parentId: parent);
+    String withDeck(String expression, String deckName) {
+      final Map<String, String> fields = MiningRequestOverrides.attach(
+        Map<String, String>.from(
+          (jsonDecode(_payload(expression, 'よみ')) as Map<String, dynamic>)
+              .cast<String, String>(),
+        ),
+        MiningRequestOverrides(deckName: deckName),
+      );
+      return jsonEncode(fields);
+    }
+
+    final SrsMiningAnkiRepository repo = repoWith(
+      SrsMiningDestination(deckId: preferred),
+    );
+    final MineOutcome out = await repo.mineEntry(
+      rawPayloadJson: withDeck('雪', 'Books::Novel'),
+      context: bookContext(),
+    );
+    expect(out.result, MineResult.success);
+    expect(out.deckName, 'Books::Novel');
+    expect((await noteOf('雪', 'よみ')).deckId, child);
+
+    final MineOutcome missing = await repo.mineEntry(
+      rawPayloadJson: withDeck('雨', 'Nope'),
+      context: bookContext(),
+    );
+    expect(missing.result, MineResult.success);
+    expect(missing.deckName, 'Mining');
+    expect((await noteOf('雨', 'よみ')).deckId, preferred);
+  });
+
   test('落地：明确选了 Lapis 的仍落 Lapis（只改「没选过」的默认）', () async {
     final MineOutcome out = await repoWith(
       SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
