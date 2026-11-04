@@ -26,6 +26,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
@@ -1655,11 +1656,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     await ref
         .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(
+        .enterWorkSession(
+          owner: this,
           bookUid: widget.bookKey,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.manga,
-          restoreFallback: true,
         );
   }
 
@@ -1718,6 +1719,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
+    WorkProfileScope.instance.leave(this);
     _pageCurlDrag = null;
     _pageCurl?.dispose();
     _pageCurl = null;

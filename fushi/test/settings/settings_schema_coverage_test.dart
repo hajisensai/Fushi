@@ -1579,7 +1579,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 八个媒体类型绑定写的是 `media_type_profiles` 表，getAllPrefs() 的 diff 结构上
   // 看不到。穷尽断言「每个 ProfileMediaKind 都有绑定行」+ 表级往返 + resolveProfileId
   // 优先级链共同咬住；epub/srtbook/audiobook/lyrics 四类共用同一条
-  // resolveProfileId/autoApplyBinding 链，没有逐类型 guard。
+  // resolveProfileId/enterWorkSession 链，没有逐类型 guard。
   'profiles/Book': _kMediaTypeBindingEvidence,
   'profiles/Subtitle book': _kMediaTypeBindingEvidence,
   'profiles/Audiobook': _kMediaTypeBindingEvidence,
@@ -1747,7 +1747,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /
-/// autoApplyBinding 链 + 同一张 `media_type_profiles` 表）。
+/// enterWorkSession 链 + 同一张 `media_type_profiles` 表）。
 const String _kMediaTypeBindingEvidence =
     'test/profile/media_type_binding_new_kinds_guard_test.dart + '
     'test/profile/media_type_binding_video_guard_test.dart + '

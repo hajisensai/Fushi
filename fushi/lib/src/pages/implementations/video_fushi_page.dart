@@ -377,6 +377,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -3872,7 +3873,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // `_bookRow` 此刻还没赋值，所以这里自己读一次（主键查询）。远端视频没有本地
     // 行 → language 为 null → 语言级整级跳过，落到 'video' 媒体类型绑定。
     //
-    // 查询失败必须与 autoApplyBinding 一样非致命：这条链绝不能打断视频加载。
+    // 查询失败必须与 enterWorkSession 一样非致命：这条链绝不能打断视频加载。
     String? languageTag;
     try {
       languageTag = (await widget.repo.getByBookUid(_activeBookUid))?.language;
@@ -3881,11 +3882,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     await ref
         .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(
+        .enterWorkSession(
+          owner: this,
           bookUid: _activeBookUid,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.video,
-          restoreFallback: true,
         );
   }
 
@@ -6768,6 +6769,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
+    WorkProfileScope.instance.leave(this);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
