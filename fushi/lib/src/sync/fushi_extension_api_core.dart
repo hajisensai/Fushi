@@ -18,6 +18,7 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart'
 import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// [FushiExtensionApiCore.handle] 的结果：成功体是 JSON 对象，失败是状态码 + 纯文本
 /// （文案与 HTTP 端点返回的 body 逐字一致）。
@@ -333,6 +334,11 @@ class FushiExtensionApiCore {
   /// 抓图取词：body `{image: base64 PNG/JPEG（可带 data: 前缀）}` →
   /// [extensionOcrFrameJson]。引擎不可用不是错误，回 `{error: <原因>, blocks: []}`，
   /// 扩展据此提示「先在 app 里装好 OCR 引擎」而不是「连不上 Fushi」。
+  ///
+  /// 识别本身失败（会话在识别途中被关、app 还没起完拿不到 navigator context、识别器
+  /// 报错……）同样回 200 + `{error: 'failed'}`：连接是通的，扩展该提示「识别失败」。
+  /// 抛到外层会变成 HTTP 500 / app 内桥回 null，扩展两种都只能当「连不上 Fushi / API
+  /// 未开」处理，误导用户去查连接。原始异常记进错误日志，不吞。
   Future<FushiExtensionApiResponse> _ocrImage(Map<String, dynamic> body) async {
     final Uint8List? image = decodeExtensionOcrImage(body['image']);
     if (image == null) {
@@ -348,6 +354,12 @@ class FushiExtensionApiCore {
       return FushiExtensionApiResponse.json(<String, dynamic>{
         'error': e.reason.name,
         'blocks': const <Object?>[],
+      });
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('ExtensionImageOcr.recognize', e, stack);
+      return const FushiExtensionApiResponse.json(<String, dynamic>{
+        'error': kExtensionOcrRecognizeFailed,
+        'blocks': <Object?>[],
       });
     }
     return FushiExtensionApiResponse.json(extensionOcrFrameJson(frame));

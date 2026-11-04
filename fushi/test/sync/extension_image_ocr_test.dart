@@ -149,6 +149,61 @@ void main() {
       });
     });
 
+    test('识别本身失败（会话途中被关 / 拿不到 context / 识别器报错）回 200 + {error:failed}，'
+        '不是 500——否则扩展会误报「连不上 Fushi」', () async {
+      for (final Object thrown in <Object>[
+        StateError('extension OCR session closed'),
+        StateError('No navigator context to assemble OCR engines'),
+        Exception('recognizer crashed'),
+      ]) {
+        final FushiExtensionApiCore core = FushiExtensionApiCore(
+          imageOcr: (Uint8List _) async => throw thrown,
+        );
+        final FushiExtensionApiResponse r = await core.handle(
+          FushiExtensionApiCore.ocrImagePath,
+          <String, dynamic>{'image': base64Encode(_png)},
+        );
+        expect(r.status, 200, reason: '$thrown');
+        expect(r.json, <String, dynamic>{
+          'error': kExtensionOcrRecognizeFailed,
+          'blocks': <Object?>[],
+        }, reason: '$thrown');
+      }
+    });
+
+    test(
+      'app 内浏览器的 canvasOcrCapture：截该标签页 WebView，回包与 background 同形',
+      () async {
+        WebBrowserExtensionHostServices services(
+          Future<Uint8List?> Function()? capture,
+        ) => WebBrowserExtensionHostServices(
+          api: FushiExtensionApiCore().handle,
+          openSidePanel: () {},
+          openOptions: () {},
+          dismissLookup: () {},
+          captureViewport: capture,
+        );
+        final Map<String, Object?> ok = await routeWebBrowserExtensionMessage(
+          <String, dynamic>{'type': 'canvasOcrCapture'},
+          services(() async => _png),
+        );
+        expect(ok, <String, Object?>{
+          'ok': true,
+          'dataUrl': 'data:image/png;base64,${base64Encode(_png)}',
+        });
+        final Map<String, Object?> empty =
+            await routeWebBrowserExtensionMessage(<String, dynamic>{
+              'type': 'canvasOcrCapture',
+            }, services(() async => null));
+        expect(empty, <String, Object?>{'ok': false, 'error': 'empty-capture'});
+        final Map<String, Object?> none = await routeWebBrowserExtensionMessage(
+          <String, dynamic>{'type': 'canvasOcrCapture'},
+          services(null),
+        );
+        expect(none, kWebBrowserExtensionUnsupported);
+      },
+    );
+
     test('app 内浏览器的 ocrImage 消息落到同一个端点，回包与扩展 background 同形', () async {
       final FushiExtensionApiCore core = FushiExtensionApiCore(
         imageOcr: (Uint8List _) async => _frame(),

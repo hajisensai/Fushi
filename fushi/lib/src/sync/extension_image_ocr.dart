@@ -16,6 +16,9 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 /// 扩展抓图识别端点。
 const String kExtensionOcrImagePath = '/api/ocr/image';
 
+/// 识别本身失败（不是引擎不可用）时 `/api/ocr/image` 回的 `error` 值。
+const String kExtensionOcrRecognizeFailed = 'failed';
+
 /// 一张截图解码后的字节上限。扩展侧已把长边压到 2048 px 以内（PNG 至多几 MB），
 /// 超过这个数只可能是坏请求，不往识别器里送。
 const int kExtensionOcrImageMaxBytes = 16 * 1024 * 1024;

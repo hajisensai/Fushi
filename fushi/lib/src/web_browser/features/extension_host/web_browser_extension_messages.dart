@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 
 /// 扩展 `chrome.runtime.sendMessage` 在 app 内浏览器里的落点要用到的 app 能力。
@@ -9,6 +12,7 @@ class WebBrowserExtensionHostServices {
     required this.dismissLookup,
     this.onStudySample,
     this.recordStudy = true,
+    this.captureViewport,
   });
 
   /// 扩展后端核心（与 HTTP 服务器同一份实现，进程内直接调，不绕本机 HTTP）。
@@ -33,6 +37,11 @@ class WebBrowserExtensionHostServices {
   /// 沉浸时间是否落库。无痕标签页为 false：与网页阅读计时（`WebBrowserStudyFeature`
   /// 无痕不计）同一条规矩，样本不进学习统计。
   final bool recordStudy;
+
+  /// 截发消息那个标签页的可视区（PNG 字节；截不到回 null）。扩展里是 background 的
+  /// `tabs.captureVisibleTab`，canvas 阅读器抓图取词在 canvas 被跨源污染 / WebGL 读回
+  /// 全透明时的兜底；app 内是该标签页 WebView 的截图。null = 宿主不提供（回 unsupported）。
+  final Future<Uint8List?> Function()? captureViewport;
 }
 
 /// 宿主不支持的消息（Netflix 录制、批量剪辑、页内弹窗专用链路……留后续阶段）回这个：
@@ -103,6 +112,19 @@ Future<Map<String, Object?>> routeWebBrowserExtensionMessage(
         <String, dynamic>{'handle': _str(message['handle'])},
       );
     // canvas 阅读器抓图取词（canvas-ocr.js）：与扩展 background.js 同形转发。
+    // canvas 阅读器抓图取词的截屏兜底：回包与 background.js 的 canvasOcrCapture 分支同形
+    // （{ok, dataUrl} / {ok:false, error}），content 按 canvas 的视口矩形裁剪。
+    case 'canvasOcrCapture':
+      final Future<Uint8List?> Function()? capture = s.captureViewport;
+      if (capture == null) return kWebBrowserExtensionUnsupported;
+      final Uint8List? png = await capture();
+      if (png == null || png.isEmpty) {
+        return const <String, Object?>{'ok': false, 'error': 'empty-capture'};
+      }
+      return <String, Object?>{
+        'ok': true,
+        'dataUrl': 'data:image/png;base64,${base64Encode(png)}',
+      };
     case 'ocrImage':
       return _apiReply(s, FushiExtensionApiCore.ocrImagePath, <String, dynamic>{
         'image': _str(message['image']),
