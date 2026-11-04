@@ -7682,8 +7682,6 @@
   "srs_count_learn": "Learning",
   "srs_count_new": "New",
   "srs_count_review": "Due",
-  "srs_count_review_rwkv": "Avg reviews/day (30 days)",
-  "srs_count_review_rwkv_hint": "RWKV picks reviews by live recall, so there is no due count. Shown is the average number of reviews per day over the last 30 days.",
   "srs_custom_study_cards_value": "$n cards",
   "srs_custom_study_days_ahead": "Due within the next",
   "srs_custom_study_days_forgotten": "Forgotten within the last",
