@@ -7680,7 +7680,6 @@
   "srs_conflict_replaced": "Replaced",
   "srs_conflict_resolved_many": "Resolved ${n} conflicts",
   "srs_conflict_revert": "Switch back",
-  "srs_conflict_side_from": "$device · $time",
   "srs_conflicts_deletions": "Deleted on one device, changed on another",
   "srs_conflicts_empty": "No sync conflicts",
   "srs_conflicts_empty_hint": "When two devices change the same setting at the same time, the replaced value shows up here so you can switch back.",

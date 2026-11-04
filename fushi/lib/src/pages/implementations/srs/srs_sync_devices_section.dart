@@ -29,9 +29,12 @@ FushiTagTone srsDeviceStateTone(SrsDeviceState s) => switch (s) {
   SrsDeviceState.retired => FushiTagTone.neutral,
 };
 
-/// 设备行的标题：本机还没起名（第一次同步前）显示「本机」。
+/// 设备行的标题：与其它行同一版式——标题是「<名称>（Fushi X.Y）」，「本机」/ 最后在线进副标题。本机还没起名
+/// （第一次同步前）标题就是「本机」；没名字的对端标题只写「未命名设备」（最后在线照样在副标题）。
 String srsDeviceRowTitle(BuildContext context, SrsDeviceView d) {
-  if (d.self && d.baseName.isEmpty) return t.srs_timeline_this_device;
+  if (d.baseName.isEmpty) {
+    return d.self ? t.srs_timeline_this_device : t.srs_device_unnamed;
+  }
   return d.displayName(formatTime: (DateTime x) => srsTimeLabel(context, x));
 }
 
@@ -45,7 +48,7 @@ List<String> srsDeviceRowDetails(
   return <String?>[
     // 标题已是「本机」（还没起名）时不重复。
     if (d.self && d.baseName.isNotEmpty) t.srs_timeline_this_device,
-    if (!d.self && seen != null && d.baseName.isNotEmpty)
+    if (!d.self && seen != null)
       t.srs_device_seen(
         time: srsTimeLabel(context, DateTime.fromMillisecondsSinceEpoch(seen)),
       ),
@@ -124,7 +127,7 @@ class SrsSyncDevicesSection extends StatelessWidget {
       child: AdaptiveSettingsRow(
         key: ValueKey<String>('srs_timeline_device_${d.id}'),
         title: srsDeviceRowTitle(context, d),
-        subtitle: details.isEmpty ? null : details.join(' · '),
+        subtitle: details.isEmpty ? null : SrsMetaLine.join(details),
         icon:
             d.digestMismatch ||
                 d.warning != null ||

@@ -109,6 +109,12 @@ Future<_Env> _open(WidgetTester tester, {bool flagConflicts = false}) =>
         dir,
       );
       await a.sync2DeviceInfo(model: 'iPhone 17', app: '3.3', platform: 'ios');
+      await b.sync2DeviceInfo(
+        model: 'DESKTOP-1',
+        app: '3.3',
+        platform: 'windows',
+        nick: 'Desk',
+      );
       final List<String> notes = <String>[
         await _note(a, '花'),
         await _note(a, '魚'),
@@ -228,6 +234,27 @@ void main() {
       );
       expect(
         find.descendant(of: state, matching: find.text(t.srs_device_state_ok)),
+        findsOneWidget,
+      );
+
+      // 本机行：标题是本机自己的名字，副标题「本机」（与其它行同一版式）。
+      final Finder selfRow = find.byKey(
+        ValueKey<String>('srs_timeline_device_${env.b.sync2Device!}'),
+      );
+      expect(
+        find.descendant(
+          of: selfRow,
+          matching: find.text(
+            t.srs_device_label_versioned(name: 'Desk', version: '3.3'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: selfRow,
+          matching: find.text(t.srs_timeline_this_device),
+        ),
         findsOneWidget,
       );
 

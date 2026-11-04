@@ -2,6 +2,7 @@
 // 冲突差异、设备显示名规则（「<名称>（Fushi X.Y）」/ 对端名 / 「未命名设备 · 最后在线」）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
 import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
@@ -71,6 +72,37 @@ void main() {
       (SrsDiffOp.added, '晴れ'),
     ]);
     expect(srsDiffSegments('a' * (kSrsDiffMaxChars + 1), 'b'), isNull);
+  });
+
+  test('元信息分隔：全角收尾标点后只接「· 」，其余照旧「 · 」，空段跳过', () {
+    expect(
+      SrsMetaLine.join(<String>['iPhone 17（Fushi 3.3）', '2026-11-04']),
+      'iPhone 17（Fushi 3.3）· 2026-11-04',
+    );
+    expect(
+      SrsMetaLine.join(<String>['iPhone 17 (Fushi 3.3)', '', '2026-11-04']),
+      'iPhone 17 (Fushi 3.3) · 2026-11-04',
+    );
+  });
+
+  test('本机行的名称 / 版本取 selfInfo', () {
+    final List<SrsDeviceView> views = srsDeviceViewsOf(<String, Object?>{
+      'selfInfo': <String, Object?>{
+        'name': '书房台式机',
+        'app': '3.3',
+        'platform': 'windows',
+      },
+      'devices': <Object?>[
+        <String, Object?>{'device': 'me', 'self': true},
+        <String, Object?>{'device': 'peer', 'name': 'iPhone 17', 'app': '3.3'},
+      ],
+    });
+    expect(
+      views.first.displayName(formatTime: (DateTime _) => ''),
+      '书房台式机（Fushi 3.3）',
+    );
+    expect(views.first.platform, 'windows');
+    expect(views.last.name, 'iPhone 17');
   });
 
   test('设备显示名：「名称（Fushi 版本）」/ 对端名 / 未命名 · 最后在线', () {

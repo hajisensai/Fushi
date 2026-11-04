@@ -792,10 +792,10 @@ class _HeldDeleteCard extends StatelessWidget {
           Text(conflict.label, style: context.fushiType.titleSmallEmphasized),
           Text(what, style: context.fushiType.bodyMedium),
           Text(
-            t.srs_conflict_side_from(
-              device: who(conflict.by),
-              time: srsFormatMoment(conflict.at),
-            ),
+            SrsMetaLine.join(<String>[
+              who(conflict.by),
+              srsFormatMoment(conflict.at),
+            ]),
             style: context.fushiType.bodySmall,
           ),
           _Recommendation(choice: t.srs_conflict_keep, reason: reason),
@@ -863,10 +863,10 @@ class _ConflictCard extends StatelessWidget {
     final String key = srsFieldKeyLabel(conflict.kind, conflict.register.key);
     final String current = conflict.formatValue(winner.value);
     final String replaced = conflict.formatValue(loser.value);
-    String from(SrsFieldEdit e) => t.srs_conflict_side_from(
-      device: who(e.dot.writerId),
-      time: srsFormatMoment(e.hlc.physical),
-    );
+    String from(SrsFieldEdit e) => SrsMetaLine.join(<String>[
+      who(e.dot.writerId),
+      srsFormatMoment(e.hlc.physical),
+    ]);
     // 推荐的一边是实心按钮，另一边描边。
     Widget button({
       required String id,

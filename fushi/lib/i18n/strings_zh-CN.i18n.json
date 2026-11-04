@@ -7680,7 +7680,6 @@
   "srs_conflict_replaced": "被替换",
   "srs_conflict_resolved_many": "已处理 ${n} 条冲突",
   "srs_conflict_revert": "改回",
-  "srs_conflict_side_from": "$device · $time",
   "srs_conflicts_deletions": "一边删除、一边修改",
   "srs_conflicts_empty": "没有同步冲突",
   "srs_conflicts_empty_hint": "两台设备同时改了同一项设置时，被替换掉的那个值会出现在这里，可以一键改回。",

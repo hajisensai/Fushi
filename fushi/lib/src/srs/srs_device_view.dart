@@ -169,13 +169,38 @@ class SrsDeviceDirectory {
 }
 
 /// 读内核的设备表（远程复习库等不支持状态的实现读不到时退到只有名字的表）。
+/// 内核 `sync2_status` 的设备行。本机那一行的名称 / 版本 / 平台取顶层 `selfInfo`（本机自报的，
+/// devices 表里本机行没有对端 head 记下的扩展信息）。
+List<SrsDeviceView> srsDeviceViewsOf(Map<String, Object?> status) {
+  final Object? info = status['selfInfo'];
+  final Map<String, Object?> self = info is Map
+      ? info.cast<String, Object?>()
+      : const <String, Object?>{};
+  final List<SrsDeviceView> out = <SrsDeviceView>[];
+  for (final Object? d in (status['devices'] as List<Object?>?) ?? const []) {
+    if (d is! Map) continue;
+    final Map<String, Object?> row = Map<String, Object?>.of(
+      d.cast<String, Object?>(),
+    );
+    if (row['self'] == true) {
+      for (final String k in const <String>[
+        'name',
+        'model',
+        'app',
+        'platform',
+      ]) {
+        final Object? v = self[k];
+        if (v is String && v.trim().isNotEmpty) row[k] = v;
+      }
+    }
+    out.add(SrsDeviceView.fromStatus(row));
+  }
+  return out;
+}
+
 Future<SrsDeviceDirectory> srsLoadDeviceDirectory(SrsDbStore store) async {
   try {
-    final Map<String, Object?> status = await store.sync2Status();
-    return SrsDeviceDirectory(<SrsDeviceView>[
-      for (final Object? d in (status['devices'] as List<Object?>?) ?? const [])
-        if (d is Map) SrsDeviceView.fromStatus(d.cast<String, Object?>()),
-    ]);
+    return SrsDeviceDirectory(srsDeviceViewsOf(await store.sync2Status()));
   } catch (e, stack) {
     ErrorLogService.instance.log('SrsDeviceDirectory.load', e, stack);
     try {

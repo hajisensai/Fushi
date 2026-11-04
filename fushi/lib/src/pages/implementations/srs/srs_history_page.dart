@@ -914,10 +914,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     );
   }
 
-  List<SrsDeviceView> get _devices => <SrsDeviceView>[
-    for (final Object? d in (_status['devices'] as List<Object?>?) ?? const [])
-      if (d is Map) SrsDeviceView.fromStatus(d.cast<String, Object?>()),
-  ];
+  List<SrsDeviceView> get _devices => srsDeviceViewsOf(_status);
 
   Widget _buildDevices(BuildContext context) =>
       ValueListenableBuilder<SrsSyncProgress?>(
