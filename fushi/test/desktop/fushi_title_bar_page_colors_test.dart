@@ -343,7 +343,12 @@ void main() {
         addTearDown(controls.dispose);
         await pumpShell(
           tester,
-          FushiTitleBarRevealScope(revealed: controls, child: reader()),
+          ValueListenableBuilder<bool>(
+            valueListenable: controls,
+            builder: (_, bool shown, Widget? page) =>
+                FushiTitleBarRevealScope(revealed: shown, child: page!),
+            child: reader(),
+          ),
         );
         expect(captionOpacity(tester), 0);
 
@@ -380,7 +385,12 @@ void main() {
         addTearDown(controls.dispose);
         await pumpShell(
           tester,
-          FushiTitleBarRevealScope(revealed: controls, child: reader()),
+          ValueListenableBuilder<bool>(
+            valueListenable: controls,
+            builder: (_, bool shown, Widget? page) =>
+                FushiTitleBarRevealScope(revealed: shown, child: page!),
+            child: reader(),
+          ),
         );
         expect(FushiDesktopTitleBar.captionRevealRequested.value, isTrue);
 

@@ -457,43 +457,53 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
               _lyricsRect = rect;
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: widget.callbacks.onTapBackground,
-                        child: design.buildBackground(context, widget.data),
+                // 覆盖层顶栏常驻（自动隐藏只收底栏），歌词矩形与顶栏都排在
+                // padding.top 之下、标题行那一条只有背景：标题行是隐形拖动条，
+                // 始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入（BUG-4078）。
+                child: FushiTitleBarDragBandScope(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      // 空白背景：单击照旧（onTapBackground），鼠标按住拖动越过
+                      // 拖动阈值才算拖窗口（BUG-4078）。歌词 WebView 在它上面，
+                      // 不被覆盖。
+                      Positioned.fill(
+                        child: FushiWindowDragArea(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: widget.callbacks.onTapBackground,
+                            child: design.buildBackground(context, widget.data),
+                          ),
+                        ),
                       ),
-                    ),
-                    // 跳转记录的返回 / 前进图标在各外观的顶栏右侧（
-                    // [LyricsPlayerData.jumpActions]），不占歌词矩形。
-                    Positioned.fromRect(rect: rect, child: widget.lyricsView),
-                    Positioned.fill(
-                      child: design.buildChrome(
-                        context,
-                        widget.data,
-                        widget.callbacks,
-                        size: size,
-                        padding: padding,
-                        lyricsRect: rect,
+                      // 跳转记录的返回 / 前进图标在各外观的顶栏右侧（
+                      // [LyricsPlayerData.jumpActions]），不占歌词矩形。
+                      Positioned.fromRect(rect: rect, child: widget.lyricsView),
+                      Positioned.fill(
+                        child: design.buildChrome(
+                          context,
+                          widget.data,
+                          widget.callbacks,
+                          size: size,
+                          padding: padding,
+                          lyricsRect: rect,
+                        ),
                       ),
-                    ),
-                    // 空闲隐藏光标：必须盖在最上层——WebView 插件自己的
-                    // MouseRegion 会覆盖外层设的光标。半透明命中（不拦事件），
-                    // 不隐藏时 defer 给下面的区域。
-                    Positioned.fill(
-                      child: MouseRegion(
-                        key: const ValueKey<String>('lyrics_cursor_hider'),
-                        opaque: false,
-                        hitTestBehavior: HitTestBehavior.translucent,
-                        cursor: _cursorHidden
-                            ? SystemMouseCursors.none
-                            : MouseCursor.defer,
+                      // 空闲隐藏光标：必须盖在最上层——WebView 插件自己的
+                      // MouseRegion 会覆盖外层设的光标。半透明命中（不拦事件），
+                      // 不隐藏时 defer 给下面的区域。
+                      Positioned.fill(
+                        child: MouseRegion(
+                          key: const ValueKey<String>('lyrics_cursor_hider'),
+                          opaque: false,
+                          hitTestBehavior: HitTestBehavior.translucent,
+                          cursor: _cursorHidden
+                              ? SystemMouseCursors.none
+                              : MouseCursor.defer,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },

@@ -252,6 +252,44 @@ class FushiDesktopTitleBar extends StatefulWidget {
     }
   }
 
+  /// 顶栏常驻、版面把标题行那一条让给背景的沉浸页（音乐歌词页、有声书歌词模式、
+  /// 游戏串流）登记的 owner。有 owner 时沉浸标题行变成「隐形拖动条」：拖动区
+  /// 始终可命中（按住拖动整个窗口、双击最大化，与普通页同一份 `DragToMoveArea`），
+  /// 窗口按钮仍隐去，指针进入这一条短暂停留后才淡入、离开淡出——不再靠窗口
+  /// 最顶边 8px + 400ms 停留（那 8px 在 Windows 窗口化时压着顶边 resize 把手，
+  /// BUG-4078）。用户 2026-11-04 否决了「按钮常显」。页面一般用
+  /// [FushiTitleBarDragBandScope]。
+  static final Set<Object> _captionDragBandOwners = <Object>{};
+  static final ValueNotifier<bool> _captionDragBand = ValueNotifier<bool>(
+    false,
+  );
+
+  /// 是否有沉浸页要求隐形拖动条（测试读）。
+  static ValueListenable<bool> get captionDragBand => _captionDragBand;
+
+  static void setCaptionDragBand({
+    required Object owner,
+    required bool enabled,
+  }) {
+    final bool changed = enabled
+        ? _captionDragBandOwners.add(owner)
+        : _captionDragBandOwners.remove(owner);
+    if (!changed) return;
+    void publish() =>
+        _captionDragBand.value = _captionDragBandOwners.isNotEmpty;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => publish());
+    } else {
+      publish();
+    }
+  }
+
+  /// 此刻能否由 app 发起「拖动整个窗口」（[FushiWindowDragArea] 读）：装了自绘
+  /// 顶栏且不在内容全屏（全屏下窗口不能拖）。
+  static bool get windowDragAvailable =>
+      _isEnabled && !_contentFullscreen.value;
+
   /// 接管标题行的页面必须让开的左右宽度：macOS 左侧系统红绿灯留位；
   /// Windows / Linux 右侧 MD3 窗口按钮组 + 组右侧页边。未装自绘顶栏时为零。
   static EdgeInsets captionReservedInsets(BuildContext context) {
@@ -527,22 +565,37 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                           left: 0,
                           right: 0,
                           height: FushiDesktopTitleBar.height,
-                          child: _ImmersiveCaptionReveal(
-                            enabled: immersive,
-                            child: ValueListenableBuilder<bool>(
-                              valueListenable:
-                                  FushiDesktopTitleBar._captionPassthrough,
-                              builder:
-                                  (
-                                    BuildContext context,
-                                    bool passthrough,
-                                    Widget? _,
-                                  ) => _buildCaptionRow(
-                                    context,
-                                    page,
-                                    passthrough: passthrough,
-                                  ),
-                            ),
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable:
+                                FushiDesktopTitleBar._captionDragBand,
+                            builder:
+                                (
+                                  BuildContext context,
+                                  bool dragBand,
+                                  Widget? _,
+                                ) => _ImmersiveCaptionReveal(
+                                  enabled: immersive,
+                                  dragBand: dragBand,
+                                  builder:
+                                      (
+                                        BuildContext context,
+                                        bool controlsShown,
+                                      ) => ValueListenableBuilder<bool>(
+                                        valueListenable: FushiDesktopTitleBar
+                                            ._captionPassthrough,
+                                        builder:
+                                            (
+                                              BuildContext context,
+                                              bool passthrough,
+                                              Widget? _,
+                                            ) => _buildCaptionRow(
+                                              context,
+                                              page,
+                                              passthrough: passthrough,
+                                              controlsShown: controlsShown,
+                                            ),
+                                      ),
+                                ),
                           ),
                         ),
                     ],
@@ -584,6 +637,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     BuildContext context,
     FushiTitleBarColors? page, {
     required bool passthrough,
+    required bool controlsShown,
   }) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     // 没有页面上报色 = 标题行浮在页面上、完全透明：页面背景（含详情页
@@ -651,7 +705,12 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                 ),
               ),
             ),
-          _buildCaptionControls(trafficLights, page, passthrough: passthrough),
+          _buildCaptionControls(
+            trafficLights,
+            page,
+            passthrough: passthrough,
+            controlsShown: controlsShown,
+          ),
         ],
       ),
     );
@@ -661,6 +720,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     bool trafficLights,
     FushiTitleBarColors? page, {
     required bool passthrough,
+    required bool controlsShown,
   }) {
     return Row(
       children: <Widget>[
@@ -700,33 +760,38 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // M3E 窗口按钮组：三枚小号 standard 图标按钮收进一枚 tonal 胶囊；
           // 右缘与页面浮动页头的动作组同一条页边（[FushiSpacingTokens.page]），
           // 竖直方向在 32 高的标题行里居中。
-          _FushiCaptionButtonGroup(
-            page: page,
-            active: _isFocused,
-            children: <Widget>[
-              _FushiCaptionButton(
-                glyph: _CaptionGlyph.minimize,
-                page: page,
-                active: _isFocused,
-                onPressed: _minimize,
-              ),
-              _FushiCaptionButton(
-                glyph: _CaptionGlyph.maximize,
-                maximized: _isMaximized,
-                // 只有 Windows runner 认 HTMAXBUTTON 命中区（贴靠布局）。
-                snapLayouts: FushiDesktopTitleBar._hostIsWindows,
-                page: page,
-                active: _isFocused,
-                onPressed: _toggleMaximize,
-              ),
-              _FushiCaptionButton(
-                key: FushiDesktopTitleBar.closeButtonKey,
-                glyph: _CaptionGlyph.close,
-                page: page,
-                active: _isFocused,
-                onPressed: _close,
-              ),
-            ],
+          // 隐形拖动条模式下按钮隐去时不吃指针：看不见的关闭键不能一点就关窗。
+          // 拖动区不受影响（[_ImmersiveCaptionReveal.dragBand]）。
+          IgnorePointer(
+            ignoring: !controlsShown,
+            child: _FushiCaptionButtonGroup(
+              page: page,
+              active: _isFocused,
+              children: <Widget>[
+                _FushiCaptionButton(
+                  glyph: _CaptionGlyph.minimize,
+                  page: page,
+                  active: _isFocused,
+                  onPressed: _minimize,
+                ),
+                _FushiCaptionButton(
+                  glyph: _CaptionGlyph.maximize,
+                  maximized: _isMaximized,
+                  // 只有 Windows runner 认 HTMAXBUTTON 命中区（贴靠布局）。
+                  snapLayouts: FushiDesktopTitleBar._hostIsWindows,
+                  page: page,
+                  active: _isFocused,
+                  onPressed: _toggleMaximize,
+                ),
+                _FushiCaptionButton(
+                  key: FushiDesktopTitleBar.closeButtonKey,
+                  glyph: _CaptionGlyph.close,
+                  page: page,
+                  active: _isFocused,
+                  onPressed: _close,
+                ),
+              ],
+            ),
           ),
           // 组右侧的页边留白仍是拖动区（右上角另有顶边 resize 把手）。
           DragToMoveArea(
@@ -770,11 +835,23 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
 ///
 /// [enabled] 为 false 时原样常显（普通页 / macOS）；结构恒定，开关切换不重挂
 /// 标题行子树。时长走 [fushiMotionDuration]（墨水屏 / 减弱动效归零）。
+///
+/// [dragBand]（[FushiDesktopTitleBar.setCaptionDragBand]）：隐形拖动条。「拖动区
+/// 可命中」与「按钮可见」拆成两个状态——拖动区始终可命中（不套 `IgnorePointer`），
+/// 按钮由 [builder] 收到的 `controlsShown` 控制显隐与命中；指针进入整条带子
+/// 停留 [FushiMotion.short] 即淡入，不要求贴着最顶边。
 class _ImmersiveCaptionReveal extends StatefulWidget {
-  const _ImmersiveCaptionReveal({required this.enabled, required this.child});
+  const _ImmersiveCaptionReveal({
+    required this.enabled,
+    required this.dragBand,
+    required this.builder,
+  });
 
   final bool enabled;
-  final Widget child;
+  final bool dragBand;
+
+  /// 构建标题行；`controlsShown` = 窗口按钮此刻可见（隐去时按钮不吃指针）。
+  final Widget Function(BuildContext context, bool controlsShown) builder;
 
   @override
   State<_ImmersiveCaptionReveal> createState() =>
@@ -845,6 +922,18 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       return;
     }
     if (_hovered) return;
+    // 隐形拖动条：整条带子都是入口（拖动区一直在），停一小会儿就把按钮带出来；
+    // 划过不算（延迟内离开带子即取消）。
+    if (widget.dragBand) {
+      _revealDwell ??= Timer(
+        fushiMotionDuration(context, FushiMotion.short),
+        () {
+          _revealDwell = null;
+          if (mounted) _setHovered(true);
+        },
+      );
+      return;
+    }
     // 已经因别的理由显示着（页面 chrome 带出来的、键盘焦点、触摸）：指针进了
     // 带子就是奔着窗口按钮 / 拖动区来的，接着显示，不能在它下面隐去。
     if (_shown) {
@@ -940,8 +1029,10 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   @override
   void didUpdateWidget(covariant _ImmersiveCaptionReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 换页（离开沉浸页再回来）从隐藏态开始，不沿用上一页残留的悬停。
-    if (!widget.enabled && oldWidget.enabled) {
+    // 换页（离开沉浸页再回来）从隐藏态开始，不沿用上一页残留的悬停；
+    // 隐形拖动条开关翻转同理（换了一种浮出规则）。
+    if ((!widget.enabled && oldWidget.enabled) ||
+        widget.dragBand != oldWidget.dragBand) {
       _cancelRevealDwell();
       _hovered = false;
       _leftForMaxButton = false;
@@ -983,14 +1074,15 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
         onFocusChange: (bool value) {
           if (_focused != value) _update(() => _focused = value);
         },
+        // 隐形拖动条：拖动区不随按钮隐去而失去命中（按钮自己按 shown 让开）。
         child: IgnorePointer(
-          ignoring: !shown,
+          ignoring: !shown && !widget.dragBand,
           child: AnimatedOpacity(
             opacity: shown ? 1 : 0,
             duration: fushiMotionDuration(context, FushiMotion.short),
             curve: FushiMotion.standard,
             onEnd: _onFadeEnd,
-            child: widget.child,
+            child: widget.builder(context, shown),
           ),
         ),
       ),
@@ -1755,8 +1847,14 @@ class _FushiTitleBarPassthroughScopeState
 
 /// 沉浸页声明「我的 chrome 此刻浮出，标题行跟着浮出」：[revealed] 为真且本页
 /// 没被别的整页盖住时登记 [FushiDesktopTitleBar.setCaptionRevealed]，被盖住 /
-/// dispose 时撤回（与 [FushiTitleBarColorScope] 同一套撤回语义）。普通页的标题行
-/// 本就常显，登记无副作用；未挂自绘顶栏时无人消费。
+/// dispose 时撤回（与 [FushiTitleBarColorScope] / [FushiTitleBarPassthroughScope]
+/// 同一套撤回语义、同样在 build 里上报）。普通页的标题行本就常显，登记无副作用；
+/// 未挂自绘顶栏时无人消费。
+///
+/// 每个沉浸页都要表态（BUG-3929 视频页、BUG-4078 阅读器 / 漫画），否则标题行隐去
+/// 时只剩「窗口最顶边 8px 停留」一个入口，而 Windows 窗口化时那 8px 正压着顶边
+/// resize 把手，等于拖不动窗口。chrome 会自动收起的页传 chrome 的真实可见态；
+/// 顶栏常驻、标题行那一条下面只有背景的页改用 [FushiTitleBarDragBandScope]。
 class FushiTitleBarRevealScope extends StatefulWidget {
   const FushiTitleBarRevealScope({
     required this.revealed,
@@ -1764,7 +1862,7 @@ class FushiTitleBarRevealScope extends StatefulWidget {
     super.key,
   });
 
-  final ValueListenable<bool> revealed;
+  final bool revealed;
   final Widget child;
 
   @override
@@ -1772,59 +1870,111 @@ class FushiTitleBarRevealScope extends StatefulWidget {
       _FushiTitleBarRevealScopeState();
 }
 
-class _FushiTitleBarRevealScopeState extends State<FushiTitleBarRevealScope> {
+class _FushiTitleBarRevealScopeState
+    extends _CoverAwareTitleBarScopeState<FushiTitleBarRevealScope> {
+  @override
+  void publish({required bool covered}) =>
+      FushiDesktopTitleBar.setCaptionRevealed(
+        owner: this,
+        revealed: widget.revealed && !covered,
+      );
+
+  @override
+  Widget get child => widget.child;
+}
+
+/// 沉浸页声明「我的标题行是隐形拖动条」（[FushiDesktopTitleBar.setCaptionDragBand]）：
+/// 窗口最上面一条始终可拖动 / 双击最大化，窗口按钮指针进入才淡入。给顶栏常驻、
+/// 版面经 SafeArea 把标题行那一条让给背景的页（音乐歌词页、有声书歌词模式、
+/// 游戏串流）。被别的整页盖住 / dispose 时撤回，语义同 [FushiTitleBarRevealScope]。
+class FushiTitleBarDragBandScope extends StatefulWidget {
+  const FushiTitleBarDragBandScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<FushiTitleBarDragBandScope> createState() =>
+      _FushiTitleBarDragBandScopeState();
+}
+
+class _FushiTitleBarDragBandScopeState
+    extends _CoverAwareTitleBarScopeState<FushiTitleBarDragBandScope> {
+  @override
+  void publish({required bool covered}) =>
+      FushiDesktopTitleBar.setCaptionDragBand(owner: this, enabled: !covered);
+
+  @override
+  Widget get child => widget.child;
+}
+
+/// 浮出 / 拖动条两个 scope 共用的「被别的整页盖住就撤回」骨架：盯本页路由的
+/// `secondaryAnimation`（PopupRoute 不推动它，弹窗不撤回），build 里上报，
+/// dispose 撤回（[publish] 传 `covered: true`）。
+abstract class _CoverAwareTitleBarScopeState<T extends StatefulWidget>
+    extends State<T> {
   Animation<double>? _coverAnimation;
 
-  @override
-  void initState() {
-    super.initState();
-    widget.revealed.addListener(_publish);
-  }
+  /// 把本页此刻的表态推给 [FushiDesktopTitleBar]（值不变时那边直接返回）。
+  void publish({required bool covered});
 
-  @override
-  void didUpdateWidget(covariant FushiTitleBarRevealScope oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.revealed, widget.revealed)) {
-      oldWidget.revealed.removeListener(_publish);
-      widget.revealed.addListener(_publish);
-      _publish();
-    }
-  }
+  Widget get child;
+
+  bool get _covered =>
+      (_coverAnimation?.status ?? AnimationStatus.dismissed) !=
+      AnimationStatus.dismissed;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
-    if (!identical(next, _coverAnimation)) {
-      _coverAnimation?.removeStatusListener(_onCoverStatus);
-      _coverAnimation = next;
-      _coverAnimation?.addStatusListener(_onCoverStatus);
-    }
-    _publish();
+    if (identical(next, _coverAnimation)) return;
+    _coverAnimation?.removeStatusListener(_onCoverStatus);
+    _coverAnimation = next;
+    _coverAnimation?.addStatusListener(_onCoverStatus);
   }
 
-  void _onCoverStatus(AnimationStatus _) => _publish();
-
-  void _publish() {
-    final bool covered =
-        (_coverAnimation?.status ?? AnimationStatus.dismissed) !=
-        AnimationStatus.dismissed;
-    FushiDesktopTitleBar.setCaptionRevealed(
-      owner: this,
-      revealed: widget.revealed.value && !covered,
-    );
-  }
+  void _onCoverStatus(AnimationStatus _) => publish(covered: _covered);
 
   @override
   void dispose() {
-    widget.revealed.removeListener(_publish);
     _coverAnimation?.removeStatusListener(_onCoverStatus);
-    FushiDesktopTitleBar.setCaptionRevealed(owner: this, revealed: false);
+    publish(covered: true);
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    publish(covered: _covered);
+    return child;
+  }
+}
+
+/// 沉浸页空白背景「按住拖动 = 拖动整个窗口」（PotPlayer / 音乐播放器同款），
+/// 给顶栏常驻的页（音乐歌词页、有声书歌词模式）的**非交互背景**用：包在背景
+/// 那一层外面，上面的按钮 / 进度条 / 歌词 WebView 照常先命中。
+///
+/// 只认鼠标、只认 pan：单击照常交给背景自己的点击回调（拖动手势要越过 pan 阈值
+/// 才胜出，原地点击仍是点击）；没有双击回调，不会让背景的单击等双击超时。
+/// 发起拖动走与标题行 `DragToMoveArea` 同一个原生入口 `windowManager.startDragging`；
+/// 未装自绘顶栏 / 内容全屏时不挂识别器。
+class FushiWindowDragArea extends StatelessWidget {
+  const FushiWindowDragArea({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: FushiDesktopTitleBar._contentFullscreen,
+    builder: (BuildContext context, bool _, Widget? child) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      supportedDevices: const <PointerDeviceKind>{PointerDeviceKind.mouse},
+      onPanStart: FushiDesktopTitleBar.windowDragAvailable
+          ? (DragStartDetails _) => unawaited(windowManager.startDragging())
+          : null,
+      child: child,
+    ),
+    child: child,
+  );
 }
 
 /// 透明标题行上窗口按钮背后柔光的半径（压扁前；见 [_buildCaptionRow]）。

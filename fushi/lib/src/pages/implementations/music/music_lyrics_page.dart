@@ -78,7 +78,11 @@ import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+    show
+        FushiTitleBarColorScope,
+        FushiTitleBarDragBandScope,
+        FushiWindowDragArea,
+        fushiTitleBarColorsOn;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -851,7 +855,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       body: FushiAppUiScaleNeutralizer(
         child: Stack(
           children: <Widget>[
-            Positioned.fill(child: background),
+            // 空白背景按住拖动 = 拖动整个窗口（BUG-4078）；上面的封面 / 按钮 /
+            // 歌词列表照常先命中。
+            Positioned.fill(child: FushiWindowDragArea(child: background)),
             Positioned.fill(
               child: SafeArea(
                 child: LayoutBuilder(
@@ -2164,6 +2170,10 @@ class _TitleBarScope extends StatelessWidget {
   @override
   Widget build(BuildContext context) => FushiTitleBarColorScope(
     colors: fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface),
-    child: child,
+    // 顶栏（返回 / 动作组）常驻，版面经 SafeArea 把标题行那一条让给背景：标题行
+    // 是隐形拖动条——始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入
+    // （BUG-4078；不表态时只能靠窗口最顶边 8px 停留浮出，那 8px 在 Windows
+    // 窗口化时压着 resize 把手）。
+    child: FushiTitleBarDragBandScope(child: child),
   );
 }
