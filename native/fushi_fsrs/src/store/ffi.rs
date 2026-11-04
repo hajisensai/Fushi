@@ -1227,7 +1227,7 @@ fn sync2_command(
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
-        // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4005）。
+        // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4011）。
         "legacy_dots" => c.sync2_legacy_dots(profile)?,
         // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。
         "digest_buckets" => c.sync2_digest_buckets(profile)?,

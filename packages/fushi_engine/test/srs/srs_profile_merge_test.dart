@@ -506,7 +506,7 @@ void main() {
     expect(await b.rowsOf(bOld), before);
   });
 
-  // BUG-4005：宿主把旧 profile 并入时，目标集合里已经有同一批修改记录（01a173ca 迁出的 `2RIr94…#1`：与宿主旧写入者
+  // BUG-4011：宿主把旧 profile 并入时，目标集合里已经有同一批修改记录（01a173ca 迁出的 `2RIr94…#1`：与宿主旧写入者
   // 逐条同 seq、同 HLC 物理时刻与计数，只是写入者名字不同），并入却改名成 `merged-…`，31 万条修改记录在目标里成了
   // 两份。目标里已有时沿用目标的名字：dot 相同 → 修改记录 ID 相同，认出已在，不再并。
   test('目标里已有同一批修改记录（同 seq 同 HLC）：沿用目标的写入者、不重复并；同 seq 不同 HLC 的照常改名', () async {
@@ -585,7 +585,7 @@ void main() {
     );
   });
 
-  // BUG-4005 端到端：目标 uid 的数据只在同步位置上（另一台设备 A 迁出 / 写入的），本机 B 切到这个 uid 并入。并入前
+  // BUG-4011 端到端：目标 uid 的数据只在同步位置上（另一台设备 A 迁出 / 写入的），本机 B 切到这个 uid 并入。并入前
   // 先只拉不发一轮（[srsMergeProfileUid] 的 pullTarget），合并就看得到目标里已有的同一批修改记录，不再改名造第二份。
   for (final bool pullFirst in <bool>[true, false]) {
     test(

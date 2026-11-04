@@ -351,10 +351,10 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// [beforeMigrate]：还没迁移时、迁移之前在同一个独占区里先跑一次（store 还没交给调用方，不会有本机写入），用来先
   /// 收一轮同步位置上别的设备已迁出的操作：迁移只包还没有任何设备的操作代表的旧行（内核 store/sync2/mod.rs
-  /// `enqueue_legacy_rows`，BUG-4005），先收到的那部分旧行不会再被包成第二条重复的操作流。已迁移时不调用。
+  /// `enqueue_legacy_rows`，BUG-4011），先收到的那部分旧行不会再被包成第二条重复的操作流。已迁移时不调用。
   ///
   /// [deferMigration]：这次打开不迁移，留给调用方之后调 [migrateLegacy]（App 等首次同步确认之后、第一轮同步之前
-  /// 才迁移，BUG-4005）。没迁移的副本照常可读可写：本机写入本来就是操作，迁移时按「已有操作代表」跳过。
+  /// 才迁移，BUG-4011）。没迁移的副本照常可读可写：本机写入本来就是操作，迁移时按「已有操作代表」跳过。
   Future<void> _sync2Open([
     Future<void> Function(SrsDbStore store)? beforeMigrate,
     bool deferMigration = false,
