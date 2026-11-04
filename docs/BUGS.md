@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3608 条。点号进各自文件。
+> 共 3611 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4007](bugs/BUG-4007-mac-reader-click-lookup-dead-until-reopen.md) | 🚧 | 🚧 | macOS 阅读器点词不查词、退出重进恢复 |
+| [BUG-4006](bugs/BUG-4006-popup-selection-text-plain.md) | 🚧 | 🚧 | 制卡字段 popup-selection-text 拍平成纯文本 |
+| [BUG-4005](bugs/BUG-4005-lookup-tab-nested-mining-no-sentence.md) | ✅ | ✅ | 查词页释义里点词叠出的浮层制卡例句恒空 |
 | [BUG-4004](bugs/BUG-4004-popup-dict-long-press-also-toggles.md) | ✅ | ✅ | 查词弹窗长按词典标题选词典松开后又折叠该词典 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
