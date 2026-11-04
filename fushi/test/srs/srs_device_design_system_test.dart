@@ -1,11 +1,9 @@
 // 同步设备区 / 冲突差异块走设计系统（PR #2830 审查）：本机行的「点按改名」提示用 FushiTooltip（不写裸 Tooltip），
 // 差异块底色取设计令牌的嵌套面板色（MD3 / Apple 各自分派），不在页面里自选 MD3 色调。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/utils.dart';
 import 'package:material_ui/material_ui.dart';
 
