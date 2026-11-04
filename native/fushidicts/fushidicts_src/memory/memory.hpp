@@ -112,6 +112,15 @@ using shared_blob_file = std::shared_ptr<const blob_file>;
 // map_rd_shared. Empty when missing / empty / unopenable.
 shared_blob_file open_blob_file(const std::string& path);
 
+// A [u32 count][u64 x count] offset table in blobs.bin. [span] covers exactly
+// the count u64s; it is empty when the header or the whole table does not fit
+// in the file.
+struct offset_list {
+  blob_span span;
+  uint32_t count = 0;
+};
+offset_list read_offset_list(const blob_file& blobs, uint64_t at);
+
 // Which access mode open_blob_file picks. automatic: windowed in 32-bit
 // processes (or when the FUSHIDICTS_BLOB_WINDOWED=1 environment variable is
 // set, so the whole native suite can be run against the windowed path on a

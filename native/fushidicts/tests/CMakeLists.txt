@@ -84,6 +84,9 @@ add_fushi_test(shared_mapping_test shared_mapping_test.cpp "${FUSHI_SRC}")
 # BUG-4013: 32 位进程的 blobs.bin 窗口映射与整份映射逐字节同结果（含跨窗口、超窗口
 # 堆读、LRU 压到 1 个窗口时的持续淘汰）。
 add_fushi_test(blob_window_test blob_window_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 偏移表 count 超出文件剩余字节时判坏表、不读（32 位窗口模式下按 count
+# 申请堆缓冲会 bad_alloc 穿过 FFI 直接 abort）。
+add_fushi_test(offset_list_bounds_test offset_list_bounds_test.cpp "${FUSHI_SRC}")
 # Re-zipping an extracted dictionary wraps every entry in one directory; the
 # importer must address entries by their dictionary-relative name so such an
 # archive imports identically (media keys included), while an archive spanning

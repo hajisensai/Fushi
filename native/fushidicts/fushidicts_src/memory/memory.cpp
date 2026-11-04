@@ -510,6 +510,27 @@ blob_span blob_file::view_windowed(uint64_t offset, size_t n) const {
   return {p, n, std::move(w)};
 }
 
+offset_list read_offset_list(const blob_file& blobs, uint64_t at) {
+  offset_list out;
+  const blob_span head = blobs.view(at, sizeof(uint32_t));
+  if (head.size < sizeof(uint32_t)) {
+    return out;
+  }
+  std::memcpy(&out.count, head.data, sizeof(uint32_t));
+  // The count is read from disk. A table claiming more u64s than the file still
+  // holds is corrupt; reading it would size the windowed heap buffer by the
+  // rest of the file (bad_alloc across the FFI on 32-bit). Same outcome as an
+  // unreadable header.
+  const uint64_t table_at = at + sizeof(uint32_t);
+  const uint64_t table_bytes = uint64_t{out.count} * sizeof(uint64_t);
+  if (table_bytes > blobs.size() - table_at) {
+    out.count = 0;
+    return out;
+  }
+  out.span = blobs.view(table_at, static_cast<size_t>(table_bytes));
+  return out;
+}
+
 shared_blob_file open_blob_file(const std::string& path) {
   const bool windowed = use_windowed_blobs();
   if (!windowed) {

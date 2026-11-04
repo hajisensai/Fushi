@@ -66,23 +66,8 @@ ZSTD_DCtx* thread_dctx() {
   return ctx.get();
 }
 
-// blobs.bin 里 [u32 count][u64 x count] 的偏移表。span 覆盖 u64 数组（文件被截断时
-// 比 count*8 短，与旧的「BlobReader 读到文件尾」同口径）；表头读不到时 span 为空。
-struct OffsetList {
-  memory::blob_span span;
-  uint32_t count = 0;
-};
-
-OffsetList read_offset_list(const memory::blob_file& blobs, uint64_t at) {
-  OffsetList out;
-  const memory::blob_span head = blobs.view(at, sizeof(uint32_t));
-  if (head.size < sizeof(uint32_t)) {
-    return out;
-  }
-  std::memcpy(&out.count, head.data, sizeof(uint32_t));
-  out.span = blobs.view(at + sizeof(uint32_t), static_cast<size_t>(out.count) * sizeof(uint64_t));
-  return out;
-}
+using OffsetList = memory::offset_list;
+using memory::read_offset_list;
 
 }
 

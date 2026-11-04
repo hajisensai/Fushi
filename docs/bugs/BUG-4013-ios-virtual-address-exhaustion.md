@@ -20,5 +20,6 @@
   - 待真机复测：开 entitlement 后用 Instruments VM Tracker 复测同步、长时间播歌、浏览器搜索三个原始场景。
   - 未做：符号化 23315 构建 Rust 那几次 abort（需 dSYM）。
   - 32 位 Android（armeabi-v7a，约 3 GB 地址空间）同类问题一并修：原先大的 blobs.bin 整份映射失败 → 该词典静默不装载（整套约 1.9 GB blobs 也放不进去）。现由 `memory::blob_file` 读取：64 位照旧整份映射（`view()` 内联指针运算）；32 位按 1 MB 对齐映射 2 MB 窗口，进程级 LRU 封顶 96 MB 地址，超过 1 MB 的块读进堆；查询期 string_view 由局部 pin、懒解压的 glossary 由 `GlossaryEntry::compressed_owner` 撑住窗口；lookup 去重改按 blob 身份（来源 + 偏移）比较。测试 `native/fushidicts/tests/blob_window_test.cpp`（多窗口、跨窗口、超窗口堆读、LRU 压到 1 个窗口持续淘汰，与整份映射逐字节同结果）；整套原生测试另以 `FUSHIDICTS_BLOB_WINDOWED=1` 跑一遍窗口路径，49/49。
+  - 偏移表 count 越界：`memory::read_offset_list`（`fushidicts_src/memory/memory.cpp`）在 u32 count×8 超过文件剩余字节时判坏表、返回空 span——原先 `view()` 只把长度截到文件尾，32 位窗口模式据此申请「文件剩余全部」的堆缓冲，坏 count 可在约 3 GB 地址空间里要几百 MB 到 GB，`bad_alloc` 穿过无 try/catch 的 FFI 入口 abort。测试 `native/fushidicts/tests/offset_list_bounds_test.cpp`（整份 / 窗口两模式，count=0xFFFFFFFF 与刚好多 1 项都判空，完好表逐字节读出）；修复前 4 条全红，修复后整套 50/50，`FUSHIDICTS_BLOB_WINDOWED=1` 再跑 50/50。
   - 性能实测（Windows x64 Release，4 万词条，5 万次 query，临时基准）：develop 原版 vs 本修复 64 位路径中位数 1273–1497 ns vs 1273–1341 ns，在噪声内持平；窗口路径（仅 32 位）约 1480–1520 ns，约 +15%。
   - 32 位上 hash.table / bloom.filter 仍整份映射（远小于 blobs.bin）。
