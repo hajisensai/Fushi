@@ -2828,6 +2828,18 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_music/verify_abi.sh --no-plugin fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_corpus/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+      # BUG-4102 / BUG-4075：iOS 崩溃诊断只给 `Runner+偏移` 与镜像 UUID，没有这一次构建的
+      # dSYM 就无法符号化（Rust 静态库都链在 Runner 里）。按序号命名，取证时按报告里的构建号
+      # 与 `binary uuids` 对上。只是证据，不进 Release 资产（名字刻意不叫 desktop-artifacts-*）。
+      - name: Upload iOS release dSYMs (no codesign)
+        if: github.event.inputs.testflight_only != 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dsyms-unsigned-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/Release-iphoneos/*.dSYM
+          if-no-files-found: warn
+          retention-days: 90
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
@@ -3205,6 +3217,17 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh "$runner" nm
           bash native/fushi_music/verify_abi.sh --no-plugin "$runner" nm
           bash native/fushi_corpus/verify_abi.sh "$runner" nm
+      # TestFlight 用户跑的是这份归档里的 Runner（与上面未签名包不是同一个二进制、UUID 不同），
+      # 它的 dSYM 单独存（BUG-4102 / BUG-4075）。
+      - name: Upload signed iOS archive dSYMs
+        if: steps.signing.outputs.testflight == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dsyms-testflight-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/archive/Runner.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 90
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
       # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫
       # desktop-artifacts-*：publish job 按那个前缀收 Release 资产，App Store 签名包
