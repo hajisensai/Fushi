@@ -1270,7 +1270,9 @@ class _ModernWideChrome extends StatelessWidget {
                   ),
           ),
         ),
-        // 进度线上方两端时间。
+        // 进度线上方：两端时间，中间阅读读数（阅读速度 · 全书进度 · 本次阅读时长，
+        // 与经典宽屏左栏的读数标签 / 窄屏顶栏同一份数据；BUG-4006：新版宽屏原先
+        // 只在左岛留了一个百分比，速度 / 字数 / 时长全丢了）。
         Positioned(
           left: g.left,
           right: size.width - g.right,
@@ -1278,23 +1280,55 @@ class _ModernWideChrome extends StatelessWidget {
           height: g.seekBand.top - g.timeTop,
           child: chrome(
             IgnorePointer(
-              child: _ClockSecondsBuilder(
-                clock: data.clock,
-                builder:
-                    (BuildContext context, Duration position, Duration total) =>
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: <Widget>[
-                            Text(
-                              formatLyricsPlayerTime(position),
-                              style: timeStyle,
-                            ),
-                            Text(
-                              _remainingText(position, total),
-                              style: timeStyle,
-                            ),
-                          ],
+              child: Row(
+                children: <Widget>[
+                  _ClockSecondsBuilder(
+                    clock: data.clock,
+                    builder:
+                        (
+                          BuildContext context,
+                          Duration position,
+                          Duration total,
+                        ) => Text(
+                          formatLyricsPlayerTime(position),
+                          style: timeStyle,
                         ),
+                  ),
+                  const SizedBox(width: _kModernIslandGap),
+                  Expanded(
+                    child: _StatsBuilder(
+                      clock: data.clock,
+                      builder: (BuildContext context, LyricsPlayerStats stats) {
+                        final String? progress = _progressText(stats);
+                        return Text(
+                          <String>[
+                            _speedText(stats),
+                            if (progress != null) progress,
+                            _sessionText(stats),
+                          ].join('  ·  '),
+                          key: const ValueKey<String>('lyrics_modern_stats'),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: timeStyle,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: _kModernIslandGap),
+                  _ClockSecondsBuilder(
+                    clock: data.clock,
+                    builder:
+                        (
+                          BuildContext context,
+                          Duration position,
+                          Duration total,
+                        ) => Text(
+                          _remainingText(position, total),
+                          style: timeStyle,
+                        ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1412,7 +1446,7 @@ class _ModernWideChrome extends StatelessWidget {
   }
 }
 
-/// 左岛：封面位（兼插图入口）+ 书名 / 章名 · 全书进度。
+/// 左岛：封面位（兼插图入口）+ 书名 / 章名。
 class _ModernInfoIsland extends StatelessWidget {
   const _ModernInfoIsland({
     required this.data,
@@ -1459,23 +1493,17 @@ class _ModernInfoIsland extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: text.title.copyWith(color: cs.onSurface),
                   ),
-                  _StatsBuilder(
-                    clock: data.clock,
-                    builder: (BuildContext context, LyricsPlayerStats stats) {
-                      final double? percent = stats.percent;
-                      return Text(
-                        <String>[
-                          if (chapter.isNotEmpty) chapter,
-                          if (percent != null) '${percent.toStringAsFixed(1)}%',
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: text.detail.tabular.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      );
-                    },
-                  ),
+                  // 全书进度百分比随读数一起在进度线上方（见 [_ModernWideChrome]），
+                  // 这里只留章名，不重复。
+                  if (chapter.isNotEmpty)
+                    Text(
+                      chapter,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.detail.tabular.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                 ],
               ),
             ),
