@@ -30,6 +30,7 @@ import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/diagnostics/video_diag_export.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';

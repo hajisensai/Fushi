@@ -24,6 +24,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicEmbeddedCoverCache;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_recent_destinations.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -66,6 +67,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:transparent_image/transparent_image.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 速览卡最多列几个「最近」条目。
 const int _kPeekRecentCount = 4;

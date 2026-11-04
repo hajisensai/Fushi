@@ -49,6 +49,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subti
     show AudiobookshelfSubtitleMatch;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 class AudiobookshelfItemDetailPage extends ConsumerStatefulWidget {
   const AudiobookshelfItemDetailPage({

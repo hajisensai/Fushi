@@ -11,7 +11,7 @@ import 'package:fushi/src/creator/enhancement.dart';
 import 'package:fushi/src/creator/fields/reading_field.dart';
 import 'package:fushi/src/creator/fields/term_field.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/creator_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'

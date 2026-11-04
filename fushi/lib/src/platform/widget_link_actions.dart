@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
     show ServerContinueCandidate;
 import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart'
     show ServerContinueFeed;
+import 'package:fushi/src/media/media_source.dart';
 
 // 小组件深链的落地动作（接到 [runWidgetLink] 的回调上）。都在 navigator 已退回首页
 // 根路由之后才被调用，各自返回「有没有真的打开」，没打开时调用方停在对应 tab。

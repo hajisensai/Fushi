@@ -25,6 +25,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 预览里给用户确认的东西（全是 Rust 提取 / 会话的结论，这里只渲染）。
 @immutable

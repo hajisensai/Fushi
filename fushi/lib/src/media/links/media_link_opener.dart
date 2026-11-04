@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart'
     show OnlineSourcesDomain;
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 「未入库」灰卡的「去搜」：交给各模块**已有**的获取入口，标题预填。返回 null =
 /// 本平台 / 本配置没有可用入口（灰卡就只是灰卡，不渲染一个点了没去处的按钮）。

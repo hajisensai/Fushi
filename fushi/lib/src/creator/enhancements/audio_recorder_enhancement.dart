@@ -8,7 +8,7 @@ import 'package:fushi/src/creator/audio_enhancement.dart';
 import 'package:fushi/src/creator/audio_export_field.dart';
 import 'package:fushi/src/creator/enhancement.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/creator_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/pages/implementations/audio_recorder_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';

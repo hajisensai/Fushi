@@ -5,6 +5,7 @@ import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart' show FushiClientUrl;
 import 'package:fushi/i18n/strings.g.dart';

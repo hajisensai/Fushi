@@ -8,6 +8,7 @@ import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/ops/ctl_settings_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';

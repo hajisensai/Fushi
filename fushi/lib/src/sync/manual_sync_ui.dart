@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
-import 'package:fushi/src/models/app_font_sync_local.dart';
+import 'package:fushi/src/sync/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;

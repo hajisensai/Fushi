@@ -27,6 +27,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_corpus/fushi_corpus.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 语料来源 → 制卡来源（两个域各自的枚举；语料没有漫画 / 有声书 / 歌词模式）。
 SentenceSourceKind sentenceSourceKindOfCorpus(CorpusSourceKind kind) =>

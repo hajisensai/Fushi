@@ -52,6 +52,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
+import 'package:fushi/src/media/media_source.dart';
 
 enum _CollectionType { sentence, mined, word }
 

@@ -25,7 +25,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
-import 'package:fushi/src/models/recommended_dictionary_installer.dart';
+import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';

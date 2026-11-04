@@ -11,7 +11,7 @@ import 'package:material_color_utilities/material_color_utilities.dart'
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show settingsFootnoteStyle;
-import 'package:fushi/src/storage/storage_usage_actions.dart';
+import 'package:fushi/src/settings/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';

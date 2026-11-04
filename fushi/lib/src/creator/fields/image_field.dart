@@ -14,7 +14,7 @@ import 'package:fushi/src/creator/enhancements/crop_image_enhancement.dart';
 import 'package:fushi/src/creator/image_export_field.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/creator_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 
 /// Returns audio information from context.

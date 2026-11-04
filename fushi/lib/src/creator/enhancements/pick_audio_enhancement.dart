@@ -9,7 +9,7 @@ import 'package:fushi/src/creator/audio_export_field.dart';
 import 'package:fushi/src/creator/enhancement.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/creator_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 

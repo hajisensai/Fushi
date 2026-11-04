@@ -22,6 +22,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
     show buildLookupDestination;
@@ -34,6 +35,7 @@ import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart'
     show BackupMergePreview;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_archive_name.dart';
 import 'package:fushi/src/sync/backup_validating_overlay_route.dart';
 import 'package:fushi/src/sync/desktop_oauth.dart'
     show DesktopOAuthLaunch, DesktopOAuthLaunchObserver;

@@ -916,3 +916,18 @@ abstract class MediaSource {
   /// Aspect ratio of media items.
   double get aspectRatio;
 }
+
+/// [MediaItem] 按序列化标识回查 app 里注册的媒体类型 / 媒体源。依赖 [AppModel] 的
+/// 注册表，所以住在媒体源层而不是 `media_item.dart`（后者是纯数据模型）。
+extension MediaItemAppLookup on MediaItem {
+  /// Get the [MediaType] from a [MediaItem] from its serialised identifier.
+  MediaType getMediaType({required AppModel appModel}) {
+    return appModel.mediaTypes[mediaTypeIdentifier]!;
+  }
+
+  /// Get the [MediaSource] from a [MediaItem] from its serialised identifier.
+  MediaSource getMediaSource({required AppModel appModel}) {
+    MediaType mediaType = getMediaType(appModel: appModel);
+    return appModel.mediaSources[mediaType]![mediaSourceIdentifier]!;
+  }
+}

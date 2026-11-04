@@ -15,6 +15,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsProfileConflict;
 import 'package:fushi/src/sync/sync_settings_schema.dart';

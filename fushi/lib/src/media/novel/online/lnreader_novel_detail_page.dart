@@ -44,6 +44,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 小说源的作品页：详情 + 章节目录。默认**在线阅读**，另有「加入书架」「下载」。
 ///

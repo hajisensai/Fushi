@@ -203,6 +203,7 @@ import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 Color? _savedSplashColor;
 

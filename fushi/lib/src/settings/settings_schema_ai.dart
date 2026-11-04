@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.d
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';

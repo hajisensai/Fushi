@@ -13,8 +13,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {

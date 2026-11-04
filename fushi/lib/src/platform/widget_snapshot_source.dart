@@ -63,6 +63,7 @@ import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui
     show audiobookshelfTabServers;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
+import 'package:fushi/src/media/media_source.dart';
 
 /// 快照里每个封面最多探测的候选数 = 书架上限，封面文件探测只对入选的几条做。
 const int _kCoverProbeLimit = kWidgetShelfLimit;

@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/video_external_provider_settings
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 

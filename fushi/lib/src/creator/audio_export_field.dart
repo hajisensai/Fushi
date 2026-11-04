@@ -6,7 +6,7 @@ import 'package:fushi/src/creator/enhancement.dart';
 import 'package:fushi/src/creator/export_field_search.dart';
 import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/creator_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart'
     show WordAudioUnavailable, reportWordAudioUnavailable;
 import 'package:fushi/i18n/strings.g.dart';

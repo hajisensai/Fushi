@@ -15,6 +15,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_page_backdrop.dart';
 import 'package:fushi/src/settings/nav_module_order_list.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';

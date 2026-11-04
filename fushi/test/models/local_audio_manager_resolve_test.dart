@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
-import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_path_rebase.dart';
 import 'package:path/path.dart' as p;
 
 /// TODO-1171: internal local-audio copies must resolve by FILENAME onto the

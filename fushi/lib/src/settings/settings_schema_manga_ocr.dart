@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_page_reset.dart'
     show settingsSectionModifiedSummary;
 import 'package:fushi/i18n/strings.g.dart';

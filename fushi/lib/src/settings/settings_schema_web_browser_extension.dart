@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage_provider.dart';

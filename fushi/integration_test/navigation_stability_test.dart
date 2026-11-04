@@ -16,7 +16,7 @@ import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart'
     show OnboardingWizardPage;
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart'
     show ShortcutSettingsPage;
-import 'package:fushi/src/settings/settings_destination.dart'
+import 'package:fushi/src/settings/settings_destination_id.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/settings/settings_detail_page.dart'
     show SettingsDetailPage;

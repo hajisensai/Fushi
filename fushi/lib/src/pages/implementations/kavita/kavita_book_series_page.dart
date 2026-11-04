@@ -40,6 +40,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 class KavitaBookSeriesPage extends ConsumerStatefulWidget {
   const KavitaBookSeriesPage({
