@@ -44,6 +44,9 @@ class Plugin:
     loop: Optional[asyncio.AbstractEventLoop] = None
     settings_path: str = ""
     settings: Dict[str, Any] = {}
+    # The Lens screen is showing: the capture button then only closes it (the
+    # frontend does that), it must not capture the Lens itself and reopen it.
+    lens_open: bool = False
 
     async def _main(self) -> None:
         self.loop = asyncio.get_running_loop()
@@ -69,6 +72,8 @@ class Plugin:
     # Back button press (reader thread): grab the frame before Steam's UI
     # covers the game, then tell the frontend to open the Lens on it.
     def _on_paddle(self, _button: str) -> None:
+        if self.lens_open:
+            return
         if self.loop is not None:
             asyncio.run_coroutine_threadsafe(self._capture_and_emit(), self.loop)
 
@@ -108,6 +113,10 @@ class Plugin:
             return {"ok": True, **await asyncio.to_thread(self.service.capture)}
         except Exception as e:  # noqa: BLE001
             return _error(e)
+
+    async def set_lens_open(self, is_open: bool) -> Dict[str, Any]:
+        self.lens_open = bool(is_open)
+        return {"ok": True}
 
     async def set_button(self, button: str) -> Dict[str, Any]:
         if button not in BUTTONS:

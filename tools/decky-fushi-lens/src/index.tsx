@@ -11,7 +11,6 @@ import {
   ButtonItem,
   DropdownItem,
   Focusable,
-  GamepadButton,
   GamepadEvent,
   Navigation,
   PanelSection,
@@ -42,6 +41,7 @@ const finishPairing = callable<[string], Result>("finish_pairing");
 const unpair = callable<[], Result>("unpair");
 const captureNow = callable<[], Result & Partial<FrameInfo>>("capture");
 const setButton = callable<[string], Result>("set_button");
+const setLensOpen = callable<[boolean], Result>("set_lens_open");
 
 const ERRORS: Record<string, string> = {
   unreachable: "Can't reach Fushi at that address. Is it running with Interconnect on?",
@@ -73,62 +73,118 @@ function openLens(frameId: string) {
 
 // ── Lens route ──────────────────────────────────────────────────────────
 
-const BUTTON_NAMES: Partial<Record<GamepadButton, string>> = {
-  [GamepadButton.DIR_UP]: "UP",
-  [GamepadButton.DIR_DOWN]: "DOWN",
-  [GamepadButton.DIR_LEFT]: "LEFT",
-  [GamepadButton.DIR_RIGHT]: "RIGHT",
-  [GamepadButton.OK]: "A",
-  [GamepadButton.CANCEL]: "B",
-  [GamepadButton.SECONDARY]: "X",
-  [GamepadButton.OPTIONS]: "Y",
-  [GamepadButton.BUMPER_LEFT]: "LB",
-  [GamepadButton.BUMPER_RIGHT]: "RB",
+// Steam's own controller button ids (`RegisterForControllerInputMessages`,
+// enum read from Steam's steamui/sp.js on SteamOS 2026-11-04). Steam's focus
+// navigation never hands these presses to a plugin route that only holds an
+// iframe, so the route listens to the raw input stream while it is mounted.
+const STEAM_BUTTONS: Record<number, string> = {
+  0: "A",
+  1: "B",
+  2: "X",
+  3: "Y",
+  4: "UP",
+  5: "RIGHT",
+  6: "DOWN",
+  7: "LEFT",
+  20: "UP", // left stick
+  21: "DOWN",
+  22: "LEFT",
+  23: "RIGHT",
+  30: "LB",
+  31: "RB",
+};
+
+const STEAM_BACK_BUTTONS = [32, 33, 44, 45];
+
+type InputRegistration = { unregister(): void };
+declare const SteamClient: {
+  Input: {
+    RegisterForControllerInputMessages(
+      cb: (controller: number, button: number, pressed: boolean) => void,
+    ): InputRegistration;
+  };
+};
+
+// Steam's focus navigation acts on the same presses (the d-pad moved focus to
+// the search bar). The Lens holds Steam focus on one element that consumes
+// every navigation and face-button event; the actual handling comes from the
+// raw input stream above.
+const swallow = (evt: GamepadEvent) => {
+  evt.preventDefault();
+  evt.stopPropagation();
 };
 
 function LensRoute() {
   const frame = useRef<HTMLIFrameElement>(null);
+  const trap = useRef<HTMLDivElement>(null);
   const [src] = useState(() => (lensUrl ? `${lensUrl}#frame=${pendingFrame ?? ""}` : null));
 
   useEffect(() => {
     const origin = lensUrl ? new URL(lensUrl).origin : "";
     postToLens = (msg) => frame.current?.contentWindow?.postMessage(msg, origin);
+    let bFallback = 0;
     const onMessage = (e: MessageEvent) => {
-      if (e.source === frame.current?.contentWindow && e.data?.fushiLens === "exit") Navigation.NavigateBack();
+      if (e.source !== frame.current?.contentWindow) return;
+      if (e.data?.fushiLens === "ack") clearTimeout(bFallback);
+      if (e.data?.fushiLens === "exit") Navigation.NavigateBack();
     };
-    window.addEventListener("message", onMessage);
+    // The iframe lives in the Big Picture window, while this code runs in
+    // SharedJSContext: the page's "exit" goes to the window that hosts it.
+    const host = frame.current?.ownerDocument?.defaultView ?? window;
+    host.addEventListener("message", onMessage);
+    trap.current?.focus();
+    void setLensOpen(true);
+    const input = SteamClient.Input.RegisterForControllerInputMessages((_controller, button, pressed) => {
+      if (!pressed) return;
+      // Back buttons (L5 R5 L4 R4) close the Lens: the capture button toggles it.
+      if (STEAM_BACK_BUTTONS.includes(button)) {
+        Navigation.NavigateBack();
+        return;
+      }
+      const name = STEAM_BUTTONS[button];
+      if (!name) return;
+      postToLens?.({ fushiLens: "button", button: name });
+      if (name === "B") {
+        // Safety net: if the page does not answer, B leaves the Lens anyway.
+        clearTimeout(bFallback);
+        bFallback = window.setTimeout(() => Navigation.NavigateBack(), 600);
+      }
+    });
     return () => {
+      input.unregister();
+      clearTimeout(bFallback);
+      // Let the closing back-button press reach the backend first, so it does not
+      // capture the Lens screen and reopen it.
+      setTimeout(() => void setLensOpen(false), 400);
       postToLens = null;
-      window.removeEventListener("message", onMessage);
+      host.removeEventListener("message", onMessage);
     };
   }, []);
-
-  const onButton = (evt: GamepadEvent) => {
-    const button = evt.detail.button;
-    // The capture button again (or Steam's back paddles) closes the Lens.
-    if (button >= GamepadButton.REAR_LEFT_UPPER && button <= GamepadButton.REAR_RIGHT_LOWER) {
-      Navigation.NavigateBack();
-      return;
-    }
-    const name = BUTTON_NAMES[button];
-    if (name) postToLens?.({ fushiLens: "button", button: name });
-  };
 
   if (!src) {
     return <div style={{ padding: "60px 24px" }}>Fushi Lens is not running. Reload the plugin.</div>;
   }
   return (
     <Focusable
+      ref={trap}
       style={{ position: "fixed", inset: 0, zIndex: 7000, background: "#000" }}
-      onActivate={() => {}}
-      onButtonDown={onButton}
-      onCancelButton={() => {}}
+      preferredFocus
       noFocusRing
+      onActivate={() => {}}
+      onGamepadDirection={swallow}
+      onOKButton={swallow}
+      onSecondaryButton={swallow}
+      onOptionsButton={swallow}
+      onCancelButton={swallow}
+      // B too: the Lens closes its popup first and asks to leave only when none is open.
+      onButtonDown={swallow}
+      onGamepadBlur={() => setTimeout(() => trap.current?.focus(), 0)}
     >
       <iframe
         ref={frame}
         src={src}
-        style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+        tabIndex={-1}
+        style={{ width: "100%", height: "100%", border: 0, display: "block", pointerEvents: "none" }}
         title="Fushi Lens"
       />
     </Focusable>

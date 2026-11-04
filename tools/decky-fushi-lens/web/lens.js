@@ -227,6 +227,14 @@
     if (popupPort) popupPort.postMessage({ __fushiPopupFrame: true, ...message });
   }
 
+  // The Decky frontend runs in Steam's SharedJSContext window, not in the window
+  // that hosts this iframe, so its messages come from Steam's UI origin rather
+  // than from window.parent.
+  const STEAM_UI_ORIGIN = 'https://steamloopback.host';
+  function fromSteam(event) {
+    return event.source === window.parent || event.origin === STEAM_UI_ORIGIN;
+  }
+
   window.addEventListener('message', (event) => {
     const msg = event.data;
     if (event.source === popupFrame.contentWindow) {
@@ -243,8 +251,15 @@
       if (pendingRender) { sendPopup({ type: 'render', data: pendingRender }); pendingRender = null; }
       return;
     }
-    if (event.source === window.parent && msg && msg.fushiLens === 'button') onButton(String(msg.button || ''));
-    if (event.source === window.parent && msg && msg.fushiLens === 'frame') loadFrame(String(msg.frameId || ''));
+    if (!fromSteam(event) || !msg) return;
+    if (msg.fushiLens === 'button') {
+      onButton(String(msg.button || ''));
+      // Tell the frontend the press was handled: without this answer it closes the
+      // Lens on B by itself (so a broken page can never trap the player).
+      // Same window as `exit`: the frontend listens on the window hosting this iframe.
+      if (window.parent !== window) window.parent.postMessage({ fushiLens: 'ack', button: msg.button }, '*');
+    }
+    if (msg.fushiLens === 'frame') loadFrame(String(msg.frameId || ''));
   });
 
   function onPopupMessage(msg) {
