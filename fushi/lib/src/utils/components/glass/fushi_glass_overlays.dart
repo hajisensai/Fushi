@@ -16,6 +16,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_dialog_content_scroll.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -530,7 +531,7 @@ class FushiAlertDialog extends StatelessWidget {
     this.shape,
     this.alignment,
     this.constraints,
-    this.scrollable = false,
+    this.scrollable,
   }) : scrollController = null,
        actionScrollController = null,
        insetAnimationDuration = const Duration(milliseconds: 100),
@@ -569,7 +570,7 @@ class FushiAlertDialog extends StatelessWidget {
     this.shape,
     this.alignment,
     this.constraints,
-    this.scrollable = false,
+    this.scrollable,
     this.scrollController,
     this.actionScrollController,
     this.insetAnimationDuration = const Duration(milliseconds: 100),
@@ -602,7 +603,13 @@ class FushiAlertDialog extends StatelessWidget {
   final ShapeBorder? shape;
   final AlignmentGeometry? alignment;
   final BoxConstraints? constraints;
-  final bool scrollable;
+
+  /// null（默认）= 内容区「装得下原样、装不下就滚」（[FushiDialogContentScroll]）：
+  /// 含输入框的对话框在键盘弹出 / 小窗口里不再溢出，调用点不必再手包
+  /// `SingleChildScrollView`；吃满剩余高度的内容（列表）布局不变。
+  /// true = [AlertDialog.scrollable]（标题与内容一起滚，内容拿无界高度）；
+  /// false = 不套任何滚动，内容自己管高度。
+  final bool? scrollable;
   final ScrollController? scrollController;
   final ScrollController? actionScrollController;
   final Duration insetAnimationDuration;
@@ -621,7 +628,7 @@ class FushiAlertDialog extends StatelessWidget {
         title: title,
         titlePadding: titlePadding,
         titleTextStyle: titleTextStyle,
-        content: content,
+        content: _scrollableContent(),
         contentPadding: contentPadding,
         contentTextStyle: contentTextStyle,
         actions: actions,
@@ -643,7 +650,7 @@ class FushiAlertDialog extends StatelessWidget {
         shape: shape,
         alignment: alignment,
         constraints: constraints ?? _kMd3DialogConstraints,
-        scrollable: scrollable,
+        scrollable: scrollable ?? false,
         scrollController: scrollController,
         actionScrollController: actionScrollController,
         insetAnimationDuration: insetAnimationDuration,
@@ -658,7 +665,7 @@ class FushiAlertDialog extends StatelessWidget {
         title: title,
         titlePadding: titlePadding,
         titleTextStyle: titleTextStyle,
-        content: content,
+        content: _scrollableContent(),
         contentPadding: contentPadding,
         contentTextStyle: contentTextStyle,
         actions: actions,
@@ -678,10 +685,17 @@ class FushiAlertDialog extends StatelessWidget {
         shape: shape,
         alignment: alignment,
         constraints: constraints ?? _kMd3DialogConstraints,
-        scrollable: scrollable,
+        scrollable: scrollable ?? false,
       );
     }
     return _buildGlass(context);
+  }
+
+  /// 内容区按 [scrollable] 套滚动外壳（null 才套，见字段注释）。
+  Widget? _scrollableContent() {
+    final Widget? raw = content;
+    if (raw == null || scrollable != null) return raw;
+    return FushiDialogContentScroll(child: raw);
   }
 
   /// M3E：调用方给的图标包进形状库装饰底（[FushiDialogHeroIcon]，9 瓣饼干 +
@@ -723,7 +737,7 @@ class FushiAlertDialog extends StatelessWidget {
       child: Semantics(
         container: true,
         explicitChildNodes: true,
-        child: content!,
+        child: _scrollableContent()!,
       ),
     );
   }
@@ -735,7 +749,7 @@ class FushiAlertDialog extends StatelessWidget {
     Widget? actionsWidget,
   ) {
     final List<Widget> columnChildren;
-    if (scrollable) {
+    if (scrollable ?? false) {
       columnChildren = <Widget>[
         if (head.isNotEmpty || contentWidget != null)
           Flexible(
