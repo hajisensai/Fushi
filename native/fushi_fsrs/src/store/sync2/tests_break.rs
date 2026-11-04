@@ -5,7 +5,7 @@ use serde_json::json;
 use super::tests::{Bucket, Device, P};
 use crate::sync2::id::Id;
 use crate::sync2::keys::DeviceKey;
-use crate::sync2::segment::{Head, CHAIN_ZERO, MIN_READER, PROTOCOL};
+use crate::sync2::segment::{CHAIN_ZERO, Head, MIN_READER, PROTOCOL};
 use crate::sync2::vv::Vv;
 
 const T0: i64 = 1_700_000_000_000;
@@ -27,6 +27,7 @@ fn forged_head(collection: Id, protocol: u32, min_reader: u32) -> Vec<u8> {
         digest: String::new(),
         at_ms: T0,
         name: "future".into(),
+        ext: None,
     }
     .encode(&key)
 }
@@ -38,7 +39,12 @@ fn this_version_writes_protocol_three_heads() {
     let a = Device::new("br-w");
     let mut bucket = Bucket::default();
     a.sync(&mut bucket, "loc", T0);
-    let head = bucket.0.iter().find(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).unwrap();
+    let head = bucket
+        .0
+        .iter()
+        .find(|(k, _)| k.contains("/head-"))
+        .map(|(_, v)| v.clone())
+        .unwrap();
     let h = Head::decode(&head).unwrap();
     assert_eq!((h.protocol, h.min_reader), (3, 3));
 }
@@ -47,7 +53,12 @@ fn this_version_writes_protocol_three_heads() {
 #[test]
 fn plan_refuses_heads_that_need_a_newer_reader() {
     let a = Device::new("br-a");
-    let collection = Id::parse(a.core.sync2_identity(P, T0).unwrap()["collection"].as_str().unwrap()).unwrap();
+    let collection = Id::parse(
+        a.core.sync2_identity(P, T0).unwrap()["collection"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
     let newer = forged_head(collection, PROTOCOL + 1, PROTOCOL + 1);
     let plan = a.core.sync2_plan_at(P, &[newer], Some("loc")).unwrap();
     assert_eq!(plan["needsUpgrade"], json!(true), "{plan}");
@@ -58,7 +69,10 @@ fn plan_refuses_heads_that_need_a_newer_reader() {
     let plan = a.core.sync2_plan_at(P, &[readable], Some("loc")).unwrap();
     assert_eq!(plan["needsUpgrade"], json!(false), "{plan}");
     let after = a.rows("SELECT count(*) FROM sync2_devices");
-    assert_ne!(known, after, "the readable head's device is recorded, the newer one was not");
+    assert_ne!(
+        known, after,
+        "the readable head's device is recorded, the newer one was not"
+    );
 }
 
 /// v1 位置迁移补绑定：只补没人绑过的名字，已有绑定（不管指向什么）一概不动；同一批里重名只绑第一次。
@@ -67,20 +81,32 @@ fn migration_binds_only_names_nobody_bound() {
     let a = Device::new("br-m");
     a.core.sync2_identity(P, T0).unwrap();
     let sha = |b: u8| [b; 32];
-    let first = a.core.sync2_media_bind_unbound(P, &[("a.png".into(), sha(1), 10)], T0).unwrap();
+    let first = a
+        .core
+        .sync2_media_bind_unbound(P, &[("a.png".into(), sha(1), 10)], T0)
+        .unwrap();
     assert_eq!(first["appended"], json!(1));
     let again = a
         .core
         .sync2_media_bind_unbound(
             P,
-            &[("a.png".into(), sha(2), 20), ("b.png".into(), sha(3), 30), ("b.png".into(), sha(4), 40)],
+            &[
+                ("a.png".into(), sha(2), 20),
+                ("b.png".into(), sha(3), 30),
+                ("b.png".into(), sha(4), 40),
+            ],
             T0 + 1,
         )
         .unwrap();
     assert_eq!(again["bound"], json!(["b.png"]), "{again}");
     let scan = a
         .core
-        .sync2_media_scan(P, &["a.png".into(), "b.png".into()], &std::collections::HashMap::new(), T0 + 2)
+        .sync2_media_scan(
+            P,
+            &["a.png".into(), "b.png".into()],
+            &std::collections::HashMap::new(),
+            T0 + 2,
+        )
         .unwrap();
     let hex = |b: u8| format!("{b:02x}").repeat(32);
     assert_eq!(scan["items"][0]["sha"], json!(hex(1)), "{scan}");

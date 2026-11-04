@@ -28,7 +28,9 @@ impl Writer {
     }
 
     pub fn with_capacity(n: usize) -> Self {
-        Self { buf: Vec::with_capacity(n) }
+        Self {
+            buf: Vec::with_capacity(n),
+        }
     }
 
     pub fn into_vec(self) -> Vec<u8> {
@@ -153,7 +155,10 @@ impl<'a> Reader<'a> {
     }
 
     pub fn raw(&mut self, n: usize) -> DResult<&'a [u8]> {
-        let end = self.pos.checked_add(n).ok_or(DecodeError("length overflow"))?;
+        let end = self
+            .pos
+            .checked_add(n)
+            .ok_or(DecodeError("length overflow"))?;
         if end > self.buf.len() {
             return Err(DecodeError("truncated bytes"));
         }
@@ -243,9 +248,14 @@ pub struct ZstdWindow<'s> {
 
 impl<'s> ZstdWindow<'s> {
     pub fn new(compressed: &'s [u8]) -> Result<ZstdWindow<'s>, StreamError> {
-        let decoder =
-            ruzstd::decoding::StreamingDecoder::new(compressed).map_err(|e| StreamError::Zstd(e.to_string()))?;
-        Ok(ZstdWindow { decoder, buf: Vec::new(), pos: 0, eof: false })
+        let decoder = ruzstd::decoding::StreamingDecoder::new(compressed)
+            .map_err(|e| StreamError::Zstd(e.to_string()))?;
+        Ok(ZstdWindow {
+            decoder,
+            buf: Vec::new(),
+            pos: 0,
+            eof: false,
+        })
     }
 
     /// 补读：先丢掉已解的前缀，再补 [WINDOW] 与未解部分中较大者。
@@ -279,7 +289,10 @@ impl<'s> ZstdWindow<'s> {
     }
 
     /// 解一个值；缺字节（[Reader] 的截断错误）就补读重试，流读完了还缺才算截断。
-    pub fn parse<T>(&mut self, f: impl Fn(&mut Reader<'_>) -> DResult<T>) -> Result<T, StreamError> {
+    pub fn parse<T>(
+        &mut self,
+        f: impl Fn(&mut Reader<'_>) -> DResult<T>,
+    ) -> Result<T, StreamError> {
         loop {
             let mut r = Reader::new(&self.buf[self.pos..]);
             match f(&mut r) {

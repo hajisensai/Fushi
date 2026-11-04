@@ -13,7 +13,7 @@
 
 use serde_json::value::RawValue;
 
-use crate::history::{Extra, Kind, Log, Outcome, Parsed, RType, NONE_I64};
+use crate::history::{Extra, Kind, Log, NONE_I64, Outcome, Parsed, RType};
 
 pub const DAY_MS: i64 = 86_400_000;
 
@@ -63,8 +63,10 @@ pub enum MemAlg {
 }
 
 impl MemAlg {
-    fn of(raw: Option<&RawValue>) -> Self {
-        let Some(raw) = raw else { return MemAlg::Absent };
+    pub(crate) fn of(raw: Option<&RawValue>) -> Self {
+        let Some(raw) = raw else {
+            return MemAlg::Absent;
+        };
         match serde_json::from_str::<String>(raw.get()) {
             Ok(s) => match s.as_str() {
                 "fsrs6" => MemAlg::Is(Alg::Fsrs6),
@@ -142,7 +144,10 @@ impl EffLog {
     /// `srsIsReset`：manual 且结果是新卡、reps 归零。
     fn is_reset(&self) -> bool {
         self.kind == Kind::Manual
-            && self.res.as_ref().is_some_and(|r| r.queue == 0 && r.reps == 0)
+            && self
+                .res
+                .as_ref()
+                .is_some_and(|r| r.queue == 0 && r.reps == 0)
     }
 
     /// `srsIsRestoreState`：「恢复到备份时间点」照抄状态的 manual 日志。
@@ -154,13 +159,21 @@ impl EffLog {
 /// 一份历史的有效日志（排序后），供投影用。
 pub fn effective_logs(parsed: &[Parsed<'_>]) -> Vec<EffLog> {
     let logs: Vec<Log<'_>> = parsed.iter().map(|p| p.0.clone()).collect();
-    let sel = crate::history::select(&logs);
+    effective_by(&logs, |i, clamped| {
+        let (log, res, extra) = &parsed[i];
+        EffLog::of(log, res, extra, clamped)
+    })
+}
+
+/// 按选取规则（[crate::history::select]）挑出 [logs] 里的有效日志、按排序键排好；[eff] 由第 i 条与「排序键被钳位」
+/// 造出那条的 [EffLog]（调用方各自持有日志的其余字段：解析结果 [Parsed]，或整 profile 扫描时的紧凑形态）。
+pub fn effective_by(logs: &[Log<'_>], mut eff: impl FnMut(usize, bool) -> EffLog) -> Vec<EffLog> {
+    let sel = crate::history::select(logs);
     let mut out = Vec::with_capacity(sel.order.len());
     for (k, &i) in sel.order.iter().enumerate() {
         let s = sel.status[k];
         if s & crate::history::STATUS_EFFECTIVE != 0 {
-            let (log, res, extra) = &parsed[i];
-            out.push(EffLog::of(log, res, extra, s & crate::history::STATUS_CLAMPED != 0));
+            out.push(eff(i, s & crate::history::STATUS_CLAMPED != 0));
         }
     }
     out
@@ -203,9 +216,19 @@ fn to_reviews(rs: &[&EffLog], previous: Option<i64>, alg: Alg, day: &Day) -> Vec
     out
 }
 
-fn from_anchor(anchor: &EffLog, after: &[&EffLog], alg: Alg, day: &Day) -> Result<MemoryInput, String> {
+fn from_anchor(
+    anchor: &EffLog,
+    after: &[&EffLog],
+    alg: Alg,
+    day: &Day,
+) -> Result<MemoryInput, String> {
     let (since, mem, ease, ivl) = match &anchor.res {
-        Some(r) => (r.last_reviewed_at.unwrap_or(anchor.at), r.memory, r.ease, r.scheduled_days),
+        Some(r) => (
+            r.last_reviewed_at.unwrap_or(anchor.at),
+            r.memory,
+            r.ease,
+            r.scheduled_days,
+        ),
         None => (anchor.at, None, None, 0),
     };
     let reviews = to_reviews(after, Some(since), alg, day);
@@ -216,12 +239,22 @@ fn from_anchor(anchor: &EffLog, after: &[&EffLog], alg: Alg, day: &Day) -> Resul
     };
     if let Some(m) = mem {
         if anchor_alg == MemAlg::Is(alg) {
-            return Ok(MemoryInput { reviews, starting: Some(m), sm2: None, complete: false });
+            return Ok(MemoryInput {
+                reviews,
+                starting: Some(m),
+                sm2: None,
+                complete: false,
+            });
         }
     }
     let ease = ease.unwrap_or(2500) as f64 / 1000.0;
     let ivl = if ivl <= 0 { 1.0 } else { ivl as f64 };
-    Ok(MemoryInput { reviews, starting: None, sm2: Some((ease, ivl)), complete: false })
+    Ok(MemoryInput {
+        reviews,
+        starting: None,
+        sm2: Some((ease, ivl)),
+        complete: false,
+    })
 }
 
 /// 收集 S/D 的输入（铁律 A ①～③，`srsCollectMemoryInput`）。[eff] 是排序后的有效日志。
@@ -229,7 +262,9 @@ pub fn memory_input(eff: &[EffLog], alg: Alg, day: &Day) -> Result<MemoryInput, 
     let start = eff.iter().rposition(EffLog::is_reset).map_or(0, |i| i + 1);
     let window = &eff[start..];
     // 评分在窗口里的下标（「在锚点之后」按排序位置比）。
-    let ratings: Vec<usize> = (0..window.len()).filter(|&i| window[i].is_rating()).collect();
+    let ratings: Vec<usize> = (0..window.len())
+        .filter(|&i| window[i].is_rating())
+        .collect();
     let pick = |from: Option<usize>| -> Vec<&EffLog> {
         ratings
             .iter()
@@ -244,7 +279,12 @@ pub fn memory_input(eff: &[EffLog], alg: Alg, day: &Day) -> Result<MemoryInput, 
     let last_anchor = window.iter().rposition(|l| l.kind == Kind::ImportAnchor);
     if ratings.is_empty() {
         return match last_anchor {
-            None => Ok(MemoryInput { reviews: Vec::new(), starting: None, sm2: None, complete: true }),
+            None => Ok(MemoryInput {
+                reviews: Vec::new(),
+                starting: None,
+                sm2: None,
+                complete: true,
+            }),
             Some(a) => from_anchor(&window[a], &[], alg, day),
         };
     }
@@ -273,16 +313,25 @@ pub fn memory_input(eff: &[EffLog], alg: Alg, day: &Day) -> Result<MemoryInput, 
 ///
 /// 规则同删除前的 `srsPrepareOptimization` 循环：历史完整且非空；有效评分里去掉「时间不确定」的之后，
 /// 条数必须与记忆状态输入的评审条数相同（有可证明时间错误的日志、或重置之前还有评分，整卡不进）。
-pub fn optimizer_card(eff: &[EffLog], alg: Alg, day: &Day) -> Result<Option<(Vec<(i64, f64)>, Vec<(i64, usize)>)>, String> {
+pub fn optimizer_card(
+    eff: &[EffLog],
+    alg: Alg,
+    day: &Day,
+) -> Result<Option<(Vec<(i64, f64)>, Vec<(i64, usize)>)>, String> {
     let input = memory_input(eff, alg, day)?;
     if !input.complete || input.reviews.is_empty() {
         return Ok(None);
     }
-    let ratings: Vec<&EffLog> = eff.iter().filter(|l| l.is_rating() && !l.time_uncertain).collect();
+    let ratings: Vec<&EffLog> = eff
+        .iter()
+        .filter(|l| l.is_rating() && !l.time_uncertain)
+        .collect();
     if ratings.len() != input.reviews.len() {
         return Ok(None);
     }
-    let items = (1..input.reviews.len()).map(|i| (ratings[i].at, i + 1)).collect();
+    let items = (1..input.reviews.len())
+        .map(|i| (ratings[i].at, i + 1))
+        .collect();
     Ok(Some((input.reviews, items)))
 }
 
@@ -325,18 +374,27 @@ fn type_of(r: RType) -> i64 {
 
 /// 上一条是 review+Again 或 relearn+Again/Hard：同日再次复习的 review 卡算重学（card_type 3）。
 fn relearning(rtype: RType, rating: i64) -> bool {
-    (rtype == RType::Review && rating == 1) || (rtype == RType::Relearn && (rating == 1 || rating == 2))
+    (rtype == RType::Review && rating == 1)
+        || (rtype == RType::Relearn && (rating == 1 || rating == 2))
 }
 
 /// 第 i 条保留评分的 card_type（上游 RwkvReviewState）。
 fn card_type(kept: &[&EffLog], i: usize, day: &Day) -> i64 {
     let log = kept[i];
     if i == 0 {
-        return if log.rtype == RType::Learn { 0 } else { type_of(log.rtype) };
+        return if log.rtype == RType::Learn {
+            0
+        } else {
+            type_of(log.rtype)
+        };
     }
     let prev = kept[i - 1];
     if log.rtype == RType::Review && day.index(log.at) == day.index(prev.at) {
-        return if relearning(prev.rtype, prev.rating.unwrap_or(0)) { 3 } else { 4 };
+        return if relearning(prev.rtype, prev.rating.unwrap_or(0)) {
+            3
+        } else {
+            4
+        };
     }
     type_of(log.rtype)
 }
@@ -397,7 +455,11 @@ pub fn push_rwkv_row(
 }
 
 /// 一张卡的保留评分行（时间顺序 = 排序键顺序），连同每行的评分时刻与保留评分在 [eff] 里的下标。
-pub fn rwkv_card_rows(eff: &[EffLog], ids: &RwkvIds, day: &Day) -> Result<(Vec<u8>, Vec<i64>, Vec<usize>), String> {
+pub fn rwkv_card_rows(
+    eff: &[EffLog],
+    ids: &RwkvIds,
+    day: &Day,
+) -> Result<(Vec<u8>, Vec<i64>, Vec<usize>), String> {
     let kept_idx = rwkv_kept(eff);
     let kept: Vec<&EffLog> = kept_idx.iter().map(|&i| &eff[i]).collect();
     let mut rows = Vec::with_capacity(kept.len() * RWKV_ROW);
@@ -439,12 +501,10 @@ pub fn push_rwkv_now_row(
     let fresh = last.is_none() || queue == 0;
     let card_type = match last {
         _ if fresh => 0,
-        Some((at, rating, rtype)) if review_type == RType::Review && day.index(now_ms) == day.index(at) => {
-            if relearning(rtype, rating) {
-                3
-            } else {
-                4
-            }
+        Some((at, rating, rtype))
+            if review_type == RType::Review && day.index(now_ms) == day.index(at) =>
+        {
+            if relearning(rtype, rating) { 3 } else { 4 }
         }
         _ => type_of(review_type),
     };
@@ -483,7 +543,11 @@ pub fn memory_input_columns(ints: &[i64], alg: Alg, day: &Day) -> Result<MemoryI
                     last_reviewed_at: opt(c[8]),
                     ease: opt(c[9]),
                     memory: (flags & 2 != 0).then(|| {
-                        (f64::from_bits(c[10] as u64), f64::from_bits(c[11] as u64), f64::from_bits(c[12] as u64))
+                        (
+                            f64::from_bits(c[10] as u64),
+                            f64::from_bits(c[11] as u64),
+                            f64::from_bits(c[12] as u64),
+                        )
                     }),
                 }),
                 mem_alg: MemAlg::from_code(c[13]),
@@ -497,12 +561,13 @@ pub fn memory_input_columns(ints: &[i64], alg: Alg, day: &Day) -> Result<MemoryI
     memory_input(&eff, alg, day)
 }
 
-
 /// [MemoryInput] 的输出布局（小端）：`[i64 flags][i64 n][f64 × 5: s, d, sf, ease, ivl][i64 rating × n][f64 delta × n]`，
 /// flags：1 complete、2 有 starting、4 有 sm2。
 pub fn encode_memory_input(m: &MemoryInput) -> Vec<u8> {
     let mut out = Vec::with_capacity(56 + m.reviews.len() * 16);
-    let flags = i64::from(m.complete) | if m.starting.is_some() { 2 } else { 0 } | if m.sm2.is_some() { 4 } else { 0 };
+    let flags = i64::from(m.complete)
+        | if m.starting.is_some() { 2 } else { 0 }
+        | if m.sm2.is_some() { 4 } else { 0 };
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(m.reviews.len() as i64).to_le_bytes());
     let (s, d, sf) = m.starting.unwrap_or((0.0, 0.0, 0.0));
@@ -541,7 +606,9 @@ mod tests {
     use crate::history::parse_full;
 
     fn wire(id: &str, kind: &str, phys: i64, at: i64, extra: &str) -> String {
-        format!(r#"{{"id":"{id}","p":"p","card":"c","kind":"{kind}","hlc":"{phys}:0:A","at":{at},"ts":"anchored"{extra}}}"#)
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"c","kind":"{kind}","hlc":"{phys}:0:A","at":{at},"ts":"anchored"{extra}}}"#
+        )
     }
 
     fn eff(jsons: &[String]) -> Vec<EffLog> {
@@ -549,13 +616,19 @@ mod tests {
         effective_logs(&parsed)
     }
 
-    const D: Day = Day { utc_offset_min: 0, rollover_hour: 4 };
+    const D: Day = Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    };
 
     #[test]
     fn day_index_floors_before_rollover() {
         assert_eq!(D.index(4 * 3_600_000), 0);
         assert_eq!(D.index(4 * 3_600_000 - 1), -1);
-        let jst = Day { utc_offset_min: 540, rollover_hour: 4 };
+        let jst = Day {
+            utc_offset_min: 540,
+            rollover_hour: 4,
+        };
         assert_eq!(jst.index(0), 0);
         assert_eq!(jst.index(-5 * 3_600_000 - 1), -1);
     }
@@ -563,14 +636,29 @@ mod tests {
     #[test]
     fn complete_history_starts_at_learn_and_fsrs6_counts_days() {
         let h = eff(&[
-            wire("a", "review", 1, 0, r#","rtype":"learn","rating":3,"res":{"queue":"review"}"#),
-            wire("b", "review", 2, DAY_MS * 3 / 2, r#","rtype":"review","rating":3,"res":{"queue":"review"}"#),
+            wire(
+                "a",
+                "review",
+                1,
+                0,
+                r#","rtype":"learn","rating":3,"res":{"queue":"review"}"#,
+            ),
+            wire(
+                "b",
+                "review",
+                2,
+                DAY_MS * 3 / 2,
+                r#","rtype":"review","rating":3,"res":{"queue":"review"}"#,
+            ),
         ]);
         let seven = memory_input(&h, Alg::Fsrs7, &D).unwrap();
         assert!(seven.complete);
         assert_eq!(seven.reviews, vec![(3, 0.0), (3, 1.5)]);
         let six = memory_input(&h, Alg::Fsrs6, &D).unwrap();
-        assert_eq!(six.reviews[1].1, (D.index(DAY_MS * 3 / 2) - D.index(0)) as f64);
+        assert_eq!(
+            six.reviews[1].1,
+            (D.index(DAY_MS * 3 / 2) - D.index(0)) as f64
+        );
         let (reviews, items) = optimizer_card(&h, Alg::Fsrs7, &D).unwrap().unwrap();
         assert_eq!(reviews.len(), 2);
         assert_eq!(items, vec![(DAY_MS * 3 / 2, 2)]);
@@ -579,8 +667,20 @@ mod tests {
     #[test]
     fn anchor_without_same_algorithm_memory_uses_sm2() {
         let h = eff(&[
-            wire("a", "importAnchor", 1, 0, r#","res":{"queue":"review","ivl":20,"lastReviewedAt":-1728000000,"ease":2300}"#),
-            wire("b", "review", 2, 5 * DAY_MS, r#","rtype":"review","rating":3"#),
+            wire(
+                "a",
+                "importAnchor",
+                1,
+                0,
+                r#","res":{"queue":"review","ivl":20,"lastReviewedAt":-1728000000,"ease":2300}"#,
+            ),
+            wire(
+                "b",
+                "review",
+                2,
+                5 * DAY_MS,
+                r#","rtype":"review","rating":3"#,
+            ),
         ]);
         let m = memory_input(&h, Alg::Fsrs7, &D).unwrap();
         assert!(!m.complete);
@@ -591,10 +691,20 @@ mod tests {
 
     #[test]
     fn bad_mem_alg_is_an_error_only_when_the_anchor_is_used() {
-        let anchor = wire("a", "importAnchor", 1, 0, r#","memAlg":5,"res":{"queue":"review"}"#);
+        let anchor = wire(
+            "a",
+            "importAnchor",
+            1,
+            0,
+            r#","memAlg":5,"res":{"queue":"review"}"#,
+        );
         assert!(memory_input(&eff(&[anchor.clone()]), Alg::Fsrs7, &D).is_err());
         let learn = wire("b", "review", 2, 10, r#","rtype":"learn","rating":3"#);
-        assert!(memory_input(&eff(&[anchor, learn]), Alg::Fsrs7, &D).unwrap().complete);
+        assert!(
+            memory_input(&eff(&[anchor, learn]), Alg::Fsrs7, &D)
+                .unwrap()
+                .complete
+        );
     }
 
     #[test]
@@ -602,20 +712,44 @@ mod tests {
         let h = eff(&[
             wire("a", "review", 1, 0, r#","rtype":"learn","rating":3"#),
             wire("b", "review", 2, DAY_MS, r#","rtype":"review","rating":1"#),
-            wire("c", "review", 3, DAY_MS + 60_000, r#","rtype":"review","rating":3,"dur":1500"#),
+            wire(
+                "c",
+                "review",
+                3,
+                DAY_MS + 60_000,
+                r#","rtype":"review","rating":3,"dur":1500"#,
+            ),
         ]);
         let (rows, times, kept) = rwkv_card_rows(&h, &[10, 20, 1, 1], &D).unwrap();
         assert_eq!(kept, vec![0, 1, 2]);
         assert_eq!(times, vec![0, DAY_MS, DAY_MS + 60_000]);
-        let field = |row: usize, k: usize| i64::from_le_bytes(rows[row * 80 + 8 * k..row * 80 + 8 * k + 8].try_into().unwrap());
+        let field = |row: usize, k: usize| {
+            i64::from_le_bytes(
+                rows[row * 80 + 8 * k..row * 80 + 8 * k + 8]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
         assert_eq!(field(0, 5), 0);
         assert_eq!(field(0, 7), -1);
-        assert_eq!(field(2, 5), 3, "same-day review after review+Again is relearning");
+        assert_eq!(
+            field(2, 5),
+            3,
+            "same-day review after review+Again is relearning"
+        );
         assert_eq!(field(2, 4), 1500);
         assert_eq!(field(2, 8), 60);
         assert_eq!(rows[2 * 80 + 76], 3);
         let mut now = Vec::new();
-        push_rwkv_now_row(&mut now, &[10, 20, 1, 1], Some((DAY_MS + 60_000, 3, RType::Review)), 2, 3 * DAY_MS, &D).unwrap();
+        push_rwkv_now_row(
+            &mut now,
+            &[10, 20, 1, 1],
+            Some((DAY_MS + 60_000, 3, RType::Review)),
+            2,
+            3 * DAY_MS,
+            &D,
+        )
+        .unwrap();
         assert_eq!(i64::from_le_bytes(now[56..64].try_into().unwrap()), 2);
         assert_eq!(now[76], 0);
     }

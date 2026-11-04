@@ -136,7 +136,13 @@ Widget _host(DictionaryPopupController controller) {
                       keepWebViewWarm: entry.isWarmSlot,
                       webViewKey: entry.webViewKey,
                       onDismiss: () {},
-                      onTextSelected: (String _, Rect __, List<Object?> ___) {},
+                      onTextSelected:
+                          (
+                            String _,
+                            Rect __,
+                            List<Object?> ___,
+                            String ____,
+                          ) {},
                       onLinkClick: (String _, Rect __) {},
                       onMineEntry: (Map<String, String> _) async =>
                           const MinePopupResult(),

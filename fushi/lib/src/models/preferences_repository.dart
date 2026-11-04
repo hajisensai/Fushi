@@ -6630,6 +6630,77 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
     notifyListeners();
   }
+
+  // ── 每日目标（桌面小组件「目标」卡；0 = 关，随 Profile）─────────────────
+  /// 目标上限：分钟 24h、张数 / 复习数 100 万，防误输入。
+  static const int _kGoalMinutesMax = 24 * 60;
+  static const int _kGoalCountMax = 1000000;
+
+  int _goal(String key, int max) =>
+      (getPref(key, defaultValue: 0) as int).clamp(0, max);
+
+  Future<void> _setGoal(String key, int value, int max) async {
+    await setPref(key, value.clamp(0, max));
+    notifyListeners();
+  }
+
+  int get studyGoalDailyMinutes =>
+      _goal('study_goal_daily_minutes', _kGoalMinutesMax);
+  Future<void> setStudyGoalDailyMinutes(int value) =>
+      _setGoal('study_goal_daily_minutes', value, _kGoalMinutesMax);
+
+  int get studyGoalDailyReadingMinutes =>
+      _goal('study_goal_daily_reading_minutes', _kGoalMinutesMax);
+  Future<void> setStudyGoalDailyReadingMinutes(int value) =>
+      _setGoal('study_goal_daily_reading_minutes', value, _kGoalMinutesMax);
+
+  int get studyGoalDailyListeningMinutes =>
+      _goal('study_goal_daily_listening_minutes', _kGoalMinutesMax);
+  Future<void> setStudyGoalDailyListeningMinutes(int value) =>
+      _setGoal('study_goal_daily_listening_minutes', value, _kGoalMinutesMax);
+
+  int get studyGoalDailyVideoMinutes =>
+      _goal('study_goal_daily_video_minutes', _kGoalMinutesMax);
+  Future<void> setStudyGoalDailyVideoMinutes(int value) =>
+      _setGoal('study_goal_daily_video_minutes', value, _kGoalMinutesMax);
+
+  int get srsGoalDailyReviews =>
+      _goal('srs_goal_daily_reviews', _kGoalCountMax);
+  Future<void> setSrsGoalDailyReviews(int value) =>
+      _setGoal('srs_goal_daily_reviews', value, _kGoalCountMax);
+
+  int get miningGoalDailyCards =>
+      _goal('mining_goal_daily_cards', _kGoalCountMax);
+  Future<void> setMiningGoalDailyCards(int value) =>
+      _setGoal('mining_goal_daily_cards', value, _kGoalCountMax);
+
+  // ── 桌面小组件默认隐私（设备本地，默认全显示）───────────────────────────
+  static const String widgetPrivacyHideTitlesKey = 'widget_privacy_hide_titles';
+  static const String widgetPrivacyHideDefinitionsKey =
+      'widget_privacy_hide_definitions';
+  static const String widgetPrivacyHideProfileKey =
+      'widget_privacy_hide_profile';
+
+  bool get widgetPrivacyHideTitles =>
+      getPref(widgetPrivacyHideTitlesKey, defaultValue: false) as bool;
+  Future<void> setWidgetPrivacyHideTitles(bool value) async {
+    await setPref(widgetPrivacyHideTitlesKey, value);
+    notifyListeners();
+  }
+
+  bool get widgetPrivacyHideDefinitions =>
+      getPref(widgetPrivacyHideDefinitionsKey, defaultValue: false) as bool;
+  Future<void> setWidgetPrivacyHideDefinitions(bool value) async {
+    await setPref(widgetPrivacyHideDefinitionsKey, value);
+    notifyListeners();
+  }
+
+  bool get widgetPrivacyHideProfile =>
+      getPref(widgetPrivacyHideProfileKey, defaultValue: false) as bool;
+  Future<void> setWidgetPrivacyHideProfile(bool value) async {
+    await setPref(widgetPrivacyHideProfileKey, value);
+    notifyListeners();
+  }
 }
 
 /// [AiKeyHealthStore] 的偏好表实现（[PreferencesRepository.loadFromDb] 装配）。

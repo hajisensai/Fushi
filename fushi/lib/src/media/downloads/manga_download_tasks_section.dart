@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/manga/download/manga_download_progress_label.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart'
     show mangaChapterDownloadFailedLabel;
@@ -120,14 +121,13 @@ DownloadTaskEntry mangaDownloadTaskEntry(
   final bool retryable =
       job.status == MangaDownloadJobStatus.failed ||
       job.status == MangaDownloadJobStatus.cancelled;
+  final MangaDownloadProgress live = downloads.progressOf(job);
   final double? progress = job.status == MangaDownloadJobStatus.done
       ? 1
-      : job.pagesTotal > 0
-      ? (job.pagesDone / job.pagesTotal).clamp(0.0, 1.0)
-      : null;
+      : live.fraction;
   final String? seriesName = mokuroMoeSeriesNameOf(job.bookKey);
   final String collectionTitle = seriesName ?? job.title;
-  final String status = _statusLabel(job);
+  final String status = _statusLabel(job, live);
   final ({DownloadTransferMethod method, bool external}) source =
       mangaDownloadSourceOf(job.runtime);
   return DownloadTaskEntry(
@@ -181,6 +181,7 @@ DownloadTaskEntry mangaDownloadTaskEntry(
       details: _MangaDownloadTaskRow(
         job: job,
         status: status,
+        progress: live.fraction,
         downloads: downloads,
       ),
     ),
@@ -244,35 +245,33 @@ bool _isFinished(MangaDownloadJobRow job) =>
     job.status == MangaDownloadJobStatus.failed ||
     job.status == MangaDownloadJobStatus.cancelled;
 
-String _statusLabel(MangaDownloadJobRow job) => switch (job.status) {
-  MangaDownloadJobStatus.queued => t.download_status_queued,
-  MangaDownloadJobStatus.running =>
-    job.pagesTotal > 0
-        ? t.manga_ocr_wizard_page_progress(
-            done: job.pagesDone,
-            total: job.pagesTotal,
-          )
-        : t.manga_chapter_download_status_downloading(
-            done: '${job.pagesDone}',
-            total: '${job.pagesTotal}',
-          ),
-  MangaDownloadJobStatus.done => t.manga_online_downloaded,
-  MangaDownloadJobStatus.cancelled => t.download_status_cancelled,
-  // 2026-10 体验优化：lastError 为空时原写法留下「失败: 」尾冒号；与章节列表
-  // 共用同一个失败文案拼法。
-  _ => mangaChapterDownloadFailedLabel(job.lastError),
-};
+/// [progress] 带单位（字节 / 页），由 [MangaDownloadService.progressOf] 给出。
+String _statusLabel(MangaDownloadJobRow job, MangaDownloadProgress progress) =>
+    switch (job.status) {
+      MangaDownloadJobStatus.queued => t.download_status_queued,
+      MangaDownloadJobStatus.running =>
+        mangaDownloadProgressLabel(progress) ?? t.download_task_status_active,
+      MangaDownloadJobStatus.done => t.manga_online_downloaded,
+      MangaDownloadJobStatus.cancelled => t.download_status_cancelled,
+      // 2026-10 体验优化：lastError 为空时原写法留下「失败: 」尾冒号；与章节列表
+      // 共用同一个失败文案拼法。
+      _ => mangaChapterDownloadFailedLabel(job.lastError),
+    };
 
 /// 卡片展开后的详情行：状态图标 + 标题 + 状态文案 + 行内动作。
 class _MangaDownloadTaskRow extends StatelessWidget {
   const _MangaDownloadTaskRow({
     required this.job,
     required this.status,
+    required this.progress,
     required this.downloads,
   });
 
   final MangaDownloadJobRow job;
   final String status;
+
+  /// 0..1，null = 不定进度（单位无关，见 [MangaDownloadProgress.fraction]）。
+  final double? progress;
   final MangaDownloadService downloads;
 
   /// 2026-10 体验优化：20 号图标 + 默认 8 内边距只有 36dp 命中区，低于触摸
@@ -318,9 +317,7 @@ class _MangaDownloadTaskRow extends StatelessWidget {
                   padding: const EdgeInsets.all(2),
                   child: FushiCircularProgressIndicator(
                     strokeWidth: 2,
-                    value: job.pagesTotal > 0
-                        ? (job.pagesDone / job.pagesTotal).clamp(0.0, 1.0)
-                        : null,
+                    value: progress,
                   ),
                 ),
               ),

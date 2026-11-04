@@ -91,7 +91,7 @@
             <label class="setting-row" for="subtitleOverlayAutoLookup">
               <span class="setting-copy">
                 <strong data-i18n="opt_subtitleOverlayAutoLookup_title">悬浮字幕自动查词</strong>
-                <small data-i18n="opt_subtitleOverlayAutoLookup_desc">指向视频字幕里的词即查词，无需 Shift。</small>
+                <small data-i18n="opt_subtitleOverlayAutoLookup_desc">指向视频字幕里的词即查词，无需按住查词键。</small>
               </span>
               <span class="switch"><input id="subtitleOverlayAutoLookup" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
@@ -182,14 +182,14 @@
             <label class="setting-row" for="nfSubList">
               <span class="setting-copy">
                 <strong data-i18n="opt_nfSubList_title">字幕侧边栏</strong>
-                <small data-i18n="opt_nfSubList_desc">可从工具栏菜单或 Shift+S 打开字幕列表。</small>
+                <small data-i18n="opt_nfSubList_desc">可从工具栏菜单或对应快捷键（见「快捷键」）打开字幕列表。</small>
               </span>
               <span class="switch"><input id="nfSubList" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleHidden">
               <span class="setting-copy">
                 <strong data-i18n="opt_subtitleHidden_title">隐藏字幕</strong>
-                <small data-i18n-html="opt_subtitleHidden_desc">纯听力练习：隐藏所有字幕，<kbd>Shift</kbd>+<kbd>H</kbd> 切换。</small>
+                <small data-i18n="opt_subtitleHidden_desc">纯听力练习：隐藏所有字幕，可用对应快捷键（见「快捷键」）切换。</small>
               </span>
               <span class="switch"><input id="subtitleHidden" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
@@ -639,6 +639,49 @@
               <button class="keycap keycap-edit" type="button" data-shortcut-action="rate-up" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+]</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutRateUp_title">提高播放速度</strong></span>
               <span class="switch"><input id="videoShortcutRateUp" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row shortcut-row" for="videoShortcutSeekBack">
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="seek-back" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Shift+←</button>
+              <span class="setting-copy"><strong data-i18n="opt_videoShortcutSeekBack_title">快退</strong></span>
+              <span class="switch"><input id="videoShortcutSeekBack" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row shortcut-row" for="videoShortcutSeekForward">
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="seek-forward" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Shift+→</button>
+              <span class="setting-copy"><strong data-i18n="opt_videoShortcutSeekForward_title">快进</strong></span>
+              <span class="switch"><input id="videoShortcutSeekForward" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row shortcut-row" for="videoShortcutHoldSpeed">
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="hold-speed" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">E</button>
+              <span class="setting-copy"><strong data-i18n="opt_videoShortcutHoldSpeed_title">按住临时倍速</strong></span>
+              <span class="switch"><input id="videoShortcutHoldSpeed" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+          </div>
+          <div class="setting-list">
+            <label class="setting-row" for="videoSeekSeconds">
+              <span class="setting-copy">
+                <strong data-i18n="opt_videoSeekSeconds_title">快退 / 快进秒数</strong>
+              </span>
+              <select class="select-input" id="videoSeekSeconds">
+                <option value="1">1s</option>
+                <option value="2">2s</option>
+                <option value="3">3s</option>
+                <option value="5">5s</option>
+                <option value="10">10s</option>
+                <option value="15">15s</option>
+                <option value="30">30s</option>
+              </select>
+            </label>
+            <label class="setting-row" for="videoHoldSpeedRate">
+              <span class="setting-copy">
+                <strong data-i18n="opt_videoHoldSpeedRate_title">按住时的倍速</strong>
+              </span>
+              <select class="select-input" id="videoHoldSpeedRate">
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+                <option value="2.5">2.5×</option>
+                <option value="3">3×</option>
+                <option value="4">4×</option>
+              </select>
             </label>
           </div>
         </section>

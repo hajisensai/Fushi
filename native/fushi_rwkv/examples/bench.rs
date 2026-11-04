@@ -147,7 +147,8 @@ fn resident_mb() -> Option<f64> {
             ..Default::default()
         };
         // SAFETY: plain Win32 call writing into a correctly sized struct.
-        let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) };
+        let ok =
+            unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) };
         (ok != 0).then(|| counters.working_set as f64 / 1e6)
     }
     #[cfg(target_os = "linux")]

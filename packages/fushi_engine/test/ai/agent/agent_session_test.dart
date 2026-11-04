@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
@@ -205,10 +206,24 @@ class _Host implements AgentHost {
   }
 }
 
+/// 确认卡片一直没人点（进程在等待时没了）。
+class _BlockingHost implements AgentHost {
+  _BlockingHost(this._answer);
+
+  final Future<bool> _answer;
+
+  @override
+  Future<bool> confirm(AgentConfirmRequest request) => _answer;
+
+  @override
+  Future<String?> askChoice(String prompt, List<AgentChoiceOption> options) =>
+      Future<String?>.value();
+}
+
 AgentSession _session(
   _StubLlm llm,
   _Toolbox toolbox,
-  _Host host, {
+  AgentHost host, {
   AgentLimits limits = const AgentLimits(),
 }) => AgentSession(
   id: 's1',
@@ -654,6 +669,128 @@ void main() {
     expect(update.content, contains('<untrusted_data source="tasks">'));
     expect(update.content, contains('ep3.mkv'));
     expect(session.entries.last.text, '下载完成，接着补字幕。');
+  });
+
+  test('反馈 qg_L2sVx3p：一轮中途落盘后进程没了，读回的会话能接着说', () async {
+    // 一轮：先起一个长任务，再调一个要确认的不可逆操作；用户还没点确认卡片时
+    // 长任务结束（排队 + 控制器此刻存档），然后进程没了。
+    final Completer<bool> neverAnswered = Completer<bool>();
+    final _StubLlm llm = _StubLlm(<AiChatTurn>[
+      AiChatTurn(
+        text: '',
+        toolCalls: <AiChatToolCall>[
+          AiChatToolCall(
+            id: 'c1',
+            name: agentWireToolName('video.discovery.acquire'),
+            arguments: const <String, Object?>{'id': 'vr1'},
+          ),
+          AiChatToolCall(
+            id: 'c2',
+            name: agentWireToolName('library.file.delete'),
+            arguments: const <String, Object?>{'path': 'a.epub'},
+          ),
+        ],
+      ),
+    ]);
+    final AgentSession live = _session(
+      llm,
+      _Toolbox(),
+      _BlockingHost(neverAnswered.future),
+    );
+    unawaited(live.send('下载然后删掉旧文件'));
+    await pumpEventQueue();
+    expect(live.running, isTrue, reason: '卡在确认卡片上');
+    await live.continueAfterTask(
+      'j1',
+      opId: 'video.discovery.acquire',
+      succeeded: true,
+      summary: 'ep3.mkv',
+    );
+    final Map<String, Object?> snapshot =
+        jsonDecode(jsonEncode(live.toJson())) as Map<String, Object?>;
+    final List<Object?> savedHistory = snapshot['history']! as List<Object?>;
+    expect(
+      savedHistory.where((Object? m) => (m! as Map)['role'] == 'tool'),
+      hasLength(1),
+      reason: '存档里 c2 只有 tool_use、没有 tool_result——原样发出去会被拒收',
+    );
+
+    final _StubLlm next = _StubLlm(<AiChatTurn>[_reply('下载好了，删除没执行。')]);
+    final AgentSession restored = AgentSession.fromJson(
+      snapshot,
+      llm: next,
+      toolbox: _Toolbox(),
+      host: _Host(),
+    );
+
+    // 条目如实说「中断了」，不是空白的失败、也不是用户没点过的拒绝。
+    final AgentEntry deleteCall = restored.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.toolCall,
+    );
+    expect(
+      (deleteCall.status, deleteCall.errorCode),
+      (AgentEntryStatus.failed, AgentStopCode.interrupted),
+    );
+    final AgentEntry card = restored.entries.firstWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+    expect(
+      (card.status, card.errorCode),
+      (AgentEntryStatus.declined, AgentStopCode.interrupted),
+    );
+
+    await restored.send('现在什么情况？');
+    final List<AiChatMessage> request = next.requests.single;
+    final Set<String> called = <String>{
+      for (final AiChatMessage m in request)
+        for (final AiChatToolCall c in m.toolCalls) c.id,
+    };
+    final Set<String> answered = <String>{
+      for (final AiChatMessage m in request)
+        if (m.role == 'tool') m.toolCallId!,
+    };
+    expect(answered, called, reason: '每个 tool_use 都有 tool_result');
+    final AiChatMessage interrupted = request.lastWhere(
+      (AiChatMessage m) => m.role == 'tool',
+    );
+    expect(interrupted.toolCallId, 'c2');
+    expect(interrupted.isError, isTrue);
+    expect(interrupted.content, contains(AgentStopCode.interrupted));
+    // 角色交替：补的结果之后是 assistant，再是这句新话。
+    expect(request[request.length - 2].role, 'assistant');
+    final AiChatMessage user = request.last;
+    expect(user.role, 'user');
+    expect(user.content, contains('<untrusted_data source="tasks">'));
+    expect(user.content, contains('"taskId":"j1"'));
+    expect(user.content, contains('现在什么情况？'));
+    expect(restored.entries.last.text, '下载好了，删除没执行。');
+    expect(restored.toJson().containsKey('pendingTaskEvents'), isFalse);
+  });
+
+  test('完整结束的存档读回不改历史', () {
+    final List<AiChatMessage> history = <AiChatMessage>[
+      const AiChatMessage.user('hi'),
+      AiChatMessage.assistantToolCalls('', const <AiChatToolCall>[
+        AiChatToolCall(id: 'c1', name: 'settings__get', arguments: {}),
+      ]),
+      const AiChatMessage.toolResult(
+        toolCallId: 'c1',
+        toolName: 'settings__get',
+        content: '{}',
+      ),
+      const AiChatMessage.assistant('done'),
+    ];
+    final List<AiChatMessage> repaired = repairInterruptedAgentHistory(history);
+    expect(repaired.map(agentMessageToJson), history.map(agentMessageToJson));
+  });
+
+  test('活的快照（远端视图）不按中断收尾', () {
+    final AgentEntry entry = AgentEntry.fromJson(<String, Object?>{
+      'id': 'x-1',
+      'kind': 'confirm',
+      'status': 'pending',
+    }, settleInterrupted: false);
+    expect((entry.status, entry.errorCode), (AgentEntryStatus.pending, null));
   });
 
   test('长任务在模型说话时结束：排队，本轮结束后再续', () async {

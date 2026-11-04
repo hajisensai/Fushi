@@ -1085,12 +1085,20 @@ void main() {
       expect(backend.scoredRows, 8, reason: 'first queue scores every card');
       await f.store.answer(first, 3);
       f.advance(1000);
+      final int queriesBefore = backend.queries;
       await f.store.deckSummary(deck);
       await f.store.nextCard(deck);
       expect(
         backend.scoredRows,
-        9,
-        reason: 'only the answered card is rescored',
+        8,
+        reason:
+            'the other cards hit the table; the answered card (answered today) '
+            'is scored at now by a direct query, outside the day-end table',
+      );
+      expect(
+        backend.queries - queriesBefore,
+        2,
+        reason: 'one direct query of the answered card per queue build',
       );
       expect(backend.requeries, 0);
 
@@ -1109,6 +1117,37 @@ void main() {
       await f.store.nextCard(deck);
       expect(backend.requeries, 2);
       expect(backend.clears, 1, reason: 'only the first build cleared');
+    });
+
+    test('统计页此刻的 R 直接查询、不碰排队的分数表：与排队来回切不整表重查', () async {
+      final String deck = f.store.defaultDeckId;
+      await f.store.nextCard(deck);
+      expect(backend.scoredRows, 8);
+      final List<SrsRwkvCandidate> all = <SrsRwkvCandidate>[
+        for (final String id in cards)
+          SrsRwkvCandidate(
+            id: id,
+            noteId: (await f.store.cardRow(id))!.noteId,
+            deckId: deck,
+            lastLogId: (await f.store.cardRow(id))!.lastLogId,
+          ),
+      ];
+      for (int i = 0; i < 3; i++) {
+        final int queriesBefore = backend.queries;
+        final Map<String, double>? now = await f.store.instantRetrievabilityOf(
+          all,
+        );
+        expect(now, hasLength(8));
+        expect(backend.queries - queriesBefore, 1, reason: 'one direct query');
+        await f.store.nextCard(deck);
+        await f.store.deckSummary(deck);
+      }
+      expect(
+        backend.requeries,
+        0,
+        reason: 'stats at now no longer moves the table off the day-end time',
+      );
+      expect(backend.scoredRows, 8, reason: 'queue keeps hitting the table');
     });
 
     test('撤销最近一次作答：撤回日志、只重算那张卡；撤更早的作答 → 退回重放（不重建）', () async {
@@ -1149,6 +1188,59 @@ void main() {
       expect(backend.resets, 1);
       expect(backend.rewinds, 1);
       expect(backend.replayedCards, hasLength(9));
+      expect(backend.replayedCards, await _fullReplayOrder(f));
+    });
+
+    test('收段会话期间：要退回重放的对齐推到会话结束后做一次、再报就绪；分数表刷新并成一次', () async {
+      final String deck = f.store.defaultDeckId;
+      final String a = (await f.store.nextCard(deck))!;
+      final SrsReviewLog la = await f.store.answer(a, 3);
+      f.advance(40000);
+      final String b = (await f.store.nextCard(deck, exclude: <String>{a}))!;
+      await f.store.answer(b, 3);
+      expect(await service.refresh(), isTrue);
+      final String keyBefore = f.store.rwkvScoresKey;
+
+      await f.store.sync2IngestBegin();
+      expect(f.store.sync2Ingesting, isTrue);
+      // 撤更早的作答：只能退回重放（整 profile 扫日志）。会话里不做，这次没有可用状态。
+      expect(await f.store.undo(a, la.id), isTrue);
+      expect(await service.refresh(), isFalse);
+      expect(await service.refresh(), isFalse);
+      expect(backend.rewinds, 0);
+      expect(service.ready, isTrue, reason: 'state is kept, not rebuilt');
+      // 会话里推进分数表刷新的写入（牌组设置）先攒着。
+      await f.store.editFields(SrsEntityKind.deck, deck, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.rwkv.wire,
+          'auto': false,
+        },
+      });
+      expect(f.store.rwkvScoresKey, keyBefore);
+      // 整 profile 的回放等会话结束。
+      bool replayed = false;
+      final Future<void> replay = f.store
+          .rwkvReplay(
+            <String>[a],
+            const <int>[1, 2, 3, 4],
+            await f.store.dayContext(),
+            since: 0,
+          )
+          .then((_) => replayed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(replayed, isFalse);
+
+      final Future<SrsRwkvStatus> readyAgain = service.statusChanges.firstWhere(
+        (SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready,
+      );
+      await f.store.sync2IngestEnd();
+      await replay;
+      await readyAgain;
+      int rev(String key) => int.parse(key.split(':').last);
+      expect(rev(f.store.rwkvScoresKey), rev(keyBefore) + 1);
+      expect(backend.rewinds, 1);
+      expect(backend.resets, 1, reason: 'no full rebuild');
+      expect(await service.refresh(), isTrue);
       expect(backend.replayedCards, await _fullReplayOrder(f));
     });
 

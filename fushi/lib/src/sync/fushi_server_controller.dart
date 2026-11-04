@@ -543,6 +543,37 @@ class FushiSyncServerController extends ChangeNotifier {
     _clientSyncWrites.add(relativePath);
   }
 
+  final StreamController<({String path, String peerName})> _clientUploads =
+      StreamController<({String path, String peerName})>.broadcast();
+
+  /// 已配对设备经互联写入（PUT）了同步目录里的文件，且认得出是哪个对端（per-peer token → 配对时它自报的名字，
+  /// 去掉品牌前缀）：路径同 [clientSyncWrites]。共享 token 的老设备认不出，不进这条流。
+  Stream<({String path, String peerName})> get clientUploads =>
+      _clientUploads.stream;
+
+  /// per-peer token → 对端名（遇到认不得的 token 重读）。
+  Map<String, String>? _peerNamesByToken;
+
+  void _onClientUpload(String relativePath, String? peerToken) {
+    if (peerToken == null || _clientUploads.isClosed) return;
+    unawaited(() async {
+      try {
+        Future<Map<String, String>> load() async => <String, String>{
+          // 没自报名字的对端记成空串（认得、但没名字），不每次 PUT 都重读配对表。
+          for (final FushiPairedPeerRow p in await _database().getPairedPeers())
+            p.token: interconnectPeerDisplayName(p.deviceName ?? ''),
+        };
+        // 认不得的 token（刚配对的设备）重读一次配对表。
+        String? name = (_peerNamesByToken ??= await load())[peerToken];
+        name ??= (_peerNamesByToken = await load())[peerToken];
+        if (name == null || name.isEmpty || _clientUploads.isClosed) return;
+        _clientUploads.add((path: relativePath, peerName: name));
+      } catch (e, stack) {
+        ErrorLogService.instance.log('FushiServerController.upload', e, stack);
+      }
+    }());
+  }
+
   @override
   void notifyListeners() {
     if (_disposed) return;
@@ -560,6 +591,7 @@ class FushiSyncServerController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     unawaited(_clientSyncWrites.close());
+    unawaited(_clientUploads.close());
     final List<LanDiscoveryService> discoveries = _activeDiscoveries.toList(
       growable: false,
     );
@@ -801,6 +833,7 @@ class FushiSyncServerController extends ChangeNotifier {
           ..onPeerPaired = _persistPairedPeer
           // 复习同步：已配对设备写进同步目录后，host 自己的 SRS 同步去抖跟一轮（srs_app_runtime.dart）。
           ..onClientWrite = _onClientWrite
+          ..onClientUpload = _onClientUpload
           ..pairedPeerTokensProvider = _loadPairedPeerTokens
           // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
           // 反代地址每次 capabilities 实时读，改完不必重启互联服务。

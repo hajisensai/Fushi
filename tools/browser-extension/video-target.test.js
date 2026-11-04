@@ -67,6 +67,47 @@ test('mainVideo：都没有可见面积时退回第一个（旧行为，不变�
   assert.strictEqual(runMainVideo([a, b]).name, 'a');
 });
 
+function runControlledVideo(videos, fullscreenElement, tracked) {
+  const ctx = {
+    window: { innerWidth: 1280, innerHeight: 720 },
+    document: {
+      fullscreenElement: fullscreenElement || null,
+      querySelectorAll: (s) => (s === 'video' ? videos : []),
+      querySelector: (s) => (s === 'video' ? videos[0] || null : null),
+      documentElement: {},
+    },
+  };
+  ctx.self = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'video-target.js'), 'utf8'), ctx);
+  return ctx.window.fushiControlledVideo(tracked);
+}
+
+test('pickControlledVideo：只挑可见且非静音的；Fushi 已挂轨时静音也算；全不合格返回 null（不回落）', () => {
+  const view = { width: 1280, height: 720 };
+  const mutedBig = { el: 'mutedBig', rect: rect(0, 0, 1280, 400), playing: true, muted: true };
+  const main = { el: 'main', rect: rect(0, 400, 640, 300), playing: true, muted: false };
+  const hidden = { el: 'hidden', rect: rect(0, 0, 0, 0), playing: true, muted: false };
+  assert.strictEqual(VT.pickControlledVideo([mutedBig, main], view, false), 'main');
+  assert.strictEqual(VT.pickControlledVideo([mutedBig, main], view, true), 'mutedBig');
+  assert.strictEqual(VT.pickControlledVideo([mutedBig, hidden], view, false), null);
+  assert.strictEqual(VT.pickControlledVideo([hidden], view, true), null);
+});
+
+test('controlledVideo：页面只有隐藏 / 视口外 <video> 时是 null（mainVideo 为浮层仍回落第一个）', () => {
+  const a = fakeVideo('a', rect(0, 0, 0, 0));
+  const b = fakeVideo('b', rect(0, 3000, 100, 100));
+  assert.strictEqual(runControlledVideo([a, b], null, true), null);
+  assert.strictEqual(runMainVideo([a, b]).name, 'a');
+  const preview = fakeVideo('preview', rect(0, 0, 640, 360), { muted: true });
+  assert.strictEqual(runControlledVideo([preview], null, false), null);
+  assert.strictEqual(runControlledVideo([preview], null, true).name, 'preview');
+  const volumeZero = fakeVideo('v0', rect(0, 0, 640, 360), { volume: 0 });
+  assert.strictEqual(runControlledVideo([volumeZero], null, false), null);
+  // 全屏的 <video> 是用户显式选的：直接是目标。
+  assert.strictEqual(runControlledVideo([preview], preview, false).name, 'preview');
+});
+
 test('fixedOrigin：探针量出包含块原点与缩放；<html> 恒等；探针插在最前不抢浮层的「最后」', () => {
   assert.deepStrictEqual(VT.originFromProbeRect(rect(0, 0, 100, 100)), { x: 0, y: 0, sx: 1, sy: 1 });
   assert.deepStrictEqual(VT.originFromProbeRect(rect(40, -30, 50, 200)), { x: 40, y: -30, sx: 0.5, sy: 2 });

@@ -26,7 +26,6 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -789,8 +788,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         return Column(
           children: [
             _buildSearchRegion(),
-            // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-            const SyncProgressBanner(),
             Expanded(child: _buildBody()),
           ],
         );
@@ -834,7 +831,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           child: Column(
             children: <Widget>[
               _buildSearchRegion(),
-              const SyncProgressBanner(),
               Expanded(
                 child: FushiRefreshIndicator(
                   onRefresh: _pullToRefreshDictionary,
@@ -1933,14 +1929,16 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       // TODO-617：顶层查词把 WebView 局部 localRect 经结果 WebView 的 render box
                       // localToGlobal 映成屏幕坐标（popupWordScreenRect），与根 Overlay 弹窗同系。
                       // localRect==Zero 时直传 Zero，由 mixin fallbackSelectionRect 兜底。
-                      onTextSelected: (text, localRect, rubySpans) {
-                        _pushNestedPopup(
-                          text,
-                          _resultWordScreenRect(localRect),
-                          reuseWarmSlot: true,
-                          rubySpans: rubySpans,
-                        );
-                      },
+                      onTextSelected:
+                          (text, localRect, rubySpans, contextSentence) {
+                            _pushNestedPopup(
+                              text,
+                              _resultWordScreenRect(localRect),
+                              reuseWarmSlot: true,
+                              rubySpans: rubySpans,
+                              contextSentence: contextSentence,
+                            );
+                          },
                       onLinkClick: (query, localRect) {
                         _pushNestedPopup(
                           query,
@@ -2182,6 +2180,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     Rect selectionRect, {
     bool reuseWarmSlot = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) {
     return pushNestedPopup(
       query: query,
@@ -2190,8 +2189,24 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       reuseWarmSlot: reuseWarmSlot,
       autoRead: true,
       rubySpans: rubySpans,
+      contextSentence: contextSentence,
     );
   }
+
+  /// 反馈 TnKWBi4C-9：浮层里的词是从释义正文点出来的，例句就是被点处那一句
+  /// （[DictionaryPopupEntry.contextSentence]）——与 Yomitan 在弹窗释义里扫词同口径。
+  /// 源文本条那句只属于结果区（BUG-3216），不是浮层词的语境，所以这里不用它。
+  @override
+  Map<String, String> miningFieldsForLayer(
+    int index,
+    DictionaryPopupController controller,
+    Map<String, String> fields,
+  ) => index < controller.entries.length
+      ? withFallbackMiningSentence(
+          fields,
+          controller.entries[index].contextSentence,
+        )
+      : fields;
 
   /// TODO-931：是否有任何**可见**弹窗层（常驻隐藏热槽不算）。
   bool get _hasVisiblePopup => _popup.hasVisiblePopup;
@@ -2212,8 +2227,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       index: index,
       screen: screen,
       controller: _popup,
-      onPush: (text, rect, rubySpans) =>
-          _pushNestedPopup(text, rect, rubySpans: rubySpans),
+      onPush: (text, rect, rubySpans, contextSentence) => _pushNestedPopup(
+        text,
+        rect,
+        rubySpans: rubySpans,
+        contextSentence: contextSentence,
+      ),
       onPop: _popNestedPopupAt,
     );
   }

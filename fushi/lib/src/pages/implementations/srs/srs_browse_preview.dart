@@ -22,6 +22,8 @@ import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
+    show SrsFushiCardView;
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -156,24 +158,33 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
       );
     } else {
       final String language = ref.read(appProvider).defaultContentLanguage;
-      face = ref.watch(srsCardFaceBuilderProvider)(
-        context,
-        SrsCardFace(
-          cardId: detail.card.id,
-          showingAnswer: widget.showAnswer,
-          bodyHtml: widget.showAnswer ? rendered.answer : rendered.question,
-          css: rendered.css,
-          languageCode: language.isEmpty ? null : language,
-          fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
-          bridgeKeys: kSrsBrowseBridgeKeys,
-          onBridgeKey: (String token) {
-            if (_lookup.guardBridgeToken(token)) return;
-            final SrsPreviewCommand? c = srsPreviewCommandOfToken(token);
-            if (c != null) widget.onCommand(c);
-          },
-          onSourceLink: _openSource,
-        ),
+      final SrsCardFace cardFace = SrsCardFace(
+        cardId: detail.card.id,
+        showingAnswer: widget.showAnswer,
+        bodyHtml: widget.showAnswer ? rendered.answer : rendered.question,
+        css: rendered.css,
+        languageCode: language.isEmpty ? null : language,
+        fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+        bridgeKeys: kSrsBrowseBridgeKeys,
+        onBridgeKey: (String token) {
+          if (_lookup.guardBridgeToken(token)) return;
+          final SrsPreviewCommand? c = srsPreviewCommandOfToken(token);
+          if (c != null) widget.onCommand(c);
+        },
+        onSourceLink: _openSource,
       );
+      // 与复习页同一判据（[SrsRenderedCard.fushiCardDefinitions]）：内置 Fushi 卡片（模板未改、
+      // 媒体原生画得全）走原生 + 释义 WebView 的混合卡面，其余整面 WebView。以前预览一律整面
+      // WebView，Fushi 卡片在浏览预览里与复习时长得不一样（satv-DI70B）。
+      final String? definitions = rendered.fushiCardDefinitions;
+      face = definitions != null
+          ? SrsFushiCardView(
+              key: const ValueKey<String>('srs-browse-preview-native'),
+              face: cardFace,
+              fields: rendered.fields,
+              definitionsHtml: definitions,
+            )
+          : ref.watch(srsCardFaceBuilderProvider)(context, cardFace);
     }
     final String caption = <String>[
       if (widget.position != null) widget.position!,

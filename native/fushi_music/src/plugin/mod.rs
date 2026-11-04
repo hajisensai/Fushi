@@ -28,7 +28,7 @@ pub mod policy;
 pub mod runtime;
 pub mod vault;
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -51,10 +51,20 @@ unsafe fn str_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a str> {
 }
 
 /// step 的输出帧：`[u32 LE json 长度][json][二进制区]`。
-unsafe fn out_framed(v: serde_json::Value, blob: Vec<u8>, out_ptr: *mut *mut u8, out_len: *mut usize) -> i32 {
+unsafe fn out_framed(
+    v: serde_json::Value,
+    blob: Vec<u8>,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
     let j = v.to_string().into_bytes();
     let Ok(n) = u32::try_from(j.len()) else {
-        return out_framed(error_json("step 结果过大".into()), Vec::new(), out_ptr, out_len);
+        return out_framed(
+            error_json("step 结果过大".into()),
+            Vec::new(),
+            out_ptr,
+            out_len,
+        );
     };
     let mut buf = Vec::with_capacity(4 + j.len() + blob.len());
     buf.extend_from_slice(&n.to_le_bytes());
@@ -226,7 +236,10 @@ pub unsafe extern "C" fn ffm_plugin_step(
         let handle: &PluginHandle = &*handle;
         let (v, out_blob) = match handle.inst.lock() {
             Ok(mut inst) => inst.step(ops, blob),
-            Err(_) => (json!({ "fatal": "插件运行时内部错误（上次执行崩溃）" }), Vec::new()),
+            Err(_) => (
+                json!({ "fatal": "插件运行时内部错误（上次执行崩溃）" }),
+                Vec::new(),
+            ),
         };
         out_framed(v, out_blob, out_ptr, out_len)
     })
@@ -309,8 +322,12 @@ pub unsafe extern "C" fn ffm_plugin_vault(
         let r = provided.and_then(|k| {
             let src = k.map_or(vault::KeySource::Os, vault::KeySource::Provided);
             match s("op") {
-                "get" => vault::get(root, src, s("plugin"), s("key")).map(|v| json!({ "value": v })),
-                "set" => vault::set(root, src, s("plugin"), s("key"), s("value")).map(|_| json!({})),
+                "get" => {
+                    vault::get(root, src, s("plugin"), s("key")).map(|v| json!({ "value": v }))
+                }
+                "set" => {
+                    vault::set(root, src, s("plugin"), s("key"), s("value")).map(|_| json!({}))
+                }
                 "remove" => vault::remove(root, s("plugin"), s("key")).map(|_| json!({})),
                 "clear" => vault::clear(root, s("plugin")).map(|_| json!({})),
                 "legacyKey" => Ok(json!({

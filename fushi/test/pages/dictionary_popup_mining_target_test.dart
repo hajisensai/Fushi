@@ -260,7 +260,8 @@ void main() {
                   showMiningTargetSwitch: show,
                   onClose: () {},
                   onDismiss: () {},
-                  onTextSelected: (String text, Rect rect, List<Object?> _) {},
+                  onTextSelected:
+                      (String text, Rect rect, List<Object?> _, String __) {},
                   onLinkClick: (String query, Rect rect) {},
                   onMineEntry: (Map<String, String> fields) async =>
                       const MinePopupResult(),

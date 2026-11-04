@@ -110,8 +110,9 @@ const List<String> kStatPages = <String>[
   'lib/src/reader/reader_statistics_sheet.dart',
   // 库页条目右键 / 长按「查看统计」：今日 / 近 7 天 / 近 30 天按 StatWindow 切片。
   'lib/src/pages/implementations/media_item_stats_dialog.dart',
-  // 主屏小组件快照：连续天数 / 近 7 天 / 热力图按 StatWindow 切片，与统计中心同口径。
-  'lib/src/platform/home_widgets/home_widgets_host.dart',
+  // 桌面 / 安卓小组件快照（#2819）：今日 / 近 7 / 35 天按 StatWindow 切 loadStatFacts，
+  // 与首页「今日」卡同口径；属窗口统计消费方，受 ④ 管辖。
+  'lib/src/platform/widget_snapshot_source.dart',
 ];
 
 void main() {

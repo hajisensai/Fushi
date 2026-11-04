@@ -52,11 +52,7 @@ class RemoteListingSnapshot {
           in folders[bookFolderName] ?? const <AssetEntry>[])
         if (!e.isFolder) SyncFileRef(id: e.id, name: e.name),
     ];
-    return SyncFileTrio(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
+    return syncFileTrioFromFiles(files);
   }
 
   /// 某个保留命名空间下的条目，语义与 `SyncAssetStore.listChildren` 相同。
@@ -111,6 +107,35 @@ class RemoteListingBuilder {
   }
 
   RemoteListingSnapshot build() => RemoteListingSnapshot(_folders);
+}
+
+/// 本轮书阶段对各书文件夹的列举所见：folderId → 该文件夹下的全部文件名
+/// （jHQpTfjrNB）。
+///
+/// 书阶段为了拿进度三件套，本来就对每本书的文件夹列过一次（或从快照里取）；后面的
+/// 有声书包阶段要问的「`.fushiaudio` 在不在」答案就在同一份回包里，旧实现却对每本
+/// 有声书再发 1–2 次 HEAD。这里把那份回包按 folderId 记下来供同轮后续阶段复用。
+///
+/// 只用来**跳过「已存在」的探针**：记录里说有就是有（同一轮、同一次回包）；记录里
+/// 没有、或根本没记录的，调用方照旧实时去问，绝不把「没看见」当成「不存在」去做
+/// 不可逆的事。同轮本机上传的条目由 [noteUploaded] 补进来。
+class BookFolderListingObservations {
+  final Map<String, Set<String>> _namesByFolderId = <String, Set<String>>{};
+
+  /// 记下 [folderId] 这次列举看到的完整文件名清单。
+  void record(String folderId, Set<String> fileNames) {
+    _namesByFolderId[folderId] = Set<String>.of(fileNames);
+  }
+
+  /// [folderId] 本轮见过的文件名；没列过（或列举不完整）返回 null。
+  Set<String>? namesOf(String folderId) => _namesByFolderId[folderId];
+
+  /// 本机本轮往 [folderId] 传了 [name]。
+  void noteUploaded(String folderId, String name) {
+    _namesByFolderId[folderId]?.add(name);
+  }
+
+  int get folderCount => _namesByFolderId.length;
 }
 
 /// 后端的**可选**能力：一次列举整个同步根。

@@ -131,8 +131,47 @@ class SrsDeckSummary {
   final bool rwkvPending;
 
   /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看存下的到期日，按 RWKV 预测的
-  /// 今天结束时的回忆率挑（降到目标保留率以下的就是今天到期，[_instantInput]），已算进 [reviewCount]。
+  /// 今天结束时的回忆率挑（降到目标保留率以下的就是今天到期；今天已答过的卡按此刻的回忆率，[_instantInput]），
+  /// 已算进 [reviewCount]。
   final bool rwkvScheduled;
+}
+
+/// 今天（[SrsDbStore.dayContext] 的日界）已做的复习：首页复习条的「今日」一行。口径与复习统计页
+/// 「今天」一节（`SrsStatsData.todayStats`，不按牌组筛选）相同：有效复习投影里的评分复习。
+class SrsTodayReviewSummary {
+  const SrsTodayReviewSummary({
+    required this.count,
+    required this.durationMs,
+    required this.again,
+  });
+
+  static const SrsTodayReviewSummary empty = SrsTodayReviewSummary(
+    count: 0,
+    durationMs: 0,
+    again: 0,
+  );
+
+  /// 评分复习次数。
+  final int count;
+
+  /// 作答用时之和（毫秒）。
+  final int durationMs;
+
+  /// 其中评「重来」的次数。
+  final int again;
+
+  /// 正确率（非「重来」的占比）；今天还没复习时为 null。
+  double? get correctRate => count == 0 ? null : (count - again) / count;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsTodayReviewSummary &&
+      other.count == count &&
+      other.durationMs == durationMs &&
+      other.again == again;
+
+  @override
+  int get hashCode => Object.hash(count, durationMs, again);
 }
 
 /// 复习页一张卡的全部信息。
@@ -375,36 +414,48 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 旧库还没并成操作就并（打开时用 `deferMigration` 推迟了的那一次）。已迁移时立即返回。
   ///
-  /// [beforeMigrate] 在独占区**外**先跑（只拉不发的一轮可能要等网络，期间本机复习照常落库），然后在独占区里分批
-  /// 迁移（迁移期间本机写入等它做完）。迁移只包还没有任何操作代表的旧行，所以 [beforeMigrate] 与迁移之间插进来的
-  /// 本机写入 / 收到的操作都不会被重复包装。
+  /// [beforeMigrate] 在独占区**外**先跑（只拉不发的一轮可能要等网络，期间本机复习照常落库），然后分批迁移：
+  /// **每批单独进出一次独占区**（[batch] 条一批，默认 [kSrsSync2MigrateBatch]）。推迟的迁移是在会话中途（首次同步
+  /// 确认之后）触发的，大库要跑十几批、几分钟；以前整个迁移包在一个独占区里，期间本机评分 / 撤销 / 编辑全部排在
+  /// 它后面，界面卡到最后一批做完。独占区是 FIFO（[runExclusive]），迁移期间发起的写入排在当前这一批之后、下一批之前。
+  ///
+  /// 交错写入下语义不变：迁移只包还没有任何操作代表的旧行，队列在第一批排好（只排那一刻已有的旧行，之后的本机写入
+  /// 本来就是操作）；续做的批次在内核里包装前逐条再判一次「已被代表」（store/sync2/mod.rs `represented`），所以
+  /// [beforeMigrate] 与迁移之间、批与批之间插进来的本机写入 / 收到的操作都不会被重复包装。几条入口同时迁移（不同
+  /// 拉取范围的 [SrsSyncScheduler.ensureMigrated]）各自跑批也一样：队列在内核里，谁做到最后一批谁置 [sync2Migrated]。
   Future<void> migrateLegacy({
     Future<void> Function(SrsDbStore store)? beforeMigrate,
+    int batch = kSrsSync2MigrateBatch,
   }) async {
     if (_sync2Migrated) return;
     if (beforeMigrate != null) await beforeMigrate(this);
-    await runExclusive(() async {
-      if (_sync2Migrated) return;
-      await _sync2MigrateAll(now().$1);
-    });
+    while (!_sync2Migrated) {
+      await runExclusive(() async {
+        if (_sync2Migrated) return;
+        await _sync2MigrateBatch(now().$1, batch);
+      });
+    }
   }
 
   /// 本 profile 的旧库已并成操作（或本来就没有要并的）。
   bool get sync2Migrated => _sync2Migrated;
   bool _sync2Migrated = false;
 
+  /// 打开时（store 还没交给调用方，[_sync2Open] 的独占区里）一口气做完全部批次。
   Future<void> _sync2MigrateAll(int nowMs) async {
-    while (true) {
-      final Map<String, Object?> m = await _sync2(<String, Object?>{
-        'op': 'migrate',
-        'now': nowMs,
-        'limit': kSrsSync2MigrateBatch,
-      });
-      if (m['done'] == true) {
-        _sync2Migrated = true;
-        return;
-      }
+    while (!_sync2Migrated) {
+      await _sync2MigrateBatch(nowMs, kSrsSync2MigrateBatch);
     }
+  }
+
+  /// 迁移一批（内核一个独立提交的 savepoint）；做完最后一批置 [sync2Migrated]。调用方在独占区里。
+  Future<void> _sync2MigrateBatch(int nowMs, int batch) async {
+    final Map<String, Object?> m = await _sync2(<String, Object?>{
+      'op': 'migrate',
+      'now': nowMs,
+      'limit': batch,
+    });
+    if (m['done'] == true) _sync2Migrated = true;
   }
 
   /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。
@@ -489,7 +540,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 直接按它的索引查，见 store/browse.rs `anki_dupes`）。老行这一列是 NULL，升级时内核只补这一列
   /// （caches.rs `backfill_dupe_norms`：物化笔记与笔记类型算首字段，不重算整行与卡片——那要读每张卡的血统与
   /// 日志）。只改这一列、不算缓存写入，不进变更日志。
-  static const int _kCacheRevision = 8;
+  /// 9：没有出处记录的制卡笔记按 Fushi 制卡标签认出处（`fushi` / `hibiki` + `book` / `video` / `anime` /
+  /// `game` / `music`，层级 `<分类>::<作品名>` 给作品名；caches.rs `source_from_tags`，反馈 AhIskigAq3）。
+  /// 老行只补 source_kind / source_title 两列（caches.rs `backfill_tag_sources`，按缓存行自己的 tags_json），
+  /// 不算缓存写入，不进变更日志。
+  static const int _kCacheRevision = 9;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
@@ -521,6 +576,51 @@ class SrsDbStore implements SrsSync2Host {
 
   /// [_rwkvScoresRevision] 连同纪元：变了 = 分数表整表按此刻重查。
   String get rwkvScoresKey => '$_epoch:$_rwkvScoresRevision';
+
+  /// 收段会话（[sync2IngestBegin] … [sync2IngestEnd]）期间攒下的分数表刷新：会话里每片投递 / 收尾重放都可能
+  /// 推进它，以前每片 +1，整表重查跟着每片来一次、与下一片抢内存（35 万条日志的 iPhone 收尾 OOM）。会话结束时
+  /// 并成一次（[_endIngestSession]）。只在内存：进程死在会话中途时下次启动 [_loadLocal] 本来就 +1、原生分数表
+  /// 也是空的，不会漏刷新。
+  int _rwkvScoresDeferred = 0;
+
+  /// 推进 [_rwkvScoresRevision]；收段会话里先攒着，会话结束时并成一次。
+  void _bumpRwkvScores([int n = 1]) {
+    if (n <= 0) return;
+    if (_ingestSession != null) {
+      _rwkvScoresDeferred += n;
+    } else {
+      _rwkvScoresRevision += n;
+    }
+  }
+
+  /// 正在进行的收段会话；完成 = 会话结束。RWKV 回放（[rwkvReplay]，整 profile 扫一遍日志）等它结束才跑，
+  /// 会话开始前等在途的回放跑完（[_rwkvReplaysIdle]）：两者都随日志总量线性占内存，不能叠在一起。
+  Completer<void>? _ingestSession;
+
+  /// 在途的 [rwkvReplay] 个数与「全部跑完」信号（收段会话开始时等它）。
+  int _rwkvReplaysInFlight = 0;
+  Completer<void>? _rwkvReplaysIdle;
+
+  /// 正在收段（[sync2IngestBegin] 之后、[sync2IngestEnd] 之前）。RWKV 对齐据此把要整 profile 重放的那一步
+  /// 推到会话结束之后（`SrsRwkvService`）。
+  bool get sync2Ingesting => _ingestSession != null;
+
+  /// 当前没有收段会话时立即完成，否则在会话（及紧接着的下一场）结束后完成。
+  Future<void> sync2IngestSettled() async {
+    for (Completer<void>? s = _ingestSession; s != null; s = _ingestSession) {
+      await s.future;
+    }
+  }
+
+  void _endIngestSession(Completer<void> session) {
+    if (!identical(_ingestSession, session)) return;
+    _ingestSession = null;
+    if (_rwkvScoresDeferred > 0) {
+      _rwkvScoresDeferred = 0;
+      _rwkvScoresRevision++;
+    }
+    session.complete();
+  }
 
   /// 纪元：变了（覆盖恢复后本机状态重建）= 分数表清空、按历史重算。
   String get rwkvScoresClearKey => _epoch;
@@ -690,7 +790,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 读本机状态；返回之前是否存过。
   Future<bool> _loadLocal() async {
     _contentRevision++;
-    _rwkvScoresRevision++;
+    _bumpRwkvScores();
     final SrsLocalStateRow? row = await (db.select(
       db.srsLocalState,
     )..where((t) => t.profileUid.equals(profileUid))).getSingleOrNull();
@@ -1174,7 +1274,7 @@ class SrsDbStore implements SrsSync2Host {
     _revision += landed;
     _contentRevision += (m['content'] as int?) ?? 0;
     _viewRevision += (m['view'] as int?) ?? 0;
-    _rwkvScoresRevision += (m['rwkv'] as int?) ?? 0;
+    _bumpRwkvScores((m['rwkv'] as int?) ?? 0);
     for (final Object? c in (r['changed'] as List?) ?? const <Object?>[]) {
       if (c is List &&
           c.length == 2 &&
@@ -1310,42 +1410,65 @@ class SrsDbStore implements SrsSync2Host {
     'open_file',
   };
 
+  /// 开一场收段会话。先登记会话（之后来的 [rwkvReplay] 排到会话结束），再等在途的回放跑完，然后才让内核开始：
+  /// 收段的投递 / 收尾与整 profile 的 RWKV 回放不会同时在内存里。开不成（抛错）时会话随即结束——调用方只在
+  /// 这一步成功后才配对 [sync2IngestEnd]。
   @override
-  Future<void> sync2IngestBegin() => runExclusive(() async {
-    final Map<String, Object?> r = await _sync2(const <String, Object?>{
-      'op': 'ingest_begin',
-    });
-    _ingestOpen = true;
-    // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
-    // 事务前要先把它按片做完（[_transactionOrReload]）。
-    if (r['channel'] == true) _channelLive = true;
-  });
+  Future<void> sync2IngestBegin() async {
+    final Completer<void> session = Completer<void>();
+    await sync2IngestSettled();
+    _ingestSession = session;
+    try {
+      final Completer<void>? replays = _rwkvReplaysIdle;
+      if (replays != null) await replays.future;
+      await runExclusive(() async {
+        final Map<String, Object?> r = await _sync2(const <String, Object?>{
+          'op': 'ingest_begin',
+        });
+        _ingestOpen = true;
+        // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
+        // 事务前要先把它按片做完（[_transactionOrReload]）。
+        if (r['channel'] == true) _channelLive = true;
+      });
+    } catch (_) {
+      _endIngestSession(session);
+      rethrow;
+    }
+  }
 
   /// 本副本开着内核收段会话（[sync2IngestBegin] 之后、[sync2IngestEnd] / [retire] 放掉之前）。
+  /// [_ingestSession] 是 Dart 侧的会话（攒分数表刷新、让 RWKV 回放排队），比它早开、不晚于它结束。
   bool _ingestOpen = false;
 
   /// 测试：[_ingestOpen]。
   @visibleForTesting
   bool get debugIngestOpen => _ingestOpen;
 
-  /// 放掉收段会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了会话：这里无事可做，不再进独占区
-  /// （进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
+  /// 结束收段会话：会话里攒下的分数表刷新并成一次（[_rwkvScoresDeferred]），等着的 RWKV 回放放行；内核命令失败
+  /// 也照样结束 Dart 侧会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了内核会话：这里不再进
+  /// 独占区（进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
   @override
   Future<void> sync2IngestEnd() async {
-    if (!_ingestOpen) return;
+    final Completer<void>? session = _ingestSession;
     try {
+      if (!_ingestOpen) return;
       await runExclusive(_releaseIngestSession);
     } on SrsStoreRetiredError catch (e) {
       // 排队期间被作废：会话由 [retire] 放掉了（[_ingestOpen] 已清）。别的原因（会话仍开着）照常抛。
       if (!identical(e.store, this) || _ingestOpen) rethrow;
+    } finally {
+      if (session != null) _endIngestSession(session);
     }
   }
 
-  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。
+  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。内核会话放掉的同时结束 Dart 侧
+  /// 会话：[retire] 走这条路时，攒着的分数表刷新与排队的 RWKV 回放也随之放行，不必等那一轮的 [sync2IngestEnd]。
   Future<void> _releaseIngestSession() async {
     if (!_ingestOpen) return;
     await _sync2(const <String, Object?>{'op': 'ingest_end'});
     _ingestOpen = false;
+    final Completer<void>? session = _ingestSession;
+    if (session != null) _endIngestSession(session);
   }
 
   /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
@@ -1521,7 +1644,7 @@ class SrsDbStore implements SrsSync2Host {
     final Object? persisted = r['localRevision'];
     if (persisted is int) _revision = persisted;
     if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
-      _rwkvScoresRevision++;
+      _bumpRwkvScores();
     }
     await _notifyPurged();
     return r;
@@ -1620,7 +1743,7 @@ class SrsDbStore implements SrsSync2Host {
         blobs: <Uint8List>[bytes],
       );
       _absorbProjection(r);
-      _rwkvScoresRevision++;
+      _bumpRwkvScores();
       await _saveLocal();
     });
     final Map<String, Object?> id = await _sync2(<String, Object?>{
@@ -1635,6 +1758,36 @@ class SrsDbStore implements SrsSync2Host {
   /// 同步状态（设计 §10.6）。
   Future<Map<String, Object?>> sync2Status() async =>
       (await sync2Command(<String, Object?>{'op': 'status'})).map;
+
+  /// 本机设备信息（native/fushi_fsrs/src/store/sync2/devices.rs）：给了哪个改哪个，[nick] 给空串 = 清掉昵称、回到
+  /// 型号。人读名 = 昵称或型号，随下一次写 head 发布（型号 / 版本 / 平台进 head 的扩展）。没变时内核不进写锁。
+  Future<Map<String, Object?>> sync2DeviceInfo({
+    String? model,
+    String? app,
+    String? platform,
+    String? nick,
+  }) async => (await sync2Command(<String, Object?>{
+    'op': 'device_info',
+    'now': now().$1,
+    'model': ?model,
+    'app': ?app,
+    'platform': ?platform,
+    'nick': ?nick,
+  })).map;
+
+  /// 给没有自报名字的设备 [device] 记一个补充名（互联 host 认出了直接写它的段的已配对对端）。
+  Future<void> sync2DeviceHint(String device, String hint) => sync2Command(
+    <String, Object?>{'op': 'device_hint', 'device': device, 'hint': hint},
+  );
+
+  /// 停用 / 取消停用一台别的设备（「这台设备不用了」）：停用后因等它的数据而卡在缓冲里的操作立即投递，同一次
+  /// 调用里接进缓存。不删任何数据；它之后又同步过来会自动取消停用。
+  Future<void> sync2Retire(String device, {required bool retire}) =>
+      _sync2Write(<String, Object?>{
+        'op': 'retire',
+        'device': device,
+        'retire': retire,
+      });
 
   /// 算并记下状态摘要（写 head 时带上；两台设备在同一版本向量下摘要不同 = 确定性 bug）。
   Future<Map<String, Object?>> sync2Digest() async =>
@@ -1710,6 +1863,7 @@ class SrsDbStore implements SrsSync2Host {
     'ingest_finish',
     'replay_pending',
     'import',
+    'retire',
     'resolve',
     'purge',
     'checkpoint',
@@ -2389,6 +2543,10 @@ class SrsDbStore implements SrsSync2Host {
       if (_cacheRevision < 8) {
         await _sync2(const <String, Object?>{'op': 'backfill_dupe_norms'});
       }
+      // 整行重算已按新规则写好出处；这一步补的只是出处列仍为空、标签认得出的老行。
+      if (_cacheRevision < 9) {
+        await _sync2(const <String, Object?>{'op': 'backfill_tag_sources'});
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -2585,20 +2743,33 @@ class SrsDbStore implements SrsSync2Host {
     required int since,
     int? rebaseSince,
     int? rowsFrom,
-  }) async => srsDecodeRwkvReplay(
-    await _coreRwkvReplay(
-      core.address,
-      core.libraryPath,
-      profileUid,
-      _seedGroups(cardIds),
-      ids,
-      day.utcOffsetMin,
-      day.rolloverHour,
-      since,
-      rebaseSince,
-      rowsFrom,
-    ),
-  );
+  }) async {
+    // 收段会话期间不扫：等会话结束（[sync2IngestBegin] 反过来等在途的回放）。
+    await sync2IngestSettled();
+    _rwkvReplaysInFlight++;
+    _rwkvReplaysIdle ??= Completer<void>();
+    try {
+      return srsDecodeRwkvReplay(
+        (await _coreRwkvReplay(
+          core.address,
+          core.libraryPath,
+          profileUid,
+          _seedGroups(cardIds),
+          ids,
+          day.utcOffsetMin,
+          day.rolloverHour,
+          since,
+          rebaseSince,
+          rowsFrom,
+        )).materialize().asUint8List(),
+      );
+    } finally {
+      if (--_rwkvReplaysInFlight == 0) {
+        _rwkvReplaysIdle?.complete();
+        _rwkvReplaysIdle = null;
+      }
+    }
+  }
 
   /// RWKV 对齐：本 profile 日志的指纹与 rowid 在 [since] 之后的行数（同一个快照），[withRows] 时连同这些行。
   Future<SrsRwkvLogTail> rwkvLogTail({
@@ -3753,6 +3924,34 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
+  /// 今天已做的复习（[SrsTodayReviewSummary]）：有效复习投影（`srs_stat_reviews`，被撤销的不在）里落在
+  /// 今天（[dayContext] 的日界，与牌组计数同一个「今天」）的评分复习，按 (profile, 时刻) 索引聚合一次。
+  Future<SrsTodayReviewSummary> todayReviewSummary() async {
+    final SrsDayContext day = await dayContext();
+    final int today = day.dayIndexOf(now().$1);
+    final $SrsStatReviewsTable t = db.srsStatReviews;
+    final Expression<int> n = countAll();
+    final Expression<int> ms = t.durationMs.sum();
+    final Expression<int> again = const CustomExpression<int>(
+      'SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END)',
+    );
+    final TypedResult row =
+        await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[n, ms, again])
+              ..where(
+                t.profileUid.equals(profileUid) &
+                    t.rating.isNotNull() &
+                    t.occurredAt.isBiggerOrEqualValue(day.dayStartMs(today)) &
+                    t.occurredAt.isSmallerThanValue(day.dayStartMs(today + 1)),
+              ))
+            .getSingle();
+    return SrsTodayReviewSummary(
+      count: row.read(n) ?? 0,
+      durationMs: row.read(ms) ?? 0,
+      again: row.read(again) ?? 0,
+    );
+  }
+
   /// 单个牌组（含子树）的计数，与 [deckSummaries] 里同一牌组的那一行相同：
   /// 一个牌组的计数只取决于它自己的子树，祖先的上限不参与。
   Future<SrsDeckSummary?> deckSummary(String deckId) async {
@@ -4080,25 +4279,43 @@ class SrsDbStore implements SrsSync2Host {
       return pending;
     }
     final int today = day.dayIndexOf(nowMs);
-    final List<_RwkvCandidate> rows = (await _rwkvCandidates(
+    final int todayStart = day.dayStartMs(today);
+    // 今天还没答过的卡取今天结束那一刻（下一个翻日时刻前 1 ms）的 R：到那时会降到目标线以下的就是今天到期，与
+    // FSRS 按天到期同一粒度。计数是「今天还剩多少」，出卡与它同一口径（数字 > 0 就有卡出）。
+    // 今天已答过的卡取此刻的 R：答过就不再是「今天还剩的」，同日重出要等它真的掉到目标线下（再加内核的同日
+    // 间隔守卫）。它也按今天结束时的 R 判的话，刚答完模型仍预测它撑不到今天结束（年轻卡、刚重学毕业的卡），
+    // 守卫一过又合格，一天里被反复刷、答一张计数不降。「今天答过」与内核守卫同一判据（上次作答 ≥ 今天开始，
+    // store/study.rs `instant_eligible`）。
+    final List<_RwkvCandidate> rows = <_RwkvCandidate>[];
+    final List<_RwkvCandidate> answered = <_RwkvCandidate>[];
+    for (final _RwkvCandidate r in (await _rwkvCandidates(
       today,
       targets.keys,
-    )).values.toList();
-    // 今天结束那一刻（下一个翻日时刻前 1 ms）的 R：到那时会降到目标线以下的卡就是今天到期，与 FSRS 按天到期同一
-    // 粒度。计数是「今天还剩多少」，出卡与它同一口径（数字 > 0 就有卡出）；按此刻的 R 排的话合格的卡一天里不断冒
-    // 出来，计数只是一个快照。
-    final List<double>? scores = await source.instantRetrievability(
+    )).values) {
+      final int? last = r.lastReviewedAt;
+      (last != null && last >= todayStart ? answered : rows).add(r);
+    }
+    final List<double>? dayEnd = await source.instantRetrievability(
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
       atMs: day.dayStartMs(today + 1) - 1,
     );
-    if (scores == null) return pending;
-    if (scores.length != rows.length) {
-      // 违反 [SrsRwkvScheduling.instantRetrievability] 的契约（与候选同序同长）：不是「没准备好」，当成
-      // pending 的话复习页会一直等一个已经来过的「就绪」。
+    if (dayEnd == null) return pending;
+    final List<double>? current = answered.isEmpty
+        ? const <double>[]
+        : await source.currentRetrievability(<SrsRwkvCandidate>[
+            for (final _RwkvCandidate r in answered) r.card,
+          ], nowMs: nowMs);
+    if (current == null) return pending;
+    if (dayEnd.length != rows.length || current.length != answered.length) {
+      // 违反 [SrsRwkvScheduling] 的契约（与候选同序同长）：不是「没准备好」，当成 pending 的话复习页会一直等
+      // 一个已经来过的「就绪」。
       throw StateError(
-        'SrsDbStore: RWKV returned ${scores.length} scores for ${rows.length} cards',
+        'SrsDbStore: RWKV returned ${dayEnd.length} + ${current.length} scores '
+        'for ${rows.length} + ${answered.length} cards',
       );
     }
+    rows.addAll(answered);
+    final List<double> scores = <double>[...dayEnd, ...current];
     final bool anyMinimum = queueOf.values.any(
       (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
     );
@@ -4221,16 +4438,17 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// [cards]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。
+  /// [cards]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。不经排队的
+  /// 常驻分数表（[SrsRwkvScheduling.currentRetrievability]）：那张表按今天结束的时刻维护。
   Future<Map<String, double>?> instantRetrievabilityOf(
     List<SrsRwkvCandidate> cards,
   ) async {
     final SrsRwkvScheduling? source = rwkv;
     if (source == null || !source.ready) return null;
     if (cards.isEmpty) return const <String, double>{};
-    final List<double>? scores = await source.instantRetrievability(
+    final List<double>? scores = await source.currentRetrievability(
       cards,
-      atMs: now().$1,
+      nowMs: now().$1,
     );
     if (scores == null || scores.length != cards.length) return null;
     return <String, double>{
@@ -4305,13 +4523,22 @@ class SrsDbStore implements SrsSync2Host {
       cardFlag: d.card.flag,
       cardId: d.card.id,
     );
+    final int cardOrd = d.noteType.isCloze ? d.card.clozeOrd - 1 : tpl.ord;
     final AnkiRenderedCard r = renderAnkiCard(
       questionTemplate: front,
       answerTemplate: back,
       noteFields: fields,
-      cardOrd: d.noteType.isCloze ? d.card.clozeOrd - 1 : tpl.ord,
+      cardOrd: cardOrd,
       isCloze: d.noteType.isCloze,
       specials: specials,
+    );
+    // 「打字输入答案」（`{{type:…}}`）：问题面换成输入框，答案面换成带期望答案的比对占位
+    // （卡面拿到打的字后填比对，见 anki_type_answer.dart）。
+    final ({String question, String answer}) faces = ankiResolveTypeAnswer(
+      question: r.question,
+      answer: r.answer,
+      fields: fields,
+      cardOrd: cardOrd,
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
@@ -4325,8 +4552,8 @@ class SrsDbStore implements SrsSync2Host {
       specials: specials,
     );
     return SrsRenderedCard(
-      question: r.question,
-      answer: r.answer,
+      question: faces.question,
+      answer: faces.answer,
       css: d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
@@ -4679,7 +4906,7 @@ class SrsDbStore implements SrsSync2Host {
         serverTimes: serverTimes,
       );
       // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-      if (landed > 0) _rwkvScoresRevision++;
+      if (landed > 0) _bumpRwkvScores();
       for (final SrsEvent e in mine) {
         final Hlc? h = switch (e) {
           SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
@@ -5351,7 +5578,7 @@ Future<Uint8List> _coreRwkvCards(
   ),
 );
 
-Future<Uint8List> _coreRwkvReplay(
+Future<TransferableTypedData> _coreRwkvReplay(
   int address,
   String? libraryPath,
   String profileUid,
@@ -5362,7 +5589,7 @@ Future<Uint8List> _coreRwkvReplay(
   int since,
   int? rebaseSince,
   int? rowsFrom,
-) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+) => SrsCoreWorkers.of(libraryPath).run<TransferableTypedData>(
   address,
   (SrsCore c) => c.rwkvReplay(
     profileUid,

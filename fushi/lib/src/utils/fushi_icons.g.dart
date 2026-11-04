@@ -1200,6 +1200,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 原画（不转码，源文件画质）：Symbols `hd`（取代 Icons.hd_outlined / Icons.hd）
+  static const IconData originalQuality = IconData(
+    0xe052,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 动画 / 插帧：Symbols `animation`（取代 Icons.animation_outlined / Icons.animation）
   static const IconData animation = IconData(
     0xe71c,
@@ -1940,6 +1946,7 @@ abstract final class FushiIcons {
     'alignLeft': alignLeft,
     'alignRight': alignRight,
     'highQuality': highQuality,
+    'originalQuality': originalQuality,
     'animation': animation,
     'myLocation': myLocation,
     'signalLow': signalLow,
@@ -2061,6 +2068,7 @@ abstract final class FushiIcons {
     0xe04d: IconData(0xe04d, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe04f: IconData(0xe04f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe050: IconData(0xe050, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe052: IconData(0xe052, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe053: IconData(0xe053, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe056: IconData(0xe056, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe059: IconData(0xe059, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2437,6 +2445,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe04d: (CupertinoIcons.speaker_1_fill, CupertinoIcons.speaker_1_fill),
   0xe04f: (CupertinoIcons.speaker_slash, CupertinoIcons.speaker_slash_fill),
   0xe050: (CupertinoIcons.speaker_2, CupertinoIcons.speaker_2_fill),
+  0xe052: (CupertinoIcons.film, CupertinoIcons.film_fill),
   0xe053: (CupertinoIcons.textformat_abc, CupertinoIcons.textformat_abc),
   0xe056: (CupertinoIcons.goforward_10, CupertinoIcons.goforward_10),
   0xe059: (CupertinoIcons.gobackward_10, CupertinoIcons.gobackward_10),

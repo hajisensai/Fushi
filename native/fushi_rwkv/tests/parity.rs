@@ -225,7 +225,8 @@ fn runtime_thread_count_does_not_change_results() {
     let fixture = Fixture::load("simulated_collection");
     let mut results = Vec::new();
     for threads in [0, 1, 3] {
-        let mut runtime = RwkvRuntime::new(&Model::from(model().clone()), StatePrecision::Int8, threads).unwrap();
+        let mut runtime =
+            RwkvRuntime::new(&Model::from(model().clone()), StatePrecision::Int8, threads).unwrap();
         let mut outputs = Vec::new();
         for step in &fixture.steps {
             match step {

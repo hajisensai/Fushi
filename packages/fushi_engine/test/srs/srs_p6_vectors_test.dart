@@ -236,16 +236,19 @@ void main() {
         );
         // 全量回放（一份历史一个 profile）：按时刻排好序的行与 lastAt。
         final SrsRwkvReplay replay = srsDecodeRwkvReplay(
-          core.rwkvReplay(
-            'p$i',
-            <List<String>>[
-              <String>['v$i'],
-            ],
-            _ids(i),
-            utcOffsetMin: e.key.utcOffsetMin,
-            rolloverHour: e.key.rolloverHour,
-            since: 0,
-          ),
+          core
+              .rwkvReplay(
+                'p$i',
+                <List<String>>[
+                  <String>['v$i'],
+                ],
+                _ids(i),
+                utcOffsetMin: e.key.utcOffsetMin,
+                rolloverHour: e.key.rolloverHour,
+                since: 0,
+              )
+              .materialize()
+              .asUint8List(),
         );
         expect(_hex(replay.rows.bytes), want['rows'], reason: 'vector $i rows');
         expect(replay.lastAt, want['lastAt']);

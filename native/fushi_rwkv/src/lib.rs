@@ -33,23 +33,23 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_char, CString};
+use std::ffi::{CString, c_char};
 use std::io;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // 上游在 `cfg(test)` 下额外编译 aarch64/macOS 的批量查询路径（给它自己的对拍测试用），
 // 本 crate 的测试在 tests/ 里、不调用它们，x86 上的 lib test 构建就只剩 dead_code 告警。
 // let_and_return：删掉上游 `cfg(test)` 打点语句后，`let heads = ..; heads` 这类写法留了下来；
 // manual_is_multiple_of：上游 aarch64 内核里的 `x % n == 0`。数值代码保持逐字搬运，不为 lint 改写。
+mod curve;
 #[cfg_attr(test, allow(dead_code))]
 #[allow(clippy::let_and_return, clippy::manual_is_multiple_of)]
 mod rwkv;
-mod curve;
 
-pub use curve::{answer_intervals, AnswerCurve};
+pub use curve::{AnswerCurve, answer_intervals};
 pub use rwkv::small::{SmallHeads, SmallInference, SmallModel, SmallUndo};
 pub use rwkv::{
-    forecast_query, predict_curve, ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision,
+    ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision, forecast_query, predict_curve,
 };
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
@@ -323,7 +323,11 @@ impl From<io::Error> for RwkvError {
 impl RwkvRuntime {
     /// `threads == 0`：用 rayon 全局池；否则建一个专用池（墨水屏 / 低端机可传 1）。
     /// 线程数不影响数值：上游的并行全是逐行 map，没有跨线程浮点归约。
-    pub fn new(model: &Model, precision: StatePrecision, threads: usize) -> Result<Self, RwkvError> {
+    pub fn new(
+        model: &Model,
+        precision: StatePrecision,
+        threads: usize,
+    ) -> Result<Self, RwkvError> {
         if !model.kind().supports(precision) {
             return Err(RwkvError::Input(format!(
                 "{:?} model does not support {precision:?} state (its card states diverge; \
@@ -521,7 +525,13 @@ impl RwkvRuntime {
         match outcome {
             Ok(result) => Ok(result?
                 .into_iter()
-                .map(|r| if r.is_finite() && (0.0..=1.0).contains(&r) { r } else { f32::NAN })
+                .map(|r| {
+                    if r.is_finite() && (0.0..=1.0).contains(&r) {
+                        r
+                    } else {
+                        f32::NAN
+                    }
+                })
                 .collect()),
             Err(panic) => {
                 *poisoned = true;
@@ -541,12 +551,16 @@ impl RwkvRuntime {
         max_interval_days: u32,
     ) -> Result<([u32; 4], [f32; 4]), RwkvError> {
         if !(target_retention > 0.0 && target_retention < 1.0) {
-            return Err(RwkvError::Input("target_retention must be in (0, 1)".into()));
+            return Err(RwkvError::Input(
+                "target_retention must be in (0, 1)".into(),
+            ));
         }
         let max = max_interval_days.max(1);
         let curves = self.answer_curves(answer)?;
         let days = curve::answer_intervals(&curves, target_retention, max);
-        let at = std::array::from_fn(|index| curves[index].retrievability(days[index] as f32 * 86_400.0));
+        let at = std::array::from_fn(|index| {
+            curves[index].retrievability(days[index] as f32 * 86_400.0)
+        });
         if at.iter().any(|r: &f32| !r.is_finite()) {
             return Err(RwkvError::Data("non-finite forgetting curve".into()));
         }
@@ -570,7 +584,9 @@ impl RwkvRuntime {
             poisoned,
             ..
         } = self;
-        match catch_unwind(AssertUnwindSafe(|| install(pool, || inference.answer_curves(&answer)))) {
+        match catch_unwind(AssertUnwindSafe(|| {
+            install(pool, || inference.answer_curves(&answer))
+        })) {
             Ok(curves) => Ok(curves?),
             Err(panic) => {
                 *poisoned = true;
@@ -667,12 +683,19 @@ impl RwkvRuntime {
     /// 只有小模型支持（大模型返回 [RwkvError::Unsupported]，调用方改用 replay）；每行必须有
     /// 评分；时刻不得早于日志里最后一条（日志按时刻有序，[Self::rewind_from] 靠它）；校验同
     /// [Self::replay]，整批通过才应用。
-    pub fn append(&mut self, reviews: &[ReviewInput], tags: &[u64], ats: &[i64]) -> Result<(), RwkvError> {
+    pub fn append(
+        &mut self,
+        reviews: &[ReviewInput],
+        tags: &[u64],
+        ats: &[i64],
+    ) -> Result<(), RwkvError> {
         if self.poisoned {
             return Err(RwkvError::Poisoned);
         }
         if tags.len() != reviews.len() || ats.len() != reviews.len() {
-            return Err(RwkvError::Input("tags / ats and reviews differ in length".into()));
+            return Err(RwkvError::Input(
+                "tags / ats and reviews differ in length".into(),
+            ));
         }
         let mut last_at = self.journal.last().map_or(i64::MIN, |entry| entry.1);
         for (index, &at) in ats.iter().enumerate() {
@@ -1511,7 +1534,12 @@ pub unsafe extern "C" fn frwkv_runtime_scores_lookup(
         }
         let scores = std::slice::from_raw_parts_mut(out_scores, count);
         let hits = std::slice::from_raw_parts_mut(out_found, count);
-        for (index, value) in runtime.0.scores_lookup(ids, versions).into_iter().enumerate() {
+        for (index, value) in runtime
+            .0
+            .scores_lookup(ids, versions)
+            .into_iter()
+            .enumerate()
+        {
             scores[index] = value.unwrap_or(f32::NAN);
             hits[index] = u8::from(value.is_some());
             found += usize::from(value.is_some());
@@ -1599,7 +1627,10 @@ pub unsafe extern "C" fn frwkv_runtime_scores_requery(
     let mut count = 0usize;
     let code = guarded(|| {
         let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
-        count = runtime.0.scores_requery(today, now_ms).map_err(rwkv_error)?;
+        count = runtime
+            .0
+            .scores_requery(today, now_ms)
+            .map_err(rwkv_error)?;
         Ok(())
     });
     if code == FRWKV_OK {
@@ -1706,7 +1737,10 @@ pub unsafe extern "C" fn frwkv_runtime_snapshot_to_file(
         let runtime = runtime.as_ref().ok_or_else(|| argument("null runtime"))?;
         let path = slice_or_empty(path, path_len).ok_or_else(|| argument("null path"))?;
         let path = std::str::from_utf8(path).map_err(|_| argument("path must be UTF-8"))?;
-        runtime.0.snapshot_to_file(std::path::Path::new(path)).map_err(rwkv_error)
+        runtime
+            .0
+            .snapshot_to_file(std::path::Path::new(path))
+            .map_err(rwkv_error)
     })
 }
 
@@ -1724,7 +1758,10 @@ pub unsafe extern "C" fn frwkv_runtime_restore_from_file(
         let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
         let path = slice_or_empty(path, path_len).ok_or_else(|| argument("null path"))?;
         let path = std::str::from_utf8(path).map_err(|_| argument("path must be UTF-8"))?;
-        runtime.0.restore_from_file(std::path::Path::new(path)).map_err(rwkv_error)
+        runtime
+            .0
+            .restore_from_file(std::path::Path::new(path))
+            .map_err(rwkv_error)
     })
 }
 

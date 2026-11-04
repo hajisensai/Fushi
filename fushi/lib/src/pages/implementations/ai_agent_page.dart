@@ -924,6 +924,9 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       AgentEntryStatus.undone => t.ai_agent_undone,
       AgentEntryStatus.superseded => t.ai_agent_superseded,
       AgentEntryStatus.declined => t.ai_agent_tool_declined,
+      AgentEntryStatus.failed
+          when entry.errorCode == AgentStopCode.interrupted =>
+        t.ai_agent_tool_interrupted,
       AgentEntryStatus.failed => t.ai_agent_tool_failed(
         code: entry.errorCode ?? '',
       ),
@@ -1094,6 +1097,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 Text(
                   entry.status == AgentEntryStatus.approved
                       ? t.ai_agent_confirm_approved
+                      : entry.errorCode == AgentStopCode.interrupted
+                      ? t.ai_agent_confirm_interrupted
                       : t.ai_agent_confirm_declined,
                   style: text.labelMedium,
                 ),
@@ -1151,7 +1156,9 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               )
             else
               Text(
-                entry.selected == null
+                entry.errorCode == AgentStopCode.interrupted
+                    ? t.ai_agent_confirm_interrupted
+                    : entry.selected == null
                     ? t.ai_agent_choice_cancel
                     : t.ai_agent_choice_picked(label: labelOf(entry.selected)),
                 style: text.labelMedium,

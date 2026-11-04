@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository, SentenceSourceKind;
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
@@ -18,127 +18,49 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/platform/home_widgets/home_widget_channel.dart';
+import 'package:fushi/src/platform/home_widgets/live_activity_controller.dart';
 
-/// 一次播放活动的内容（与 Swift `FushiPlaybackAttributes.ContentState` 逐字段对应）。
-@immutable
-class PlaybackActivityState {
-  const PlaybackActivityState({
-    required this.title,
-    required this.subtitle,
-    required this.line,
-    required this.isPlaying,
-    required this.progress,
-    required this.elapsedLabel,
-    required this.remainingLabel,
-    this.nextLine,
-    this.startedAt,
-    this.endsAt,
-    this.detail,
-    this.canFavorite = false,
-    this.favorited = false,
-    this.realtimeLabels = false,
-  });
-
-  final String title;
-  final String subtitle;
-  final String line;
-  final String? nextLine;
-  final bool isPlaying;
-  final double? startedAt;
-  final double? endsAt;
-  final double progress;
-  final String elapsedLabel;
-  final String remainingLabel;
-  final String? detail;
-  final bool canFavorite;
-  final bool favorited;
-
-  /// true：时间文字可以由系统按 [startedAt]…[endsAt] 自走（音乐：1 倍速、整首）。
-  /// false：自走的只有进度条，文字用 [elapsedLabel] / [remainingLabel]——有声书的
-  /// 进度条走本章、文字是整本，且倍速下墙钟与音频时间对不上。
-  final bool realtimeLabels;
-
-  /// 不含随时间自走的量（进度 / 时间标签 / 起止时刻）：只有它变了才值得推一次更新。
-  String get significantKey =>
-      '$title|$subtitle|$line|$nextLine|$isPlaying|$detail|$canFavorite|'
-      '$favorited';
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'title': title,
-    'subtitle': subtitle,
-    'line': line,
-    'nextLine': nextLine,
-    'isPlaying': isPlaying,
-    'startedAt': startedAt,
-    'endsAt': endsAt,
-    'progress': progress,
-    'elapsedLabel': elapsedLabel,
-    'remainingLabel': remainingLabel,
-    'detail': detail,
-    'canFavorite': canFavorite,
-    'favorited': favorited,
-    'realtimeLabels': realtimeLabels,
-  };
-}
-
-/// 播放中让系统自走进度条的起止墙钟时刻（秒）。倍速 [speed] 下按墙钟换算：
-/// 整段媒体时长 [duration] 在墙钟上占 duration / speed。
-({double startedAt, double endsAt})? playbackWallClock({
-  required Duration position,
-  required Duration duration,
-  required double speed,
-  required DateTime now,
-}) {
-  if (duration <= Duration.zero || speed <= 0) return null;
-  final double nowSec = now.millisecondsSinceEpoch / 1000;
-  final double start = nowSec - position.inMilliseconds / 1000 / speed;
-  return (
-    startedAt: start,
-    endsAt: start + duration.inMilliseconds / 1000 / speed,
-  );
-}
+export 'package:fushi/src/platform/home_widgets/live_activity_controller.dart'
+    show formatPlaybackClock, playbackWallClock;
 
 /// 有声书 / 音乐 / 设备端转录 → Live Activity（iOS 灵动岛 + 锁屏）或 macOS 菜单栏播放条。
 ///
-/// 只订阅现成的 ChangeNotifier（会话、控制器、歌词、转录队列），在「当前句 / 歌词行 /
-/// 播放状态 / 收藏状态」变化时推一次；进度条由系统按起止时刻自己走，不按秒推。
-/// 播放暂停超过 [pauseTimeout] 或会话结束就收掉活动。
+/// 只订阅现成的 ChangeNotifier（会话、控制器、歌词、转录队列），把它们读成样本交给
+/// [LiveActivityController]（串行收敛、暂停超时、换种类）。进度条由系统按起止时刻自己走，
+/// 不按秒推。
 class HomeWidgetLiveActivities {
-  HomeWidgetLiveActivities({
-    required this.appModel,
-    required this.channel,
-    this.pauseTimeout = const Duration(minutes: 10),
-  });
+  HomeWidgetLiveActivities({required this.appModel, required this.channel});
 
   final AppModel appModel;
   final HomeWidgetChannel channel;
-  final Duration pauseTimeout;
+
+  late final LiveActivityController _activities = LiveActivityController(
+    channel: channel,
+    readPlayback: _currentPlayback,
+    readRunningTask: _runningTask,
+    readFinishedTask: _finishedTask,
+  );
 
   AudiobookSession? _session;
   AudiobookPlayerController? _controller;
   MusicPlayerEngine? _music;
   MusicLyricsLive? _lyrics;
   AudiobookTranscribeImportQueue? _queue;
-
-  String? _playbackId;
-  String? _playbackKind;
-  String? _playbackKey;
-  int _lastFullPushMs = 0;
-  Timer? _pauseTimer;
-  bool _starting = false;
-
-  String? _taskId;
-  String? _taskJobId;
-  String? _taskKey;
   bool _backgrounded = false;
 
   String? _favoriteCheckedFor;
   bool _currentFavorited = false;
 
   bool _disposed = false;
+  bool _pushScheduled = false;
+  bool _forceNext = false;
+  bool _taskScheduled = false;
 
-  void start() {
-    unawaited(channel.endAllActivities());
+  /// 先**等**原生把上次进程留下的活动全部收掉，再开始订阅：否则冷启动时会话恢复起的新活动
+  /// 可能被迟到的「全部结束」一起收掉。
+  Future<void> start() async {
+    await channel.endAllActivities();
+    if (_disposed) return;
     _session = appModel.audiobookSession..addListener(_onAudiobookSession);
     _music = appModel.musicSession.engine..addListener(_schedulePlayback);
     _lyrics = appModel.musicLyricsLive
@@ -154,7 +76,6 @@ class HomeWidgetLiveActivities {
 
   void dispose() {
     _disposed = true;
-    _pauseTimer?.cancel();
     _session?.removeListener(_onAudiobookSession);
     _controller?.removeListener(_schedulePlayback);
     _music?.removeListener(_schedulePlayback);
@@ -162,6 +83,7 @@ class HomeWidgetLiveActivities {
       ?..removeListener(_schedulePlayback)
       ..setLiveActivityWanted(false);
     _queue?.removeListener(_scheduleTask);
+    _activities.dispose();
   }
 
   /// app 进后台 / 回前台：转录在后台可能被系统挂起，如实标出来。
@@ -175,7 +97,7 @@ class HomeWidgetLiveActivities {
 
   /// Live Activity / 菜单栏上的 上一句 / 播放暂停 / 下一句 / 收藏这句。
   Future<bool> handlePlaybackAction(String? action) async {
-    if (_playbackKind == 'music') {
+    if (_activities.playbackKind == 'music') {
       final MusicPlayerEngine? music = _music;
       if (music == null) return false;
       switch (action) {
@@ -207,12 +129,21 @@ class HomeWidgetLiveActivities {
     return true;
   }
 
-  /// 主屏「接着听」：会话还在就后台续播。没有会话返回 false（调用方改走前台打开）。
-  Future<bool> resumeAudiobook() async {
+  /// 主屏「接着听」/ 控制中心「接着听」：会话还在就后台续播。[kind] 是小组件快照里
+  /// `nowPlaying.kind`（`music` / `audiobook`）；null = 控制中心（不知道是哪个，按快照同一
+  /// 优先级：音乐 → 有声书）。没有可续的会话返回 false（原生侧改走前台打开链接）。
+  Future<bool> resumePlayback(String? kind) async {
+    final MusicPlayerEngine? music = _music;
+    if (kind != 'audiobook' && music != null && music.current != null) {
+      await music.play();
+      return true;
+    }
     final AudiobookPlayerController? c = _session?.controller;
-    if (c == null) return false;
-    await c.play();
-    return true;
+    if (kind != 'music' && c != null) {
+      await c.play();
+      return true;
+    }
+    return false;
   }
 
   Future<void> _toggleFavorite() async {
@@ -261,9 +192,7 @@ class HomeWidgetLiveActivities {
     _schedulePlayback();
   }
 
-  bool _pushScheduled = false;
-  bool _forceNext = false;
-
+  /// 同一帧里多个监听器连着通知（控制器 + 歌词）合成一次同步。
   void _schedulePlayback({bool force = false}) {
     _forceNext |= force;
     if (_pushScheduled || _disposed) return;
@@ -272,12 +201,41 @@ class HomeWidgetLiveActivities {
       _pushScheduled = false;
       final bool f = _forceNext;
       _forceNext = false;
-      unawaited(_syncPlayback(force: f));
+      unawaited(_activities.syncPlayback(force: f));
     });
   }
 
-  ({String kind, PlaybackActivityState state, String? cover})?
-  _currentPlayback() {
+  /// 本机封面文件的绝对路径（原生侧缩略后拷进 App Group，扩展进程读不到 app 沙盒）；
+  /// 远程封面 / 文件不在时为 null，活动上显示类型图标。
+  static String? _localCover(String? path) {
+    if (path == null || path.isEmpty) return null;
+    final String local = path.startsWith('file://')
+        ? Uri.parse(path).toFilePath()
+        : path;
+    if (local.startsWith('http://') || local.startsWith('https://')) {
+      return null;
+    }
+    return File(local).existsSync() ? local : null;
+  }
+
+  Map<String, Object?> _attributes(String kind, String? cover) {
+    final bool music = kind == 'music';
+    return <String, Object?>{
+      'kind': kind,
+      'cover': _localCover(cover),
+      'accessibilityPlay': t.widget_label_play,
+      'accessibilityPause': t.widget_label_pause,
+      'accessibilityPrevious': music
+          ? t.widget_label_previous
+          : t.widget_activity_previous_sentence,
+      'accessibilityNext': music
+          ? t.widget_label_next
+          : t.widget_activity_next_sentence,
+      'accessibilityFavorite': t.widget_activity_favorite_sentence,
+    };
+  }
+
+  PlaybackActivitySample? _currentPlayback() {
     final MusicPlayerEngine? music = _music;
     final AudiobookPlayerController? c = _controller;
     final SessionBookInfo? book = _session?.book;
@@ -296,9 +254,9 @@ class HomeWidgetLiveActivities {
             )
           : null;
       final String line = _lyrics?.currentLineText ?? '';
-      return (
+      return PlaybackActivitySample(
         kind: 'music',
-        cover: item.coverPath,
+        attributes: _attributes('music', item.coverPath),
         state: PlaybackActivityState(
           title: item.title,
           subtitle: item.artist ?? '',
@@ -336,9 +294,9 @@ class HomeWidgetLiveActivities {
     final int count = c.chapterCueCount;
     final int index = c.currentCueIdx;
     final Duration remaining = total > global ? total - global : Duration.zero;
-    return (
+    return PlaybackActivitySample(
       kind: 'audiobook',
-      cover: book.coverPath,
+      attributes: _attributes('audiobook', book.coverPath),
       state: PlaybackActivityState(
         title: book.title,
         subtitle: book.author ?? '',
@@ -352,7 +310,7 @@ class HomeWidgetLiveActivities {
         elapsedLabel: formatPlaybackClock(c.position),
         remainingLabel: '-${formatPlaybackClock(remaining)}',
         detail: count > 0 && index >= 0
-            ? t.home_widget_activity_sentence_of(index: index + 1, total: count)
+            ? t.widget_activity_sentence_of(index: index + 1, total: count)
             : null,
         canFavorite: line.isNotEmpty,
         favorited: _currentFavorited,
@@ -373,166 +331,67 @@ class HomeWidgetLiveActivities {
     _schedulePlayback(force: true);
   }
 
-  Future<void> _syncPlayback({bool force = false}) async {
-    if (_disposed || _starting) return;
-    final ({String kind, PlaybackActivityState state, String? cover})? now =
-        _currentPlayback();
-    if (now == null) {
-      await _endPlayback();
-      return;
-    }
-    // 暂停太久就收掉；重新播放时再起一个。
-    if (now.state.isPlaying) {
-      _pauseTimer?.cancel();
-      _pauseTimer = null;
-    } else {
-      _pauseTimer ??= Timer(pauseTimeout, () => unawaited(_endPlayback()));
-    }
-    final String? id = _playbackId;
-    if (id != null && _playbackKind != now.kind) {
-      await _endPlayback();
-    }
-    if (_playbackId == null) {
-      if (!now.state.isPlaying) return; // 只在真正开始播放时起活动。
-      _starting = true;
-      try {
-        if (!await channel.activitiesEnabled()) return;
-        final String? newId = await channel.startPlayback(
-          attributes: <String, Object?>{
-            'kind': now.kind,
-            'cover': await _activityCover(now.cover),
-            'accessibilityPlay': t.home_widget_activity_play,
-            'accessibilityPause': t.home_widget_activity_pause,
-            'accessibilityPrevious': t.home_widget_activity_previous,
-            'accessibilityNext': t.home_widget_activity_next,
-            'accessibilityFavorite': t.home_widget_activity_favorite,
-          },
-          state: now.state.toJson(),
-        );
-        _playbackId = newId;
-        _playbackKind = newId == null ? null : now.kind;
-        _playbackKey = now.state.significantKey;
-        _lastFullPushMs = DateTime.now().millisecondsSinceEpoch;
-      } finally {
-        _starting = false;
-      }
-      return;
-    }
-    // 只在内容变化时推；内容不变但播放中，每 30 秒校一次进度（拖动 / 卡顿后的偏差）。
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    final bool changed = now.state.significantKey != _playbackKey;
-    if (!force && !changed && nowMs - _lastFullPushMs < 30000) return;
-    _playbackKey = now.state.significantKey;
-    _lastFullPushMs = nowMs;
-    await channel.updatePlayback(_playbackId!, now.state.toJson());
-  }
-
-  /// 活动的封面要放进 App Group（扩展进程读不到 app 沙盒）；iOS 封面路径本就在 app
-  /// 沙盒里，所以交给快照写入器同一个目录。没有 App Group 时为 null（显示图标）。
-  Future<String?> Function(String? path) activityCoverResolver =
-      (String? _) async => null;
-
-  Future<String?> _activityCover(String? path) => activityCoverResolver(path);
-
-  Future<void> _endPlayback() async {
-    _pauseTimer?.cancel();
-    _pauseTimer = null;
-    final String? id = _playbackId;
-    _playbackId = null;
-    _playbackKind = null;
-    _playbackKey = null;
-    if (id != null) await channel.endActivity(id);
-  }
-
   // ── 转录 ──────────────────────────────────────────────────────────
-
-  bool _taskScheduled = false;
 
   void _scheduleTask() {
     if (_taskScheduled || _disposed) return;
     _taskScheduled = true;
     scheduleMicrotask(() {
       _taskScheduled = false;
-      unawaited(_syncTask());
+      unawaited(_activities.syncTask());
     });
   }
 
-  Future<void> _syncTask() async {
+  static const Map<String, Object?> _taskAttributes = <String, Object?>{
+    'kind': 'transcribe',
+    'url': 'fushi://widget/tab/books',
+  };
+
+  TaskActivitySample? _runningTask() {
     final AudiobookTranscribeImportQueue? queue = _queue;
-    if (queue == null || _disposed) return;
-    AudiobookTranscribeJob? running;
+    if (queue == null) return null;
     for (final AudiobookTranscribeJob job in queue.jobs) {
       if (job.status == AudiobookTranscribeJobStatus.running) {
-        running = job;
-        break;
-      }
-    }
-    final String? id = _taskId;
-    if (running == null) {
-      if (id == null) return;
-      final AudiobookTranscribeJob? finished = _jobById(queue, _taskJobId);
-      _taskId = null;
-      _taskJobId = null;
-      _taskKey = null;
-      if (finished?.status == AudiobookTranscribeJobStatus.done) {
-        await channel.updateTask(
-          id,
-          _taskState(finished!, finished: true).toJson(),
+        // 后台没在放音频时，系统随时可能挂起转录：如实标「已暂停」，回前台自动清掉。
+        final bool paused = _backgrounded && !_anyAudioPlaying;
+        return TaskActivitySample(
+          jobId: job.id,
+          attributes: _taskAttributes,
+          state: _taskState(job, paused: paused),
         );
-        await channel.endActivity(id, dismissAfter: 30 * 60);
-      } else {
-        await channel.endActivity(id);
       }
-      return;
     }
-    // 后台没在放音频时，系统随时可能挂起转录：如实标「已暂停」，回前台自动清掉。
-    final bool paused = _backgrounded && !_anyAudioPlaying;
-    final _TaskState state = _taskState(running, paused: paused);
-    if (id != null && _taskJobId != running.id) {
-      await channel.endActivity(id);
-      _taskId = null;
-    }
-    if (_taskId == null) {
-      if (!await channel.activitiesEnabled()) return;
-      _taskId = await channel.startTask(
-        attributes: <String, Object?>{
-          'kind': 'transcribe',
-          'url': 'fushi://shortcut/books',
-        },
-        state: state.toJson(),
+    return null;
+  }
+
+  TaskActivitySample? _finishedTask(String jobId) {
+    final AudiobookTranscribeImportQueue? queue = _queue;
+    if (queue == null) return null;
+    for (final AudiobookTranscribeJob job in queue.jobs) {
+      if (job.id != jobId) continue;
+      if (job.status != AudiobookTranscribeJobStatus.done) return null;
+      return TaskActivitySample(
+        jobId: job.id,
+        attributes: _taskAttributes,
+        state: _taskState(job, finished: true),
       );
-      _taskJobId = running.id;
-      _taskKey = state.key;
-      return;
     }
-    if (state.key == _taskKey) return;
-    _taskKey = state.key;
-    await channel.updateTask(_taskId!, state.toJson());
+    return null;
   }
 
   bool get _anyAudioPlaying =>
       (_controller?.isPlaying ?? false) || (_music?.isPlaying ?? false);
 
-  AudiobookTranscribeJob? _jobById(
-    AudiobookTranscribeImportQueue queue,
-    String? id,
-  ) {
-    for (final AudiobookTranscribeJob job in queue.jobs) {
-      if (job.id == id) return job;
-    }
-    return null;
-  }
-
-  _TaskState _taskState(
+  TaskActivityState _taskState(
     AudiobookTranscribeJob job, {
     bool paused = false,
     bool finished = false,
   }) {
     final double progress = finished ? 1 : (job.progress ?? 0);
-    return _TaskState(
+    return TaskActivityState(
       title: finished
-          ? t.home_widget_task_transcribe_done
-          : t.home_widget_task_transcribe_title,
+          ? t.widget_activity_transcribe_done
+          : t.widget_activity_transcribe_title,
       detail: finished
           ? job.title
           : '${job.title} · ${audiobookTranscribeJobStatusLabel(job, compact: true)}',
@@ -541,48 +400,8 @@ class HomeWidgetLiveActivities {
       percentLabel: finished || job.progress != null
           ? formatAsrPercent(progress)
           : '…',
-      pausedNote: paused ? t.home_widget_task_paused : null,
+      pausedNote: paused ? t.widget_activity_task_paused : null,
       finished: finished,
     );
   }
-}
-
-class _TaskState {
-  const _TaskState({
-    required this.title,
-    required this.detail,
-    required this.progress,
-    required this.percentLabel,
-    required this.finished,
-    this.pausedNote,
-  });
-
-  final String title;
-  final String detail;
-  final double progress;
-  final String percentLabel;
-  final String? pausedNote;
-  final bool finished;
-
-  String get key =>
-      '$title|$detail|${(progress * 100).floor()}|$percentLabel|$pausedNote|'
-      '$finished';
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'title': title,
-    'detail': detail,
-    'progress': progress,
-    'percentLabel': percentLabel,
-    'pausedNote': pausedNote,
-    'finished': finished,
-  };
-}
-
-/// `1:02:03` / `4:05`。
-String formatPlaybackClock(Duration d) {
-  final Duration v = d.isNegative ? Duration.zero : d;
-  final int h = v.inHours;
-  final String m = (v.inMinutes % 60).toString().padLeft(h > 0 ? 2 : 1, '0');
-  final String s = (v.inSeconds % 60).toString().padLeft(2, '0');
-  return h > 0 ? '$h:$m:$s' : '$m:$s';
 }

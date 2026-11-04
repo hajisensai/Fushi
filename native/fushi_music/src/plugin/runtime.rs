@@ -14,10 +14,10 @@ use std::sync::{Arc, Mutex};
 
 use rquickjs::{Context, Ctx, Exception, Function, Runtime, TypedArray, Value};
 use serde::Deserialize;
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 use crate::plugin::jsapi;
-use crate::plugin::manifest::{Manifest, HOST_API_VERSION};
+use crate::plugin::manifest::{HOST_API_VERSION, Manifest};
 use crate::plugin::package::VerifiedPackage;
 use crate::plugin::policy::{Policy, Purpose};
 
@@ -103,7 +103,12 @@ pub(crate) struct Gate {
 impl Gate {
     /// 核对并登记一次宿主调用，返回调用 id。[body] 是请求体原始字节（只有 http 收），不经
     /// base64：随 step 输出的二进制区交给宿主，参数里只留 `body: {off, len}`。
-    pub(crate) fn host_call(&self, op: &str, args_json: &str, body: Option<Vec<u8>>) -> Result<u64, String> {
+    pub(crate) fn host_call(
+        &self,
+        op: &str,
+        args_json: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<u64, String> {
         let args: Json =
             serde_json::from_str(args_json).map_err(|e| format!("宿主调用参数不是 JSON：{e}"))?;
         if body.is_some() && op != "http" {
@@ -123,10 +128,14 @@ impl Gate {
         let size = normalized.to_string().len() + body.as_ref().map_or(0, Vec::len);
         let mut out = self.outbox.lock().unwrap();
         if out.pending_calls.len() >= MAX_INFLIGHT_CALLS {
-            return Err(out.fail(format!("在途宿主调用超过 {MAX_INFLIGHT_CALLS} 个，插件已终止")));
+            return Err(out.fail(format!(
+                "在途宿主调用超过 {MAX_INFLIGHT_CALLS} 个，插件已终止"
+            )));
         }
         if out.step_calls >= MAX_CALLS_PER_STEP {
-            return Err(out.fail(format!("单步宿主调用超过 {MAX_CALLS_PER_STEP} 个，插件已终止")));
+            return Err(out.fail(format!(
+                "单步宿主调用超过 {MAX_CALLS_PER_STEP} 个，插件已终止"
+            )));
         }
         if out.step_out_bytes + size > MAX_OUT_BYTES_PER_STEP {
             return Err(out.fail("单步宿主调用参数超过 16 MiB，插件已终止".into()));
@@ -140,7 +149,8 @@ impl Gate {
         out.next_call += 1;
         let id = out.next_call;
         out.pending_calls.insert(id);
-        out.calls.push(json!({ "id": id, "op": op, "args": normalized }));
+        out.calls
+            .push(json!({ "id": id, "op": op, "args": normalized }));
         Ok(id)
     }
 
@@ -168,14 +178,19 @@ impl Gate {
         for (k, v) in &req.headers {
             let lk = k.to_ascii_lowercase();
             if k.is_empty()
-                || !k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+                || !k
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
                 || v.len() > MAX_HEADER_BYTES
                 || v.bytes().any(|b| b == b'\r' || b == b'\n')
             {
                 return Err(format!("请求头不合法：{k}"));
             }
             // 由宿主 / HTTP 栈决定的头不让插件改。
-            if matches!(lk.as_str(), "host" | "content-length" | "connection" | "transfer-encoding") {
+            if matches!(
+                lk.as_str(),
+                "host" | "content-length" | "connection" | "transfer-encoding"
+            ) {
                 return Err(format!("不允许设置请求头 {k}"));
             }
         }
@@ -248,7 +263,12 @@ impl Gate {
 #[serde(tag = "op", rename_all = "camelCase")]
 enum Op {
     /// 发起能力调用；`inv` 由宿主分配、在本实例内唯一。
-    Invoke { inv: u64, method: String, #[serde(default)] args: Json },
+    Invoke {
+        inv: u64,
+        method: String,
+        #[serde(default)]
+        args: Json,
+    },
     /// 交回宿主调用结果：成功时 `value` 是任意 JSON，失败时 `error` 是错误信息。`value` 是对象且带
     /// `body: {off, len}` 时，这段字节从 step 输入的二进制区切出、以 Uint8Array 交给 JS（响应体
     /// 不经 base64 / JSON）。
@@ -275,7 +295,11 @@ pub struct Instance {
 /// 从进程内首次调用起算、+1 保证非 0（0 是「未布防」哨兵）。
 fn now_ms() -> u64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64 + 1
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+        + 1
 }
 
 fn exception_text(ctx: &Ctx<'_>, e: rquickjs::Error) -> String {
@@ -284,7 +308,11 @@ fn exception_text(ctx: &Ctx<'_>, e: rquickjs::Error) -> String {
         if let Some(ex) = v.as_exception() {
             let msg = ex.message().unwrap_or_default();
             let stack = ex.stack().unwrap_or_default();
-            return if stack.is_empty() { msg } else { format!("{msg}\n{stack}") };
+            return if stack.is_empty() {
+                msg
+            } else {
+                format!("{msg}\n{stack}")
+            };
         }
         return ctx
             .json_stringify(v)
@@ -383,13 +411,17 @@ impl Instance {
             return Err(a);
         }
         if over {
-            return Err(format!("插件加载超过 {} ms CPU 预算，已终止", self.budget_ms));
+            return Err(format!(
+                "插件加载超过 {} ms CPU 预算，已终止",
+                self.budget_ms
+            ));
         }
         Ok(())
     }
 
     fn arm(&self) {
-        self.deadline.store(now_ms() + self.budget_ms, Ordering::Relaxed);
+        self.deadline
+            .store(now_ms() + self.budget_ms, Ordering::Relaxed);
     }
 
     fn disarm(&self) {
@@ -408,9 +440,11 @@ impl Instance {
                 Ok(false) => break,
                 Err(e) => {
                     // 清掉挂在上下文上的异常（不清会在之后的 GC 里破坏引用计数）。
-                    let detail = e.0.with(|ctx| exception_text(&ctx, rquickjs::Error::Exception));
+                    let detail =
+                        e.0.with(|ctx| exception_text(&ctx, rquickjs::Error::Exception));
                     if self.over_budget() {
-                        self.fatal = Some(format!("插件单步 CPU 超过 {} ms，已终止", self.budget_ms));
+                        self.fatal =
+                            Some(format!("插件单步 CPU 超过 {} ms，已终止", self.budget_ms));
                         break;
                     }
                     // 普通的任务异常（未处理的 rejection 之外的错误）：记一条日志继续。
@@ -442,11 +476,19 @@ impl Instance {
     /// 是本 step 新发起的宿主调用引用的二进制区（请求体）。
     pub fn step(&mut self, ops_json: &[u8], blob: &[u8]) -> (Json, Vec<u8>) {
         if let Some(f) = &self.fatal {
-            return (json!({ "fatal": f, "settled": [], "calls": [], "logs": [] }), Vec::new());
+            return (
+                json!({ "fatal": f, "settled": [], "calls": [], "logs": [] }),
+                Vec::new(),
+            );
         }
         let ops: Vec<Op> = match serde_json::from_slice(ops_json) {
             Ok(v) => v,
-            Err(e) => return (json!({ "error": format!("step 参数不合法：{e}") }), Vec::new()),
+            Err(e) => {
+                return (
+                    json!({ "error": format!("step 参数不合法：{e}") }),
+                    Vec::new(),
+                );
+            }
         };
         self.gate.outbox.lock().unwrap().begin_step();
         self.arm();
@@ -467,7 +509,9 @@ impl Instance {
                         let r = ctx
                             .globals()
                             .get::<_, Function>("__fushi_invoke")
-                            .and_then(|f| f.call::<_, ()>((inv, method.as_str(), args.to_string())));
+                            .and_then(|f| {
+                                f.call::<_, ()>((inv, method.as_str(), args.to_string()))
+                            });
                         if let Err(e) = r {
                             self.gate.outbox.lock().unwrap().pending_invs.remove(&inv);
                             immediate.push(json!({
@@ -475,7 +519,12 @@ impl Instance {
                             }));
                         }
                     }
-                    Op::Complete { call, ok, mut value, error } => {
+                    Op::Complete {
+                        call,
+                        ok,
+                        mut value,
+                        error,
+                    } => {
                         // 只认还在途的调用：重复 / 未知 id 不进 JS。
                         if !self.gate.outbox.lock().unwrap().pending_calls.remove(&call) {
                             continue;
@@ -485,13 +534,16 @@ impl Instance {
                             Ok(body) => (true, body, value.to_string()),
                             Err(e) => (false, None, e),
                         };
-                        let r = ctx.globals().get::<_, Function>("__fushi_complete").and_then(|f| {
-                            let body = match body {
-                                Some(b) => Some(TypedArray::<u8>::new(ctx.clone(), b)?),
-                                None => None,
-                            };
-                            f.call::<_, ()>((call, ok, payload, body))
-                        });
+                        let r = ctx
+                            .globals()
+                            .get::<_, Function>("__fushi_complete")
+                            .and_then(|f| {
+                                let body = match body {
+                                    Some(b) => Some(TypedArray::<u8>::new(ctx.clone(), b)?),
+                                    None => None,
+                                };
+                                f.call::<_, ()>((call, ok, payload, body))
+                            });
                         if let Err(e) = r {
                             let msg = exception_text(&ctx, e);
                             self.gate.outbox.lock().unwrap().log("error", &msg);
@@ -530,11 +582,18 @@ impl Instance {
 
 /// 从 complete 的 `value` 里取出 `body: {off, len}` 引用并切出字节（越界 = 宿主协议错误，按失败交回）。
 fn take_body(value: &mut Json, blob: &[u8]) -> Result<Option<Vec<u8>>, String> {
-    let Some(obj) = value.as_object_mut() else { return Ok(None) };
-    let Some(r) = obj.remove("body") else { return Ok(None) };
+    let Some(obj) = value.as_object_mut() else {
+        return Ok(None);
+    };
+    let Some(r) = obj.remove("body") else {
+        return Ok(None);
+    };
     let off = r["off"].as_u64().ok_or("响应体引用不合法")? as usize;
     let len = r["len"].as_u64().ok_or("响应体引用不合法")? as usize;
-    let end = off.checked_add(len).filter(|&e| e <= blob.len()).ok_or("响应体引用越界")?;
+    let end = off
+        .checked_add(len)
+        .filter(|&e| e <= blob.len())
+        .ok_or("响应体引用越界")?;
     Ok(Some(blob[off..end].to_vec()))
 }
 
@@ -546,7 +605,9 @@ pub(crate) fn settle(gate: &Gate, inv: u64, ok: bool, payload: String) {
         return;
     }
     if out.settled.len() >= MAX_SETTLED_PER_STEP {
-        out.fail(format!("单步能力结果超过 {MAX_SETTLED_PER_STEP} 条，插件已终止"));
+        out.fail(format!(
+            "单步能力结果超过 {MAX_SETTLED_PER_STEP} 条，插件已终止"
+        ));
         return;
     }
     out.settled_bytes += payload.len().min(MAX_RESULT_BYTES + 1);
@@ -561,9 +622,11 @@ pub(crate) fn settle(gate: &Gate, inv: u64, ok: bool, payload: String) {
     }
     if ok {
         let value: Json = serde_json::from_str(&payload).unwrap_or(Json::Null);
-        out.settled.push(json!({ "inv": inv, "ok": true, "value": value }));
+        out.settled
+            .push(json!({ "inv": inv, "ok": true, "value": value }));
     } else {
-        out.settled.push(json!({ "inv": inv, "ok": false, "error": payload }));
+        out.settled
+            .push(json!({ "inv": inv, "ok": false, "error": payload }));
     }
 }
 

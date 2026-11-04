@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_bg"
+    android:orientation="vertical"
+    android:padding="12dp">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Downloads" android:textSize="12sp" android:textColor="@android:color/system_accent1_600" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="63%" android:textSize="24sp" android:textStyle="bold" android:textColor="@android:color/system_neutral1_900" />
+    <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:progress="63" android:max="100" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="2.4 MB/s" android:textSize="12sp" android:textColor="@android:color/system_neutral2_700" />
+</LinearLayout>

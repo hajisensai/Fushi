@@ -1,9 +1,13 @@
 import 'dart:ui' show Canvas, PictureRecorder;
 
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton, kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_appearance.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_line_layout.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show MouseBindingDispatch;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 import 'package:fushi_music/fushi_music.dart';
@@ -88,6 +92,8 @@ Widget _host({
   ValueChanged<int>? onSeek,
   ValueChanged<KaraokeLookupHit>? onLookup,
   bool disableAnimations = false,
+  bool tapLooksUp = false,
+  bool Function(int buttons)? isSeekPointer,
 }) => MaterialApp(
   home: MediaQuery(
     data: MediaQueryData(
@@ -104,6 +110,8 @@ Widget _host({
           playing: playing,
           onSeek: onSeek,
           onLookup: onLookup,
+          tapLooksUp: tapLooksUp,
+          isSeekPointer: isSeekPointer,
           appearance: const KaraokeLyricsAppearance(fontSize: 24),
         ),
       ),
@@ -369,6 +377,56 @@ void main() {
       expect(hits.single.charIndexInLine, 3);
       expect(hits.single.lineText, 'abcde');
       expect(hits.single.globalRect.left, closeTo(tl.dx + 72, 1));
+    });
+
+    testWidgets('tapLooksUp：点字查词、点字外跳转；认定的鼠标键点行跳转且不查词', (
+      WidgetTester tester,
+    ) async {
+      MouseBindingDispatch.resetForTest();
+      final _Clock clock = _Clock()..ms = 1100;
+      final List<int> seeks = <int>[];
+      final List<KaraokeLookupHit> hits = <KaraokeLookupHit>[];
+      await tester.pumpWidget(
+        _host(
+          timeline: _timeline(),
+          clock: clock,
+          playing: false,
+          onSeek: seeks.add,
+          onLookup: hits.add,
+          tapLooksUp: true,
+          isSeekPointer: (int b) => b & kMiddleMouseButton != 0,
+        ),
+      );
+      await tester.pump();
+      // 第一声部行左对齐（fghij 是第二声部、右对齐）。字宽 24：第 2 个字（b）。
+      final Offset tl = tester.getTopLeft(_row('abcde'));
+      await tester.tapAt(tl + const Offset(24 + 6, 12));
+      await tester.pump(const Duration(seconds: 4));
+      expect(hits.single.lineText, 'abcde');
+      expect(hits.single.charIndexInLine, 1);
+      expect(seeks, isEmpty, reason: '点字只查词');
+
+      await tester.tapAt(tl + const Offset(600, 12));
+      await tester.pump(const Duration(seconds: 4));
+      expect(seeks, <int>[1000], reason: '点行内字外 = 跳到该行');
+
+      await tester.tapAt(
+        tl + const Offset(24 + 6, 12),
+        buttons: kMiddleMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(seeks, <int>[1000, 1000], reason: '中键点在字上也是跳转');
+      expect(hits, hasLength(1), reason: '中键不查词');
+
+      await tester.tapAt(
+        tl + const Offset(24 + 6, 12),
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(seeks, hasLength(2), reason: '没认定的键不跳');
+      MouseBindingDispatch.resetForTest();
     });
 
     testWidgets('减弱动态效果：暂停时不再有逐帧动画、换行直接跳', (WidgetTester tester) async {

@@ -336,15 +336,9 @@ class RemoteAiAgentSession extends ChangeNotifier
     notifyListeners();
   }
 
-  /// [AgentEntry.fromJson] 是给存档用的（把 running / pending 收尾成失败 / 拒绝）；
-  /// 这里是活的快照，状态原样还原。
-  static AgentEntry _liveEntry(Map<String, Object?> json) {
-    final AgentEntry entry = AgentEntry.fromJson(json);
-    for (final AgentEntryStatus status in AgentEntryStatus.values) {
-      if (status.name == json['status']) entry.status = status;
-    }
-    return entry;
-  }
+  /// 这里是活的快照：不按存档的中断规则收尾，状态与错误码原样还原。
+  static AgentEntry _liveEntry(Map<String, Object?> json) =>
+      AgentEntry.fromJson(json, settleInterrupted: false);
 
   void _onError(Object error, String where) {
     if (_disposed) return;
