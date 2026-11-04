@@ -8,6 +8,7 @@ import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
+import 'package:fushi/src/media/video/video_chapter.dart';
 import 'package:fushi/src/media/video/video_audio_output_recovery.dart';
 import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
