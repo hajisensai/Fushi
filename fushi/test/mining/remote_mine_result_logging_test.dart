@@ -26,6 +26,18 @@ void main() {
     // 落卡阶段失败（AnkiConnect 不可达等）是环境问题：必须显式标 transient，扩展据此
     // 不计该项尝试次数，不会把整条队列移进失败分组。
     expect(r.errorKind, RemoteMineErrorKind.transient);
+    expect(r.errorCode, isNull);
+  });
+
+  test('反馈 E52FUMdbR6：失败分类码随结果回传给互联客户端', () {
+    final RemoteMineResult r = remoteMineResultFromOutcome(
+      MineOutcome.failure(
+        'refused',
+        errorCode: AnkiErrorCode.connectionRefused,
+      ),
+    );
+    expect(r.result, 'error');
+    expect(r.errorCode, AnkiErrorCode.connectionRefused);
   });
 
   test('remoteMineError 写日志并回带 reason/detail', () {

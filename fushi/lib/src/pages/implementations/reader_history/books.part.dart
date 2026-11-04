@@ -54,7 +54,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // TODO-919 / BUG-441：EPUB 有声书配对行（TODO-894 落的 srt_books）按有声书出
     // 副行（「🎧 有声书 · 46%」，对齐状态同 EPUB 卡），纯字幕书写「字幕书」。
     // TODO-935 ①A：引用导入后原音频断链 → 副行改错误态「音频文件丢失」。
-    final bool audioMissing = _srtBookHasMissingAudio(book);
+    // 反馈 IHgBrvHizT：用户对这组路径点过「不再提示」就退回正常副行。
+    final bool audioMissing = _srtMissingAudio.showsWarning(book);
     // TODO-1094：书架 SRT 卡书名必须与长按对话框同源——两者都基于同一
     // [_srtBookMediaItem]，再经 [MediaSource.getDisplayTitleFromMediaItem] 应用
     // 编辑弹窗写入的 override_title 偏好。以前直接读 DB 原始列 book.title，忽略
@@ -258,6 +259,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             await _relocateSrtBookAudio(book);
           },
         ),
+      // 反馈 IHgBrvHizT：断链书卡此前只有「重新定位」一条出路（且随听书模块门控），
+      // 错误态副行关不掉。下面几项都在书架卡菜单里就能处理、不用进书，也不通往别的
+      // 模块，所以不按模块过滤；每一项都有对应的撤销项。
+      ..._srtMissingAudioActions(dialogContext, book),
       // 纯字幕（standalone）有声书的「从互联对端重新拉取」：host 上重新转录 / 换了
       // 字幕之后把新字幕（或整本）拉回来。与 EPUB 书卡的同名两项同一语义、同一套
       // 拉取与导入（只更新字幕不动音频，本机进度 / 断点 / 调轴保留）；配对书
@@ -483,10 +488,89 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   /// TODO-935 ①A：字幕书引用导入后原音频被移动/删除 → 任一 audioPaths 断链。
   /// 仅对 files 模式（audioPaths）判定；folder 模式（audioRoot）不在本期范围。
-  bool _srtBookHasMissingAudio(SrtBook book) {
-    final List<String>? paths = book.audioPaths;
-    if (paths == null || paths.isEmpty) return false;
-    return AudiobookStorage.hasMissingPaths(paths);
+  /// 「重新定位」只看断链本身，不看用户是否关过提示——关了提示照样能重新定位。
+  bool _srtBookHasMissingAudio(SrtBook book) =>
+      _srtMissingAudio.hasMissingAudio(book);
+
+  /// 反馈 IHgBrvHizT：断链书卡的处置（不再提示 / 转纯字幕书）与各自撤销的唯一入口。
+  SrtBookMissingAudio get _srtMissingAudio => SrtBookMissingAudio(
+    prefs: appModel.prefsRepo,
+    repository: SrtBookRepository(appModel.database),
+  );
+
+  /// 反馈 IHgBrvHizT：书架卡菜单里处理「音频文件丢失」的几项。
+  ///
+  /// - 断链且未关提示 → 「不再提示音频丢失」（保留路径）；已关 → 「恢复音频丢失提示」。
+  /// - 断链且不是 EPUB 有声书配对行 → 「转成纯字幕书」（原路径暂存）；
+  ///   已转、行上没有音频且有暂存 → 「恢复音频」。
+  List<DialogAction> _srtMissingAudioActions(
+    BuildContext dialogContext,
+    SrtBook book,
+  ) {
+    final SrtBookMissingAudio missing = _srtMissingAudio;
+    final bool hasMissing = missing.hasMissingAudio(book);
+    final bool dismissed = hasMissing && missing.isDismissed(book);
+    return <DialogAction>[
+      if (hasMissing && !dismissed)
+        DialogListAction(
+          label: t.audiobook_missing_audio_dismiss_action,
+          icon: FushiIcons.notificationsOff,
+          group: DialogActionGroup.content,
+          onPressed: () => _runSrtMissingAudioAction(dialogContext, () async {
+            await missing.dismiss(book);
+            return true;
+          }, t.audiobook_missing_audio_dismissed),
+        ),
+      if (dismissed)
+        DialogListAction(
+          label: t.audiobook_missing_audio_undismiss_action,
+          icon: FushiIcons.notificationsActive,
+          group: DialogActionGroup.content,
+          onPressed: () => _runSrtMissingAudioAction(dialogContext, () async {
+            await missing.undismiss(book);
+            return true;
+          }, null),
+        ),
+      if (missing.canConvertToSubtitleOnly(book))
+        DialogListAction(
+          label: t.audiobook_missing_audio_convert_action,
+          icon: FushiIcons.subtitles,
+          group: DialogActionGroup.content,
+          onPressed: () => _runSrtMissingAudioAction(
+            dialogContext,
+            () => missing.convertToSubtitleOnly(book),
+            t.audiobook_missing_audio_converted,
+          ),
+        ),
+      if (missing.detachedAudioPaths(book) != null)
+        DialogListAction(
+          label: t.audiobook_missing_audio_restore_action,
+          icon: FushiIcons.undo,
+          group: DialogActionGroup.content,
+          onPressed: () => _runSrtMissingAudioAction(
+            dialogContext,
+            () => missing.restoreAudio(book),
+            t.audiobook_missing_audio_restored,
+          ),
+        ),
+    ];
+  }
+
+  /// 收起卡菜单 → 执行 [action] → 刷新书架；[action] 返回 true 且 [doneMessage]
+  /// 非空时弹成功提示。
+  Future<void> _runSrtMissingAudioAction(
+    BuildContext dialogContext,
+    Future<bool> Function() action,
+    String? doneMessage,
+  ) async {
+    Navigator.pop(dialogContext);
+    final bool done = await action();
+    if (!mounted) return;
+    _refreshSrtBooks();
+    _rebuild(() {});
+    if (done && doneMessage != null) {
+      FushiToast.show(msg: doneMessage, severity: ToastSeverity.success);
+    }
   }
 
   /// 重新定位断链音频：让用户重选文件 → 重写 [SrtBook.audioPaths] → 落库。

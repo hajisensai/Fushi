@@ -152,6 +152,32 @@ void main() {
     expect(japanese.title, '葬送のフリーレン');
   });
 
+  // BUG-4056：资料语言留空 = 按作品原语言；MAL 的原文标题就是 title_japanese，
+  // 兜底语言（界面语言）是英语也不取英文名。
+  test('跟随原语言时 MAL 标题取原文，不看兜底语言', () async {
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      language: 'en-US',
+      followOriginalLanguage: true,
+      requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{
+              'mal_id': 1,
+              'title': 'Sousou no Frieren',
+              'title_japanese': '葬送のフリーレン',
+              'title_english': "Frieren: Beyond Journey's End",
+              'type': 'TV',
+            },
+          });
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    addTearDown(provider.close);
+    expect((await provider.fetchWork(lookup))!.title, '葬送のフリーレン');
+  });
+
   test(
     'episode pagination uses real records, skips untitled and maps only source season one',
     () async {

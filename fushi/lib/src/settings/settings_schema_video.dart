@@ -2026,13 +2026,15 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
-          // 资料语言默认**跟随界面语言**，不是写死的某一种语言（BUG-2454）。
+          // 资料语言留空 = 每部作品按**它自己的原语言**刮（BUG-4056：日本动画拿日文
+          // 资料，不因界面是中文就变中文）；界面语言只在原语言推不出时兜底。更早
+          // 的 BUG-2454 定的是「留空跟随界面语言」，已被 BUG-4056 覆盖。
           //
           // 这里曾经硬编码 'zh-CN'（默认值与 placeholder 各一份），于是每个德语、
           // 韩语、阿拉伯语用户装上就默认拉中文简介和中文海报。app 出 17 种语言，
           // 没有哪种配当隐含默认值。
           //
-          // 输入框显示的是**存的值**：空 = 跟随界面语言，占位文案说明这一点。不把
+          // 输入框显示的是**存的值**：空 = 按作品原语言，占位文案说明这一点。不把
           // 界面语言的具体串预填进去——预填后用户在没动过的框上按回车就会把
           // `en-US` 这种具体串写进偏好，「跟随」从此变成「钉死」，而界面上看不出
           // 区别。resetValue 写空串 = 一键回到跟随。
@@ -2041,7 +2043,7 @@ SettingsDestination buildVideoDestination() {
             title: t.video_source_scrape_locale,
             subtitle: t.video_source_scrape_locale_hint,
             icon: Icons.language_outlined,
-            placeholder: t.video_source_scrape_locale_follow_ui,
+            placeholder: t.video_source_scrape_locale_follow_original,
             value: (SettingsContext settingsContext) =>
                 (settingsContext.appModel.prefsRepo.getPref(
                           kVideoMetadataLocalePref,
