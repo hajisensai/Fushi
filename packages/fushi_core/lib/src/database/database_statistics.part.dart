@@ -1325,6 +1325,17 @@ mixin _FushiDbStatistics
     favoriteWords,
   )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
 
+  /// 最近 [limit] 条收藏词（createdAt 倒序）。桌面小组件「每日词汇」用：只取头部几行，
+  /// 不要为它把整张收藏表读进内存（[getAllFavoriteWords] 给收藏夹导出用）。
+  Future<List<FavoriteWordRow>> getRecentFavoriteWords(int limit) =>
+      (select(favoriteWords)
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.createdAt),
+              (t) => OrderingTerm.desc(t.id),
+            ])
+            ..limit(limit))
+          .get();
+
   // ── mining statistics ───────────────────────────────────────────
   /// 制卡成功计数 +[delta]：累加到 (sourceType, dateKey) 现有计数。
   Future<void> addMiningCount({
@@ -1744,6 +1755,16 @@ mixin _FushiDbStatistics
   Future<List<MinedSentenceRow>> getAllMinedSentences() => (select(
     minedSentences,
   )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
+
+  /// 最近 [limit] 条制卡历史（createdAt 倒序）。桌面小组件用，见 [getRecentFavoriteWords]。
+  Future<List<MinedSentenceRow>> getRecentMinedSentences(int limit) =>
+      (select(minedSentences)
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.createdAt),
+              (t) => OrderingTerm.desc(t.id),
+            ])
+            ..limit(limit))
+          .get();
 
   /// 删除一条制卡历史（按 id）。返回删除的行数。
   Future<int> removeMinedSentence(int id) =>

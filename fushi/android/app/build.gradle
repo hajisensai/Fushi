@@ -2,6 +2,7 @@ plugins {
     id "com.android.application"
     id "kotlin-android"
     id "org.jetbrains.kotlin.plugin.serialization"
+    id "org.jetbrains.kotlin.plugin.compose"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -429,6 +430,15 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation platform('androidx.compose:compose-bom:2026.05.00')
     implementation 'androidx.compose.runtime:runtime'
+    // Home-screen widgets (app.fushi.reader.widgets): Glance rendering + Material You colors.
+    implementation 'androidx.glance:glance-appwidget:1.1.1'
+    implementation 'androidx.glance:glance-material3:1.1.1'
+    // ColorScheme builders for the per-widget light / dark override (widgets/WidgetCommon.kt).
+    implementation 'androidx.compose.material3:material3'
+    // NowPlayingControl reads audio_service's MediaBrowserServiceCompat session token through
+    // typed calls (a by-name reflective call does not survive R8). The plugin only has this as
+    // `implementation`, so declare it here at the plugin's version (audio_service 0.18.18).
+    implementation 'androidx.media:media:1.7.0'
 }
 
 // 计算内核 fushi_compute 是硬依赖：本次构建要出的每个 ABI 都必须已有

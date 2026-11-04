@@ -1891,6 +1891,10 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // Android 桌面小组件的默认隐私：描述这台设备的桌面。
+    PreferencesRepository.widgetPrivacyHideTitlesKey,
+    PreferencesRepository.widgetPrivacyHideDefinitionsKey,
+    PreferencesRepository.widgetPrivacyHideProfileKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。

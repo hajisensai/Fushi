@@ -616,6 +616,7 @@ class _HomePageState extends BasePageState<HomePage>
     // it only exists under the macOS shell).
     homeShellTabNotifier.value = _currentTab;
     homeShellTabNotifier.addListener(_onShellTabRequested);
+    externalBrowseRequest.addListener(_onExternalBrowseRequest);
     // 「功能模块」可在当前 tab 上被关掉（ctl `/api/admin/modules`、互联下载
     // 配置 / 备份恢复刷新偏好、新手引导写回）：选中身份与共享 notifier 要跟着
     // 落到默认落地 tab，否则桌面标题栏 / macOS 侧栏 / ctl 仍报被关掉的 tab。
@@ -989,6 +990,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    externalBrowseRequest.removeListener(_onExternalBrowseRequest);
     _webMineBackground?.dispose();
     _appleChrome.dispose();
     _largeTitle.dispose();
@@ -3271,6 +3273,19 @@ class _HomePageState extends BasePageState<HomePage>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  /// 外部（小组件深链）要求切浏览页签：取走请求并走与应用内跳转同一条 [_openBrowseTab]。
+  void _onExternalBrowseRequest() {
+    final BrowseNavigationRequest? request = externalBrowseRequest.value;
+    if (request == null) return;
+    externalBrowseRequest.value = null;
+    if (!mounted) return;
+    _openBrowseTab(
+      request.tab,
+      downloadsSection: request.downloadsSection,
+      downloadsWorkFocus: request.downloadsWorkFocus,
+    );
   }
 
   void _openBrowseTab(
