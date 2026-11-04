@@ -276,10 +276,14 @@ com.apple.security.cs.disable-library-validation
 
 iOS 的主屏 / 锁屏小组件、灵动岛（Live Activity）、控制中心控件，以及 macOS 的小组件，都住在
 扩展 `FushiWidgets.appex`（bundle `app.fushi.reader.widgets`）里。它和主 app 靠 **App Group**
-共享 Dart 写的快照（`<group>/home_widgets/snapshot.json`）。工程里的 target 由
+共享主 app 写的快照（`<group>/home_widgets/snapshot.json` + `covers/`）：Dart 的
+`WidgetSnapshotPublisher` 把与 Android **同一份** JSON 经 `app.fushi.reader/widgets` 的
+`updateSnapshot` 推给原生，`FushiHomeWidgets.swift` 的 `FushiWidgetSnapshotSink` 缩略封面、落盘、
+重载时间线（契约见 [android-widgets.md](android-widgets.md)「Apple (WidgetKit)」）。工程里的 target 由
 `fushi/tool/apple/widgets_target.rb add ios|macos` 生成，源码在 `fushi/apple/HomeWidgets/`。
 
-**iOS 一次性配置（Apple Developer 后台）**，缺任何一步，CI 都会**摘掉扩展**（`widgets_target.rb
+**iOS 一次性配置（Apple Developer 后台；2026-11-04 用户已配好 App Group、App ID、两份描述文件与
+`IOS_WIDGETS_PROVISIONING_PROFILE_BASE64`，CI 按此签扩展）**，缺任何一步，CI 都会**摘掉扩展**（`widgets_target.rb
 strip ios`）再签，TestFlight 照常上传、只是没有小组件，job 打一条 notice，不会红：
 
 1. Identifiers → App Groups → **+** → `group.app.fushi.reader`。
