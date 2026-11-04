@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4102](bugs/BUG-4102-srs-mining-no-background-queue.md) | ✅ | ✅ | 挖词目标 = Fushi 复习时没有后台制卡队列：每张卡都同步写完才返回 |
 | [BUG-4102](bugs/BUG-4102-popup-header-meta-resize-observer-loop.md) | ✅ | ✅ | 查词弹窗词头元数据列 ResizeObserver 同步写布局：每次弹窗变宽都报 loop 错误灌满错误日志，且逐词条强制回流 |
 | [BUG-4102](bugs/BUG-4102-webdav-href-raw-non-ascii.md) | ✅ | ✅ | WebDAV 同步根 PROPFIND href 含裸日文字符时 Uri.decodeFull 抛 Illegal percent encoding |
 | [BUG-4102](bugs/BUG-4102-srs-rated-chip-lingers.md) | ✅ | ✅ | srs-rated-chip-lingers |
