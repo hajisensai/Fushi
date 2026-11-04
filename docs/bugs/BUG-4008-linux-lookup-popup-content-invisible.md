@@ -1,0 +1,18 @@
+## BUG-4008 · Linux 查词弹窗词典内容不显示但可点击、可制卡
+- **报告**：2026-11-04（反馈 #63DhJLTAHW，Arch Linux（内核 7.2.11-arch1-1），3.0.1+19816，1440x928@1.0：「词典查词时无法正常显示，词典内容可正常点击，可正常导出卡片」。3 张截图第二轮单独导出）。
+- **真实性**：⚠️ 现象已由截图确认，根因未复现（本机只有 Windows、没有 Linux 编译器）。
+  - **截图现象**：
+    - `s1`：查词页右栏的 Flutter 词头「朝向」正常，下面的词典 WebView 区域是**一整块纯黑直角矩形**。外框卡片是圆角，黑块不跟着圆角，说明黑色来自平台视图纹理本身，不是页面 CSS。
+    - `s2`：设置 → 词典样式的预览 WebView 同样纯黑。
+    - `s0`：没查词时的空态正常，那时没有 WebView。
+    - 浅色主题；用户说内容能点、能制卡，说明 DOM 与 JS 桥都在工作，只是出图不对。
+  - **两处黑块的共同点**：查词弹窗（`fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:2773`）与带主题的词典样式预览（`fushi/lib/src/pages/implementations/dict_style_preview.dart:215`）都开了 `transparentBackground: true`。不透明的阅读器 WebView 不开这一项。
+  - **推测**（未验证）：透明背景下 WPE 出的是 alpha=0 的帧，Linux 后端在出图链路上把 alpha 丢掉了，透明像素变成不透明黑（RGB=0），浅色主题的深色正文落在黑底上就看不见。这与「能点不能看」吻合。
+  - **代码里能确认的缺陷**：`packages/flutter_inappwebview_linux/linux/in_app_webview/simd_convert.h` 的 `ConvertARGB32ToRGBA` 在标量路径（`:96` 等处 `out[3] = a == 0 ? 255 : a; // Make fully transparent pixels opaque`）**刻意把全透明像素改成不透明**，并且做了反预乘；SIMD 主循环（NEON `:56-75`、SSSE3 `:117-121`、SSE2 `:155-171`）却保留 alpha、不反预乘。两条路径对同一帧给出不同 alpha 语义，标量路径会把透明背景直接画成黑色。这条函数服务于 SHM 出图路径（`in_app_webview.cc:1457`、`:1501`、`:8004`）。
+  - **不能断言就是它**：x86-64 下 CMake 会加 `-mssse3`（`linux/CMakeLists.txt:171-173`），主循环走 SSSE3、保留 alpha，标量只处理每行 `width % 4` 的尾巴，解释不了整块全黑。整块全黑更可能出在 DMA-BUF 零拷贝路径（格式若是 XRGB，alpha 被忽略）或 Flutter 侧纹理合成，这需要 Linux 现场确认。
+- **[ ] ①** — 未修。没有 Linux 编译与运行环境，原生改动无法编译也无法验证，不盲改。
+- **[ ] ②** —
+- **备注**：Linux 是社区维护平台。下一步在 Arch Linux 上：
+  - 开 `debugLog`，确认走的是哪条出图路径：`CustomPlatformView: using GL texture` / `pixel buffer`，`InAppWebViewEGLTexture: zero-copy` / `SHM fallback`；
+  - 把查词弹窗的 `transparentBackground` 临时设为 false 做对照：不黑了即坐实是透明链路；
+  - 坐实后按路径修：SHM 路径把 `ConvertARGB32ToRGBA` 统一成「只换通道、保留预乘 alpha」（Flutter 外部纹理按预乘处理），并配 googletest（`linux/test/`）；DMA-BUF 路径则核对导出格式。

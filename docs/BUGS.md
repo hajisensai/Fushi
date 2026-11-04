@@ -52,6 +52,18 @@
 | [BUG-4006](bugs/BUG-4006-srs-anki-template-audio-dom-contract.md) | ✅ | ✅ | eggrolls 卡组复习时不播单词音频（卡面外壳不满足 Anki reviewer 的 DOM 契约） |
 | [BUG-4005](bugs/BUG-4005-srs-review-no-rating-feedback.md) | ✅ | ✅ | SRS 评分后没有任何结果提示 |
 | [BUG-4004](bugs/BUG-4004-srs-review-undo-lost-on-reentry.md) | ✅ | ✅ | SRS 退出再进复习页后无法撤销上一次评分 |
+> 共 3615 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4011](bugs/BUG-4011-macos-popup-header-button-clipped.md) | ✅ | ✅ | macOS 查词弹窗右上角调节按钮被右边缘裁掉一半 |
+| [BUG-4010](bugs/BUG-4010-dict-render-strange-symbols.md) | ✅ | ✅ | 词典释义里出现奇怪符号 |
+| [BUG-4009](bugs/BUG-4009-shinmeikai-headword-kanji-mark-render.md) | ✅ | ✅ | 新明解国語辞典词头表外字标注渲染异常 |
+| [BUG-4008](bugs/BUG-4008-linux-lookup-popup-content-invisible.md) | — | — | Linux 查词弹窗词典内容不显示但可点击、可制卡 |
+| [BUG-4007](bugs/BUG-4007-srs-lookup-expanded-bottom-clipped.md) | — | — | 复习卡背面释义展开后底部被截断且其他词典消失 |
+| [BUG-4006](bugs/BUG-4006-srs-lookup-popup-flash-below-then-above.md) | — | — | 复习卡查词弹窗先在下方出现再跳到上方 |
+| [BUG-4005](bugs/BUG-4005-dict-style-preview-theme-after-unmount.md) | ✅ | ✅ | 离开词典样式页时预览续体读已卸载 context 空断言 |
+| [BUG-4004](bugs/BUG-4004-srs-native-lookup-no-highlight.md) | ✅ | ✅ | 复习卡原生卡面查词后卡面上没有被查词高亮 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |

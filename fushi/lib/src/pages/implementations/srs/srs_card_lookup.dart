@@ -91,7 +91,7 @@ class SrsCardLookupRequest {
   /// 发起查词的表面（弹窗关闭 / 换词时其它表面据此清掉自己的选区高亮）。
   final SrsCardLookupSurface? origin;
 
-  /// 查到结果后回报命中字数（WebView 表面据此在卡面上高亮被查词）。
+  /// 查到结果后回报命中字数（WebView 卡面与原生文字区都据此在卡面上高亮被查词）。
   final void Function(int matchedChars)? onMatched;
 }
 
@@ -989,6 +989,33 @@ class SrsLookupTextData {
   /// 注音拼接文字的分段：`(outerStart, outerLength, fullStart, placeholder)`。
   final List<SrsLookupTextSegment>? segments;
 
+  /// [text] 里的区间 `[start, end)` → 外层段落纯文本里要高亮的区间（[mapOuterOffset]
+  /// 的反向）。注音段在外层只占一个占位符：区间碰到它就整段（占位符那一格）算进来。
+  List<TextRange> outerRangesFor(int start, int end) {
+    if (end <= start) return const <TextRange>[];
+    final List<SrsLookupTextSegment>? segs = segments;
+    if (segs == null) return <TextRange>[TextRange(start: start, end: end)];
+    final List<TextRange> out = <TextRange>[];
+    for (int i = 0; i < segs.length; i++) {
+      final SrsLookupTextSegment s = segs[i];
+      final int fullEnd = i + 1 < segs.length
+          ? segs[i + 1].fullStart
+          : text.length;
+      final int from = start > s.fullStart ? start : s.fullStart;
+      final int to = end < fullEnd ? end : fullEnd;
+      if (to <= from) continue;
+      out.add(
+        s.placeholder
+            ? TextRange(start: s.outerStart, end: s.outerStart + s.outerLength)
+            : TextRange(
+                start: s.outerStart + (from - s.fullStart),
+                end: s.outerStart + (to - s.fullStart),
+              ),
+      );
+    }
+    return out;
+  }
+
   /// 外层段落纯文本里的 UTF-16 偏移 → [text] 里的偏移；落在占位符上返回 null。
   int? mapOuterOffset(int outer) {
     final List<SrsLookupTextSegment>? segs = segments;
@@ -1042,7 +1069,39 @@ typedef SrsNativeLookupHit = ({
   RenderParagraph paragraph,
   int start,
   List<FushiRubySpan> rubySpans,
+  // 承载整段 [SrsLookupTextData] 的外层段落（注音段的基字 / 注音是它里面的子段落；
+  // 普通文字时就是 [paragraph]）与标记本身：查到结果后据此在卡面上高亮被查词。
+  RenderParagraph outerParagraph,
+  SrsLookupTextData data,
 });
+
+/// 一次原生取词命中查到 [matchedChars] 个字后，被查词在 [root] 坐标系里的高亮矩形
+/// （与 WebView 卡面 `highlightSelection(count)` 同一语义：从查询起点起命中的那几个字）。
+/// 注音段整段算进来（它在外层段落里是一个占位符）。纯几何，可单测。
+List<Rect> srsNativeLookupHighlightRects(
+  RenderBox root,
+  SrsNativeLookupHit hit,
+  int matchedChars,
+) {
+  final RenderParagraph outer = hit.outerParagraph;
+  if (matchedChars <= 0 || !outer.attached || !root.attached) {
+    return const <Rect>[];
+  }
+  final int end = (hit.start + matchedChars).clamp(
+    hit.start,
+    hit.data.text.length,
+  );
+  final Matrix4 toRoot = outer.getTransformTo(root);
+  final List<Rect> rects = <Rect>[];
+  for (final TextRange r in hit.data.outerRangesFor(hit.start, end)) {
+    for (final TextBox b in outer.getBoxesForSelection(
+      TextSelection(baseOffset: r.start, extentOffset: r.end),
+    )) {
+      rects.add(MatrixUtils.transformRect(toRoot, b.toRect()));
+    }
+  }
+  return rects;
+}
 
 /// 在 [root] 子树里按全局坐标找被点的字（纯几何，可单测）：命中路径上最深的
 /// [RenderParagraph] + 最近的 [SrsLookupTextData] 标记 → 整段纯文本里的偏移 →
@@ -1054,14 +1113,17 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   final BoxHitTestResult result = BoxHitTestResult();
   if (!root.hitTest(result, position: local)) return null;
   RenderParagraph? paragraph;
+  RenderParagraph? outerParagraph;
   SrsLookupRubySegment? segment;
   SrsLookupTextData? data;
   for (final HitTestEntry entry in result.path) {
     final HitTestTarget target = entry.target;
     if (paragraph == null) {
-      if (target is RenderParagraph) paragraph = target;
+      if (target is RenderParagraph) paragraph = outerParagraph = target;
       continue;
     }
+    // 路径由深到浅：标记之前最后经过的段落就是承载整段文字的外层段落。
+    if (target is RenderParagraph) outerParagraph = target;
     if (target is RenderMetaData) {
       final Object? meta = target.metaData;
       if (meta is SrsLookupRubySegment && segment == null) {
@@ -1072,7 +1134,12 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
       }
     }
   }
-  if (paragraph == null || data == null || data.text.isEmpty) return null;
+  if (paragraph == null ||
+      outerParagraph == null ||
+      data == null ||
+      data.text.isEmpty) {
+    return null;
+  }
   final String paraText = paragraph.text.toPlainText(
     includeSemanticsLabels: false,
   );
@@ -1131,6 +1198,8 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
     paragraph: paragraph,
     start: startUtf16,
     rubySpans: rubySpans,
+    outerParagraph: outerParagraph,
+    data: data,
   );
 }
 
@@ -1217,6 +1286,7 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
     } else {
       _hovered = null;
     }
+    _setHighlight(const <Rect>[]);
     c.lookup(
       SrsCardLookupRequest(
         term: hit.term,
@@ -1225,9 +1295,27 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
         sentence: hit.sentence,
         fromHover: fromHover,
         origin: this,
+        // 查到结果后在卡面上标出被查词（与 WebView 卡面的 highlightSelection 同口径）。
+        // 弹窗开着时 barrier 盖住卡面、卡面不会滚动，矩形在关窗前一直有效。
+        onMatched: (int matched) {
+          final RenderBox? box = _box;
+          if (!mounted || box == null || !c.isOpen) return;
+          _setHighlight(srsNativeLookupHighlightRects(box, hit, matched));
+        },
       ),
     );
     return true;
+  }
+
+  /// 被查词在本区域坐标系里的高亮矩形（空 = 不高亮）。
+  List<Rect> _highlight = const <Rect>[];
+
+  @visibleForTesting
+  List<Rect> get debugHighlightRects => _highlight;
+
+  void _setHighlight(List<Rect> rects) {
+    if (!mounted || (rects.isEmpty && _highlight.isEmpty)) return;
+    setState(() => _highlight = rects);
   }
 
   @override
@@ -1235,6 +1323,8 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
     required bool open,
     required SrsCardLookupSurface? origin,
   }) {
+    // 弹窗关了，或别的表面发起了新查词：本区域的高亮作废。
+    if (!open || !identical(origin, this)) _setHighlight(const <Rect>[]);
     if (!open) {
       _hovered = null;
       _hover.reset();
@@ -1299,9 +1389,43 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
         _pendingHit = null;
       },
       onPointerHover: _onHover,
-      child: widget.child,
+      child: CustomPaint(
+        foregroundPainter: _highlight.isEmpty
+            ? null
+            : _SrsLookupHighlightPainter(
+                rects: _highlight,
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.32),
+              ),
+        child: widget.child,
+      ),
     );
   }
+}
+
+/// 原生卡面上被查词的高亮（半透明强调色圆角块，与 WebView 卡面 [kSrsCardLookupCss]
+/// 的 `.fushi-dict-highlight` 同色同形）。
+class _SrsLookupHighlightPainter extends CustomPainter {
+  const _SrsLookupHighlightPainter({required this.rects, required this.color});
+
+  final List<Rect> rects;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()..color = color;
+    for (final Rect r in rects) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r, const Radius.circular(2)),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SrsLookupHighlightPainter oldDelegate) =>
+      !identical(oldDelegate.rects, rects) || oldDelegate.color != color;
 }
 
 /// [SrsCardGestureRegion.excluded] 在命中路径上留下的标记。
