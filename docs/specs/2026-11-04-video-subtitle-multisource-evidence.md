@@ -108,10 +108,15 @@ SRT / ASS 也没有 ruby 载体，本次不做。
 `WebKnowledgeClient` 只查固定站点（MediaWiki / ANN / TVMaze）。新增通用搜索：
 
 - `WebSearchConfig`：`kind`（`searxng` 自建 / 公共实例，`brave` Brave Search API）、`endpoint`、
-  `apiKey`；JSON 存偏好（app）/ 配置文件 `ai:` 段（服务端）。
-- `WebSearchClient.search(query)` → 标题 / URL / 摘要；`fetchText(url)` 取页面正文（HTML 去标签、
-  4 MB 上限、走 `createAppHttpClient` 全应用代理）。
+  `apiKey`；JSON 存偏好（app，key 与 `ai_providers` 同口径存 base64 `apiKeyB64`，旧明文
+  `apiKey` 启动时迁移）/ 配置文件 `ai:` 段（服务端）。
+- `WebSearchClient.search(query)` → 标题 / URL / 摘要；`fetchPage(url)` 取页面正文（HTML 去标签、
+  4 MB 上限、走全应用代理）。抓页按已校验的公网 IP 建连；走代理时自己向代理发
+  `CONNECT <IP>:<端口>`，代理拿不到可重新解析的主机名（DNS rebinding）。
 - `AiSettingsSource.aiWebSearch` 暴露给 AI 功能；设置页在「联网资料」旁加一节。
+- 抓前 3 页交给 AI 前首次确认（`ai_web_search_page_fetch`，开 AI 生成字幕点「开始」前问一次，
+  设置里可改）：没答过 / 不允许时 app 的 `aiWebSearch` 为 null。说明里写明部分 AI 提供商自带
+  联网搜索（有的收费），可以不配置这里。服务端由管理员亲手写 `web_search:` 即视为同意。
 - 首个消费者是歌词补齐；之后其它 AI 功能可直接复用。
 
 ## 不做 / 留后
