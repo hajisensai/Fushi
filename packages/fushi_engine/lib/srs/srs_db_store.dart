@@ -548,6 +548,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 按作品出卡直接按它的索引查，见 store/study.rs `CustomStudy`）。老行这一列是 NULL，升级时内核只补这一列
   /// （caches.rs `backfill_source_keys`），不算缓存写入，不进变更日志。
   static const int _kCacheRevision = 10;
+
+  /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
+  /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
+  @visibleForTesting
+  static const int currentCacheRevision = _kCacheRevision;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。

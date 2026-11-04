@@ -24,8 +24,10 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart'
     show srsSoundPlayerProvider;
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -287,38 +289,43 @@ class _ColumnsSheetState extends State<_ColumnsSheet> {
               style: context.fushiType.titleMediumEmphasized,
             ),
             Flexible(
-              child: ReorderableListView.builder(
+              child: SingleChildScrollView(
                 key: const ValueKey<String>('srs-browse-columns'),
-                shrinkWrap: true,
-                buildDefaultDragHandles: false,
-                itemCount: _order.length,
-                onReorder: (int from, int to) => setState(() {
-                  final SrsBrowseTableColumn c = _order.removeAt(from);
-                  _order.insert(to > from ? to - 1 : to, c);
-                }),
-                itemBuilder: (BuildContext context, int i) {
-                  final SrsBrowseTableColumn c = _order[i];
-                  return FushiStaggeredEntrance(
-                    key: ValueKey<SrsBrowseTableColumn>(c),
-                    index: i,
-                    child: FushiListItem(
-                      key: ValueKey<String>('srs-browse-column-${c.name}'),
-                      leading: FushiCheckbox(
-                        value: _on.contains(c),
-                        onChanged: c == SrsBrowseTableColumn.front
-                            ? null
-                            : (_) => setState(() {
-                                if (!_on.remove(c)) _on.add(c);
-                              }),
+                // 自实现的 FushiReorderableColumn 而非 SDK ReorderableListView：
+                // 整棵树活在 FushiAppUiScale 的 Transform.scale 之下，SDK 的拖拽代理
+                // 不认祖先缩放，「界面大小」非 100% 时拖拽浮层漂移（BUG-778 同根因）。
+                child: FushiReorderableColumn(
+                  itemCount: _order.length,
+                  useDragHandles: true,
+                  feedbackBorderRadius: FushiM3eShape.smallRadius,
+                  keyForIndex: (int i) =>
+                      ValueKey<SrsBrowseTableColumn>(_order[i]),
+                  onReorder: (int from, int to) => setState(() {
+                    final SrsBrowseTableColumn c = _order.removeAt(from);
+                    _order.insert(to, c);
+                  }),
+                  itemBuilder: (BuildContext context, int i) {
+                    final SrsBrowseTableColumn c = _order[i];
+                    return FushiStaggeredEntrance(
+                      index: i,
+                      child: FushiListItem(
+                        key: ValueKey<String>('srs-browse-column-${c.name}'),
+                        leading: FushiCheckbox(
+                          value: _on.contains(c),
+                          onChanged: c == SrsBrowseTableColumn.front
+                              ? null
+                              : (_) => setState(() {
+                                  if (!_on.remove(c)) _on.add(c);
+                                }),
+                        ),
+                        title: Text(srsBrowseColumnLabel(c)),
+                        trailing: const FushiReorderableDragHandle(
+                          child: FushiIcon(FushiIcons.dragIndicator),
+                        ),
                       ),
-                      title: Text(srsBrowseColumnLabel(c)),
-                      trailing: ReorderableDragStartListener(
-                        index: i,
-                        child: const FushiIcon(FushiIcons.dragIndicator),
-                      ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
             FushiFilledButton(
@@ -578,7 +585,7 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
       curve: FushiMotion.standard,
       decoration: BoxDecoration(
         color: selected ? highlight : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: FushiM3eShape.smallRadius,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
@@ -606,12 +613,15 @@ class _SrsBrowseTableState extends State<SrsBrowseTable> {
       ),
     );
     return FushiPressScale(
-      child: GestureDetector(
-        key: ValueKey<String>('srs-browse-row-$id'),
-        behavior: HitTestBehavior.opaque,
-        onTap: () => widget.onRowTap(id, index),
-        onSecondaryTap: () => widget.onRowSecondaryTap(id, index),
-        child: line,
+      // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
+      child: ContextMenuTrigger(
+        onInvoke: (Offset _) => widget.onRowSecondaryTap(id, index),
+        child: GestureDetector(
+          key: ValueKey<String>('srs-browse-row-$id'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onRowTap(id, index),
+          child: line,
+        ),
       ),
     );
   }
@@ -1005,7 +1015,7 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
           spacing: 12,
           children: <Widget>[
             ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: FushiM3eShape.smallRadius,
               child: SizedBox.square(
                 dimension: 48,
                 child: image == null
@@ -1142,7 +1152,7 @@ class SrsBrowseHealthBar extends StatelessWidget {
           onView: onViewDupes,
         ),
     ];
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.short),
       curve: FushiMotion.standard,
       alignment: Alignment.topCenter,
