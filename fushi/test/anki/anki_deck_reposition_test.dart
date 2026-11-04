@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -344,6 +345,63 @@ void main() {
     });
   });
 
+  // 用户拍板⑱：设置页入口的门控。探测明确说没有原生重排 → 置灰并给版本提示；
+  // 连不上 → 保持未知，入口照常可点（真跑时 runner 当场再探）。
+  group('AnkiViewModel 重排能力探测', () {
+    Future<AnkiViewModel> vmFor(_FakeRepo repo) async {
+      final AnkiViewModel vm = AnkiViewModel(repo);
+      await Future<void>.delayed(Duration.zero);
+      return vm;
+    }
+
+    test('有原生接口：入口可用', () async {
+      final AnkiViewModel vm = await vmFor(_FakeRepo());
+      await vm.probeDeckReposition();
+      expect(vm.canRepositionDeck, isTrue);
+      expect(vm.canAutoReposition, isTrue);
+      expect(vm.deckRepositionBlockedByBackend, isFalse);
+    });
+
+    test('没有原生接口：重排与自动重排都置灰，原因是后端版本', () async {
+      final AnkiViewModel vm = await vmFor(
+        _FakeRepo()..nativeReposition = false,
+      );
+      expect(vm.canRepositionDeck, isTrue, reason: '探测前未知，不先把入口藏掉');
+      await vm.probeDeckReposition();
+      expect(vm.canRepositionDeck, isFalse);
+      expect(vm.canAutoReposition, isFalse);
+      expect(vm.deckRepositionBlockedByBackend, isTrue);
+    });
+
+    test('探测连不上：保持未知，不记成不支持', () async {
+      final _FakeRepo repo = _FakeRepo()
+        ..probeError = const SocketException('refused');
+      final AnkiViewModel vm = await vmFor(repo);
+      await vm.probeDeckReposition();
+      expect(vm.canRepositionDeck, isTrue);
+      expect(vm.deckRepositionBlockedByBackend, isFalse);
+    });
+
+    test('后端类型不支持：不发探测，原因不是版本', () async {
+      final _FakeRepo repo = _FakeRepo(supported: false);
+      final AnkiViewModel vm = await vmFor(repo);
+      await vm.probeDeckReposition();
+      expect(repo.probeCalls, 0);
+      expect(vm.canRepositionDeck, isFalse);
+      expect(vm.deckRepositionBlockedByBackend, isFalse);
+    });
+
+    test('并发要结论只探一次', () async {
+      final _FakeRepo repo = _FakeRepo();
+      final AnkiViewModel vm = await vmFor(repo);
+      await Future.wait(<Future<void>>[
+        vm.probeDeckReposition(),
+        vm.probeDeckReposition(),
+      ]);
+      expect(repo.probeCalls, 1);
+    });
+  });
+
   group('AnkiDeckRepositionRunner', () {
     late Directory tmp;
     setUp(() => tmp = Directory.systemTemp.createTempSync('anki_repo_'));
@@ -366,6 +424,21 @@ void main() {
             options: const AnkiRepositionRankOptions(),
           );
       expect(p, isNull);
+    });
+
+    // 用户拍板⑱：AnkiConnect 26.10.11.0 起禁写 due，原生重排只在更新的版本才有。
+    test('探测不到原生重排能力：plan 抛 Unsupported，读卡前就挡下、一张不写', () async {
+      final _FakeRepo repo = _FakeRepo()..nativeReposition = false;
+      await expectLater(
+        runner(repo).plan(
+          deckName: 'D',
+          settings: const AnkiSettings(),
+          options: const AnkiRepositionRankOptions(),
+        ),
+        throwsA(isA<AnkiRepositionUnsupportedException>()),
+      );
+      expect(repo.listCalls, 0);
+      expect(repo.writes, isEmpty);
     });
 
     // 反馈：电脑上制卡后自动重排就卡死白屏——每次都在 UI isolate 上把整组新卡重查一遍词典。
@@ -746,6 +819,24 @@ class _FakeRepo extends BaseAnkiRepository {
   final bool supported;
   final List<int> Function(List<AnkiCardInfo> ordered)? assign;
 
+  /// 能力探测结论：false = 连着的 AnkiConnect 没有原生重排接口。
+  bool nativeReposition = true;
+  int listCalls = 0;
+
+  /// 非 null 时探测直接抛它（模拟 Anki 没开 / 连不上）。
+  Exception? probeError;
+  int probeCalls = 0;
+
+  @override
+  Future<bool> probeDeckReposition() async {
+    probeCalls++;
+    if (probeError != null) throw probeError!;
+    return supported && nativeReposition;
+  }
+
+  @override
+  Future<AnkiSettings> loadSettings() async => const AnkiSettings();
+
   @override
   List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
       assign?.call(ordered) ?? super.assignNewCardPositions(ordered);
@@ -756,8 +847,10 @@ class _FakeRepo extends BaseAnkiRepository {
   bool get supportsDeckReposition => supported;
 
   @override
-  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
-      List<AnkiCardInfo>.of(cards);
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    listCalls++;
+    return List<AnkiCardInfo>.of(cards);
+  }
 
   @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(

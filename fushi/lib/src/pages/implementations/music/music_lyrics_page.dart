@@ -55,6 +55,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamResolver, resolveMusicPluginStream;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -320,8 +321,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
+    _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     _clock.dispose();
     super.dispose();

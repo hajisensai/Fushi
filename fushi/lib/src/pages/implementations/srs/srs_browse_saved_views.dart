@@ -11,6 +11,7 @@ import 'package:fushi_engine/srs/srs_browse.dart' show srsFieldContainsQuery;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_browse_query.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -174,30 +175,36 @@ class SrsBrowseViewStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return SingleChildScrollView(
-      key: const ValueKey<String>('srs-browse-views'),
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        spacing: tokens.spacing.gap,
-        children: <Widget>[
-          for (final SrsBrowseViewEntry e in entries)
-            FushiPressScale(
-              child: GestureDetector(
-                onLongPress: e.onMenu,
-                onSecondaryTap: e.onMenu,
-                child: FushiFilterChip(
-                  key: ValueKey<String>('srs-browse-view-${e.id}'),
-                  avatar: FushiIcon(e.icon, size: 18),
-                  showCheckmark: false,
-                  selected: e.selected,
-                  label: Text(
-                    e.count == null ? e.label : '${e.label} · ${e.count}',
+    // 桌面端鼠标也能横拖这条视图条（默认 dragDevices 不含 mouse）。
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('srs-browse-views'),
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            for (final SrsBrowseViewEntry e in entries)
+              FushiPressScale(
+                // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
+                child: ContextMenuTrigger(
+                  onInvoke: e.onMenu == null ? null : (Offset _) => e.onMenu!(),
+                  child: GestureDetector(
+                    onLongPress: e.onMenu,
+                    child: FushiFilterChip(
+                      key: ValueKey<String>('srs-browse-view-${e.id}'),
+                      avatar: FushiIcon(e.icon, size: 18),
+                      showCheckmark: false,
+                      selected: e.selected,
+                      label: Text(
+                        e.count == null ? e.label : '${e.label} · ${e.count}',
+                      ),
+                      onSelected: (_) => e.onTap(),
+                    ),
                   ),
-                  onSelected: (_) => e.onTap(),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -7,8 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_remote.dart';
 import 'package:fushi/src/web_browser/features/page_visibility/web_browser_page_visibility_feature.dart';
-import 'package:fushi/src/web_browser/features/play_in_fushi/play_in_fushi_feature.dart'
-    show kWebBrowserHoldMediaScript;
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -239,7 +237,7 @@ void main() {
             ),
         runScript: (InAppWebViewController c, String source) async => log.add(
           '${(c as _FakeController).name}:'
-          '${source == kWebBrowserHoldMediaScript ? 'hold' : 'release'}',
+          '${source == kWebBrowserCoverHoldMediaScript ? 'hold' : 'release'}',
         ),
       );
       addTearDown(visibility.dispose);
