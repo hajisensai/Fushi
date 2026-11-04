@@ -52,6 +52,9 @@ void main() {
       isNot(contains('AnkiSectionRow.tags,')),
       reason: 'tags input must not sit in the allow-duplicates group',
     );
+    // 反馈 MhQHXQI-sB：制卡位置写进 MiscInfo（卡片内容），不再是标签。
+    expect(contentSection, contains('AnkiSectionRow.tagCharPosition,'));
+    expect(tagsSection, isNot(contains('AnkiSectionRow.tagCharPosition,')));
   });
 
   test(

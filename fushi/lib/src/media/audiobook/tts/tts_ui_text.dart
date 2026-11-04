@@ -51,6 +51,16 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   _ => providerId,
 };
 
+/// 非官方在线接口（网页 / 客户端的朗读通道）在编辑页额外显示的「可能失效」提示；
+/// 官方接口与本机引擎返回 null。微软翻译借用的是翻译 App 的通道，单独说清楚。
+String? ttsUnofficialNotice(String providerId) => switch (providerId) {
+  MicrosoftTranslatorTtsDescriptor.providerId =>
+    t.audiobook_tts_ms_translator_notice,
+  EdgeTtsDescriptor.providerId ||
+  GoogleTranslateTtsDescriptor.providerId => t.audiobook_tts_unofficial_notice,
+  _ => null,
+};
+
 /// 服务类型切换菜单里每个引擎的说明（免费 / 需密钥）。
 String? ttsProviderHint(String providerId) => switch (providerId) {
   EdgeTtsDescriptor.providerId ||
