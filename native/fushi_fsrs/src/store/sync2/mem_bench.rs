@@ -63,15 +63,15 @@ const DAY: i64 = 86_400_000;
 const MIB: f64 = 1024.0 * 1024.0;
 
 /// 一步的测量：Rust / SQLite 堆峰值比步前多出的最高值、步后仍比步前多占的（常驻），耗时。
-struct Mem {
-    rust_peak: f64,
-    sqlite_peak: f64,
-    rust_kept: f64,
-    sqlite_kept: f64,
-    ms: u128,
+pub(crate) struct Mem {
+    pub rust_peak: f64,
+    pub sqlite_peak: f64,
+    pub rust_kept: f64,
+    pub sqlite_kept: f64,
+    pub ms: u128,
 }
 
-fn measure<T>(f: impl FnOnce() -> T) -> (T, Mem) {
+pub(crate) fn measure<T>(f: impl FnOnce() -> T) -> (T, Mem) {
     let base = CUR.load(Ordering::Relaxed);
     PEAK.store(base, Ordering::Relaxed);
     // SAFETY: 读 / 复位 SQLite 全局内存统计量。

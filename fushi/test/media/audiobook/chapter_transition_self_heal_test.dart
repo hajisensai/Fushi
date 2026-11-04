@@ -125,8 +125,10 @@ void main() {
         'awaitwidget.onJumpSection(entry.index,entry.fragment);',
         hold,
       );
+      // 只钉到 callerPositionsReader:true 为止：其后的命名参数（如跳转记录的
+      // jumpSource）与本装配无关，增删它们不该让这条守卫失效。
       final int seek = panel.indexOf(
-        'awaitctrl.skipToCue(first,callerPositionsReader:true,);',
+        'awaitctrl.skipToCue(first,callerPositionsReader:true,',
         jump,
       );
       expect(hold, isNonNegative, reason: '跳章在飞期间按旧章位置判出的跨章就是回弹');

@@ -64,7 +64,9 @@ Future<T> _await<T>(
   );
   final bool ok = await _pumpUntil(tester, () => done, timeout: timeout);
   if (!ok) throw StateError('timed out');
-  if (error case final Object e) Error.throwWithStackTrace(e, StackTrace.current);
+  if (error case final Object e) {
+    Error.throwWithStackTrace(e, StackTrace.current);
+  }
   return value;
 }
 

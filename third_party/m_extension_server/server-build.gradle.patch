@@ -404,10 +404,27 @@ index 1635772..63987f5 100644
 diff --git a/build.gradle.kts b/build.gradle.kts
 --- a/build.gradle.kts
 +++ b/build.gradle.kts
-@@ -18,7 +18,35 @@
+@@ -18,7 +18,51 @@
          mavenCentral()
          google()
-         maven("https://github.com/Suwayomi/Suwayomi-Server/raw/android-jar/")
+-        maven("https://github.com/Suwayomi/Suwayomi-Server/raw/android-jar/")
++        // com.github.Suwayomi:android-jar:1.0.0 is a *mutable* coordinate: Suwayomi
++        // re-publishes the same 1.0.0 jar on its android-jar branch every time
++        // their AndroidCompat takes over a class, deleting that stub. On 2026-11-01
++        // (Suwayomi-Server 6830765f) it dropped android.net.Network, NetworkRequest
++        // and NetworkCapabilities, which this tree's AndroidCompat
++        // ConnectivityManager still compiles against: every cache-miss build then
++        // died with 67 "cannot find symbol". The stub is also shaded into the
++        // sidecar jar, so the moving bytes changed the shipped runtime too.
++        // Resolve it only from the branch commit this tree was written against
++        // (3983289d, 2025-12-17; jar sha256 2743be4f...ac303e3), addressed by SHA
++        // so the bytes cannot move again. Guard: mihon_android_stub_pin_guard_test.
++        exclusiveContent {
++            forRepository {
++                maven("https://raw.githubusercontent.com/Suwayomi/Suwayomi-Server/3983289d9481a8ba99c0b16350b27f41364906a2/")
++            }
++            filter { includeModule("com.github.Suwayomi", "android-jar") }
++        }
 -        maven("https://jogamp.org/deployment/maven")
 +        // org.jogamp:*:2.5.0 (pulled in transitively by kcef -> jcef, and really
 +        // loaded at runtime: KcefWebViewProvider renders via CefRendering.OFFSCREEN,

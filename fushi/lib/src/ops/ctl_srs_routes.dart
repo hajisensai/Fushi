@@ -99,11 +99,8 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
             'new': d.newCount,
             'learn': d.learnCount,
             'review': d.reviewCount,
-            // RWKV 牌组的 review 是此刻回忆率低于目标的快照，不是到期数：另给 FSRS 牌组的到期数与 RWKV 牌组近 30 天复习数。
+            // RWKV 牌组的 review = 今天结束前回忆率会降到目标以下的卡。
             if (d.rwkvScheduled) 'reviewByRwkv': true,
-            if (d.fsrsDue != null) 'fsrsDue': d.fsrsDue,
-            if (d.rwkvReviewsLast30 != null)
-              'rwkvReviewsLast30': d.rwkvReviewsLast30,
             'total': d.totalCards,
           },
       ],

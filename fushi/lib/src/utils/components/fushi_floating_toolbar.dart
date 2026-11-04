@@ -41,6 +41,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder, fushiPlayButtonRotation;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -57,6 +59,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbarScope;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 /// M3E 悬浮工具栏容器高（规格 64）。阅读器手机底栏带标签时用它。
 const double kFushiFloatingToolbarExtent = 64;
@@ -361,7 +364,7 @@ typedef FushiToolbarIconBuilder =
 /// - 提示（[FushiTooltip]）在外层，长按识别器在里层：命中测试由深到浅登记，里层的
 ///   长按先进手势竞技场、同一时限下先胜出，所以触屏长按打开动作而不是只弹提示；
 ///   鼠标悬停照样出提示。反过来（长按包在提示外面）长按就会被提示抢走。
-/// - 右键（`onSecondaryTap`）与长按同一动作。
+/// - 右键（经绑定表的 [ContextMenuTrigger]，不硬绑次按钮）与长按同一动作。
 /// - 语义：名称恒为 [label]（tooltip 只是提示），点按 / 长按动作都进语义树。
 ///
 /// [child] 必须是不带 tooltip / 长按的裸按钮（自己处理点按）。
@@ -385,18 +388,21 @@ class FushiToolbarLongPressTarget extends StatelessWidget {
   Widget build(BuildContext context) => FushiTooltip(
     message: tooltip,
     excludeFromSemantics: true,
-    child: GestureDetector(
-      onLongPress: onLongPress,
-      onSecondaryTap: onLongPress,
-      child: Semantics(
-        label: label,
-        hint: tooltip == label ? null : tooltip,
-        button: true,
-        enabled: onPressed != null,
-        excludeSemantics: true,
-        onTap: onPressed,
+    // 右键走绑定表（ContextMenuTrigger），不硬绑次按钮：右键被改绑给别的动作时不双触发。
+    child: ContextMenuTrigger(
+      onInvoke: contextMenuInvoker(onLongPress),
+      child: GestureDetector(
         onLongPress: onLongPress,
-        child: child,
+        child: Semantics(
+          label: label,
+          hint: tooltip == label ? null : tooltip,
+          button: true,
+          enabled: onPressed != null,
+          excludeSemantics: true,
+          onTap: onPressed,
+          onLongPress: onLongPress,
+          child: child,
+        ),
       ),
     ),
   );
@@ -572,10 +578,9 @@ class FushiToolbarButton extends StatelessWidget {
     final bool longPressHandled = !showLabel && !inlineLabel;
     final Widget withLongPress = longPress == null || longPressHandled
         ? shown
-        : GestureDetector(
-            onLongPress: showLabel || inlineLabel ? longPress : null,
-            onSecondaryTap: longPress,
-            child: shown,
+        : ContextMenuTrigger(
+            onInvoke: contextMenuInvoker(longPress),
+            child: GestureDetector(onLongPress: longPress, child: shown),
           );
     if (item.semanticsId == null) return withLongPress;
     return Semantics(identifier: item.semanticsId, child: withLongPress);
@@ -1938,6 +1943,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
 /// primaryContainer；[morphing] 时在圆（[rounded] = false）与圆角方之间按弹簧
 /// 变形——播放键：播放态 = 圆角方（「正在进行」），暂停态 = 圆。Apple = 圆形
 /// 强调色按钮，不变形（iOS 没有形状变形语汇）。
+///
+/// [playButton] = 主播放 / 暂停键：MD3 外形换成统一的播放键多边形
+/// （[fushiPlayButtonBorder]），播放态（[rounded] = true）转半瓣代替圆 ↔ 圆角方
+/// 形变；Apple 不受影响。
 class FushiToolbarFab extends StatefulWidget {
   const FushiToolbarFab({
     super.key,
@@ -1948,6 +1957,7 @@ class FushiToolbarFab extends StatefulWidget {
     this.morphing = false,
     this.size = 56,
     this.semanticsId,
+    this.playButton = false,
   });
 
   final IconData icon;
@@ -1960,6 +1970,9 @@ class FushiToolbarFab extends StatefulWidget {
   final bool morphing;
   final double size;
   final String? semanticsId;
+
+  /// true = 主播放键（见类注释）；需配合 [morphing]，[rounded] 表示「播放中」。
+  final bool playButton;
 
   @override
   State<FushiToolbarFab> createState() => _FushiToolbarFabState();
@@ -2062,24 +2075,29 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
       builder: (BuildContext context, Widget? child) {
         // 0 = 圆角方（16），1 = 圆（pill）。Apple 恒圆。
         final double pill = glass ? 1 : _shape.value.clamp(0.0, 1.0);
-        final OutlinedBorder shape = FushiMorphBorder(
-          radius: 16,
-          startPill: pill,
-          endPill: pill,
-        );
+        // 播放键：多边形外形，播放态（_shape → 0）转半瓣；字形反向转回。
+        final double angle = widget.playButton
+            ? fushiPlayButtonRotation(1 - _shape.value)
+            : 0;
+        final OutlinedBorder shape = widget.playButton
+            ? fushiPlayButtonBorder()
+            : FushiMorphBorder(radius: 16, startPill: pill, endPill: pill);
         return SizedBox.square(
           dimension: widget.size,
-          child: DecoratedBox(
-            decoration: fushiFloatingPillDecoration(
-              context,
-              color: bg,
-              shape: shape,
-            ),
-            child: Material(
-              type: MaterialType.transparency,
-              shape: shape,
-              clipBehavior: Clip.antiAlias,
-              child: child,
+          child: Transform.rotate(
+            angle: angle,
+            child: DecoratedBox(
+              decoration: fushiFloatingPillDecoration(
+                context,
+                color: bg,
+                shape: shape,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                shape: shape,
+                clipBehavior: Clip.antiAlias,
+                child: Transform.rotate(angle: -angle, child: child),
+              ),
             ),
           ),
         );

@@ -5,13 +5,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
-import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout_editor.dart'
-    show lyricsControlItemIcon, lyricsControlItemLabel;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_modern_shared.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
     show FushiJumpHistoryActions;
@@ -417,7 +417,7 @@ class _WidePanel extends StatelessWidget {
         // 固定几何（[LyricsShellMd3WideGeometry]），封面变大只往竖向长，歌词区不受影响。
         // 竖版书封 / 插图按原比例放进「栏宽 × 剩余高度」的框里，不再先裁成
         // 正方形——以前竖图被正方形的高卡住，左右空出一大截。
-        final Widget card = _SpringEntrance(
+        final Widget card = LyricsSpringEntrance(
           delay: 0.18,
           child: _PlayerCard(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
@@ -475,7 +475,7 @@ class _WidePanel extends StatelessWidget {
                   if (height < _minCoverExtent) return const SizedBox.shrink();
                   return Padding(
                     padding: const EdgeInsets.only(bottom: _gap),
-                    child: _SpringEntrance(
+                    child: LyricsSpringEntrance(
                       // 封面（带大投影）自成一层：控件层别处重画时不连带它
                       // 重新栅格化。
                       child: RepaintBoundary(
@@ -624,38 +624,6 @@ class _TitleBlock extends StatelessWidget {
             style: titleStyle,
           ),
       ],
-    );
-  }
-}
-
-/// 进场：spatial 弹簧从下方上移 + effects 淡入（墨水屏 / 减弱动态效果时长归零，
-/// 直接落位）。[delay] 是占总时长的比例，做错峰。
-class _SpringEntrance extends StatelessWidget {
-  const _SpringEntrance({required this.child, this.delay = 0});
-
-  final Widget child;
-  final double delay;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiMotionScheme motion = context.fushiMotion;
-    final double d = delay.clamp(0.0, 0.6);
-    Duration total(Duration base) =>
-        base == Duration.zero ? Duration.zero : base * (1 / (1 - d));
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: total(motion.effectsSlow.duration),
-      curve: Interval(d, 1, curve: motion.effectsSlow.curve),
-      builder: (BuildContext context, double fade, Widget? child) =>
-          Opacity(opacity: fade.clamp(0.0, 1.0), child: child),
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: 1),
-        duration: total(motion.spatialSlow.duration),
-        curve: Interval(d, 1, curve: motion.spatialSlow.curve),
-        builder: (BuildContext context, double v, Widget? child) =>
-            Transform.translate(offset: Offset(0, 28 * (1 - v)), child: child),
-        child: child,
-      ),
     );
   }
 }
@@ -886,76 +854,14 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
 // 读数
 // ---------------------------------------------------------------------------
 
-/// 千分位（读数 chip 用；与统计侧栏同口径的 1,234 写法）。
-String _grouped(int n) {
-  final String digits = n.abs().toString();
-  final StringBuffer out = StringBuffer(n < 0 ? '-' : '');
-  for (int i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
-    out.write(digits[i]);
-  }
-  return out.toString();
-}
-
 /// 全书进度文案：`当前 / 总 · xx.xx%`；未就绪为 null。
 String? _progressText(LyricsPlayerStats stats) {
   final int? cur = stats.currentChars;
   final int? total = stats.totalChars;
   final double? percent = stats.percent;
   if (cur == null || total == null || percent == null) return null;
-  return '${_grouped(cur)} / ${_grouped(total)} · '
+  return '${lyricsGroupedNumber(cur)} / ${lyricsGroupedNumber(total)} · '
       '${percent.toStringAsFixed(2)}%';
-}
-
-String _sessionText(LyricsPlayerStats stats) =>
-    formatLyricsPlayerTime(Duration(milliseconds: stats.sessionDurationMs));
-
-String _speedText(LyricsPlayerStats stats) =>
-    t.reader_stats_chars_per_hour(n: _grouped(stats.charsPerHour));
-
-/// 每秒读一次 [LyricsPlayerClock.stats]（只读），变了才重建这一小块。
-class _StatsBuilder extends StatefulWidget {
-  const _StatsBuilder({required this.clock, required this.builder});
-
-  final LyricsPlayerClock clock;
-  final Widget Function(BuildContext context, LyricsPlayerStats stats) builder;
-
-  @override
-  State<_StatsBuilder> createState() => _StatsBuilderState();
-}
-
-class _StatsBuilderState extends State<_StatsBuilder> {
-  late LyricsPlayerStats _stats = widget.clock.stats;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _poll());
-  }
-
-  @override
-  void didUpdateWidget(covariant _StatsBuilder oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.clock, widget.clock)) _stats = widget.clock.stats;
-  }
-
-  void _poll() {
-    if (!mounted) return;
-    final LyricsPlayerStats next = widget.clock.stats;
-    if (next != _stats) setState(() => _stats = next);
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  // 自带重绘边界：读数每秒一变只重录这一小块，不连带播放卡投影与封面。
-  @override
-  Widget build(BuildContext context) =>
-      RepaintBoundary(child: widget.builder(context, _stats));
 }
 
 /// 宽屏读数：tonal 标签一行（阅读速度 / 全书进度 / 会话时长）。
@@ -974,7 +880,7 @@ class _StatsChips extends StatelessWidget {
       backgroundColor: cs.secondaryContainer.withValues(alpha: 0.8),
       foregroundColor: cs.onSecondaryContainer,
     );
-    return _StatsBuilder(
+    return LyricsStatsBuilder(
       clock: clock,
       builder: (BuildContext context, LyricsPlayerStats stats) {
         final String? progress = _progressText(stats);
@@ -982,11 +888,11 @@ class _StatsChips extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: <Widget>[
-            chip(FushiIcons.speed, _speedText(stats)),
+            chip(FushiIcons.speed, lyricsSpeedText(stats)),
             if (progress != null) chip(FushiIcons.books, progress),
             chip(
               stats.tracking ? FushiIcons.timer : FushiIcons.timerOff,
-              _sessionText(stats),
+              lyricsSessionText(stats),
             ),
           ],
         );
@@ -1019,12 +925,23 @@ class _SpeedButton extends StatelessWidget {
     final TextStyle? style = Theme.of(context).textTheme.labelLarge?.copyWith(
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
     );
+    final FushiFillSlot? slot = FushiFillSlot.maybeOf(context);
     return Tooltip(
       message: t.playback_speed,
       child: Builder(
         builder: (BuildContext anchor) => FushiPressScale(
           child: FushiFilledButton.tonal(
             key: const ValueKey<String>('lyrics_speed_button'),
+            // 装在新版宽屏的圆角方块里：尺寸 / 形状取方块的，底色由方块画。
+            style: slot == null
+                ? null
+                : fushiFillSlotButtonStyle(slot.extent, slot.shape).merge(
+                    const ButtonStyle(
+                      backgroundColor: WidgetStatePropertyAll<Color>(
+                        Color(0x00000000),
+                      ),
+                    ),
+                  ),
             onPressed: () {
               final ValueChanged<LyricsMenuAnchor>? viaPage = onSpeedPanel;
               final LyricsMenuAnchor? at = _anchorOf(anchor);
@@ -1346,15 +1263,15 @@ class _NarrowTopBar extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: type.titleMediumEmphasized.copyWith(color: cs.onSurface),
               ),
-              _StatsBuilder(
+              LyricsStatsBuilder(
                 clock: data.clock,
                 builder: (BuildContext context, LyricsPlayerStats stats) {
                   final String? progress = _progressText(stats);
                   return Text(
                     <String>[
-                      _speedText(stats),
+                      lyricsSpeedText(stats),
                       if (progress != null) progress,
-                      _sessionText(stats),
+                      lyricsSessionText(stats),
                     ].join('  ·  '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1542,7 +1459,7 @@ class _NarrowControlBar extends StatelessWidget {
     final ValueChanged<int>? seekAside = transport.inlineSeek
         ? null
         : callbacks.onSeekRelative;
-    return _SpringEntrance(
+    return LyricsSpringEntrance(
       child: _PlayerCard(
         padding: const EdgeInsets.all(_kNarrowCardPadding),
         child: Column(

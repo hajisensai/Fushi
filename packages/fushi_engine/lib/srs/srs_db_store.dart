@@ -112,8 +112,6 @@ class SrsDeckSummary {
     this.parentId,
     this.rwkvPending = false,
     this.rwkvScheduled = false,
-    this.rwkvReviewsLast30,
-    this.fsrsDue,
   });
 
   final SrsDeckView deck;
@@ -132,23 +130,9 @@ class SrsDeckSummary {
   /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
   final bool rwkvPending;
 
-  /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看到期日，按**此刻**的回忆率
-  /// 实时挑（低于目标保留率的出），[reviewCount] 里它们那部分只是这一刻的快照、过一会儿就变，不是到期数。
-  /// 界面据此把到期一格拆成 FSRS 牌组的到期 [fsrsDue] 与 RWKV 牌组的 [rwkvDailyReviews]；[reviewCount] 本身照旧给出卡判断用。
+  /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看存下的到期日，按 RWKV 预测的
+  /// 今天结束时的回忆率挑（降到目标保留率以下的就是今天到期，[_instantInput]），已算进 [reviewCount]。
   final bool rwkvScheduled;
-
-  /// 子树里 **RWKV 牌组**最近 30 天（含今天）的复习数（`review_type = 'review'` 的作答；FSRS 牌组的复习不算）。
-  /// 内核只在排队请求带 RWKV 牌组时给，否则 null。
-  final int? rwkvReviewsLast30;
-
-  /// 子树里**非 RWKV 牌组**的到期数（同 [reviewCount] 一棵上限树截断，不含 RWKV 此刻合格的卡）。内核只在排队请求带
-  /// RWKV 牌组时给，否则 null（这时 [reviewCount] 就全是 FSRS 到期）。
-  final int? fsrsDue;
-
-  /// RWKV 牌组那部分显示的数：近 30 天日均复习数（四舍五入）。子树里没有 RWKV 牌组时为 null（照常显示到期数）。
-  int? get rwkvDailyReviews => rwkvScheduled && rwkvReviewsLast30 != null
-      ? (rwkvReviewsLast30! / 30).round()
-      : null;
 }
 
 /// 复习页一张卡的全部信息。
@@ -289,18 +273,27 @@ abstract interface class SrsExclusiveOuter {
   Future<T> run<T>(Future<T> Function() body);
 }
 
+/// 副本被 [SrsDbStore.retire] 作废之后，排着的与以后再来的写入抛它。[store] 是被作废的那份副本：在跑的同步 / 维护
+/// 据此认出「我用的副本被换掉了」（与写失败重读也失败的作废区分开，那种仍是普通 [StateError]）。
+class SrsStoreRetiredError extends StateError {
+  SrsStoreRetiredError(this.store, super.message);
+
+  final SrsDbStore store;
+}
+
 class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
     required this.db,
     required this.core,
     required this.profileUid,
     required this.deviceId,
-    required this.engine,
+    required FsrsEngine? engine,
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
     this.styles,
     SrsExclusiveOuter? exclusiveOuter,
-  }) : _trusted = trustedClock,
+  }) : _engine = engine,
+       _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour,
        _exclusiveOuter = exclusiveOuter;
 
@@ -428,7 +421,8 @@ class SrsDbStore implements SrsSync2Host {
   final String deviceId;
 
   /// 排程内核；null = 原生库不可用（只能浏览 / 编辑，不能复习）。
-  final FsrsEngine? engine;
+  FsrsEngine? get engine => _engine;
+  FsrsEngine? _engine;
 
   /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantInput]）。它没准备好时
   /// RWKV 牌组的复习卡一张都不出（[SrsStudyState.rwkvPending]），**不**退回按 FSRS-7 存下的到期日排队。
@@ -438,7 +432,18 @@ class SrsDbStore implements SrsSync2Host {
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
   final SrsStyleStore? styles;
   final SrsTrustedClock _trusted;
-  final int Function() _fallbackRollover;
+  int Function() _fallbackRollover;
+
+  /// 同一个 profile 重新激活时就地换上打开参数（[engine]、统计日界回退），不另开副本：同一个 uid 只该有一份活
+  /// 副本，交接会作废在跑的同步 / 维护（srs_profile_stores.dart `activate`）。连接、uid、设备 ID 不在此列——
+  /// 它们变了就不是同一份副本。
+  void rebind({
+    required FsrsEngine? engine,
+    required int Function() fallbackRolloverHour,
+  }) {
+    _engine = engine;
+    _fallbackRollover = fallbackRolloverHour;
+  }
 
   late SrsEditWriter _writer;
   late HlcClock _clock;
@@ -586,17 +591,31 @@ class SrsDbStore implements SrsSync2Host {
   /// 还排着的、以后再来的写入一律明确失败（[_unusable]），不会把行写回一个已删的 uid。[body] 失败也作废。
   ///
   /// [reason]：作废原因（写进之后写入的报错）；缺省是「profile 被删除」。
-  Future<T> retire<T>(Future<T> Function() body, {String? reason}) =>
-      runExclusive(() async {
-        try {
-          return await body();
-        } finally {
-          _unusable ??= StateError(
-            'SRS store is unusable: '
-            '${reason ?? 'profile $profileUid was deleted'}',
-          );
-        }
-      });
+  ///
+  /// 一调用就置上 [isWindingDown]（排队等独占区之前）：在跑的同步 / 维护在下一个检查点收手，不再排新的写入。
+  /// 最后一段独占区里先放掉本副本开着的收段会话（内核 `ingest_end`），再跑 [body]：之后同一 uid 的新副本才开得了
+  /// 自己的会话，本副本那一轮 finally 里的 [sync2IngestEnd] 也不必（不能）再进独占区。
+  Future<T> retire<T>(Future<T> Function() body, {String? reason}) {
+    _retireRequested = true;
+    return runExclusive(() async {
+      try {
+        await _releaseIngestSession();
+        return await body();
+      } finally {
+        _unusable ??= SrsStoreRetiredError(
+          this,
+          'SRS store is unusable: '
+          '${reason ?? 'profile $profileUid was deleted'}',
+        );
+      }
+    });
+  }
+
+  /// [retire] 已被调用（可能还排在在途写入后面）。
+  bool _retireRequested = false;
+
+  /// 在跑的长任务（同步一轮、样式去重、媒体回收）该在下一个检查点收手：副本已作废，或作废已发起。
+  bool get isWindingDown => _retireRequested || _unusable != null;
 
   /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间把这条连接的 WAL 自动 checkpoint 阈值调到
   /// [_bulkWalAutocheckpointPages]，结束后 checkpoint 一次再恢复原值。
@@ -1219,6 +1238,14 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async {
+    if (request['op'] == 'dedup') {
+      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）：与冲突解决同一条路径，
+      // 投影变化接进缓存。
+      return SrsSync2Result(
+        await _sync2Write(request),
+        const <(String, Uint8List)>[],
+      );
+    }
     if (request['op'] == 'plan') {
       final SrsSync2Result r = await _sync2Raw(<String, Object?>{
         ...request,
@@ -1288,14 +1315,38 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> r = await _sync2(const <String, Object?>{
       'op': 'ingest_begin',
     });
+    _ingestOpen = true;
     // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
     // 事务前要先把它按片做完（[_transactionOrReload]）。
     if (r['channel'] == true) _channelLive = true;
   });
 
+  /// 本副本开着内核收段会话（[sync2IngestBegin] 之后、[sync2IngestEnd] / [retire] 放掉之前）。
+  bool _ingestOpen = false;
+
+  /// 测试：[_ingestOpen]。
+  @visibleForTesting
+  bool get debugIngestOpen => _ingestOpen;
+
+  /// 放掉收段会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了会话：这里无事可做，不再进独占区
+  /// （进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
   @override
-  Future<void> sync2IngestEnd() =>
-      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_end'}));
+  Future<void> sync2IngestEnd() async {
+    if (!_ingestOpen) return;
+    try {
+      await runExclusive(_releaseIngestSession);
+    } on SrsStoreRetiredError catch (e) {
+      // 排队期间被作废：会话由 [retire] 放掉了（[_ingestOpen] 已清）。别的原因（会话仍开着）照常抛。
+      if (!identical(e.store, this) || _ingestOpen) rethrow;
+    }
+  }
+
+  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。
+  Future<void> _releaseIngestSession() async {
+    if (!_ingestOpen) return;
+    await _sync2(const <String, Object?>{'op': 'ingest_end'});
+    _ingestOpen = false;
+  }
 
   /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
   /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，
@@ -1663,6 +1714,7 @@ class SrsDbStore implements SrsSync2Host {
     'purge',
     'checkpoint',
     'restore',
+    'dedup',
     'refresh_caches',
     'rebuild_caches',
     'backfill_dupe_norms',
@@ -3551,7 +3603,7 @@ class SrsDbStore implements SrsSync2Host {
     return d;
   }
 
-  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, RWKV 近 30 天复习数?, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
+  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
   SrsDeckSummary _summaryFrom(
     SrsDeckView d,
@@ -3586,8 +3638,6 @@ class SrsDbStore implements SrsSync2Host {
           tree.subtree(d.id).any(rwkvPendingDecks.contains),
       rwkvScheduled:
           rwkvDecks.isNotEmpty && tree.subtree(d.id).any(rwkvDecks.contains),
-      rwkvReviewsLast30: c.length > 8 ? c[8] as int? : null,
-      fsrsDue: c.length > 9 ? c[9] as int? : null,
     );
   }
 
@@ -3981,7 +4031,7 @@ class SrsDbStore implements SrsSync2Host {
       _instantTargets(tree, decks).isNotEmpty;
 
   /// RWKV-Instant 的排队输入（上游 kuma3 `rslib/src/scheduler/rwkv.rs` 与 `scheduler/queue/builder/gathering.rs`）：
-  /// [decks] 里算法是 RWKV 的牌组，其可出复习卡**不看到期日**，按此刻的回忆率 R（即时头）排。这里只取分数
+  /// [decks] 里算法是 RWKV 的牌组，其可出复习卡**不看到期日**，按今天结束时的回忆率 R（即时头）排。这里只取分数
   /// （RWKV 服务是另一个原生库，[SrsRwkvScheduling]），排队规则（目标保留率、同日间隔守卫、每天最少复习数、
   /// 按 R 升序、每日上限）在内核（store/study.rs `instant_eligible`）。
   ///
@@ -4025,17 +4075,21 @@ class SrsDbStore implements SrsSync2Host {
     if (!source.ready) {
       // 不读候选卡：没准备好时 [SrsRwkvScheduling.instantRetrievability] 只触发准备并返回 null。
       unawaited(
-        source.instantRetrievability(const <SrsRwkvCandidate>[], nowMs: nowMs),
+        source.instantRetrievability(const <SrsRwkvCandidate>[], atMs: nowMs),
       );
       return pending;
     }
+    final int today = day.dayIndexOf(nowMs);
     final List<_RwkvCandidate> rows = (await _rwkvCandidates(
-      day.dayIndexOf(nowMs),
+      today,
       targets.keys,
     )).values.toList();
+    // 今天结束那一刻（下一个翻日时刻前 1 ms）的 R：到那时会降到目标线以下的卡就是今天到期，与 FSRS 按天到期同一
+    // 粒度。计数是「今天还剩多少」，出卡与它同一口径（数字 > 0 就有卡出）；按此刻的 R 排的话合格的卡一天里不断冒
+    // 出来，计数只是一个快照。
     final List<double>? scores = await source.instantRetrievability(
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
-      nowMs: nowMs,
+      atMs: day.dayStartMs(today + 1) - 1,
     );
     if (scores == null) return pending;
     if (scores.length != rows.length) {
@@ -4176,7 +4230,7 @@ class SrsDbStore implements SrsSync2Host {
     if (cards.isEmpty) return const <String, double>{};
     final List<double>? scores = await source.instantRetrievability(
       cards,
-      nowMs: now().$1,
+      atMs: now().$1,
     );
     if (scores == null || scores.length != cards.length) return null;
     return <String, double>{

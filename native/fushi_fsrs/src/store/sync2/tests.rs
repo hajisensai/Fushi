@@ -2094,7 +2094,7 @@ fn unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat() {
     // 内容没变 → 不写，指回上次的 head。
     let last = match write_head(&a, &mut bucket, T0 + 1000) {
         HeadWrite::Unchanged { path, .. } => path,
-        HeadWrite::Written { .. } => panic!("an unchanged head must not be rewritten"),
+        HeadWrite::Written { .. } | HeadWrite::Recut => panic!("an unchanged head must not be rewritten"),
     };
     assert!(bucket.0.contains_key(&last), "points at the head already on the location: {last}");
     // 本机有新操作 → 写。
@@ -2615,7 +2615,7 @@ fn failed_obsolete_deletes_are_retried_next_round() {
     let w = a.core.sync2_head_if_changed(P, "loc", u64::MAX, T0 + DAY + 70_000, Some(DAY)).unwrap();
     match w {
         super::transport::HeadWrite::Unchanged { obsolete, .. } => assert_eq!(obsolete.len(), pending),
-        super::transport::HeadWrite::Written { .. } => panic!("head content did not change"),
+        super::transport::HeadWrite::Written { .. } | super::transport::HeadWrite::Recut => panic!("head content did not change"),
     }
     // 下一轮正常：删光并确认。
     a.sync(&mut bucket, "loc", T0 + DAY + 80_000);
