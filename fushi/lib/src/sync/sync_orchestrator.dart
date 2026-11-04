@@ -601,7 +601,19 @@ class SyncOrchestrator {
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
     this.pendingMineRelay,
+    AggregatePeerSnapshotCache? remoteManifestMirror,
   }) : _db = db,
+       _manifestMirror =
+           remoteManifestMirror ??
+           DirectoryAggregatePeerSnapshotCache(
+             () async => Directory(
+               p.join(
+                 (await enginePaths.supportRootDirectory()).path,
+                 'sync_cache',
+                 'manifests',
+               ),
+             ),
+           ),
        _backend = backend,
        _dictionaryResourceRoot = dictionaryResourceRoot,
        _audioDatabaseRoot = audioDatabaseRoot,
@@ -620,6 +632,35 @@ class SyncOrchestrator {
   final Directory _audioDatabaseRoot;
   final Directory _tempDir;
   final SyncAssetPackageService _packages;
+
+  /// 各设备 per-device 清单（删除墓碑合并清单 / 合集清单 / 作品图谱清单 / 云视频
+  /// 目录清单）的本地镜像，按资产 id + [AssetEntry.revision] 命中（jHQpTfjrNB）。
+  ///
+  /// 这些清单每轮都要**全部**折叠一遍（合并语义要求如此，见聚合快照缓存同一段
+  /// 论证），但没变的那几份没有理由每轮整份重下：旧实现 N 台设备就是每轮 N 次
+  /// GET × 4 类清单，远端一字未变也照下。命中条件是远端报告的内容版本与上次下载
+  /// 时一致，此时镜像与远端逐字节同源，折叠结果与重新下载完全相同；后端给不出
+  /// 版本标记（revision 为 null）时不缓存，行为与改动前一致。
+  final AggregatePeerSnapshotCache _manifestMirror;
+
+  /// 读一份 per-device 清单的 JSON：版本没变读镜像，否则下载并更新镜像。
+  /// 下载失败 / 读回 null 的语义与直接 `getJsonAsset` 完全相同（照抛 / 照返 null）。
+  Future<Object?> _readManifestJson(String family, AssetEntry entry) async {
+    final String channel = '${_scope.id}.$family';
+    final Object? mirrored = await _manifestMirror.read(channel, entry);
+    if (mirrored != null) return mirrored;
+    final Object? json = await _backend.getJsonAsset(entry.id);
+    if (json != null) await _manifestMirror.write(channel, entry, json);
+    return json;
+  }
+
+  /// 删掉 [family] 下远端已不存在的清单镜像。
+  Future<void> _retainManifestMirror(
+    String family,
+    Iterable<AssetEntry> live,
+  ) => _manifestMirror.retainOnly('${_scope.id}.$family', <String>{
+    for (final AssetEntry e in live) e.name,
+  });
 
   /// This device's stable id (SyncRepository.getOrCreateDeviceId). Names this
   /// device's own snapshot asset in the cloud `__aggregate__` namespace so two
@@ -852,6 +893,9 @@ class SyncOrchestrator {
     // 登出并引导重新登录（TODO-836 / BUG-1323），吞成 report.errors 会把「凭据已
     // 失效」降级成一条无操作性的杂项错误；且鉴权死了后续阶段本来也无法工作。
     List<SyncBookResult> bookResults = const <SyncBookResult>[];
+    // 书阶段对每个书文件夹的列举所见，同轮有声书包阶段复用（jHQpTfjrNB）。
+    final BookFolderListingObservations bookFolderNames =
+        BookFolderListingObservations();
     try {
       bookResults =
           await SyncManager(
@@ -872,6 +916,7 @@ class SyncOrchestrator {
             syncContent: managerSyncContent,
             syncMangaContent: managerSyncMangaContent,
             listing: listing,
+            observations: bookFolderNames,
             skipBookKeys: cloudVetoedBookKeys,
             onBookProgress: (int done, int itemTotal, String title) {
               settleReadingBook();
@@ -923,7 +968,13 @@ class SyncOrchestrator {
       // upload-only（host→client 仍走按需流式/下载）。
       if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
-      if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
+      if (syncAudioBookFiles) {
+        await syncAudiobookPackages(
+          root,
+          report,
+          bookFolderNames: bookFolderNames,
+        );
+      }
       // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
       // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
       if (syncVideoFiles) await syncVideoAssets(report);
@@ -1055,6 +1106,12 @@ class SyncOrchestrator {
     }
     return report;
   }
+
+  /// [_manifestMirror] 的家族名（各占一个镜像通道，互不串）。
+  static const String _kTombstoneBundleMirror = 'tombstone_bundles';
+  static const String _kCollectionsMirror = 'collections';
+  static const String _kMediaLinksMirror = 'media_links';
+  static const String _kVideoManifestMirror = 'videos';
 
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
   /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
@@ -1207,6 +1264,10 @@ class SyncOrchestrator {
       // 折叠里**包含本端自己上轮那份**——保真已发布墓碑戳、字节稳定（幂等）。
       final String ownName = collectionsManifestNameFor(deviceId);
       final List<AssetEntry> children = await _backend.listChildren(ns);
+      await _retainManifestMirror(_kCollectionsMirror, <AssetEntry>[
+        for (final AssetEntry e in children)
+          if (!e.isFolder && isCollectionsManifestName(e.name)) e,
+      ]);
 
       final List<CollectionManifest> peers = <CollectionManifest>[];
       bool ownExists = false;
@@ -1222,7 +1283,7 @@ class SyncOrchestrator {
           legacySingle = e; // 记下旧单文件，吸收其知识后删除（finding 1）。
         }
         try {
-          final Object? json = await _backend.getJsonAsset(e.id);
+          final Object? json = await _readManifestJson(_kCollectionsMirror, e);
           if (json == null) {
             throw const FormatException('unreadable (null decode)');
           }
@@ -1529,12 +1590,16 @@ class SyncOrchestrator {
       bool ownBundleWritable = true;
       final List<DeletionTombstoneBundle> bundles = <DeletionTombstoneBundle>[];
       if (bundlesDir != null) {
-        for (final AssetEntry b in await _backend.listChildren(bundlesDir.id)) {
-          if (b.isFolder) continue;
+        final List<AssetEntry> bundleEntries = <AssetEntry>[
+          for (final AssetEntry b in await _backend.listChildren(bundlesDir.id))
+            if (!b.isFolder) b,
+        ];
+        await _retainManifestMirror(_kTombstoneBundleMirror, bundleEntries);
+        for (final AssetEntry b in bundleEntries) {
           final bool isOwn = b.name == ownBundleName;
           Object? json;
           try {
-            json = await _backend.getJsonAsset(b.id);
+            json = await _readManifestJson(_kTombstoneBundleMirror, b);
             if (json == null) {
               report.noteError(
                 'deletion tombstone bundle "${b.name}" unreadable',
@@ -1805,20 +1870,31 @@ class SyncOrchestrator {
       final String ns = await _backend.ensureNamespace(kSyncVideosNamespace);
 
       // 远端既有资产（名 -> 大小），用于「同尺寸跳过」与「封面是否已上传」判定。
+      final List<AssetEntry> children = await _backend.listChildren(ns);
       final Map<String, int?> remoteSizeByName = <String, int?>{
-        for (final AssetEntry e in await _backend.listChildren(ns))
+        for (final AssetEntry e in children)
           if (!e.isFolder) e.name: e.sizeBytes,
       };
 
-      // 远端既有清单（无则空，首轮优雅退化为「只上传本机视频」）。
-      final AssetEntry? manifestAsset = await _backend.findAsset(
-        ns,
-        kSyncVideosManifestName,
-      );
+      // 远端既有清单（无则空，首轮优雅退化为「只上传本机视频」）。清单就在刚列出的
+      // 命名空间条目里，不再单独 HEAD 一次（jHQpTfjrNB）。
+      AssetEntry? manifestAsset;
+      for (final AssetEntry e in children) {
+        if (!e.isFolder && e.name == kSyncVideosManifestName) {
+          manifestAsset = e;
+          break;
+        }
+      }
+      await _retainManifestMirror(_kVideoManifestMirror, <AssetEntry>[
+        if (manifestAsset != null) manifestAsset,
+      ]);
       RemoteVideoManifest remote = RemoteVideoManifest.empty;
       String? remoteCanonical;
       if (manifestAsset != null) {
-        final Object? json = await _backend.getJsonAsset(manifestAsset.id);
+        final Object? json = await _readManifestJson(
+          _kVideoManifestMirror,
+          manifestAsset,
+        );
         if (json == null) {
           // 清单资产存在但读不出（getJsonAsset 返 null = 下载失败/损坏）：本轮**跳过
           // 视频上传 + 清单回写**并 return（finding 3）。若照传：远端 = 空清单 →
@@ -2257,7 +2333,15 @@ class SyncOrchestrator {
   /// 两次 `findAsset`（Drive 上每本最多三次网络往返），算出的 `hasLocal` 却只在
   /// 最后决定传不传。于是 1 本有声书显示成「有声书 (k/全部书数)」、逐本走过漫画，
   /// 远端慢时整段像卡死。远端状态只对工作集里的书才需要问。
-  Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
+  ///
+  /// [bookFolderNames] 是同轮书阶段对各书文件夹列举所见（jHQpTfjrNB）：里面已经有
+  /// 包名（新名或 Hibiki 旧名）的书直接跳过，不再每本每轮 1–2 次 HEAD；没列过 /
+  /// 没看见的照旧实时探针确认后再决定上传。
+  Future<void> syncAudiobookPackages(
+    String root,
+    SyncRunReport report, {
+    BookFolderListingObservations? bookFolderNames,
+  }) async {
     // 立刻换掉上一阶段最后一本书的进度行：建工作集要读 DB 与探音频文件。
     _emitPhaseStart(SyncPhase.audiobooks);
     final List<({EpubBookRow book, SrtBookRow srt})> work =
@@ -2280,6 +2364,12 @@ class SyncOrchestrator {
         );
         // 先认新名，再回落 Hibiki 时代的旧名：漏认旧名会把「云上已有有声书」
         // 判成没有，于是重新上传一份新名资产，同一本书在云上留下两份包。
+        final Set<String>? seen = bookFolderNames?.namesOf(folderId);
+        if (seen != null &&
+            (seen.contains(kSyncAudiobookAssetName) ||
+                seen.contains(kLegacySyncAudiobookAssetName))) {
+          continue;
+        }
         final AssetEntry? existing =
             await _backend.findAsset(folderId, kSyncAudiobookAssetName) ??
             await _backend.findAsset(folderId, kLegacySyncAudiobookAssetName);
@@ -2304,6 +2394,7 @@ class SyncOrchestrator {
             fileBytes: b,
           ),
         );
+        bookFolderNames?.noteUploaded(folderId, kSyncAudiobookAssetName);
         report.audiobooksExported++;
       } catch (e) {
         report.noteError('audiobook "${book.title}"', e);

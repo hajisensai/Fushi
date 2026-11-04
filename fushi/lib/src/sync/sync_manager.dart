@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -189,6 +190,9 @@ class SyncManager {
     bool syncMangaContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
+    BookFolderListingObservations? observations,
+    Map<String, Future<SyncFileTrio?>> prefetchedSyncFiles =
+        const <String, Future<SyncFileTrio?>>{},
   }) async {
     // 书籍与漫画各有自己的「上传文件」开关：这里一次定下本书生效的那个，下游补缺 /
     // 导出 sidecar 的门一律只看它（漫画开关关时这本漫画的书文件与 sidecar 都不碰）。
@@ -220,6 +224,8 @@ class SyncManager {
         syncContent: contentEnabled,
         importOnly: importOnly,
         listing: listing,
+        observations: observations,
+        prefetchedSyncFiles: prefetchedSyncFiles,
         onProgressResult: (SyncBookResult result) => progressResult = result,
       );
       await _persistDriveCache();
@@ -243,6 +249,7 @@ class SyncManager {
             // 重试是因为一次瞬时后端错误；此时快照多半已经陈旧，不再复用它，
             // 老老实实逐本列举拿最新状态。
             listing: null,
+            observations: observations,
             onProgressResult: (SyncBookResult result) =>
                 progressResult = result,
           );
@@ -278,6 +285,7 @@ class SyncManager {
     bool syncMangaContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
+    BookFolderListingObservations? observations,
     Set<String> skipBookKeys = const <String>{},
     void Function(int done, int total, String title)? onBookProgress,
   }) async {
@@ -288,6 +296,12 @@ class SyncManager {
     await _restoreDriveCache();
 
     final books = await _db.getAllEpubBooks();
+    // 没有整树快照时，把「每本书列一次文件夹」从串行改成有界并发的预取：请求数不变
+    // （仍是每本一次），但不再一本接一本地排队等往返（jHQpTfjrNB：36 本书 ×
+    // 一次 PROPFIND 串行就是十几秒）。
+    final Map<String, Future<SyncFileTrio?>> prefetched = listing == null
+        ? await _prefetchSyncFileLists(books, skipBookKeys)
+        : const <String, Future<SyncFileTrio?>>{};
     final results = <SyncBookResult>[];
     for (int i = 0; i < books.length; i++) {
       final book = books[i];
@@ -313,6 +327,8 @@ class SyncManager {
         syncMangaContent: syncMangaContent,
         importOnly: importOnly,
         listing: listing,
+        observations: observations,
+        prefetchedSyncFiles: prefetched,
       );
       results.add(result);
     }
@@ -322,6 +338,81 @@ class SyncManager {
     // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
     await _persistDriveCache();
     return results;
+  }
+
+  /// 逐本列举预取的并发上限。只是把同样多的请求叠起来发，不改变请求数；取小值是为了
+  /// 不触发云盘的并发限流（OneDrive 429 / 部分 WebDAV 503）。
+  static const int _listingPrefetchConcurrency = 4;
+
+  /// 为本轮要同步的书预取各自书文件夹的列举（folderId → 那次 `listSyncFiles`）。
+  ///
+  /// 和整树快照同一个立场：拿到的是**同一批文件名**，只是提前、并发地拿；每本书的
+  /// 方向判定一字不改。只预取满足下面全部条件的书，其余照旧在轮到它时现列：
+  /// - 文件夹已在 title→folderId 缓存里（拿 folderId 不需要任何网络，也不会因预取
+  ///   而提前建文件夹）；
+  /// - 本轮没有别的书落在同一个文件夹（同名书：前一本的导出会改这个文件夹，后一本
+  ///   必须看到改后的样子，不能用开轮时的列举）；
+  /// - 不在推送否决名单里（[syncAllBooks] 会整本跳过它）。
+  ///
+  /// 预取失败的那本得到 null，轮到它时走与改动前完全相同的现列路径——错误在那里照常
+  /// 抛出、照常进重试 / 失败结果，不会被这里吞掉。
+  Future<Map<String, Future<SyncFileTrio?>>> _prefetchSyncFileLists(
+    List<EpubBookRow> books,
+    Set<String> skipBookKeys,
+  ) async {
+    final Map<String, String> cached = _backend.cachedFolderIds;
+    if (cached.isEmpty) return const <String, Future<SyncFileTrio?>>{};
+    final Map<String, int> booksPerFolder = <String, int>{};
+    for (final EpubBookRow book in books) {
+      final String key = sanitizeTtuFilename(book.title);
+      if (key.isEmpty) continue;
+      booksPerFolder[key] = (booksPerFolder[key] ?? 0) + 1;
+    }
+    final String rootId = await _backend.findOrCreateRootFolder();
+    final List<String> folderIds = <String>[];
+    for (final EpubBookRow book in books) {
+      final String key = sanitizeTtuFilename(book.title);
+      if (key.isEmpty ||
+          booksPerFolder[key] != 1 ||
+          skipBookKeys.contains(book.bookKey) ||
+          !cached.containsKey(key)) {
+        continue;
+      }
+      // 缓存命中：后端直接返回规范化后的 folderId，不发请求、不读封面（与
+      // [_syncBookOnce] 稍后拿到的是同一个值）。
+      folderIds.add(
+        await _backend.ensureBookFolder(
+          bookTitle: book.title,
+          rootFolderId: rootId,
+        ),
+      );
+    }
+    if (folderIds.isEmpty) return const <String, Future<SyncFileTrio?>>{};
+
+    final Map<String, Completer<SyncFileTrio?>> slots =
+        <String, Completer<SyncFileTrio?>>{
+          for (final String id in folderIds) id: Completer<SyncFileTrio?>(),
+        };
+    final Iterator<String> pending = slots.keys.iterator;
+    Future<void> worker() async {
+      while (pending.moveNext()) {
+        final String id = pending.current;
+        try {
+          slots[id]!.complete(await _backend.listSyncFiles(id));
+        } catch (_) {
+          // 交给轮到这本书时的现列路径：那里会把同一个错误照常抛出并处理。
+          slots[id]!.complete(null);
+        }
+      }
+    }
+
+    for (int k = 0; k < _listingPrefetchConcurrency; k++) {
+      unawaited(worker());
+    }
+    return <String, Future<SyncFileTrio?>>{
+      for (final MapEntry<String, Completer<SyncFileTrio?>> e in slots.entries)
+        e.key: e.value.future,
+    };
   }
 
   /// 进度分数 tie-break 的相等容差（[_determineSyncDirection] 专用）。
@@ -336,6 +427,9 @@ class SyncManager {
     bool syncContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
+    BookFolderListingObservations? observations,
+    Map<String, Future<SyncFileTrio?>> prefetchedSyncFiles =
+        const <String, Future<SyncFileTrio?>>{},
     required void Function(SyncBookResult result) onProgressResult,
   }) async {
     // BUG-619 / TODO-1329: an empty sanitized title has no unique bookKey and no
@@ -381,9 +475,18 @@ class SyncManager {
     // 列举：新书本就要付这一次（文件夹刚由 ensureBookFolder 建出），稳态仍是 O(1)。
     final RemoteListingSnapshot? folderListing =
         listing != null && listing.hasFolder(assetKey) ? listing : null;
+    final Future<SyncFileTrio?>? prefetch = prefetchedSyncFiles[folderId];
     final SyncFileTrio syncFiles = folderListing != null
         ? folderListing.trioFor(assetKey)
-        : await _backend.listSyncFiles(folderId);
+        : (prefetch == null ? null : await prefetch) ??
+              await _backend.listSyncFiles(folderId);
+    // 这次列举（快照或逐本）看到的完整文件名：下面补传书文件直接拿它判「远端有没
+    // 有」，同轮有声书包阶段也拿它判 `.fushiaudio` 在不在——同一个文件夹不再重列 /
+    // 逐个探针（jHQpTfjrNB）。列举方给不出完整清单时为 null，下游照旧自己去问。
+    final Set<String>? remoteFileNames = syncFiles.fileNames;
+    if (remoteFileNames != null) {
+      observations?.record(folderId, remoteFileNames);
+    }
 
     final SyncBookResult result = await _syncBookProgress(
       book: book,
@@ -410,11 +513,8 @@ class SyncManager {
       await _exportContentIfMissing(
         book: book,
         folderId: folderId,
-        remoteFileNames: folderListing
-            ?.entriesOf(assetKey)
-            .where((AssetEntry entry) => !entry.isFolder)
-            .map((AssetEntry entry) => entry.name)
-            .toSet(),
+        remoteFileNames: remoteFileNames,
+        observations: observations,
       );
     }
     return result;
@@ -455,6 +555,8 @@ class SyncManager {
         : null;
 
     final SyncDirection syncDir;
+    // 自动路径读到的共同祖先；手动路径不读（null），落基线时照旧无条件写。
+    int? autoBase;
     if (direction != null) {
       // Manual (compare-dialog) path: caller owns the direction, so no
       // three-way conflict gate here. The baseline IS still written after the
@@ -466,6 +568,7 @@ class SyncManager {
       // (both sides moved off base) must surface as a conflict instead of
       // silently last-write-wins clobbering one side.
       final int? base = await _db.getSyncBaseline(assetKey, _progressDimension);
+      autoBase = base;
       ProgressResolution res = resolveProgressSync(
         local: localPosition?.updatedAt,
         remote: remoteTimestamp,
@@ -513,12 +616,12 @@ class SyncManager {
       // so a later single-sided edit is recognised instead of re-colliding.
       // Written on both auto and manual paths — once both sides agree, the
       // common ancestor is this timestamp regardless of who decided it.
-      if (localPosition?.updatedAt != null) {
-        await _db.setSyncBaseline(
-          assetKey,
-          _progressDimension,
-          localPosition!.updatedAt,
-        );
+      //
+      // jHQpTfjrNB：自动路径上基线已经等于这个时间戳（两端都没动过的书——每轮绝大
+      // 多数书都是这样）时不再重写同一个值：旧实现每本未变的书每轮都落一次库。
+      final int? agreed = localPosition?.updatedAt;
+      if (agreed != null && (direction != null || autoBase != agreed)) {
+        await _db.setSyncBaseline(assetKey, _progressDimension, agreed);
       }
       return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
@@ -949,6 +1052,7 @@ class SyncManager {
     required EpubBookRow book,
     required String folderId,
     required Set<String>? remoteFileNames,
+    BookFolderListingObservations? observations,
   }) async {
     Set<String>? names = remoteFileNames;
     Future<Set<String>> remoteNames() async => names ??= <String>{
@@ -1010,6 +1114,7 @@ class SyncManager {
               file: epubTmp,
               onProgress: onContentProgress,
             );
+            observations?.noteUploaded(folderId, fileName);
           }
         } finally {
           try {
@@ -1111,9 +1216,10 @@ class SyncManager {
   // ── DB helpers ────────────────────────────────────────────────────
 
   Future<List<TtuStatistics>> _getLocalStatsForBook(String title) async {
-    final rows = await _db.getAllReadingStatistics();
+    // 只读这本书的行：旧实现每导入 / 导出一本书就把整张统计表读进来再按书名过滤，
+    // N 本书一轮是 O(N × 全表)（jHQpTfjrNB）。
+    final rows = await _db.getReadingStatisticsForTitle(title);
     return rows
-        .where((r) => r.title == title)
         .map(
           (r) => TtuStatistics(
             title: r.title,
