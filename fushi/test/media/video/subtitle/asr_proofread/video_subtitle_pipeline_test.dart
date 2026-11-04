@@ -47,11 +47,18 @@ class _FakeEvidence implements SubtitleEvidenceSource {
   final String key;
   int loads = 0;
 
+  /// 每次 sourceKey 时管线给的「是不是自己的产物」判据（测试拿它问具体路径）。
+  final List<bool Function(String path)> ownChecks =
+      <bool Function(String path)>[];
+
   @override
   Future<String> sourceKey(
     String videoPath, {
     required bool Function(String path) isOwnOutput,
-  }) async => key;
+  }) async {
+    ownChecks.add(isOwnOutput);
+    return key;
+  }
 
   @override
   Future<List<SubtitleEvidenceTrack>> load(
@@ -495,5 +502,33 @@ void main() {
     expect(ev2.loads, 1);
     expect(s3Of(ai2), contains('主(既存字幕から補完): 先生、待ってよ'));
     expect(srt(), contains('先生、待ってよ'));
+  });
+
+  test('自己的产物判据：认内容不认路径；.asr 退路名任务目录没了也认', () async {
+    final String ja = p.join(videos.path, 'ep01.ja.srt');
+    final String asr = p.join(videos.path, 'ep01.ja.asr.srt');
+    final _FakeEvidence ev = _FakeEvidence(const <SubtitleEvidenceTrack>[]);
+    Future<void> runOnce() => pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+
+    await runOnce();
+    expect(File(ja).existsSync(), isTrue);
+    // 第二轮：.ja.srt 还是本管线写的那份 → 是自己的产物。
+    await runOnce();
+    expect(ev.ownChecks.last(ja), isTrue);
+
+    // 用户把它换成自己的字幕（同一路径、内容变了）：是别人的文件，照常当证据。
+    File(ja).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n人工の字幕\n');
+    await runOnce();
+    expect(ev.ownChecks.last(ja), isFalse);
+    expect(File(asr).existsSync(), isTrue, reason: '被占着就写 .asr 退路');
+
+    // 任务目录被清掉（换 jobsRoot 同理）：.asr 退路名仍认作自己的产物。
+    jobs.deleteSync(recursive: true);
+    await runOnce();
+    expect(ev.ownChecks.last(asr), isTrue);
+    expect(ev.ownChecks.last(ja), isFalse);
   });
 }

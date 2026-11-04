@@ -1,9 +1,12 @@
 /// 收集一集视频身边的字幕证据（spec §2）：外挂文字字幕、内嵌文字轨、内嵌图形轨 OCR。
 ///
 /// - 排除本管线自己的产物（[SubtitleEvidenceLoadRequest.isOwnOutput]）。
-/// - 外挂文件不保证与这份视频同步（别的压制版本、带片头的 BD 版…）：把识别稿的开始
-///   时刻当参考轨，交上游 `decideSubtitleSync` 判偏移，只在 `autoApply` 时改写时间
-///   （不在本仓写对齐算法）。内嵌轨与视频同容器，视为已同步。
+/// - 外挂文件不保证与这份视频同步（别的压制版本、带片头的 BD 版、文件名配错集…）：
+///   把识别稿的开始时刻当参考轨，交上游 `decideSubtitleSync` 判偏移（不在本仓写对齐
+///   算法）。**只有判 `autoApply` 的外挂轨才收**（按对齐结果改写时间）；判
+///   `needsConfirmation` / `refused`、参考行数不够没法判、或字幕本身读不出可对齐的行，
+///   一律丢掉——证据的下游（缺口补齐、校对的同时段原文、歌词段检测）全按时间取行，
+///   时间轴不可信的轨会把别处的台词确定性地插进字幕稿。内嵌轨与视频同容器，本来就同步。
 /// - 图形轨的 OCR 由宿主注入（[SubtitleGraphicTrackRecognizer]）：引擎没有 OCR 推理，
 ///   无头服务端不注入 = 跳过图形轨。只识别标成目标语言或没标语言的图形轨（OCR 模型
 ///   只认日文）。
@@ -226,24 +229,34 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
   ) async {
     final SubtitleFormat? format = subtitleFormatForPath(path);
     if (format == null) return null;
-    String content = await readTextWithEncoding(File(path));
-    bool synced = false;
     // 参考太少（短片）判不出可靠偏移：上游要求参考轨至少 kMinReferenceCues 条。
-    if (asrReference.first.starts.length >= kMinReferenceCues) {
-      final Uint8List bytes = Uint8List.fromList(utf8.encode(content));
-      final EmbeddedReferenceSyncResult sync = await Isolate.run(
-        () => syncSubtitleBytesToReferences(
-          subtitleBytes: bytes,
-          references: asrReference,
-        ),
+    if (asrReference.first.starts.length < kMinReferenceCues) {
+      fushiDebugPrint(
+        '[SubtitleEvidence] skip sidecar "$path": too few recognized cues '
+        'to verify its timing',
       );
-      final SubtitleRetimeOutcome? retime = sync.retime;
-      if (sync.kind == SubtitleSyncDecisionKind.autoApply && retime != null) {
-        content = utf8.decode(retime.bytes, allowMalformed: true);
-        synced = true;
-      }
+      return null;
     }
-    final List<SubtitleEvidenceCue> cues = await _parse(format, content);
+    final String original = await readTextWithEncoding(File(path));
+    final Uint8List bytes = Uint8List.fromList(utf8.encode(original));
+    final EmbeddedReferenceSyncResult sync = await Isolate.run(
+      () => syncSubtitleBytesToReferences(
+        subtitleBytes: bytes,
+        references: asrReference,
+      ),
+    );
+    final SubtitleRetimeOutcome? retime = sync.retime;
+    if (sync.kind != SubtitleSyncDecisionKind.autoApply || retime == null) {
+      fushiDebugPrint(
+        '[SubtitleEvidence] skip sidecar "$path": timing not verified '
+        '(${sync.status.name}/${sync.kind.name})',
+      );
+      return null;
+    }
+    final List<SubtitleEvidenceCue> cues = await _parse(
+      format,
+      utf8.decode(retime.bytes, allowMalformed: true),
+    );
     final String? tagged = _sidecarLanguageTag(path, videoPath);
     return SubtitleEvidenceTrack(
       label: p.basename(path),
@@ -252,7 +265,6 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
         tagged: tagged,
         detected: _detect(cues),
       ),
-      synced: synced,
       cues: cues,
     );
   }

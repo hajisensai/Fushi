@@ -41,7 +41,7 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
-    show buildSubtitleLyricsFinder;
+    show SubtitleLyricsFinder, buildSubtitleLyricsFinder;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show isImportedExternalSubtitlePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
@@ -502,8 +502,10 @@ class AppVideoSubtitleService {
     WebKnowledgeClient Function(List<WebKnowledgeSite> sites)? webKnowledge,
     SubtitleEvidenceSource? Function(AppVideoSubtitleTarget target)?
     evidenceSource,
+    SubtitleLyricsFinder Function({WebSearchClient? webSearch})? lyricsFinder,
     int Function()? nowMs,
   }) : _evidenceSource = evidenceSource,
+       _lyricsFinder = lyricsFinder ?? buildSubtitleLyricsFinder,
        _resolveRecognizer = recognizerResolver ?? _defaultResolver,
        _completerFactory = completerFactory ?? _defaultCompleter,
        _jobsRoot = jobsRoot ?? defaultVideoSubtitleJobsRoot,
@@ -548,6 +550,11 @@ class AppVideoSubtitleService {
   /// 证据来源（测试注入）；null = 生产实现 [_defaultEvidenceSource]。
   final SubtitleEvidenceSource? Function(AppVideoSubtitleTarget target)?
   _evidenceSource;
+
+  /// 歌词补齐的查词后端装配（生产 [buildSubtitleLyricsFinder]：LRCLIB + 配了联网搜索时
+  /// 的网页搜索）。每次运行按当时的「设置 › AI › 联网搜索」现建。
+  final SubtitleLyricsFinder Function({WebSearchClient? webSearch})
+  _lyricsFinder;
   final int Function() _nowMs;
 
   /// 生产证据来源：视频旁 / 内嵌字幕之外，再加这一集在库里登记的导入字幕（手动导入、
@@ -1114,7 +1121,7 @@ class AppVideoSubtitleService {
         // 歌词补齐要 AI 认歌 / 对齐：没开 AI 不装。
         lyricsFinder: aiConfig == null
             ? null
-            : buildSubtitleLyricsFinder(webSearch: search),
+            : _lyricsFinder(webSearch: search),
       );
       final VideoSubtitlePipelineResult result = await pipeline.run(
         videoPaths: videoPaths,

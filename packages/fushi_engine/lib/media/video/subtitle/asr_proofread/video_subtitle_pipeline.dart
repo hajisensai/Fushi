@@ -291,6 +291,10 @@ Future<void> resetVideoSubtitleJobFrom(
 /// 管线写字幕时在 `state.json` 里记下的作者标记。
 const String kVideoSubtitlePipelineWriter = 'fushi-video-subtitle-pipeline';
 
+/// 证据收集规则的版本，进 `evidence.json` 的缓存键：收集规则改了（例如 v2 起时间轴没
+/// 对上的外挂轨不再收），旧缓存要作废重收。
+const int kSubtitleEvidenceCollectVersion = 2;
+
 /// 视频字幕管线。
 class VideoSubtitlePipeline {
   VideoSubtitlePipeline({
@@ -361,6 +365,17 @@ class VideoSubtitlePipeline {
 
   Directory jobDirFor(String videoPath) =>
       Directory(p.join(jobsRoot.path, videoSubtitleJobId(videoPath)));
+
+  /// [path] 是不是本管线的产物（不能当证据 / 样式参考读回来，否则上次的识别错误会被
+  /// 当成人工字幕自我强化）：
+  /// * 内容仍是本管线上次写进去的那份（[_JobState.wrote]，哈希对得上）——路径曾是导出、
+  ///   但已被用户改过 / 换成别的字幕的，是别人的文件，照常用；
+  /// * `.asr` 退路名（[asrSubtitlePathFor] / [asrStyledSubtitlePathFor]）只有本管线会写，
+  ///   任务目录被清掉、换了 jobsRoot 也一律认作产物。
+  bool _isOwnOutput(String videoPath, _JobState state, String path) =>
+      state.wrote(path) ||
+      p.equals(path, asrSubtitlePathFor(videoPath)) ||
+      p.equals(path, asrStyledSubtitlePathFor(videoPath));
 
   /// 跑 [videoPaths]（单集传一个；整季传全部并置 [wholeSeason]）。
   ///
@@ -889,13 +904,13 @@ class VideoSubtitlePipeline {
   }) async {
     final SubtitleEvidenceSource? source = evidence;
     if (source == null) return const <SubtitleEvidenceTrack>[];
-    bool own(String path) =>
-        state.exports.keys.any((String o) => p.equals(o, path));
+    bool own(String path) => _isOwnOutput(video, state, path);
     final File cache = File(p.join(dir.path, VideoSubtitleJobFiles.evidence));
     try {
       final String key = sha1
           .convert(
             utf8.encode(
+              'v$kSubtitleEvidenceCollectVersion\n'
               '${recognizer.id}\n$_targetLanguage\n'
               '${await source.sourceKey(video, isOwnOutput: own)}',
             ),
@@ -977,9 +992,8 @@ class VideoSubtitlePipeline {
     if (load == null) return null;
     final AssStyleReference? reference = await load(
       e.video,
-      // 只排除本管线写过的文件；用户自己放的 `.ja.ass` 照样能当参考。
-      isOwnOutput: (String path) =>
-          e.state.exports.keys.any((String own) => p.equals(own, path)),
+      // 只排除本管线的产物；用户自己放的（或改过本管线输出的）`.ja.ass` 照样能当参考。
+      isOwnOutput: (String path) => _isOwnOutput(e.video, e.state, path),
     );
     if (reference == null) return null;
     final String target = styledSubtitlePathFor(e.video);

@@ -81,14 +81,15 @@ class SubtitleEvidenceCue {
   };
 }
 
-/// 一条证据轨。
+/// 一条证据轨。时间轴一律可信（与视频同步）：内嵌轨与视频同容器；外挂轨只有按识别稿
+/// 对齐成功（`autoApply`）的才会被收集器收进来（`subtitle_evidence_loader.dart`），
+/// 所以下游可以直接按时间取行。
 class SubtitleEvidenceTrack {
   const SubtitleEvidenceTrack({
     required this.label,
     required this.kind,
     required this.cues,
     this.language,
-    this.synced = false,
   });
 
   factory SubtitleEvidenceTrack.fromJson(Map<String, Object?> json) =>
@@ -98,7 +99,6 @@ class SubtitleEvidenceTrack {
             SubtitleEvidenceKind.fromName(json['kind']) ??
             SubtitleEvidenceKind.text,
         language: json['language'] as String?,
-        synced: json['synced'] == true,
         cues: <SubtitleEvidenceCue>[
           for (final Object? c
               in (json['cues'] as List<Object?>? ?? const <Object?>[]))
@@ -114,9 +114,6 @@ class SubtitleEvidenceTrack {
   /// 归一化的语言（`ja` / `en` / `zh` / `ko` …）；判不出为 null。
   final String? language;
 
-  /// 是否已按识别稿对过时间轴（外挂文件；内嵌轨与视频同容器，本来就同步）。
-  final bool synced;
-
   /// 按开始时间升序。
   final List<SubtitleEvidenceCue> cues;
 
@@ -128,7 +125,6 @@ class SubtitleEvidenceTrack {
     'label': label,
     'kind': kind.name,
     if (language != null) 'language': language,
-    if (synced) 'synced': true,
     'cues': <Map<String, Object?>>[
       for (final SubtitleEvidenceCue c in cues) c.toJson(),
     ],

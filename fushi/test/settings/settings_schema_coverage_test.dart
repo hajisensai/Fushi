@@ -1732,6 +1732,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'ai/TVmaze':
       'test/settings/ai_web_knowledge_settings_test.dart + '
       'test/ai/web_knowledge_test.dart',
+  // 联网搜索后端（SearXNG / Brave）：生效点是字幕生成装配歌词补齐的查词后端（有可用
+  // 配置时加 WebSearchSubtitleLyricsFinder），harness 里没有字幕管线。生效测试从设置项
+  // 的写入助手一路走到服务交给管线的 lyricsFinder；偏好读写与客户端（含抓页 SSRF 防护）
+  // 各有窄测试。
+  'ai/Search backend':
+      'test/media/video/subtitle/video_subtitle_web_search_setting_effect_test.dart + '
+      'test/ai/ai_web_search_prefs_test.dart + '
+      '../packages/fushi_engine/test/ai/web_search_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /

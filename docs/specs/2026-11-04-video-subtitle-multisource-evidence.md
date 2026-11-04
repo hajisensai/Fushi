@@ -35,7 +35,8 @@
 ## 1. 证据（`subtitle_evidence.dart`，纯函数）
 
 - `SubtitleEvidenceTrack`：`label`、`language`（`ja` / `en` / `zh` / `ko` / … / null）、`kind`
-  （`text` 人工字幕 / `ocr` 图形字幕识别）、`cues`、`synced`（是否经过对时间轴）。
+  （`text` 人工字幕 / `ocr` 图形字幕识别）、`cues`。证据轨的时间轴一律可信（见 §2「对时间轴」），
+  下游直接按时间取行。
 - `SubtitleEvidenceCue`：`startMs` / `endMs` / `text` / `role`（`dialogue` / `sign` / `song`）。
   - ASS：带 `\pos` `\move` `\clip` 的事件、`\p` 绘图 → `sign`；样式名 / Name / Effect 命中
     OP / ED / song / 歌 / insert / karaoke，或正文带 `\k` 卡拉 OK 标签 → `song`。
@@ -52,13 +53,19 @@
   （`.sup` / `.idx+.sub`）走 OCR 端口。
 - 内嵌：`probeEmbeddedSubtitleTracks` 的文字轨（`extractEmbeddedSubtitleTrackFile`）与图形轨
   （OCR 端口）。网络路径不 demux 整片（同样式参考的规矩）。
-- 排除本管线自己的产物（`isOwnOutput`）。
+- 排除本管线自己的产物（`isOwnOutput`）：内容仍是本管线上次写进去的那份（`state.json`
+  `exports` 的哈希对得上），或是只有本管线会写的 `.asr` 退路名（`<视频名>.<后缀>.asr.srt` /
+  `.asr.ass`，任务目录被清掉也认得出）。路径曾是导出、内容已被换掉的（用户改过 / 换成别的
+  字幕）照常当证据。
 - **OCR 端口** `SubtitleGraphicTrackRecognizer`：引擎不能用 Flutter OCR，由宿主注入（app 用现有
   整轨图形字幕 OCR；无头服务端暂不注入 = 跳过图形轨）。
 - **对时间轴**：内嵌轨与视频同一容器，视为已同步；外挂文件把识别稿的开始时刻当参考轨，
-  调上游 `decideSubtitleSync` → `retimeSubtitleBytes`（不在本仓写新对齐算法）。判不出可靠
-  偏移的保持原样。
-- 缓存：`<任务目录>/evidence.json`，键 = 各来源（路径 + 字节数 + mtime）+ 识别器 id 的指纹。
+  调上游 `decideSubtitleSync` → `retimeSubtitleBytes`（不在本仓写新对齐算法）。**只收判
+  `autoApply` 的外挂轨**（按对齐结果改写时间）；`needsConfirmation` / `refused`、识别稿不足
+  `kMinReferenceCues` 行判不了、或字幕读不出可对齐的行，整条丢掉（只记诊断日志）——缺口补齐、
+  校对的同时段原文、歌词段检测都按时间取行，时间轴不可信的轨会把别处的台词插进字幕稿。
+- 缓存：`<任务目录>/evidence.json`，键 = 收集规则版本 + 各来源（路径 + 字节数 + mtime）+
+  识别器 id 的指纹（收集规则改了，旧缓存作废）。
 
 ## 3. 缺口补齐（`subtitle_evidence_fusion.dart`）
 

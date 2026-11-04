@@ -57,7 +57,7 @@ class FakeVideoSubtitleSettings implements AppVideoSubtitleSettings {
   List<WebKnowledgeSite> get webKnowledgeSites => const <WebKnowledgeSite>[];
 
   @override
-  WebSearchConfig? get webSearch => null;
+  WebSearchConfig? webSearch;
 }
 
 class MemoryGlossaryStore implements SubtitleGlossaryStore {
