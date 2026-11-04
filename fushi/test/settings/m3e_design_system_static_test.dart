@@ -1530,7 +1530,7 @@ class AnotherPopupPart {
         'BorderRadius.circular(',
       },
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
-          <String>{'surfaceContainerHighest', 'fontSize:'},
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
       'lib/src/pages/implementations/video_fushi/episode.part.dart': <String>{
