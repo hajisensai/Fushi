@@ -171,9 +171,19 @@ fn check(user: u32, weights_file: &str, prefix: &str, chunk: usize) -> f32 {
         for (rating, p) in heads.rating_probabilities().iter().enumerate() {
             compare("p_rating", row, *p, e("p_rating")[row * 4 + rating]);
         }
-        compare("p_curve", row, p_curve(heads, v.label_seconds[row]), e("p_curve")[row]);
+        compare(
+            "p_curve",
+            row,
+            p_curve(heads, v.label_seconds[row]),
+            e("p_curve")[row],
+        );
         for (i, &t) in v.sweep.iter().enumerate() {
-            compare("p_curve_sweep", row, p_curve(heads, t), e("p_curve_sweep")[row * 6 + i]);
+            compare(
+                "p_curve_sweep",
+                row,
+                p_curve(heads, t),
+                e("p_curve_sweep")[row * 6 + i],
+            );
         }
     }
     assert!(v.has_label.iter().any(|&l| l == 1));
@@ -225,7 +235,11 @@ fn matches_reference_int8_weights() {
 fn chunking_does_not_change_results() {
     let v = vectors(4676);
     let model = small_model("weights.int8.bin");
-    for precision in [StatePrecision::F32, StatePrecision::Int8, StatePrecision::Int4] {
+    for precision in [
+        StatePrecision::F32,
+        StatePrecision::Int8,
+        StatePrecision::Int4,
+    ] {
         let run = |chunk: usize| {
             let mut runtime = SmallInference::new(&model, precision);
             runtime.run_prepared_rows(&v.features, &v.keys, &v.commit, chunk)

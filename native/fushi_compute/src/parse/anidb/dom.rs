@@ -17,7 +17,7 @@
 //! string_units × u16  名字与属性值
 //! ```
 
-use super::xml::{decode_entities, parse_event, Event, Step};
+use super::xml::{Event, Step, decode_entities, parse_event};
 use crate::parse::title_score::is_regex_whitespace;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,7 +130,7 @@ pub fn parse_dom(buf: &[u16]) -> Result<Vec<u8>, DomError> {
                 return Err(DomError::Parser {
                     message: fail.msg.to_string(),
                     position: fail.pos,
-                })
+                });
             }
         };
         let start = pos;
@@ -201,7 +201,7 @@ pub fn parse_dom(buf: &[u16]) -> Result<Vec<u8>, DomError> {
                         return Err(DomError::TagUnexpected {
                             actual,
                             position: start,
-                        })
+                        });
                     }
                     Some(&top) => {
                         let expected = name_of(&strings, &elements[top as usize]);

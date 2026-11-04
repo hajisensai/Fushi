@@ -4,7 +4,7 @@
 
 use serde_json::json;
 
-use super::tests::{legacy_library, projection, Bucket, Device, DAY, P};
+use super::tests::{Bucket, DAY, Device, P, legacy_library, projection};
 
 const T0: i64 = 1_700_000_000_000;
 
@@ -41,7 +41,9 @@ fn legacy_extra(d: &Device) {
 }
 
 fn ops(d: &Device) -> i64 {
-    d.rows("SELECT COUNT(*) FROM sync2_ops")[1][0].parse().unwrap()
+    d.rows("SELECT COUNT(*) FROM sync2_ops")[1][0]
+        .parse()
+        .unwrap()
 }
 
 /// A 迁移并上传；B 有同一份旧库外加三条独有的旧行，先收 A 的操作再迁移：只包那三条。两边与全新设备收敛，
@@ -55,25 +57,43 @@ fn a_second_device_migrating_the_same_legacy_library_wraps_only_what_is_missing(
     legacy_extra(&b);
     let mut bucket = Bucket::default();
     let now = T0 + 10 * DAY;
-    assert_eq!(a.core.sync2_migrate(P, now, None).unwrap()["ops"], json!(10));
+    assert_eq!(
+        a.core.sync2_migrate(P, now, None).unwrap()["ops"],
+        json!(10)
+    );
     a.sync(&mut bucket, "loc", now);
 
     // B 先收一轮（迁移前），再迁移：A 已经代表的 10 条一条不包。
     b.sync(&mut bucket, "loc", now + 1);
     let m = b.core.sync2_migrate(P, now + 2, None).unwrap();
     assert_eq!(m["done"], json!(true));
-    assert_eq!(m["ops"], json!(3), "only the rows no device has wrapped yet: {m}");
+    assert_eq!(
+        m["ops"],
+        json!(3),
+        "only the rows no device has wrapped yet: {m}"
+    );
     // 再打开一次不会再包（已迁移）。
-    assert_eq!(b.core.sync2_migrate(P, now + 3, None).unwrap()["ops"], json!(0));
+    assert_eq!(
+        b.core.sync2_migrate(P, now + 3, None).unwrap()["ops"],
+        json!(0)
+    );
 
     for k in 0..2 {
         b.sync(&mut bucket, "loc", now + 10 + k);
         a.sync(&mut bucket, "loc", now + 20 + k);
     }
-    assert_eq!(ops(&a), 13, "every legacy row is one op, not one per migrating device");
+    assert_eq!(
+        ops(&a),
+        13,
+        "every legacy row is one op, not one per migrating device"
+    );
     assert_eq!(ops(&b), 13);
     assert_eq!(projection(&a), projection(&b));
-    assert_eq!(a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'desc'")[1][0], "only here");
+    assert_eq!(
+        a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'desc'")[1]
+            [0],
+        "only here"
+    );
 
     let c = Device::new("dedup-c");
     c.sync(&mut bucket, "loc", now + 30);
@@ -94,11 +114,17 @@ fn ops_received_between_migration_batches_are_not_wrapped_again() {
     b.core
         .writer()
         .unwrap()
-        .execute("UPDATE srs_entities SET created_at = 0 WHERE id = srs_id('N9')", [])
+        .execute(
+            "UPDATE srs_entities SET created_at = 0 WHERE id = srs_id('N9')",
+            [],
+        )
         .unwrap();
     let mut bucket = Bucket::default();
     let now = T0 + 10 * DAY;
-    assert_eq!(a.core.sync2_migrate(P, now, None).unwrap()["ops"], json!(10));
+    assert_eq!(
+        a.core.sync2_migrate(P, now, None).unwrap()["ops"],
+        json!(10)
+    );
     a.sync(&mut bucket, "loc", now);
 
     let first = b.core.sync2_migrate(P, now + 1, Some(1)).unwrap();
@@ -113,13 +139,20 @@ fn ops_received_between_migration_batches_are_not_wrapped_again() {
             break;
         }
     }
-    assert_eq!(wrapped, 3, "only B's own three legacy rows, never A's ten again");
+    assert_eq!(
+        wrapped, 3,
+        "only B's own three legacy rows, never A's ten again"
+    );
 
     for k in 0..2 {
         b.sync(&mut bucket, "loc", now + 10 + k);
         a.sync(&mut bucket, "loc", now + 20 + k);
     }
-    assert_eq!(ops(&a), 13, "every legacy row is one op, not one per migrating device");
+    assert_eq!(
+        ops(&a),
+        13,
+        "every legacy row is one op, not one per migrating device"
+    );
     assert_eq!(ops(&b), 13);
     assert_eq!(projection(&a), projection(&b));
 }
@@ -154,8 +187,20 @@ fn legacy_dots_lists_every_legacy_edit_in_the_op_log_including_dominated_ones() 
     a.core.sync2_migrate(P, T0 + 10 * DAY, None).unwrap();
     // 本机再改一次 desc：旧的 seq 3 被支配，投影里没有了，操作日志里还在。
     let deck = super::config::default_deck_id(P);
-    a.apply(T0 + 11 * DAY, vec![super::tests::edit("deck", &deck, "desc", json!("newer"))]);
-    assert!(a.rows("SELECT 1 FROM srs_field_edits WHERE srs_idt(writer_id) = 'old' AND seq = 3").len() == 1, "dominated: gone from the projection");
+    a.apply(
+        T0 + 11 * DAY,
+        vec![super::tests::edit("deck", &deck, "desc", json!("newer"))],
+    );
+    assert!(
+        a.rows("SELECT 1 FROM srs_field_edits WHERE srs_idt(writer_id) = 'old' AND seq = 3")
+            .len()
+            == 1,
+        "dominated: gone from the projection"
+    );
     let dots = a.core.sync2_legacy_dots(P).unwrap();
-    assert_eq!(dots["writers"]["old"], json!([1, 1, 0, 2, 2, 0, 3, 3, 0]), "{dots}");
+    assert_eq!(
+        dots["writers"]["old"],
+        json!([1, 1, 0, 2, 2, 0, 3, 3, 0]),
+        "{dots}"
+    );
 }

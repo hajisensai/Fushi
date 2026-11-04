@@ -46,7 +46,9 @@ pub unsafe extern "C" fn ffm_lyrics_parse(
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        let Some(data) = slice_arg(data_ptr, data_len) else { return status::NULL_ARGUMENT };
+        let Some(data) = slice_arg(data_ptr, data_len) else {
+            return status::NULL_ARGUMENT;
+        };
         let hint = match str_arg(hint_ptr, hint_len) {
             Ok(h) => h,
             Err(code) => return code,
@@ -141,15 +143,24 @@ pub unsafe extern "C" fn ffm_lyrics_merge(
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        let (Some(p), Some(s)) = (slice_arg(primary_ptr, primary_len), slice_arg(secondary_ptr, secondary_len)) else {
+        let (Some(p), Some(s)) = (
+            slice_arg(primary_ptr, primary_len),
+            slice_arg(secondary_ptr, secondary_len),
+        ) else {
             return status::NULL_ARGUMENT;
         };
         let lang = match str_arg(lang_ptr, lang_len) {
             Ok(l) => l,
             Err(code) => return code,
         };
-        let (Some(p), Some(s)) = (wire::decode(p), wire::decode(s)) else { return status::BAD_INPUT };
-        hand_over_bytes(wire::encode(&super::merge::merge_translation(&p, &s, lang)), out_ptr, out_len);
+        let (Some(p), Some(s)) = (wire::decode(p), wire::decode(s)) else {
+            return status::BAD_INPUT;
+        };
+        hand_over_bytes(
+            wire::encode(&super::merge::merge_translation(&p, &s, lang)),
+            out_ptr,
+            out_len,
+        );
         status::OK
     })
 }
@@ -169,12 +180,16 @@ pub unsafe extern "C" fn ffm_lyrics_export(
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        let Some(tb) = slice_arg(timeline_ptr, timeline_len) else { return status::NULL_ARGUMENT };
+        let Some(tb) = slice_arg(timeline_ptr, timeline_len) else {
+            return status::NULL_ARGUMENT;
+        };
         let format = match str_arg(format_ptr, format_len) {
             Ok(f) => f,
             Err(code) => return code,
         };
-        let Some(t) = wire::decode(tb) else { return status::BAD_INPUT };
+        let Some(t) = wire::decode(tb) else {
+            return status::BAD_INPUT;
+        };
         let out = match format.to_ascii_lowercase().as_str() {
             "ttml" => super::export::to_ttml(&t),
             "lrc" => super::export::to_lrc(&t),
@@ -201,7 +216,9 @@ pub unsafe extern "C" fn ffm_lyrics_ass_raw(
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        let Some(data) = slice_arg(data_ptr, data_len) else { return status::NULL_ARGUMENT };
+        let Some(data) = slice_arg(data_ptr, data_len) else {
+            return status::NULL_ARGUMENT;
+        };
         let raw = super::ass::prepare_raw(data);
         let mut out = Vec::with_capacity(8 + raw.text.len());
         out.extend_from_slice(&raw.play_res_x.to_le_bytes());

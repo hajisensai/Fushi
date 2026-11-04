@@ -3,22 +3,30 @@
 //! 收完再全量重建缓存」逐行相同；切片期间只记待刷新、不写缓存行；收尾前被打断（会话丢掉）时，下一轮 `plan`
 //! 报 `finishPending`，再开会话收尾就把剩下的刷完。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{deck_entity, edit, review, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, deck_entity, edit, review};
 
 const T0: i64 = 1_700_000_000_000;
 const DAY: i64 = 86_400_000;
 
 fn heads(b: &Bucket) -> Vec<Vec<u8>> {
     b.0.iter()
-        .filter(|(k, _)| k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some())
+        .filter(|(k, _)| {
+            k.rsplit('/')
+                .next()
+                .and_then(crate::sync2::segment::parse_head_file_name)
+                .is_some()
+        })
         .map(|(_, v)| v.clone())
         .collect()
 }
 
 fn segs(b: &Bucket) -> Vec<Vec<u8>> {
-    b.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect()
+    b.0.iter()
+        .filter(|(k, _)| k.contains("/seg-"))
+        .map(|(_, v)| v.clone())
+        .collect()
 }
 
 /// 第 [n] 条笔记的 ID（卡 ID 由它派生，要是 UUID）。
@@ -60,13 +68,29 @@ fn world(notes: usize, reviews: usize) -> (Bucket, String) {
                 }
                 for r in 0..reviews as i64 {
                     let at = T0 + (wave * reviews as i64 + r) * DAY + i as i64 * 3_600_000;
-                    let rtype = if wave == 0 && r == 0 { "learn" } else { "review" };
+                    let rtype = if wave == 0 && r == 0 {
+                        "learn"
+                    } else {
+                        "review"
+                    };
                     let card = crate::registers::card_id(&note, "t1", 0).unwrap();
-                    let e = review(&format!("w{wave}d{i}n{n}r{r}"), &card, at, 1 + (r % 4), rtype);
+                    let e = review(
+                        &format!("w{wave}d{i}n{n}r{r}"),
+                        &card,
+                        at,
+                        1 + (r % 4),
+                        rtype,
+                    );
                     input.push(json!({"e": e, "note": note}));
                 }
             }
-            d.core.sync2_apply_local(P, T0 + 40 * DAY + wave * DAY, &Value::Array(input).to_string()).unwrap();
+            d.core
+                .sync2_apply_local(
+                    P,
+                    T0 + 40 * DAY + wave * DAY,
+                    &Value::Array(input).to_string(),
+                )
+                .unwrap();
         }
         for (i, d) in devs.iter().enumerate() {
             d.sync(&mut bucket, "loc", T0 + 41 * DAY + wave * DAY + i as i64);
@@ -89,13 +113,17 @@ fn caches(d: &Device) -> Vec<Vec<Vec<String>>> {
     ["srs_notes_cache", "srs_cards_cache", "srs_stat_reviews"]
         .iter()
         .map(|t| {
-            let cols: Vec<String> = d.rows(&format!("SELECT name FROM pragma_table_info('{t}') WHERE name != 'updated_at' ORDER BY cid"))
-                [1..]
+            let cols: Vec<String> = d.rows(&format!(
+                "SELECT name FROM pragma_table_info('{t}') WHERE name != 'updated_at' ORDER BY cid"
+            ))[1..]
                 .iter()
                 .map(|r| r[0].clone())
                 .collect();
             let sel: Vec<String> = cols.iter().map(|c| format!("quote({c})")).collect();
-            d.rows(&format!("SELECT {} FROM {t} ORDER BY 1, 2, 3", sel.join(", ")))
+            d.rows(&format!(
+                "SELECT {} FROM {t} ORDER BY 1, 2, 3",
+                sel.join(", ")
+            ))
         })
         .collect()
 }
@@ -114,17 +142,36 @@ fn join_sliced(d: &Device, deck: &str, bucket: &Bucket, batch: usize, slice: usi
     for chunk in segs(bucket).chunks(batch.max(1)) {
         cmd(d, deck, json!({"op": "ingest_prepare"}), chunk.to_vec());
         loop {
-            let r = cmd(d, deck, json!({"op": "ingest_commit", "now": now, "sliceOps": slice}), vec![]);
-            assert_eq!(r["cache"], json!({"notes": [], "cards": [], "removed": []}), "a slice must not refresh caches: {r}");
+            let r = cmd(
+                d,
+                deck,
+                json!({"op": "ingest_commit", "now": now, "sliceOps": slice}),
+                vec![],
+            );
+            assert_eq!(
+                r["cache"],
+                json!({"notes": [], "cards": [], "removed": []}),
+                "a slice must not refresh caches: {r}"
+            );
             if r["more"] != json!(true) {
                 break;
             }
         }
     }
-    assert_eq!(count(d, "SELECT COUNT(*) FROM srs_cards_cache"), 0, "no cache rows before the session finishes");
+    assert_eq!(
+        count(d, "SELECT COUNT(*) FROM srs_cards_cache"),
+        0,
+        "no cache rows before the session finishes"
+    );
     // 逐条投递：各片记下待刷新；新设备收段通道：各片只追加，待刷新在收尾折叠时才记。
-    assert!(count(d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0 || count(d, "SELECT COUNT(*) FROM sync2_boot") == 1);
-    assert!(hold(d), "a session keeps the writer page cache between slices");
+    assert!(
+        count(d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0
+            || count(d, "SELECT COUNT(*) FROM sync2_boot") == 1
+    );
+    assert!(
+        hold(d),
+        "a session keeps the writer page cache between slices"
+    );
     if finish {
         finish_session(d, deck, now);
     }
@@ -132,16 +179,29 @@ fn join_sliced(d: &Device, deck: &str, bucket: &Bucket, batch: usize, slice: usi
 
 /// 收尾：`ingest_finish`，`more` 就接着 `replay_pending`（生产 Dart `sync2IngestFinish`），每块 [CACHE_PENDING_CHUNK]。
 fn finish_session(d: &Device, deck: &str, now: i64) -> usize {
-    let mut r = cmd(d, deck, json!({"op": "ingest_finish", "now": now, "sliceOps": 1}), vec![]);
+    let mut r = cmd(
+        d,
+        deck,
+        json!({"op": "ingest_finish", "now": now, "sliceOps": 1}),
+        vec![],
+    );
     let mut calls = 1;
     while r["more"] == json!(true) {
-        r = cmd(d, deck, json!({"op": "replay_pending", "sliceOps": 1}), vec![]);
+        r = cmd(
+            d,
+            deck,
+            json!({"op": "replay_pending", "sliceOps": 1}),
+            vec![],
+        );
         calls += 1;
         assert!(calls < 10_000, "finish never converges");
     }
     assert_eq!(count(d, "SELECT COUNT(*) FROM sync2_cache_pending"), 0);
     assert_eq!(count(d, "SELECT COUNT(*) FROM sync2_replay_pending"), 0);
-    assert!(!hold(d), "a finished session trims the writer page cache again");
+    assert!(
+        !hold(d),
+        "a finished session trims the writer page cache again"
+    );
     calls
 }
 
@@ -155,7 +215,9 @@ fn in_mode<T>(sequential: bool, f: impl FnOnce() -> T) -> T {
 }
 
 fn hold(d: &Device) -> bool {
-    d.core.ingest_holds_cache.load(std::sync::atomic::Ordering::Relaxed)
+    d.core
+        .ingest_holds_cache
+        .load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// 参照：一次收完（不切片），再从事件全量重建缓存。
@@ -184,8 +246,15 @@ fn deferred_cache_refresh_matches_a_full_rebuild() {
                 join_sliced(&d, &deck, &bucket, batch, slice, false);
                 finish_session(&d, &deck, T0 + 50 * DAY)
             });
-            assert!(calls > 1, "the drain must span several chunks (calls={calls} sequential={sequential})");
-            assert_eq!(caches(&d), caches(&reference), "batch={batch} slice={slice} sequential={sequential}");
+            assert!(
+                calls > 1,
+                "the drain must span several chunks (calls={calls} sequential={sequential})"
+            );
+            assert_eq!(
+                caches(&d),
+                caches(&reference),
+                "batch={batch} slice={slice} sequential={sequential}"
+            );
         }
     }
 }
@@ -227,11 +296,18 @@ fn rebuild_clears_the_pending_set() {
 
 /// 每台设备 gen 最大的 head（同 tests.rs `Device::sync`）。
 fn top_heads(b: &Bucket) -> Vec<Vec<u8>> {
-    let mut by_dev: std::collections::BTreeMap<String, Vec<(u64, Vec<u8>)>> = std::collections::BTreeMap::new();
+    let mut by_dev: std::collections::BTreeMap<String, Vec<(u64, Vec<u8>)>> =
+        std::collections::BTreeMap::new();
     for (path, bytes) in &b.0 {
         let parts: Vec<&str> = path.split('/').collect();
-        if let Some(g) = parts.last().and_then(|p| crate::sync2::segment::parse_head_file_name(p)) {
-            by_dev.entry(parts[parts.len() - 2].to_owned()).or_default().push((g, bytes.clone()));
+        if let Some(g) = parts
+            .last()
+            .and_then(|p| crate::sync2::segment::parse_head_file_name(p))
+        {
+            by_dev
+                .entry(parts[parts.len() - 2].to_owned())
+                .or_default()
+                .push((g, bytes.clone()));
         }
     }
     let mut out = Vec::new();
@@ -261,17 +337,31 @@ fn catch_up_refreshes_successors_of_cards_refreshed_through_their_notes() {
     let mut input: Vec<Value> =
         [0, 1, 2, 4, 5, 6].iter().map(|&n| json!({"e": edit("note", &note_id(n), "f/fa", json!(format!("改{n}"))), "note": note_id(n)})).collect();
     input.push(json!({"e": edit("card", &pred, "suspended", json!(true)), "note": note}));
-    w.core.sync2_apply_local(P, now, &Value::Array(input).to_string()).unwrap();
+    w.core
+        .sync2_apply_local(P, now, &Value::Array(input).to_string())
+        .unwrap();
     w.sync(&mut bucket, "loc", now + 1);
     let succ = crate::registers::card_id(&note_id(3), "t1", 0).unwrap();
-    let row = |x: &Device| x.rows(&format!("SELECT * FROM srs_cards_cache WHERE id = srs_id('{succ}')"))[1][1..].to_vec();
+    let row = |x: &Device| {
+        x.rows(&format!(
+            "SELECT * FROM srs_cards_cache WHERE id = srs_id('{succ}')"
+        ))[1][1..]
+            .to_vec()
+    };
     let before = row(&d);
 
     let later = now + DAY;
     cmd(&d, &deck, json!({"op": "plan"}), top_heads(&bucket));
     cmd(&d, &deck, json!({"op": "ingest_begin"}), vec![]);
     cmd(&d, &deck, json!({"op": "ingest_prepare"}), segs(&bucket));
-    while cmd(&d, &deck, json!({"op": "ingest_commit", "now": later, "sliceOps": 2}), vec![])["more"] == json!(true) {}
+    while cmd(
+        &d,
+        &deck,
+        json!({"op": "ingest_commit", "now": later, "sliceOps": 2}),
+        vec![],
+    )["more"]
+        == json!(true)
+    {}
     finish_session(&d, &deck, later);
 
     let reference = join_rebuilt(&deck, &bucket);
@@ -291,7 +381,12 @@ fn purging_the_profile_releases_the_held_cache() {
     join_sliced(&d, &deck, &bucket, 1, 4, false);
     d.core.profile_purge(P).unwrap();
     assert!(!hold(&d));
-    assert_eq!(count(&d, "SELECT COUNT(*) FROM sync2_boot") + count(&d, "SELECT COUNT(*) FROM sync2_boot_order"), 0, "the channel goes with the profile");
+    assert_eq!(
+        count(&d, "SELECT COUNT(*) FROM sync2_boot")
+            + count(&d, "SELECT COUNT(*) FROM sync2_boot_order"),
+        0,
+        "the channel goes with the profile"
+    );
 }
 
 /// 会话怎么结束，留着的页缓存就怎么放掉（不靠下一轮碰巧收尾）：Dart 中途收手 / 出错发的 `ingest_end` 放掉会话
@@ -304,7 +399,10 @@ fn ending_an_unfinished_session_releases_the_held_cache() {
     join_sliced(&d, &deck, &bucket, 1, 4, false);
     cmd(&d, &deck, json!({"op": "ingest_end"}), vec![]);
     assert!(!hold(&d), "ingest_end releases the held page cache");
-    let err = d.core.sync2_ingest_batch(P, Vec::new(), None, T0).unwrap_err();
+    let err = d
+        .core
+        .sync2_ingest_batch(P, Vec::new(), None, T0)
+        .unwrap_err();
     assert!(err.contains("no ingest session"), "{err}");
     // 再发一次（已经没有会话）是空操作。
     cmd(&d, &deck, json!({"op": "ingest_end"}), vec![]);
@@ -328,10 +426,15 @@ fn a_session_voided_by_an_error_releases_the_held_cache() {
     cmd(&d, &deck, json!({"op": "ingest_prepare"}), segs(&bucket));
     assert!(hold(&d));
     d.core.sync2_rotate(P, now).unwrap();
-    let req = json!({"op": "ingest_commit", "profile": P, "caches": {"defaultDeck": deck}, "now": now});
-    let err = crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new()).unwrap_err();
+    let req =
+        json!({"op": "ingest_commit", "profile": P, "caches": {"defaultDeck": deck}, "now": now});
+    let err = crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new())
+        .unwrap_err();
     assert!(err.contains("local identity changed"), "{err}");
-    assert!(!hold(&d), "a session voided by an error releases the held page cache");
+    assert!(
+        !hold(&d),
+        "a session voided by an error releases the held page cache"
+    );
 }
 
 /// 老设备追积压：本机已有缓存行的卡在投递的那一片里当场刷新（复习队列直接读缓存行，不能按旧的 due 排队到收尾），
@@ -354,7 +457,9 @@ fn catch_up_refreshes_existing_cache_rows_in_the_slice() {
         json!({"e": edit("note", &fresh, "f/fa", json!("新")), "note": fresh}),
         json!({"e": review("late-r2", &fresh_card, now - DAY, 3, "learn"), "note": fresh}),
     ];
-    w.core.sync2_apply_local(P, now, &Value::Array(input).to_string()).unwrap();
+    w.core
+        .sync2_apply_local(P, now, &Value::Array(input).to_string())
+        .unwrap();
     w.sync(&mut bucket, "loc", now + 1);
     let reference = join_rebuilt(&deck, &bucket);
     // 这张卡的缓存行（去掉刷新时刻 `updated_at`）；没有行 = None。
@@ -363,7 +468,12 @@ fn catch_up_refreshes_existing_cache_rows_in_the_slice() {
             .iter()
             .map(|r| format!("quote({})", r[0]))
             .collect();
-        x.rows(&format!("SELECT {} FROM srs_cards_cache WHERE id = srs_id('{id}')", cols.join(", "))).get(1).cloned()
+        x.rows(&format!(
+            "SELECT {} FROM srs_cards_cache WHERE id = srs_id('{id}')",
+            cols.join(", ")
+        ))
+        .get(1)
+        .cloned()
     };
     let before = row(&d, &old_card).expect("the old device has a cache row for the card");
     assert!(!before.contains(&"'late-r1'".to_owned()));
@@ -374,8 +484,20 @@ fn catch_up_refreshes_existing_cache_rows_in_the_slice() {
     cmd(&d, &deck, json!({"op": "ingest_prepare"}), segs(&bucket));
     let mut refreshed = Vec::new();
     loop {
-        let r = cmd(&d, &deck, json!({"op": "ingest_commit", "now": later, "sliceOps": 2}), vec![]);
-        refreshed.extend(r["cache"]["cards"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned));
+        let r = cmd(
+            &d,
+            &deck,
+            json!({"op": "ingest_commit", "now": later, "sliceOps": 2}),
+            vec![],
+        );
+        refreshed.extend(
+            r["cache"]["cards"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned),
+        );
         if r["more"] != json!(true) {
             break;
         }
@@ -384,8 +506,15 @@ fn catch_up_refreshes_existing_cache_rows_in_the_slice() {
     // 定下：这里的测试日志没带真实的调度结果）；新卡还没有缓存行、在待刷新集合里。
     assert!(refreshed.contains(&old_card), "{refreshed:?}");
     let mid = row(&d, &old_card).unwrap();
-    assert!(mid.contains(&"'late-r1'".to_owned()), "an existing cache row is refreshed in the slice: {mid:?}");
-    assert_eq!(row(&d, &fresh_card), None, "a new card waits for the finish");
+    assert!(
+        mid.contains(&"'late-r1'".to_owned()),
+        "an existing cache row is refreshed in the slice: {mid:?}"
+    );
+    assert_eq!(
+        row(&d, &fresh_card),
+        None,
+        "a new card waits for the finish"
+    );
     assert!(count(&d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0);
     finish_session(&d, &deck, later);
     assert_eq!(caches(&d), caches(&reference));

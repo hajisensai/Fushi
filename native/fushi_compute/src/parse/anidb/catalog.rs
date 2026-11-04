@@ -15,12 +15,12 @@ use std::collections::{HashMap, HashSet};
 
 use super::dart_sort::dart_sort;
 use super::xml::{
-    dart_int_try_parse, decode_entities, eq_ascii, local_name, name_prefix, parse_event, Event,
-    RawAttr, Step,
+    Event, RawAttr, Step, dart_int_try_parse, decode_entities, eq_ascii, local_name, name_prefix,
+    parse_event,
 };
 use crate::parse::title_score::{
-    dart_double_compare, dart_to_lower, dart_trim, normalize, push_rune, runes, tokens_of_runes,
-    PreparedQuery,
+    PreparedQuery, dart_double_compare, dart_to_lower, dart_trim, normalize, push_rune, runes,
+    tokens_of_runes,
 };
 
 pub const MAX_ANIME_RECORDS: usize = 100_000;
@@ -309,7 +309,9 @@ fn decode_utf8_chunk(
         Err(e) => {
             if e.error_len().is_some() {
                 let carried = input.len() - bytes.len();
-                return Err(CatalogError::InvalidData(utf8_error_message(input, carried)));
+                return Err(CatalogError::InvalidData(utf8_error_message(
+                    input, carried,
+                )));
             }
             let (head, tail) = input.split_at(e.valid_up_to());
             // SAFETY: valid_up_to 之前是合法 UTF-8。

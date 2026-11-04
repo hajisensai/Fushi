@@ -40,12 +40,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use rusqlite::config::DbConfig;
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
 
 use super::digest::Deltas;
-use super::transport::{defer_cache_refresh, defer_replay, CommitBudget};
-use super::{canonical, snapshots, sql, Touched};
+use super::transport::{CommitBudget, defer_cache_refresh, defer_replay};
+use super::{Touched, canonical, snapshots, sql};
 use crate::store::caches::Dirty;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
@@ -72,7 +72,13 @@ const PHASE_MERGE: i64 = 2;
 const PHASE_ONE_BY_ONE: i64 = 3;
 
 /// 通道的全部表：通道做完时这几张表里这个 profile 的行全删。
-const BOOT_TABLES: [&str; 5] = ["sync2_boot_order", "sync2_boot_complex", "sync2_boot_moves", "sync2_boot_rows", "sync2_boot"];
+const BOOT_TABLES: [&str; 5] = [
+    "sync2_boot_order",
+    "sync2_boot_complex",
+    "sync2_boot_moves",
+    "sync2_boot_rows",
+    "sync2_boot",
+];
 
 /// 逐条阶段一次读多少条。
 const ONE_BY_ONE_CHUNK: i64 = 256;
@@ -86,11 +92,19 @@ struct Boot {
 }
 
 fn boot(c: &Connection, profile: &str) -> Result<Option<Boot>, String> {
-    c.prepare_cached("SELECT phase, next_rank, cursor FROM sync2_boot WHERE profile_uid = srs_id(?1)")
-        .map_err(sql)?
-        .query_row([profile], |r| Ok(Boot { phase: r.get(0)?, next_rank: r.get(1)?, cursor: r.get(2)? }))
-        .optional()
-        .map_err(sql)
+    c.prepare_cached(
+        "SELECT phase, next_rank, cursor FROM sync2_boot WHERE profile_uid = srs_id(?1)",
+    )
+    .map_err(sql)?
+    .query_row([profile], |r| {
+        Ok(Boot {
+            phase: r.get(0)?,
+            next_rank: r.get(1)?,
+            cursor: r.get(2)?,
+        })
+    })
+    .optional()
+    .map_err(sql)
 }
 
 fn set_boot(c: &Connection, profile: &str, b: &Boot) -> Result<(), String> {
@@ -131,7 +145,15 @@ pub(crate) fn begin(w: &Connection, profile: &str) -> Result<bool, String> {
         // [settle] 做完才返回、出错就报错：走到这里只能是有人在上面那次 settle 之后又开了通道。
         Some(_) => Err("sync2 channel: still folding after settle".to_owned()),
         None if fresh(c, profile)? && !forced_off() => {
-            set_boot(c, profile, &Boot { phase: PHASE_APPEND, next_rank: 0, cursor: 0 })?;
+            set_boot(
+                c,
+                profile,
+                &Boot {
+                    phase: PHASE_APPEND,
+                    next_rank: 0,
+                    cursor: 0,
+                },
+            )?;
             Ok(true)
         }
         None => Ok(false),
@@ -158,13 +180,24 @@ impl Append {
     /// 这个 profile 的通道在追加阶段就载入，否则 None（按逐条投递）。
     pub(crate) fn load(c: &Connection, profile: &str) -> Result<Option<Append>, String> {
         Ok(match boot(c, profile)? {
-            Some(b) if b.phase == PHASE_APPEND => Some(Append { next_rank: b.next_rank, deps: HashMap::new(), legacy: BTreeMap::new() }),
+            Some(b) if b.phase == PHASE_APPEND => Some(Append {
+                next_rank: b.next_rank,
+                deps: HashMap::new(),
+                legacy: BTreeMap::new(),
+            }),
             _ => None,
         })
     }
 
     /// 一条已过链与因果校验的远端操作：写进操作日志，记下投递顺序与它的分区（逐条投递的 `insert_op` + `project`）。
-    pub(crate) fn append(&mut self, c: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
+    pub(crate) fn append(
+        &mut self,
+        c: &Connection,
+        profile: &str,
+        op: &Op,
+        chain: &Chain,
+        now: i64,
+    ) -> Result<(), String> {
         let bytes = op.deps.encode();
         let deps = match self.deps.get(&bytes) {
             Some(&d) => d,
@@ -182,7 +215,10 @@ impl Append {
                 }
                 let ent = e.entity.text();
                 let tags = e.kind == EntKind::Note && e.key == "tags";
-                let synthetic = e.legacy.as_ref().is_some_and(|l| super::is_synthetic_writer(&l.writer));
+                let synthetic = e
+                    .legacy
+                    .as_ref()
+                    .is_some_and(|l| super::is_synthetic_writer(&l.writer));
                 if e.key == "deleted" || (synthetic && !tags) {
                     seed(c, profile, e.kind.wire(), &ent)?;
                 }
@@ -209,7 +245,9 @@ impl Append {
                 PART_ONE_BY_ONE
             }
             // 副本骨架（dedup.rs）：旧戳在这里记进闭包（逐条投递的 `project_body` 同一算法），逐条区里不再记。
-            Body::Duplicate { legacy: Some(l), .. } => {
+            Body::Duplicate {
+                legacy: Some(l), ..
+            } => {
                 self.note_legacy(c, profile, &op.id.device, op.id.seq, &l)?;
                 PART_ONE_BY_ONE
             }
@@ -224,17 +262,33 @@ impl Append {
     }
 
     /// [super::note_legacy] 同一算法，行在内存里（[Append::checkpoint] 写回）。
-    fn note_legacy(&mut self, c: &Connection, profile: &str, device: &Id, seq: u64, l: &LegacyStamp) -> Result<(), String> {
+    fn note_legacy(
+        &mut self,
+        c: &Connection,
+        profile: &str,
+        device: &Id,
+        seq: u64,
+        l: &LegacyStamp,
+    ) -> Result<(), String> {
         let mut d = match self.legacy.remove(device) {
             Some(r) => r.d,
-            None => super::stored_legacy(c, profile, device)?.map(|(_, d)| d).unwrap_or_default(),
+            None => super::stored_legacy(c, profile, device)?
+                .map(|(_, d)| d)
+                .unwrap_or_default(),
         };
         d.merge(&Dvv::parse(&l.ctx_json));
         if !super::is_synthetic_writer(&l.writer) {
             d.add(&l.writer, l.seq);
         }
         d.drop_writers(crate::registers::SYNTHETIC_WRITER_PREFIX);
-        self.legacy.insert(*device, LegacyRow { upto: seq as i64, d, dirty: true });
+        self.legacy.insert(
+            *device,
+            LegacyRow {
+                upto: seq as i64,
+                d,
+                dirty: true,
+            },
+        );
         Ok(())
     }
 
@@ -280,14 +334,20 @@ fn part_of(kind: &str, key: &str) -> i64 {
 /// 收尾推进通道（transport.rs 的 `ingest_finish` / `replay_pending`，以及 [settle]）：追加阶段转入折叠，逐个分区折，
 /// 再按投递顺序逐条投其余的，做到 [budget] 用完（一个分区不切开）。返回（做完了没有, 这一次的投影变化）；投影变化
 /// 要刷新的缓存与要重放的卡已记进待刷新 / 待重放集合，交回的 [Touched] 只给计数（[counts_only]）。没有通道 = 做完了。
-pub(crate) fn advance(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>) -> Result<(bool, Touched), String> {
+pub(crate) fn advance(
+    c: &Connection,
+    profile: &str,
+    budget: &mut CommitBudget<'_>,
+) -> Result<(bool, Touched), String> {
     let mut t = Touched::default();
     let done = advance_into(c, profile, budget, &mut t)?;
     defer_replay(c, profile, &t.cards)?;
     let mut dirty = Dirty::default();
     dirty.notes.extend(std::mem::take(&mut t.marks.notes));
     dirty.cards.extend(std::mem::take(&mut t.marks.cards));
-    dirty.note_types.extend(std::mem::take(&mut t.marks.note_types));
+    dirty
+        .note_types
+        .extend(std::mem::take(&mut t.marks.note_types));
     for (kind, id) in &t.entities_changed {
         match kind.as_str() {
             "note" => dirty.notes.insert(id.clone()),
@@ -302,8 +362,15 @@ pub(crate) fn advance(c: &Connection, profile: &str, budget: &mut CommitBudget<'
     Ok((done, t))
 }
 
-fn advance_into(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>, t: &mut Touched) -> Result<bool, String> {
-    let Some(mut b) = boot(c, profile)? else { return Ok(true) };
+fn advance_into(
+    c: &Connection,
+    profile: &str,
+    budget: &mut CommitBudget<'_>,
+    t: &mut Touched,
+) -> Result<bool, String> {
+    let Some(mut b) = boot(c, profile)? else {
+        return Ok(true);
+    };
     if b.phase == PHASE_APPEND {
         close_append(c, profile)?;
         b.phase = PHASE_FOLD;
@@ -348,7 +415,11 @@ fn advance_into(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>, t:
         )?;
         if batch.is_empty() {
             for table in BOOT_TABLES {
-                c.execute(&format!("DELETE FROM {table} WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)?;
+                c.execute(
+                    &format!("DELETE FROM {table} WHERE profile_uid = srs_id(?1)"),
+                    [profile],
+                )
+                .map_err(sql)?;
             }
             return Ok(true);
         }
@@ -371,24 +442,48 @@ fn advance_into(c: &Connection, profile: &str, budget: &mut CommitBudget<'_>, t:
 
 /// 追加阶段结束：移进复杂牌组的卡也算复杂（一层：卡不会让别的实体变复杂）。
 fn close_append(c: &Connection, profile: &str) -> Result<(), String> {
-    let _moved = c.execute(
-        "INSERT OR IGNORE INTO sync2_boot_complex (profile_uid, kind, entity) \
+    let _moved = c
+        .execute(
+            "INSERT OR IGNORE INTO sync2_boot_complex (profile_uid, kind, entity) \
          SELECT m.profile_uid, 'card', m.card FROM sync2_boot_moves m JOIN sync2_boot_complex x \
            ON x.profile_uid = m.profile_uid AND x.kind = 'deck' AND x.entity = m.deck \
          WHERE m.profile_uid = srs_id(?1)",
+            [profile],
+        )
+        .map_err(sql)?;
+    #[cfg(test)]
+    cover(3, _moved);
+    c.execute(
+        "DELETE FROM sync2_boot_moves WHERE profile_uid = srs_id(?1)",
         [profile],
     )
     .map_err(sql)?;
-    #[cfg(test)]
-    cover(3, _moved);
-    c.execute("DELETE FROM sync2_boot_moves WHERE profile_uid = srs_id(?1)", [profile]).map_err(sql)?;
     Ok(())
 }
 
 /// 按投递顺序读通道里的操作：（序号, 操作, 收到时刻）。收到时刻是追加时那一片的 `now`，逐条投递在同一片里拿它写
 /// 投影（服务器时刻行的 `received_at`、冲突时刻），这里照用。
-fn read_ops(c: &Connection, filter: &str, args: impl rusqlite::Params) -> Result<Vec<(i64, Op, i64)>, String> {
-    type Raw = (i64, Vec<u8>, i64, i64, i64, i64, i64, i64, Vec<u8>, bool, Option<String>, Option<i64>, i64, i64);
+fn read_ops(
+    c: &Connection,
+    filter: &str,
+    args: impl rusqlite::Params,
+) -> Result<Vec<(i64, Op, i64)>, String> {
+    type Raw = (
+        i64,
+        Vec<u8>,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        Vec<u8>,
+        bool,
+        Option<String>,
+        Option<i64>,
+        i64,
+        i64,
+    );
     let raw: Vec<Raw> = c
         .prepare_cached(&format!(
             "SELECT b.rank, o.device, o.seq, o.wall, o.logical, o.deps, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at, o.pz, o.received_at \
@@ -419,7 +514,23 @@ fn read_ops(c: &Connection, filter: &str, args: impl rusqlite::Params) -> Result
         .map_err(sql)?;
     let mut deps: HashMap<i64, Arc<Vv>> = HashMap::new();
     let mut out = Vec::with_capacity(raw.len());
-    for (rank, device, seq, wall, logical, dep, kind, schema, payload, purged, sc, sc_at, pz, received) in raw {
+    for (
+        rank,
+        device,
+        seq,
+        wall,
+        logical,
+        dep,
+        kind,
+        schema,
+        payload,
+        purged,
+        sc,
+        sc_at,
+        pz,
+        received,
+    ) in raw
+    {
         let device = Id(device.try_into().map_err(|_| "bad device".to_string())?);
         let vv = match deps.get(&dep) {
             Some(v) => Arc::clone(v),
@@ -429,15 +540,25 @@ fn read_ops(c: &Connection, filter: &str, args: impl rusqlite::Params) -> Result
                     .map_err(sql)?
                     .query_row([dep], |r| r.get(0))
                     .map_err(sql)?;
-                let v = Arc::new(Vv::read(&mut crate::sync2::codec::Reader::new(&bytes)).map_err(|e| e.to_string())?);
+                let v = Arc::new(
+                    Vv::read(&mut crate::sync2::codec::Reader::new(&bytes))
+                        .map_err(|e| e.to_string())?,
+                );
                 deps.insert(dep, Arc::clone(&v));
                 v
             }
         };
         let payload = snapshots::unpack_payload(c, payload, sc, sc_at, pz)?;
         let op = Op {
-            id: OpId { device, seq: seq as u64 },
-            hlc: Hlc { wall, logical: logical as u32, device },
+            id: OpId {
+                device,
+                seq: seq as u64,
+            },
+            hlc: Hlc {
+                wall,
+                logical: logical as u32,
+                device,
+            },
             deps: vv,
             kind: kind as u16,
             schema: schema as u16,
@@ -514,10 +635,14 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
                 let (eid, v) = super::edit_row(c, profile, op, &e)?;
                 // `sync2_edit_ops`：INSERT OR REPLACE（后到者胜）；实体 → 操作索引：INSERT OR IGNORE。
                 edit_ops.insert(eid.clone(), (dev.clone(), seq));
-                ent_ops.entry((e.kind.wire(), ent.clone(), dev.clone(), seq)).or_insert_with(|| e.key.clone());
+                ent_ops
+                    .entry((e.kind.wire(), ent.clone(), dev.clone(), seq))
+                    .or_insert_with(|| e.key.clone());
                 if e.kind == EntKind::Card && e.key == "deck" {
                     if let Ok(Value::String(d)) = serde_json::from_str::<Value>(&e.value) {
-                        ent_ops.entry(("deck", d, dev.clone(), seq)).or_insert_with(|| "#move".to_owned());
+                        ent_ops
+                            .entry(("deck", d, dev.clone(), seq))
+                            .or_insert_with(|| "#move".to_owned());
                     }
                 }
                 groups.entry((e.kind, ent)).or_default().push(Arrival {
@@ -533,16 +658,24 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
             Body::Log(l) => {
                 let card = l.card.text();
                 let note = l.note.as_ref().map(|n| n.text());
-                if is_complex("card", &card) || note.as_deref().is_some_and(|n| is_complex("note", n)) {
+                if is_complex("card", &card)
+                    || note.as_deref().is_some_and(|n| is_complex("note", n))
+                {
                     deferred.push((*rank, dev, seq));
                     continue;
                 }
                 let lid = l.id.text();
                 let (intent, arg) = super::intent_code(&l.intent);
-                log_meta.entry(lid.clone()).or_insert_with(|| (card.clone(), note.clone(), intent, arg, dev.clone(), seq));
-                ent_ops.entry(("card", card.clone(), dev.clone(), seq)).or_insert_with(|| "#log".to_owned());
+                log_meta
+                    .entry(lid.clone())
+                    .or_insert_with(|| (card.clone(), note.clone(), intent, arg, dev.clone(), seq));
+                ent_ops
+                    .entry(("card", card.clone(), dev.clone(), seq))
+                    .or_insert_with(|| "#log".to_owned());
                 if let Some(n) = &note {
-                    ent_ops.entry(("note", n.clone(), dev.clone(), seq)).or_insert_with(|| "#log".to_owned());
+                    ent_ops
+                        .entry(("note", n.clone(), dev.clone(), seq))
+                        .or_insert_with(|| "#log".to_owned());
                 }
                 if !logs.contains_key(&lid) {
                     let row = super::log_row(profile, op, &l);
@@ -579,13 +712,22 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
                     None => true,
                     Some(old) if old.1 == rec => false,
                     Some(old) => {
-                        t.diagnostics.push(format!("entity {idt}: same id, different content"));
+                        t.diagnostics
+                            .push(format!("entity {idt}: same id, different content"));
                         rec < old.1
                     }
                 };
                 if write {
                     t.marks.entity(kind, &idt);
-                    entities.insert(idt, (kind, rec, canonical(&d), d["createdAt"].as_i64().unwrap_or(0)));
+                    entities.insert(
+                        idt,
+                        (
+                            kind,
+                            rec,
+                            canonical(&d),
+                            d["createdAt"].as_i64().unwrap_or(0),
+                        ),
+                    );
                 }
             }
             // 追加时已分进逐条那一区；表里有就说明分区规则变过，照逐条投。
@@ -603,7 +745,10 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
     let mut deltas = Deltas::default();
     let mut edits: Vec<(String, EntKind, String, String, String, i64, String)> = Vec::new();
     for ((kind, ent), arrs) in groups {
-        let items: Vec<crate::registers::StoredEdit<'_>> = arrs.iter().map(|a| (a.text.as_str(), a.server, None)).collect();
+        let items: Vec<crate::registers::StoredEdit<'_>> = arrs
+            .iter()
+            .map(|a| (a.text.as_str(), a.server, None))
+            .collect();
         let (landed, deleted) = crate::registers::land_stored(&items, 0)?;
         let gone: HashSet<usize> = deleted.iter().flatten().copied().collect();
         for (i, a) in arrs.into_iter().enumerate() {
@@ -638,13 +783,23 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         s.execute(rusqlite::named_params! {"?1": id, "?2": kind.wire(), "?3": payload, "?4": created, "?20": profile}).map_err(sql)?;
         deltas.add(profile, b'e', id, &format!("{}{payload}", kind.wire()));
     }
-    let mut s = stage(c, T_EDIT, 7, "srs_id(?1), ?3, srs_id(?4), ?5, srs_id(?6), ?7, srs_edit_pack(?8, ?1, ?20, ?3, ?4, ?5, ?6, ?7)")?;
+    let mut s = stage(
+        c,
+        T_EDIT,
+        7,
+        "srs_id(?1), ?3, srs_id(?4), ?5, srs_id(?6), ?7, srs_edit_pack(?8, ?1, ?20, ?3, ?4, ?5, ?6, ?7)",
+    )?;
     for (eid, kind, ent, key, writer, seq, text) in &edits {
         s.execute(rusqlite::named_params! {"?1": eid, "?3": kind.wire(), "?4": ent, "?5": key, "?6": writer, "?7": seq, "?8": text, "?20": profile})
             .map_err(sql)?;
         deltas.add(profile, b'f', eid, text);
     }
-    let mut s = stage(c, T_LOG, 9, "srs_id(?1), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, srs_log_pack(?10, ?1, ?20, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")?;
+    let mut s = stage(
+        c,
+        T_LOG,
+        9,
+        "srs_id(?1), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, srs_log_pack(?10, ?1, ?20, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+    )?;
     for (lid, r) in &logs {
         s.execute(rusqlite::named_params! {
             "?1": lid, "?3": r.card, "?4": r.kind, "?5": r.rating, "?6": r.at, "?7": r.rtype, "?8": r.origin, "?9": r.dur, "?10": r.text, "?20": profile
@@ -656,17 +811,24 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
 
     let mut s = stage(c, T_STAMP, 3, "srs_id(?1), ?2, ?3")?;
     for (id, (server, now)) in &stamps {
-        s.execute(rusqlite::named_params! {"?1": id, "?2": server, "?3": now, "?20": profile}).map_err(sql)?;
+        s.execute(rusqlite::named_params! {"?1": id, "?2": server, "?3": now, "?20": profile})
+            .map_err(sql)?;
     }
     let mut s = stage(c, T_EDIT_OP, 3, "srs_id(?1), ?2, ?3")?;
     for (eid, (d, sq)) in &edit_ops {
-        s.execute(rusqlite::named_params! {"?1": eid, "?2": d, "?3": sq, "?20": profile}).map_err(sql)?;
+        s.execute(rusqlite::named_params! {"?1": eid, "?2": d, "?3": sq, "?20": profile})
+            .map_err(sql)?;
     }
     let mut s = stage(c, T_ENT_OP, 5, "?1, srs_id(?2), ?3, ?4, ?5")?;
     for ((kind, ent, d, sq), what) in &ent_ops {
         s.execute(rusqlite::named_params! {"?1": kind, "?2": ent, "?3": d, "?4": sq, "?5": what, "?20": profile}).map_err(sql)?;
     }
-    let mut s = stage(c, T_LOG_META, 7, "srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7")?;
+    let mut s = stage(
+        c,
+        T_LOG_META,
+        7,
+        "srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7",
+    )?;
     for (lid, (card, note, intent, arg, d, sq)) in &log_meta {
         s.execute(rusqlite::named_params! {"?1": lid, "?2": card, "?3": note, "?4": intent, "?5": arg, "?6": d, "?7": sq, "?20": profile})
             .map_err(sql)?;
@@ -675,26 +837,55 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         .prepare_cached("INSERT INTO sync2_boot_order (profile_uid, part, rank, device, seq) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
         .map_err(sql)?;
     for (rank, d, sq) in &deferred {
-        s.execute(params![profile, PART_ONE_BY_ONE, rank, d, sq]).map_err(sql)?;
+        s.execute(params![profile, PART_ONE_BY_ONE, rank, d, sq])
+            .map_err(sql)?;
     }
-    c.execute("DELETE FROM sync2_boot_order WHERE profile_uid = srs_id(?1) AND part = ?2", params![profile, part]).map_err(sql)?;
+    c.execute(
+        "DELETE FROM sync2_boot_order WHERE profile_uid = srs_id(?1) AND part = ?2",
+        params![profile, part],
+    )
+    .map_err(sql)?;
     Ok(n)
 }
 
 /// 折叠写的投影表，按归并顺序（暂存表 `sync2_boot_rows` 的 `tbl` = 下标）：（目标表与列, 暂存的列, 关掉摘要
 /// 触发器写）。暂存的列按 [fold_part] 写入的顺序 `c1, c2, …`。
 const TARGETS: [(&str, &str, bool); 7] = [
-    ("srs_entities (id, profile_uid, kind, payload_json, created_at)", "c1, profile_uid, c2, c3, c4", true),
-    ("srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim)", "c1, profile_uid, c2, c3, c4, c5, c6, c7", true),
+    (
+        "srs_entities (id, profile_uid, kind, payload_json, created_at)",
+        "c1, profile_uid, c2, c3, c4",
+        true,
+    ),
+    (
+        "srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim)",
+        "c1, profile_uid, c2, c3, c4, c5, c6, c7",
+        true,
+    ),
     (
         "srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim)",
         "c1, profile_uid, c2, c3, c4, c5, c6, c7, c8, c9",
         true,
     ),
-    ("srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at)", "c1, profile_uid, NULL, c2, c3", false),
-    ("sync2_edit_ops (edit_id, profile_uid, device, seq)", "c1, profile_uid, c2, c3", false),
-    ("sync2_ent_ops (profile_uid, kind, entity, device, seq, what)", "profile_uid, c1, c2, c3, c4, c5", false),
-    ("sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq)", "c1, profile_uid, c2, c3, c4, c5, c6, c7", false),
+    (
+        "srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at)",
+        "c1, profile_uid, NULL, c2, c3",
+        false,
+    ),
+    (
+        "sync2_edit_ops (edit_id, profile_uid, device, seq)",
+        "c1, profile_uid, c2, c3",
+        false,
+    ),
+    (
+        "sync2_ent_ops (profile_uid, kind, entity, device, seq, what)",
+        "profile_uid, c1, c2, c3, c4, c5",
+        false,
+    ),
+    (
+        "sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq)",
+        "c1, profile_uid, c2, c3, c4, c5, c6, c7",
+        false,
+    ),
 ];
 const T_ENTITY: usize = 0;
 const T_EDIT: usize = 1;
@@ -705,10 +896,18 @@ const T_ENT_OP: usize = 5;
 const T_LOG_META: usize = 6;
 
 /// 暂存一种投影行的插入语句：[n] 列 `c1..cn` 依次取 [values]（profile 是 `?20`：大于各表用到的编号，与它们不撞号）。
-fn stage<'c>(c: &'c Connection, tbl: usize, n: usize, values: &str) -> Result<rusqlite::CachedStatement<'c>, String> {
+fn stage<'c>(
+    c: &'c Connection,
+    tbl: usize,
+    n: usize,
+    values: &str,
+) -> Result<rusqlite::CachedStatement<'c>, String> {
     let cols: Vec<String> = (1..=n).map(|i| format!("c{i}")).collect();
-    c.prepare_cached(&format!("INSERT INTO sync2_boot_rows (profile_uid, tbl, {}) VALUES (srs_id(?20), {tbl}, {values})", cols.join(", ")))
-        .map_err(sql)
+    c.prepare_cached(&format!(
+        "INSERT INTO sync2_boot_rows (profile_uid, tbl, {}) VALUES (srs_id(?20), {tbl}, {values})",
+        cols.join(", ")
+    ))
+    .map_err(sql)
 }
 
 /// 归并一步最多写多少行（一步一个事务）。提交前 WAL 要装下这一步写的全部页：一张大表一次写完，WAL 涨到几百 MB
@@ -731,19 +930,26 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
         .optional()
         .map_err(sql)?;
     let upto = last.unwrap_or(i64::MAX);
-    let q = format!("INSERT INTO {target} SELECT {cols} FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3");
+    let q = format!(
+        "INSERT INTO {target} SELECT {cols} FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3"
+    );
     let n = if digest {
         let triggers = DigestTriggersOff::new(c)?;
-        let n = c.execute(&q, params![profile, tbl as i64, upto]).map_err(sql)?;
+        let n = c
+            .execute(&q, params![profile, tbl as i64, upto])
+            .map_err(sql)?;
         triggers.restore()?;
         n
     } else {
-        c.execute(&q, params![profile, tbl as i64, upto]).map_err(sql)?
+        c.execute(&q, params![profile, tbl as i64, upto])
+            .map_err(sql)?
     };
-    c.prepare_cached("DELETE FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3")
-        .map_err(sql)?
-        .execute(params![profile, tbl as i64, upto])
-        .map_err(sql)?;
+    c.prepare_cached(
+        "DELETE FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3",
+    )
+    .map_err(sql)?
+    .execute(params![profile, tbl as i64, upto])
+    .map_err(sql)?;
     Ok((n, last.is_none()))
 }
 
@@ -759,12 +965,15 @@ struct DigestTriggersOff<'a> {
 
 impl<'a> DigestTriggersOff<'a> {
     fn new(c: &'a Connection) -> Result<Self, String> {
-        c.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false).map_err(sql)?;
+        c.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false)
+            .map_err(sql)?;
         Ok(DigestTriggersOff { c, on: false })
     }
 
     fn restore(mut self) -> Result<(), String> {
-        self.c.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true).map_err(sql)?;
+        self.c
+            .set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)
+            .map_err(sql)?;
         // 打开成功才算恢复：失败时丢弃守卫还会再试一次。
         self.on = true;
         Ok(())
@@ -774,7 +983,9 @@ impl<'a> DigestTriggersOff<'a> {
 impl Drop for DigestTriggersOff<'_> {
     fn drop(&mut self) {
         if !self.on {
-            let _ = self.c.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true);
+            let _ = self
+                .c
+                .set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true);
         }
     }
 }
@@ -810,7 +1021,9 @@ pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
     }
     super::transport::bump_delivery_epoch();
     if !w.is_autocommit() {
-        return super::in_savepoint(w, |c| advance(c, profile, &mut CommitBudget::unlimited()).map(|_| ()));
+        return super::in_savepoint(w, |c| {
+            advance(c, profile, &mut CommitBudget::unlimited()).map(|_| ())
+        });
     }
     loop {
         #[cfg(test)]
@@ -865,15 +1078,19 @@ impl crate::store::SrsCore {
 
     /// 收段会话开了通道（[begin] 返回真）：之后的命令要先看通道。
     pub(crate) fn note_channel_live(&self) {
-        self.channel_live.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.channel_live
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// 已提交的状态里还有没有任何 profile 的通道，按它重置标记。只在写连接不在事务里时清：事务里删掉的通道行可能
     /// 随回滚回来，标记宁可多留（多一次查表）也不能先清。
     pub(crate) fn recheck_channel_live(&self, w: &Connection) -> Result<(), String> {
         if w.is_autocommit() {
-            let any: bool = w.query_row("SELECT EXISTS (SELECT 1 FROM sync2_boot)", [], |r| r.get(0)).map_err(sql)?;
-            self.channel_live.store(any, std::sync::atomic::Ordering::SeqCst);
+            let any: bool = w
+                .query_row("SELECT EXISTS (SELECT 1 FROM sync2_boot)", [], |r| r.get(0))
+                .map_err(sql)?;
+            self.channel_live
+                .store(any, std::sync::atomic::Ordering::SeqCst);
         }
         Ok(())
     }

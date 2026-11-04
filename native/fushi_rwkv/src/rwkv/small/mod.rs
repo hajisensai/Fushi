@@ -18,13 +18,13 @@ mod weights;
 use std::io;
 use std::sync::Arc;
 
+use super::slots::SlotStore;
 use super::{
-    read_runtime_feature_state, SnapshotReader, FeatureState, ReviewInput, RwkvStats, StatePrecision,
-    CARD_FEATURES, ID_PLACEHOLDER,
+    CARD_FEATURES, FeatureState, ID_PLACEHOLDER, ReviewInput, RwkvStats, SnapshotReader,
+    StatePrecision, read_runtime_feature_state,
 };
 pub use model::SmallHeads;
-use model::{Layout, Rows, SmallNet, COMPACT_STREAMS, STREAMS};
-use super::slots::SlotStore;
+use model::{COMPACT_STREAMS, Layout, Rows, STREAMS, SmallNet};
 use weights::Weights;
 
 /// Answered reviews per engine call. A call holds about 2.2 KB of scratch
@@ -123,8 +123,11 @@ pub struct SmallInference {
 
 impl SmallInference {
     pub fn new(model: &SmallModel, precision: StatePrecision) -> Self {
-        let layouts: [Layout; STREAMS] =
-            std::array::from_fn(|stream| model.net.layout(stream, stream_precision(stream, precision)));
+        let layouts: [Layout; STREAMS] = std::array::from_fn(|stream| {
+            model
+                .net
+                .layout(stream, stream_precision(stream, precision))
+        });
         let stores = std::array::from_fn(|stream| SlotStore::new(layouts[stream].slot_len));
         Self {
             model: model.clone(),
@@ -148,7 +151,10 @@ impl SmallInference {
     /// scheduling would read after that answer. `(index, p_imm before the
     /// answer, heads of the answer row)`.
     #[doc(hidden)]
-    pub fn replay_with_curves(&mut self, reviews: Vec<ReviewInput>) -> io::Result<Vec<(usize, f32, SmallHeads)>> {
+    pub fn replay_with_curves(
+        &mut self,
+        reviews: Vec<ReviewInput>,
+    ) -> io::Result<Vec<(usize, f32, SmallHeads)>> {
         let answered: Vec<(usize, ReviewInput)> = reviews
             .into_iter()
             .enumerate()
@@ -275,7 +281,9 @@ impl SmallInference {
         for (stream, prior) in undo.prior.into_iter().enumerate() {
             let id = undo.keys[stream];
             match prior {
-                Some(bytes) => self.stores[stream].get_or_insert(id).copy_from_slice(&bytes),
+                Some(bytes) => self.stores[stream]
+                    .get_or_insert(id)
+                    .copy_from_slice(&bytes),
                 None => {
                     self.stores[stream].take(id);
                 }
@@ -482,10 +490,15 @@ impl SmallInference {
     /// count (u32), states by ascending id (i64 id + slot bytes); then u32
     /// length + the `ARWKVPROCSTATE2` feature cache. Lossless.
     pub fn snapshot(&self) -> Vec<u8> {
-        let state_bytes: usize = self.stores.iter().map(|s| s.len() * (8 + s.slot_len())).sum();
+        let state_bytes: usize = self
+            .stores
+            .iter()
+            .map(|s| s.len() * (8 + s.slot_len()))
+            .sum();
         let feature_len = b"ARWKVPROCSTATE2".len() + self.features.cache_state_len() + 4;
         let mut out = Vec::with_capacity(64 + state_bytes + feature_len);
-        self.write_snapshot(&mut out).expect("writing to a Vec should not fail");
+        self.write_snapshot(&mut out)
+            .expect("writing to a Vec should not fail");
         out
     }
 
@@ -542,13 +555,16 @@ impl SmallInference {
 
     /// Bounded decoder shared with the byte API. Errors preserve the old state.
     pub fn read_snapshot(&mut self, input: &mut impl io::Read, len: u64) -> io::Result<()> {
-        let invalid = |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
+        let invalid =
+            |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
         let mut cursor = SnapshotReader::new(input, len);
         cursor.expect_magic(SNAPSHOT_MAGIC).map_err(|_| {
             invalid("not a small-model RWKV snapshot (a big-model snapshot or damaged bytes)")
         })?;
         if cursor.u8()? != super::precision_code(self.precision) {
-            return Err(invalid("RWKV snapshot was taken with another state precision"));
+            return Err(invalid(
+                "RWKV snapshot was taken with another state precision",
+            ));
         }
         let mut fingerprint = [0u8; 8];
         fingerprint.copy_from_slice(cursor.bytes(8)?);

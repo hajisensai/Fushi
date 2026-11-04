@@ -48,7 +48,8 @@ pub(crate) const CHUNK: u64 = 32 << 20;
 const AUTO_VACUUM_INCREMENTAL: u64 = 2;
 
 fn pragma(c: &Connection, name: &str) -> rusqlite::Result<u64> {
-    c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).map(|v| v.max(0) as u64)
+    c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0))
+        .map(|v| v.max(0) as u64)
 }
 
 fn record(c: &Connection, v: serde_json::Value) {
@@ -80,14 +81,23 @@ pub(crate) fn use_temp_dir(dir: &Path) -> Result<(), String> {
         return if cur == dir {
             Ok(())
         } else {
-            Err(format!("srs temp directory already set to {} (asked for {})", cur.display(), dir.display()))
+            Err(format!(
+                "srs temp directory already set to {} (asked for {})",
+                cur.display(),
+                dir.display()
+            ))
         };
     }
-    let text = dir.to_str().ok_or_else(|| "srs temp directory is not UTF-8".to_string())?;
+    let text = dir
+        .to_str()
+        .ok_or_else(|| "srs temp directory is not UTF-8".to_string())?;
     // PRAGMA 设的是全局 `sqlite3_temp_directory`，在哪条连接上执行都一样；SQLite 会检查目录存在且可写。
     let c = Connection::open_in_memory().map_err(|e| e.to_string())?;
-    c.execute_batch(&format!("PRAGMA temp_store_directory = '{}';", text.replace('\'', "''")))
-        .map_err(|e| format!("srs temp directory {}: {e}", dir.display()))?;
+    c.execute_batch(&format!(
+        "PRAGMA temp_store_directory = '{}';",
+        text.replace('\'', "''")
+    ))
+    .map_err(|e| format!("srs temp directory {}: {e}", dir.display()))?;
     *set = Some(dir.to_path_buf());
     Ok(())
 }
@@ -95,7 +105,9 @@ pub(crate) fn use_temp_dir(dir: &Path) -> Result<(), String> {
 /// 打开库之前确认临时数据有地方落：Android 上必须先 [use_temp_dir]（没有平台默认目录）。
 pub(crate) fn require_temp_dir() -> Result<(), String> {
     if cfg!(target_os = "android") && TEMP_DIR.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
-        return Err("srs temp directory not set: call ffsrs_set_temp_dir before opening srs.db".into());
+        return Err(
+            "srs temp directory not set: call ffsrs_set_temp_dir before opening srs.db".into(),
+        );
     }
     Ok(())
 }
@@ -160,7 +172,12 @@ pub(crate) fn run(
     // 上次死在重命名之前留下的半成品。
     remove_staged(&staged);
     let meta = |key: &str| -> Option<String> {
-        c.query_row("SELECT CAST(value AS TEXT) FROM srs_meta WHERE key = ?1", [key], |r| r.get(0)).ok()
+        c.query_row(
+            "SELECT CAST(value AS TEXT) FROM srs_meta WHERE key = ?1",
+            [key],
+            |r| r.get(0),
+        )
+        .ok()
     };
     let Some(pending) = meta(PENDING) else {
         return Ok(c);
@@ -171,13 +188,19 @@ pub(crate) fn run(
         Some(g) if g == gave_up_at => return Ok(c),
         // 整理改了版 / 又升级过：重新来过。
         Some(_) => {
-            let _ = c.execute("DELETE FROM srs_meta WHERE key IN (?1, ?2)", [GAVE_UP, ATTEMPTS]);
+            let _ = c.execute(
+                "DELETE FROM srs_meta WHERE key IN (?1, ?2)",
+                [GAVE_UP, ATTEMPTS],
+            );
         }
         None => {}
     }
-    let (Ok(size), Ok(pages), Ok(spare), Ok(auto)) =
-        (pragma(&c, "page_size"), pragma(&c, "page_count"), pragma(&c, "freelist_count"), pragma(&c, "auto_vacuum"))
-    else {
+    let (Ok(size), Ok(pages), Ok(spare), Ok(auto)) = (
+        pragma(&c, "page_size"),
+        pragma(&c, "page_count"),
+        pragma(&c, "freelist_count"),
+        pragma(&c, "auto_vacuum"),
+    ) else {
         return Ok(c);
     };
     let before = size * pages;
@@ -185,11 +208,18 @@ pub(crate) fn run(
     let in_place = auto == AUTO_VACUUM_INCREMENTAL;
     let need = if in_place { CHUNK } else { live }.saturating_add(MARGIN);
     if let Some(free) = free.filter(|&f| f < need) {
-        record(&c, json!({"at": now, "ok": false, "reason": "disk", "need": need, "free": free, "bytes": before}));
+        record(
+            &c,
+            json!({"at": now, "ok": false, "reason": "disk", "need": need, "free": free, "bytes": before}),
+        );
         return Ok(c);
     }
     let attempts: i64 = c
-        .query_row("SELECT CAST(value AS INTEGER) FROM srs_meta WHERE key = ?1", [ATTEMPTS], |r| r.get(0))
+        .query_row(
+            "SELECT CAST(value AS INTEGER) FROM srs_meta WHERE key = ?1",
+            [ATTEMPTS],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
     if attempts >= MAX_ATTEMPTS {
         // 标记留着，记下在哪个版本 / 哪次升级停的手（见模块文档）。
@@ -199,7 +229,10 @@ pub(crate) fn run(
             "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [GAVE_UP, &gave_up_at],
         );
-        record(&c, json!({"at": now, "ok": false, "reason": "interrupted", "attempts": attempts, "rev": COMPACT_REV, "bytes": before}));
+        record(
+            &c,
+            json!({"at": now, "ok": false, "reason": "interrupted", "attempts": attempts, "rev": COMPACT_REV, "bytes": before}),
+        );
         let _ = c.execute_batch("COMMIT");
         return Ok(c);
     }
@@ -209,7 +242,10 @@ pub(crate) fn run(
         rusqlite::params![ATTEMPTS, (attempts + 1).to_string()],
     );
     if let Err(e) = marked {
-        record(&c, json!({"at": now, "ok": false, "reason": e.to_string(), "bytes": before}));
+        record(
+            &c,
+            json!({"at": now, "ok": false, "reason": e.to_string(), "bytes": before}),
+        );
         return Ok(c);
     }
     if in_place {
@@ -226,7 +262,10 @@ pub(crate) fn run(
     let c = reopen()?;
     if let Err(e) = out {
         let _ = c.execute("DELETE FROM srs_meta WHERE key = ?1", [ATTEMPTS]);
-        record(&c, json!({"at": now, "ok": false, "reason": e, "bytes": before}));
+        record(
+            &c,
+            json!({"at": now, "ok": false, "reason": e, "bytes": before}),
+        );
     }
     Ok(c)
 }
@@ -256,31 +295,61 @@ fn shrink_in_place(c: &Connection, size: u64, before: u64, now: i64) {
     match out {
         Ok(()) => {
             let after = pragma(c, "page_count").unwrap_or(0) * size;
-            let _ = c.execute("DELETE FROM srs_meta WHERE key IN (?1, ?2)", [PENDING, GAVE_UP]);
-            record(c, json!({"at": now, "ok": true, "mode": "in_place", "before": before, "after": after}));
+            let _ = c.execute(
+                "DELETE FROM srs_meta WHERE key IN (?1, ?2)",
+                [PENDING, GAVE_UP],
+            );
+            record(
+                c,
+                json!({"at": now, "ok": true, "mode": "in_place", "before": before, "after": after}),
+            );
         }
-        Err(e) => record(c, json!({"at": now, "ok": false, "mode": "in_place", "reason": e, "bytes": before})),
+        Err(e) => record(
+            c,
+            json!({"at": now, "ok": false, "mode": "in_place", "reason": e, "bytes": before}),
+        ),
     }
 }
 
 /// 把整理后的库写成 [staged]（auto_vacuum 改成 INCREMENTAL），在里面清掉标记、记好结果，fsync。
-fn rewrite_into(c: &Connection, staged: &Path, size: u64, before: u64, now: i64) -> Result<(), String> {
-    let staged_text = staged.to_str().ok_or_else(|| "srs.db path is not UTF-8".to_string())?;
+fn rewrite_into(
+    c: &Connection,
+    staged: &Path,
+    size: u64,
+    before: u64,
+    now: i64,
+) -> Result<(), String> {
+    let staged_text = staged
+        .to_str()
+        .ok_or_else(|| "srs.db path is not UTF-8".to_string())?;
     // WAL 截断到 0：之后旧库的主文件本身就是完整的库，换文件之前任何一步崩溃都不丢东西。有别的连接正读着就截不动，
     // 不整理（没在读的别的连接由 [swap_in] 按关闭后 WAL 是否还在查出来）。
     let (busy, frames, done): (i64, i64, i64) = c
-        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
         .map_err(|e| e.to_string())?;
     if busy != 0 || done != frames {
-        return Err(format!("busy: wal_checkpoint busy={busy} frames={frames} checkpointed={done}"));
+        return Err(format!(
+            "busy: wal_checkpoint busy={busy} frames={frames} checkpointed={done}"
+        ));
     }
-    c.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;").map_err(|e| e.to_string())?;
-    c.execute("VACUUM INTO ?1", [staged_text]).map_err(|e| e.to_string())?;
+    c.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
+        .map_err(|e| e.to_string())?;
+    c.execute("VACUUM INTO ?1", [staged_text])
+        .map_err(|e| e.to_string())?;
     {
         let s = Connection::open(staged).map_err(|e| e.to_string())?;
         let after = pragma(&s, "page_count").map_err(|e| e.to_string())? * size;
-        s.execute("DELETE FROM srs_meta WHERE key IN (?1, ?2, ?3)", [PENDING, ATTEMPTS, GAVE_UP]).map_err(|e| e.to_string())?;
-        record(&s, json!({"at": now, "ok": true, "mode": "rewrite", "before": before, "after": after}));
+        s.execute(
+            "DELETE FROM srs_meta WHERE key IN (?1, ?2, ?3)",
+            [PENDING, ATTEMPTS, GAVE_UP],
+        )
+        .map_err(|e| e.to_string())?;
+        record(
+            &s,
+            json!({"at": now, "ok": true, "mode": "rewrite", "before": before, "after": after}),
+        );
     }
     // Windows 的 FlushFileBuffers 要写权限：只读句柄上 sync_all 报「拒绝访问」。
     std::fs::OpenOptions::new()
@@ -295,11 +364,16 @@ fn rewrite_into(c: &Connection, staged: &Path, size: u64, before: u64, now: i64)
 fn swap_in(path: &Path, staged: &Path) -> Result<(), String> {
     let wal = suffixed(path, "-wal");
     if wal.exists() {
-        return Err(format!("busy: {} still exists after closing (another connection has srs.db open)", wal.display()));
+        return Err(format!(
+            "busy: {} still exists after closing (another connection has srs.db open)",
+            wal.display()
+        ));
     }
     let shm = suffixed(path, "-shm");
     match std::fs::remove_file(&shm) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(format!("remove {}: {e}", shm.display())),
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(format!("remove {}: {e}", shm.display()));
+        }
         _ => {}
     }
     std::fs::rename(staged, path).map_err(|e| format!("rename {}: {e}", staged.display()))?;
@@ -330,11 +404,20 @@ mod imp {
 
     #[link(name = "kernel32")]
     extern "system" {
-        fn GetDiskFreeSpaceExW(dir: *const u16, avail: *mut u64, total: *mut u64, free: *mut u64) -> i32;
+        fn GetDiskFreeSpaceExW(
+            dir: *const u16,
+            avail: *mut u64,
+            total: *mut u64,
+            free: *mut u64,
+        ) -> i32;
     }
 
     pub(super) fn free(dir: &Path) -> Option<u64> {
-        let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let wide: Vec<u16> = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
         let (mut avail, mut total, mut free) = (0u64, 0u64, 0u64);
         // SAFETY: wide 以 0 结尾；三个输出指针指向本函数里的局部变量。
         let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free) };
@@ -379,7 +462,10 @@ mod tests {
     #[test]
     fn free_bytes_reads_the_real_volume() {
         let p = temp_db("free");
-        Connection::open(&p).unwrap().execute_batch("CREATE TABLE t (x)").unwrap();
+        Connection::open(&p)
+            .unwrap()
+            .execute_batch("CREATE TABLE t (x)")
+            .unwrap();
         assert!(super::free_bytes(&p).is_some_and(|f| f > 0));
         assert!(super::free_bytes(p.parent().unwrap()).is_some_and(|f| f > 0));
     }
@@ -401,7 +487,10 @@ mod tests {
         // 对照：只 step 一次（rusqlite execute_batch）几乎不动。
         c.execute_batch("PRAGMA incremental_vacuum(200);").unwrap();
         let after_batch = free(&c);
-        assert!(spare - after_batch < 10, "execute_batch steps once: {spare} -> {after_batch}");
+        assert!(
+            spare - after_batch < 10,
+            "execute_batch steps once: {spare} -> {after_batch}"
+        );
         super::incremental_vacuum(&c, Some(200)).unwrap();
         assert_eq!(free(&c), after_batch - 200);
         super::incremental_vacuum(&c, None).unwrap();
@@ -432,7 +521,10 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        assert!(opts.iter().any(|o| o == "TEMP_STORE=1"), "compile_options: {opts:?}");
+        assert!(
+            opts.iter().any(|o| o == "TEMP_STORE=1"),
+            "compile_options: {opts:?}"
+        );
     }
 
     /// 覆盖参数写在 crate 目录的 cargo 配置里（所有构建脚本都在本目录跑 cargo）：先 -U 掉 libsqlite3-sys 给 Android

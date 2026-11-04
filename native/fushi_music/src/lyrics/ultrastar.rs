@@ -15,7 +15,10 @@ pub fn looks_like_ultrastar(text: &str) -> bool {
         if l.starts_with("#BPM:") || l.starts_with("#bpm:") {
             has_header = true;
         }
-        if l.len() > 2 && matches!(l.as_bytes()[0], b':' | b'*' | b'F' | b'R' | b'G') && l.as_bytes()[1] == b' ' {
+        if l.len() > 2
+            && matches!(l.as_bytes()[0], b':' | b'*' | b'F' | b'R' | b'G')
+            && l.as_bytes()[1] == b' '
+        {
             has_note = true;
         }
     }
@@ -35,7 +38,13 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
     let mut agent: Option<usize> = None;
     let mut cur = Line::default();
 
-    let beat_ms = |bpm: f64, beat: i64| -> f64 { if bpm > 0.0 { beat as f64 * 60_000.0 / (bpm * 4.0) } else { 0.0 } };
+    let beat_ms = |bpm: f64, beat: i64| -> f64 {
+        if bpm > 0.0 {
+            beat as f64 * 60_000.0 / (bpm * 4.0)
+        } else {
+            0.0
+        }
+    };
 
     for raw in text.lines() {
         let l = raw.trim_end_matches('\r');
@@ -54,7 +63,9 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
             continue;
         }
         let trimmed = l.trim_start();
-        let Some(&kind) = trimmed.as_bytes().first() else { continue };
+        let Some(&kind) = trimmed.as_bytes().first() else {
+            continue;
+        };
         match kind {
             b'E' => break,
             b'P' => {
@@ -63,7 +74,10 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
                 agent = Some(t.agent_index(id, AgentKind::Person));
             }
             b'-' => {
-                let nums: Vec<i64> = trimmed[1..].split_whitespace().filter_map(|n| n.parse().ok()).collect();
+                let nums: Vec<i64> = trimmed[1..]
+                    .split_whitespace()
+                    .filter_map(|n| n.parse().ok())
+                    .collect();
                 if let Some(&b) = nums.first() {
                     let at = (gap + beat_ms(bpm, rel_base + b)).round() as i64;
                     if cur.end_ms <= cur.start_ms {
@@ -80,8 +94,12 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
                 let body = &trimmed[1..];
                 let mut it = body.splitn(5, ' ');
                 let _ = it.next(); // 记号后的那个空格
-                let (Some(s), Some(d), Some(_pitch)) = (it.next(), it.next(), it.next()) else { continue };
-                let (Ok(s), Ok(d)) = (s.trim().parse::<i64>(), d.trim().parse::<i64>()) else { continue };
+                let (Some(s), Some(d), Some(_pitch)) = (it.next(), it.next(), it.next()) else {
+                    continue;
+                };
+                let (Ok(s), Ok(d)) = (s.trim().parse::<i64>(), d.trim().parse::<i64>()) else {
+                    continue;
+                };
                 let txt = it.next().unwrap_or("");
                 let start = (gap + beat_ms(bpm, rel_base + s)).round() as i64;
                 let end = (gap + beat_ms(bpm, rel_base + s + d)).round() as i64;
@@ -116,7 +134,12 @@ fn flush(t: &mut Timeline, cur: &mut Line) {
     if let Some(f) = line.syllables.first_mut() {
         f.text = f.text.trim_start().to_owned();
     }
-    line.end_ms = line.syllables.iter().map(|s| s.end_ms).max().unwrap_or(line.end_ms);
+    line.end_ms = line
+        .syllables
+        .iter()
+        .map(|s| s.end_ms)
+        .max()
+        .unwrap_or(line.end_ms);
     t.lines.push(line);
 }
 
@@ -131,8 +154,19 @@ mod tests {
         let t = parse(txt, None);
         // 一拍 = 60000 / 1200 = 50 ms。
         assert_eq!(t.lines.len(), 2);
-        let s: Vec<_> = t.lines[0].syllables.iter().map(|s| (s.text.as_str(), s.start_ms, s.end_ms)).collect();
-        assert_eq!(s, vec![("Hel", 1000, 1200), ("lo", 1200, 1400), (" world", 1400, 1500)]);
+        let s: Vec<_> = t.lines[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.start_ms, s.end_ms))
+            .collect();
+        assert_eq!(
+            s,
+            vec![
+                ("Hel", 1000, 1200),
+                ("lo", 1200, 1400),
+                (" world", 1400, 1500)
+            ]
+        );
         assert_eq!(t.agents[t.lines[0].agent.unwrap()].id, "P1");
         assert_eq!(t.agents[t.lines[1].agent.unwrap()].id, "P2");
         assert_eq!(t.lines[1].syllables[0].end_ms, 2100);

@@ -232,7 +232,7 @@ impl Scanner {
                         return vec![Record::Error {
                             path: ps,
                             message: e.to_string(),
-                        }]
+                        }];
                     }
                 };
                 let (mtime, size) = (mtime_ms(&fs_meta), fs_meta.len() as i64);
@@ -288,7 +288,7 @@ impl Scanner {
                         return vec![Record::Error {
                             path: ps,
                             message: e.to_string(),
-                        }]
+                        }];
                     }
                 };
                 // 改 CUE 也要重解析：有效修改时刻取两者较新的。

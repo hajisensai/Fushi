@@ -131,7 +131,9 @@ fn append_matches_replay_and_unappend_restores_exactly() {
         journaled.replay(&reviews, false).unwrap();
         let before = journaled.snapshot().unwrap();
         let tags: Vec<u64> = (0..appended.len() as u64).map(|t| 100 + t).collect();
-        journaled.append(&appended, &tags, &ats(0, appended.len())).unwrap();
+        journaled
+            .append(&appended, &tags, &ats(0, appended.len()))
+            .unwrap();
         assert_eq!(journaled.journal_len(), appended.len());
         assert_eq!(
             journaled.snapshot().unwrap(),
@@ -156,7 +158,11 @@ fn append_matches_replay_and_unappend_restores_exactly() {
         );
         assert!(journaled.unappend(101).unwrap());
         assert!(journaled.unappend(100).unwrap());
-        assert_eq!(journaled.snapshot().unwrap(), before, "{precision:?}: unappend all");
+        assert_eq!(
+            journaled.snapshot().unwrap(),
+            before,
+            "{precision:?}: unappend all"
+        );
         assert!(!journaled.unappend(100).unwrap(), "journal is empty");
     }
 }
@@ -236,7 +242,11 @@ fn append_rejects_unrated_rows_and_the_large_model() {
         runtime.append(&appended[..1], &[1], &[0]),
         Err(RwkvError::Unsupported(_))
     ));
-    assert_eq!(runtime.rewind_from(0, i64::MIN).unwrap(), None, "the large model has no journal");
+    assert_eq!(
+        runtime.rewind_from(0, i64::MIN).unwrap(),
+        None,
+        "the large model has no journal"
+    );
 }
 
 #[test]
@@ -263,9 +273,17 @@ fn rewind_from_then_append_in_time_order_equals_the_full_replay() {
         runtime.append(&rows, &tags, &times).unwrap();
 
         // X 到了：退到它的时刻之前，再按时间顺序追加 X 及之后的全部行。
-        assert_eq!(runtime.rewind_from(at(p), i64::MAX).unwrap(), None, "unknown floor: unreachable");
+        assert_eq!(
+            runtime.rewind_from(at(p), i64::MAX).unwrap(),
+            None,
+            "unknown floor: unreachable"
+        );
         let popped = runtime.rewind_from(at(p), floor).unwrap();
-        assert_eq!(popped, Some(reviews.len() - p - 1), "{precision:?}: pops every entry at >= X");
+        assert_eq!(
+            popped,
+            Some(reviews.len() - p - 1),
+            "{precision:?}: pops every entry at >= X"
+        );
         let tail: Vec<usize> = (p..reviews.len()).collect();
         runtime
             .append(
@@ -284,13 +302,21 @@ fn rewind_from_then_append_in_time_order_equals_the_full_replay() {
 
         // 退到 replay 进来的行之中：退不到，什么都不改。
         let now = runtime.snapshot().unwrap();
-        assert_eq!(runtime.rewind_from(floor, floor).unwrap(), None, "{precision:?}");
+        assert_eq!(
+            runtime.rewind_from(floor, floor).unwrap(),
+            None,
+            "{precision:?}"
+        );
         assert_eq!(runtime.snapshot().unwrap(), now, "{precision:?}: unchanged");
         // 刚好退到日志最早一条之后：可以，等于只回放前 k + 1 条。
         assert!(runtime.rewind_from(at(k + 1), floor).unwrap().is_some());
         let mut prefix = RwkvRuntime::new(&model, precision, 1).unwrap();
         prefix.replay(&reviews[..=k], false).unwrap();
-        assert_eq!(runtime.snapshot().unwrap(), prefix.snapshot().unwrap(), "{precision:?}");
+        assert_eq!(
+            runtime.snapshot().unwrap(),
+            prefix.snapshot().unwrap(),
+            "{precision:?}"
+        );
         assert_ne!(prefix.snapshot().unwrap(), before_journal);
         // 退到日志最早一条之前、但仍晚于 floor：整段日志撤光，回到 replay 之后的状态。
         assert_eq!(runtime.rewind_from(at(k), floor).unwrap(), Some(1));
@@ -306,13 +332,25 @@ fn a_journal_started_from_reset_rewinds_all_the_way_to_empty() {
     let empty = runtime.snapshot().unwrap();
     let n = 200;
     runtime
-        .append(&reviews[..n], &(0..n as u64).collect::<Vec<_>>(), &ats(10, n))
+        .append(
+            &reviews[..n],
+            &(0..n as u64).collect::<Vec<_>>(),
+            &ats(10, n),
+        )
         .unwrap();
     assert_eq!(runtime.rewind_from(10, i64::MIN).unwrap(), Some(n));
     assert_eq!(runtime.snapshot().unwrap(), empty);
-    assert_eq!(runtime.rewind_from(10, i64::MIN).unwrap(), Some(0), "nothing left, still reachable");
+    assert_eq!(
+        runtime.rewind_from(10, i64::MIN).unwrap(),
+        Some(0),
+        "nothing left, still reachable"
+    );
     runtime.restore(&empty).unwrap();
-    assert_eq!(runtime.rewind_from(10, i64::MAX).unwrap(), None, "after restore the caller must say");
+    assert_eq!(
+        runtime.rewind_from(10, i64::MAX).unwrap(),
+        None,
+        "after restore the caller must say"
+    );
 }
 
 fn model_large() -> RwkvModel {
@@ -343,13 +381,22 @@ fn scores_single_and_batch_are_bit_identical_and_patching_is_scoped() {
                     .unwrap(),
             );
         }
-        assert_eq!(bits(&single), bits(&batch), "{precision:?}: single == batch");
+        assert_eq!(
+            bits(&single),
+            bits(&batch),
+            "{precision:?}: single == batch"
+        );
 
         let ids: Vec<i64> = all.iter().map(|q| q.card_id).collect();
         let hits = runtime.scores_lookup(&ids, &versions);
         assert!(hits.iter().all(Option::is_some));
         let other: Vec<u64> = versions.iter().map(|v| v + 1).collect();
-        assert!(runtime.scores_lookup(&ids, &other).iter().all(Option::is_none));
+        assert!(
+            runtime
+                .scores_lookup(&ids, &other)
+                .iter()
+                .all(Option::is_none)
+        );
 
         // 作答卡 1004（笔记 5002，与 1005 同笔记）：只作废 1004 / 1005。
         runtime.append(&appended[..1], &[9], &[0]).unwrap();
@@ -402,7 +449,12 @@ fn c_abi_round_trip() {
         let runtime = frwkv_runtime_new(model, FRWKV_PRECISION_INT4, 1);
         let history = rows(&reviews);
         assert_eq!(
-            frwkv_runtime_replay(runtime, history.as_ptr(), history.len(), std::ptr::null_mut()),
+            frwkv_runtime_replay(
+                runtime,
+                history.as_ptr(),
+                history.len(),
+                std::ptr::null_mut()
+            ),
             FRWKV_OK
         );
         let tail = rows(&appended[..2]);
@@ -415,14 +467,20 @@ fn c_abi_round_trip() {
         assert_eq!(frwkv_runtime_unappend(runtime, 41), 0);
         assert_eq!(frwkv_runtime_unappend(runtime, 42), 1);
         let mut popped = 99u64;
-        assert_eq!(frwkv_runtime_rewind_from(runtime, 1_001, 999, &mut popped), 1);
+        assert_eq!(
+            frwkv_runtime_rewind_from(runtime, 1_001, 999, &mut popped),
+            1
+        );
         assert_eq!(popped, 0, "nothing at >= 1001 left");
         assert_eq!(
             frwkv_runtime_rewind_from(runtime, 1_000, 1_000, &mut popped),
             0,
             "the replayed rows before the journal are out of reach"
         );
-        assert_eq!(frwkv_runtime_rewind_from(runtime, 1_000, 999, &mut popped), 1);
+        assert_eq!(
+            frwkv_runtime_rewind_from(runtime, 1_000, 999, &mut popped),
+            1
+        );
         assert_eq!(popped, 1);
 
         let q = rows(&queries(90, 0..4));
@@ -471,7 +529,13 @@ fn c_abi_round_trip() {
 }
 
 /// 「此刻」查询行，与 Dart `srsRwkvAddNowRow` 同规则（复习队列）：锚点 = 上次评分时刻（毫秒）。
-fn now_row(card: i64, last_ms: i64, last_type: i64, now_ms: i64, day_of: impl Fn(i64) -> i64) -> ReviewInput {
+fn now_row(
+    card: i64,
+    last_ms: i64,
+    last_type: i64,
+    now_ms: i64,
+    day_of: impl Fn(i64) -> i64,
+) -> ReviewInput {
     let today = day_of(now_ms);
     let last_day = day_of(last_ms);
     ReviewInput {
@@ -500,16 +564,28 @@ fn requery_equals_rebuilding_the_rows_at_the_new_time() {
         runtime.replay(&reviews, false).unwrap();
         // 30 张卡：一半昨天评过、一半今天早些时候评过（同日行 card_type 4）。
         let lasts: Vec<(i64, i64)> = (0..30)
-            .map(|c| if c % 2 == 0 { (c, base - 86_400_000 + c * 1_000) } else { (c, base - 3_600_000 + c * 1_000) })
+            .map(|c| {
+                if c % 2 == 0 {
+                    (c, base - 86_400_000 + c * 1_000)
+                } else {
+                    (c, base - 3_600_000 + c * 1_000)
+                }
+            })
             .collect();
-        let rows: Vec<ReviewInput> = lasts.iter().map(|&(c, at)| now_row(c, at, 4, base, day_of)).collect();
+        let rows: Vec<ReviewInput> = lasts
+            .iter()
+            .map(|&(c, at)| now_row(c, at, 4, base, day_of))
+            .collect();
         let versions: Vec<u64> = (0..30).collect();
         let anchors: Vec<i64> = lasts.iter().map(|&(_, at)| at).collect();
         runtime.scores_update(&rows, &versions, &anchors).unwrap();
 
         for later in [base + 1_234_567, base + 20 * 3_600_000] {
             assert_eq!(runtime.scores_requery(day_of(later), later).unwrap(), 30);
-            let fresh: Vec<ReviewInput> = lasts.iter().map(|&(c, at)| now_row(c, at, 4, later, day_of)).collect();
+            let fresh: Vec<ReviewInput> = lasts
+                .iter()
+                .map(|&(c, at)| now_row(c, at, 4, later, day_of))
+                .collect();
             let expected = runtime.query(&fresh).unwrap();
             let ids: Vec<i64> = fresh.iter().map(|r| r.card_id).collect();
             let got: Vec<f32> = runtime

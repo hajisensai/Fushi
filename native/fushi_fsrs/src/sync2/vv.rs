@@ -39,7 +39,10 @@ impl Vv {
             return Ok(false);
         }
         if op.seq != cur + 1 {
-            return Err(format!("non-contiguous op {}:{} after {cur}", op.device, op.seq));
+            return Err(format!(
+                "non-contiguous op {}:{} after {cur}",
+                op.device, op.seq
+            ));
         }
         self.0.insert(op.device, op.seq);
         Ok(true)
@@ -138,11 +141,35 @@ mod tests {
     #[test]
     fn advance_only_accepts_the_next_contiguous_seq() {
         let mut v = Vv::new();
-        assert_eq!(v.advance(&OpId { device: id(1), seq: 1 }), Ok(true));
-        assert_eq!(v.advance(&OpId { device: id(1), seq: 1 }), Ok(false));
-        assert!(v.advance(&OpId { device: id(1), seq: 3 }).is_err());
-        assert!(v.contains(&OpId { device: id(1), seq: 1 }));
-        assert!(!v.contains(&OpId { device: id(1), seq: 2 }));
+        assert_eq!(
+            v.advance(&OpId {
+                device: id(1),
+                seq: 1
+            }),
+            Ok(true)
+        );
+        assert_eq!(
+            v.advance(&OpId {
+                device: id(1),
+                seq: 1
+            }),
+            Ok(false)
+        );
+        assert!(
+            v.advance(&OpId {
+                device: id(1),
+                seq: 3
+            })
+            .is_err()
+        );
+        assert!(v.contains(&OpId {
+            device: id(1),
+            seq: 1
+        }));
+        assert!(!v.contains(&OpId {
+            device: id(1),
+            seq: 2
+        }));
     }
 
     #[test]

@@ -22,8 +22,8 @@ use serde_json::{Map, Value};
 
 use super::op::Intent;
 use super::sched::{self, Config, Queue, Sched};
-use crate::history::{select, Kind, Outcome, STATUS_CLAMPED, STATUS_EFFECTIVE};
-use crate::projection::{memory_input, Day, EffLog, MemoryInput};
+use crate::history::{Kind, Outcome, STATUS_CLAMPED, STATUS_EFFECTIVE, select};
+use crate::projection::{Day, EffLog, MemoryInput, memory_input};
 
 /// 重放的一行输入：日志投影行的 JSON、它的 S(e)、它的意图。
 #[derive(Debug, Clone)]
@@ -50,7 +50,10 @@ pub fn infer_intent(json: &Value) -> Intent {
     match s("kind") {
         Some("review") => {
             let rating_type = matches!(s("rtype"), Some("learn" | "review" | "relearn"));
-            let rating = json.get("rating").and_then(Value::as_i64).is_some_and(|r| (1..=4).contains(&r));
+            let rating = json
+                .get("rating")
+                .and_then(Value::as_i64)
+                .is_some_and(|r| (1..=4).contains(&r));
             if s("origin").unwrap_or("fushi") == "fushi" && rating_type && rating {
                 Intent::Answer
             } else {
@@ -58,7 +61,9 @@ pub fn infer_intent(json: &Value) -> Intent {
             }
         }
         Some("manual") => {
-            let Some(res) = res else { return Intent::Absolute };
+            let Some(res) = res else {
+                return Intent::Absolute;
+            };
             if json.get("restoreOf").is_some_and(|v| !v.is_null()) {
                 return Intent::Absolute;
             }
@@ -73,7 +78,9 @@ pub fn infer_intent(json: &Value) -> Intent {
         }
         Some("reschedule") if res.is_some() => Intent::Reschedule,
         Some("handOff") => match res {
-            Some(r) => Intent::HandOff { to_anki: r.get("scheduler").and_then(Value::as_str) == Some("anki") },
+            Some(r) => Intent::HandOff {
+                to_anki: r.get("scheduler").and_then(Value::as_str) == Some("anki"),
+            },
             None => Intent::Absolute,
         },
         _ => Intent::Absolute,
@@ -100,12 +107,21 @@ fn outcome_of(s: &Sched) -> Outcome {
 }
 
 /// Dart `srsComputeMemory`（sm2Retention = 0.9）在确定性 FSRS 上的同一流程。
-fn compute_memory(input: &MemoryInput, model: &super::fsrs_det::Model) -> Option<super::fsrs_det::Memory> {
+fn compute_memory(
+    input: &MemoryInput,
+    model: &super::fsrs_det::Model,
+) -> Option<super::fsrs_det::Memory> {
     use super::fsrs_det::Memory;
-    let mut starting = input.starting.map(|(s, d, sf)| Memory { s: s as f32, d: d as f32, sf: sf as f32 });
+    let mut starting = input.starting.map(|(s, d, sf)| Memory {
+        s: s as f32,
+        d: d as f32,
+        sf: sf as f32,
+    });
     if starting.is_none() {
         if let Some((ease, ivl)) = input.sm2 {
-            starting = model.memory_state_from_sm2(ease as f32, ivl as f32, 0.9).ok();
+            starting = model
+                .memory_state_from_sm2(ease as f32, ivl as f32, 0.9)
+                .ok();
         }
     }
     if input.reviews.is_empty() {
@@ -115,7 +131,16 @@ fn compute_memory(input: &MemoryInput, model: &super::fsrs_det::Model) -> Option
         .reviews
         .iter()
         .enumerate()
-        .map(|(i, &(r, dt))| (r.clamp(0, 4) as u32, if i == 0 && starting.is_none() { 0.0 } else { dt as f32 }))
+        .map(|(i, &(r, dt))| {
+            (
+                r.clamp(0, 4) as u32,
+                if i == 0 && starting.is_none() {
+                    0.0
+                } else {
+                    dt as f32
+                },
+            )
+        })
         .collect();
     model.memory_state(&reviews, starting).ok()
 }
@@ -136,7 +161,13 @@ pub const SNAPSHOT_KEY: &str = "sc";
 
 /// 评分预览（四个按钮的「这次操作后」结果）：在重放到此刻的状态上算，与之后真正作答时的重放是同一段
 /// 代码、同一套浮点运算——按钮上显示的间隔就是合并后重放出的到期。返回 (当前状态, 作答前记忆状态, 四个结果)。
-pub fn preview(rows: &[Row<'_>], cfg: &Config, card: &str, now: i64, day: &Day) -> Result<(Sched, Option<super::fsrs_det::Memory>, [Sched; 4]), String> {
+pub fn preview(
+    rows: &[Row<'_>],
+    cfg: &Config,
+    card: &str,
+    now: i64,
+    day: &Day,
+) -> Result<(Sched, Option<super::fsrs_det::Memory>, [Sched; 4]), String> {
     let model = cfg.model()?;
     let (r, prefix) = fold(rows)?;
     let cur = r.state.unwrap_or_else(Sched::initial);
@@ -155,7 +186,9 @@ fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
     let mut parsed = Vec::with_capacity(rows.len());
     for r in rows {
         let v: Value = serde_json::from_str(r.json).map_err(|e| format!("bad review log: {e}"))?;
-        let Value::Object(m) = v else { return Err("bad review log: not an object".into()) };
+        let Value::Object(m) = v else {
+            return Err("bad review log: not an object".into());
+        };
         values.push(m);
         parsed.push(crate::history::parse_full(r.json, r.server_time)?);
     }
@@ -175,7 +208,11 @@ fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
         let v = &values[i];
         // 没有生效配置快照的派生日志按作者结果照抄（见文件头）。
         let snap = v.get(SNAPSHOT_KEY).and_then(Config::from_json);
-        let intent = if snap.is_some() { rows[i].intent.clone() } else { Intent::Absolute };
+        let intent = if snap.is_some() {
+            rows[i].intent.clone()
+        } else {
+            Intent::Absolute
+        };
         if !effective && matches!(intent, Intent::Absolute) {
             continue;
         }
@@ -187,7 +224,11 @@ fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
         let card = v.get("card").and_then(Value::as_str).unwrap_or_default();
         let base = last.clone().unwrap_or_else(Sched::initial);
         let scheduler = owner.clone().unwrap_or_else(|| "fushi".into());
-        let cur = if base.scheduler == scheduler { base } else { Sched { scheduler, ..base } };
+        let cur = if base.scheduler == scheduler {
+            base
+        } else {
+            Sched { scheduler, ..base }
+        };
         let author = v.get("res").filter(|x| x.is_object()).map(Sched::from_json);
         let (cfg, model) = match snap {
             Some(c) => {
@@ -209,22 +250,31 @@ fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
                 } else {
                     let input = memory_input(&prefix, cfg.alg.projection_alg(), &day)?;
                     let memory = compute_memory(&input, model);
-                    let elapsed = sched::elapsed_days(cfg.alg, cur.last_reviewed_at, at, &day) as f32;
+                    let elapsed =
+                        sched::elapsed_days(cfg.alg, cur.last_reviewed_at, at, &day) as f32;
                     Some(
                         model
                             .next_states(memory, cfg.desired_retention as f32, elapsed)
                             .ok()
-                            .map(|next| sched::plan_answer(card, &cur, at, &day, cfg, &next)[(rating - 1) as usize].clone()),
+                            .map(|next| {
+                                sched::plan_answer(card, &cur, at, &day, cfg, &next)
+                                    [(rating - 1) as usize]
+                                    .clone()
+                            }),
                     )
                 }
             }
-            (Intent::SetDue { due_day }, _, _) => Some(Some(sched::manual_set_due(&cur, *due_day, day.index(at)))),
+            (Intent::SetDue { due_day }, _, _) => {
+                Some(Some(sched::manual_set_due(&cur, *due_day, day.index(at))))
+            }
             (Intent::Reset, _, _) => Some(Some(sched::manual_reset(&cur))),
             (Intent::HandOff { to_anki }, _, _) => Some(Some(sched::hand_off(&cur, *to_anki))),
             (Intent::Reschedule, Some(cfg), Some(model)) => {
                 let input = memory_input(&prefix, cfg.alg.projection_alg(), &day)?;
                 let memory = compute_memory(&input, model);
-                Some(Some(sched::reschedule(card, &cur, memory, model, cfg, &day)))
+                Some(Some(sched::reschedule(
+                    card, &cur, memory, model, cfg, &day,
+                )))
             }
         };
         let is_derived = derived.is_some();
@@ -255,13 +305,29 @@ fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
             }
         }
         let outcome = res.as_ref().map(outcome_of);
-        prefix.push(EffLog::of(&parsed[i].0, &outcome, &parsed[i].2, status & STATUS_CLAMPED != 0));
+        prefix.push(EffLog::of(
+            &parsed[i].0,
+            &outcome,
+            &parsed[i].2,
+            status & STATUS_CLAMPED != 0,
+        ));
     }
     let state = last.map(|b| {
         let scheduler = owner.unwrap_or_else(|| "fushi".into());
-        if b.scheduler == scheduler { b } else { Sched { scheduler, ..b } }
+        if b.scheduler == scheduler {
+            b
+        } else {
+            Sched { scheduler, ..b }
+        }
     });
-    Ok((Replayed { rows: out, state, uncomputable }, prefix))
+    Ok((
+        Replayed {
+            rows: out,
+            state,
+            uncomputable,
+        },
+        prefix,
+    ))
 }
 
 #[cfg(test)]
@@ -296,7 +362,11 @@ pub(crate) mod tests {
         let input: Vec<Row<'_>> = texts
             .iter()
             .zip(rows)
-            .map(|(t, v)| Row { json: t, server_time: None, intent: infer_intent(v) })
+            .map(|(t, v)| Row {
+                json: t,
+                server_time: None,
+                intent: infer_intent(v),
+            })
             .collect();
         let r = replay(&input).unwrap();
         let out = r
@@ -314,15 +384,42 @@ pub(crate) mod tests {
         let cfg = Config::default();
         let mut rows: Vec<Value> = Vec::new();
         let t0 = 1_700_000_000_000i64;
-        for (k, (dt, rating)) in [(0, 3), (600_000, 3), (DAY, 3), (4 * DAY, 1), (4 * DAY + 600_000, 3), (9 * DAY, 4)].iter().enumerate() {
-            rows.push(review(&format!("l{k}"), "C", "A", t0 + dt, *rating, "learn"));
+        for (k, (dt, rating)) in [
+            (0, 3),
+            (600_000, 3),
+            (DAY, 3),
+            (4 * DAY, 1),
+            (4 * DAY + 600_000, 3),
+            (9 * DAY, 4),
+        ]
+        .iter()
+        .enumerate()
+        {
+            rows.push(review(
+                &format!("l{k}"),
+                "C",
+                "A",
+                t0 + dt,
+                *rating,
+                "learn",
+            ));
             let (filled, _) = run(&rows, &cfg);
             rows = filled;
         }
         let texts: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
-        let input: Vec<Row<'_>> = texts.iter().map(|t| Row { json: t, server_time: None, intent: Intent::Answer }).collect();
+        let input: Vec<Row<'_>> = texts
+            .iter()
+            .map(|t| Row {
+                json: t,
+                server_time: None,
+                intent: Intent::Answer,
+            })
+            .collect();
         let again = replay(&input).unwrap();
-        assert!(again.rows.iter().all(Option::is_none), "replay must be idempotent");
+        assert!(
+            again.rows.iter().all(Option::is_none),
+            "replay must be idempotent"
+        );
         let s = again.state.unwrap();
         assert_eq!(s.reps, 6);
         assert_eq!(s.lapses, 1);
@@ -341,7 +438,8 @@ pub(crate) mod tests {
         let (merged, state) = run(&[a2.clone(), b1.clone(), a1.clone()], &cfg);
         let (sequential, seq_state) = run(&[a1, b1, a2], &cfg);
         assert_eq!(state, seq_state);
-        let by_id = |rows: &[Value], id: &str| rows.iter().find(|r| r["id"] == id).unwrap()["res"].clone();
+        let by_id =
+            |rows: &[Value], id: &str| rows.iter().find(|r| r["id"] == id).unwrap()["res"].clone();
         for id in ["a1", "b1", "a2"] {
             assert_eq!(by_id(&merged, id), by_id(&sequential, id));
         }
@@ -394,6 +492,9 @@ pub(crate) mod tests {
         let b = review("b", "C", "A", t0 + 2 * DAY, 3, "learn");
         let (_, s) = run(&[b, reset, a], &cfg);
         let s = s.unwrap();
-        assert_eq!(s.reps, 1, "only the review after the reset counts toward reps");
+        assert_eq!(
+            s.reps, 1,
+            "only the review after the reset counts toward reps"
+        );
     }
 }
