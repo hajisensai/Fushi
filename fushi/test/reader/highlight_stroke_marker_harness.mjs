@@ -137,7 +137,7 @@ const CHECK = String.raw`(async () => {
     'cover-ruby extends the stroke over the furigana (' + (coverOff / rtArea).toFixed(2) + ' -> ' + (coverOn / rtArea).toFixed(2) + ')');
   await setVar('--fushi-mark-favorite-cover-ruby', '0');
 
-  for (const s of ['marker', 'fluo', 'rough', 'under', 'crayon', 'tape']) {
+  for (const s of ['underline', 'marker', 'fluo', 'rough', 'under', 'crayon', 'tape']) {
     await setVar('--fushi-mark-favorite-style', s);
     const bb = strokes('fushi-hl-yellow');
     ok(bb.length > 0 && bb.some((b) => b.width > 2 && b.height > 2), s + ': paints a visible stroke');
@@ -150,7 +150,40 @@ const CHECK = String.raw`(async () => {
     document.documentElement.style.removeProperty('--fushi-mark-favorite-thickness');
     await setVar('--fushi-mark-favorite-cover-ruby', '0');
   }
+  // ── underline (user 2026-11-04: "it should be an underline, not drawn over the text") ──
+  // Every line form sits wholly on the block-end side of the 1em text box (below a horizontal
+  // line, left of a vertical column), so it never covers the glyphs; it spans the text.
+  await setVar('--fushi-mark-favorite-style', 'underline');
+  const favRects = Array.from(fav.getClientRects()).filter((x) => x.width > 0.5 && x.height > 0.5);
+  for (const f of ['solid', 'double', 'dashed', 'dotted', 'wavy']) {
+    await setVar('--fushi-mark-favorite-form', f);
+    const label = 'underline/' + f;
+    const bb = strokes('fushi-hl-yellow');
+    ok(bb.length > 0, label + ': paints');
+    contained('fushi-hl-yellow', label);
+    for (const r of favRects) {
+      const edge = vertical ? mid(r) - em / 2 : mid(r) + em / 2;
+      const mine = bb.filter((b) => Math.abs(mid(b) - mid(r)) < em * 1.5 &&
+        span(b)[0] < span(r)[1] && span(b)[1] > span(r)[0]);
+      ok(mine.length > 0, label + ': a line runs along the text at ' + Math.round(mid(r)));
+      for (const b of mine) {
+        ok(vertical ? b.right <= edge + 0.5 : b.top >= edge - 0.5,
+          label + ': the line stays outside the text box (' + (vertical ? b.right - edge : edge - b.top).toFixed(1) + 'px)');
+        ok(thick(b) <= em * 0.6, label + ': a line, not a band (' + thick(b).toFixed(1) + ')');
+        ok(span(b)[0] <= span(r)[0] + 1 && span(b)[1] >= span(r)[1] - 1, label + ': the line spans the text');
+      }
+    }
+  }
+  // The distance from the text is adjustable.
+  await setVar('--fushi-mark-favorite-form', 'solid');
+  const nearEdge = Math.min(...strokes('fushi-hl-yellow').map((b) => vertical ? -b.right : b.top));
+  await setVar('--fushi-mark-favorite-offset', '0.45');
+  const farEdge = Math.min(...strokes('fushi-hl-yellow').map((b) => vertical ? -b.right : b.top));
+  ok(farEdge - nearEdge > em * 0.2, 'underline offset moves the line away from the text (' + (farEdge - nearEdge).toFixed(1) + 'px)');
+  document.documentElement.style.removeProperty('--fushi-mark-favorite-offset');
+  document.documentElement.style.removeProperty('--fushi-mark-favorite-form');
   await setVar('--fushi-mark-favorite-style', 'marker');
+
 
   // A book paragraph with its own background (BUG-3421): the lane layer moves into that paragraph,
   // and the stroke style must follow it there (with document-unique SVG ids).

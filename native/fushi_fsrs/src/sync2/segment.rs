@@ -32,11 +32,13 @@ use super::vv::{OpId, Vv};
 pub const MAGIC: &[u8; 4] = b"FSG2";
 pub const VERSION: u8 = 1;
 /// 协议版本（head 的 `v`）。2 = 2026-10-30 断代：集合根挪到 `v3/`（Dart srs_location_store.dart）、媒体只剩内容寻址 +
-/// 分块封装；段与 head 的字节格式没变（v1 位置的段 / head 原样搬进新根，读者照读）。
-pub const PROTOCOL: u32 = 2;
+/// 分块封装；段与 head 的字节格式没变（v1 位置的段 / head 原样搬进新根，读者照读）。3 = 存量重复流收敛：新种类
+/// `Dedup`（op.rs [super::op::KIND_DEDUP]）与带副本说明的骨架（[super::op::Op::duplicate]，骨架载荷不再恒为 32 字节）。
+pub const PROTOCOL: u32 = 3;
 /// 能读本版本写出的数据所需的最低读者版本（设计 §8）。读者遇到 head 的 `minReader` 比自己的 [PROTOCOL] 新：不收这台
-/// 设备、报需要升级（store/sync2/transport.rs `plan`）。
-pub const MIN_READER: u32 = 2;
+/// 设备、报需要升级（store/sync2/transport.rs `plan`）。3：协议 2 的读者解不开副本骨架（整段拒收），也不认 `Dedup`
+/// （会把作者的副本当原件留着，删除扣留与修改记录行和别的设备分叉）。
+pub const MIN_READER: u32 = 3;
 
 /// 切段目标（设计 §6.2）：按**压缩后**的体积算，一段约 4 MB。哑存储上一次请求的固定开销远大于传几 MB 的
 /// 时间，段越少首次提交 / 新设备追赶越快；增量同步每轮只有几条操作，本来就只出一个小段，由小段合并（§7.1）收拢。
@@ -224,9 +226,7 @@ fn read_op(r: &mut Reader<'_>, device: Id, seq: u64, i: u64, prev_wall: i64, pre
     let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
     let purged = r.bool()?;
     let payload: Arc<[u8]> = r.bytes()?.into();
-    if purged && payload.len() != 32 {
-        return Err(DecodeError("purged op without payload hash"));
-    }
+    super::op::check_skeleton(purged, &payload)?;
     Ok(Op { id: OpId { device, seq }, hlc: Hlc { wall, logical, device }, deps, kind, schema, payload, purged })
 }
 
@@ -710,7 +710,15 @@ pub struct Head {
     /// 在 [ack] 下的派生状态摘要（确定性自检，设计 §4.5）。
     pub digest: String,
     pub at_ms: i64,
+    /// 设备的人读名（昵称，没设昵称就是自动取的型号）。协议 2 起就在签名里；老版本读者直接显示它。
     pub name: String,
+    /// 扩展信息（设备型号 / App 版本 / 平台等，`{"model", "app", "platform"}`；没有 = None）。
+    ///
+    /// **不进主签名**（`sig` 只覆盖 [Head::unsigned_json] 的固定字段）：老读者按固定字段重建签名原文验签，若把新字段
+    /// 并进主签名，老读者会验签失败、静默丢掉这台设备的整个 head（`plan` 里 `Head::decode` 失败即 `continue`）。
+    /// 所以扩展单独签一份 `extSig`（覆盖主字段 + `ext`，绑死在这一代 head 上）：老读者忽略未知键、主签名照过；
+    /// 新读者验 `extSig`，不过就丢掉扩展、head 照收。往 `ext` 里加键不必升 `minReader`。
+    pub ext: Option<Value>,
 }
 
 fn hex(b: &[u8]) -> String {
@@ -768,10 +776,20 @@ impl Head {
         serde_json::to_vec(&self.unsigned_json()).expect("head json")
     }
 
+    /// 扩展签名的原文：主字段 + `ext`（见 [Head::ext]）。
+    fn ext_signed_bytes(&self, ext: &Value) -> Vec<u8> {
+        let mut v = self.unsigned_json();
+        v["ext"] = ext.clone();
+        serde_json::to_vec(&v).expect("head json")
+    }
+
     /// 内容签名：除代号与时刻外的全部字段（发布了什么、ack 到哪、摘要、名字）。两个 head 的内容签名相同 =
     /// 对别的设备而言没有任何新信息，不必再发一次（见 `sync2_head` 的「没变就不写」）。
     pub fn content_sig(&self) -> String {
         let mut v = self.unsigned_json();
+        if let Some(ext) = &self.ext {
+            v["ext"] = ext.clone();
+        }
         if let Some(m) = v.as_object_mut() {
             m.remove("gen");
             m.remove("at");
@@ -783,6 +801,10 @@ impl Head {
         let sig = signer.sign(&self.signed_bytes());
         let mut v = self.unsigned_json();
         v["sig"] = json!(hex(&sig));
+        if let Some(ext) = self.ext.as_ref().filter(|e| e.is_object()) {
+            v["extSig"] = json!(hex(&signer.sign(&self.ext_signed_bytes(ext))));
+            v["ext"] = ext.clone();
+        }
         serde_json::to_vec(&v).expect("head json")
     }
 
@@ -818,10 +840,23 @@ impl Head {
             digest: s("digest")?.to_owned(),
             at_ms: v.get("at").and_then(Value::as_i64).ok_or("head: missing at")?,
             name: s("name")?.to_owned(),
+            ext: None,
         };
         let sig = unhex::<64>(s("sig")?).ok_or("head: bad sig")?;
         if !verify(&head.public, &head.signed_bytes(), &sig) {
             return Err("head signature mismatch".into());
+        }
+        // 扩展：签名不对（被转发者 / 位置改过）只丢扩展，head 本身照收（主签名已担保它）。
+        let mut head = head;
+        if let Some(ext) = v.get("ext").filter(|e| e.is_object()) {
+            let ok = v
+                .get("extSig")
+                .and_then(Value::as_str)
+                .and_then(unhex::<64>)
+                .is_some_and(|es| verify(&head.public, &head.ext_signed_bytes(ext), &es));
+            if ok {
+                head.ext = Some(ext.clone());
+            }
         }
         // 段清单必须首尾相接、覆盖 1..=seq（否则读者无法判断「引用段都可读」）。
         let mut next = 1;
@@ -1039,11 +1074,56 @@ pub(crate) mod tests {
             digest: "abc".into(),
             at_ms: 123,
             name: "Pixel".into(),
+            ext: None,
         };
         let bytes = head.encode(&signer);
         assert_eq!(Head::decode(&bytes).unwrap(), head);
+        assert!(!String::from_utf8(bytes.clone()).unwrap().contains("ext"));
         let tampered = String::from_utf8(bytes).unwrap().replace("\"seq\":30", "\"seq\":31");
         assert!(Head::decode(tampered.as_bytes()).is_err());
+    }
+
+    /// 设备扩展信息（型号 / 版本）不进主签名：老读者（只按固定字段重建原文验签）照收带扩展的 head；新读者验
+    /// `extSig`，被改过的扩展只丢扩展、head 照收。
+    #[test]
+    fn head_ext_is_separately_signed_and_old_readers_still_verify() {
+        let signer = DeviceKey::generate();
+        let head = Head {
+            gen: 2,
+            protocol: PROTOCOL,
+            min_reader: MIN_READER,
+            collection: Id([1; 16]),
+            device: Id([2; 16]),
+            public: signer.public(),
+            seq: 0,
+            chain: CHAIN_ZERO,
+            segments: Vec::new(),
+            ack: Vv::new(),
+            digest: String::new(),
+            at_ms: 5,
+            name: "iPhone 17".into(),
+            ext: Some(json!({"model": "iPhone 17", "app": "3.3", "platform": "ios"})),
+        };
+        let bytes = head.encode(&signer);
+        assert_eq!(Head::decode(&bytes).unwrap(), head);
+        // 老读者的验签：只取固定字段重建原文（= 不认识 ext / extSig）。
+        let v: Value = serde_json::from_slice(&bytes).unwrap();
+        let sig = unhex::<64>(v["sig"].as_str().unwrap()).unwrap();
+        let old_view = Head { ext: None, ..head.clone() };
+        assert!(verify(&head.public, &old_view.signed_bytes(), &sig), "old readers must still accept the head");
+        // 改扩展：扩展丢掉，head 照收。
+        let tampered = String::from_utf8(bytes.clone()).unwrap().replace("\"3.3\"", "\"9.9\"");
+        let got = Head::decode(tampered.as_bytes()).unwrap();
+        assert_eq!(got.ext, None);
+        assert_eq!(got.name, "iPhone 17");
+        // 扩展签名绑在这一代 head 上：换到另一代（主签名重签）的扩展签名不认。
+        let other = Head { gen: 3, ..head.clone() }.encode(&signer);
+        let mut ov: Value = serde_json::from_slice(&other).unwrap();
+        ov["extSig"] = v["extSig"].clone();
+        assert_eq!(Head::decode(&serde_json::to_vec(&ov).unwrap()).unwrap().ext, None);
+        // 内容签名随扩展变（改名 / 升版本要触发重写 head）。
+        let bumped = Head { ext: Some(json!({"model": "iPhone 17", "app": "3.4", "platform": "ios"})), ..head.clone() };
+        assert_ne!(head.content_sig(), bumped.content_sig());
     }
 
     #[test]

@@ -73,12 +73,20 @@ const PLAY = String.raw`(async () => {
     line.boxes.push(b);
   });
   const em = parseFloat(getComputedStyle(document.body).fontSize);
-  // The line is drawn just outside the block-end edge of the cue's lane strips (the 1em strip
-  // the lane layer lays over each visual line), so the band sits across that edge. A text
-  // range's box spans the font's ascent + descent, which is font-dependent and wider than the
-  // em box, so it cannot place the band; it only gives the extent along the line.
-  const lanes = [...document.querySelectorAll('fushi-hl-lane[data-hl="fushi-sentence-audio"]')]
-    .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
+  // The line is the underline stroke style (user 2026-11-04: e-ink reuses it), drawn just
+  // outside the block-end edge of the 1em box the lane layer measures for each visual line.
+  // Each line's stroke svg box is centred on that line (lane centre ± 3.5em across), so its
+  // centre gives the line centre and the band sits across centre + 0.5em. A text range's box
+  // spans the font's ascent + descent, which is font-dependent and wider than the em box, so it
+  // cannot place the band; it only gives the extent along the line.
+  const lanes = [...document.querySelectorAll('fushi-hl-lanes-group[data-hl-group="fushi-sentence-audio"] svg.fushi-mark-ink')]
+    .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height)
+    .map((r) => {
+      const c = vertical ? (r.left + r.right) / 2 : (r.top + r.bottom) / 2;
+      return vertical
+        ? { left: c - em / 2, right: c + em / 2, top: r.top, bottom: r.bottom }
+        : { left: r.left, right: r.right, top: c - em / 2, bottom: c + em / 2 };
+    });
   const bands = lines.map((l) => {
     const a = Math.min(...l.boxes.map((b) => vertical ? b.t : b.l));
     const z = Math.max(...l.boxes.map((b) => vertical ? b.b : b.r));
@@ -87,7 +95,8 @@ const PLAY = String.raw`(async () => {
       const c = vertical ? (r.left + r.right) / 2 : (r.top + r.bottom) / 2;
       return l.boxes.some((b) => vertical ? c > b.l && c < b.r : c > b.t && c < b.b);
     });
-    if (!mine.length) return { text, error: 'no lane strip over this line' };
+    if (!mine.length) return { text, error: 'no underline stroke along this line' };
+
     if (vertical) {
       const edge = Math.min(...mine.map((r) => r.left));
       return { text, rect: { x: Math.floor(edge - 0.4 * em), y: Math.ceil(a), width: Math.round(0.35 * em), height: Math.floor(z - a) } };

@@ -1,0 +1,12 @@
+## BUG-4005 · srs-sync2-alias-dedup
+- **报告**：2026-11-04（用户：宿主库 3.3 GB，新设备首次同步要拉的段过大、收段峰值高；分析见 BUG-4004 同一轮调查）
+- **真实性**：✅ 真问题（存量数据结构缺陷）。两台设备各自把同一份旧版（v1）数据迁成 v2 操作：本机流里有 308420 条修改记录 + 对应日志 / 实体是 ID 更小那台设备已发布操作的逐条等值副本（其中 5712 条只差实体 / key 的 ID 重映射），写入者名换成了本机合并时生成的 `merged-…`。新设备得把两份都下下来、都投影；删除扣留（`sync2_ent_ops`）同时挂着两份 dot，扣留判定随投递顺序变。v2 协议里没有「这条是那条的副本」的表达，读者无从合并——根因在操作格式（`native/fushi_fsrs/src/sync2/op.rs` 无对应 Body）与投影（`native/fushi_fsrs/src/store/sync2/mod.rs` `project_log` 对同一日志第二份只跳过、不归并）。
+- **[x] ① 已修复** — 协议 3 / minReader 3：
+  - 新操作 `Body::Dedup{pairs}`（KIND 13，`sync2/op.rs`）：作者（两台里 ID 更大、持有副本的一方）逐条核对等值（`store/sync2/dedup.rs:105` `verify`：实体 / 日志含 legacy_hlc 字节相同；修改记录除写入者外相同、写入者改名后 ctx 相同；寄存器里混着改名写入者未配对操作的整组不收）后声明 `本机 seq ≡ 对方 OpId`。
+  - 本机副本变「重复骨架」（purged=1，payload = 32 字节哈希 ‖ 版本 ‖ 对方 OpId ‖ 旧戳；`op.rs` `Op::duplicate` / `check_skeleton`），链哈希不变、旧闭包（`sync2_legacy`）在新设备上照样确定（`mod.rs:430`、`channel.rs:212`）。
+  - 读者应用（`dedup.rs:163` `apply`，`mod.rs:777`）：删多出来的并存修改记录行（同 ID 的改挂 `sync2_edit_ops`）、从 `sync2_ent_ops` 摘掉副本 dot、`sync2_log_meta` 改指原件，重算扣留——任何投递顺序下扣留与摘要一致。
+  - 作者侧作业分阶段（INDEX / MATCH / CHECK / EMIT，每步 ≤20000 条，`dedup.rs:412` `sync2_dedup`），中途被杀从作业表续做；schema v24（`store/schema.rs`，`store/sync2/schema.rs` `V24_DEDUP`）建作业表并给已迁移 profile 排作业；收到对方日志而先到的是本机副本时也排（`mod.rs:1066`）。
+  - 作者把含副本的段登记为同名重写（restamp=2），发件时复用骨架段剥掉；Dart 发件传 `archive`（`srs_sync2_round.dart:268`），归档位置不重写（`store/sync2/transport.rs:1860` `sync2_outbox_to`）。文件整理不在收段途中做：作业做完给 `srs_meta` 记 `compact_pending`，下次打开库时由 `store/compact.rs` 整理（写连接独占、读连接未开）。
+  - Dart 一轮在收段后、发件前推进作业（`srs_sync2_round.dart:240`，预算 20 s，`done == false` 才续，`shouldStop` 生效）；旧客户端见 minReader 3 走既有 needsUpgrade → `SrsSyncNotice.backendUnsupported` 提示（`fushi/lib/src/srs/srs_sync_scheduler.dart:1098`）。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/sync2/tests_dedup.rs`（老设备逐条投递 / 新设备收段通道收敛、归档位置不重写、Dedup / Duplicate 往返、proptest 投递顺序无关 + 摘要一致）、`tests_break.rs`（写协议 3 head）；`packages/fushi_engine/test/srs/sync2/srs_sync2_dedup_round_test.dart`（轮次顺序、archive 透传、shouldStop）。实测探针 `store/sync2/dedup_measure.rs`（`#[ignore]`，`SRS_DEDUP_DB` 指库副本）。
+- **备注**：骨架仍留 32 字节哈希 + 尾巴，字节收益受此所限（见 PR 测量数字）；协议 3 让未升级的客户端停同步、提示升级。

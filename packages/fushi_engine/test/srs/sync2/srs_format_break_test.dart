@@ -215,7 +215,7 @@ void main() {
     ).readAsBytesSync();
     final Map<String, Object?>? fence = srsDecodeV1Fence(bytes);
     expect(fence, isNotNull);
-    expect(fence!['minReader'], 2);
+    expect(fence!['minReader'], kSrsSync2MinReader);
     expect(fence[kSrsV1MovedToKey], kSrsSync2Folder);
     expect(
       () => jsonDecode(utf8.decode(bytes)),

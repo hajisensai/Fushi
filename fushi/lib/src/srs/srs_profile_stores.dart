@@ -146,15 +146,29 @@ class SrsProfileStores {
   /// `srsStoreProvider` 打开激活副本：先作废同 uid 的扩展副本，再交接（[_handOver]：旧激活副本
   /// 排空作废、在它最后一段独占区里 [open]）。激活完成前来的同 uid 请求等它、直接用它；别的 uid 等它
   /// 做完（见 [storeFor]）。
+  ///
+  /// **同一个 uid 再激活不交接**：当前激活副本就是 [profileUid] 的、还能写、没在作废时，交给 [reuse] 就地换上
+  /// 打开参数（[SrsDbStore.rebind]）并原样返回它——provider 因与 uid 无关的依赖重建（启动时配置装载完成、
+  /// 引擎 / 目录 provider 重建）不是切换配置，交接会作废这份副本，在跑的同步收段、样式去重、媒体回收全部
+  /// 作废重来。[reuse] 返回 false（连接 / 设备 ID 变了，不是同一份副本）才交接重开；缺省直接复用。
   Future<SrsDbStore> activate(
     String profileUid,
-    Future<SrsDbStore> Function() open,
-  ) {
+    Future<SrsDbStore> Function() open, {
+    bool Function(SrsDbStore current)? reuse,
+  }) {
     final Completer<void> settled = Completer<void>();
     late final ({String uid, Future<SrsDbStore> store, Future<void> settled})
     marker;
     final Future<SrsDbStore> opening = _serialSwitch(() async {
       try {
+        final SrsDbStore? current = _active;
+        if (current != null &&
+            current.profileUid == profileUid &&
+            current.isUsable &&
+            !current.isWindingDown &&
+            (reuse?.call(current) ?? true)) {
+          return current;
+        }
         await release(profileUid);
         return (await _handOver(open))!;
       } finally {

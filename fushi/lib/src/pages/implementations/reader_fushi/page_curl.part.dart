@@ -13,6 +13,10 @@ class _ReaderPageCurlHost implements PageCurlHost {
   @override
   Future<ui.Image?> capturePage() => capturePageCurlWebView(_state._controller);
 
+  /// 小说的纸就是整个视口（页边距也是纸）。
+  @override
+  Future<Rect?> paperRect() async => null;
+
   @override
   Future<bool> previewNeighbour({required bool forward}) async {
     final InAppWebViewController? controller = _state._controller;

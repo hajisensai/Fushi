@@ -13,6 +13,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -504,6 +505,178 @@ void main() {
     expect(await b.db.profileUidOf(b.profileId), bOld);
     expect(await b.rowsOf(bOld), before);
   });
+
+  // BUG-4011：宿主把旧 profile 并入时，目标集合里已经有同一批修改记录（01a173ca 迁出的 `2RIr94…#1`：与宿主旧写入者
+  // 逐条同 seq、同 HLC 物理时刻与计数，只是写入者名字不同），并入却改名成 `merged-…`，31 万条修改记录在目标里成了
+  // 两份。目标里已有时沿用目标的名字：dot 相同 → 修改记录 ID 相同，认出已在，不再并。
+  test('目标里已有同一批修改记录（同 seq 同 HLC）：沿用目标的写入者、不重复并；同 seq 不同 HLC 的照常改名', () async {
+    final _Device b = await _Device.open('host');
+    final String bOld = b.store.profileUid;
+    const String target = '01900000-0000-7000-8000-0000000000aa';
+    final SrsDbStore t = await SrsDbStore.open(
+      db: b.srs.db,
+      core: b.srs.core,
+      profileUid: target,
+      deviceId: b.deviceId,
+      engine: const SrsFakeEngine(),
+    );
+    const int t0 = 1700000000000;
+    SrsEditEvent legacy(String uid, String w, int seq, int at, String key) =>
+        SrsEditEvent(
+          SrsFieldEdit(
+            profileUid: uid,
+            entityKind: SrsEntityKind.deck,
+            entityId: SrsIds.builtinDefaultDeck(uid),
+            fieldKey: key,
+            dot: SrsDot(w, seq),
+            ctx: SrsCausalContext.empty(),
+            value: 'v',
+            hlc: Hlc(at, 0, w),
+            timeSource: SrsTimeSource.wall,
+          ),
+        );
+    await b.store.applyRemote(<SrsEvent>[
+      for (int i = 1; i <= 3; i++)
+        legacy(bOld, 'host-old#1', i, t0 + i, 'x/$i'),
+      // 同 seq、不同 HLC：与目标里的任何一条都不是同一条记录。
+      legacy(bOld, 'clone-a#1', 1, t0 + 10, 'c/a'),
+    ]);
+    await t.applyRemote(<SrsEvent>[
+      for (int i = 1; i <= 3; i++) legacy(target, 'their#1', i, t0 + i, 'x/$i'),
+      legacy(target, 'clone-b#1', 1, t0 + 20, 'c/b'),
+    ]);
+
+    await srsMergeProfileUid(
+      b.db,
+      b.srs.db,
+      core: b.srs.core,
+      profileId: b.profileId,
+      oldUid: bOld,
+      newUid: target,
+      deviceId: b.deviceId,
+    );
+    final List<QueryRow> rows = await b.srs.db
+        .customSelect(
+          'SELECT srs_idt(writer_id) AS w, field_key AS k FROM srs_field_edits '
+          "WHERE profile_uid = ? AND (field_key LIKE 'x/%' OR field_key LIKE 'c/%') "
+          'ORDER BY k, w',
+          variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
+        )
+        .get();
+    final List<String> got = <String>[
+      for (final QueryRow r in rows)
+        '${r.read<String>('k')} ${r.read<String>('w')}',
+    ];
+    final String merged = got
+        .firstWhere((String s) => s.startsWith('c/a '))
+        .substring(4);
+    expect(merged, startsWith(kSrsMergedWriterPrefix));
+    expect(
+      got,
+      <String>[
+        'c/a $merged',
+        'c/b clone-b#1',
+        'x/1 their#1',
+        'x/2 their#1',
+        'x/3 their#1',
+      ],
+      reason:
+          'the shared edits land once, under the writer the target already has',
+    );
+  });
+
+  // BUG-4011 端到端：目标 uid 的数据只在同步位置上（另一台设备 A 迁出 / 写入的），本机 B 切到这个 uid 并入。并入前
+  // 先只拉不发一轮（[srsMergeProfileUid] 的 pullTarget），合并就看得到目标里已有的同一批修改记录，不再改名造第二份。
+  for (final bool pullFirst in <bool>[true, false]) {
+    test(
+      pullFirst
+          ? '切 uid 并入前先收目标数据：同一批修改记录不再产生 merged- 写入者'
+          : '对照：不先收目标数据，同一批修改记录改名成 merged- 落第二份',
+      () async {
+        final _Device a = await _Device.open('A');
+        final _Device b = await _Device.open('B');
+        final String target = a.store.profileUid;
+        final String bOld = b.store.profileUid;
+        const int t0 = 1700000000000;
+        SrsEditEvent legacy(String uid, String w, int seq) => SrsEditEvent(
+          SrsFieldEdit(
+            profileUid: uid,
+            entityKind: SrsEntityKind.deck,
+            entityId: SrsIds.builtinDefaultDeck(uid),
+            fieldKey: 'x/$seq',
+            dot: SrsDot(w, seq),
+            ctx: SrsCausalContext.empty(),
+            value: 'v$seq',
+            hlc: Hlc(t0 + seq, 0, w),
+            timeSource: SrsTimeSource.wall,
+          ),
+        );
+        await a.store.applyRemote(<SrsEvent>[
+          for (int i = 1; i <= 3; i++) legacy(target, 'their#1', i),
+        ]);
+        expect((await a.round(dir)).error, isNull);
+        await b.store.applyRemote(<SrsEvent>[
+          for (int i = 1; i <= 3; i++) legacy(bOld, 'host-old#1', i),
+        ]);
+
+        await srsMergeProfileUid(
+          b.db,
+          b.srs.db,
+          core: b.srs.core,
+          profileId: b.profileId,
+          oldUid: bOld,
+          newUid: target,
+          deviceId: b.deviceId,
+          pullTarget: pullFirst
+              ? (SrsDbStore t) async {
+                  expect(
+                    await srsSync2PullWithin(
+                      t,
+                      (SrsSync2Host h) async {
+                        final SrsSync2Report r = await srsSync2PullOnly(
+                          host: h,
+                          location: SrsAssetLocationStore(
+                            store: dir,
+                            profileUid: target,
+                          ),
+                          locationId: 'interconnect:host',
+                          nowMs: () => t.now().$1,
+                        );
+                        expect(r.error, isNull);
+                        expect(r.applied, greaterThan(0));
+                      },
+                      budget: kSrsPullBeforeMergeBudget,
+                      onError: (Object e, StackTrace s) => fail('$e'),
+                    ),
+                    isTrue,
+                  );
+                }
+              : null,
+        );
+        final List<QueryRow> rows = await b.srs.db
+            .customSelect(
+              'SELECT srs_idt(writer_id) AS w FROM srs_field_edits '
+              "WHERE profile_uid = ? AND field_key LIKE 'x/%'",
+              variables: <Variable<Object>>[
+                Variable<String>(target, srsIdType),
+              ],
+            )
+            .get();
+        final List<String> writers = <String>[
+          for (final QueryRow r in rows) r.read<String>('w'),
+        ];
+        final int merged = writers
+            .where((String w) => w.startsWith(kSrsMergedWriterPrefix))
+            .length;
+        if (pullFirst) {
+          expect(merged, 0, reason: '$writers');
+          expect(writers, <String>['their#1', 'their#1', 'their#1']);
+        } else {
+          expect(merged, 3, reason: '$writers');
+        }
+      },
+    );
+  }
 }
 
 /// 设备上唯一一条笔记的 guid（按缓存表读，不经 uid）。
