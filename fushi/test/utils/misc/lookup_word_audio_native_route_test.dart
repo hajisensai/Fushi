@@ -12,7 +12,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 String _read(String path) => File(path).readAsStringSync();
@@ -212,7 +212,7 @@ void main() {
     });
 
     test('auto-read skips the WebView <audio> when routing natively', () {
-      final String src = _read('lib/src/utils/misc/lookup_audio_playback.dart');
+      final String src = _read('lib/src/lookup/lookup_audio_playback.dart');
       expect(
         src,
         contains('if (playInWebView != null && !lookupWordAudioPlaysNatively)'),

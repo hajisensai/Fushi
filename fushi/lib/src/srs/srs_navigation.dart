@@ -10,7 +10,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// 从 [from] 所在的 provider 作用域再压页面 / 抽屉时，把同一个作用域带过去：路由建在导航器的
 /// overlay 里，不在 [from] 的子树下，不带的话会落回根作用域（App 激活配置的复习）。

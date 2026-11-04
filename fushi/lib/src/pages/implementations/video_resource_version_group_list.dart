@@ -6,7 +6,11 @@ import 'package:fushi_engine/media/video/download/video_resource_version_groups.
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/src/media/video/episode_span_format.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
 /// 下载模式的资源「版本卡」列表：一张卡 = 一个「发布组 › 清晰度」版本，
 /// 组内逐集发布折在卡内展开。点卡：恰 1 条发布 → 直接选中；否则展开。

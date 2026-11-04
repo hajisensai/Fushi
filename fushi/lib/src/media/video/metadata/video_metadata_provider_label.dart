@@ -3,7 +3,7 @@
 library;
 
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 String videoMetadataProviderLabel(VideoMetadataProviderKind kind) =>
     switch (kind) {

@@ -6,9 +6,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/fields/image_field.dart';
+import 'package:fushi/src/creator/image_enhancement.dart';
+import 'package:fushi/src/creator/image_export_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// An enhancement that can be used to take a picture to set a new image.
 class CameraEnhancement extends ImageEnhancement {

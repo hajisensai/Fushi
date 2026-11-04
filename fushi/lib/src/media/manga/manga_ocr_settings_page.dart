@@ -7,9 +7,11 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 「漫画 OCR」设置的独立页（settings kit 页壳：浮动页头 + 分组跳转条）：引擎偏好 /
 /// 内置模型下载 / Lens 语言 / 外部 mokuro。

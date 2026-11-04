@@ -13,7 +13,9 @@ import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 游戏统一刮削弹窗守卫：
 /// 1. 打开即按预填词自动首搜，候选带「源 · ID · 发行日」副行与每行「使用」按钮；

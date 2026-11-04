@@ -5,7 +5,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/changelog_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 
 void main() {
   testWidgets('initial changelog release stays below the floating header', (

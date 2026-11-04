@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/pages/implementations/home_reader_page.dart';
 
 /// Media type that encapsulates text-based media, like books or articles.
 class ReaderMediaType extends MediaType {

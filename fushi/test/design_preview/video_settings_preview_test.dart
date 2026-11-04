@@ -31,7 +31,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show readerSideSheetWidth;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/settings/settings_destination.dart' show VideoGroup;
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';

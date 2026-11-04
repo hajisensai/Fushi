@@ -5,7 +5,7 @@ import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 播放页「着色器」视图里不是记录列表的那几样操作在控制通道上的条目（着色器文件
 /// 列表本身是 schema 行 `video.player.shaders` 的 cliList）：画质档位、从本机 mpv

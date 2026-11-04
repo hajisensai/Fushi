@@ -26,7 +26,9 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
     show AudiobookPlayerController;
 import 'package:fushi/src/media/audiobook/audiobook_session.dart'
@@ -69,6 +71,7 @@ import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui
     show audiobookshelfTabServers;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
+import 'package:fushi/src/media/media_source.dart';
 
 /// 快照里每个封面最多探测的候选数 = 书架上限，封面文件探测只对入选的几条做。
 const int _kCoverProbeLimit = kWidgetShelfLimit;
@@ -918,7 +921,10 @@ class WidgetSnapshotSource {
   Future<WidgetOnDeckInput> _collectOnDeck(AppModel appModel) async {
     final ModuleVisibility modules = appModel.moduleVisibility;
     final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
-        serverContinueGates(appModel);
+        serverContinueGates(
+          prefs: appModel.isPreferencesReady ? appModel.prefsRepo : null,
+          visibility: appModel.moduleVisibility,
+        );
     bool hasMedia = false;
     if (modules.isEnabled(ModuleId.video)) {
       try {

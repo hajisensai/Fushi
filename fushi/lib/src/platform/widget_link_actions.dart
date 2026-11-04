@@ -5,7 +5,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
     show deliverExternalLookup;
 import 'package:fushi/src/anki/source_review_navigation.dart'
@@ -35,6 +36,7 @@ import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
     show ServerContinueCandidate;
 import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart'
     show ServerContinueFeed;
+import 'package:fushi/src/media/media_source.dart';
 
 // 小组件深链的落地动作（接到 [runWidgetLink] 的回调上）。都在 navigator 已退回首页
 // 根路由之后才被调用，各自返回「有没有真的打开」，没打开时调用方停在对应 tab。

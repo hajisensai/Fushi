@@ -8,7 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtitle_search_sheet.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:material_ui/material_ui.dart';
 
 const ValueKey<String> _queryKey = ValueKey<String>(

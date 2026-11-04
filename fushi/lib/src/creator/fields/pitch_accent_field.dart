@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Returns the formatted pitch accent diagram HTML of a [DictionaryEntry].
 class PitchAccentField extends Field {

@@ -16,7 +16,7 @@ import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart'
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatActivityRelativeTime;
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';

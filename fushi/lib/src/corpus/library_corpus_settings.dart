@@ -9,7 +9,8 @@ import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 开关当前值（D-L2：默认开，全在本机、不上传）。

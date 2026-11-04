@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// BUG-3250：宽窗库页工具栏行里的外壳标题胶囊（[FushiShellInlineTitle]）在 Row

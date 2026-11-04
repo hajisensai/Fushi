@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_recent_destinations.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show

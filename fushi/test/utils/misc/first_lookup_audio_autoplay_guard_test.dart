@@ -72,7 +72,7 @@ void main() {
 
     test('auto-read falls back to the Dart player on WebView failure', () {
       final String playback = _read(
-        'lib/src/utils/misc/lookup_audio_playback.dart',
+        'lib/src/lookup/lookup_audio_playback.dart',
       );
       expect(
         playback,

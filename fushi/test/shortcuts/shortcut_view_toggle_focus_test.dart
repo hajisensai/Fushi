@@ -5,7 +5,8 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// TODO-942 残留缺口守卫：快捷键设置页顶部「列表 / 键盘皮肤」模式切换开关必须
 /// 可被手柄 / 键盘焦点操作。修复前它是一个裸 `SegmentedButton<bool>` —— 由多个

@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show AudiobookAlignmentStep;
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';

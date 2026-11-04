@@ -13,7 +13,7 @@ import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
     show kFloatingBallOcrLanguage;
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';

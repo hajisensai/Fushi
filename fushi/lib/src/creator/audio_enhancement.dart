@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// An entity for enhancements that specificallly generate audio.
 abstract class AudioEnhancement extends Enhancement {

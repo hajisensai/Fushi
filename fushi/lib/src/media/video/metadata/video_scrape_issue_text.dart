@@ -9,7 +9,7 @@ library;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 String describeVideoScrapeIssueMessage(String message) {
   final VideoScrapePendingNote? pending = parseVideoScrapePendingNote(message);

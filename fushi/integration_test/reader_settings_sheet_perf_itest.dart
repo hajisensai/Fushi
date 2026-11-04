@@ -5,14 +5,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
 import 'package:fushi/src/reader/reader_settings_ia.dart'
     show ReaderSettingsTab;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiSlider;
-import 'package:fushi/utils.dart' show FushiGlassMaterial;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:flutter/services.dart';

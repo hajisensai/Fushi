@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/pages/implementations/changelog_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// TODO-1310：「查看更新日志」页渲染守卫。通过 `initialReleases` 注入口绕开网络，
 /// 验证：① 列表态渲染版本号/日期/预发布徽标/Markdown 正文；② 空态给出提示文案与

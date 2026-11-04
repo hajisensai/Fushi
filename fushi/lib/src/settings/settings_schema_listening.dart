@@ -17,7 +17,8 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「听书」的两个设置分区（有声书 + 悬浮歌词）。
 ///

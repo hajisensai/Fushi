@@ -1,5 +1,5 @@
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 export 'package:fushi_engine/media/discovery/discovery_format.dart'
     show formatDiscoveryBytes;

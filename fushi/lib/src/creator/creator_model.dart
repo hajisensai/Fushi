@@ -1,8 +1,16 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/audio_export_field.dart';
+import 'package:fushi/src/creator/creator_field_values.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/creator/fields/cloze_after_field.dart';
+import 'package:fushi/src/creator/fields/cloze_before_field.dart';
+import 'package:fushi/src/creator/fields/cloze_inside_field.dart';
+import 'package:fushi/src/creator/fields/sentence_field.dart';
+import 'package:fushi/src/creator/fields/tags_field.dart';
+import 'package:fushi/src/creator/image_export_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// A global [Provider] for the card creator.
 final creatorProvider = ChangeNotifierProvider<CreatorModel>((ref) {

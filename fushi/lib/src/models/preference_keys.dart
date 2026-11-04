@@ -1118,3 +1118,6 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'video_subtitle_subdl_api_key',
   'yomitan_api_key',
 };
+
+/// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
+const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';

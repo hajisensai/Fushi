@@ -35,6 +35,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -682,9 +684,6 @@ srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
   }
   return SrsDeckListData(store: store, decks: decks, revision: revision);
 });
-
-/// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
-const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';
 
 /// 是否显示旧 Lapis 迁移提醒（读写偏好 [kSrsLapisMigrationReminderPrefKey]）。
 final StateProvider<bool> srsLapisMigrationReminderProvider =

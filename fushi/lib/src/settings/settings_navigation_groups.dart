@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 
 /// 一级导航分组固定展开，分区内部的展开策略与此无关。
 enum SettingsNavigationGroupId {

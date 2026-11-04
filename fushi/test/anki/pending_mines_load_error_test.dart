@@ -12,8 +12,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
-import 'package:fushi/utils.dart'
-    show FushiPlaceholderMessage, FushiPlaceholderTone;
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 

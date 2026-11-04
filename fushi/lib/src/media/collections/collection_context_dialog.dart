@@ -15,7 +15,9 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart'
     show ShelfCoverMaterial;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 统一三库页合集入口的右键 / 长按菜单（书架横排行、视频合集封面卡、游戏库

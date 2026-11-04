@@ -7,7 +7,8 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// File drop callback. [globalPosition] uses Flutter global/view coordinates,
 /// matching rectangles produced by RenderBox.localToGlobal.

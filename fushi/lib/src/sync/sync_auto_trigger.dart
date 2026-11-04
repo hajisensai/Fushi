@@ -20,7 +20,7 @@ import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 final _bookKeyPattern = RegExp(r'fushi://book/(.+)');

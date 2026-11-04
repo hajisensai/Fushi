@@ -23,7 +23,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FrequencyAggregate;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'

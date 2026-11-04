@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';

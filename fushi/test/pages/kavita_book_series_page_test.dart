@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_book_series_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';

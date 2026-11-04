@@ -8,7 +8,8 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// mokuro.moe「在线目录」对话框（O1）：薄壳——外框 chrome 与 footer 动作按钮
 /// 在此，浏览/搜索/选卷/入队的全部状态与内容体在 [MokuroMoeCatalogView]

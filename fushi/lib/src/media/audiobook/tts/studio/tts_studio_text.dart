@@ -10,7 +10,8 @@ import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 /// 任务失败码 → 文案（码由制作流程写进任务清单）。
 String ttsRenderFailureText(String? code) {

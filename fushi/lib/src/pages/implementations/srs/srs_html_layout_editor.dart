@@ -9,7 +9,10 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/srs/srs_html_layout.dart';
 import 'package:fushi/src/srs/srs_html_text_parts.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 
 /// 一个段落的输入框控制器：文字 = 各节拼起来；改动按 [srsApplySegmentEdit] 落回各节，
 /// 分隔（空白 / 换行 / 图片）删不掉。

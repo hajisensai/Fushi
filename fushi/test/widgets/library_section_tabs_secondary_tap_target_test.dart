@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 
 // 库页二级下划线页签（`secondary: true`、非浮动）视觉降到 36 高后，命中区
 // 不能跟着降到 M3 触控目标 48dp 以下：上下补透明命中带，点在带里命中正上 /

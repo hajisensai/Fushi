@@ -39,7 +39,9 @@ import 'package:fushi_engine/media/video/video_work_companions.dart'
     show videoWorkCompanionBookUids;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 /// [deleteVideoBooksWithDecision] 的结果：删了几行 + 没删掉的行（BUG-2754：某条

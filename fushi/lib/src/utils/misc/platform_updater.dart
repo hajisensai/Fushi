@@ -15,7 +15,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_landing.dart';
-import 'package:fushi/utils.dart'; // ErrorLogService
+import 'package:fushi/src/utils/misc/error_log_service.dart'; // ErrorLogService
 
 export 'update_handoff.dart'
     show

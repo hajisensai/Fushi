@@ -5,7 +5,12 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeBar, FushiFloatingChromeSoloTitle;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import '../helpers/glass_unwrap.dart';
 
 /// [MediaLibraryShell] 的行为守卫（PR#550 审查补）。

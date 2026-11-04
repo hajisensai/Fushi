@@ -2,8 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart'
-    show FushiListItem, FushiListItemSelectedShape;
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 

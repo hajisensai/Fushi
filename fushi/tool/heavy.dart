@@ -56,6 +56,7 @@ import 'test_flow/heavy_i18n.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/heavy_offload.dart';
 import 'test_flow/heavy_sdk_check.dart';
+import 'test_flow/heavy_test_closure.dart';
 
 Future<void> main(List<String> args) async {
   if (args.contains('--status')) return _status();
@@ -83,8 +84,13 @@ Future<void> main(List<String> args) async {
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,
     capMb: capOverride ?? classified.capMb,
-    // An explicit --cap-mb books what it asks for.
-    bookMb: capOverride ?? classified.bookMb,
+    // An explicit --cap-mb books what it asks for; a test books from what it
+    // compiles (heavy_budget.dart testBookMb).
+    bookMb:
+        capOverride ??
+        (classified.kind == HeavyKind.test
+            ? _testBooking(command)
+            : classified.bookMb),
     worktreeExclusive: classified.worktreeExclusive,
     light: classified.light,
   );
@@ -392,6 +398,41 @@ void _status() {
       '${h.cwd}',
     );
   }
+}
+
+/// What a test [command] books: its import closure and tester count
+/// (heavy_budget.dart testBookMb). Whole-directory runs, unreadable targets
+/// and a failing closure walk book the ceiling.
+int _testBooking(List<String> command) {
+  final List<String>? targets = testTargetsOf(command);
+  int? closure;
+  if (targets != null) {
+    try {
+      closure = testClosureFiles(
+        Directory.current.path,
+        targets,
+        edgeCache: File('${heavyStateDir().path}/closure-edges.json'),
+      );
+    } on Object catch (e) {
+      stderr.writeln(
+        'heavy: import closure not measured ($e); booking the ceiling',
+      );
+    }
+  }
+  final int concurrency = testConcurrencyOf(command) ?? kDefaultTestConcurrency;
+  final int testers = targets == null
+      ? concurrency
+      : (targets.length < concurrency ? targets.length : concurrency);
+  final String exe = command.first
+      .replaceAll(r'\', '/')
+      .split('/')
+      .last
+      .toLowerCase();
+  return testBookMb(
+    closureFiles: closure,
+    testers: testers,
+    flutter: !exe.startsWith('dart'),
+  );
 }
 
 int? _intArg(List<String> args, String prefix) {

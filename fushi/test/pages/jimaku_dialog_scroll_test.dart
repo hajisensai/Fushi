@@ -2,7 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 矮屏（手机横屏 / 软键盘弹起时的可视高度）下验证 Jimaku 自动获取字幕对话框候选列表区。
 ///

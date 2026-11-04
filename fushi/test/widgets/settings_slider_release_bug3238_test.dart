@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// BUG-3238：设置滑条松手后保留拖动值等调用方写回；调用方拒绝新值（重建时

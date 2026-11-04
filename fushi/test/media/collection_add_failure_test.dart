@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/collections/collection_drag.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「拖进合集」落库失败必须给用户明确提示，**不得静默**。
 ///

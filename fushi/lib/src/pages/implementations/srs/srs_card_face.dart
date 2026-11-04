@@ -60,7 +60,13 @@ import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 一面卡（问题面或答案面）。
 @immutable

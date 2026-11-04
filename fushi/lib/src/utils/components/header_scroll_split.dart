@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 查询 / 筛选头部 + 结果 sliver 的统一滚动容器（反馈 XFsZIWYbr8）。
 ///

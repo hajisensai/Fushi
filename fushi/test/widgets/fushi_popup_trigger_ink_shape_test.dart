@@ -2,7 +2,10 @@ import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 // 2026-10-05 用户反馈：书架「阅读状态」筛选 chip 悬停 / 点击时的灰色反馈范围
 // 与高亮胶囊对不上。根因在共享触发器 [FushiPopupMenuButton] 的 MD3 路径：框架

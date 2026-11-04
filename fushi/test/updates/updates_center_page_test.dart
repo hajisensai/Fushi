@@ -9,7 +9,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 更新中心：**进页面 = 已读**。用户从首页横幅 / 系统通知点进来这一下就是
 /// 「我看到了」，不该进来之后还要再按「全部已读」或逐条点才能把角标消掉。

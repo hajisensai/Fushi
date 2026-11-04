@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 2026-08-13 手机顶栏显示不全：页头（customTitle 分段导航形态）在「分段条自然宽
 /// + 动作自然宽 > 行宽」时把可收纳动作折进 ⋯ 菜单，把宽度还给分段条；摆得下时

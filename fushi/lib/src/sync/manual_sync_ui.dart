@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
-import 'package:fushi/src/models/app_font_sync_local.dart';
+import 'package:fushi/src/sync/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
@@ -16,7 +16,7 @@ import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 手动同步完成后的 SnackBar 摘要（消费 [SyncRunReport]）。纯函数，便于单测边界：
 /// 全 0 → "无新增"；多类型 → ` · ` 拼接；有失败 → 追加失败计数后缀。

@@ -21,8 +21,9 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart';
-import 'package:fushi/utils.dart'
-    show FushiDestructiveConfirmDialog, FushiLoadingView, FushiSelectableChip;
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';

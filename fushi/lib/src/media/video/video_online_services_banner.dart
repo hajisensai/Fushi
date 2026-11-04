@@ -2,7 +2,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 
 /// One reminder shared by the video library's home, series and all sections.
 class VideoOnlineServicesBanner extends StatefulWidget {

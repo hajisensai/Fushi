@@ -21,7 +21,12 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 enum AniDbDiscoveryIdentityStatus {
   /// reference 已带 anidbId，或解析唯一命中并已写入。

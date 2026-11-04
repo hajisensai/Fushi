@@ -34,6 +34,7 @@ import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/cover_image.dart'
     show kLocalCoverDecodePixelWidth, resizedFileImage;
+import 'package:fushi/src/media/media_source.dart';
 
 /// 解析一条媒体的封面图源；返回 null = 无封面可显示，调用方画占位
 /// （占位图标用 [mediaCoverFallbackIcon]）。
