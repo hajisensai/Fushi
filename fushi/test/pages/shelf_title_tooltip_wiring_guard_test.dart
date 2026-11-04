@@ -51,18 +51,26 @@ void main() {
   });
 
   test('书架：继续阅读 hero 标题接标题溢出 Tooltip（TODO-2497）', () {
-    // 2026-10-28 起书架 hero 是共用的 FushiContinueHero，Tooltip 接在组件里。
+    // 2026-11-01 起书架继续区是库页共用的封面取色并列卡 FushiContinueCardRow
+    // （PR #2811 用户选定设计稿），Tooltip 接在组件里。
     final String shelf = maskComments(
       File(
         'lib/src/pages/implementations/reader_fushi_history_page.dart',
       ).readAsStringSync(),
     );
     expect(
-      shelf.contains('FushiContinueSpotlight('),
+      shelf.contains('FushiContinueCardRow.grid('),
       isTrue,
-      reason:
-          '书架继续阅读 hero 必须走共用的 FushiContinueSpotlight（主卡皮是 FushiContinueHero）',
+      reason: '书架继续阅读区必须走库页共用的 FushiContinueCardRow',
     );
+    expect(
+      countIn('lib/src/utils/components/fushi_continue_card_row.dart'),
+      greaterThanOrEqualTo(1),
+      reason: 'FushiContinueCardRow 卡片标题必须接 ShelfTitleOverflowTooltip',
+    );
+  });
+
+  test('FushiContinueHero（首页 / 视频 / 游戏 / 音乐共用）标题接标题溢出 Tooltip', () {
     expect(
       countIn('lib/src/utils/components/fushi_continue_hero.dart'),
       greaterThanOrEqualTo(1),

@@ -931,7 +931,7 @@ const CACHE_PENDING_CHUNK: usize = 5;
 ///
 /// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
 /// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
-const CHANNEL_TRANSPARENT: [&str; 47] = [
+const CHANNEL_TRANSPARENT: [&str; 48] = [
     "identity",
     "channel_settle",
     "open_v1",
@@ -944,6 +944,7 @@ const CHANNEL_TRANSPARENT: [&str; 47] = [
     "ingest_end",
     "replay_pending",
     "status",
+    "legacy_dots",
     "conflicts",
     "checkpoints",
     "history",
@@ -986,8 +987,9 @@ const CHANNEL_TRANSPARENT: [&str; 47] = [
 /// 通道没做完时要先做完它的命令（改投影、读完整投影、在投影上记账的）。分发器只看 [CHANNEL_TRANSPARENT]（不在那张表
 /// 里的一律先做完）；这张表只为登记完整（见上）。
 #[cfg_attr(not(test), allow(dead_code))]
-const CHANNEL_SETTLES: [&str; 21] = [
+const CHANNEL_SETTLES: [&str; 22] = [
     "apply",
+    "dedup",
     "migrate",
     "replay_all",
     "ingest",
@@ -1010,8 +1012,20 @@ const CHANNEL_SETTLES: [&str; 21] = [
     "backfill_dupe_norms",
 ];
 
-const PROJECTING_OPS: [&str; 11] =
-    ["apply", "ingest", "ingest_batch", "ingest_commit", "ingest_finish", "replay_pending", "import", "resolve", "purge", "checkpoint", "restore"];
+const PROJECTING_OPS: [&str; 12] = [
+    "apply",
+    "ingest",
+    "ingest_batch",
+    "ingest_commit",
+    "ingest_finish",
+    "replay_pending",
+    "import",
+    "resolve",
+    "purge",
+    "checkpoint",
+    "restore",
+    "dedup",
+];
 
 fn sync2_command(
     c: &SrsCore,
@@ -1043,6 +1057,8 @@ fn sync2_command(
             parse(c.sync2_apply_local(profile, i("now")?, input)?)?
         }
         "migrate" => c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?,
+        // 存量重复流收敛作业推进一步（store/sync2/dedup.rs，一个事务）；`done` 为假就再发。
+        "dedup" => c.sync2_dedup(profile, i("now")?)?,
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
         "study" => c.study(profile, req)?,
@@ -1070,9 +1086,20 @@ fn sync2_command(
             let max_bytes = req.get("maxBytes").and_then(Value::as_u64).unwrap_or(crate::store::sync2::transport::OUTBOX_BATCH_BYTES);
             let max_segments =
                 req.get("maxSegments").and_then(Value::as_u64).map_or(crate::store::sync2::transport::OUTBOX_BATCH_SEGMENTS, |n| n as usize);
-            let batch = c.sync2_outbox(profile, s("location")?, key32(&req["key"])?, max_bytes.max(1), max_segments.max(1))?;
+            // `present`（可选，一轮的第一批带）：位置上 `devices/<本机>/` 的文件名。水位以下却不在的本机段先登记重传
+            // （作者自检，transport.rs `sync2_audit_own`），这一批起照当前切法补传。
+            let audited = match req.get("present").and_then(Value::as_array) {
+                Some(names) => {
+                    let present: std::collections::BTreeSet<String> = names.iter().filter_map(Value::as_str).map(str::to_owned).collect();
+                    c.sync2_audit_own(profile, s("location")?, &present)?
+                }
+                None => 0,
+            };
+            // `archive`：归档位置（Dart 位置配置），副本收敛换下的段不重写（transport.rs `sync2_outbox_to`）。
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            let batch = c.sync2_outbox_to(profile, s("location")?, key32(&req["key"])?, max_bytes.max(1), max_segments.max(1), archive)?;
             *files = batch.files;
-            json!({"upto": batch.upto, "more": batch.more, "segments": batch.segments})
+            json!({"upto": batch.upto, "more": batch.more, "segments": batch.segments, "audited": audited})
         }
         "outbox_ack" => {
             let segments: Vec<(u64, u64)> = req
@@ -1099,6 +1126,8 @@ fn sync2_command(
                 crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
                     json!({"unchanged": true, "path": path, "delete": obsolete})
                 }
+                // 要引用的段还有没传到这个位置的（发件确认后被合并改切）：不写，Dart 按「改切」结束这一轮。
+                crate::store::sync2::transport::HeadWrite::Recut => json!({"recut": true}),
             }
         }
         // `location`：这些 head 所在位置的进度身份（记下位置上有谁的哪些段，转发用，store/sync2/relay.rs）。
@@ -1198,6 +1227,8 @@ fn sync2_command(
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4011）。
+        "legacy_dots" => c.sync2_legacy_dots(profile)?,
         // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。
         "digest_buckets" => c.sync2_digest_buckets(profile)?,
         // 位置媒体目录的已知内容 / 记下事实（store/sync2/media.rs）：媒体对账读日志投影，不列目录。

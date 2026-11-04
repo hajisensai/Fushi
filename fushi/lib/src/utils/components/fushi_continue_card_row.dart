@@ -132,8 +132,6 @@ class FushiContinueCardRow extends StatelessWidget {
       Directionality.of(context),
     );
     final double baseCardHeight = math.max(coverHeight, infoMin) + pad * 2;
-    // 悬停放大的上下余量，免得抬起时被行裁掉。
-    final double headroom = baseCardHeight * (kFushiHoverLiftScale - 1) / 2 + 4;
     final String? label = this.label;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,19 +168,31 @@ class FushiContinueCardRow extends StatelessWidget {
                     math.max(cover, infoMin) + pad * 2,
                     (fit - gap * (rows - 1)) / rows,
                   );
-            double hoverInset(double w) =>
-                w * (kFushiHoverLiftScale - 1) / 2 + 2;
+            // 悬停放大的余量必须按**卡片实际尺寸**算：卡被铺满 / 撑高后比下限
+            // 大，按下限留的余量不够，放大的卡就被视口裁掉（用户 2026-11-03
+            // 截图：视频首页大卡旁的取色卡抬起后右缘被切）。
+            final double headroom = cardHeight * kFushiHoverLiftOverflow + 4;
+            double hoverInset(double w) => w * kFushiHoverLiftOverflow + 2;
             final double cardWidth;
             final double? cellWidth = _cellWidth;
             final int? columns = _columns;
             if (cellWidth == null || columns == null) {
               final double need = _minCardWidth(cover, pad);
-              final double room = c.maxWidth - hoverInset(need) * 2;
+              // 页边外扩（[bleed]）不够放大余量时，差额在视口内补。
+              final double room =
+                  c.maxWidth - math.max(0, hoverInset(need) - bleed) * 2;
               final int perRow = math.max(
                 1,
                 ((room + gap) / (need + gap)).floor(),
               );
-              cardWidth = (room - gap * (perRow - 1)) / perRow;
+              final double flush = (c.maxWidth - gap * (perRow - 1)) / perRow;
+              // 卡宽与它要的余量互相依赖：铺满整行时余量放得进外扩就铺满；
+              // 放不进就解 n·w + 缝 + 2·(w·k + 2) = 视口宽 + 2·bleed，
+              // 首尾卡放大后正好贴视口边。
+              cardWidth = hoverInset(flush) <= bleed
+                  ? flush
+                  : (c.maxWidth + bleed * 2 - 4 - gap * (perRow - 1)) /
+                        (perRow + kFushiHoverLiftOverflow * 2);
             } else {
               final int span = spanFor(
                 cellWidth: cellWidth,

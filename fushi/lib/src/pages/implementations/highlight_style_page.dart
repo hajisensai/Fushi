@@ -41,6 +41,7 @@ const Map<HighlightKind, Color> kHighlightKindPreviewColors =
 /// 样式名（设置行副标题、样式块标题共用）。
 String highlightStrokeStyleLabel(HighlightStrokeStyle style) => switch (style) {
   HighlightStrokeStyle.classic => t.reader_highlight_style_classic,
+  HighlightStrokeStyle.underline => t.reader_highlight_style_underline,
   HighlightStrokeStyle.marker => t.reader_highlight_style_marker,
   HighlightStrokeStyle.fluo => t.reader_highlight_style_fluo,
   HighlightStrokeStyle.rough => t.reader_highlight_style_rough,
@@ -73,8 +74,17 @@ String highlightStyleSummary(ReaderFushiSource source) {
   return parts.isEmpty ? t.reader_highlight_all_classic : parts.join(' · ');
 }
 
+String _underlineFormLabel(HighlightUnderlineForm form) => switch (form) {
+  HighlightUnderlineForm.solid => t.reader_highlight_underline_form_solid,
+  HighlightUnderlineForm.doubleLine => t.reader_highlight_underline_form_double,
+  HighlightUnderlineForm.dashed => t.reader_highlight_underline_form_dashed,
+  HighlightUnderlineForm.dotted => t.reader_highlight_underline_form_dotted,
+  HighlightUnderlineForm.wavy => t.reader_highlight_underline_form_wavy,
+};
+
 String _styleHint(HighlightStrokeStyle style) => switch (style) {
   HighlightStrokeStyle.classic => t.reader_highlight_style_classic_hint,
+  HighlightStrokeStyle.underline => t.reader_highlight_style_underline_hint,
   HighlightStrokeStyle.marker => t.reader_highlight_style_marker_hint,
   HighlightStrokeStyle.fluo => t.reader_highlight_style_fluo_hint,
   HighlightStrokeStyle.rough => t.reader_highlight_style_rough_hint,
@@ -200,12 +210,12 @@ class _HighlightStylePageState extends State<HighlightStylePage>
       children: <Widget>[
         _buildKindSelector(context),
         const SizedBox(height: 12),
-        _buildPreview(context, paper: paper, ink: ink),
+        _buildPreview(context, paper: paper, ink: ink, eink: eink),
         if (eink)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
             child: Text(
-              t.reader_highlight_eink_notice,
+              t.reader_highlight_eink_underline_notice,
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -258,7 +268,12 @@ class _HighlightStylePageState extends State<HighlightStylePage>
     BuildContext context, {
     required Color paper,
     required Color ink,
+    required bool eink,
   }) {
+    // 墨水屏下预览画正文里实际会画的东西：一律下划线、正文色（与 highlightStrokeCssVariables 同一判据）。
+    final HighlightStrokeConfig shown = eink
+        ? _kind.einkEffective(_config)
+        : _config;
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -283,8 +298,8 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                   builder: (BuildContext context, _) => CustomPaint(
                     painter: HighlightStrokePreviewPainter(
                       sample: kHighlightPreviewSample,
-                      config: _config,
-                      color: _previewColor,
+                      config: eink ? shown.copyWith(opacity: 0.5) : shown,
+                      color: eink ? ink : _previewColor,
                       paper: paper,
                       ink: ink,
                       vertical: _vertical,
@@ -455,6 +470,36 @@ class _HighlightStylePageState extends State<HighlightStylePage>
             divisions: 10,
             onChanged: (double v) => _preview(_config.copyWith(roughness: v)),
             onChangeEnd: (double v) => _commit(_config.copyWith(roughness: v)),
+          ),
+        if (style == HighlightStrokeStyle.underline)
+          AdaptiveSettingsSegmentedRow<HighlightUnderlineForm>(
+            key: const ValueKey<String>('highlight_style_underline_form'),
+            title: t.reader_highlight_underline_form,
+            segments: <ButtonSegment<HighlightUnderlineForm>>[
+              for (final HighlightUnderlineForm form
+                  in HighlightUnderlineForm.values)
+                ButtonSegment<HighlightUnderlineForm>(
+                  value: form,
+                  label: Text(_underlineFormLabel(form)),
+                ),
+            ],
+            selected: _config.underlineForm,
+            onChanged: (HighlightUnderlineForm v) =>
+                _commit(_config.copyWith(underlineForm: v)),
+          ),
+        if (style == HighlightStrokeStyle.underline)
+          AdaptiveSettingsSliderRow(
+            key: const ValueKey<String>('highlight_style_underline_offset'),
+            title: t.reader_highlight_underline_offset,
+            readout: '${_config.underlineOffset.toStringAsFixed(2)} em',
+            value: _config.underlineOffset,
+            min: kHighlightUnderlineOffsetMin,
+            max: kHighlightUnderlineOffsetMax,
+            divisions: 10,
+            onChanged: (double v) =>
+                _preview(_config.copyWith(underlineOffset: v)),
+            onChangeEnd: (double v) =>
+                _commit(_config.copyWith(underlineOffset: v)),
           ),
         if (style.supportsCoverRuby)
           AdaptiveSettingsSwitchRow(

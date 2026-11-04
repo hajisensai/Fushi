@@ -288,7 +288,7 @@ class ReaderSettings {
   Future<void> setLyricsPanelMirrored(bool v) =>
       _set<bool>('lyrics_panel_mirrored', v);
 
-  /// MD3 歌词模式播放控件布局（`LyricsControlsStyle.wire`）：`modern` = 新版
+  /// 歌词模式播放控件布局（`LyricsControlsStyle.wire`，MD3 / Apple 都读）：`modern` = 新版
   /// （默认，2026-10-31 用户拍板）/ `classic` = 经典布局。
   String get lyricsControlsStyle =>
       _get<String>('lyrics_controls_style', 'modern');
@@ -331,7 +331,8 @@ class ReaderSettings {
       _set<int>('audio_highlight_text_color', v);
 
   /// 一类高亮的笔触配置：`<前缀>_style` / `_thickness` / `_opacity` / `_cover_ruby` /
-  /// `_roughness` / `_animate` 六个键，前缀见 [HighlightKind.prefPrefix]（收藏
+  /// `_roughness` / `_animate` / `_underline_form` / `_underline_offset` 八个键，前缀见
+  /// [HighlightKind.prefPrefix]（收藏
   /// `favorite_highlight`、查词 `lookup_highlight`、有声书 `audio_highlight`、搜索
   /// `search_highlight`）。没写过的键取 [HighlightKind.defaults]。
   HighlightStrokeConfig highlightStrokeConfig(HighlightKind kind) {
@@ -346,6 +347,10 @@ class ReaderSettings {
       coverRuby: _get<bool>('${p}_cover_ruby', d.coverRuby),
       roughness: _get<double>('${p}_roughness', d.roughness),
       animate: _get<bool>('${p}_animate', d.animate),
+      underlineForm: HighlightUnderlineForm.fromWire(
+        _get<String>('${p}_underline_form', d.underlineForm.wireName),
+      ),
+      underlineOffset: _get<double>('${p}_underline_offset', d.underlineOffset),
     );
   }
 
@@ -373,6 +378,12 @@ class ReaderSettings {
     }
     if (next.animate != prev.animate) {
       await _set<bool>('${p}_animate', next.animate);
+    }
+    if (next.underlineForm != prev.underlineForm) {
+      await _set<String>('${p}_underline_form', next.underlineForm.wireName);
+    }
+    if (next.underlineOffset != prev.underlineOffset) {
+      await _set<double>('${p}_underline_offset', next.underlineOffset);
     }
   }
 

@@ -77,11 +77,38 @@ void main() {
           in kHighlightStrokeNaturalEm.entries)
         e.key.wireName: e.value,
     });
-    // 笔触样式以好看为先：除半截外，自然粗细都超过一个字高（用户 2026-10-16）。
+    // 笔触样式以好看为先：除半截与下划线外，自然粗细都超过一个字高（用户 2026-10-16）。
     for (final HighlightStrokeStyle s in HighlightStrokeStyle.values) {
-      if (!s.isStroke || s == HighlightStrokeStyle.under) continue;
+      if (!s.isStroke ||
+          s == HighlightStrokeStyle.under ||
+          s == HighlightStrokeStyle.underline) {
+        continue;
+      }
       expect(kHighlightStrokeNaturalEm[s], greaterThan(1), reason: s.wireName);
     }
+    // 下划线是一条线，不是色带（用户 2026-11-04「应该更像下划线，而不是要画在字体上」）。
+    expect(
+      kHighlightStrokeNaturalEm[HighlightStrokeStyle.underline],
+      lessThan(0.25),
+    );
+  });
+
+  test('JS UNDERLINE_FORMS lists exactly the Dart underline forms', () {
+    expect(jsList('UNDERLINE_FORMS'), <String>[
+      for (final HighlightUnderlineForm f in HighlightUnderlineForm.values)
+        f.wireName,
+    ]);
+    expect(
+      HighlightUnderlineForm.fromWire('nope'),
+      HighlightUnderlineForm.solid,
+    );
+    expect(
+      HighlightUnderlineForm.fromWire('double'),
+      HighlightUnderlineForm.doubleLine,
+    );
+    // 下划线不碰字，「盖住振假名」对它没有意义。
+    expect(HighlightStrokeStyle.underline.supportsCoverRuby, isFalse);
+    expect(HighlightStrokeStyle.underline.isStroke, isTrue);
   });
 
   test('JS MARK_KINDS and group mapping cover every Dart kind', () {
@@ -113,6 +140,8 @@ void main() {
       coverRuby: true,
       roughness: 0.2,
       animate: true,
+      underlineForm: HighlightUnderlineForm.wavy,
+      underlineOffset: 0.3,
     );
     final ReaderSettings s = await settingsWith(
       (ReaderSettings s) =>
@@ -272,20 +301,72 @@ void main() {
       expect(css, contains('--fushi-mark-dark: 0;'));
     });
 
-    test('e-ink forces the classic style for every kind', () {
+    test(
+      'e-ink draws every kind as the underline style in the text colour',
+      () {
+        final String css = vars(<HighlightKind, HighlightStrokeConfig>{
+          for (final HighlightKind k in HighlightKind.values)
+            k: const HighlightStrokeConfig(style: HighlightStrokeStyle.fluo),
+        }, eink: true);
+        for (final HighlightKind k in HighlightKind.values) {
+          expect(css, contains('--fushi-mark-${k.cssName}-style: underline;'));
+          expect(css, contains('--fushi-mark-${k.cssName}-ink: #000;'));
+          expect(css, contains('--fushi-mark-${k.cssName}-animate: 0;'));
+          expect(css, contains('--fushi-mark-${k.cssName}-roughness: 0;'));
+        }
+        // 没选下划线的种类沿用墨水屏一直以来的线式：查词粗、跟读细、搜索双线。
+        expect(css, contains('--fushi-mark-lookup-thickness: 1.2;'));
+        expect(css, contains('--fushi-mark-audio-thickness: 0.85;'));
+        expect(css, contains('--fushi-mark-search-form: double;'));
+        expect(css, contains('--fushi-mark-lookup-form: solid;'));
+        expect(css, contains('--fushi-mark-audio-form: solid;'));
+        // 彩色模式不写 -ink（线色取各组自己的高亮色）。
+        expect(
+          vars(<HighlightKind, HighlightStrokeConfig>{}),
+          isNot(contains('-ink:')),
+        );
+      },
+    );
+
+    test('e-ink honours the parameters of a kind set to underline', () {
       final String css = vars(<HighlightKind, HighlightStrokeConfig>{
-        for (final HighlightKind k in HighlightKind.values)
-          k: const HighlightStrokeConfig(style: HighlightStrokeStyle.fluo),
+        HighlightKind.audio: const HighlightStrokeConfig(
+          style: HighlightStrokeStyle.underline,
+          thickness: 1.6,
+          roughness: 0.3,
+          underlineForm: HighlightUnderlineForm.wavy,
+          underlineOffset: 0.4,
+        ),
       }, eink: true);
-      for (final HighlightKind k in HighlightKind.values) {
-        expect(css, contains('--fushi-mark-${k.cssName}-style: classic;'));
-      }
+      expect(css, contains('--fushi-mark-audio-thickness: 1.6;'));
+      expect(css, contains('--fushi-mark-audio-roughness: 0.3;'));
+      expect(css, contains('--fushi-mark-audio-form: wavy;'));
+      expect(css, contains('--fushi-mark-audio-offset: 0.4;'));
+      expect(css, contains('--fushi-mark-audio-animate: 0;'));
+    });
+
+    test('underline form and offset are written per kind, clamped', () {
+      final String css = vars(<HighlightKind, HighlightStrokeConfig>{
+        HighlightKind.lookup: const HighlightStrokeConfig(
+          style: HighlightStrokeStyle.underline,
+          underlineForm: HighlightUnderlineForm.dotted,
+          underlineOffset: 3,
+        ),
+      });
+      expect(css, contains('--fushi-mark-lookup-style: underline;'));
+      expect(css, contains('--fushi-mark-lookup-form: dotted;'));
+      expect(css, contains('--fushi-mark-lookup-offset: 0.5;'));
+      expect(css, contains('--fushi-mark-lookup-cover-ruby: 0;'));
+      expect(css, contains('--fushi-mark-favorite-offset: 0.15;'));
+      // 搜索的下划线默认双线。
+      expect(css, contains('--fushi-mark-search-form: double;'));
     });
 
     test('cover-ruby is dropped for styles where it means nothing', () {
       for (final HighlightStrokeStyle s in <HighlightStrokeStyle>[
         HighlightStrokeStyle.classic,
         HighlightStrokeStyle.under,
+        HighlightStrokeStyle.underline,
       ]) {
         expect(
           vars(<HighlightKind, HighlightStrokeConfig>{
@@ -308,12 +389,13 @@ void main() {
         ),
         isEmpty,
       );
+      // 墨水屏下收藏一律画下划线笔触，text-decoration 也要去掉（不然叠成两道）。
       expect(
         favoriteHighlightUnderlineOverrideCss(
-          const HighlightStrokeConfig(style: HighlightStrokeStyle.marker),
+          const HighlightStrokeConfig(),
           einkMode: true,
         ),
-        isEmpty,
+        contains('text-decoration-line: none !important;'),
       );
       final String css = favoriteHighlightUnderlineOverrideCss(
         const HighlightStrokeConfig(style: HighlightStrokeStyle.marker),
@@ -357,7 +439,7 @@ void main() {
       expect(css, contains('收藏笔触样式：形状本身就是标记'));
       expect(
         ReaderContentStyles.css(settings: marked, einkMode: true),
-        contains('--fushi-mark-audio-style: classic;'),
+        contains('--fushi-mark-audio-style: underline;'),
       );
     });
   });
@@ -386,14 +468,24 @@ void main() {
     });
 
     test('every style paints in both orientations and mid-animation', () {
-      for (final HighlightStrokeStyle style in HighlightStrokeStyle.values) {
+      final List<HighlightStrokeConfig> configs = <HighlightStrokeConfig>[
+        for (final HighlightStrokeStyle style in HighlightStrokeStyle.values)
+          HighlightStrokeConfig(style: style, coverRuby: true),
+        for (final HighlightUnderlineForm form in HighlightUnderlineForm.values)
+          HighlightStrokeConfig(
+            style: HighlightStrokeStyle.underline,
+            underlineForm: form,
+          ),
+      ];
+      for (final HighlightStrokeConfig config in configs) {
         for (final bool vertical in <bool>[false, true]) {
           for (final double progress in <double>[0.3, 1]) {
             final ui.PictureRecorder recorder = ui.PictureRecorder();
             final Canvas canvas = Canvas(recorder);
             HighlightStrokePreviewPainter(
               sample: kHighlightPreviewSample,
-              config: HighlightStrokeConfig(style: style, coverRuby: true),
+              config: config,
+
               color: kFavoriteHighlightColors['pink']!,
               paper: const Color(0xFFFFFFFF),
               ink: const Color(0xFF000000),

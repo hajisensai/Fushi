@@ -795,7 +795,10 @@ final class SrsCore {
   ///
   /// [rebaseSince] 给了就是局部重放（lib.rs `SrsCore::rwkv_replay`）：同一快照里算出 rowid 在它之后的日志
   /// 造成的分歧时刻，行从 [rowsFrom]（给了的话）或分歧时刻起取。
-  Uint8List rwkvReplay(
+  ///
+  /// 结果随日志总量线性（每条保留评分约 96 字节），从原生内存直接拷进 [TransferableTypedData]：在后台 isolate
+  /// 里调用时交回调用方不再整块复制，`materialize` 也不复制（[_commandTransferable]）。
+  TransferableTypedData rwkvReplay(
     String profileUid,
     List<List<String>> lineages,
     List<int> ids, {
@@ -804,16 +807,20 @@ final class SrsCore {
     required int since,
     int? rebaseSince,
     int? rowsFrom,
-  }) => _command(_b.rwkvRows, _lineagePage(lineages, profileUid), <int>[
-    lineages.length,
-    1,
-    utcOffsetMin,
-    rolloverHour,
-    since,
-    rebaseSince ?? _noneI64,
-    rowsFrom ?? _noneI64,
-    ...ids,
-  ]);
+  }) => _commandTransferable(
+    _b.rwkvRows,
+    _lineagePage(lineages, profileUid),
+    <int>[
+      lineages.length,
+      1,
+      utcOffsetMin,
+      rolloverHour,
+      since,
+      rebaseSince ?? _noneI64,
+      rowsFrom ?? _noneI64,
+      ...ids,
+    ],
+  );
 
   /// Rust 侧的「无」（`NONE_I64` = i64::MIN）。
   static const int _noneI64 = -0x8000000000000000;
@@ -838,9 +845,28 @@ final class SrsCore {
           for (final String c in lineages[g]) <Object?>[g, c],
       ]);
 
-  Uint8List _command(_CmdDart f, Uint8List page, List<int> args) => using((
-    Arena arena,
-  ) {
+  Uint8List _command(_CmdDart f, Uint8List page, List<int> args) =>
+      _commandWith(f, page, args, Uint8List.fromList);
+
+  /// [_command]，结果直接拷进 [TransferableTypedData]（大结果跨 isolate 交回时少一份整块副本）。
+  TransferableTypedData _commandTransferable(
+    _CmdDart f,
+    Uint8List page,
+    List<int> args,
+  ) => _commandWith(
+    f,
+    page,
+    args,
+    (Uint8List native) => TransferableTypedData.fromList(<TypedData>[native]),
+  );
+
+  /// 跑一条交回字节的内核命令；[take] 在原生缓冲区释放之前把它（原生内存上的视图）拷成调用方要的形态。
+  T _commandWith<T>(
+    _CmdDart f,
+    Uint8List page,
+    List<int> args,
+    T Function(Uint8List native) take,
+  ) => using((Arena arena) {
     final ffi.Pointer<ffi.Int64> a = arena<ffi.Int64>(
       args.isEmpty ? 1 : args.length,
     );
@@ -855,11 +881,9 @@ final class SrsCore {
       err,
     );
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(
-      out.value.asTypedListOutOfLine(len),
-    );
+    final T result = take(out.value.asTypedListOutOfLine(len));
     _b._freeBytes(out.value, len);
-    return bytes;
+    return result;
   });
 
   /// Drift 事务外查询（[snapshotQuery]）的并发上限：内核只读连接池的连接数上限，按本机核数算

@@ -32,11 +32,13 @@ use super::vv::{OpId, Vv};
 pub const MAGIC: &[u8; 4] = b"FSG2";
 pub const VERSION: u8 = 1;
 /// 协议版本（head 的 `v`）。2 = 2026-10-30 断代：集合根挪到 `v3/`（Dart srs_location_store.dart）、媒体只剩内容寻址 +
-/// 分块封装；段与 head 的字节格式没变（v1 位置的段 / head 原样搬进新根，读者照读）。
-pub const PROTOCOL: u32 = 2;
+/// 分块封装；段与 head 的字节格式没变（v1 位置的段 / head 原样搬进新根，读者照读）。3 = 存量重复流收敛：新种类
+/// `Dedup`（op.rs [super::op::KIND_DEDUP]）与带副本说明的骨架（[super::op::Op::duplicate]，骨架载荷不再恒为 32 字节）。
+pub const PROTOCOL: u32 = 3;
 /// 能读本版本写出的数据所需的最低读者版本（设计 §8）。读者遇到 head 的 `minReader` 比自己的 [PROTOCOL] 新：不收这台
-/// 设备、报需要升级（store/sync2/transport.rs `plan`）。
-pub const MIN_READER: u32 = 2;
+/// 设备、报需要升级（store/sync2/transport.rs `plan`）。3：协议 2 的读者解不开副本骨架（整段拒收），也不认 `Dedup`
+/// （会把作者的副本当原件留着，删除扣留与修改记录行和别的设备分叉）。
+pub const MIN_READER: u32 = 3;
 
 /// 切段目标（设计 §6.2）：按**压缩后**的体积算，一段约 4 MB。哑存储上一次请求的固定开销远大于传几 MB 的
 /// 时间，段越少首次提交 / 新设备追赶越快；增量同步每轮只有几条操作，本来就只出一个小段，由小段合并（§7.1）收拢。
@@ -224,9 +226,7 @@ fn read_op(r: &mut Reader<'_>, device: Id, seq: u64, i: u64, prev_wall: i64, pre
     let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
     let purged = r.bool()?;
     let payload: Arc<[u8]> = r.bytes()?.into();
-    if purged && payload.len() != 32 {
-        return Err(DecodeError("purged op without payload hash"));
-    }
+    super::op::check_skeleton(purged, &payload)?;
     Ok(Op { id: OpId { device, seq }, hlc: Hlc { wall, logical, device }, deps, kind, schema, payload, purged })
 }
 

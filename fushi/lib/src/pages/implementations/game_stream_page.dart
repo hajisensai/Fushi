@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -2584,7 +2585,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                     ),
                     // Grows / shrinks with the mode instead of jumping the
                     // line below it.
-                    AnimatedSize(
+                    FushiAnimatedSize(
                       duration: spring.duration,
                       curve: spring.curve,
                       alignment: AlignmentDirectional.topStart,

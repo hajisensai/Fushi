@@ -44,16 +44,23 @@ class SrsPurgeReport {
 }
 
 /// 维护：回收过了保留期的媒体（store 打开后在后台跑）。[mediaRoot] 为 null 时什么也不做。
+///
+/// [shouldStop]：每一步（收候选、回收）之前看一次，返回 true 就收手（store 换掉 / 副本开始作废）；候选已持久化在
+/// 本机状态里，下次打开接着回收。
 Future<SrsPurgeReport> srsPurgeExpiredTombstones(
   SrsDbStore store, {
   Directory? mediaRoot,
   Duration after = kSrsMediaRetention,
   Duration mediaGrace = kSrsMediaGcGrace,
+  bool Function()? shouldStop,
 }) async {
   final SrsPurgeReport report = SrsPurgeReport();
   if (mediaRoot == null) return report;
+  bool stopped() => shouldStop?.call() ?? false;
+  if (stopped()) return report;
   final int cutoff = store.now().$1 - after.inMilliseconds;
   await store.queueMediaGc(await store.expiredNoteMediaRefs(cutoff));
+  if (stopped()) return report;
   if (store.pendingMediaGc.isNotEmpty) {
     report.mediaFiles = await _collectPendingMedia(
       store,

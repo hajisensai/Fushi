@@ -354,7 +354,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.jump_history.progress_marks',
             title: t.media_jump_history_setting_marks,
             subtitle: t.media_jump_history_setting_marks_hint,
-            icon: Icons.linear_scale_outlined,
+            icon: FushiIcons.flag,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.jumpHistoryProgressMarks,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -366,7 +366,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.jump_history.auto_hide',
             title: t.media_jump_history_setting_auto_hide,
             subtitle: t.media_jump_history_setting_auto_hide_hint,
-            icon: Icons.timer_outlined,
+            icon: FushiIcons.timer,
             options: <SettingsSegmentOption<int>>[
               for (final int seconds in kJumpHistoryAutoHideOptions)
                 SettingsSegmentOption<int>(
