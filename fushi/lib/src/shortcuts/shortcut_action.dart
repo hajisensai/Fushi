@@ -249,8 +249,9 @@ enum ShortcutScope {
       // 要开任一通道，先在页面里接上对应的解析入口（守卫
       // `shortcut_channel_wiring_guard_test` 盯着）。
       case webBrowser:
-      // 音乐：只有键盘有解析入口（music_library_page.dart 的 _handleKey →
-      // `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有派发点，不开通道。
+      // 音乐：只有键盘有解析入口（曲库页 / 歌词页的键事件节点 →
+      // music_shortcuts.dart 的 `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有
+      // 派发点，不开通道（歌词行中键跳转复用 audiobook 的点句绑定，不走 music scope）。
       case music:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // SRS 复习页：键盘 + 手柄。
@@ -748,7 +749,7 @@ enum ShortcutAction {
     'web_browser_downloads_open',
   ),
   // 音乐（音乐模块 P0）：曲库页 / 播放条的播放控制。键盘一条通道，由音乐库页按
-  // ShortcutScope.music 解析（music_library_page.dart 的 _handleKey）。
+  // ShortcutScope.music 解析（曲库页 / 歌词页共用 music_shortcuts.dart）。
   musicTogglePlayPause(ShortcutScope.music, 'music_toggle_play_pause'),
   musicNextTrack(ShortcutScope.music, 'music_next_track'),
   musicPreviousTrack(ShortcutScope.music, 'music_previous_track'),
