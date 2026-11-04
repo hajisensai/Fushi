@@ -412,8 +412,8 @@ class WidgetSrsInput {
   /// 每天复习数，最旧 → 今天；不足 [kWidgetMonthDays] 前面补 0，多了取最近的。
   final List<int> reviewsByDay;
 
-  /// 待复习数的预排（[buildWidgetSrsDueTimeline]）；空 = 只有「现在」一项。
-  /// [buildWidgetSnapshot] 会把第一项钉成「生成时刻 / 当前 due」，保证与 `srs.due` 一致。
+  /// 待复习数的预排（[buildWidgetSrsDueTimeline]）；空 = 不会自己变。快照里只留晚于
+  /// 生成时刻、且与前一个计数不同的点（「现在」就是 `srs.due`）。
   final List<WidgetSrsDueStep> timeline;
 }
 
@@ -807,22 +807,24 @@ Map<String, Object?> buildWidgetSnapshot({
   };
 }
 
-/// `srs.timeline`：第一项钉成（生成时刻, 当前 due），之后只留晚于生成时刻、计数有变化的点。
+/// `srs.timeline`：只留晚于生成时刻、与前一个计数不同的变化点（「现在」= `srs.due`，
+/// 不进数组）。不带生成时刻：否则每次采集签名都变，发布器去重失效。原生侧取
+/// `at <= now` 的最后一点，一点都没过就显示 `srs.due`。
 List<Map<String, int>> _srsTimelineJson(
   List<WidgetSrsDueStep> steps,
   int generatedAt,
   int due,
 ) {
-  final List<Map<String, int>> out = <Map<String, int>>[
-    <String, int>{'at': generatedAt, 'due': due},
-  ];
+  final List<Map<String, int>> out = <Map<String, int>>[];
+  int last = due;
   final List<WidgetSrsDueStep> later = <WidgetSrsDueStep>[
     for (final WidgetSrsDueStep s in steps)
       if (s.at > generatedAt) s,
   ]..sort((WidgetSrsDueStep a, WidgetSrsDueStep b) => a.at.compareTo(b.at));
   for (final WidgetSrsDueStep s in later) {
     final int value = _nonNegative(s.due);
-    if (value == out.last['due']) continue;
+    if (value == last) continue;
+    last = value;
     out.add(<String, int>{'at': s.at, 'due': value});
   }
   return out;
