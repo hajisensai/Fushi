@@ -8,7 +8,8 @@
 /// - 正面完全原生（不建 WebView）。背面版式：宽（≥720 逻辑像素，与模板断点相同）= 左栏原生
 ///   （各自滚动）+ 右栏释义 WebView（自己滚动）；窄 = 一条 Flutter 滚动：原生标题区 → 释义
 ///   WebView（高度跟内容走，页面上报）→ 原生页脚。内容高于 [kSrsDefsMaxInlineHeight] 时
-///   WebView 改为一屏高、内部滚动（平台视图过高时纹理 / 内存开销过大）。
+///   平台视图只是内容里的一段窗口（纹理 / 内存上限），释义区仍占满内容高度、滚动只归外层，
+///   窗口跟着外层滚动换位置（[SrsDefsScrollWindow]，BUG-4007）。
 /// - 外观设置（字号 / 行距 / 配色 / 密度 / 区块显隐 / 字体库字体）原生同样生效。
 library;
 
@@ -34,6 +35,7 @@ import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_defs_scroll_window.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
@@ -63,7 +65,8 @@ const double _kSrsRubyRatio = 0.36;
 /// 宽版式断点（与模板 `(min-width: 720px)` 一致）。
 const double kSrsFushiCardWideBreakpoint = 720;
 
-/// 窄版式里释义 WebView 跟内容走的最大高度；更高时改为一屏高、内部滚动。
+/// 窄版式里释义平台视图的最大高度（纹理上限）；内容更高时平台视图是其中一段窗口
+/// （[SrsDefsScrollWindow]），释义区仍按内容高度占位、由外层滚动。
 const double kSrsDefsMaxInlineHeight = 4800;
 
 /// 音调类型的配色（与 styling.css `--fc-pitch-*` 默认值同一份）。
@@ -245,6 +248,9 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
 class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   final ScrollController _scroll = ScrollController();
   double? _defsHeight;
+
+  /// 窄版式释义超过纹理上限时的窗口通道（BUG-4007，见 [SrsDefsScrollWindow]）。
+  final SrsPageWindowLink _defsWindow = SrsPageWindowLink();
 
   /// 选区自带的焦点不进 Tab 遍历：焦点驱动（Tab → Enter）照旧落到卡面的可操作控件上。
   final FocusNode _selectionFocus = FocusNode(
@@ -1125,6 +1131,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     pageZoom: widget.face.pageZoom,
     fushiCard: true,
     onContentHeight: wide ? null : _onDefsHeight,
+    pageWindow: wide ? null : _defsWindow,
     // 释义页只有释义区：纵向排、撑满宿主给的栏宽（模板的 flex 横排会让释义块按内容
     // 收缩，宽屏下右栏空一大片）。模板 CSS 不动——原生渲染按「笔记类型 CSS 与内置
     // 模板逐字一致」判定，改模板会让库里已有的 Fushi 卡片退回整面 WebView。
@@ -1220,10 +1227,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: false);
     final double viewport = c.maxHeight.isFinite ? _viewport : 800;
-    final double reported = _defsHeight ?? viewport * 0.6;
-    final double defsHeight = reported > kSrsDefsMaxInlineHeight
-        ? viewport
-        : reported;
+    // 释义区在外层滚动里始终占满内容高度；超过纹理上限时平台视图只是其中一段窗口
+    // （[SrsDefsScrollWindow]），外层是唯一的滚动所有者（BUG-4007）。
+    final double defsHeight = _defsHeight ?? viewport * 0.6;
     // 自上而下与宽版式左栏同序：词条 → 图片 / 视频（通栏）→ 例句 → 释义 → 元信息。
     // 原生文字分成「标题区」与「页脚」两块选区，释义 WebView 夹在中间、不在任何选区里
     // （见 [_selectable]）。
@@ -1281,7 +1287,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               duration: fushiMotionDuration(context, FushiMotion.short),
               curve: FushiMotion.enter,
               height: defsHeight,
-              child: defs,
+              child: SrsDefsScrollWindow(
+                contentHeight: defsHeight,
+                maxFrameHeight: kSrsDefsMaxInlineHeight,
+                controller: _scroll,
+                link: _defsWindow,
+                child: defs,
+              ),
             ),
           ),
         ),
