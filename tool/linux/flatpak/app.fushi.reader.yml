@@ -48,48 +48,6 @@ modules:
         url: https://dotat.at/prog/unifdef/unifdef-2.12.tar.xz
         sha256: 43ce0f02ecdcdc723b2475575563ddb192e988c886d368260bc0a63aee3ac400
 
-  - name: libass
-    config-opts:
-      - --disable-static
-    sources:
-      - type: archive
-        url: https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.xz
-        sha256: 78f1179b838d025e9c26e8fef33f8092f65611444ffa1bfc0cfac6a33511a05a
-
-  - name: libplacebo
-    buildsystem: meson
-    config-opts:
-      - -Dvulkan=disabled
-      - -Dshaderc=disabled
-      - -Dglslang=disabled
-      - -Dopengl=enabled
-      - -Ddemos=false
-      - -Dtests=false
-    sources:
-      - type: git
-        url: https://code.videolan.org/videolan/libplacebo.git
-        tag: v7.351.0
-        commit: 3188549fba13bbdf3a5a98de2a38c2e71f04e21e
-
-  - name: mpv
-    buildsystem: meson
-    config-opts:
-      - -Dlibmpv=true
-      - -Dcplayer=false
-      - -Dlua=disabled
-      - -Djavascript=disabled
-      - -Dmanpage-build=disabled
-      - -Dhtml-build=disabled
-      - -Dvulkan=disabled
-      - -Duchardet=disabled
-      - -Drubberband=disabled
-      - -Dzimg=disabled
-      - -Dlibarchive=disabled
-    sources:
-      - type: archive
-        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
-        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
-
   - name: keybinder-3.0
     config-opts:
       - --disable-introspection
@@ -152,6 +110,64 @@ modules:
         path: wpewebkit-cmake4-quote-linked-into.patch
       - type: patch
         path: wpewebkit-gcc15-scroll-momentum-ice.patch
+
+  # Video stack after WebKit: flatpak-builder rebuilds every module after a
+  # changed one, so mpv tweaks must not invalidate the multi-hour WebKit build.
+  - name: libass
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.xz
+        sha256: 78f1179b838d025e9c26e8fef33f8092f65611444ffa1bfc0cfac6a33511a05a
+
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Dvulkan=disabled
+      - -Dshaderc=disabled
+      - -Dglslang=disabled
+      - -Dopengl=enabled
+      - -Ddemos=false
+      - -Dtests=false
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.351.0
+        commit: 3188549fba13bbdf3a5a98de2a38c2e71f04e21e
+
+  # mpv's DRM support (hence VA-API via /dev/dri/renderD128) needs it; not in the SDK.
+  - name: libdisplay-info
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://gitlab.freedesktop.org/-/project/14497/uploads/289d58230e2981b51f23d31faf25bef9/libdisplay-info-0.4.0.tar.xz
+        sha256: 43b180baa143e2035654759d84e2b2f5ee77d5fe817c423838c7fe59c0d68459
+
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dmanpage-build=disabled
+      - -Dhtml-build=disabled
+      - -Dvulkan=disabled
+      - -Duchardet=disabled
+      - -Drubberband=disabled
+      - -Dzimg=disabled
+      - -Dlibarchive=disabled
+      # VA-API through the DRM render node: Steam Game Mode runs apps on X11
+      # (gamescope Xwayland), where the Wayland-only VA path cannot open a
+      # device and 1080p fell back to CPU decoding. Fail the build if it is lost.
+      - -Dvaapi=enabled
+      - -Ddrm=enabled
+      - -Dvaapi-drm=enabled
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
 
   # file_picker's Linux backend shells out to zenity / kdialog / qarma; the GNOME
   # runtime has none, so every "choose file / folder" button failed in the sandbox.
