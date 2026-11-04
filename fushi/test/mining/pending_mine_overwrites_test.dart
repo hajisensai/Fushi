@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/pending_mine_overwrites.dart';
 
 /// BUG-3492（所有者拍板的方案 B）：卡还在后台写入 Anki 时发起的覆盖先排队，写入落地后

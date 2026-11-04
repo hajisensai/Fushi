@@ -6,7 +6,7 @@
 // Each link of name → build → bundle → Dart preload is pinned here.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _read(String relativeToFushi) {
   final File file = File(relativeToFushi);

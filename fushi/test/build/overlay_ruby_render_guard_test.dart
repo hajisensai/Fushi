@@ -14,7 +14,7 @@
 // 点字 index 也会跟着漂。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String window = File(

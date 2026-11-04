@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
 
 /// galgame 文本 hook「系统 UI 文字 vs 台词」过滤守卫（[isGalgameSystemUiLine]）。

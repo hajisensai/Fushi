@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-726 生产接线守卫（源码扫描）：浏览器扩展「app 升级 → 磁盘副本刷新 → 扩展自
 /// reload」链路的三段接线缺一不可。历史事故：BUG-621/688 把扩展弹窗 parity/主题修好

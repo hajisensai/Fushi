@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../../pages/reader_history_source_corpus.dart';
 
 /// 源码守卫（Phase 3）：「新导入视频」入口必须门控在编译期常量

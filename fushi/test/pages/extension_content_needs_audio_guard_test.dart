@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1005 场景A 守卫：浏览器扩展 `content.js` 注入词典查词结果时，必须在每处
 /// `window.audioSources = ...` 之后同时注入 `window.needsAudio = true;`——否则

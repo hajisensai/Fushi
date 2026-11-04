@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1364 / BUG-681 守卫：Netflix 逐句回放录制的**尾段音频完整性**。
 ///

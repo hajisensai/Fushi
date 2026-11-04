@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// MainActivity native 契约合并守卫（mainactivity-native-contract）：单个
 /// setUpAll 读 MainActivity.java，各 group 保留原 test 名，断言逐字搬运。

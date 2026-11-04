@@ -3,7 +3,7 @@
 // 位定义与 native/fushi_torrent 头文件契约逐位对齐（TorrentPeerFlagBits），
 // 这里守住字母映射的语义分支：D/d、U/u、K、?、修饰位、全 0 哨兵。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/torrent/torrent_task_display.dart';
 
 void main() {

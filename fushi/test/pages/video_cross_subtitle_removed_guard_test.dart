@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-154 防回归源码守卫：跨字幕录制特性（TODO-102，参考 asbplayer 的多句拼接制卡）
 /// 已整特性下线（用户决策档 B，字幕列表可替代）。本守卫钉死该特性的所有 symbol /

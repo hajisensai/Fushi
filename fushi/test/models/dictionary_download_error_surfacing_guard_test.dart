@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-447 source guards: the online "download recommended dictionaries" loop
 /// must not swallow per-dictionary failures silently. TODO-892 regression had

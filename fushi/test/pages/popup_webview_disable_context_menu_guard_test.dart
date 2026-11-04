@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-477 守卫（BUG-468 同根，弹窗 WebView 漏修）：查词弹窗在 Windows 上右键曾同时弹两个
 /// 菜单——WebView2 原生菜单（返回/刷新/另存为/打印/更多工具）和 Fushi 自定义的 Flutter 选区

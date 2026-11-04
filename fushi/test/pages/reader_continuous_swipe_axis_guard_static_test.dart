@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-239 源码守卫：阅读器统一手势 `_gestureEnd` 的 onSwipe 回传必须被连续模式

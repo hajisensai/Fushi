@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1862 源码守卫：视频页的「返回上一级」必须先逐级关前台浮层，再退全屏 / 退页，
 /// 且四条输入通道（键盘 Escape / [PopScope] 系统返回键 / 手柄 B / 屏幕上的返回箭头

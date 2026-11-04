@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-685 (TODO-1361 ⑤) guard: the Netflix batch-mining seek→record handoff
 /// must gate recording on the seek actually settling at the `<video>` element

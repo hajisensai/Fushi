@@ -1,7 +1,7 @@
 // 查词弹窗「有效最大宽高」纯函数 + 解锁语义单元测试。
 //
 // 纯 Dart，不依赖词典 FFI / sqlite native-assets，可 `flutter test` 单独跑过。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 
 void main() {

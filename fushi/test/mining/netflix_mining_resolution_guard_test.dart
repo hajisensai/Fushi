@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// TODO-1145 分辨率守卫：网飞（浏览器扩展）制卡默认分辨率拉高，且未开启压缩时保满分辨率。

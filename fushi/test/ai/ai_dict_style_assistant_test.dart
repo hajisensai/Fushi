@@ -2,7 +2,7 @@
 //
 // AI 产物落地前的全部把关都在这里，所以用例围绕「坏输入不得穿透」展开：未知部位、
 // 编造的词典名、非法颜色、`body{}`、`@import` 一个都不能进草稿。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/ai/ai_dict_style_assistant.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 

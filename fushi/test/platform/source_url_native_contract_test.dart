@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:xml/xml.dart';
 
 import 'package:fushi/src/platform/source_url_channel.dart';

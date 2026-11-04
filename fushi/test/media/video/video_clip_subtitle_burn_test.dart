@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 
 /// 旧 `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，

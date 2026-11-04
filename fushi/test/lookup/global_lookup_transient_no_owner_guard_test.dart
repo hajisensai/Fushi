@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-741 — 瞬态查词覆盖窗（悬浮字幕点词/全局热键）不得 owned by
 /// 主窗（源码扫描守卫）。

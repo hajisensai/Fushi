@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // Mirrors ReorderableListView.onReorder's index compensation. The gamepad
 // up/down reorder buttons (sync URLs, dictionary audio sources, fonts,

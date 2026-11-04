@@ -12,7 +12,7 @@
 //   ③ href 没被顺手删掉（点击处理仍要用它，那是 BUG-842 划在范围外的另一件事）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 取出 `GlobalLookupWindow::[name]` 的函数体源码（到下一个成员函数定义为止）。
 /// 在 main() 顶层调用，故不能用 expect（那是 OutsideTestException），直接抛。

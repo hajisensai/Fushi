@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 远端封面必须走 `AppCachedHttpImage`（`extends CachedNetworkImageProvider`，
 /// 磁盘缓存语义不变，另外把请求接进全应用代理装配 —— 裸

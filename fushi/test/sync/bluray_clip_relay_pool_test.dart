@@ -1,5 +1,5 @@
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
 

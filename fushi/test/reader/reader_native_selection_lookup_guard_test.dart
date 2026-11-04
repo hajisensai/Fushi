@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-927 源码守卫：阅读器桌面/细指针（鼠标）路径「原生选区残留卡住查词 + 右键闪退」
 /// 三连锁的根因修复不得回退。

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';
 

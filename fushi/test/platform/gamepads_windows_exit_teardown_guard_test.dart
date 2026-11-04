@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2167：Windows 每次退出 fail-fast 崩溃 `0xc0000409`。
 ///

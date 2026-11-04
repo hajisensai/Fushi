@@ -28,7 +28,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 从当前 cwd 向上找含 docs/BUGS.md 的仓库根。
 Directory _repoRoot() {

@@ -1,6 +1,6 @@
 // 发现页的 torrent 源只来自用户添加的 BT 站：Nyaa 式、启用、且有发现域分类的站点
 // 各展开一个用户自配源；没有站点就一个都没有（不再内置任何站）。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-068 guard: the app-wide UI [TextStyle] must follow the *display*
 /// language ([appLocale]), not the pinned Japanese reading language

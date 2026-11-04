@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1325 #7 / #5 part1 + TODO-1338 三镜像守卫：查词弹窗的样式/脚本改动必须三端一致
 /// （in-app 弹窗 + 两份浏览器扩展 vendor 副本；byte-parity 由

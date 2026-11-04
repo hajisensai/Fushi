@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：客户端互联视频合集连播的关键接线，防后续重构悄悄回退成「远端只认
 /// host 下发的 episodes」（Phase 3 合集成员各自独立行、host 不填 episodes → 无列表无连播）。

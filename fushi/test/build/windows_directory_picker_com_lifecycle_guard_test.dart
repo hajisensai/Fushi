@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3321：Windows 选文件夹后几秒整个 app 0xC0000005 崩溃的源码守卫。
 ///

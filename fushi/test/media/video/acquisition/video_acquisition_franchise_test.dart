@@ -1,5 +1,5 @@
 // 「AI 下视频」整套下载 + 操作条 / 再下一部 / 版本直选 / 只下最新一集。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// `assets/web_video/web_video_page_lookup.js` 的纯逻辑（取光标所在的那一句 + 句内字形下标），
 /// 在 node 里跑。没有 node 就跳过。

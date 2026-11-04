@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：本地钉的 Flutter（`fushi/.fvmrc`）与 CI 各 workflow 的 `flutter-version`
 /// 必须是**同一个版本**。

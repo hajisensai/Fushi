@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-944：快捷键设置列表里「未映射」（当前无任何按键绑定）的行也必须能点击
 /// 进入分配流程。历史上 [_ActionTile] 只在 trailing 挂了一个小小的编辑图标按钮，

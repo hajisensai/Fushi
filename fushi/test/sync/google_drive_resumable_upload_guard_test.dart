@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-087: large content uploads (EPUB / dictionary / audiobook / local-audio
 /// packages — multi-GB in the wild) must use resumable CHUNKED upload, not a

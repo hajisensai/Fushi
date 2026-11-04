@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：自动发音的解析/播放逻辑单一真相。WordAudioResolver 装配 +
 /// resolveConfigured 只住在 lookup_audio_playback.dart；base_source_page 与

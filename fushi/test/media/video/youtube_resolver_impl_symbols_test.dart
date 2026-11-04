@@ -7,7 +7,7 @@
 // dart format 换行会令行内 `// ignore` 锚点失效，故用 file 级抑制（本文件唯一的内部符号
 // 使用就是守卫 VideoController 等 @internal 符号存在）。
 // ignore_for_file: invalid_use_of_internal_member
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 // ignore: implementation_imports
 import 'package:youtube_explode_dart/src/videos/video_controller.dart'
     show VideoController;

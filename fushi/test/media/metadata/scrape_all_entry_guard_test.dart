@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('视频 legacy 在线入口已下线，canonical 全部刮削留在视频来源页；书 / 漫画不再批量刮削', () {

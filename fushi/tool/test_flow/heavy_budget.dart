@@ -382,3 +382,79 @@ String? heavyLeaseSkipReason(Map<String, String> env) {
   if (parent.isNotEmpty) return 'held by parent pid $parent';
   return null;
 }
+
+/// `flutter test` flags `dart test` takes as is (with their separate value
+/// where they have one); `--no-pub` is flutter_tools' own and is dropped.
+const Set<String> _dartTestFlagsWithValue = <String>{
+  '--concurrency',
+  '-j',
+  '--plain-name',
+  '--name',
+  '-n',
+  '--reporter',
+  '-r',
+  '--file-reporter',
+  '--tags',
+  '-t',
+  '--exclude-tags',
+  '-x',
+  '--timeout',
+  '--test-randomize-ordering-seed',
+  '--total-shards',
+  '--shard-index',
+};
+const Set<String> _dartTestBareFlags = <String>{
+  '--chain-stack-traces',
+  '--no-chain-stack-traces',
+  '--run-skipped',
+  '--fail-fast',
+};
+
+/// The `dart test` argv that runs the same files as [argv] (a
+/// `flutter test` whose every target was found not to reach `dart:ui`), or
+/// null when [argv] uses a flag `dart test` does not share (`--dart-define`,
+/// `--update-goldens`, `--coverage`, a device, ...): then it stays a
+/// flutter test. The dart executable sits next to flutter in the SDK's bin.
+List<String>? dartTestCommandFor(List<String> argv) {
+  if (argv.isEmpty) return null;
+  final String first = argv.first.replaceAll(r'\', '/');
+  final int slash = first.lastIndexOf('/');
+  final String name = first.substring(slash + 1).toLowerCase();
+  final String? dartName = switch (name) {
+    'flutter' => 'dart',
+    'flutter.bat' => 'dart.bat',
+    'flutter.exe' => 'dart.exe',
+    _ => null,
+  };
+  if (dartName == null) return null;
+  final int verb = argv.indexWhere((String a) => !a.startsWith('-'), 1);
+  if (verb < 0 || argv[verb].toLowerCase() != 'test') return null;
+  final List<String> out = <String>[
+    '${argv.first.substring(0, slash + 1)}$dartName',
+    'test',
+  ];
+  for (int i = verb + 1; i < argv.length; i++) {
+    final String a = argv[i];
+    if (!a.startsWith('-')) {
+      out.add(a);
+      continue;
+    }
+    if (a == '--no-pub') continue;
+    final int eq = a.indexOf('=');
+    final String flag = eq < 0 ? a : a.substring(0, eq);
+    if (_dartTestBareFlags.contains(flag) && eq < 0) {
+      out.add(a);
+    } else if (_dartTestFlagsWithValue.contains(flag)) {
+      out.add(a);
+      if (eq < 0) {
+        if (i + 1 >= argv.length) return null;
+        out.add(argv[++i]);
+      }
+    } else if (a.startsWith('-j') && int.tryParse(a.substring(2)) != null) {
+      out.add(a);
+    } else {
+      return null;
+    }
+  }
+  return out;
+}

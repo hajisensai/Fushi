@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-614 静态守卫：把「覆写范围（latest/all）」两点改动的关键接线锁住，防止
 /// 静默回退。覆盖：

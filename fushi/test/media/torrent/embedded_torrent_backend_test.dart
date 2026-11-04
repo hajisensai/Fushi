@@ -7,7 +7,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';

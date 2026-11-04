@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 
 /// BUG-2105 真值表：视频页对进程级显示态（移动端横屏锁 / 系统栏可见性回调 /

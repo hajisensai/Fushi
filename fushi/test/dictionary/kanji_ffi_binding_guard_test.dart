@@ -10,7 +10,7 @@
 // also exists (host: load fushidicts_ffi.dll -> add_kanji_dict -> query_kanji).
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   String read(String relativeToFushi) {

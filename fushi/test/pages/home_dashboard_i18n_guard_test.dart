@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2966 守卫：首页（dashboard + 展示件 + 更新横幅）用到的每个 i18n key，
 /// 在每种非英文语言里都必须有真译文，不能是英文原值占位。

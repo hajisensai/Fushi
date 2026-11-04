@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Flutter 3.47 把 Material / Cupertino 拆成 pub 包 `material_ui` /
 /// `cupertino_ui`，本仓已整体迁移（`tool/migrate_design_widgets.sh`）。

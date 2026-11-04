@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 重锚落定的帧调度必须能在隐藏页面里落定（`_reanchorFrame`：可见走 rAF，
 /// `document.hidden` 走 setTimeout(0)）。2026-09-12 Mac 隐藏 runner 探针实测

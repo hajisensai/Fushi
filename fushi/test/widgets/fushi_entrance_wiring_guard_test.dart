@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 2026-10 动效重做的接入面守卫：PR #1905 只给书架散书网格接了错峰进场，
 /// 用户实测「视频那块手感还是之前那样、设置页也要做」（2026-10-04）。这里钉住

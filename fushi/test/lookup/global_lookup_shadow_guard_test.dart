@@ -19,7 +19,7 @@
 //    执行 sqrt/exp。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   late final String shadowCpp;

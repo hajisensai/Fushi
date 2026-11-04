@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2455 源码守卫：native 播放器拿到的每一个 URL 都必须过 `nativePlaybackUri`。
 ///

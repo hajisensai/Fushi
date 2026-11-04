@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（2026-09-30）：build-multiplatform.yml 的 PR 路径门。
 ///

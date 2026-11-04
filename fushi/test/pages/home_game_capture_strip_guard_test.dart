@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _extractInvocation(String source, String invocation, {int startAt = 0}) {
   final int invocationStart = source.indexOf(invocation, startAt);

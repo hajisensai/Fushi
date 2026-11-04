@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1322: 统计页顶栏「清空全部统计」——只清纯统计数字（阅读 / 观看时长、字数、

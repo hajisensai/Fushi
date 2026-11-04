@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:path/path.dart' as p;

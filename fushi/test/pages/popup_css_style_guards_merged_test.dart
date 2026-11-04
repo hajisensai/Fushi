@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 合并守卫：popup.css 静态样式一致性。原来 popup_header_button_spacing_guard_test.dart
 /// 与 popup_pitch_frequency_spacing_guard_test.dart 各自钉死 popup.css 里不同规则块的

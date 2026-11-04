@@ -254,6 +254,10 @@ dev_dependencies:
   flutter_lints: ^2.0.1
   flutter_native_splash: ^2.2.8
   fake_async: ^1.3.1
+  # 2026-11-05：import 闭包不碰 dart:ui 的测试用 package:test 写，heavy 本机用
+  # `dart test` 跑（单 VM，约 0.8 GB；flutter test 起步 3.3 GB）。守卫
+  # test/build/pure_dart_test_import_guard_test.dart。
+  test: ^1.24.0
   flutter_test:
     sdk: flutter
   integration_test:

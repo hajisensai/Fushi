@@ -6,7 +6,7 @@
 //
 // 同文件也钉住 BUG-3065 身份判据的两处误判：标题后的「新版」/ 前面的「最新」被当成
 // 重制记号；字幕组 `Title 01` 的集号被当成续作序号。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/video_release_language.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';

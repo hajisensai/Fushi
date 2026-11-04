@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 
 /// 一张 54 字节的 head 表，flags 按 [flags] 写入（偏移 16）。

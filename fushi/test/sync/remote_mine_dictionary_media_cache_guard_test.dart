@@ -9,7 +9,7 @@
 // overlay_bridge_handlers）都是「制卡前先落缓存」，远程入口必须同一步骤。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('远程 mineEntry / mineImmersion 制卡前先落词典媒体缓存（BUG-2190）', () {

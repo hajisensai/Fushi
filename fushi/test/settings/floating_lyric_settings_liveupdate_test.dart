@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1069 / TODO-1070 / TODO-1072：悬浮字幕设置三修的源码 + i18n 守卫。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-733：词典弹窗释义正文里 ruby 基字是**元素节点**（`<rb>` / `<span>` /
 /// 嵌套 structured-content，明鏡等单语词典就这么写）时，振假名塌到基字上重叠。

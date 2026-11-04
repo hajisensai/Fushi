@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3427 守卫：iOS Runner 必须链伞形 Rust 静态库 `native/fushi_ios_umbrella`
 /// （互联 P2P 的 `fp2p_*` + SRS 排程内核的 `ffsrs_*` + 计算内核的 `ffc_*` 合一），CI 出包后

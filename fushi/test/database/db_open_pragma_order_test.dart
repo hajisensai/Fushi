@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-772 Task 3 源码守卫：DB probe-open 的 `busy_timeout` 必须先于 `journal_mode=WAL`。
 ///

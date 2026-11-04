@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-041 复核守卫：移动端着色器「文案口径」必须与「底层支持状态」一致，
 /// 防再次出现过度承诺（UI 说可用、底层注释说未验证/no-op 的自相矛盾）。

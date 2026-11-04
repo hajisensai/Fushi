@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/coalesced_rereader.dart';
 
 /// BUG-3315 审查：比值订阅下一次变化只来一次事件。蓝光菜单采样在途时来的事件若直接

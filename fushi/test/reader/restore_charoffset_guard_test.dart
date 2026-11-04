@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-162 回归守卫（源码扫描，沿用 `reanchor_charoffset_guard_test.dart` 的

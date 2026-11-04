@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 
 /// PDF 页数「读过」判据（2026-09-06 裁定，取代 BUG-2222 的标量水位

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-492 (TODO-1053 Bug A) 源码守卫：收藏/制卡写入的 sectionIndex 必须绑定到「选中该句
 /// 时」的真实章号，不能在写入时刻再读裸 _currentChapter（有声书连续推进/跨章滚动会在选区

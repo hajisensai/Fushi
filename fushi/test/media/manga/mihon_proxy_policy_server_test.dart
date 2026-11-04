@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 

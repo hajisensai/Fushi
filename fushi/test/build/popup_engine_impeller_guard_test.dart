@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2790：app 外查词窗（`:popup` 热引擎）第二次打开起只剩冻住的旧 WebView、
 /// 释义滑不动。根因：热引擎关窗只 detach，查词 WebView 若是老式 Hybrid Composition，

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 
 /// BUG-2619：从一条整包资源建订阅，规则按「追更单集」落库，检查时又被整包判据

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 首帧前的字体装载（`AppModel.initialise` 里那一段）必须覆盖 `refreshAppFont` 填的
 /// **每一个**字体字段。
