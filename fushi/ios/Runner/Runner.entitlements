@@ -5,7 +5,8 @@
 	<!--
 		APNs 远程推送（「开发者回复了你的反馈」，lib/src/feedback/feedback_push.dart）。
 
-		本文件**默认不接入构建**：工程里没有设 CODE_SIGN_ENTITLEMENTS。只有描述文件本身
+		本文件**真机默认不接入构建**：工程里没有设 CODE_SIGN_ENTITLEMENTS（模拟器例外，见下方
+		App Group 一节）。只有描述文件本身
 		带 aps-environment（App ID 已勾 Push Notifications 并重新生成过描述文件）时，
 		.github/workflows/release-desktop.yml 才往 Release.xcconfig 追加
 		CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements，并把 FUSHI_APS_ENVIRONMENT
@@ -20,5 +21,18 @@
 	-->
 	<key>aps-environment</key>
 	<string>$(FUSHI_APS_ENVIRONMENT)</string>
+	<!--
+		主屏小组件 / Live Activity 的 App Group（与 FushiWidgets 扩展共用快照目录）。
+
+		与上面的 aps-environment 同一套规矩：真机签名时 CI 逐项核对描述文件，描述文件里没有的
+		key 先从本文件删掉再签（`PlistBuddy -c "Delete :…"`，只改 runner 上的副本）；
+		两份描述文件（app.fushi.reader / app.fushi.reader.widgets）都带这个 group 时才保留，
+		否则连扩展一起摘掉（tool/apple/widgets_target.rb strip ios）。模拟器构建无条件接入
+		（Debug.xcconfig / Release.xcconfig 的 `CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]`）。
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(FUSHI_APP_GROUP)</string>
+	</array>
 </dict>
 </plist>

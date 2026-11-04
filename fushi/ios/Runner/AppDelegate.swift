@@ -255,6 +255,8 @@ final class FushiRemotePush {
     FushiDownloadKeepAlive.register(binaryMessenger: binaryMessenger)
     // 反馈回复的 APNs 远程推送（见文件顶部 FushiRemotePush）。
     FushiRemotePush.shared.install(binaryMessenger: binaryMessenger)
+    // 主屏小组件快照 + Live Activity（灵动岛）+ 小组件按钮回调（FushiHomeWidgets.swift）。
+    FushiHomeWidgets.shared.install(binaryMessenger: binaryMessenger)
     // 查词输入框的输入法语言。install 必须在任何输入框成为第一响应者之前完成——
     // `textInputMode` 是在 becomeFirstResponder **之前**被读的。
     let imeInstalled = LookupImeLanguage.install()

@@ -16,6 +16,8 @@
 #
 # 用法（验完写入 GitHub）：去掉 --verify-only，补上 --team-id/--asc-key-id/--asc-issuer-id。
 # macOS Developer ID 材料用 --macos-cert / --macos-cert-password-file 追加，可与 iOS 分两次跑。
+# 主屏小组件扩展（app.fushi.reader.widgets）的 App Store 描述文件用 --ios-widgets-profile 追加；
+# 两份描述文件都要带 App Group group.app.fushi.reader，否则 CI 签名时会把扩展摘掉。
 #
 # 完整流程见 docs/agent/apple-signing.md。
 
@@ -30,6 +32,7 @@ ASC_KEY=""
 IOS_CERT=""
 IOS_CERT_PASSWORD=""
 IOS_PROFILE=""
+IOS_WIDGETS_PROFILE=""
 MACOS_CERT=""
 MACOS_CERT_PASSWORD=""
 
@@ -76,6 +79,7 @@ while [ $# -gt 0 ]; do
     --ios-cert) IOS_CERT="$2"; shift 2 ;;
     --ios-cert-password-file) IOS_CERT_PASSWORD="$(read_password_file "$2")"; shift 2 ;;
     --ios-profile) IOS_PROFILE="$2"; shift 2 ;;
+    --ios-widgets-profile) IOS_WIDGETS_PROFILE="$2"; shift 2 ;;
     --macos-cert) MACOS_CERT="$2"; shift 2 ;;
     --macos-cert-password-file) MACOS_CERT_PASSWORD="$(read_password_file "$2")"; shift 2 ;;
     -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}"; exit 0 ;;
@@ -183,7 +187,7 @@ if [ -n "$IOS_PROFILE" ]; then
     ok "name = $PROFILE_NAME"
 
     EXPECTED_BUNDLE_ID="$(sed -n 's/.*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' \
-      "$REPO_ROOT/fushi/ios/Runner.xcodeproj/project.pbxproj" | grep -v RunnerTests | head -n 1)"
+      "$REPO_ROOT/fushi/ios/Runner.xcodeproj/project.pbxproj" | grep -v -e RunnerTests -e '\.widgets$' | head -n 1)"
     if [ "$PROFILE_BUNDLE_ID" = "$EXPECTED_BUNDLE_ID" ]; then
       ok "bundle id = ${PROFILE_BUNDLE_ID}（与 Runner.xcodeproj 一致）"
     else
@@ -235,6 +239,42 @@ if [ -n "$IOS_PROFILE" ]; then
   fi
 fi
 
+# 主屏小组件：App Group 不是硬性要求（缺了 CI 只是不签扩展），所以主描述文件缺它只提示；
+# 但一旦给了扩展描述文件，就必须是一份能用的。
+WIDGETS_APP_GROUP=group.app.fushi.reader
+if [ -n "$IOS_PROFILE" ] && [ -n "${PROFILE_PLIST:-}" ] && [ -f "$PROFILE_PLIST" ]; then
+  if /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$PROFILE_PLIST" 2>/dev/null | grep -qF "$WIDGETS_APP_GROUP"; then
+    ok "主描述文件带 App Group $WIDGETS_APP_GROUP（主屏小组件可签）"
+  else
+    echo "  ! 主描述文件没有 App Group $WIDGETS_APP_GROUP：TestFlight 包不带主屏小组件（见 apple-signing.md「主屏小组件」）"
+  fi
+fi
+if [ -n "$IOS_WIDGETS_PROFILE" ]; then
+  echo "ios widgets provisioning profile ($IOS_WIDGETS_PROFILE):"
+  [ -f "$IOS_WIDGETS_PROFILE" ] || die "profile not found: $IOS_WIDGETS_PROFILE"
+  W_PLIST="$(mktemp -t fushi-widgets-profile)"
+  if ! security cms -D -i "$IOS_WIDGETS_PROFILE" > "$W_PLIST" 2>/dev/null; then
+    fail "不是 CMS 签名的 .mobileprovision"
+  else
+    W_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$W_PLIST")"
+    if [ "${W_APP_ID#*.}" = "app.fushi.reader.widgets" ]; then
+      ok "bundle id = app.fushi.reader.widgets"
+    else
+      fail "扩展描述文件绑的是 '${W_APP_ID#*.}'，应为 app.fushi.reader.widgets"
+    fi
+    if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$W_PLIST" >/dev/null 2>&1; then
+      fail "含 ProvisionedDevices —— 这是 development/ad-hoc 描述文件，不是 App Store 的"
+    fi
+    if /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$W_PLIST" 2>/dev/null | grep -qF "$WIDGETS_APP_GROUP"; then
+      ok "带 App Group $WIDGETS_APP_GROUP"
+    else
+      fail "扩展描述文件没有 App Group $WIDGETS_APP_GROUP（App ID 勾 App Groups 并选中这个组后重新生成）"
+    fi
+    ok "有效期至 $(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$W_PLIST")"
+  fi
+  rm -f "$W_PLIST"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   echo ""
   echo "APPLE SIGNING VERDICT: FAILED - $FAILURES 项校验未通过，未写入任何 secret"
@@ -272,6 +312,9 @@ if [ -n "$IOS_CERT" ]; then
 fi
 if [ -n "$IOS_PROFILE" ]; then
   set_secret IOS_PROVISIONING_PROFILE_BASE64 "$(base64 -i "$IOS_PROFILE" | tr -d '\n')"
+fi
+if [ -n "$IOS_WIDGETS_PROFILE" ]; then
+  set_secret IOS_WIDGETS_PROVISIONING_PROFILE_BASE64 "$(base64 -i "$IOS_WIDGETS_PROFILE" | tr -d '\n')"
 fi
 if [ -n "$MACOS_CERT" ]; then
   set_secret MACOS_DEVELOPER_ID_P12_BASE64 "$(base64 -i "$MACOS_CERT" | tr -d '\n')"

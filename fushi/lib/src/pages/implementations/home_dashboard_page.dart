@@ -36,6 +36,8 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
+import 'package:fushi/src/platform/home_widgets/home_widget_continue_feed.dart';
+import 'package:fushi/src/platform/home_widgets/home_widget_snapshot.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
 import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
@@ -979,6 +981,9 @@ class _HomeDashboardPageState
     // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
     _kavitaLifecycle = AppLifecycleListener(onResume: _onResumeForKavita);
     homeShellTabNotifier.addListener(_onTabForKavita);
+    HomeWidgetContinueFeed.instance.pendingOpen.addListener(
+      _onWidgetOpenRequest,
+    );
     _reconcileKavitaProgress();
     unawaited(_loadServerContinue());
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
@@ -1160,6 +1165,9 @@ class _HomeDashboardPageState
     _reloadDebounce?.cancel();
     _kavitaLifecycle?.dispose();
     homeShellTabNotifier.removeListener(_onTabForKavita);
+    HomeWidgetContinueFeed.instance.pendingOpen.removeListener(
+      _onWidgetOpenRequest,
+    );
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());
     _profileCheckDebounce?.cancel();
@@ -1353,6 +1361,7 @@ class _HomeDashboardPageState
     _snapshots[db] = snapshot;
     if (!mounted) return;
     setState(() => _applySnapshot(snapshot));
+    HomeWidgetContinueFeed.instance.notifyDashboardReloaded();
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
     unawaited(_loadRemoteDashboardData());
   }
@@ -2334,7 +2343,107 @@ class _HomeDashboardPageState
         .toList();
     _resumeEntry = visible.isEmpty ? null : visible.first;
     _continueVisible = visible;
+    _publishContinueToWidgets(appModel, visible);
     return visible;
+  }
+
+  // ── 主屏小组件 ───────────────────────────────────────────────────────────
+
+  /// 把这一轮「继续」交给主屏小组件（[HomeWidgetContinueFeed]）。在 build 路径里算出，
+  /// 所以推迟到微任务再发（监听方会排写盘，不能在 build 中途改别的状态）。签名没变
+  /// 时 feed 自己去重。顺带处理「冷启动时小组件请求打开、首页这时才有数据」。
+  void _publishContinueToWidgets(
+    AppModel appModel,
+    List<_ContinueEntry> visible,
+  ) {
+    final List<HomeWidgetContinueSource> sources = <HomeWidgetContinueSource>[
+      for (final _ContinueEntry e in visible.take(4))
+        HomeWidgetContinueSource(
+          key: _continueWidgetKey(e),
+          kind: _continueWidgetKind(e),
+          title: _continueDisplayTitle(e),
+          subtitle: _continueSubtitle(e),
+          progress: e.progress,
+          progressLabel: e.badgeLabel,
+          cover: _continueWidgetCover(appModel, e),
+        ),
+    ];
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      HomeWidgetContinueFeed.instance.publish(sources);
+      if (_initialLoadDone) _onWidgetOpenRequest();
+    });
+  }
+
+  /// 与 `fushi://continue/<key>` 对应的稳定身份（见 [HomeWidgetContinueSource.key]）。
+  String _continueWidgetKey(_ContinueEntry e) {
+    if (e.server case final ServerContinueCandidate server) {
+      return 'server:${server.key}';
+    }
+    if (e.remote case final RemoteContinueCandidate remote) {
+      return 'remote:${remote.id}';
+    }
+    if (e.game case final GalgameEntry game) return 'game:${game.id}';
+    if (e.video case final VideoBookRow video) return 'video:${video.bookUid}';
+    return 'book:${e.book?.mediaIdentifier ?? e.title}';
+  }
+
+  HomeWidgetItemKind _continueWidgetKind(_ContinueEntry e) {
+    if (e.isAudiobook) return HomeWidgetItemKind.audiobook;
+    if (e.isVideo) return HomeWidgetItemKind.video;
+    if (e.isGame) return HomeWidgetItemKind.game;
+    if (e.module == ModuleId.manga) return HomeWidgetItemKind.manga;
+    return HomeWidgetItemKind.book;
+  }
+
+  /// 与首页卡片同一条取图链（[_continueCover]）；取不到图 → null（小组件画类型图标）。
+  ImageProvider? _continueWidgetCover(AppModel appModel, _ContinueEntry e) {
+    if (e.isVideo) return _videoCoverImage(e);
+    if (e.remote case final RemoteContinueCandidate remote) {
+      final String? url = remote.coverUrl;
+      final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
+      if (url == null || url.isEmpty || fetcher == null) return null;
+      return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
+    }
+    if (e.server case final ServerContinueCandidate server) {
+      return _serverCoverImage(server);
+    }
+    if (e.game case final GalgameEntry game) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: game.coverPath,
+        decodeWidth: kLocalCoverDecodePixelWidth,
+      );
+    }
+    final MediaItem? book = e.book;
+    if (book == null) return null;
+    final ImageProvider image = ReaderFushiSource.instance
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: book);
+    if (image is MemoryImage && identical(image.bytes, kTransparentImage)) {
+      return null;
+    }
+    return image;
+  }
+
+  /// 小组件点进来要打开的条目：在当前「继续」里找到同键的那条，走与点卡片完全相同的
+  /// [_openContinueEntry]。首页还没载完就先留着，等 [_publishContinueToWidgets] 再来；
+  /// 载完了还找不到（条目已完成 / 模块被关）就只停在首页。
+  void _onWidgetOpenRequest() {
+    final HomeWidgetContinueFeed feed = HomeWidgetContinueFeed.instance;
+    final String? key = feed.pendingOpen.value;
+    if (key == null || !mounted) return;
+    _ContinueEntry? match;
+    for (final _ContinueEntry e in _continueVisible) {
+      if (_continueWidgetKey(e) == key) {
+        match = e;
+        break;
+      }
+    }
+    if (match == null && !_initialLoadDone) return;
+    feed.pendingOpen.value = null;
+    if (match != null) {
+      unawaited(_openContinueEntry(ref.read(appProvider), match));
+    }
   }
 
   /// [HomeDashboardPanel] 注册表里一个面板此刻的 widget；不该出现时为 null。
@@ -2605,16 +2714,8 @@ class _HomeDashboardPageState
     AppModel appModel,
     _ContinueEntry entry,
   ) {
-    final ServerContinueCandidate? server = entry.server;
     final String? collectionName = entry.collectionName;
-    // 有声书没有现成的「收听」类型词（ABS 文案在多数语言还是英文占位，首页 i18n
-    // 守卫不放行），副标题直接由服务器名承担来源。
-    final String subtitle = <String>[
-      if (entry.kind case final MediaKind kind) _kindLabel(kind),
-      if (collectionName != null && collectionName != entry.title) entry.title,
-      if (entry.remote != null) _remoteDeviceName ?? t.home_remote_source,
-      if (server != null) server.serverName,
-    ].join(' · ');
+    final String subtitle = _continueSubtitle(entry);
     final int recent = entry.recentMs;
     final ImageProvider? image = _videoCoverImage(entry);
     final ShelfCoverMaterial material = _continueMaterial(entry);
@@ -2674,6 +2775,20 @@ class _HomeDashboardPageState
       progress: entry.progress,
       onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
     );
+  }
+
+  /// 「继续」条目的副标题（类型 · 合集里的这一集 · 来源）：主角卡与主屏小组件共用。
+  String _continueSubtitle(_ContinueEntry entry) {
+    final ServerContinueCandidate? server = entry.server;
+    final String? collectionName = entry.collectionName;
+    // 有声书没有现成的「收听」类型词（ABS 文案在多数语言还是英文占位，首页 i18n
+    // 守卫不放行），副标题直接由服务器名承担来源。
+    return <String>[
+      if (entry.kind case final MediaKind kind) _kindLabel(kind),
+      if (collectionName != null && collectionName != entry.title) entry.title,
+      if (entry.remote != null) _remoteDeviceName ?? t.home_remote_source,
+      if (server != null) server.serverName,
+    ].join(' · ');
   }
 
   /// 条目类型的短标签（阅读 / 观看 / 游戏）：主角卡副标题与「最近添加」行共用。

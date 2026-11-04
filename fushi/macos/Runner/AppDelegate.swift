@@ -61,6 +61,10 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // Apple Music 官方集成（MusicKit，macOS 14+ 才能整曲播放）。与 iOS 同一份实现。
       FushiAppleMusic.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // 桌面 / 通知中心小组件快照 + 菜单栏播放条（Live Activity 的 macOS 对应物）。
+      // 与 iOS 同一份实现（apple/HomeWidgets/FushiHomeWidgets.swift）。
+      FushiHomeWidgets.shared.install(
+        binaryMessenger: controller.engine.binaryMessenger)
       // 查词浮层的真模糊背衬：WebView 下方的 NSVisualEffectView 平台视图
       // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
       FushiNativeMaterial.register(
@@ -447,24 +451,37 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     }
   }
 
+  /// 交给 Dart（`source_urls` 事件流 → `handleIncomingUrl`）的 `fushi://` host：卡片出处
+  /// 回跳 + 主屏小组件 / 菜单栏播放条的链接。与 Dart `SourceUrlChannel.routedHosts` 同步。
+  /// OAuth / AnkiMobile 回调不在此列，照旧交给各自的插件（super）。
+  static let fushiRoutedUrlHosts: Set<String> = [
+    "source", "srs", "stats", "continue", "widget", "shortcut", "lookup",
+  ]
+
   override func application(_ application: NSApplication, open urls: [URL]) {
-    // Launch Services may deliver before the engine/channel exists. Keep source
+    // Launch Services may deliver before the engine/channel exists. Keep routed
     // links until Dart subscribes; other schemes/hosts still reach plugins.
     var remainingUrls: [URL] = []
     for url in urls {
       guard url.scheme?.lowercased() == "fushi",
-        url.host?.lowercased() == "source" else {
+        let host = url.host?.lowercased(),
+        Self.fushiRoutedUrlHosts.contains(host) else {
         remainingUrls.append(url)
         continue
       }
-      if let sink = sourceUrlEventSink {
-        sink(url.absoluteString)
-      } else {
-        pendingSourceUrls.append(url.absoluteString)
-      }
+      deliverUrl(url.absoluteString)
     }
     if !remainingUrls.isEmpty {
       super.application(application, open: remainingUrls)
+    }
+  }
+
+  /// 把一条 Fushi 链接交给 Dart（小组件按钮 / 菜单栏条目也走这里）。
+  func deliverUrl(_ url: String) {
+    if let sink = sourceUrlEventSink {
+      sink(url)
+    } else {
+      pendingSourceUrls.append(url)
     }
   }
 

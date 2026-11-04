@@ -128,6 +128,9 @@ import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
+import 'package:fushi/src/platform/home_widgets/home_widget_link.dart';
+import 'package:fushi/src/platform/home_widgets/home_widget_link_router.dart';
+import 'package:fushi/src/platform/home_widgets/home_widgets_host.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
@@ -1168,8 +1171,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       });
     }
     if (Platform.isMacOS) {
+      // 原生侧只转交 Fushi 自己认的 host（卡片出处 + 小组件 / 菜单栏链接，见
+      // macos/Runner/AppDelegate.swift），统一走 [handleIncomingUrl] 分流。
       _sourceUrlSubscription = SourceUrlChannel.urls.listen(
-        _queueCardSourceUrl,
+        (String url) => handleIncomingUrl(data: url, isInitial: false),
       );
     }
     if (Platform.isIOS) {
@@ -1609,6 +1614,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _queueAppShortcut(shortcut);
       return true;
     }
+    // 主屏小组件 / 控制中心 / Live Activity / macOS 菜单栏点进来的链接。
+    final HomeWidgetLink? widgetLink = HomeWidgetLink.tryParse(data);
+    if (widgetLink != null) {
+      _queueHomeWidgetLink(widgetLink);
+      return true;
+    }
     // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
     // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
     // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
@@ -1631,6 +1642,34 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     return false;
+  }
+
+  /// 小组件链接：与快捷方式同一个排队口径——app 初始化完成前只记下最后一条，就绪后的根
+  /// build 排到下一帧落地（冷启动时 HomePage 会先把 tab 重置成启动 tab）。
+  HomeWidgetLink? _pendingHomeWidgetLink;
+  bool _homeWidgetLinkScheduled = false;
+
+  void _queueHomeWidgetLink(HomeWidgetLink link) {
+    _pendingHomeWidgetLink = link;
+    if (mounted && ref.read(appProvider).isInitialised) {
+      _scheduleHomeWidgetLink();
+    } else if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _scheduleHomeWidgetLink() {
+    if (_pendingHomeWidgetLink == null || _homeWidgetLinkScheduled) return;
+    _homeWidgetLinkScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _homeWidgetLinkScheduled = false;
+      final HomeWidgetLink? link = _pendingHomeWidgetLink;
+      _pendingHomeWidgetLink = null;
+      if (link == null || !mounted) return;
+      unawaited(runHomeWidgetLink(link, ref));
+    });
+    // 无 setState 的路径上 post-frame 回调不会自己排出一帧。
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   void _queueAppShortcut(AppShortcut shortcut) {
@@ -2831,6 +2870,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _scheduleCardSourceNavigation();
     _schedulePairLinks();
     _appShortcuts.schedule();
+    _scheduleHomeWidgetLink();
     // 长按图标菜单跟着模块开关与界面语言走：两者一变根 build 就重跑（模块开关
     // notifyListeners / 语言切换重建整树），发布器按签名去重，平时不过通道。
     AppShortcutsPublisher.instance.sync(
@@ -3067,7 +3107,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   // 全局浮层），见 captureFeedbackScreenshot。
                                   RepaintBoundary(
                                     key: feedbackScreenshotBoundaryKey,
-                                    child: child!,
+                                    // iOS / macOS 主屏小组件 + Live Activity 宿主（其它
+                                    // 平台原样透传）。
+                                    child: HomeWidgetsHost(child: child!),
                                   ),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),

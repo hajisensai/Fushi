@@ -43,6 +43,13 @@ abstract final class FushiChannels {
   static const MethodChannel appShortcuts = MethodChannel(
     '$_prefix/app_shortcuts',
   );
+
+  /// 主屏小组件快照 + Live Activity / macOS 菜单栏播放条（只有 iOS / macOS 实现，
+  /// Android 不注册，Java 侧无对应常量）。Dart 门面 `lib/src/platform/home_widgets/`，
+  /// 原生 `fushi/apple/HomeWidgets/FushiHomeWidgets.swift`。
+  static const MethodChannel homeWidgets = MethodChannel(
+    '$_prefix/home_widgets',
+  );
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );

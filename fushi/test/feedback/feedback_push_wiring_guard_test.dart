@@ -80,9 +80,27 @@ void main() {
       );
       expect(probe, isNonNegative);
       expect(wire, greaterThan(probe));
+      // 描述文件没有的项先从 runner 上的副本删掉，再接入（主屏小组件的 App Group 同理）。
+      final String gate = wf.substring(probe, wire);
       expect(
-        wf.substring(probe, wire),
-        contains(r'if [ -n "$APS_ENV" ]; then'),
+        gate,
+        contains(
+          'if [ -z "\$APS_ENV" ]; then\n'
+          "            /usr/libexec/PlistBuddy -c 'Delete :aps-environment' "
+          'fushi/ios/Runner/Runner.entitlements',
+        ),
+      );
+      expect(
+        gate,
+        contains(
+          'if [ "\$WIDGETS" != true ]; then\n'
+          "            /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' "
+          'fushi/ios/Runner/Runner.entitlements',
+        ),
+      );
+      expect(
+        gate,
+        contains(r'if [ -n "$APS_ENV" ] || [ "$WIDGETS" = true ]; then'),
       );
     });
   });

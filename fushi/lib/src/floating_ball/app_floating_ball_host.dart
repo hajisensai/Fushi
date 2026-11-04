@@ -71,6 +71,10 @@ final ValueNotifier<bool> pendingOpenLookupPage = ValueNotifier<bool>(false);
 /// Android 系统球「拍照查词」：Fushi 已被拉到前台，等 app 就绪后开相机。
 final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 
+/// 主屏小组件 / 控制中心「剪贴板查词」（`fushi://widget/clipboard_lookup`）：Fushi 已被拉到
+/// 前台，等 app 就绪后读剪贴板查词（iOS 读剪贴板只能在前台）。
+final ValueNotifier<bool> pendingClipboardLookup = ValueNotifier<bool>(false);
+
 /// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
 final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
 
@@ -444,6 +448,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
+    pendingClipboardLookup.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
     pendingOpenAi.addListener(_onChanged);
     pendingProfileSwitch.addListener(_onChanged);
@@ -504,6 +509,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.removeListener(_onChanged);
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
+    pendingClipboardLookup.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
     pendingOpenAi.removeListener(_onChanged);
     pendingProfileSwitch.removeListener(_onChanged);
@@ -1132,6 +1138,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     });
   }
 
+  /// 小组件「剪贴板查词」：app 就绪后读剪贴板（与球上的剪贴板按钮同一个入口）。
+  void _flushClipboardLookup() {
+    if (!pendingClipboardLookup.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingClipboardLookup.value) return;
+      pendingClipboardLookup.value = false;
+      unawaited(_clipboardLookup());
+    });
+  }
+
   /// 系统球「立即同步」：app 就绪后跑一轮同步（同步要用已初始化的数据库与通道）。
   void _flushSync() {
     if (!pendingSync.value) return;
@@ -1601,6 +1617,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
+    _flushClipboardLookup();
     _flushSync();
     _flushOpenAi();
     _flushProfileSwitch();
