@@ -225,7 +225,7 @@
 | [BUG-3922](bugs/BUG-3922-installer-and-onboarding-localization.md) | ✅ | ✅ | 安装器只有中文、onboarding 部分文字没翻译 |
 | [BUG-3921](bugs/BUG-3921-continue-card-volume-number.md) | ✅ | ✅ | continue-card-volume-number |
 | [BUG-3920](bugs/BUG-3920-subtitle-search-sheet-header-scrolls-away.md) | ✅ | ✅ | subtitle-search-sheet-header-scrolls-away |
-| [BUG-3919](bugs/BUG-3919-collapsible-header-dialog-intrinsics.md) | 🚧 | 🚧 | collapsible-header-dialog-intrinsics |
+| [BUG-3919](bugs/BUG-3919-collapsible-header-dialog-intrinsics.md) | ✅ | ✅ | collapsible-header-dialog-intrinsics |
 | [BUG-3918](bugs/BUG-3918-home-hero-multi-episode-still-nondeterministic.md) | ✅ | ✅ | home-hero-multi-episode-still-nondeterministic |
 | [BUG-3917](bugs/BUG-3917-lyrics-choose-source-plugin-track-crash.md) | ✅ | ✅ | lyrics-choose-source-plugin-track-crash |
 | [BUG-3916](bugs/BUG-3916-lyrics-plugin-merge-stale-on-parser-bump.md) | ✅ | ✅ | lyrics-plugin-merge-stale-on-parser-bump |
