@@ -572,6 +572,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'page_backdrop_image_landscape',
   'page_backdrop_image_portrait',
   'page_backdrop_image_scrim',
+  // String（JSON）：按模块单独设的背景（反馈 DYI1IOZxSM）。图片路径表设备本地，
+  // 预设表随 Profile；没出现的模块跟随全局。
+  'page_backdrop_module_images',
+  'page_backdrop_module_presets',
   'page_backdrop_motion',
   'page_backdrop_preset',
   'page_backdrop_seed_cache',
