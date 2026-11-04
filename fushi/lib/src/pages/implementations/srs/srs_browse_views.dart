@@ -121,6 +121,7 @@ SrsBrowseSortColumn? srsBrowseColumnSort(SrsBrowseTableColumn c) => switch (c) {
   SrsBrowseTableColumn.lapses => SrsBrowseSortColumn.lapses,
   SrsBrowseTableColumn.deck => SrsBrowseSortColumn.deck,
   SrsBrowseTableColumn.noteType => SrsBrowseSortColumn.noteType,
+  SrsBrowseTableColumn.source => SrsBrowseSortColumn.source,
   SrsBrowseTableColumn.added => SrsBrowseSortColumn.created,
   SrsBrowseTableColumn.modified => SrsBrowseSortColumn.modified,
   _ => null,

@@ -63,6 +63,7 @@ String srsBrowseSortLabel(SrsBrowseSort sort) => switch (sort.column) {
   SrsBrowseSortColumn.lapses => t.srs_browse_sort_lapses,
   SrsBrowseSortColumn.deck => t.srs_key_deck,
   SrsBrowseSortColumn.noteType => t.srs_note_type,
+  SrsBrowseSortColumn.source => t.srs_browse_view_sources,
 };
 
 /// 选排序列；选「指定字段」时接着选字段。返回 null = 取消。方向沿用 [current]。

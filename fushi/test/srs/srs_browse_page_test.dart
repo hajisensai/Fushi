@@ -11,15 +11,19 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_browse_views.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
+    show FushiCheckbox, FushiFilledButton;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_browse_ops.dart'
-    show srsBatchMoveCards, srsBatchSetSuspended;
+    show srsBatchMoveCards, srsBatchSetDue, srsBatchSetSuspended;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart'
@@ -28,6 +32,10 @@ import 'package:fushi_srs/fushi_srs.dart'
         SrsEntityKind,
         SrsFieldKeys,
         SrsNoteView,
+        SrsCustomStudyMode,
+        SrsCustomStudyState,
+        SrsDeckTree,
+        SrsSourceRef,
         SrsTemplateDef,
         kFushiFsrsLibEnv;
 import 'package:material_ui/material_ui.dart';
@@ -74,22 +82,75 @@ Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
   }
 }
 
+/// 选列偏好存在内存里的 AppModel（测试没有装配 prefs）。
+class _ColumnsPrefAppModel extends SrsTestAppModel {
+  String columns = '';
+
+  @override
+  String get srsBrowseTableColumns => columns;
+
+  @override
+  Future<void> setSrsBrowseTableColumns(String value) async => columns = value;
+}
+
+/// 加一条带出处的 Lapis 笔记。
+Future<String> _addSourced(
+  WidgetTester tester,
+  SrsDbStore store,
+  String expression,
+  String definition,
+  SrsSourceRef? source, {
+  String? deckId,
+}) async {
+  final String id = (await tester.runAsync(
+    () => store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      deckId: deckId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): expression,
+        srsLapisFieldId(kSrsTestProfile, 'MainDefinition'): definition,
+      },
+      source: source,
+    ),
+  ))!;
+  _clock.advance(const Duration(seconds: 1));
+  return id;
+}
+
+SrsSourceRef _book(String key, String title) => SrsSourceRef.book(
+  bookKey: key,
+  sectionIndex: 0,
+  charStart: 0,
+  title: title,
+);
+
+/// 双击（两次点击之间留出双击识别的间隔）。
+Future<void> _doubleTap(WidgetTester tester, Finder f) async {
+  await tester.tap(f);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tap(f);
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
 Future<void> _pump(
   WidgetTester tester, {
   required SrsDbStore store,
   bool apple = false,
   Size size = const Size(500, 900),
   Widget page = const SrsBrowsePage(),
+  AppModel? app,
+  List<Override> overrides = const <Override>[],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = SrsTestAppModel();
+  final AppModel appModel = app ?? SrsTestAppModel();
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
         srsStoreProvider.overrideWith((Ref ref) async => store),
+        ...overrides,
         srsCardFaceBuilderProvider.overrideWithValue(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),
@@ -805,6 +866,286 @@ void main() {
       unorderedEquals(<String>['alpha', 'beta', 'gamma']),
     );
     expect(afterSwitch[other], isEmpty);
+    await _unmount(tester);
+  });
+
+  testWidgets('表格：按出处分组（组头是作品名，没有出处的一组在最后）；双击字段摘要格原地改原值，Enter 存并跳到下一行', (
+    WidgetTester tester,
+  ) async {
+    _expectNativeSearch();
+    final SrsDbStore store = await _openStore(tester);
+    final String eat = await _addSourced(
+      tester,
+      store,
+      '食べる',
+      '<b>to eat</b>',
+      _book('bk-a', 'Book A'),
+    );
+    await _addSourced(tester, store, '走る', 'to run', null);
+    await _addSourced(tester, store, '飲む', 'to drink', _book('bk-b', 'Book B'));
+    await _pump(tester, store: store, size: const Size(1300, 900));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-layout-table')),
+    );
+    await _settle(tester, rounds: 6);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-group-button')),
+    );
+    await _settle(tester, rounds: 4);
+    await tester.tap(find.text(t.srs_browse_table_group_source).last);
+    await _settle(tester);
+
+    String header(int index) => tester
+        .widget<Text>(find.byKey(ValueKey<String>('srs-browse-group-$index')))
+        .data!;
+    expect(header(0), 'Book A');
+    expect(header(1), 'Book B');
+    expect(header(2), t.srs_browse_source_none);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-group-3')),
+      findsNothing,
+    );
+
+    // 双击第一行的字段摘要格：编辑框是笔记里的原值（带 HTML），不是摘要。
+    await _doubleTap(
+      tester,
+      find.byKey(const ValueKey<String>('srs-browse-cell-0-field1')),
+    );
+    await _settle(tester, rounds: 6);
+    Finder editor() => find.descendant(
+      of: find.byKey(const ValueKey<String>('srs-browse-cell-editor')),
+      matching: find.byType(EditableText),
+    );
+    expect(
+      tester.widget<EditableText>(editor()).controller.text,
+      '<b>to eat</b>',
+    );
+    await tester.enterText(editor(), 'to consume');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
+      () => store.note(eat),
+    );
+    expect(
+      saved!.field(srsLapisFieldId(kSrsTestProfile, 'MainDefinition')),
+      'to consume',
+    );
+    // Enter 之后接着改下一行同一格；Esc 取消、不写。
+    expect(tester.widget<EditableText>(editor()).controller.text, 'to drink');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await _settle(tester, rounds: 4);
+    expect(editor(), findsNothing);
+
+    // 改字段进撤销栈。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+    );
+    await _settle(tester);
+    final SrsNoteView? undone = await tester.runAsync<SrsNoteView?>(
+      () => store.note(eat),
+    );
+    expect(
+      undone!.field(srsLapisFieldId(kSrsTestProfile, 'MainDefinition')),
+      '<b>to eat</b>',
+    );
+    await _unmount(tester);
+  });
+
+  testWidgets('表格选列存进 profile 偏好，重开页面照旧；标签格原地改，Tab 存并跳到下一格', (
+    WidgetTester tester,
+  ) async {
+    _expectNativeSearch();
+    expect(decodeSrsBrowseColumns(''), kSrsBrowseDefaultColumns);
+    expect(decodeSrsBrowseColumns('bogus,tags,tags'), <SrsBrowseTableColumn>[
+      SrsBrowseTableColumn.front,
+      SrsBrowseTableColumn.tags,
+    ]);
+    final SrsDbStore store = await _openStore(tester);
+    final String eat = await _add(tester, store, '食べる', 'to eat');
+    final _ColumnsPrefAppModel app = _ColumnsPrefAppModel();
+    await _pump(tester, store: store, size: const Size(1300, 900), app: app);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-layout-table')),
+    );
+    await _settle(tester, rounds: 6);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-cell-0-tags')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-columns-button')),
+    );
+    await _settle(tester, rounds: 6);
+    final Finder tagsRow = find.byKey(
+      const ValueKey<String>('srs-browse-column-tags'),
+    );
+    // 列面板的列表懒构建：滚到「标签」那一行。
+    await tester.scrollUntilVisible(
+      tagsRow,
+      60,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('srs-browse-columns')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(of: tagsRow, matching: find.byType(FushiCheckbox)),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-columns-apply')),
+    );
+    await _settle(tester);
+    expect(
+      app.columns,
+      encodeSrsBrowseColumns(<SrsBrowseTableColumn>[
+        ...kSrsBrowseDefaultColumns,
+        SrsBrowseTableColumn.tags,
+      ]),
+    );
+    await _unmount(tester);
+
+    // 重开：选的列从偏好读回来（ProviderScope 卸载时 dispose 了上一个 AppModel，换一个读同一份偏好）。
+    final _ColumnsPrefAppModel reopened = _ColumnsPrefAppModel()
+      ..columns = app.columns;
+    await _pump(
+      tester,
+      store: store,
+      size: const Size(1300, 900),
+      app: reopened,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-layout-table')),
+    );
+    await _settle(tester, rounds: 6);
+    final Finder tagsCell = find.byKey(
+      const ValueKey<String>('srs-browse-cell-0-tags'),
+    );
+    expect(tagsCell, findsOneWidget);
+    await _doubleTap(tester, tagsCell);
+    await _settle(tester, rounds: 6);
+    Finder editor() => find.descendant(
+      of: find.byKey(const ValueKey<String>('srs-browse-cell-editor')),
+      matching: find.byType(EditableText),
+    );
+    expect(tester.widget<EditableText>(editor()).controller.text, '');
+    await tester.enterText(editor(), 'n5  grammar n5');
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await _settle(tester);
+    final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
+      () => store.note(eat),
+    );
+    expect(saved!.tags, unorderedEquals(<String>['n5', 'grammar']));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await _settle(tester, rounds: 4);
+    await _unmount(tester);
+  });
+
+  testWidgets('出处视图「只复习这一作」：在作品各卡牌组的公共祖先上开只出这部作品到期卡的自定义学习', (
+    WidgetTester tester,
+  ) async {
+    _expectNativeSearch();
+    final SrsDbStore store = await _openStore(tester);
+    final (String works, String a, String b, String other) = (await tester
+        .runAsync(() async {
+          final String a = await store.ensureDeckPath('Works::A');
+          final String b = await store.ensureDeckPath('Works::B');
+          final String other = await store.ensureDeckPath('Other');
+          final SrsDeckTree tree = await store.deckTree();
+          return (tree.parentOf(a)!, a, b, other);
+        }))!;
+    final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+    expect(srsCommonDeckAncestor(tree, <String>[a, b]), works);
+    expect(srsCommonDeckAncestor(tree, <String>[a, a]), a);
+    expect(srsCommonDeckAncestor(tree, <String>[a, other]), isNull);
+    expect(srsTopLevelDecks(tree, <String>[a, b, other]), <String>[
+      works,
+      other,
+    ]);
+
+    final String due = await _addSourced(
+      tester,
+      store,
+      '食べる',
+      'to eat',
+      _book('bk-a', 'Book A'),
+      deckId: a,
+    );
+    await _addSourced(
+      tester,
+      store,
+      '飲む',
+      'to drink',
+      _book('bk-a', 'Book A'),
+      deckId: b,
+    );
+    await _addSourced(
+      tester,
+      store,
+      '走る',
+      'to run',
+      _book('bk-b', 'Book B'),
+      deckId: other,
+    );
+    final String dueCard = (await tester.runAsync(
+      () => store.cardsOfNote(due),
+    ))!.single.id;
+    await tester.runAsync(
+      () => srsBatchSetDue(store, <String>[dueCard], from: 0, to: 0),
+    );
+    // 窗口放高：三组都在首屏里构建（出处列表是懒构建的）。
+    await _pump(
+      tester,
+      store: store,
+      size: const Size(1300, 2400),
+      // 测试环境没有应用支持目录：媒体库给 null（出处磁贴不显示缩略图），不让取目录的异常把整个出处视图清空。
+      overrides: <Override>[
+        srsMediaStoreProvider.overrideWith((Ref ref) async => null),
+      ],
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-layout-sources')),
+    );
+    await _settle(tester);
+    await _settle(tester);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-sources')),
+      findsOneWidget,
+    );
+
+    // 今天没有到期卡的作品不给开。
+    final Finder idle = find.byKey(
+      const ValueKey<String>('srs-browse-source-review-book:bk-b'),
+    );
+    expect(idle, findsOneWidget);
+    expect(tester.widget<FushiFilledButton>(idle).onPressed, isNull);
+
+    final Finder review = find.byKey(
+      const ValueKey<String>('srs-browse-source-review-book:bk-a'),
+    );
+    await tester.ensureVisible(review);
+    await tester.pump();
+    await tester.tap(review);
+    await _settle(tester);
+    final SrsReviewPage page = tester.widget<SrsReviewPage>(
+      find.byType(SrsReviewPage),
+    );
+    expect(page.deckId, works);
+    expect(page.custom?.mode, SrsCustomStudyMode.filter);
+    expect(page.custom?.source, 'book:bk-a');
+    expect(page.custom?.states, <SrsCustomStudyState>{
+      SrsCustomStudyState.due,
+      SrsCustomStudyState.learning,
+    });
+    // 内核按这一轮的条件出卡：只出这部作品今天到期的那张。
+    final SrsStudyState? state = await tester.runAsync<SrsStudyState?>(
+      () => store.studyState(works, custom: page.custom),
+    );
+    expect(state?.next, dueCard);
+    expect(state?.after, isNull);
     await _unmount(tester);
   });
 }

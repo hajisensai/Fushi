@@ -10,7 +10,7 @@
 - 快捷视图（带计数，一次 `browse_counts` 算完）：今天到期 `is:due`、最近挖的 `added:7`、难卡 `prop:lapses>=4`、问题卡 `is:emptyfield or (-has:audio note:"<Fushi 卡片类型名>")`（仅 Fushi 卡片类型参与缺音频判断，见 §2.3）、已暂停 `is:suspended`，后面跟用户保存的视图。
 - 内容：
   - 列表：富卡片（正面大字 + 两个字段摘要 + 状态标签 + 保持率条 + 下次到期 + 出处小标 + 旗标）。手机左滑露出「暂停 / 旗标」，长按进多选；宽屏两列。
-  - 表格（宽屏）：可选列（拖动排序）、列头排序、双击单元格原地改字段（Tab 下一格、Esc 取消、进撤销栈）、按牌组 / 出处 / 添加日期分组。
+  - 表格（宽屏）：可选列（拖动排序；选了哪些列、什么顺序存 profile 偏好 `srs_browse_table_columns`，不进复习同步）、列头排序、双击单元格原地改字段（正面 / 两个字段摘要列 / 标签；编辑框是笔记里的原值；Enter 下一行同一格、Tab 下一格、Esc 取消、进撤销栈）、按牌组 / 出处 / 添加日期分组。
   - 出处：按出处分组（`browse_sources`），组头封面 + 标题 + 「今天到期 x / 共 y」+「只复习这一作」；组内磁贴（图片字段缩略图 + 正面 + 例句摘要 + 原声按钮）；没有出处的卡单独一组。
 - 健康条（宽屏，有问题才显示）：问题卡、难卡、疑似重复（`is:dupe`）三张卡，点了把积木换成对应条件；问题卡「一键修复」= 对空字段的卡给出删除建议 / 对缺音频的 Fushi 卡跑现有补词音频流程，执行前确认、可撤销。
 - 检查器（宽屏右栏；手机 = 全屏详情页，同三页）：
@@ -35,6 +35,7 @@
 | `addedAt` / `modifiedAt` | `int` | 笔记添加 / 内容修改时刻（毫秒；修改 = 各寄存器生效记录的最大物理时刻，不早于添加，不含作答） |
 | `lastReviewAt` | `int?` | 主卡上次复习时刻 |
 | `fieldPreview` | `List<String>` | 排序字段（笔记类型第一个字段）之外、按字段顺序前两个非空字段的纯文本（去 HTML / `[sound:]`、trim，各截 120 字符）；不足两个就少给 |
+| `fieldPreviewNames` | `List<String>` | `fieldPreview` 每一项来自的字段名（同长度同序）：表格原地改字段摘要列时按名字写回 |
 | `imageRef` / `audioRef` | `String?` | 按字段顺序第一个 `<img src>` / `[sound:…]` 的媒体文件名 |
 | `sourceKey` | `String?` | 出处分组键（见下）；无出处 null |
 | `sourceKind` | `String?` | `SrsSourceKind` 值 |
@@ -55,11 +56,13 @@
 
 章节、页码、时间区间、字符偏移一律不进键。没有出处（`source` 寄存器空 / 不是带字符串 `kind` 的对象）= null。
 
-编码（粗粒度，一页一条命令）：字符串类进现有 JSON 行（下标 8..13：`fieldPreview, imageRef, audioRef, sourceKey, sourceKind, sourceData`）；`rows.i64` 每行由 7 个扩到 11 个 i64（追加 `intervalDays, addedAt, modifiedAt, lastReviewAt`，null = `i64::MIN`）；新增 `rows.f64` 每行 2 个 f64（`difficulty, retention`，null = NaN）。字段原文、修改时刻、出处只对**这一页**的笔记从修改记录读一次（会话里按笔记缓存，写入后按笔记失效），不为取行装全库字段。
+编码（粗粒度，一页一条命令）：字符串类进现有 JSON 行（下标 8..14：`fieldPreview, imageRef, audioRef, sourceKey, sourceKind, sourceData, fieldPreviewNames`）；`rows.i64` 每行由 7 个扩到 11 个 i64（追加 `intervalDays, addedAt, modifiedAt, lastReviewAt`，null = `i64::MIN`）；新增 `rows.f64` 每行 2 个 f64（`difficulty, retention`，null = NaN）。字段原文、修改时刻、出处只对**这一页**的笔记从修改记录读一次（会话里按笔记缓存，写入后按笔记失效），不为取行装全库字段。
 
 ### 2.2 排序列
 
 新增 `retention`（`SrsBrowseSortColumn.retention`，wire 名 `retention`）：卡片模式 = 该卡可提取度，笔记模式 = 该笔记各卡（有值的）平均；None 不论升降序都排最后。
+
+新增 `source`（`SrsBrowseSortColumn.source`，wire 名 `source`）：按出处键（`sourceKey`）排，没有出处的不论升降序都排最后；表格「按出处分组」用它（组头显示作品名，同名的两部作品按键分开）。第一次用到时整列装出处寄存器（与 `src:` 同一份）。
 
 ### 2.3 新搜索词（确切语法）
 
@@ -83,7 +86,7 @@
 ### 2.4 新命令
 
 - `browse_counts`：请求 `{nodes: [语法树 JSON | null | false…], mode, …同 browse_query 的上下文}` → `{counts: [int…]}`。`null` = 空查询（全部）；`false` = Dart 解析失败 / 不支持的那一条，回 -1；求值报语法错误（如正则不合法）的那一条也回 -1，不影响其它。与 `browse_query` 同口径（同一会话、同上下文；`mode = notes` 时数笔记）。不留查询结果。Dart：`SrsBrowseSession.counts(List<String> queries, {SrsBrowseMode mode = SrsBrowseMode.cards}) → Future<List<int>>`（解析在 Dart 侧做，所以 wire 上传的是语法树而不是原文）。
-- `browse_sources`：`{gen}`（同 `browse_rows` 的结果句柄）→ `{groups: [{key, kind, data, count, due, preview: [rowIndex…≤8], latestAddedAt}]}`，按 `latestAddedAt` 降序（同值按键升序）；无出处的行合成 `key = null` 一组放最后。`data` 是组里最近添加那条笔记的出处原始 JSON；`due` = 组里有卡今天到期（`is:due` 口径）的行数；`preview` = 组内按结果顺序的前 8 个行号。Dart：`SrsBrowseResult.sources() → Future<List<SrsBrowseSourceGroup>>`。
+- `browse_sources`：`{gen}`（同 `browse_rows` 的结果句柄）→ `{groups: [{key, kind, data, count, due, preview: [rowIndex…≤8], latestAddedAt, decks: [牌组 id…]}]}`，按 `latestAddedAt` 降序（同值按键升序）；无出处的行合成 `key = null` 一组放最后。`data` 是组里最近添加那条笔记的出处原始 JSON；`due` = 组里有卡今天到期（`is:due` 口径）的行数；`preview` = 组内按结果顺序的前 8 个行号。Dart：`SrsBrowseResult.sources() → Future<List<SrsBrowseSourceGroup>>`。
 
 ```dart
 class SrsBrowseSourceGroup {
@@ -98,8 +101,15 @@ class SrsBrowseSourceGroup {
 }
 ```
 
+- `decks`（Dart `SrsBrowseSourceGroup.deckIds`）= 组里各行的卡所在的牌组 id（去重、首次出现的顺序），「只复习这一作」据此定牌组范围（§2.6）。
 - 两条新命令已加进 `SrsDbStore.kSrsBrowseOps` 与原生 `store/ffi.rs` 的浏览分派（只读，远程复习可转发）。
 - 上下文新增（`srsBrowseContext` 自动带）：`models: [[记忆算法 wire, 参数]…]`、`deckModels: {牌组 id: 下标}`、`fallbackModel`——保持率用；不进语料结构。
+
+### 2.6 只复习这一作（出处视图）
+
+- 走现有自定义学习临时会话（store/study.rs `CustomStudy`，不建筛选牌组、不挪卡、会话无状态），`filter` 模式新增 `"source": <sourceKey>`：只出笔记缓存行 `source_key` 整值相等的卡，可与 `states` / `tags` 叠加。Dart：`SrsCustomStudy.source`（远程复习的 wire 同步带上）。
+- `srs_notes_cache.source_key`（srs.db v25，部分索引 `(profile_uid, source_key) WHERE deleted_at IS NULL`）：出处寄存器的分组键，与 `browse.rs` `source_key` 同一个函数，写缓存行时算；空串 = 没有出处，NULL = 老行还没算，由 Dart 缓存修订号 10 的升级步 `backfill_source_keys` 只补这一列。不按制卡标签推（那只进统计页的 `source_kind`）。出卡时直接按索引查，不为出卡读修改记录。
+- 浏览页：组头「只复习这一作」只给有出处、今天有到期的组；牌组范围 = `decks` 的最近公共祖先（全在一个牌组就是它），分在几个顶层牌组时让用户挑一个；会话条件 = 该出处 + 状态 `due` / `learning`（今天到期的复习卡与学习卡，不引入新卡），上限 `SrsCustomStudy.maxCards`。复习页回来后浏览页重读。
 
 ### 2.5 测试
 
