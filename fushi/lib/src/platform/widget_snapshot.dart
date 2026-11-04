@@ -23,6 +23,15 @@ const int kWidgetWeekDays = 7;
 /// 月热力图的天数（5 行 × 7，最旧 → 今天）。
 const int kWidgetMonthDays = 35;
 
+/// 长热力图（快照 `heatmap`，Apple 中号「学习热力图」）的天数：16 周 × 7，最旧 → 今天。
+const int kWidgetHeatmapDays = 112;
+
+/// 复习到期预排（`srs.timeline`）往后看多远：WidgetKit 一次 timeline 的跨度。
+const Duration kWidgetSrsTimelineHorizon = Duration(hours: 24);
+
+/// 复习到期预排最多几个变化点（不含「现在」那一项）。
+const int kWidgetSrsTimelineMaxSteps = 40;
+
 /// 每日词汇最多带几条。
 const int kWidgetVocabLimit = 12;
 
@@ -128,6 +137,9 @@ const List<String> kWidgetLabelKeys = <String>[
   'lookupHint',
   'lookupCamera',
   'lookupClipboard',
+  // 「继续」里的游戏卡（隐私开关打开时代替标题）/ 16 周热力图标题
+  'kind_game',
+  'recentHeatmapDays',
 ];
 
 /// 小组件上所有文案（已按 app 内语言本地化）。键集合见 [kWidgetLabelKeys]；
@@ -177,12 +189,20 @@ class WidgetMediaInput {
     this.progress = 0,
     this.coverPath = '',
     this.remainingMs,
+    this.link = '',
   });
 
   final WidgetMediaKind kind;
 
-  /// 书 / 漫画 = `MediaItem.mediaIdentifier`，视频 = `VideoBookRow.bookUid`。
+  /// 书 / 漫画 = `MediaItem.mediaIdentifier`，视频 = `VideoBookRow.bookUid`，
+  /// 游戏 = `GalgameEntry.id`；服务器 / 互联远端条目是各自来源的稳定键（只作身份，
+  /// 打开走 [link]）。
   final String id;
+
+  /// 点卡片打开的深链。空串 = 本机条目，由 [buildWidgetSnapshot] 填成
+  /// `WidgetContinueLink(kind, id)`；服务器条目给 `WidgetServerLink`，互联远端条目给
+  /// 对应 tab（与首页「继续」点卡同一落地）。
+  final String link;
   final String title;
 
   /// 作者；没有就空串。
@@ -229,6 +249,99 @@ class WidgetImmersionInput {
     }
     return total;
   }
+}
+
+/// 复习到期预排的一个节点：从 [at]（epoch 毫秒）起待复习数是 [due]。
+typedef WidgetSrsDueStep = ({int at, int due});
+
+/// 不打开 app 时待复习数怎么变（纯函数，给 `srs.timeline` 用）：
+///
+/// - 第一项 = 现在，[dueNow] 原样（与首页复习条同一份牌组汇总，含每日上限）。
+/// - 学习中 / 重学卡按各自精确到毫秒的 `dueAt` 陆续到期，逐张加上。
+/// - 跨过 SRS 日边界（[dayIndexOf] 换日的那一刻，二分到分钟）时再加上新一天到期的
+///   复习卡 [reviewsDueNextDay]——日边界按 store 的口径（可配重置时刻），不假设零点。
+///
+/// 节点只在计数变化时产生，同一分钟到期的合成一个；超过 [maxSteps] 个时合并到整点，
+/// 仍超出就截断（日边界那一点总保留）。到期时刻都向上取整：小组件宁可晚一分钟显示，
+/// 不提前显示还没到期的卡。
+List<WidgetSrsDueStep> buildWidgetSrsDueTimeline({
+  required int nowMs,
+  required int dueNow,
+  required Iterable<int> learningDueAts,
+  required int Function(int ms) dayIndexOf,
+  required int reviewsDueNextDay,
+  Duration horizon = kWidgetSrsTimelineHorizon,
+  int maxSteps = kWidgetSrsTimelineMaxSteps,
+}) {
+  final int end = nowMs + horizon.inMilliseconds;
+  final int? boundary = _nextSrsDayBoundary(nowMs, end, dayIndexOf);
+  final List<int> ripening = <int>[
+    for (final int at in learningDueAts)
+      if (at > nowMs && at <= end) at,
+  ]..sort();
+
+  int roundUp(int at, int unit) => ((at + unit - 1) ~/ unit) * unit;
+  List<int> stepTimes(int unit) {
+    final Set<int> times = <int>{
+      for (final int at in ripening) roundUp(at, unit),
+    };
+    if (boundary != null) times.add(boundary);
+    return times.toList()..sort();
+  }
+
+  List<int> times = stepTimes(60 * 1000);
+  if (times.length > maxSteps) times = stepTimes(3600 * 1000);
+  if (times.length > maxSteps) {
+    times = times.take(maxSteps).toList();
+    if (boundary != null && !times.contains(boundary)) {
+      times = <int>[...times.take(maxSteps - 1), boundary]..sort();
+    }
+  }
+
+  final int base = _nonNegative(dueNow);
+  final int nextDay = _nonNegative(reviewsDueNextDay);
+  final List<WidgetSrsDueStep> out = <WidgetSrsDueStep>[(at: nowMs, due: base)];
+  int ripeIndex = 0;
+  for (final int t in times) {
+    if (t <= nowMs) continue;
+    while (ripeIndex < ripening.length && ripening[ripeIndex] <= t) {
+      ripeIndex++;
+    }
+    final bool pastBoundary = boundary != null && t >= boundary;
+    final int due = base + ripeIndex + (pastBoundary ? nextDay : 0);
+    if (due != out.last.due) out.add((at: t, due: due));
+  }
+  return out;
+}
+
+/// (from, to] 里第一个 [dayIndexOf] 比 from 大的时刻（分钟精度）；区间内不换日为 null。
+int? _nextSrsDayBoundary(int from, int to, int Function(int ms) dayIndexOf) {
+  final int today = dayIndexOf(from);
+  if (dayIndexOf(to) <= today) return null;
+  int lo = from;
+  int hi = to;
+  const int minute = 60 * 1000;
+  while (hi - lo > minute) {
+    final int mid = lo + (hi - lo) ~/ 2;
+    if (dayIndexOf(mid) > today) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  return hi;
+}
+
+/// 热力图一格的档位（0…4）：没学 0；学了但没计时（只有字数 / 页数）1；
+/// 否则 <15 分钟 1、<30 分钟 2、<60 分钟 3、其余 4。固定阈值（不随窗口最大值变），
+/// 同一天在不同快照里颜色一致。
+int widgetHeatLevel(int ms, {bool active = false}) {
+  const int minute = 60 * 1000;
+  if (ms <= 0) return active ? 1 : 0;
+  if (ms < 15 * minute) return 1;
+  if (ms < 30 * minute) return 2;
+  if (ms < 60 * minute) return 3;
+  return 4;
 }
 
 /// 每日目标（<= 0 = 没设）与「今日制卡数」。
@@ -280,6 +393,7 @@ class WidgetSrsInput {
     this.streakCurrent = 0,
     this.streakLongest = 0,
     this.reviewsByDay = const <int>[],
+    this.timeline = const <WidgetSrsDueStep>[],
   });
 
   final WidgetSrsProvider provider;
@@ -297,6 +411,10 @@ class WidgetSrsInput {
 
   /// 每天复习数，最旧 → 今天；不足 [kWidgetMonthDays] 前面补 0，多了取最近的。
   final List<int> reviewsByDay;
+
+  /// 待复习数的预排（[buildWidgetSrsDueTimeline]）；空 = 只有「现在」一项。
+  /// [buildWidgetSnapshot] 会把第一项钉成「生成时刻 / 当前 due」，保证与 `srs.due` 一致。
+  final List<WidgetSrsDueStep> timeline;
 }
 
 /// 每日词汇的原始输入（释义是未清洗的 HTML / 文本）。
@@ -350,6 +468,7 @@ class WidgetModulesInput {
     WidgetMediaKind.book => books,
     WidgetMediaKind.manga => manga,
     WidgetMediaKind.video => video,
+    WidgetMediaKind.game => games,
   };
 
   Map<String, bool> toJson() => <String, bool>{
@@ -524,7 +643,11 @@ String widgetPlainText(String raw, {int maxChars = kWidgetDefinitionMaxChars}) {
 /// - 关掉的模块：对应媒体先出局，再取「继续」与书架。「继续」= 按
 ///   [WidgetMediaInput.recentAt] 倒序第一条；书架 = 前 [kWidgetShelfLimit] 条。
 /// - 沉浸四类固定顺序；`today.goal*` / `goals` 只含用户设了目标（> 0）的项。
-/// - 复习：provider 为 anki / none 时**不带任何 Fushi 计数**。
+/// - 复习：provider 为 anki / none 时**不带任何 Fushi 计数**（含 `timeline`）。
+/// - 零点切换：[nextDayAt]（下一个统计日边界，epoch 毫秒）给了且晚于 [generatedAt]
+///   时带 `rollover`：同一批按天计算的块（`today` / `goals` / `week` / `month` /
+///   `streak` / `heatmap`）按**下一个统计日**再算一遍，原生侧过了 `rollover.at` 就整块
+///   换上，不开 app 也会在零点清零今日、按规则延续或中断连续天数。
 /// - 数据缺失（空输入）= 全 0 / 空数组 / `deltaPct: null`，不抛。
 /// - [formatTime] / [formatChars] / [formatCount] / [formatAge] / [weekdayLabel]
 ///   由调用方注入（走 i18n），这里不依赖 slang。
@@ -555,6 +678,7 @@ Map<String, Object?> buildWidgetSnapshot({
   bool hideTitles = false,
   bool hideDefinitions = false,
   bool hideProfile = false,
+  int? nextDayAt,
 }) {
   final List<WidgetMediaInput> visible = <WidgetMediaInput>[
     for (final WidgetMediaInput m in media)
@@ -571,7 +695,161 @@ Map<String, Object?> buildWidgetSnapshot({
       _mediaJson(visible[i], formatAge, formatTimeLeft),
   ];
 
-  final List<String> monthKeys = _lastDayKeys(day, kWidgetMonthDays);
+  final bool fushi = srs.provider == WidgetSrsProvider.fushi;
+  final List<int> reviewsMonth = _fitTo<int>(
+    <int>[for (final int r in srs.reviewsByDay) _nonNegative(r)],
+    kWidgetMonthDays,
+    0,
+  );
+  final int reviewedToday = fushi ? _nonNegative(srs.reviewedToday) : 0;
+  final int due = fushi
+      ? _nonNegative(srs.newCount) +
+            _nonNegative(srs.learnCount) +
+            _nonNegative(srs.reviewCount)
+      : 0;
+
+  Map<String, Object?> dayBlocks({
+    required String key,
+    required WidgetGoalsInput dayGoals,
+    required List<int> dayReviews,
+    required int dayReviewed,
+    required int srsStreakCurrent,
+  }) => _dayBlocks(
+    day: key,
+    immersion: immersion,
+    goals: dayGoals,
+    fushi: fushi,
+    reviewsMonth: dayReviews,
+    reviewedToday: dayReviewed,
+    srsStreakCurrent: srsStreakCurrent,
+    srsStreakLongest: _nonNegative(srs.streakLongest),
+    categoryLabels: categoryLabels,
+    goalLabels: goalLabels,
+    formatTime: formatTime,
+    formatChars: formatChars,
+    formatCount: formatCount,
+    weekdayLabel: weekdayLabel,
+  );
+
+  final Map<String, Object?> todayBlocks = dayBlocks(
+    key: day,
+    dayGoals: goals,
+    dayReviews: reviewsMonth,
+    dayReviewed: reviewedToday,
+    srsStreakCurrent: _nonNegative(srs.streakCurrent),
+  );
+  final int? rolloverAt = nextDayAt != null && nextDayAt > generatedAt
+      ? nextDayAt
+      : null;
+  final String nextDay = FushiDatabase.statDateKeyPlusDays(day, 1);
+
+  return <String, Object?>{
+    'v': kWidgetSnapshotVersion,
+    'day': day,
+    'generatedAt': generatedAt,
+    'profile': <String, Object?>{'name': profileName, 'multi': multiProfile},
+    'privacy': <String, bool>{
+      'hideTitles': hideTitles,
+      'hideDefinitions': hideDefinitions,
+      'hideProfile': hideProfile,
+    },
+    'labels': labels.toJson(),
+    'modules': modules.toJson(),
+    'continue': shelf.isEmpty ? null : shelf.first,
+    'shelf': shelf,
+    ...todayBlocks,
+    'srs': <String, Object?>{
+      'provider': srs.provider.wire,
+      'label': srs.label,
+      'enabled': fushi,
+      'due': due,
+      if (fushi) ...<String, Object?>{
+        'new': _nonNegative(srs.newCount),
+        'learn': _nonNegative(srs.learnCount),
+        'review': _nonNegative(srs.reviewCount),
+        'reviewedToday': reviewedToday,
+        'dueTomorrow': _nonNegative(srs.dueTomorrow),
+        'timeline': _srsTimelineJson(srs.timeline, generatedAt, due),
+      },
+      if (srs.provider == WidgetSrsProvider.anki)
+        'ankiPackage': srs.ankiPackage,
+    },
+    'vocab': _vocabJson(vocab),
+    'nowPlaying': buildWidgetNowPlaying(nowPlaying, modules),
+    'downloads': buildWidgetDownloadsJson(downloads),
+    'onDeck': buildWidgetOnDeckJson(onDeck, formatAge: formatAge),
+    'rollover': rolloverAt == null
+        ? null
+        : <String, Object?>{
+            'at': rolloverAt,
+            'day': nextDay,
+            // 新的一天：今日 / 本周 / 本月 / 热力图按下一个统计日重算（今天的数据自然
+            // 落到「昨天」那格）；制卡 / 复习的「今日」计数清零，复习连续天数今天没复习
+            // 就中断（复习有自己的日界，这里只是零点前后的近似，app 一开就会重算）。
+            ...dayBlocks(
+              key: nextDay,
+              dayGoals: WidgetGoalsInput(
+                totalMinutes: goals.totalMinutes,
+                readingMinutes: goals.readingMinutes,
+                listeningMinutes: goals.listeningMinutes,
+                videoMinutes: goals.videoMinutes,
+                reviews: goals.reviews,
+                minedCards: goals.minedCards,
+                chars: goals.chars,
+              ),
+              dayReviews: <int>[...reviewsMonth.skip(1), 0],
+              dayReviewed: 0,
+              srsStreakCurrent: reviewedToday > 0
+                  ? _nonNegative(srs.streakCurrent)
+                  : 0,
+            ),
+          },
+  };
+}
+
+/// `srs.timeline`：第一项钉成（生成时刻, 当前 due），之后只留晚于生成时刻、计数有变化的点。
+List<Map<String, int>> _srsTimelineJson(
+  List<WidgetSrsDueStep> steps,
+  int generatedAt,
+  int due,
+) {
+  final List<Map<String, int>> out = <Map<String, int>>[
+    <String, int>{'at': generatedAt, 'due': due},
+  ];
+  final List<WidgetSrsDueStep> later = <WidgetSrsDueStep>[
+    for (final WidgetSrsDueStep s in steps)
+      if (s.at > generatedAt) s,
+  ]..sort((WidgetSrsDueStep a, WidgetSrsDueStep b) => a.at.compareTo(b.at));
+  for (final WidgetSrsDueStep s in later) {
+    final int value = _nonNegative(s.due);
+    if (value == out.last['due']) continue;
+    out.add(<String, int>{'at': s.at, 'due': value});
+  }
+  return out;
+}
+
+/// 只依赖「哪一天」的块：`today` / `goals` / `week` / `month` / `streak` / `heatmap`。
+/// 快照顶层与 `rollover` 共用这一份（零点切换不是第二套算法）。
+Map<String, Object?> _dayBlocks({
+  required String day,
+  required WidgetImmersionInput immersion,
+  required WidgetGoalsInput goals,
+  required bool fushi,
+  required List<int> reviewsMonth,
+  required int reviewedToday,
+  required int srsStreakCurrent,
+  required int srsStreakLongest,
+  required Map<WidgetImmersionCategory, String> categoryLabels,
+  required Map<String, String> goalLabels,
+  required String Function(int ms) formatTime,
+  required String Function(int chars) formatChars,
+  required String Function(int count) formatCount,
+  required String Function(String dateKey) weekdayLabel,
+}) {
+  final List<String> heatKeys = _lastDayKeys(day, kWidgetHeatmapDays);
+  final List<String> monthKeys = heatKeys.sublist(
+    heatKeys.length - kWidgetMonthDays,
+  );
   final List<String> weekKeys = monthKeys.sublist(
     monthKeys.length - kWidgetWeekDays,
   );
@@ -600,28 +878,7 @@ Map<String, Object?> buildWidgetSnapshot({
       ? null
       : computeWeekOverWeekPercent(weekMs, prevWeekMs);
 
-  final bool fushi = srs.provider == WidgetSrsProvider.fushi;
-  final List<int> reviewsMonth = _fitTo<int>(
-    <int>[for (final int r in srs.reviewsByDay) _nonNegative(r)],
-    kWidgetMonthDays,
-    0,
-  );
-  final int reviewedToday = fushi ? _nonNegative(srs.reviewedToday) : 0;
-
   return <String, Object?>{
-    'v': kWidgetSnapshotVersion,
-    'day': day,
-    'generatedAt': generatedAt,
-    'profile': <String, Object?>{'name': profileName, 'multi': multiProfile},
-    'privacy': <String, bool>{
-      'hideTitles': hideTitles,
-      'hideDefinitions': hideDefinitions,
-      'hideProfile': hideProfile,
-    },
-    'labels': labels.toJson(),
-    'modules': modules.toJson(),
-    'continue': shelf.isEmpty ? null : shelf.first,
-    'shelf': shelf,
     'today': <String, Object?>{
       'time': formatTime(todayMs),
       'chars': formatChars(todayChars),
@@ -685,33 +942,19 @@ Map<String, Object?> buildWidgetSnapshot({
     'streak': <String, Object?>{
       'current': currentStreak,
       'longest': computeLongestStreak(immersion.activeDays),
-      'srsCurrent': fushi ? _nonNegative(srs.streakCurrent) : null,
-      'srsLongest': fushi ? _nonNegative(srs.streakLongest) : null,
+      'srsCurrent': fushi ? srsStreakCurrent : null,
+      'srsLongest': fushi ? srsStreakLongest : null,
       'week': <bool>[for (final String k in weekKeys) activeOn(k)],
     },
-    'srs': <String, Object?>{
-      'provider': srs.provider.wire,
-      'label': srs.label,
-      'enabled': fushi,
-      'due': fushi
-          ? _nonNegative(srs.newCount) +
-                _nonNegative(srs.learnCount) +
-                _nonNegative(srs.reviewCount)
-          : 0,
-      if (fushi) ...<String, Object?>{
-        'new': _nonNegative(srs.newCount),
-        'learn': _nonNegative(srs.learnCount),
-        'review': _nonNegative(srs.reviewCount),
-        'reviewedToday': reviewedToday,
-        'dueTomorrow': _nonNegative(srs.dueTomorrow),
-      },
-      if (srs.provider == WidgetSrsProvider.anki)
-        'ankiPackage': srs.ankiPackage,
+    'heatmap': <String, Object?>{
+      'levels': <int>[
+        for (final String k in heatKeys)
+          widgetHeatLevel(immersion.msOf(k), active: activeOn(k)),
+      ],
+      'firstWeekday': _isoWeekday(heatKeys.first),
+      'time': formatTime(sumMs(heatKeys)),
+      'activeDays': heatKeys.where(activeOn).length,
     },
-    'vocab': _vocabJson(vocab),
-    'nowPlaying': buildWidgetNowPlaying(nowPlaying, modules),
-    'downloads': buildWidgetDownloadsJson(downloads),
-    'onDeck': buildWidgetOnDeckJson(onDeck, formatAge: formatAge),
   };
 }
 
@@ -822,6 +1065,9 @@ Map<String, Object?> _mediaJson(
   return <String, Object?>{
     'kind': m.kind.wire,
     'id': m.id,
+    'link': m.link.isNotEmpty
+        ? m.link
+        : WidgetContinueLink(kind: m.kind, id: m.id).toUri(),
     'title': m.title.trim(),
     'subtitle': m.subtitle.trim(),
     'progress': progress,

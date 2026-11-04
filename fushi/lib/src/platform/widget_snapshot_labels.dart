@@ -103,6 +103,8 @@ WidgetSnapshotLabels buildWidgetLabels() {
     'lookupHint': t.widget_label_lookup_hint,
     'lookupCamera': t.widget_label_lookup_camera,
     'lookupClipboard': t.widget_label_lookup_clipboard,
+    'kind_game': t.widget_label_games,
+    'recentHeatmapDays': t.widget_label_last_days(n: kWidgetHeatmapDays),
   });
 }
 
