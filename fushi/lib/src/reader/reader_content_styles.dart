@@ -994,7 +994,7 @@ $pageBreakCss
 :root {
   --fushi-sentence-audio-text-color: ${sentenceAudioTextColor ?? colors.textColor};
   --fushi-sentence-audio-background-color: ${sentenceAudioHighlightColor ?? colors.sentenceAudioHighlightColor};
-${highlightStrokeCssVariables(settings.highlightStrokeConfigs, einkMode: einkMode, darkBackground: isDarkBackground(colors.backgroundColor), paperColor: colors.backgroundColor, motionEnabled: motionEnabled)}}
+${highlightStrokeCssVariables(settings.highlightStrokeConfigs, einkMode: einkMode, darkBackground: isDarkBackground(colors.backgroundColor), paperColor: colors.backgroundColor, inkColor: colors.textColor, motionEnabled: motionEnabled)}}
 html {
   /* TODO-1308 (BUG): the legacy WebKit property
      `-webkit-line-box-contain: block glyphs replaced` (cargo-ported from Hoshi
@@ -1398,10 +1398,11 @@ ruby.fushi-hl-$color-ruby-active {
   /// 设计对齐 Hoshi-Reader-Android 的 E-ink 适配：
   /// - 高亮全部从「半透明色块背景」改为**线式标记**——色块在墨水屏上是一大片
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
-  ///   查词选区=粗实线、有声书跟随=细实线、搜索命中=双线、收藏句=保留原下划线但
-  ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。查词 / 跟读 / 搜索的线
-  ///   由窄条层画在窄条外侧（BUG-3886），不经 text-decoration——Blink 上 CSS Highlight
-  ///   一生效就裁字形墨迹，还会在注音、着重号处断线。
+  ///   四类高亮一律画成「下划线」笔触样式（[HighlightKind.einkEffective]：用户选了下划线就用
+  ///   自己调的粗细 / 线型 / 离字距离，否则查词=粗实线、有声书跟随=细实线、搜索命中=双线、
+  ///   收藏句=实线；五色在灰阶屏上不可分，线本身就是收藏语义）。线由窄条层逐行量出来画成
+  ///   SVG（BUG-3886），不经 text-decoration——Blink 上 CSS Highlight 一生效就裁字形墨迹，
+  ///   还会在注音、着重号处断线；线色是正文色（`--fushi-mark-<种类>-ink`）。
   /// - 跟读线用**实线**而非虚线：上游 HSA 的墨水屏跟读高亮是 overlay 层画的
   ///   1.5px 实心直线条（reader-popup-host.js `renderSasayakiHighlight`），
   ///   虚线在慢刷新屏上每段短划都是独立的黑白跳变，既更脏也更难一眼定位当前句。
@@ -1422,43 +1423,14 @@ ruby.fushi-hl-$color-ruby-active {
   transition: none !important;
   animation: none !important;
 }
-/* BUG-3886：查词 / 有声书当前句 / 搜索的线由窄条层画，不用 text-decoration。这三类的
-   ::highlight、ruby 分流 class、wrapper 在普通规则里本来就只是「透明底 + 继承字色」，这里不再给
-   它们加下划线：Blink 把任何生效的 CSS Highlight 覆盖的文字裁进文字片段盒重画（BUG-3776，字形
-   墨迹被切），窄条层的注册表钩子还把带着重号的文字剔出引擎绘制件——下划线到着重号处就断开；
-   ruby 基字所在的行也会整段丢线。保持空操作后钩子整份不交给引擎，线跟彩色模式的底色窄条一样
-   逐文本节点量出来、跨注音并成一条。线画在窄条的块末端外侧（竖排在列左、横排在行下），与原下划线
-   同位：查词=粗实线、跟读=细实线、搜索=双线。 */
-fushi-hl-lane[data-hl="fushi-selection"],
-fushi-hl-lane[data-hl="fushi-sentence-audio"],
-fushi-hl-lane[data-hl="fushi-search"] {
-  background-color: transparent !important;
-  border-radius: 0 !important;
-}
-fushi-hl-lane[data-hl="fushi-selection"]::after,
-fushi-hl-lane[data-hl="fushi-sentence-audio"]::after,
-fushi-hl-lane[data-hl="fushi-search"]::after {
-  content: '' !important;
-  position: absolute !important;
-  inset-inline: 0 !important;
-  block-size: 0 !important;
-  inset-block-end: calc(-0.18em - var(--fushi-eink-mark-thickness)) !important;
-  border-block-end: var(--fushi-eink-mark-thickness) var(--fushi-eink-mark-style) $fg !important;
-}
-fushi-hl-lane[data-hl="fushi-selection"] {
-  --fushi-eink-mark-thickness: 0.14em;
-  --fushi-eink-mark-style: solid;
-}
-fushi-hl-lane[data-hl="fushi-sentence-audio"] {
-  --fushi-eink-mark-thickness: 0.10em;
-  --fushi-eink-mark-style: solid;
-}
-fushi-hl-lane[data-hl="fushi-search"] {
-  --fushi-eink-mark-thickness: 0.24em;
-  --fushi-eink-mark-style: double;
-}
-/* 收藏句保留原下划线（见下），不画底色窄条。 */
-fushi-hl-lane[data-hl^="fushi-hl-"] {
+/* BUG-3886：四类高亮的线由窄条层画成「下划线」笔触（:root 的 --fushi-mark-<种类>-* 变量，墨水屏
+   一律 underline + 正文色），不用 text-decoration。查词 / 当前句 / 搜索的 ::highlight、ruby 分流
+   class、wrapper 在普通规则里本来就只是「透明底 + 继承字色」，这里不给它们加下划线：Blink 把任何
+   生效的 CSS Highlight 覆盖的文字裁进文字片段盒重画（BUG-3776，字形墨迹被切），窄条层的注册表钩子
+   还把带着重号的文字剔出引擎绘制件——下划线到着重号处就断开；ruby 基字所在的行也会整段丢线。
+   保持空操作后钩子整份不交给引擎，线逐文本节点量出来、跨注音并成一条，画在字框的块末端外侧
+   （竖排在列左、横排在行下）。底色窄条在墨水屏上一律不画。 */
+fushi-hl-lane {
   display: none !important;
 }
 ruby.fushi-selection-ruby-active,
@@ -1480,8 +1452,8 @@ ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-
 ::highlight(fushi-hl-pink), .fushi-hl-pink, ruby.fushi-hl-pink-ruby-active,
 ::highlight(fushi-hl-purple), .fushi-hl-purple, ruby.fushi-hl-purple-ruby-active {
   background-color: transparent;
-  text-decoration-color: $fg;
 }
+
 .fushi-hl, .fushi-hl-yellow, .fushi-hl-green, .fushi-hl-blue, .fushi-hl-pink, .fushi-hl-purple,
 ruby.fushi-hl-yellow-ruby-active, ruby.fushi-hl-green-ruby-active, ruby.fushi-hl-blue-ruby-active,
 ruby.fushi-hl-pink-ruby-active, ruby.fushi-hl-purple-ruby-active {
