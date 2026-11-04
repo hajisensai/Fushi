@@ -116,6 +116,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4008](bugs/BUG-4008-linux-lan-scan-without-avahi.md) | ✅ | ✅ | linux-lan-scan-without-avahi |
+> 共 3613 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4009](bugs/BUG-4009-mpv-cache-on-disk-without-cache-dir.md) | ✅ | ✅ | 每次开网络流 mpv 报 "Failed to create file cache" |
+| [BUG-4008](bugs/BUG-4008-linux-x11-video-software-rendering.md) | ✅ | ✅ | Linux X11（Steam 游戏模式）视频走 mpv 软件渲染、卡顿 |
 | [BUG-4007](bugs/BUG-4007-linux-hwdec-auto-safe-software.md) | ✅ | ✅ | Linux 视频默认档疑似软解（Steam Deck）——未复现 |
 | [BUG-4006](bugs/BUG-4006-update-cleanup-deletes-shared-temp.md) | ✅ | ✅ | 非 Windows 的更新清理在共享临时目录里删别的程序的文件 |
 | [BUG-4005](bugs/BUG-4005-external-lookup-never-opens-dictionary.md) | ✅ | ✅ | app 外显式查词（深链 / fushi_cli）只排队、不打开查词页 |
