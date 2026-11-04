@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi_core/fushi_core.dart' show srsIdType;
+import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -267,6 +268,112 @@ void main() {
       expect(r.error, isNull);
     });
     expect(rounds.single, (migrated: true, ops: 3, devices: 2));
+  });
+
+  test('持锁的一轮与收全部通道的迁移并发：不互等、远在预算内做完，迁移前拉到了这条通道', () async {
+    await seedA();
+    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
+    // 与 app 的通道锁一样：排队等、FIFO。第二个进来排队的（[syncNow] 开头那份迁移的拉取）到了就放开持锁的一轮。
+    Future<void> lockTail = Future<void>.value();
+    int entered = 0;
+    final Completer<void> migrationQueued = Completer<void>();
+    Future<({int ran, List<Object> errors})> lock(
+      Future<void> Function(SyncAssetStore) body,
+    ) async {
+      final Future<void> prev = lockTail;
+      final Completer<void> mine = Completer<void>();
+      lockTail = mine.future;
+      if (++entered == 2) migrationQueued.complete();
+      try {
+        await prev;
+        await body(backend);
+        return (ran: 1, errors: const <Object>[]);
+      } finally {
+        mine.complete();
+      }
+    }
+
+    final SrsSyncScheduler s = scheduler(
+      store: b,
+      channels: lock,
+      runner: recordingRunner(stB),
+      // 预算远大于测试超时：靠预算到点解开的互等在这里就是超时失败。
+      migratePullBudget: const Duration(hours: 1),
+    );
+    final Completer<void> go = Completer<void>();
+    // 自动同步的后置步骤：拿着通道锁跑这条通道的一轮。
+    final Future<void> held = lock((SyncAssetStore x) async {
+      await go.future;
+      final SrsSync2Report r = await s.syncWithBackend(x);
+      expect(r.error, isNull);
+    });
+    // 「立即同步」：锁外发起收全部通道的迁移，它的拉取排在持锁的一轮后面。
+    final Future<SrsSyncNowResult> all = s.syncNow();
+    await migrationQueued.future;
+    go.complete();
+    await Future.wait(<Future<Object?>>[
+      held,
+      all,
+    ]).timeout(const Duration(seconds: 30));
+    expect(b.sync2Migrated, isTrue);
+    expect(
+      rounds.first,
+      (migrated: true, ops: 3, devices: 2),
+      reason:
+          "the held round pulled A's two ops from its channel before "
+          'migrating, so only B-only legacy log was wrapped',
+    );
+    expect(await _logOps(stB), (ops: 3, devices: 2));
+  });
+
+  test('推迟的迁移分批进出独占区：迁移中途发起的评分排在当前这一批之后，不等全部批次', () async {
+    final List<String> ids = <String>[
+      for (int i = 0; i < 6; i++) '0193a1b2-0000-7000-8000-0000000020a$i',
+    ];
+    final SrsStorage st = await _legacyStorage(ids);
+    final SrsDbStore b = await _open(st, 'B', deferMigration: true);
+    final String note = await b.createNote(
+      noteTypeId: b.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '雪',
+      },
+    );
+    final String card = (await b.cardsOfNote(note)).first.id;
+
+    // 先占住独占区，让迁移的第一批、评分、探针按这个顺序排进 FIFO。
+    final Completer<void> gate = Completer<void>();
+    final Future<void> hold = b.runExclusive(() => gate.future);
+    final Future<void> migration = b.migrateLegacy(batch: 1);
+    bool? migratedWhenAnswered;
+    final Future<void> answered = b.answer(card, 3).then((_) {
+      migratedWhenAnswered = b.sync2Migrated;
+    });
+    int? queuedAfterAnswer;
+    final Future<void> probe = b.runExclusive(() async {
+      final QueryRow r = await st.db
+          .customSelect('SELECT COUNT(*) AS c FROM sync2_migrate_queue')
+          .getSingle();
+      queuedAfterAnswer = r.read<int>('c');
+    });
+    gate.complete();
+    await Future.wait(<Future<void>>[hold, migration, answered, probe]);
+
+    expect(
+      migratedWhenAnswered,
+      isFalse,
+      reason: 'the rating ran between batches, not after the whole migration',
+    );
+    expect(
+      queuedAfterAnswer,
+      ids.length - 1,
+      reason: 'one batch of one row done before the rating',
+    );
+    expect(b.sync2Migrated, isTrue);
+    expect(await _logOps(st), (
+      ops: ids.length + 1,
+      devices: 1,
+    ), reason: 'every legacy log wrapped once, plus the interleaved rating');
   });
 
   test('位置卡住：最多等预算这么久，照常迁移；迟到的结果碰不到本机库', () async {

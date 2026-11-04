@@ -413,36 +413,48 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 旧库还没并成操作就并（打开时用 `deferMigration` 推迟了的那一次）。已迁移时立即返回。
   ///
-  /// [beforeMigrate] 在独占区**外**先跑（只拉不发的一轮可能要等网络，期间本机复习照常落库），然后在独占区里分批
-  /// 迁移（迁移期间本机写入等它做完）。迁移只包还没有任何操作代表的旧行，所以 [beforeMigrate] 与迁移之间插进来的
-  /// 本机写入 / 收到的操作都不会被重复包装。
+  /// [beforeMigrate] 在独占区**外**先跑（只拉不发的一轮可能要等网络，期间本机复习照常落库），然后分批迁移：
+  /// **每批单独进出一次独占区**（[batch] 条一批，默认 [kSrsSync2MigrateBatch]）。推迟的迁移是在会话中途（首次同步
+  /// 确认之后）触发的，大库要跑十几批、几分钟；以前整个迁移包在一个独占区里，期间本机评分 / 撤销 / 编辑全部排在
+  /// 它后面，界面卡到最后一批做完。独占区是 FIFO（[runExclusive]），迁移期间发起的写入排在当前这一批之后、下一批之前。
+  ///
+  /// 交错写入下语义不变：迁移只包还没有任何操作代表的旧行，队列在第一批排好（只排那一刻已有的旧行，之后的本机写入
+  /// 本来就是操作）；续做的批次在内核里包装前逐条再判一次「已被代表」（store/sync2/mod.rs `represented`），所以
+  /// [beforeMigrate] 与迁移之间、批与批之间插进来的本机写入 / 收到的操作都不会被重复包装。几条入口同时迁移（不同
+  /// 拉取范围的 [SrsSyncScheduler.ensureMigrated]）各自跑批也一样：队列在内核里，谁做到最后一批谁置 [sync2Migrated]。
   Future<void> migrateLegacy({
     Future<void> Function(SrsDbStore store)? beforeMigrate,
+    int batch = kSrsSync2MigrateBatch,
   }) async {
     if (_sync2Migrated) return;
     if (beforeMigrate != null) await beforeMigrate(this);
-    await runExclusive(() async {
-      if (_sync2Migrated) return;
-      await _sync2MigrateAll(now().$1);
-    });
+    while (!_sync2Migrated) {
+      await runExclusive(() async {
+        if (_sync2Migrated) return;
+        await _sync2MigrateBatch(now().$1, batch);
+      });
+    }
   }
 
   /// 本 profile 的旧库已并成操作（或本来就没有要并的）。
   bool get sync2Migrated => _sync2Migrated;
   bool _sync2Migrated = false;
 
+  /// 打开时（store 还没交给调用方，[_sync2Open] 的独占区里）一口气做完全部批次。
   Future<void> _sync2MigrateAll(int nowMs) async {
-    while (true) {
-      final Map<String, Object?> m = await _sync2(<String, Object?>{
-        'op': 'migrate',
-        'now': nowMs,
-        'limit': kSrsSync2MigrateBatch,
-      });
-      if (m['done'] == true) {
-        _sync2Migrated = true;
-        return;
-      }
+    while (!_sync2Migrated) {
+      await _sync2MigrateBatch(nowMs, kSrsSync2MigrateBatch);
     }
+  }
+
+  /// 迁移一批（内核一个独立提交的 savepoint）；做完最后一批置 [sync2Migrated]。调用方在独占区里。
+  Future<void> _sync2MigrateBatch(int nowMs, int batch) async {
+    final Map<String, Object?> m = await _sync2(<String, Object?>{
+      'op': 'migrate',
+      'now': nowMs,
+      'limit': batch,
+    });
+    if (m['done'] == true) _sync2Migrated = true;
   }
 
   /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。

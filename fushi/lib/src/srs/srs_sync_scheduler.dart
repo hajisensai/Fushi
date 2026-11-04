@@ -430,6 +430,10 @@ enum SrsSyncNotice {
   awaitingConfirm,
 }
 
+/// [SrsSyncScheduler.ensureMigrated] 迁移之前那轮只拉不发的范围：[within] 非 null = 只收调用方这一轮的那条位置；
+/// 否则 [channels] 为真 = 经通道运行器收全部通道（要排通道锁）。本机目录 / 文件夹位置总是收。
+typedef _SrsMigrateScope = ({SyncAssetStore? within, bool channels});
+
 class SrsSyncScheduler {
   SrsSyncScheduler({
     required Future<SrsDbStore?> Function() readStore,
@@ -685,10 +689,14 @@ class SrsSyncScheduler {
   /// 旧库迁移之前那轮只拉不发最多等多久（[ensureMigrated]）。
   final Duration _migratePullBudget;
 
-  /// 正在做的 [ensureMigrated]（按 store）：几条入口同时撞上只拉、只迁移一次。
-  final Expando<Future<void>> _migrations = Expando<Future<void>>(
-    'srsMigrations',
-  );
+  /// 正在做的 [ensureMigrated]，按 store、再按**拉取范围**（[_SrsMigrateScope]）：同一范围的几条入口同时撞上只拉、
+  /// 只迁移一次。范围是 future 身份的一部分，因为它决定这个 future 要等哪些锁：收全部通道的那份（[_syncAll] 开头，
+  /// 锁外、队列外发起）要走 [_channels]、排通道锁；拿着通道锁 / 在 [_serially] 里的一轮去等它，就是它等锁、锁等它
+  /// （以前只按 store 去重：一轮把 [_syncAll] 那份要拉全部通道的 future 拿去 await，两边互等到拉取预算到点，之后在
+  /// 什么都没拉到时照常迁移，重复的操作流又出来了）。不同范围各跑各的：拉取各自做完，迁移的队列在内核里，谁先
+  /// 做完谁置 [SrsDbStore.sync2Migrated]，另一份的迁移随即空转返回（[SrsDbStore.migrateLegacy]）。
+  final Expando<Map<_SrsMigrateScope, Future<void>>> _migrations =
+      Expando<Map<_SrsMigrateScope, Future<void>>>('srsMigrations');
 
   /// 本机目录（本机作为互联 host 时）的一轮传上了新段：app 据此唤醒已配对设备的长轮询。
   final void Function()? _onLocalDirectoryPublished;
@@ -1439,6 +1447,9 @@ class SrsSyncScheduler {
   /// [within]：调用方正在跑这条位置的一轮（[_syncWithBackend]，在 [_serially] 里、可能还拿着通道锁）：只从它和
   /// 本机目录 / 文件夹位置收，不走 [_channels]（通道锁不可重入，[_serially] 也会和锁里排队的轮次互等）。
   /// [channels] 为假：同样不走 [_channels]（文件夹位置那一轮）。只有 [_syncAll] 开头（锁外、队列外）收全部通道。
+  ///
+  /// 去重按拉取范围（[_migrations]）：持锁 / 在队列里的调用方永远不会拿到一份要排通道锁的 future，各自只等自己
+  /// 那份（它只拉调用方已经握着的位置），不形成锁依赖环。
   Future<void> ensureMigrated(
     SrsDbStore store, {
     SyncAssetStore? within,
@@ -1447,8 +1458,15 @@ class SrsSyncScheduler {
     if (store.sync2Migrated || _halted || !_firstSyncConfirmed()) {
       return Future<void>.value();
     }
-    final Future<void>? running = _migrations[store];
-    if (running != null) return running;
+    final Map<_SrsMigrateScope, Future<void>> running = _migrations[store] ??=
+        <_SrsMigrateScope, Future<void>>{};
+    // [within] 给出时 [pullInto] 不看 [channels]：同一个范围。
+    final _SrsMigrateScope scope = (
+      within: within,
+      channels: within == null && channels,
+    );
+    final Future<void>? same = running[scope];
+    if (same != null) return same;
     final Future<void> f = () async {
       try {
         await store.migrateLegacy(
@@ -1472,10 +1490,10 @@ class SrsSyncScheduler {
           },
         );
       } finally {
-        _migrations[store] = null;
+        running.remove(scope);
       }
     }();
-    _migrations[store] = f;
+    running[scope] = f;
     return f;
   }
 
