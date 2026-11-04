@@ -246,11 +246,47 @@ fn source_key(v: &Value) -> Option<(String, String)> {
     ))
 }
 
-/// 取行时才要的笔记内容（这一页的笔记从修改记录读一次，写入后按笔记失效）。
+/// 取行时才要的笔记内容（这一页的笔记从修改记录读一次，写入后按笔记失效）。只存 [Session::rows] 用到的派生投影，
+/// 不存字段原文：会话常驻（浏览页、AnkiConnect），滚一遍大库时原文会把会话内存再翻一倍；投影每条笔记只占几百字节。
 struct Detail {
-    values: HashMap<String, String>,
+    /// 字段 id → 该字段的投影（三项都没有的字段不存）。按字段 id 存而不按笔记类型的字段顺序预先挑好：笔记类型的
+    /// 字段排布随查询上下文变（改了字段顺序不会让这里失效），取行时按此刻的排布挑。
+    fields: HashMap<String, FieldDigest>,
     modified: Option<i64>,
     source: Value,
+}
+
+/// 一个字段在行里露出的部分：摘要（[preview_text]，≤120 字符）、首个图片 / 音频文件名。
+struct FieldDigest {
+    preview: String,
+    image: Option<String>,
+    audio: Option<String>,
+}
+
+impl FieldDigest {
+    fn of(raw: &str) -> Option<FieldDigest> {
+        let d = FieldDigest {
+            preview: preview_text(raw),
+            image: first_image(raw),
+            audio: first_sound(raw),
+        };
+        (!d.preview.is_empty() || d.image.is_some() || d.audio.is_some()).then_some(d)
+    }
+}
+
+impl Detail {
+    /// 投影里存下的全部文本（测试用：确认不含字段原文）。
+    #[cfg(test)]
+    fn texts(&self) -> Vec<&str> {
+        self.fields
+            .values()
+            .flat_map(|f| {
+                std::iter::once(f.preview.as_str())
+                    .chain(f.image.as_deref())
+                    .chain(f.audio.as_deref())
+            })
+            .collect()
+    }
 }
 
 fn sound_re() -> &'static regex::Regex {
@@ -1488,7 +1524,7 @@ impl Session {
             self.detail.insert(
                 id.clone(),
                 Detail {
-                    values: HashMap::new(),
+                    fields: HashMap::new(),
                     modified: None,
                     source: Value::Null,
                 },
@@ -1499,7 +1535,11 @@ impl Session {
             let (values, modified, source) = registers::note_browse_detail(stored)?;
             if let Some(d) = detail.get_mut(id) {
                 *d = Detail {
-                    values: values.into_iter().collect(),
+                    // [values] 的键已是去掉 `f/` 的字段 id；原文就地算成投影后丢掉。
+                    fields: values
+                        .into_iter()
+                        .filter_map(|(id, raw)| Some((id, FieldDigest::of(&raw)?)))
+                        .collect(),
                     modified,
                     source,
                 };
@@ -2008,21 +2048,21 @@ impl Session {
             };
             let ty = r.ctx.types.get(&n.ty);
             let detail = self.detail.get(&n.id);
-            let value = |id: &str| {
-                detail
-                    .and_then(|d| d.values.get(id))
-                    .map_or("", String::as_str)
-            };
+            let digest = |id: &str| detail.and_then(|d| d.fields.get(id));
             let fields: &[(String, String)] = ty.map_or(&[], |t| t.fields.as_slice());
-            let preview: Vec<String> = fields
+            let preview: Vec<&str> = fields
                 .iter()
                 .skip(1)
-                .map(|(id, _)| preview_text(value(id)))
+                .filter_map(|(id, _)| digest(id).map(|f| f.preview.as_str()))
                 .filter(|t| !t.is_empty())
                 .take(2)
                 .collect();
-            let image = fields.iter().find_map(|(id, _)| first_image(value(id)));
-            let audio = fields.iter().find_map(|(id, _)| first_sound(value(id)));
+            let image = fields
+                .iter()
+                .find_map(|(id, _)| digest(id).and_then(|f| f.image.as_deref()));
+            let audio = fields
+                .iter()
+                .find_map(|(id, _)| digest(id).and_then(|f| f.audio.as_deref()));
             let source = detail.map(|d| &d.source).filter(|v| !v.is_null());
             let key = source.and_then(source_key);
             strings.push(json!([
@@ -3395,6 +3435,50 @@ mod tests {
                 .step_by(2)
                 .all(|b| f64::from_le_bytes(b.try_into().unwrap()).is_nan())
         );
+    }
+
+    /// 行详情缓存只存取行要的投影：字段原文再长，会话里留下的也只是摘要（≤120 字符）和媒体文件名。
+    #[test]
+    fn browse_row_detail_keeps_projections_not_field_text() {
+        let (d, cfg, deck) = rich_library();
+        let long = format!("<div>{}</div> [sound:long.mp3]", "x".repeat(20_000));
+        write(
+            &d,
+            &cfg,
+            T0 + 20,
+            vec![edit("note", N4, "f/fb", json!(long))],
+        );
+        let (_, rows) = query_rows(&d, &deck, json!({"sort": {"col": "created", "asc": true}}));
+        let n4 = rows.by_note(N4);
+        assert_eq!(
+            rows.s[n4][8].as_array().unwrap()[0]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count(),
+            120
+        );
+        assert_eq!(rows.s[n4][10], json!("long.mp3"));
+        let b = super::lock(&d.core.browse);
+        let s = b.live.get(P).expect("live session");
+        for id in [N1, N4] {
+            let texts = s.detail.get(id).expect("detail cached after rows").texts();
+            assert!(!texts.is_empty());
+            for t in &texts {
+                assert!(t.chars().count() <= 120, "{id}: {t}");
+                assert!(
+                    !t.contains('<') && !t.contains("[sound:"),
+                    "{id} keeps raw text: {t}"
+                );
+            }
+        }
+        let total: usize = s
+            .detail
+            .values()
+            .flat_map(|d| d.texts())
+            .map(str::len)
+            .sum();
+        assert!(total < 1_000, "detail keeps {total} bytes");
     }
 
     /// 排序列 `retention`：有值的按值，没有的不论升降序都排最后。
