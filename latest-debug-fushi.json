@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.23655",
-  "tag": "v3.3.0-debug.23655+7a111a7",
+  "version": "3.3.0-debug.23660",
+  "tag": "v3.3.0-debug.23660+024bc8d",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 23655,
-  "notes": "Automated release-signed debug-channel build from develop @ 7a111a7. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 23660,
+  "notes": "Automated desktop debug-channel build from develop @ 024bc8d. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.23643-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "5de40792fe41766085bd8518b5429f2aa3c46fa96ef26ce9889d97e99b2219fa"
     },
     {
-      "name": "fushi-3.3.0-debug.23643-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23643-windows-setup.exe",
-      "releaseSequence": 23643,
-      "tag": "v3.3.0-debug.23643+d9191cf",
-      "version": "3.3.0-debug.23643",
-      "size": 295438392,
-      "sha256": "e3667b71d966699d389a490603a291ffcd1de11a32cd93a4e674e263123c6e2b"
-    },
-    {
       "name": "fushi-3.3.0-debug.23655-7a111a7-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23655-7a111a7-debug.apk",
       "releaseSequence": 23655,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.23655",
       "size": 264651180,
       "sha256": "abd9b77469cf366b7fef445750f09ba8492d2e523b5ad5b3f33d86ce78fbf6d0"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23660-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23660-windows-setup.exe",
+      "releaseSequence": 23660,
+      "tag": "v3.3.0-debug.23660+024bc8d",
+      "version": "3.3.0-debug.23660",
+      "size": 295466456,
+      "sha256": "890e75799b6f83ffc1b0e48770a5c4eec96ebb328aaab0f3c44447280ff11164"
     }
   ]
 }
