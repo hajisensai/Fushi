@@ -1414,6 +1414,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
               'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
+        WebViewMenuDismissBridge.userScript,
       ]),
       initialSettings: InAppWebViewSettings(
         // 透明底：Apple 的模糊封面 / MD3 的动态取色渐变从歌词后面透出来。
@@ -1442,6 +1443,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // 停放中创建完成（进入后立刻退出 / 停放时 renderer 死亡换代）也记下：实例
         // 复用（BUG-3913），下次进入由 _toggleLyricsMode 装载文档。
         _lyricsWebViewController = controller;
+        _lyricsMenuDismiss.attach(controller);
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
           callback: (List<dynamic> args) async {

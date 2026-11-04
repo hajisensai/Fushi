@@ -12,6 +12,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_menu_presence.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -1568,44 +1569,46 @@ Future<T?> showFushiMenu<T>({
       FocusManager.instance.highlightMode == FocusHighlightMode.traditional &&
       returnFocus != null &&
       returnFocus is! FocusScopeNode;
-  return navigator
-      .push(
-        _FushiMenuRoute<T>(
-          apple: apple,
-          appleRadius: apple ? _menuRadius(context) : 0,
-          // 墨水屏与系统减弱动效同一入口（fushiMotionEnabled），HBK-AUDIT-042。
-          reduceMotion: !fushiMotionEnabled(context),
-          focusItemOnOpen: keyboardOpened,
-          position: position,
-          positionBuilder: positionBuilder,
-          items: items,
-          initialValue: initialValue,
-          elevation: elevation,
-          shadowColor: shadowColor,
-          surfaceTintColor: surfaceTintColor,
-          semanticLabel: label,
-          shape: shape,
-          menuPadding: menuPadding,
-          color: color,
-          constraints: constraints,
-          clipBehavior: clipBehavior,
-          barrierLabel: l10n.menuDismissLabel,
-          popUpAnimationStyle: popUpAnimationStyle,
-          capturedThemes: InheritedTheme.capture(
-            from: context,
-            to: navigator.context,
-          ),
-          settings: routeSettings,
-          requestFocus: requestFocus,
-        ),
-      )
-      .then<T?>((T? value) {
-        // 取消（Esc / B / 点外面）后把焦点还给打开前的节点：路由出栈时
-        // 下层作用域只会恢复「它记得的」焦点，触发器若是被代码 / 手柄聚焦的，
-        // 这里显式补一次。选中某项后不抢焦点（选项可能已推了新页面）。
-        if (value == null) _restoreMenuReturnFocus(returnFocus);
-        return value;
-      });
+  // 任何时刻至多一个菜单：平台视图（macOS WebView）吞掉点击时旧菜单的遮罩收不到
+  // 事件，不先关掉就会一层层叠上去（反馈 U_8sCB0h_f）。
+  FushiMenuPresence.instance.dismissAll();
+  final _FushiMenuRoute<T> route = _FushiMenuRoute<T>(
+    apple: apple,
+    appleRadius: apple ? _menuRadius(context) : 0,
+    // 墨水屏与系统减弱动效同一入口（fushiMotionEnabled），HBK-AUDIT-042。
+    reduceMotion: !fushiMotionEnabled(context),
+    focusItemOnOpen: keyboardOpened,
+    position: position,
+    positionBuilder: positionBuilder,
+    items: items,
+    initialValue: initialValue,
+    elevation: elevation,
+    shadowColor: shadowColor,
+    surfaceTintColor: surfaceTintColor,
+    semanticLabel: label,
+    shape: shape,
+    menuPadding: menuPadding,
+    color: color,
+    constraints: constraints,
+    clipBehavior: clipBehavior,
+    barrierLabel: l10n.menuDismissLabel,
+    popUpAnimationStyle: popUpAnimationStyle,
+    capturedThemes: InheritedTheme.capture(
+      from: context,
+      to: navigator.context,
+    ),
+    settings: routeSettings,
+    requestFocus: requestFocus,
+  );
+  final VoidCallback unregister = FushiMenuPresence.instance.register(route);
+  return navigator.push(route).then<T?>((T? value) {
+    unregister();
+    // 取消（Esc / B / 点外面）后把焦点还给打开前的节点：路由出栈时
+    // 下层作用域只会恢复「它记得的」焦点，触发器若是被代码 / 手柄聚焦的，
+    // 这里显式补一次。选中某项后不抢焦点（选项可能已推了新页面）。
+    if (value == null) _restoreMenuReturnFocus(returnFocus);
+    return value;
+  });
 }
 
 void _restoreMenuReturnFocus(FocusNode? node) {

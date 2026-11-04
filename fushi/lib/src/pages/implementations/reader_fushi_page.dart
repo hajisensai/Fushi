@@ -188,6 +188,7 @@ import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/webview/parked_webview_slot.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
@@ -2485,6 +2486,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 的显存，旧实现每进出一轮就新建一个。
   InAppWebViewController? _lyricsWebViewController;
 
+  /// 正文 / 歌词两个 WebView 上方的菜单（文本右键菜单、歌词顶栏「⋯」）点 WebView
+  /// 即关（[WebViewMenuDismissBridge]，macOS 上平台视图吞点击）。
+  final WebViewMenuDismissBridge _bodyMenuDismiss = WebViewMenuDismissBridge();
+  final WebViewMenuDismissBridge _lyricsMenuDismiss =
+      WebViewMenuDismissBridge();
+
   /// 歌词 WebView 已经挂上过（第一次进入歌词模式之后恒真）：此后不在歌词模式时
   /// 它停在屏外，不卸载。
   bool _lyricsWebViewRetained = false;
@@ -3695,6 +3702,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    _bodyMenuDismiss.detach();
+    _lyricsMenuDismiss.detach();
     // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
     WorkProfileScope.instance.leave(this);
     _studyCoverWatch.dispose();

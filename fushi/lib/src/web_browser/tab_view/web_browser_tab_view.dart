@@ -52,6 +52,7 @@ import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
 
 /// 一个标签页的网页视图：持有该标签页的 `InAppWebView` 与控制器生命周期，把页面
 /// 状态全部写进 [WebBrowserTab]（进度、地址、标题、图标、前进后退、失败、全屏）。
@@ -242,6 +243,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     }
   }
 
+  /// 本 WebView 上方的菜单点网页即关（[WebViewMenuDismissBridge]）。
+  final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
+
   @override
   void dispose() {
     _closed = true;
@@ -252,6 +256,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     // 插件的前后台 / 关闭回调只由标签控制器（WebBrowserTabsController）发：视图被
     // 回收（活 WebView 上限）或重建时也会 dispose，那不是「关闭」。
     _detachController();
+    _menuDismiss.detach();
     super.dispose();
   }
 
@@ -461,6 +466,8 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         source: kWebBrowserFullscreenScript,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       ),
+      // 链接 / 图片菜单盖在网页上方：macOS 点到网页也要能关（showFushiMenu 统一）。
+      WebViewMenuDismissBridge.userScript,
       // 桌面右键换成本 app 的链接 / 图片菜单；手机走原生长按命中（Android 的
       // 长按也会派发 contextmenu，装了会弹两次）。
       if (!_mobile)
@@ -1247,6 +1254,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
 
   void _onWebViewCreated(InAppWebViewController controller) {
     _adblock?.onWebViewCreated(controller);
+    _menuDismiss.attach(controller);
     _registerHandlers(controller);
     _windowConsumed = true;
     _controller = controller;
