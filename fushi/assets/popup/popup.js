@@ -6835,7 +6835,20 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
 // 不挂类时被左簇压到「行宽 − 按钮组 − gap」并折行，scrollWidth 报压缩宽 → 挂类；挂上后
 // 按整宽参与换行 → 摘类……压缩宽 + gap + 按钮组恰好等于行宽，翻不翻只看整数取整。
 // 不是滚动容器的词头（理论上不该出现）不判定，宁可不铺满也不振荡。
+//
+// 读写分两拍、写挪到下一帧（BUG-4102，反馈 3op205DyWN）：
+//   · ResizeObserver 回调里**同步**挂 / 摘类会改被观察的 .entry-header 自身尺寸（叠放与否
+//     改它的高）。它正是本轮投递里最浅的目标，规范规定这种变化只能留到下一帧，浏览器于是
+//     每次都抛「ResizeObserver loop completed with undelivered notifications」：弹窗宽度
+//     一变（每次查词按选区重定宽、拖尺寸）就一条，经 window.onerror 桥全部落进错误日志，
+//     把 200 条的上限整页挤满，同一时段真正的报错全被挤掉。
+//   · 回调里逐个 header「读宽 → 写类」交替，后一个 header 的读会强制把前一个的写同步
+//     重排（layout thrashing），N 个词条付 N 次强制回流。
+// 现在回调只登记脏 header；下一帧 rAF 里先把所有 header 量完、再统一写类——一次回流，且写
+// 发生在 ResizeObserver 投递之外，没有「未送达通知」。判据本身逐字不变。
 var __fushiHeaderMetaObserver = null;
+var __fushiHeaderMetaDirty = new Set();
+var __fushiHeaderMetaRaf = 0;
 
 function entryHeaderChildByClass(parent, className) {
     const kids = parent && parent.children;
@@ -6846,16 +6859,17 @@ function entryHeaderChildByClass(parent, className) {
     return null;
 }
 
-function updateEntryHeaderMetaLayout(header) {
-    if (!header || !header.isConnected) return;
+// 只读：该 header 应不应挂 .meta-stacked；null = 不判定（未渲染 / 结构不符），保持原样。
+function measureEntryHeaderMetaStacked(header) {
+    if (!header || !header.isConnected) return null;
     const main = entryHeaderChildByClass(header, 'entry-header-main');
     const buttons = entryHeaderChildByClass(header, 'header-buttons');
     const meta = entryHeaderChildByClass(main, 'entry-header-meta');
     const headword = main && main.firstElementChild;
-    if (!buttons || !meta || !headword || headword === meta) return;
-    if (!headword.classList.contains('expression-scroll')) return;
+    if (!buttons || !meta || !headword || headword === meta) return null;
+    if (!headword.classList.contains('expression-scroll')) return null;
     const rowWidth = header.clientWidth;
-    if (!rowWidth) return;
+    if (!rowWidth) return null;
     const headerGap = parseFloat(getComputedStyle(header).columnGap) || 0;
     const mainGap = parseFloat(getComputedStyle(main).columnGap) || 0;
     const metaMin = 14 * (parseFloat(getComputedStyle(meta).fontSize) || 16);
@@ -6863,24 +6877,50 @@ function updateEntryHeaderMetaLayout(header) {
     const headwordWidth = headword.scrollWidth;
     const buttonsWidth = buttons.offsetWidth;
     const headwordRow = headwordWidth + headerGap + buttonsWidth;
-    const stacked = headwordRow <= rowWidth
+    return headwordRow <= rowWidth
         && headwordRow + mainGap + metaMin > rowWidth;
-    header.classList.toggle('meta-stacked', stacked);
+}
+
+// 一批 header：先全部量（零写入，至多一次回流），再统一写类（只写真变了的）。
+function updateEntryHeaderMetaLayouts(headers) {
+    const decisions = [];
+    headers.forEach(header => {
+        const stacked = measureEntryHeaderMetaStacked(header);
+        if (stacked !== null) decisions.push([header, stacked]);
+    });
+    decisions.forEach(([header, stacked]) => {
+        if (header.classList.contains('meta-stacked') !== stacked) {
+            header.classList.toggle('meta-stacked', stacked);
+        }
+    });
+}
+
+function updateEntryHeaderMetaLayout(header) {
+    updateEntryHeaderMetaLayouts([header]);
+}
+
+function flushEntryHeaderMetaLayout() {
+    __fushiHeaderMetaRaf = 0;
+    const headers = __fushiHeaderMetaDirty;
+    __fushiHeaderMetaDirty = new Set();
+    updateEntryHeaderMetaLayouts(headers);
 }
 
 function observeEntryHeaderMetaLayout(header) {
     if (!header || typeof ResizeObserver !== 'function') return;
     if (!__fushiHeaderMetaObserver) {
         __fushiHeaderMetaObserver = new ResizeObserver(records => {
-            const headers = new Set();
             records.forEach(record => {
                 const target = record.target;
                 const header = target.classList && target.classList.contains('entry-header')
                     ? target
                     : target.closest && target.closest('.entry-header');
-                if (header) headers.add(header);
+                if (header) __fushiHeaderMetaDirty.add(header);
             });
-            headers.forEach(updateEntryHeaderMetaLayout);
+            // 投递期间绝不写布局：挪到下一帧（见上方说明）。已排上的那一帧会带上新登记的。
+            if (!__fushiHeaderMetaRaf && __fushiHeaderMetaDirty.size) {
+                __fushiHeaderMetaRaf = requestAnimationFrame(flushEntryHeaderMetaLayout);
+            }
         });
     }
     const main = entryHeaderChildByClass(header, 'entry-header-main');
