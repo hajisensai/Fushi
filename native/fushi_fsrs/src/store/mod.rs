@@ -1681,12 +1681,20 @@ mod read_routing_tests {
     #[test]
     fn only_primary_connections_reserve_mmap_address_space_on_32_bit() {
         let core = open("mmap_roles");
-        let mmap = |c: &Connection| -> i64 { c.query_row("PRAGMA mmap_size", [], |r| r.get(0)).unwrap() };
+        let mmap =
+            |c: &Connection| -> i64 { c.query_row("PRAGMA mmap_size", [], |r| r.get(0)).unwrap() };
         assert_eq!(mmap(&core.writer().unwrap()), MMAP_BYTES);
         assert_eq!(mmap(&core.reader().unwrap()), MMAP_BYTES);
-        let expected_secondary = if cfg!(target_pointer_width = "32") { 0 } else { MMAP_BYTES };
+        let expected_secondary = if cfg!(target_pointer_width = "32") {
+            0
+        } else {
+            MMAP_BYTES
+        };
         assert_eq!(mmap_size_for(MmapRole::Secondary), expected_secondary);
-        assert_eq!(mmap(&open_drift_reader(&core.path).unwrap()), expected_secondary);
+        assert_eq!(
+            mmap(&open_drift_reader(&core.path).unwrap()),
+            expected_secondary
+        );
         let guard = core.drift_write_reader.lock().unwrap();
         assert_eq!(mmap(guard.as_ref().unwrap()), expected_secondary);
     }
