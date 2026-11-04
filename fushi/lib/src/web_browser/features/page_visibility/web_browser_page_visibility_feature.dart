@@ -55,11 +55,11 @@ Future<void> _evaluate(InAppWebViewController controller, String source) =>
 /// （按住后没有在播的了，记录只增不清）。
 const String kWebBrowserCoverHoldMediaScript =
     '(function(){var r=window.__fushiCoverResume||[];'
-        'var vs=document.querySelectorAll("video,audio");'
-        'for(var i=0;i<vs.length;i++){var v=vs[i];'
-        'try{if(!v.paused&&!v.ended&&r.indexOf(v)<0)r.push(v);}catch(e){}}'
-        'window.__fushiCoverResume=r;})();' +
-    kWebBrowserHoldMediaScript;
+    'var vs=document.querySelectorAll("video,audio");'
+    'for(var i=0;i<vs.length;i++){var v=vs[i];'
+    'try{if(!v.paused&&!v.ended&&r.indexOf(v)<0)r.push(v);}catch(e){}}'
+    'window.__fushiCoverResume=r;})();'
+    '$kWebBrowserHoldMediaScript';
 
 /// 播放页退出、页面重新看得见：跑 [kWebBrowserReleaseMediaScript] 解除按住，再把
 /// [kWebBrowserCoverHoldMediaScript] 记下的媒体续播（还在文档里、仍是暂停态的才播；
@@ -68,11 +68,11 @@ const String kWebBrowserCoverHoldMediaScript =
 /// 与「用 Fushi 播放」交接共用同一个按住监听，但那边解除只跑
 /// [kWebBrowserReleaseMediaScript]：交接时页面媒体先被它暂停，这里记不到，回来也不续播。
 const String kWebBrowserCoverReleaseMediaScript =
-    kWebBrowserReleaseMediaScript +
+    '$kWebBrowserReleaseMediaScript'
     '(function(){var r=window.__fushiCoverResume;window.__fushiCoverResume=null;'
-        'if(!r)return 0;var n=0;for(var i=0;i<r.length;i++){var v=r[i];'
-        'try{if(v.isConnected&&v.paused&&!v.ended){n++;var p=v.play();'
-        'if(p&&p.catch)p.catch(function(){});}}catch(e){}}return n;})();';
+    'if(!r)return 0;var n=0;for(var i=0;i<r.length;i++){var v=r[i];'
+    'try{if(v.isConnected&&v.paused&&!v.ended){n++;var p=v.play();'
+    'if(p&&p.catch)p.catch(function(){});}}catch(e){}}return n;})();';
 
 /// 落到页面上的状态。
 enum _PageState {
