@@ -114,7 +114,7 @@ void main() {
   });
 
   test('WebView 页内监听：菜单在场时鼠标按下只回报一次，触摸不回报', () async {
-    final String code =
+    const String code =
         '''
 const assert=require('node:assert/strict');
 const window={};
