@@ -286,12 +286,67 @@ void main() {
           in kWebBrowserVideoShortcuts) {
         expect(shortcuts, contains("'$action': '$combo'"), reason: action);
       }
+      // 反馈 dQjjzl7XWj：快退秒数 / 按住倍速的键名、取值表、缺省与扩展同一份。
+      String jsList(List<String> values) =>
+          '[${values.map((String v) => "'$v'").join(', ')}]';
+      expect(
+        shortcuts,
+        contains("SEEK_SECONDS_SETTING = '$kWebBrowserSeekSecondsSetting'"),
+      );
+      expect(
+        shortcuts,
+        contains(
+          'SEEK_SECONDS_OPTIONS = ${jsList(kWebBrowserSeekSecondsOptions)}',
+        ),
+      );
+      expect(
+        shortcuts,
+        contains("SEEK_SECONDS_DEFAULT = '$kWebBrowserSeekSecondsDefault'"),
+      );
+      expect(
+        shortcuts,
+        contains("HOLD_RATE_SETTING = '$kWebBrowserHoldSpeedRateSetting'"),
+      );
+      expect(
+        shortcuts,
+        contains(
+          'HOLD_RATE_OPTIONS = ${jsList(kWebBrowserHoldSpeedRateOptions)}',
+        ),
+      );
+      expect(
+        shortcuts,
+        contains("HOLD_RATE_DEFAULT = '$kWebBrowserHoldSpeedRateDefault'"),
+      );
+      // 裸字母键默认关：App 设置页、扩展运行时（DEFAULT_OFF）、扩展设置页（settingDefaults）
+      // 三处缺省同一份，否则 App 里显示开、网页上却不生效（或反过来默认抢站点的键）。
+      final String defaultOffJs = kWebBrowserVideoShortcutsDefaultOff
+          .map((String a) => "'$a': 1")
+          .join(', ');
+      expect(shortcuts, contains('DEFAULT_OFF = { $defaultOffJs }'));
+      final String optionsJs = File('$root/options.js').readAsStringSync();
+      for (final (String action, String key, String _, String _)
+          in kWebBrowserVideoShortcuts) {
+        final bool off = kWebBrowserVideoShortcutsDefaultOff.contains(action);
+        expect(
+          optionsJs,
+          contains('  $key: ${!off},'),
+          reason: 'options.js settingDefaults.$key',
+        );
+      }
       final String palette = File('$root/theme-palette.js').readAsStringSync();
       for (final (String key, String label)
           in kWebBrowserExtensionPalettePresets) {
         expect(palette, contains("key: '$key'"), reason: key);
         expect(palette, contains("labelKey: '$label'"), reason: label);
       }
+    });
+
+    test('快捷键开关缺省：裸键 E（按住倍速）默认关，旧总开关 true 也不带开', () {
+      expect(webBrowserShortcutEnabledDefault('hold-speed', null), isFalse);
+      expect(webBrowserShortcutEnabledDefault('hold-speed', true), isFalse);
+      expect(webBrowserShortcutEnabledDefault('seek-back', null), isTrue);
+      expect(webBrowserShortcutEnabledDefault('seek-back', false), isFalse);
+      expect(webBrowserShortcutEnabledDefault('seek-back', true), isTrue);
     });
 
     test('字幕样式：规整与扩展同律，回到全默认即删键', () async {

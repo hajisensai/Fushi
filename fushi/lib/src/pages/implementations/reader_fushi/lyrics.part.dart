@@ -1,16 +1,8 @@
 // GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch1).
 part of '../reader_fushi_page.dart';
 
-const int kLyricsModeMaxInitialCues = 600;
-
-/// 滑动窗口一次原地补装的 cue 数（[kLyricsModeMaxInitialCues] 是窗口常驻上限）。
-const int kLyricsWindowChunk = 200;
-
-/// 播放推进时，当前句离窗口边缘不足这么多句就先补装（不等视口碰到边）。
-const int kLyricsWindowEdgeMargin = 120;
-
-/// 卸载远端时，当前句身后 / 身前至少保留的句数。
-const int kLyricsWindowKeep = 150;
+// 滑动窗口常量（kLyricsModeMaxInitialCues / kLyricsWindowChunk / kLyricsWindowKeep /
+// kLyricsWindowEdgeMargin）与裁剪计算在 media/audiobook/lyrics_cue_window_slide.dart。
 
 /// 歌词文档键桥（`onLyricsKey`）里裸 Space 的 token：按 `KeyboardEvent.key` 匹配，
 /// 回到 Dart 后走与正文 `onSpaceKey` 同一个 `_resolveWebViewSpaceAction`（有声书激活 →
@@ -263,6 +255,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (lyricsController == null || _audiobookController == null) return;
     final int loadGeneration = ++_lyricsLoadGeneration;
     _lyricsPageReady = false;
+    // 新文档的 JS 从跟随态起步（_lyBrowsing = false）。
+    _lyricsJsBrowsing = false;
     final AudiobookPlayerController ctrl = _audiobookController!;
     final LyricsCueWindow cueWindow = LyricsCueWindow.select(
       allBookCues: ctrl.allBookCuesSnapshot,
@@ -927,12 +921,24 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     );
   }
 
-  /// 歌词滑动窗口：往 [forward] 方向原地补装 [kLyricsWindowChunk] 句（JS
-  /// `__lyricsSpliceCues`，不重载文档），窗口超出 [kLyricsModeMaxInitialCues] 时从另一端
-  /// 卸掉离当前句足够远（> [kLyricsWindowKeep]）的句子。触发：播放走近边缘
-  /// （[_syncLyricsOverlayCue]）或窗口首 / 末句进入视口外扩一屏（JS `onLyricsEdge`，
-  /// 手动浏览也算）。整书 cue 换了（重新对齐）时退回整页重载。
-  void _slideLyricsWindow({required bool forward}) {
+  /// 歌词层此刻是否「跟随播放」：「跟随音频」开着、JS 不在手动浏览态、焦点环不在
+  /// 歌词上（焦点环激活时 setCue 不滚，视口归焦点环）。不跟随时窗口归用户视口管——
+  /// 锚点是视口中线句，播放推进不滑窗口、播放句走出窗口也不重载（重载会把视口拽回
+  /// 播放句）。
+  bool _lyricsFollowsPlayback(AudiobookPlayerController controller) =>
+      controller.followAudio.value &&
+      !_lyricsJsBrowsing &&
+      _caretSurface != CaretSurface.lyrics;
+
+  /// 歌词滑动窗口：往 [forward] 方向原地补装至多 [kLyricsWindowChunk] 句（JS
+  /// `__lyricsSpliceCues`，不重载文档），同时从另一端卸掉离 [anchor]（整书下标）超过
+  /// [kLyricsWindowKeep] 的句子，窗口常驻不超过 [kLyricsModeMaxInitialCues]（计算见
+  /// [planLyricsWindowSlide]）。[anchor]：跟随播放时是播放句，手动浏览时是视口中线句。
+  /// 触发：播放走近边缘（[_syncLyricsOverlayCue]，只在跟随时）或窗口首 / 末句进入视口
+  /// 外扩一屏（JS `onLyricsEdge`）。整书 cue 换了（重新对齐）时退回整页重载。
+  ///
+  /// 返回 false = 这次什么也没下发（JS 的同向补装请求要由调用方复位）。
+  bool _slideLyricsWindow({required bool forward, required int anchor}) {
     final InAppWebViewController? lyrics = _lyricsController;
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (lyrics == null ||
@@ -940,7 +946,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         !_lyricsPageReady ||
         !_lyricsCueWindowUsesAllBookCues ||
         _lyricsCueList.isEmpty) {
-      return;
+      return false;
     }
     final List<AudioCue> all = ctrl.allBookCuesSnapshot;
     final int start = _lyricsCueIndexOffset;
@@ -949,30 +955,20 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         !identical(all[start], _lyricsCueList.first) ||
         !identical(all[end - 1], _lyricsCueList.last)) {
       unawaited(_loadLyricsPage());
-      return;
+      return true;
     }
-    if (forward ? end >= all.length : start <= 0) return;
-    final int newStart = forward
-        ? start
-        : math.max(0, start - kLyricsWindowChunk);
-    final int newEnd = forward
-        ? math.min(all.length, end + kLyricsWindowChunk)
-        : end;
-    final int cur = ctrl.lyricsCueAllBookIdx;
-    final int over = (newEnd - newStart) - kLyricsModeMaxInitialCues;
-    int trimHead = 0;
-    int trimTail = 0;
-    if (over > 0) {
-      if (forward) {
-        final int limit = cur >= 0 ? cur - kLyricsWindowKeep - newStart : over;
-        trimHead = math.max(0, math.min(over, limit));
-      } else {
-        final int limit = cur >= 0
-            ? newEnd - (cur + kLyricsWindowKeep + 1)
-            : over;
-        trimTail = math.max(0, math.min(over, limit));
-      }
-    }
+    final LyricsWindowSlide? plan = planLyricsWindowSlide(
+      total: all.length,
+      start: start,
+      end: end,
+      forward: forward,
+      anchor: anchor,
+    );
+    if (plan == null) return false;
+    final int newStart = plan.loadStart;
+    final int newEnd = plan.loadEnd;
+    final int trimHead = plan.trimHead;
+    final int trimTail = plan.trimTail;
     final String rows = forward
         ? LyricsModeHtml.cueRowsHtml(
             cues: all.sublist(end, newEnd),
@@ -999,6 +995,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     );
     // 新进来的句子按收藏重新标一遍。
     unawaited(_applyLyricsFavorites());
+    return true;
   }
 
   /// 歌词 WebView 上的 fire-and-forget 求值：半销毁 WebView 抛的异常就地记录，
@@ -1041,30 +1038,56 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     } else {
       sourceIdx = controller.currentCueIdx;
     }
+    // 播放态与当前行解耦：下面每条不重载的出口都经 LyricsModeHtml.overlaySyncScript
+    // 下发它（BUG-4007 R2），JS 的暂停样式与「浏览 4 秒回到跟随」计时才不会脱节。
+    final bool playing = controller.isPlaying;
     // BUG-767: sourceIdx < 0 = 当前 cue 暂不可解析（cue 间隙 / 尚未匹配）。此时保位
     // 不跳、绝不重载（旧码在此重开歌词页 → 无限重载、高亮恒回第一句）。
-    if (sourceIdx < 0) return;
-    // 滑动窗口：播放走近窗口边缘就原地补装下一段（不重载、后面不留空白）。
-    if (_lyricsCueWindowUsesAllBookCues) {
+    if (sourceIdx < 0) {
+      _evalLyrics(
+        lyrics,
+        LyricsModeHtml.overlaySyncScript(playing: playing),
+        'setCue',
+      );
+      return;
+    }
+    // forceReveal = 显式回到当前句（跟随开关 snap / 字幕搜索跳转）：JS 的
+    // __lyricsScrollToCue 会结束手动浏览态，窗口锚点同步回到播放句。
+    if (forceReveal) _lyricsJsBrowsing = false;
+    final bool follows = forceReveal || _lyricsFollowsPlayback(controller);
+    // 滑动窗口：跟随中播放走近窗口边缘就原地补装下一段（不重载、后面不留空白），
+    // 锚点是播放句。手动浏览中窗口锚在用户视口（JS onLyricsEdge 驱动），这里不滑。
+    if (_lyricsCueWindowUsesAllBookCues && follows) {
       final int rel = sourceIdx - _lyricsCueIndexOffset;
       if (rel >= 0 && rel < _lyricsCueList.length) {
         if (_lyricsCueList.length - rel <= kLyricsWindowEdgeMargin) {
-          _slideLyricsWindow(forward: true);
+          _slideLyricsWindow(forward: true, anchor: sourceIdx);
         } else if (rel < kLyricsWindowEdgeMargin) {
-          _slideLyricsWindow(forward: false);
+          _slideLyricsWindow(forward: false, anchor: sourceIdx);
         }
       }
     }
     final int idx = sourceIdx - _lyricsCueIndexOffset;
     if (idx < 0 || idx >= _lyricsCueList.length) {
+      if (!_lyricsCueWindowUsesAllBookCues) return;
+      if (!follows) {
+        // 手动浏览中播放句不在窗口里：只摘掉旧高亮，不重载（重载会把视口拽走）。
+        // 回到跟随时（onLyricsBrowse(false) / forceReveal）再以播放句为锚重开。
+        // 播放态照样下发：继续播放时 JS 起 4 秒回中计时、暂停时停掉它。
+        _evalLyrics(
+          lyrics,
+          LyricsModeHtml.overlaySyncScript(playing: playing, clearCue: true),
+          'setCue',
+        );
+        return;
+      }
       // cue 真的移出已载窗口 → 重开窗口居中当前 cue（唯一合法的重载）。
-      if (_lyricsCueWindowUsesAllBookCues) unawaited(_loadLyricsPage());
+      unawaited(_loadLyricsPage());
       return;
     }
     // followAudio OFF → scroll=false：只换当前行高亮、不自动滚（用户可自由滚动
     // 歌词）。forceReveal（切「跟随音频」ON 触发的 snap 回中）也放行滚动。
     final bool scroll = controller.followAudio.value || forceReveal;
-    final bool playing = controller.isPlaying;
     final AudioCue cue = _lyricsCueList[idx];
     _observeLyricsIllustrations(cue, controller.globalPosition);
     final int rawDurMs = cue.endMs - cue.startMs;
@@ -1077,19 +1100,17 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final double ratePerSec = playing ? controller.speed * 1000 / durMs : 0;
     _evalLyrics(
       lyrics,
-      'if(window.__lyricsSetCue)'
-          'window.__lyricsSetCue($idx, $scroll);'
-          // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的
-          // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
-          // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
-          '${forceReveal ? 'if(window.__lyricsScrollToCue)'
-                    'window.__lyricsScrollToCue($idx);' : ''}'
-          'if(window.__lyricsSetPlaying)window.__lyricsSetPlaying($playing);'
-          // BUG-3777 R2：带上算出 fraction 的墙钟时刻，JS 执行晚了按速率自己补上延迟。
-          'if(window.__lyricsSetProgress)'
-          'window.__lyricsSetProgress($idx,${fraction.toStringAsFixed(4)},'
-          '${ratePerSec.toStringAsFixed(5)},'
-          '${DateTime.now().millisecondsSinceEpoch});',
+      LyricsModeHtml.overlaySyncScript(
+        playing: playing,
+        cue: (
+          index: idx,
+          scroll: scroll,
+          forceReveal: forceReveal,
+          fraction: fraction,
+          ratePerSec: ratePerSec,
+          sentAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ),
       'setCue',
     );
   }
@@ -1531,6 +1552,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             // BUG-2276：抽屉压着歌词时，这一下是「点遮罩关抽屉」，不是跳播。
             if (_closeSideSheetForWebViewPointer()) return;
             if (isDictionaryShown) clearDictionaryResult();
+            // 点句跳播 = 退出手动浏览（JS 随后补发 onLyricsBrowse(false)，届时已是
+            // 同态、不再重推）：窗口锚点回到播放句，跳到的这句就在窗口里。
+            _lyricsJsBrowsing = false;
             unawaited(
               _audiobookController!.playCueAndContinue(_lyricsCueList[idx]),
             );
@@ -1554,20 +1578,60 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             );
           },
         );
-        // 滑动窗口：窗口首 / 末句进入视口外扩一屏 → 原地补装那一侧（args = [方向, 文档代号]）。
+        // 滑动窗口：窗口首 / 末句进入视口外扩一屏 → 原地补装那一侧
+        // （args = [方向, 文档代号, 视口中线句的窗口内下标]）。锚点：跟随中是播放句，
+        // 手动浏览中是视口中线句（BUG-4004 复审：只按播放句裁，暂停后一路往后滑窗口
+        // 会无上限变大）。这次没下发拼接时复位 JS 的同向请求位，否则该方向从此不再请求。
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsEdge',
           callback: (List<dynamic> args) {
-            if (args.length < 2 ||
+            if (args.length < 3 ||
                 !_lyricsMode ||
                 !identical(controller, _lyricsController)) {
               return;
             }
             final num? dir = args[0] is num ? args[0] as num : null;
             final num? gen = args[1] is num ? args[1] as num : null;
-            if (dir == null || gen == null) return;
+            final num? view = args[2] is num ? args[2] as num : null;
+            if (dir == null || gen == null || view == null) return;
             if (gen.toInt() != _lyricsLoadGeneration) return;
-            _slideLyricsWindow(forward: dir > 0);
+            final AudiobookPlayerController? ctrl = _audiobookController;
+            if (ctrl == null) return;
+            final int viewRel = view.toInt();
+            final int viewAnchor =
+                viewRel >= 0 && viewRel < _lyricsCueList.length
+                ? _lyricsCueIndexOffset + viewRel
+                : -1;
+            final int anchor = _lyricsFollowsPlayback(ctrl) || viewAnchor < 0
+                ? ctrl.lyricsCueAllBookIdx
+                : viewAnchor;
+            final bool forward = dir > 0;
+            if (!_slideLyricsWindow(forward: forward, anchor: anchor)) {
+              _evalLyrics(
+                controller,
+                'if(window.__lyricsEdgeIdle)'
+                    'window.__lyricsEdgeIdle(${forward ? 1 : -1});',
+                'edgeIdle',
+              );
+            }
+          },
+        );
+        // JS 手动浏览态的进出（args = [是否浏览中, 文档代号]）。退出浏览 = 回到跟随：
+        // 按播放位置重推一次快照——播放句已不在窗口里就以它为锚重开窗口、走近边缘就滑。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsBrowse',
+          callback: (List<dynamic> args) {
+            if (args.length < 2 ||
+                !_lyricsMode ||
+                !identical(controller, _lyricsController)) {
+              return;
+            }
+            final num? gen = args[1] is num ? args[1] as num : null;
+            if (gen == null || gen.toInt() != _lyricsLoadGeneration) return;
+            final bool browsing = args[0] == true;
+            if (browsing == _lyricsJsBrowsing) return;
+            _lyricsJsBrowsing = browsing;
+            if (!browsing) _resyncLyricsOverlayToAudio();
           },
         );
         // BUG-3777 R2：歌词文档变回可见（visibilitychange）→ 重推快照。

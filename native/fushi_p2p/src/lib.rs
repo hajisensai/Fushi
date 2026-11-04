@@ -26,18 +26,20 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::net::SocketAddr;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
-use iroh::endpoint::{presets, Connection, QuicTransportConfig, RecvStream, SendStream, VarInt};
-use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMap, RelayMode, RelayUrl, SecretKey, TransportAddr};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow, bail};
+use iroh::endpoint::{Connection, QuicTransportConfig, RecvStream, SendStream, VarInt, presets};
+use iroh::{
+    Endpoint, EndpointAddr, EndpointId, RelayMap, RelayMode, RelayUrl, SecretKey, TransportAddr,
+};
+use serde_json::{Value, json};
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
@@ -167,9 +169,12 @@ impl P2p {
                 .relay_mode(relay_mode)
                 .transport_config(transport);
             #[cfg(feature = "dht")]
-            let builder = builder
-                .address_lookup(iroh_mainline_address_lookup::DhtAddressLookup::builder());
-            builder.bind().await.map_err(|e| anyhow!("bind endpoint: {e}"))
+            let builder =
+                builder.address_lookup(iroh_mainline_address_lookup::DhtAddressLookup::builder());
+            builder
+                .bind()
+                .await
+                .map_err(|e| anyhow!("bind endpoint: {e}"))
         })?;
         let shared = Arc::new(Shared {
             endpoint,
@@ -255,17 +260,15 @@ impl P2p {
     fn conn_status(&self, node: &str) -> Result<Value> {
         let id = EndpointId::from_str(node.trim()).map_err(|e| anyhow!("invalid node id: {e}"))?;
         let outgoing: Option<Connection> = self.shared.conns.lock().unwrap().get(&id).cloned();
-        let conn = outgoing
-            .filter(|c| c.close_reason().is_none())
-            .or_else(|| {
-                self.shared
-                    .incoming
-                    .lock()
-                    .unwrap()
-                    .get(&id)
-                    .filter(|c| c.close_reason().is_none())
-                    .cloned()
-            });
+        let conn = outgoing.filter(|c| c.close_reason().is_none()).or_else(|| {
+            self.shared
+                .incoming
+                .lock()
+                .unwrap()
+                .get(&id)
+                .filter(|c| c.close_reason().is_none())
+                .cloned()
+        });
         Ok(match conn {
             Some(c) => path_status(&c),
             None => json!({
@@ -315,7 +318,13 @@ impl Shared {
         if let Some(c) = self.cached(&id, dead) {
             return Ok(c);
         }
-        let lock = self.dial_locks.lock().unwrap().entry(id).or_default().clone();
+        let lock = self
+            .dial_locks
+            .lock()
+            .unwrap()
+            .entry(id)
+            .or_default()
+            .clone();
         let _dialing = lock.lock().await;
         // 等锁期间别的任务可能已经拨通了。
         if let Some(c) = self.cached(&id, dead) {
@@ -343,7 +352,9 @@ fn parse_addr_hint(id: EndpointId, hint: &Value) -> Result<EndpointAddr> {
     let mut addrs: Vec<TransportAddr> = Vec::new();
     if let Some(list) = hint.get("directAddrs").and_then(Value::as_array) {
         for v in list {
-            let s = v.as_str().ok_or_else(|| anyhow!("directAddrs must be strings"))?;
+            let s = v
+                .as_str()
+                .ok_or_else(|| anyhow!("directAddrs must be strings"))?;
             let sa = SocketAddr::from_str(s).map_err(|e| anyhow!("bad direct addr {s}: {e}"))?;
             addrs.push(TransportAddr::Ip(sa));
         }
@@ -404,7 +415,9 @@ async fn host_accept_loop(shared: Arc<Shared>) {
         }
         let shared = shared.clone();
         tokio::spawn(async move {
-            let Ok(accepting) = incoming.accept() else { return };
+            let Ok(accepting) = incoming.accept() else {
+                return;
+            };
             let Ok(conn) = accepting.await else { return };
             host_serve_connection(shared, conn).await;
         });
@@ -430,7 +443,10 @@ async fn host_serve_connection(shared: Arc<Shared>, conn: Connection) {
         }
     }
     let mut map = shared.incoming.lock().unwrap();
-    if map.get(&remote).is_some_and(|c| c.stable_id() == conn.stable_id()) {
+    if map
+        .get(&remote)
+        .is_some_and(|c| c.stable_id() == conn.stable_id())
+    {
         map.remove(&remote);
     }
 }
@@ -456,7 +472,9 @@ async fn host_serve_stream(
     let tcp = if port == 0 {
         None
     } else {
-        TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port))).await.ok()
+        TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port)))
+            .await
+            .ok()
     };
     let Some(tcp) = tcp else {
         let _ = send.reset(VarInt::from_u32(ERR_PUMP));
@@ -467,7 +485,10 @@ async fn host_serve_stream(
     // 这条映射一定已经在了。
     let local_port = tcp.local_addr()?.port();
     shared.host_peers.lock().unwrap().insert(local_port, remote);
-    let _entry = HostPeerEntry { shared, port: local_port };
+    let _entry = HostPeerEntry {
+        shared,
+        port: local_port,
+    };
     pump(tcp, send, recv).await
 }
 
@@ -499,7 +520,9 @@ async fn client_open_stream(shared: &Shared, id: EndpointId) -> Result<(SendStre
         // 缓存的连接已死（对端重启/网络切换）：换一条新连接，只换一次。
         Err(_) => {
             let conn = shared.connection(id, Some(conn.stable_id())).await?;
-            conn.open_bi().await.map_err(|e| anyhow!("open stream: {e}"))
+            conn.open_bi()
+                .await
+                .map_err(|e| anyhow!("open stream: {e}"))
         }
     }
 }
@@ -554,7 +577,9 @@ async fn pump(tcp: TcpStream, mut send: SendStream, mut recv: RecvStream) -> Res
 
 fn into_c_string(s: String) -> *mut c_char {
     // JSON 里不会有内部 NUL（serde_json 会转义 \u0000）；兜底去掉以免 panic。
-    CString::new(s.replace('\0', "")).map(CString::into_raw).unwrap_or(std::ptr::null_mut())
+    CString::new(s.replace('\0', ""))
+        .map(CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
 }
 
 fn json_out(v: Value) -> *mut c_char {
@@ -588,7 +613,10 @@ unsafe fn opt_str<'a>(p: *const c_char) -> Result<Option<&'a str>> {
     if p.is_null() {
         return Ok(None);
     }
-    CStr::from_ptr(p).to_str().map(Some).map_err(|_| anyhow!("argument is not valid UTF-8"))
+    CStr::from_ptr(p)
+        .to_str()
+        .map(Some)
+        .map_err(|_| anyhow!("argument is not valid UTF-8"))
 }
 
 unsafe fn handle<'a>(h: *mut P2p) -> Result<&'a P2p> {
@@ -663,7 +691,9 @@ pub unsafe extern "C" fn fp2p_endpoint_online(h: *mut P2p, timeout_ms: u32) -> *
         let p = handle(h)?;
         let ep = p.shared.endpoint.clone();
         let online = p.rt.block_on(async {
-            tokio::time::timeout(Duration::from_millis(timeout_ms as u64), ep.online()).await.is_ok()
+            tokio::time::timeout(Duration::from_millis(timeout_ms as u64), ep.online())
+                .await
+                .is_ok()
         });
         let mut v = p.info();
         v["online"] = json!(online);
@@ -693,7 +723,9 @@ pub unsafe extern "C" fn fp2p_client_forward(
         let p = handle(h)?;
         let node = opt_str(node_id)?.ok_or_else(|| anyhow!("node_id is null"))?;
         let hint: Option<Value> = match opt_str(addr_hint_json)? {
-            Some(s) if !s.trim().is_empty() => Some(serde_json::from_str(s).context("addr_hint_json")?),
+            Some(s) if !s.trim().is_empty() => {
+                Some(serde_json::from_str(s).context("addr_hint_json")?)
+            }
             _ => None,
         };
         let port = p.client_forward(node, hint.as_ref())?;

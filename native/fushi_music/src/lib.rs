@@ -11,7 +11,7 @@
 //!   [status::PANIC]，不越过 FFI 边界。
 //! - **硬依赖、无 Dart 回退**：Dart 侧加载失败抛带原因的 `FushiMusicUnavailableError`。
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod cd;
 pub mod cue;

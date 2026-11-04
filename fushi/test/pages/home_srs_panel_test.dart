@@ -41,7 +41,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import '../srs/srs_test_support.dart' show openSrsTestStorage;
+import '../srs/srs_test_support.dart' show SrsTestEngine, openSrsTestStorage;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -172,7 +172,8 @@ void main() {
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
-      engine: null,
+      // 「今日」一行的用例要真的答卡（测试 FSRS 引擎，与其它 SRS 页测试同一份）。
+      engine: const SrsTestEngine(),
     );
   });
 
@@ -420,6 +421,59 @@ void main() {
       expect(panel, findsOneWidget);
       expect(find.text(t.home_srs_panel_done), findsOneWidget);
       expect(start, findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('$ds · 「今日」一行：今天已复习张数 · 用时 · 正确率，与统计口径同一数据源', (
+      WidgetTester tester,
+    ) async {
+      useSize(tester, const Size(420, 900));
+      final List<String> cards = <String>[];
+      await tester.runAsync(() async {
+        await useSrs(target: SrsMiningTarget.srs);
+        for (final String w in <String>['食べる', '飲む', '走る']) {
+          final String note = await store.createNote(
+            noteTypeId: store.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              srsLapisFieldId(_kProfile, 'Expression'): w,
+              srsLapisFieldId(_kProfile, 'MainDefinition'): 'meaning',
+            },
+          );
+          cards.add((await store.cardsOfNote(note)).first.id);
+        }
+      });
+      await tester.pumpWidget(app(dashboard(), apple: apple));
+      await settle(tester);
+      final Finder today = find.descendant(
+        of: panel,
+        matching: find.byKey(const ValueKey<String>('home-srs-panel-today')),
+      );
+      // 还没复习：0 张、没有正确率。
+      expect(
+        tester.widget<Text>(today).data,
+        homeSrsTodayLine(SrsTodayReviewSummary.empty),
+      );
+      expect(tester.widget<Text>(today).data, isNot(contains('%')));
+
+      await tester.runAsync(() async {
+        await store.answer(cards[0], 3, durationMs: 70000);
+        await store.answer(cards[1], 1, durationMs: 5000);
+      });
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(panel),
+      );
+      container.read(srsRevisionProvider.notifier).state++;
+      await settle(tester);
+      final SrsTodayReviewSummary summary = (await tester.runAsync(
+        store.todayReviewSummary,
+      ))!;
+      expect(summary.count, 2);
+      expect(summary.again, 1);
+      final String line = tester.widget<Text>(today).data!;
+      expect(line, homeSrsTodayLine(summary));
+      expect(line, contains('2'));
+      expect(line, contains('50%'));
+      expect(tester.takeException(), isNull);
       await unmount(tester);
     });
 

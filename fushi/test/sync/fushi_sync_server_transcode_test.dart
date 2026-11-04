@@ -252,6 +252,45 @@ void main() {
     });
   });
 
+  group('源码率（uaBRMzK_WM：client 自动档按链路带宽对源码率选原画）', () {
+    test('能转码的 host 报 sourceBitrate = 体积 × 8 ÷ 时长（原画票也带）', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl',
+      );
+      // 8 字节 ÷ 15.5 秒 = 4 bps（整除）。
+      expect(json['sourceBitrate'], 8 * 8 * 1000 ~/ 15500);
+      final Map<String, dynamic> transcoded = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      expect(transcoded['sourceBitrate'], json['sourceBitrate']);
+    });
+
+    test('转不了码的 host 不报（没有可选的，client 也不比）', () async {
+      await startServer(transcodeAvailable: false);
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl',
+      );
+      expect(json.containsKey('sourceBitrate'), isFalse);
+    });
+
+    test('探不出时长 → 不报', () async {
+      await startServer(durationSeconds: null);
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl',
+      );
+      expect(json.containsKey('sourceBitrate'), isFalse);
+    });
+  });
+
+  test('averageBitrateBps：缺项 / 非正值返回 null', () {
+    expect(averageBitrateBps(sizeBytes: 1000, durationMs: 1000), 8000);
+    expect(averageBitrateBps(sizeBytes: null, durationMs: 1000), isNull);
+    expect(averageBitrateBps(sizeBytes: 1000, durationMs: null), isNull);
+    expect(averageBitrateBps(sizeBytes: 0, durationMs: 1000), isNull);
+    expect(averageBitrateBps(sizeBytes: 1000, durationMs: 0), isNull);
+  });
+
   group('HLS 端点', () {
     late String tokenQuery;
 

@@ -2706,8 +2706,12 @@ class _GameStreamPageState extends State<GameStreamPage>
                   enableSwipeToClose: false,
                   onDismiss: () => _setLookupVisible(false),
                   onTextSelected:
-                      (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
-                          unawaited(controller.lookup(text)),
+                      (
+                        String text,
+                        Rect rect,
+                        List<FushiRubySpan> rubySpans,
+                        String _,
+                      ) => unawaited(controller.lookup(text)),
                   onLinkClick: (String text, Rect rect) =>
                       unawaited(controller.lookup(text)),
                   onMineEntry: _mine,

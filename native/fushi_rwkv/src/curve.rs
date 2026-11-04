@@ -38,13 +38,18 @@ impl AnswerCurve {
 
 /// 四条曲线（Again..Easy）在 `target_retention` 下的间隔（整天，1..=`max_interval_days`，到上限仍高于
 /// 目标给上限），评分顺序已修正为不减。
-pub fn answer_intervals(curves: &[AnswerCurve; 4], target_retention: f32, max_interval_days: u32) -> [u32; 4] {
+pub fn answer_intervals(
+    curves: &[AnswerCurve; 4],
+    target_retention: f32,
+    max_interval_days: u32,
+) -> [u32; 4] {
     let margins_at = |days: f32| -> [f32; 4] {
         pava_non_decreasing(std::array::from_fn(|index| {
             curves[index].retrievability(days * SECONDS_PER_DAY) - target_retention
         }))
     };
-    crossings_on_grid(max_interval_days, margins_at).map(|days| clamped_interval_days(days, max_interval_days))
+    crossings_on_grid(max_interval_days, margins_at)
+        .map(|days| clamped_interval_days(days, max_interval_days))
 }
 
 const SUB_DAY_SEARCH_POINTS: [f32; 14] = [
@@ -64,7 +69,10 @@ const SUB_DAY_SEARCH_POINTS: [f32; 14] = [
     20.0 / 24.0,
 ];
 
-fn crossings_on_grid<const N: usize>(max_interval_days: u32, margins_at: impl Fn(f32) -> [f32; N]) -> [f32; N] {
+fn crossings_on_grid<const N: usize>(
+    max_interval_days: u32,
+    margins_at: impl Fn(f32) -> [f32; N],
+) -> [f32; N] {
     let mut points = Vec::new();
     if margins_at(1.0).iter().any(|margin| *margin <= 0.0) {
         points.extend(SUB_DAY_SEARCH_POINTS);
@@ -87,10 +95,13 @@ fn crossings_on_grid<const N: usize>(max_interval_days: u32, margins_at: impl Fn
             }
             let margin = margins[index];
             if margin <= 0.0 {
-                let (low, low_margin) =
-                    previous[index].unwrap_or_else(|| (0.0, at_zero.get_or_insert_with(|| margins_at(0.0))[index]));
+                let (low, low_margin) = previous[index].unwrap_or_else(|| {
+                    (0.0, at_zero.get_or_insert_with(|| margins_at(0.0))[index])
+                });
                 let crossing = if low_margin > 0.0 {
-                    crossing_between(low, low_margin, point, margin, |days| margins_at(days)[index])
+                    crossing_between(low, low_margin, point, margin, |days| {
+                        margins_at(days)[index]
+                    })
                 } else {
                     point
                 };
@@ -105,7 +116,13 @@ fn crossings_on_grid<const N: usize>(max_interval_days: u32, margins_at: impl Fn
     crossings.map(|crossing| crossing.unwrap_or(maximum))
 }
 
-fn crossing_between(low: f32, low_margin: f32, high: f32, high_margin: f32, margin: impl Fn(f32) -> f32) -> f32 {
+fn crossing_between(
+    low: f32,
+    low_margin: f32,
+    high: f32,
+    high_margin: f32,
+    margin: impl Fn(f32) -> f32,
+) -> f32 {
     const MAX_STEPS: usize = 64;
     let (mut low, mut low_margin) = (low as f64, low_margin as f64);
     let (mut high, mut high_margin) = (high as f64, high_margin as f64);
@@ -239,7 +256,12 @@ mod tests {
     #[test]
     fn interval_is_the_target_crossing_rounded_up() {
         // 越线点都不落在整数天上（落在整数上时 ceil 对 1 秒的误差敏感）。
-        let curves = [hyperbolic(0.6), hyperbolic(3.6), hyperbolic(9.4), hyperbolic(39.2)];
+        let curves = [
+            hyperbolic(0.6),
+            hyperbolic(3.6),
+            hyperbolic(9.4),
+            hyperbolic(39.2),
+        ];
         // 0.8：t = S/4 = 0.15 / 0.9 / 2.35 / 9.8 天。
         assert_eq!(answer_intervals(&curves, 0.8, 36_500), [1, 1, 3, 10]);
         // 0.5：t = S。
@@ -249,13 +271,21 @@ mod tests {
     #[test]
     fn grade_order_and_limits() {
         // Hard 的曲线比 Good 长：PAVA 把它们拉到同一处，结果不减。
-        let curves = [hyperbolic(1.3), hyperbolic(30.3), hyperbolic(10.3), hyperbolic(40.3)];
+        let curves = [
+            hyperbolic(1.3),
+            hyperbolic(30.3),
+            hyperbolic(10.3),
+            hyperbolic(40.3),
+        ];
         let days = answer_intervals(&curves, 0.5, 36_500);
         assert!(days.windows(2).all(|w| w[0] <= w[1]), "{days:?}");
         assert!(days[1] > 10 && days[1] < 30, "{days:?}");
         // 到上限仍高于目标：给上限；最短 1 天。
         let long = || hyperbolic(1e6);
-        assert_eq!(answer_intervals(&[long(), long(), long(), long()], 0.9, 365), [365; 4]);
+        assert_eq!(
+            answer_intervals(&[long(), long(), long(), long()], 0.9, 365),
+            [365; 4]
+        );
         let short = || hyperbolic(1e-4);
         assert_eq!(
             answer_intervals(&[short(), short(), short(), short()], 0.9, 365),

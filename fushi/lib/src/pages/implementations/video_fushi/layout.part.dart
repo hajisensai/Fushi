@@ -675,6 +675,10 @@ extension _VideoLayout on _VideoFushiPageState {
                               // 关栈为止——否则浮层顶栏「重播本句」一起播，刚让位的
                               // 字幕在重播那几秒又被遮回去（用户正对着浮层核对原句）。
                               lookupPopupVisible: _hasVisiblePopup,
+                              // aJqIVUPxnd：移动端点开控制条（进度条）= 想看一眼这句，
+                              // 遮蔽让位；桌面鼠标一动控制条就出来，不计入（另有悬停显形）。
+                              revealWhileControlsVisible:
+                                  !_isDesktopVideoControls,
                               // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
                               // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
                               // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /
@@ -761,6 +765,10 @@ extension _VideoLayout on _VideoFushiPageState {
                             revealOnInteraction:
                                 appModel.videoSubtitleObscureReveal,
                             lookupPopupVisible: _hasVisiblePopup,
+                            // aJqIVUPxnd：与文本字幕同一条门（仅移动端控制条）。
+                            touchControlsVisible: _isDesktopVideoControls
+                                ? null
+                                : _videoControlsVisible,
                             // 网络流图形轨：与逐句时间表同一份抽取输入（同一个在途任务，
                             // 整条流只读一遍）；本地文件由遮蔽层按路径推导。
                             regionInput:

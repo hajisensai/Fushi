@@ -2426,6 +2426,10 @@ class JellyfinVideoClient
   @override
   List<MediaServerQualityPreset> get qualityPresets => kQualityPresets;
 
+  /// 「自动」已是不限码率（profile 报 120 Mbps 顶档）、能直播放就直播放，不另列「原画」。
+  @override
+  bool get offersOriginalQuality => false;
+
   /// -1 = 自动（不给上限，服务器允许时直播放原文件）。播放页在起播前按偏好写入。
   @override
   int qualityPresetIndex = -1;

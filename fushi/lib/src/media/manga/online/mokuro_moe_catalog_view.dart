@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/download/manga_download_progress_label.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -853,17 +854,13 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     return '${t.manga_online_failed}: ${describeOnlineSourceErrorText(raw)}';
   }
 
-  static String _progressLabel(MangaDownloadJobRow job) => job.pagesTotal > 0
-      ? t.manga_ocr_wizard_page_progress(
-          done: job.pagesDone,
-          total: job.pagesTotal,
-        )
-      : t.download_status_queued;
+  /// 进度带单位（CBZ 下载阶段是字节、导入阶段是页），见 [MangaDownloadProgress]。
+  String _progressLabel(MangaDownloadJobRow job) =>
+      mangaDownloadProgressLabel(_downloads.progressOf(job)) ??
+      t.download_status_queued;
 
-  static double? _progressValue(MangaDownloadJobRow? job) =>
-      job == null || job.pagesTotal <= 0
-      ? null
-      : (job.pagesDone / job.pagesTotal).clamp(0.0, 1.0);
+  double? _progressValue(MangaDownloadJobRow? job) =>
+      job == null ? null : _downloads.progressOf(job).fraction;
 
   /// 本系列任务的内联进度面板（有未完成任务时显示）：`x/y · 当前卷进度` +
   /// 进度条 + 取消当前卷。与「下载」页任务 tab 同源（同一张任务表）。

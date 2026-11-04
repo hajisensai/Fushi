@@ -10,7 +10,10 @@
 use super::model::*;
 
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn ttml_time(ms: i64) -> String {
@@ -56,11 +59,17 @@ pub fn to_ttml(t: &Timeline) -> String {
             AgentKind::Group => "group",
             AgentKind::Other => "other",
         };
-        o.push_str(&format!("<ttm:agent type=\"{kind}\" xml:id=\"{}\"", esc(&a.id)));
+        o.push_str(&format!(
+            "<ttm:agent type=\"{kind}\" xml:id=\"{}\"",
+            esc(&a.id)
+        ));
         if a.name.is_empty() {
             o.push_str("/>");
         } else {
-            o.push_str(&format!("><ttm:name type=\"full\">{}</ttm:name></ttm:agent>", esc(&a.name)));
+            o.push_str(&format!(
+                "><ttm:name type=\"full\">{}</ttm:name></ttm:agent>",
+                esc(&a.name)
+            ));
         }
     }
     o.push_str("</metadata></head><body><div>");
@@ -68,7 +77,11 @@ pub fn to_ttml(t: &Timeline) -> String {
     let mut i = 0;
     while i < t.lines.len() {
         let l = &t.lines[i];
-        o.push_str(&format!("<p begin=\"{}\" end=\"{}\"", ttml_time(l.start_ms), ttml_time(l.end_ms)));
+        o.push_str(&format!(
+            "<p begin=\"{}\" end=\"{}\"",
+            ttml_time(l.start_ms),
+            ttml_time(l.end_ms)
+        ));
         if let Some(a) = l.agent.and_then(|a| t.agents.get(a)) {
             o.push_str(&format!(" ttm:agent=\"{}\"", esc(&a.id)));
         }
@@ -90,7 +103,11 @@ pub fn to_ttml(t: &Timeline) -> String {
             j += 1;
         }
         for (lang, text) in &l.translations {
-            o.push_str(&format!("<span ttm:role=\"x-translation\" xml:lang=\"{}\">{}</span>", esc(lang), esc(text)));
+            o.push_str(&format!(
+                "<span ttm:role=\"x-translation\" xml:lang=\"{}\">{}</span>",
+                esc(lang),
+                esc(text)
+            ));
         }
         if let Some(r) = &l.romanization {
             o.push_str(&format!("<span ttm:role=\"x-roman\">{}</span>", esc(r)));
@@ -112,7 +129,11 @@ fn push_syllables(o: &mut String, l: &Line, timed: bool) {
         }
         let body = trimmed.trim_start();
         let times = if timed {
-            format!(" begin=\"{}\" end=\"{}\"", ttml_time(s.start_ms), ttml_time(s.end_ms))
+            format!(
+                " begin=\"{}\" end=\"{}\"",
+                ttml_time(s.start_ms),
+                ttml_time(s.end_ms)
+            )
         } else {
             String::new()
         };
@@ -178,7 +199,11 @@ mod tests {
         l.start_ms = 1000;
         l.end_ms = 3000;
         l.agent = Some(v1);
-        l.syllables = vec![Syllable::new("Hel", 1000, 1500), Syllable::new("lo ", 1500, 2000), Syllable::new("世界", 2000, 3000)];
+        l.syllables = vec![
+            Syllable::new("Hel", 1000, 1500),
+            Syllable::new("lo ", 1500, 2000),
+            Syllable::new("世界", 2000, 3000),
+        ];
         l.syllables[2].ruby = Some("せかい".into());
         l.add_translation("zh-CN", "你好 & 世界");
         l.romanization = Some("harou sekai".into());

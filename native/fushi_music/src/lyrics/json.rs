@@ -39,7 +39,10 @@ impl Json {
 }
 
 pub fn parse(s: &str) -> Option<Json> {
-    let mut p = P { b: s.as_bytes(), i: 0 };
+    let mut p = P {
+        b: s.as_bytes(),
+        i: 0,
+    };
     let v = p.value()?;
     p.ws();
     (p.i == p.b.len()).then_some(v)
@@ -109,11 +112,18 @@ impl P<'_> {
             _ => {
                 let start = self.i;
                 while self.i < self.b.len()
-                    && matches!(self.b[self.i], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+                    && matches!(
+                        self.b[self.i],
+                        b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E'
+                    )
                 {
                     self.i += 1;
                 }
-                std::str::from_utf8(&self.b[start..self.i]).ok()?.parse().ok().map(Json::Num)
+                std::str::from_utf8(&self.b[start..self.i])
+                    .ok()?
+                    .parse()
+                    .ok()
+                    .map(Json::Num)
             }
         }
     }

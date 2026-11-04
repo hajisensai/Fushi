@@ -3,10 +3,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::package::tests::{build_zip, manifest_with, Sign};
-use super::package::{install_zip, inspect_zip, load_dir};
+use super::package::tests::{Sign, build_zip, manifest_with};
+use super::package::{inspect_zip, install_zip, load_dir};
 use super::runtime::Instance;
 
 fn temp_root(tag: &str) -> PathBuf {
@@ -15,7 +15,12 @@ fn temp_root(tag: &str) -> PathBuf {
     d
 }
 
-fn open(tag: &str, manifest: &str, files: &[(&str, &str)], budget: u64) -> Result<Instance, String> {
+fn open(
+    tag: &str,
+    manifest: &str,
+    files: &[(&str, &str)],
+    budget: u64,
+) -> Result<Instance, String> {
     let mut all: Vec<(&str, &[u8])> = vec![("manifest.json", manifest.as_bytes())];
     for (p, s) in files {
         all.push((p, s.as_bytes()));
@@ -53,22 +58,44 @@ fn invoke_with_http_roundtrip() {
     let util = "exports.upper = function (s) { return String(s).toUpperCase(); };";
     let mut inst = open("http", &m, &[("main.js", js), ("lib/util.js", util)], 2000).unwrap();
 
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "search", "args": { "query": "夜曲", "page": 2 } }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "search", "args": { "query": "夜曲", "page": 2 } }]),
+    );
     assert_eq!(out["settled"], json!([]), "{out}");
     let call = &out["calls"][0];
     assert_eq!(call["op"], "http");
     assert_eq!(call["args"]["method"], "GET");
-    assert!(call["args"]["url"].as_str().unwrap().starts_with("https://api.example.com/s?q=%E5%A4%9C"));
+    assert!(
+        call["args"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://api.example.com/s?q=%E5%A4%9C")
+    );
     assert!(call["args"].get("body").is_none(), "GET 没有请求体");
     let body: &[u8] = br#"xx{"items":["a","b"]}"#;
-    let (out, _) = step_blob(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
+    let (out, _) = step_blob(
+        &mut inst,
+        json!([{ "op": "complete", "call": call["id"], "ok": true,
         "value": { "status": 200, "url": "https://api.example.com/s", "headers": {},
-                   "body": { "off": 2, "len": body.len() - 2 } } }]), body);
-    assert_eq!(out["settled"][0], json!({ "inv": 1, "ok": true, "value": { "items": ["A", "B"], "page": 2 } }), "{out}");
+                   "body": { "off": 2, "len": body.len() - 2 } } }]),
+        body,
+    );
+    assert_eq!(
+        out["settled"][0],
+        json!({ "inv": 1, "ok": true, "value": { "items": ["A", "B"], "page": 2 } }),
+        "{out}"
+    );
     assert_eq!(out["logs"][0]["message"], "status 200");
 
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "lyrics", "args": {} }]));
-    assert_eq!(out["settled"][0]["value"]["md5"], "900150983cd24fb0d6963f7d28e17f72");
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 2, "method": "lyrics", "args": {} }]),
+    );
+    assert_eq!(
+        out["settled"][0]["value"]["md5"],
+        "900150983cd24fb0d6963f7d28e17f72"
+    );
 }
 
 #[test]
@@ -86,7 +113,10 @@ fn policy_violations_reject_inside_js() {
         } };
     "#;
     let mut inst = open("policy", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 7, "method": "search", "args": {} }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 7, "method": "search", "args": {} }]),
+    );
     assert_eq!(out["calls"], json!([]), "越权请求不得到达宿主：{out}");
     assert_eq!(
         out["settled"][0]["value"],
@@ -105,15 +135,31 @@ fn errors_budget_and_undeclared() {
         };
     "#;
     let mut inst = open("err", &m, &[("main.js", js)], 300).unwrap();
-    let out = step(&mut inst, json!([
-        { "op": "invoke", "inv": 1, "method": "search", "args": {} },
-        { "op": "invoke", "inv": 2, "method": "secret", "args": {} },
-    ]));
+    let out = step(
+        &mut inst,
+        json!([
+            { "op": "invoke", "inv": 1, "method": "search", "args": {} },
+            { "op": "invoke", "inv": 2, "method": "secret", "args": {} },
+        ]),
+    );
     let settled = out["settled"].as_array().unwrap();
     let by_inv = |i: u64| settled.iter().find(|s| s["inv"] == i).unwrap().clone();
-    assert!(by_inv(1)["error"].as_str().unwrap().contains("TypeError: boom"));
-    assert!(by_inv(2)["error"].as_str().unwrap().contains("没有声明能力"));
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 3, "method": "lyrics", "args": {} }]));
+    assert!(
+        by_inv(1)["error"]
+            .as_str()
+            .unwrap()
+            .contains("TypeError: boom")
+    );
+    assert!(
+        by_inv(2)["error"]
+            .as_str()
+            .unwrap()
+            .contains("没有声明能力")
+    );
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 3, "method": "lyrics", "args": {} }]),
+    );
     assert!(out["fatal"].as_str().unwrap().contains("CPU"), "{out}");
     // 作废后的实例只回 fatal。
     let out = step(&mut inst, json!([]));
@@ -123,20 +169,39 @@ fn errors_budget_and_undeclared() {
 #[test]
 fn missing_capability_export_and_escape() {
     let m = manifest_with(&["search", "lyrics"], &[], &[]);
-    let err = open("missing", &m, &[("main.js", "module.exports = { search() {} };")], 2000)
-        .err()
-        .unwrap();
+    let err = open(
+        "missing",
+        &m,
+        &[("main.js", "module.exports = { search() {} };")],
+        2000,
+    )
+    .err()
+    .unwrap();
     assert!(err.contains("lyrics"), "{err}");
     let m = manifest_with(&["lyrics"], &[], &[]);
-    let err = open("escape", &m, &[("main.js", "require('../outside'); module.exports = { lyrics() {} };")], 2000)
-        .err()
-        .unwrap();
+    let err = open(
+        "escape",
+        &m,
+        &[(
+            "main.js",
+            "require('../outside'); module.exports = { lyrics() {} };",
+        )],
+        2000,
+    )
+    .err()
+    .unwrap();
     assert!(err.contains("越出"), "{err}");
     // 原生桥不暴露给插件。
     let js = "module.exports = { lyrics() { return [typeof __n, typeof globalThis.__n]; } };";
     let mut inst = open("hidden", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]));
-    assert_eq!(out["settled"][0]["value"], json!(["undefined", "undefined"]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]),
+    );
+    assert_eq!(
+        out["settled"][0]["value"],
+        json!(["undefined", "undefined"])
+    );
 }
 
 #[test]
@@ -159,16 +224,31 @@ fn credentials_gate_and_set_cookies() {
         };
     "#;
     let mut inst = open("cred", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "login", "args": {} }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "login", "args": {} }]),
+    );
     let c = &out["calls"][0];
-    let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": true,
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": c["id"], "ok": true,
         "value": { "status": 200, "url": "https://api.example.com/login", "headers": {},
-                   "setCookies": ["MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT", "__csrf=b"] } }]));
+                   "setCookies": ["MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT", "__csrf=b"] } }]),
+    );
     let c = &out["calls"][0];
     assert_eq!(c["op"], "credentials.set");
-    assert_eq!(c["args"]["value"], "MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT|__csrf=b");
-    let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": true, "value": null }]));
-    assert_eq!(out["settled"][0]["value"], json!({ "state": "done", "cookies": 2 }));
+    assert_eq!(
+        c["args"]["value"],
+        "MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT|__csrf=b"
+    );
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": c["id"], "ok": true, "value": null }]),
+    );
+    assert_eq!(
+        out["settled"][0]["value"],
+        json!({ "state": "done", "cookies": 2 })
+    );
 
     // 没有 credentials 权限的清单不能声明 login。
     let bad = m.replace("\"network\",\"credentials\"", "\"network\"");
@@ -187,15 +267,27 @@ fn storage_roundtrip_and_host_error() {
         } };
     "#;
     let mut inst = open("storage", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]),
+    );
     let c = &out["calls"][0];
     assert_eq!(c["op"], "storage.set");
-    let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": true, "value": null }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": c["id"], "ok": true, "value": null }]),
+    );
     let c = &out["calls"][0];
     assert_eq!(c["op"], "storage.get");
-    let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": true, "value": "abc" }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": c["id"], "ok": true, "value": "abc" }]),
+    );
     let c = &out["calls"][0];
-    let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": false, "error": "disk on fire" }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": c["id"], "ok": false, "error": "disk on fire" }]),
+    );
     assert_eq!(out["settled"][0]["value"], json!(["abc", "disk on fire"]));
 }
 
@@ -224,11 +316,17 @@ fn host_call_args_are_normalized_not_forwarded() {
         };
     "#;
     let mut inst = open("normalize", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "login", "args": {} }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "login", "args": {} }]),
+    );
     let c = &out["calls"][0];
     assert_eq!(c["op"], "credentials.get");
     assert_eq!(c["args"], json!({ "key": "cookie" }), "{out}");
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "account", "args": {} }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 2, "method": "account", "args": {} }]),
+    );
     let c = &out["calls"][0];
     assert_eq!(c["op"], "storage.set");
     assert_eq!(c["args"], json!({ "key": "k", "value": "v" }), "{out}");
@@ -261,12 +359,18 @@ fn host_call_flood_is_fatal() {
         } };
     "#;
     let mut inst = open("flood", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]),
+    );
     let fatal = out["fatal"].as_str().expect("超限必须 fatal");
     assert!(fatal.contains("宿主调用"), "{fatal}");
     assert!(out["calls"].as_array().unwrap().len() <= 64);
     // 实例作废后再 step 只回 fatal。
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "lyrics" }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 2, "method": "lyrics" }]),
+    );
     assert!(out["fatal"].is_string());
 }
 
@@ -281,12 +385,18 @@ fn forged_settle_and_unknown_complete_are_dropped() {
         }, noop() { return 'x'.repeat(1000); } };
     "#;
     let mut inst = open("forge", &m, &[("main.js", js)], 2000).unwrap();
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]),
+    );
     assert!(out["fatal"].is_null(), "{out}");
     let settled = out["settled"].as_array().unwrap();
     assert_eq!(settled.len(), 1, "{out}");
     assert_eq!(settled[0]["inv"], 1);
-    let out = step(&mut inst, json!([{ "op": "complete", "call": 999, "ok": true, "value": null }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": 999, "ok": true, "value": null }]),
+    );
     assert!(out["fatal"].is_null(), "{out}");
 }
 
@@ -294,7 +404,9 @@ fn forged_settle_and_unknown_complete_are_dropped() {
 /// 不等锁、也不对实例取 `&mut`。
 #[test]
 fn check_urls_runs_concurrently_with_step() {
-    use super::{ffm_plugin_check_urls, ffm_plugin_close, ffm_plugin_open, ffm_plugin_step, PluginHandle};
+    use super::{
+        PluginHandle, ffm_plugin_check_urls, ffm_plugin_close, ffm_plugin_open, ffm_plugin_step,
+    };
     let m = manifest_with(&["lyrics"], &["network"], &["api.example.com"]);
     let js = r#"
         module.exports = { async lyrics() {
@@ -314,7 +426,17 @@ fn check_urls_runs_concurrently_with_step() {
     let mut out: *mut u8 = std::ptr::null_mut();
     let mut len = 0usize;
     unsafe {
-        assert_eq!(ffm_plugin_open(dir.as_ptr(), dir.len(), 2000, &mut handle, &mut out, &mut len), 0);
+        assert_eq!(
+            ffm_plugin_open(
+                dir.as_ptr(),
+                dir.len(),
+                2000,
+                &mut handle,
+                &mut out,
+                &mut len
+            ),
+            0
+        );
         crate::ffm_free_bytes(out, len);
     }
     assert!(!handle.is_null());
@@ -324,7 +446,15 @@ fn check_urls_runs_concurrently_with_step() {
         let mut out: *mut u8 = std::ptr::null_mut();
         let mut len = 0usize;
         unsafe {
-            ffm_plugin_step(addr as *mut PluginHandle, ops.as_ptr(), ops.len(), std::ptr::null(), 0, &mut out, &mut len);
+            ffm_plugin_step(
+                addr as *mut PluginHandle,
+                ops.as_ptr(),
+                ops.len(),
+                std::ptr::null(),
+                0,
+                &mut out,
+                &mut len,
+            );
             let frame = std::slice::from_raw_parts(out, len);
             let n = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
             let v: Value = serde_json::from_slice(&frame[4..4 + n]).unwrap();
@@ -336,12 +466,18 @@ fn check_urls_runs_concurrently_with_step() {
     let urls = br#"["https://api.example.com/a","https://evil.com/"]"#;
     let t = std::time::Instant::now();
     let checked: Value = unsafe {
-        assert_eq!(ffm_plugin_check_urls(handle, urls.as_ptr(), urls.len(), 0, &mut out, &mut len), 0);
+        assert_eq!(
+            ffm_plugin_check_urls(handle, urls.as_ptr(), urls.len(), 0, &mut out, &mut len),
+            0
+        );
         let v = serde_json::from_slice(std::slice::from_raw_parts(out, len)).unwrap();
         crate::ffm_free_bytes(out, len);
         v
     };
-    assert!(t.elapsed() < std::time::Duration::from_millis(200), "check_urls 等了 step 的锁");
+    assert!(
+        t.elapsed() < std::time::Duration::from_millis(200),
+        "check_urls 等了 step 的锁"
+    );
     assert_eq!(checked["urls"][0], "https://api.example.com/a");
     assert!(checked["urls"][1].is_null());
     let stepped = stepper.join().unwrap();
@@ -368,20 +504,35 @@ fn http_bodies_travel_as_bytes() {
         };
     "#;
     let mut inst = open("bytes", &m, &[("main.js", js)], 2000).unwrap();
-    let (out, blob) = step_blob(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "search", "args": {} }]), &[]);
+    let (out, blob) = step_blob(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 1, "method": "search", "args": {} }]),
+        &[],
+    );
     let call = &out["calls"][0];
     assert_eq!(call["args"]["body"], json!({ "off": 0, "len": 4 }), "{out}");
     assert_eq!(blob, vec![0u8, 1, 2, 255]);
     assert!(call["args"].get("bodyBase64").is_none());
-    let (out, _) = step_blob(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
+    let (out, _) = step_blob(
+        &mut inst,
+        json!([{ "op": "complete", "call": call["id"], "ok": true,
         "value": { "status": 200, "url": "https://api.example.com/p", "headers": {},
-                   "body": { "off": 1, "len": 3 } } }]), &[9, 7, 8, 6]);
+                   "body": { "off": 1, "len": 3 } } }]),
+        &[9, 7, 8, 6],
+    );
     assert_eq!(out["settled"][0]["value"], json!([7, 8, 6]), "{out}");
 
-    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "lyrics", "args": {} }]));
+    let out = step(
+        &mut inst,
+        json!([{ "op": "invoke", "inv": 2, "method": "lyrics", "args": {} }]),
+    );
     let call = &out["calls"][0];
-    let (out, _) = step_blob(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
+    let (out, _) = step_blob(
+        &mut inst,
+        json!([{ "op": "complete", "call": call["id"], "ok": true,
         "value": { "status": 200, "url": "https://api.example.com/x", "headers": {},
-                   "body": { "off": 2, "len": 9 } } }]), &[1, 2, 3]);
+                   "body": { "off": 2, "len": 9 } } }]),
+        &[1, 2, 3],
+    );
     assert_eq!(out["settled"][0]["value"], "响应体引用越界", "{out}");
 }

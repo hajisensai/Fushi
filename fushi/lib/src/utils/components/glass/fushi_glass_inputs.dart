@@ -170,7 +170,9 @@ InputDecoration? fushiMd3FieldDecoration(
 
   final EdgeInsetsGeometry? padding = search
       ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
-      : decoration.contentPadding;
+      : (labelled
+            ? fushiFilledLabelContentPadding(context, decoration)
+            : decoration.contentPadding);
   return decoration.copyWith(
     filled: true,
     fillColor: decoration.fillColor ?? cs.surfaceContainerHigh,
@@ -190,6 +192,35 @@ InputDecoration? fushiMd3FieldDecoration(
     suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
     contentPadding: padding,
   );
+}
+
+/// 带标题的填充式字段（M3 filled text field）的内边距：浮起标题的顶部留白
+/// **不被平台密度吃掉**（反馈 jIlpJV-xW4「文字显示不全」）。
+///
+/// InputDecorator 把填充式字段的浮起标题画在 `contentPadding.top + 密度dy/2`
+/// 处，M3 默认 top 是 8（dense 4）。桌面（Windows / macOS / Linux）主题默认
+/// `VisualDensity.compact`（dy = -8），于是 dense 字段的标题顶在 0——字形直接贴着
+/// 填充块上沿被切（字幕合集面板的「Jimaku API 密钥」「番剧名」「偏好版本」）；
+/// 非 dense 也只剩 4。密度本意是压整体高度，这里把它从顶部补回来、只让它作用在
+/// 底部：标题顶距在所有平台都等于 M3 默认（8 / dense 4）。
+///
+/// 调用方显式给了 [InputDecoration.contentPadding] 或 isCollapsed 时原样返回；
+/// 密度不为负时返回 null，交给 InputDecorator 的 M3 默认。
+EdgeInsetsGeometry? fushiFilledLabelContentPadding(
+  BuildContext context,
+  InputDecoration decoration,
+) {
+  if (decoration.contentPadding != null || (decoration.isCollapsed ?? false)) {
+    return decoration.contentPadding;
+  }
+  final double dy =
+      (decoration.visualDensity ?? Theme.of(context).visualDensity)
+          .baseSizeAdjustment
+          .dy;
+  if (dy >= 0) return null;
+  // InputDecorator 的 M3 填充式默认：dense (12, 4, 12, 4)，常规 (12, 8, 12, 8)。
+  final double base = (decoration.isDense ?? false) ? 4.0 : 8.0;
+  return EdgeInsetsDirectional.fromSTEB(12, base - dy / 2, 12, base);
 }
 
 /// M3E outlined 变体（见 [FushiOutlinedFieldBorder]）：透明底、1px outline 描边，

@@ -78,7 +78,8 @@ pub fn ttml(s: &str) -> Option<i64> {
     if s.is_empty() {
         return None;
     }
-    let num_part = |suffix: &str| -> Option<f64> { s.strip_suffix(suffix)?.trim().parse::<f64>().ok() };
+    let num_part =
+        |suffix: &str| -> Option<f64> { s.strip_suffix(suffix)?.trim().parse::<f64>().ok() };
     if let Some(v) = num_part("ms") {
         return Some(v.round() as i64);
     }

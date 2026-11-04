@@ -30,7 +30,9 @@ pub struct Writer {
 
 impl Writer {
     pub fn new() -> Self {
-        Writer { buf: Vec::with_capacity(4096) }
+        Writer {
+            buf: Vec::with_capacity(4096),
+        }
     }
     pub fn u8(&mut self, v: u8) {
         self.buf.push(v);
@@ -81,13 +83,16 @@ impl<'a> Reader<'a> {
         self.take(1).map(|b| b[0])
     }
     pub fn u32(&mut self) -> Option<u32> {
-        self.take(4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        self.take(4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
     }
     pub fn i32(&mut self) -> Option<i32> {
-        self.take(4).map(|b| i32::from_le_bytes(b.try_into().unwrap()))
+        self.take(4)
+            .map(|b| i32::from_le_bytes(b.try_into().unwrap()))
     }
     pub fn i64(&mut self) -> Option<i64> {
-        self.take(8).map(|b| i64::from_le_bytes(b.try_into().unwrap()))
+        self.take(8)
+            .map(|b| i64::from_le_bytes(b.try_into().unwrap()))
     }
     pub fn str(&mut self) -> Option<String> {
         let n = self.u32()? as usize;
@@ -184,7 +189,11 @@ pub fn decode(data: &[u8]) -> Option<Timeline> {
         let start_ms = r.i64()?;
         let end_ms = r.i64()?;
         let agent = r.i32()?;
-        let role = if r.u8()? == 1 { Role::Background } else { Role::Main };
+        let role = if r.u8()? == 1 {
+            Role::Background
+        } else {
+            Role::Main
+        };
         let mut line = Line {
             start_ms,
             end_ms,
@@ -199,7 +208,13 @@ pub fn decode(data: &[u8]) -> Option<Timeline> {
             let end_ms = r.i64()?;
             let fill = Fill::from_u8(r.u8()?);
             let ruby = r.opt_str()?;
-            line.syllables.push(Syllable { text, start_ms, end_ms, fill, ruby });
+            line.syllables.push(Syllable {
+                text,
+                start_ms,
+                end_ms,
+                fill,
+                ruby,
+            });
         }
         let tr = r.u32()? as usize;
         for _ in 0..tr {

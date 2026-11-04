@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show RendererBinding;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
@@ -80,6 +81,7 @@ void main() {
     bool playing = false,
     bool heldForLookup = false,
     ValueChanged<Rect>? onLyricsRect,
+    LyricsPlayerClock? clock,
   }) => MaterialApp(
     home: Scaffold(
       body: ReaderLyricsPlayerOverlay(
@@ -98,7 +100,7 @@ void main() {
           playbackHeldForLookup: heldForLookup,
           speed: 1,
           lyricsMasked: false,
-          clock: _Clock(),
+          clock: clock ?? _Clock(),
           controlsStyle: style,
           compactControlsExpanded: expanded,
         ),
@@ -233,6 +235,35 @@ void main() {
       expect(calls.last, isEmpty);
       await tester.tap(key('lyrics_close_button'));
       expect(calls.last, 'exit');
+      expect(tester.takeException(), isNull);
+    });
+
+    // BUG-4027：新版宽屏原先只在左岛留了一个百分比，阅读速度 / 已读字数 / 本次
+    // 阅读时长全丢了（经典宽屏左栏、窄屏顶栏都有）。
+    testWidgets('reading stats (speed · progress · session) above the seek '
+        'line', (WidgetTester tester) async {
+      await pumpAt(
+        tester,
+        const Size(1600, 900),
+        app(clock: const _StatsClock()),
+      );
+      final Finder stats = key('lyrics_modern_stats_line');
+      expect(stats, findsOneWidget);
+      final String text = tester
+          .widgetList<Text>(
+            find.descendant(of: stats, matching: find.byType(Text)),
+          )
+          .map((Text w) => w.data ?? '')
+          .join(' · ');
+      expect(text, contains(t.reader_stats_chars_per_hour(n: '7,200')));
+      expect(text, contains('2.2%'));
+      expect(text, contains('30:00'));
+      // 在进度线上方、浮岛之上（与两端时间同一行）。
+      final Rect statsRect = tester.getRect(stats);
+      final Rect close = tester.getRect(key('lyrics_close_button'));
+      expect(statsRect.bottom, lessThan(close.top));
+      final Rect lyrics = tester.getRect(key('lyrics_view_probe'));
+      expect(statsRect.top, greaterThanOrEqualTo(lyrics.bottom));
       expect(tester.takeException(), isNull);
     });
 
@@ -729,6 +760,26 @@ void main() {
       expect(f(audio: -2000), isFalse, reason: '往回走');
     });
   });
+}
+
+/// 带读数的时钟：30 分钟读 3600 字（= 7,200 字/时），全书 1,234 / 56,789。
+class _StatsClock implements LyricsPlayerClock {
+  const _StatsClock();
+
+  @override
+  Duration get position => const Duration(minutes: 3);
+
+  @override
+  Duration get duration => const Duration(minutes: 10);
+
+  @override
+  LyricsPlayerStats get stats => const LyricsPlayerStats(
+    sessionDurationMs: 30 * 60 * 1000,
+    sessionChars: 3600,
+    tracking: true,
+    currentChars: 1234,
+    totalChars: 56789,
+  );
 }
 
 class _ConstClock implements LyricsPlayerClock {

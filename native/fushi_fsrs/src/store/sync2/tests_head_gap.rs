@@ -10,13 +10,16 @@ use std::collections::BTreeSet;
 
 use serde_json::json;
 
-use super::tests::{deck_entity, edit, projection, review, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, deck_entity, edit, projection, review};
 use super::transport::{HeadWrite, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS};
 
 const T0: i64 = 1_700_000_000_000;
 
 fn device_id(d: &Device) -> String {
-    d.core.sync2_identity(P, T0).unwrap()["device"].as_str().unwrap().to_owned()
+    d.core.sync2_identity(P, T0).unwrap()["device"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 /// 发件到 [location]（分批、逐批确认），返回水位；只发段，不写 head。
@@ -32,7 +35,10 @@ fn upload(d: &Device, bucket: &mut Bucket, location: &str) -> u64 {
         for (path, bytes) in batch.files {
             bucket.0.insert(path, bytes);
         }
-        let (accepted, mark) = d.core.sync2_outbox_ack(P, location, &batch.segments).unwrap();
+        let (accepted, mark) = d
+            .core
+            .sync2_outbox_ack(P, location, &batch.segments)
+            .unwrap();
         assert!(accepted);
         if !batch.more {
             return mark;
@@ -42,7 +48,11 @@ fn upload(d: &Device, bucket: &mut Bucket, location: &str) -> u64 {
 
 /// 写 head 到 [location]，并按生产两段式删掉可删的旧段。返回是否写了。
 fn write_head(d: &Device, bucket: &mut Bucket, location: &str, upto: u64, now: i64) -> bool {
-    match d.core.sync2_head_if_changed(P, location, upto, now, None).unwrap() {
+    match d
+        .core
+        .sync2_head_if_changed(P, location, upto, now, None)
+        .unwrap()
+    {
         HeadWrite::Written {
             path,
             bytes,
@@ -88,7 +98,12 @@ fn missing_referenced(bucket: &Bucket) -> Vec<String> {
 /// 作者自检（生产里随一轮的第一批发件带上 `present`）：列 [bucket] 上本机目录交给内核。
 fn audit(d: &Device, bucket: &Bucket, location: &str) -> usize {
     let prefix = format!("devices/{}/", device_id(d));
-    let present: BTreeSet<String> = bucket.0.keys().filter_map(|k| k.strip_prefix(&prefix)).map(str::to_owned).collect();
+    let present: BTreeSet<String> = bucket
+        .0
+        .keys()
+        .filter_map(|k| k.strip_prefix(&prefix))
+        .map(str::to_owned)
+        .collect();
     d.core.sync2_audit_own(P, location, &present).unwrap()
 }
 
@@ -99,7 +114,9 @@ fn bulky(deck: &str, tag: &str, bytes: usize, seed: &mut u64) -> Vec<serde_json:
         .map(|j| {
             let v: String = (0..PIECE)
                 .map(|_| {
-                    *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    *seed = seed
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
                     char::from(b'!' + ((*seed >> 33) % 90) as u8)
                 })
                 .collect();
@@ -117,7 +134,13 @@ fn head_never_references_a_segment_merged_after_the_last_upload() {
     let mut l1 = Bucket::default();
     let mut l2 = Bucket::default();
     let deck = super::config::default_deck_id(P);
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "name", json!("Default")),
+        ],
+    );
     let mut seed = 7u64;
     let mut recuts = 0;
     for i in 0..4i64 {
@@ -125,7 +148,10 @@ fn head_never_references_a_segment_merged_after_the_last_upload() {
         a.apply(now, bulky(&deck, &format!("a{i}"), 2_300_000, &mut seed));
         let upto = upload(&a, &mut l1, "l1");
         // 交错：L1 确认之后，本机又写了一批，另一个位置的发件在这里跑（同一台设备的另一个进程 / 旧版本未串行的轮次）。
-        a.apply(now + 1, bulky(&deck, &format!("b{i}"), 2_300_000, &mut seed));
+        a.apply(
+            now + 1,
+            bulky(&deck, &format!("b{i}"), 2_300_000, &mut seed),
+        );
         let upto2 = upload(&a, &mut l2, "l2");
         if !write_head(&a, &mut l1, "l1", upto, now) {
             recuts += 1;
@@ -137,7 +163,10 @@ fn head_never_references_a_segment_merged_after_the_last_upload() {
             "round {i}: L1 head references segments that were never uploaded there: {missing:?}"
         );
     }
-    assert!(recuts > 0, "the interleaving must actually hit a post-ack merge");
+    assert!(
+        recuts > 0,
+        "the interleaving must actually hit a post-ack merge"
+    );
     // 过了宽限期，正常轮次（先发后写 head）几代：合并掉的旧段删光，head 仍然只引用在的段。
     for k in 0..4i64 {
         let now = T0 + 2 * super::tests::DAY + 1000 * k;
@@ -157,7 +186,13 @@ fn author_reuploads_own_segments_missing_from_a_location() {
     let a = Device::new("heal-a");
     let mut bucket = Bucket::default();
     let deck = super::config::default_deck_id(P);
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "name", json!("Default")),
+        ],
+    );
     // 一个满段（不参与合并）打底，之后每轮一条复习：位置上至少两段，丢掉第一段后后面的都收不了。
     let mut seed = 11u64;
     a.apply(T0, bulky(&deck, "base", 2_800_000, &mut seed));
@@ -175,7 +210,9 @@ fn author_reuploads_own_segments_missing_from_a_location() {
         .filter(|(k, _)| k.starts_with(&format!("devices/{dev}/head-")))
         .max_by_key(|(k, _)| (*k).clone())
         .unwrap();
-    let segs = crate::sync2::segment::Head::decode(latest).unwrap().segment_files();
+    let segs = crate::sync2::segment::Head::decode(latest)
+        .unwrap()
+        .segment_files();
     assert!(segs.len() >= 2, "{segs:?}");
     let lost = format!("devices/{dev}/{}", segs[0]);
     bucket.0.remove(&lost);
@@ -211,8 +248,13 @@ fn purged_with_restamps(tag: &str, bucket: &mut Bucket) -> Device {
         a.sync(bucket, "loc", T0 + i);
     }
     a.core.sync2_purge(P, "deck", "DX", T0 + 10).unwrap();
-    let restamps: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 1")[1][0].parse().unwrap();
-    assert!(restamps >= 3, "every content segment of DX is a same-name rewrite: {restamps}");
+    let restamps: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 1")[1][0]
+        .parse()
+        .unwrap();
+    assert!(
+        restamps >= 3,
+        "every content segment of DX is a same-name rewrite: {restamps}"
+    );
     a
 }
 
@@ -231,9 +273,14 @@ fn same_name_rewrites_do_not_hold_back_the_head() {
     }
     let (accepted, mark) = a.core.sync2_outbox_ack(P, "loc", &batch.segments).unwrap();
     assert!(accepted);
-    let left: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 1")[1][0].parse().unwrap();
+    let left: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 1")[1][0]
+        .parse()
+        .unwrap();
     assert!(left >= 2, "same-name rewrites are still pending: {left}");
-    assert!(write_head(&a, &mut bucket, "loc", mark, T0 + 11), "pending same-name rewrites must not hold back the head");
+    assert!(
+        write_head(&a, &mut bucket, "loc", mark, T0 + 11),
+        "pending same-name rewrites must not hold back the head"
+    );
     assert!(missing_referenced(&bucket).is_empty());
     // 剩下的改写随后几轮传完；新设备收到的与作者一致。
     a.sync(&mut bucket, "loc", T0 + 12);
@@ -256,14 +303,26 @@ fn a_missing_segment_still_holds_back_the_head_when_it_is_also_a_same_name_rewri
         .filter(|(k, _)| k.starts_with(&format!("devices/{dev}/head-")))
         .max_by_key(|(k, _)| (*k).clone())
         .unwrap();
-    let segs = crate::sync2::segment::Head::decode(latest).unwrap().segment_files();
+    let segs = crate::sync2::segment::Head::decode(latest)
+        .unwrap()
+        .segment_files();
     let lost = format!("devices/{dev}/{}", segs[0]);
     bucket.0.remove(&lost);
     assert_eq!(audit(&a, &bucket, "loc"), 1);
-    let gaps: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 0")[1][0].parse().unwrap();
-    assert_eq!(gaps, 1, "the missing segment is registered as a gap even though the purge registered it first");
-    let uploaded: u64 = a.rows("SELECT uploaded FROM sync2_locations")[1][0].parse().unwrap();
-    assert!(!write_head(&a, &mut bucket, "loc", uploaded, T0 + 11), "a head must never reference a segment missing from the location");
+    let gaps: usize = a.rows("SELECT COUNT(*) FROM sync2_rewrites WHERE restamp = 0")[1][0]
+        .parse()
+        .unwrap();
+    assert_eq!(
+        gaps, 1,
+        "the missing segment is registered as a gap even though the purge registered it first"
+    );
+    let uploaded: u64 = a.rows("SELECT uploaded FROM sync2_locations")[1][0]
+        .parse()
+        .unwrap();
+    assert!(
+        !write_head(&a, &mut bucket, "loc", uploaded, T0 + 11),
+        "a head must never reference a segment missing from the location"
+    );
     a.sync(&mut bucket, "loc", T0 + 12);
     assert!(bucket.0.contains_key(&lost));
     assert!(missing_referenced(&bucket).is_empty());

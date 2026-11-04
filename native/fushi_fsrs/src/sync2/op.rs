@@ -70,7 +70,10 @@ impl Op {
     /// 原载荷的 BLAKE3（哈希链按它算，所以清除载荷不影响链与签名的可验证性）。
     pub fn payload_hash(&self) -> [u8; 32] {
         if self.purged {
-            self.payload.get(..32).and_then(|h| h.try_into().ok()).unwrap_or([0; 32])
+            self.payload
+                .get(..32)
+                .and_then(|h| h.try_into().ok())
+                .unwrap_or([0; 32])
         } else {
             *blake3::hash(&self.payload).as_bytes()
         }
@@ -81,7 +84,11 @@ impl Op {
         if self.purged {
             return self.clone();
         }
-        Op { payload: self.payload_hash().to_vec().into(), purged: true, ..self.clone() }
+        Op {
+            payload: self.payload_hash().to_vec().into(),
+            purged: true,
+            ..self.clone()
+        }
     }
 
     /// 作者认定是 [of] 的副本之后的骨架（[Body::Dedup]）：原载荷哈希（链值不变）+ [of] + 旧修改记录的旧戳
@@ -107,7 +114,11 @@ impl Op {
                 l.write(&mut w);
             }
         }
-        Ok(Op { payload: w.into_vec().into(), purged: true, ..self.clone() })
+        Ok(Op {
+            payload: w.into_vec().into(),
+            purged: true,
+            ..self.clone()
+        })
     }
 
     /// 信封（不含载荷）的规范编码：链值 = blake3(前一环 || 信封 || 载荷哈希)。
@@ -173,7 +184,15 @@ impl Op {
         let purged = r.bool()?;
         let payload: Arc<[u8]> = r.bytes()?.into();
         check_skeleton(purged, &payload)?;
-        Ok(Op { id: OpId { device, seq }, hlc, deps: Arc::new(deps), kind, schema, payload, purged })
+        Ok(Op {
+            id: OpId { device, seq },
+            hlc,
+            deps: Arc::new(deps),
+            kind,
+            schema,
+            payload,
+            purged,
+        })
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -188,7 +207,11 @@ pub(crate) fn skeleton_body(payload: &[u8]) -> DResult<Body> {
     if payload.len() == 32 {
         return Ok(Body::Purged);
     }
-    let mut r = Reader::new(payload.get(32..).ok_or(DecodeError("purged op without payload hash"))?);
+    let mut r = Reader::new(
+        payload
+            .get(32..)
+            .ok_or(DecodeError("purged op without payload hash"))?,
+    );
     if r.u8()? != 1 {
         return Err(DecodeError("duplicate skeleton version"));
     }
@@ -199,7 +222,10 @@ pub(crate) fn skeleton_body(payload: &[u8]) -> DResult<Body> {
         1 => Some(LegacyStamp::read(&mut r)?),
         _ => return Err(DecodeError("duplicate legacy tag")),
     };
-    Ok(Body::Duplicate { of: OpId { device, seq }, legacy })
+    Ok(Body::Duplicate {
+        of: OpId { device, seq },
+        legacy,
+    })
 }
 
 /// 骨架（`purged`）的载荷要么是 32 字节哈希，要么是哈希 + 能解开的副本说明；解不开的整条拒收。
@@ -224,7 +250,13 @@ pub enum EntKind {
 }
 
 impl EntKind {
-    pub const ALL: [EntKind; 5] = [EntKind::Profile, EntKind::Deck, EntKind::NoteType, EntKind::Note, EntKind::Card];
+    pub const ALL: [EntKind; 5] = [
+        EntKind::Profile,
+        EntKind::Deck,
+        EntKind::NoteType,
+        EntKind::Note,
+        EntKind::Card,
+    ];
 
     pub fn wire(self) -> &'static str {
         match self {
@@ -241,7 +273,10 @@ impl EntKind {
     }
 
     fn from_code(c: u8) -> DResult<EntKind> {
-        EntKind::ALL.get(c as usize).copied().ok_or(DecodeError("entity kind"))
+        EntKind::ALL
+            .get(c as usize)
+            .copied()
+            .ok_or(DecodeError("entity kind"))
     }
 }
 
@@ -351,39 +386,76 @@ pub struct LogBody {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Body {
     /// 身份记录：创建即不可变（Dart `SrsEntityRecord`，`data` 是 `d` 的规范 JSON）。
-    Entity { kind: EntKind, id: Key, data: String },
+    Entity {
+        kind: EntKind,
+        id: Key,
+        data: String,
+    },
     Edit(EditBody),
     Log(LogBody),
     /// 标签 OR-Set（加胜）：移除只抹掉移除者见过的那些添加。
-    TagAdd { note: Key, tag: String },
-    TagRemove { note: Key, tag: String },
+    TagAdd {
+        note: Key,
+        tag: String,
+    },
+    TagRemove {
+        note: Key,
+        tag: String,
+    },
     /// 标签的显示顺序提示（作者那一刻的整列表；HLC 大者胜）。OR-Set 本身无序，投影按它排，不在其中的按添加时刻。
-    TagOrder { note: Key, tags: Vec<String> },
+    TagOrder {
+        note: Key,
+        tags: Vec<String>,
+    },
     /// 时间线还原点（设计 §10.2）。
-    Checkpoint { name: String, reason: String },
+    Checkpoint {
+        name: String,
+        reason: String,
+    },
     /// 彻底清除某实体的内容载荷（设计 §10.5），唯一改写历史的操作。
-    Purge { kind: EntKind, entity: Key },
+    Purge {
+        kind: EntKind,
+        entity: Key,
+    },
     /// 媒体文件名 → 内容（内容寻址，设计 §6.4）。
-    Media { name: String, sha256: [u8; 32], size: u64 },
+    Media {
+        name: String,
+        sha256: [u8; 32],
+        size: u64,
+    },
     /// 某个存储位置的媒体目录里有 / 没有这些文件（设计 §6.4）：作者上传 / 下载成功、列举到，或读取时确认
     /// 不在之后写下的事实。[location] 是位置身份 + 媒体目录（加密媒体的目录按密钥指纹分），对内核不透明。
     /// 每个（位置, 名字）按 HLC 大者胜；各设备据此知道远端有什么，媒体对账不再列目录。
-    MediaAt { location: String, flags: u8, names: Vec<String> },
+    MediaAt {
+        location: String,
+        flags: u8,
+        names: Vec<String>,
+    },
     /// 两个存活牌组全名相同：[from] 并入 [to]（ID 较小者），之后指向 from 的按 to 处理（设计 §3.1）。
-    DeckAlias { from: Key, to: Key },
+    DeckAlias {
+        from: Key,
+        to: Key,
+    },
     /// 旧协议里本机不认识的事件，原样保存（JSON 原文）。
-    LegacyUnknown { json: String },
+    LegacyUnknown {
+        json: String,
+    },
     /// 作者声明：自己的这些旧操作（seq）各是另一台设备那条操作（[OpId]）的副本——同一份迁移数据被两台设备
     /// 各自包成了操作（存量重复流）。作者只对逐条核对过的配对发（store/sync2/dedup.rs）：日志 / 身份记录载荷
     /// 逐字节相同；旧修改记录除旧写入者改名外全同。读者把作者的那条当副本：投影里多出来的并存修改记录行删掉、
     /// 删除扣留的索引只认原件、本地载荷换成骨架。按作者 seq 升序。
-    Dedup { pairs: Vec<(u64, OpId)> },
+    Dedup {
+        pairs: Vec<(u64, OpId)>,
+    },
     /// 本版本不认识的种类：原样保存、原样转发、不应用。
     Unknown,
     /// 载荷已被彻底清除，只剩骨架。
     Purged,
     /// 作者认定的副本骨架（[Op::duplicate]）：原件是 [of]；旧修改记录带着旧戳 [legacy]（闭包照算）。
-    Duplicate { of: OpId, legacy: Option<LegacyStamp> },
+    Duplicate {
+        of: OpId,
+        legacy: Option<LegacyStamp>,
+    },
 }
 
 impl Body {
@@ -453,7 +525,11 @@ impl Body {
                 w.raw(sha256);
                 w.uv(*size);
             }
-            Body::MediaAt { location, flags, names } => {
+            Body::MediaAt {
+                location,
+                flags,
+                names,
+            } => {
                 w.str(location);
                 w.u8(*flags);
                 w.uv(names.len() as u64);
@@ -509,11 +585,25 @@ impl Body {
                     1 => Some(LegacyStamp::read(r)?),
                     _ => return Err(DecodeError("edit legacy tag")),
                 };
-                Body::Edit(EditBody { kind, entity, key, value, machine: flags & 1 != 0, ts: (flags >> 1) & 1, legacy })
+                Body::Edit(EditBody {
+                    kind,
+                    entity,
+                    key,
+                    value,
+                    machine: flags & 1 != 0,
+                    ts: (flags >> 1) & 1,
+                    legacy,
+                })
             }
             KIND_LOG => Body::Log(read_log(r)?),
-            KIND_TAG_ADD => Body::TagAdd { note: Key::read(r)?, tag: r.str()?.to_owned() },
-            KIND_TAG_REMOVE => Body::TagRemove { note: Key::read(r)?, tag: r.str()?.to_owned() },
+            KIND_TAG_ADD => Body::TagAdd {
+                note: Key::read(r)?,
+                tag: r.str()?.to_owned(),
+            },
+            KIND_TAG_REMOVE => Body::TagRemove {
+                note: Key::read(r)?,
+                tag: r.str()?.to_owned(),
+            },
             KIND_TAG_ORDER => {
                 let note = Key::read(r)?;
                 let n = r.uv()?;
@@ -526,8 +616,14 @@ impl Body {
                 }
                 Body::TagOrder { note, tags }
             }
-            KIND_CHECKPOINT => Body::Checkpoint { name: r.str()?.to_owned(), reason: r.str()?.to_owned() },
-            KIND_PURGE => Body::Purge { kind: EntKind::from_code(r.u8()?)?, entity: Key::read(r)? },
+            KIND_CHECKPOINT => Body::Checkpoint {
+                name: r.str()?.to_owned(),
+                reason: r.str()?.to_owned(),
+            },
+            KIND_PURGE => Body::Purge {
+                kind: EntKind::from_code(r.u8()?)?,
+                entity: Key::read(r)?,
+            },
             KIND_MEDIA => Body::Media {
                 name: r.str()?.to_owned(),
                 sha256: r.raw(32)?.try_into().map_err(|_| DecodeError("sha256"))?,
@@ -544,10 +640,19 @@ impl Body {
                 for _ in 0..n {
                     names.push(r.str()?.to_owned());
                 }
-                Body::MediaAt { location, flags, names }
+                Body::MediaAt {
+                    location,
+                    flags,
+                    names,
+                }
             }
-            KIND_DECK_ALIAS => Body::DeckAlias { from: Key::read(r)?, to: Key::read(r)? },
-            KIND_LEGACY_UNKNOWN => Body::LegacyUnknown { json: r.str()?.to_owned() },
+            KIND_DECK_ALIAS => Body::DeckAlias {
+                from: Key::read(r)?,
+                to: Key::read(r)?,
+            },
+            KIND_LEGACY_UNKNOWN => Body::LegacyUnknown {
+                json: r.str()?.to_owned(),
+            },
             KIND_DEDUP => {
                 let nd = r.uv()?;
                 if nd > 1 << 16 {
@@ -565,8 +670,16 @@ impl Body {
                 let mut own = 0u64;
                 for _ in 0..n {
                     own = own.checked_add(r.uv()?).ok_or(DecodeError("dedup seq"))?;
-                    let d = *devices.get(r.uv()? as usize).ok_or(DecodeError("dedup device"))?;
-                    pairs.push((own, OpId { device: d, seq: r.uv()? }));
+                    let d = *devices
+                        .get(r.uv()? as usize)
+                        .ok_or(DecodeError("dedup device"))?;
+                    pairs.push((
+                        own,
+                        OpId {
+                            device: d,
+                            seq: r.uv()?,
+                        },
+                    ));
                 }
                 Body::Dedup { pairs }
             }
@@ -576,8 +689,22 @@ impl Body {
 }
 
 /// 日志种类的紧凑码（持久化名冻结）；不认识的写字符串。
-const LOG_KINDS: [&str; 6] = ["review", "manual", "reschedule", "importAnchor", "handOff", "undo"];
-const RTYPES: [&str; 6] = ["learn", "review", "relearn", "filtered", "manual", "rescheduled"];
+const LOG_KINDS: [&str; 6] = [
+    "review",
+    "manual",
+    "reschedule",
+    "importAnchor",
+    "handOff",
+    "undo",
+];
+const RTYPES: [&str; 6] = [
+    "learn",
+    "review",
+    "relearn",
+    "filtered",
+    "manual",
+    "rescheduled",
+];
 const ORIGINS: [&str; 2] = ["fushi", "anki"];
 
 fn write_code(w: &mut Writer, table: &[&str], s: &str) {
@@ -595,7 +722,10 @@ fn read_code(r: &mut Reader<'_>, table: &[&str]) -> DResult<String> {
     if c == 255 {
         return Ok(r.str()?.to_owned());
     }
-    table.get(c as usize).map(|s| (*s).to_owned()).ok_or(DecodeError("log code"))
+    table
+        .get(c as usize)
+        .map(|s| (*s).to_owned())
+        .ok_or(DecodeError("log code"))
 }
 
 fn write_log(w: &mut Writer, l: &LogBody) {
@@ -746,7 +876,11 @@ pub(crate) mod tests {
     #[test]
     fn bodies_round_trip() {
         let bodies = vec![
-            Body::Entity { kind: EntKind::Note, id: Key::of("n"), data: r#"{"a":1}"#.into() },
+            Body::Entity {
+                kind: EntKind::Note,
+                id: Key::of("n"),
+                data: r#"{"a":1}"#.into(),
+            },
             Body::Edit(EditBody {
                 kind: EntKind::Card,
                 entity: Key::Uuid(Id([3; 16])),
@@ -763,16 +897,52 @@ pub(crate) mod tests {
                 }),
             }),
             Body::Log(sample_log()),
-            Body::Log(LogBody { kind: "weird".into(), rtype: "odd".into(), origin: "x".into(), intent: Intent::SetDue { due_day: -3 }, ..sample_log() }),
-            Body::TagAdd { note: Key::of("n"), tag: "t".into() },
-            Body::TagRemove { note: Key::of("n"), tag: "t".into() },
-            Body::TagOrder { note: Key::of("n"), tags: vec!["b".into(), "a".into()] },
-            Body::Checkpoint { name: "a".into(), reason: "import".into() },
-            Body::Purge { kind: EntKind::Note, entity: Key::of("n") },
-            Body::Media { name: "a.mp3".into(), sha256: [9; 32], size: 77 },
-            Body::MediaAt { location: "drive:x/media".into(), flags: MEDIA_AT_PRESENT | MEDIA_AT_SEEDED, names: vec!["a.mp3".into(), "b.png".into()] },
-            Body::MediaAt { location: "drive:x/media".into(), flags: 0, names: vec![] },
-            Body::DeckAlias { from: Key::of("b"), to: Key::of("a") },
+            Body::Log(LogBody {
+                kind: "weird".into(),
+                rtype: "odd".into(),
+                origin: "x".into(),
+                intent: Intent::SetDue { due_day: -3 },
+                ..sample_log()
+            }),
+            Body::TagAdd {
+                note: Key::of("n"),
+                tag: "t".into(),
+            },
+            Body::TagRemove {
+                note: Key::of("n"),
+                tag: "t".into(),
+            },
+            Body::TagOrder {
+                note: Key::of("n"),
+                tags: vec!["b".into(), "a".into()],
+            },
+            Body::Checkpoint {
+                name: "a".into(),
+                reason: "import".into(),
+            },
+            Body::Purge {
+                kind: EntKind::Note,
+                entity: Key::of("n"),
+            },
+            Body::Media {
+                name: "a.mp3".into(),
+                sha256: [9; 32],
+                size: 77,
+            },
+            Body::MediaAt {
+                location: "drive:x/media".into(),
+                flags: MEDIA_AT_PRESENT | MEDIA_AT_SEEDED,
+                names: vec!["a.mp3".into(), "b.png".into()],
+            },
+            Body::MediaAt {
+                location: "drive:x/media".into(),
+                flags: 0,
+                names: vec![],
+            },
+            Body::DeckAlias {
+                from: Key::of("b"),
+                to: Key::of("a"),
+            },
             Body::LegacyUnknown { json: "{}".into() },
         ];
         for b in bodies {
@@ -784,8 +954,15 @@ pub(crate) mod tests {
 
     #[test]
     fn media_at_rejects_an_oversized_name_list() {
-        let names: Vec<String> = (0..=MEDIA_AT_MAX_NAMES).map(|i| format!("{i}.mp3")).collect();
-        let bytes = Body::MediaAt { location: "l".into(), flags: MEDIA_AT_PRESENT, names }.encode();
+        let names: Vec<String> = (0..=MEDIA_AT_MAX_NAMES)
+            .map(|i| format!("{i}.mp3"))
+            .collect();
+        let bytes = Body::MediaAt {
+            location: "l".into(),
+            flags: MEDIA_AT_PRESENT,
+            names,
+        }
+        .encode();
         assert!(Body::decode(KIND_MEDIA_AT, &bytes).is_err());
     }
 
@@ -798,9 +975,19 @@ pub(crate) mod tests {
 
     #[test]
     fn known_kind_with_trailing_new_fields_still_decodes() {
-        let mut bytes = Body::TagAdd { note: Key::of("n"), tag: "t".into() }.encode();
+        let mut bytes = Body::TagAdd {
+            note: Key::of("n"),
+            tag: "t".into(),
+        }
+        .encode();
         bytes.extend_from_slice(&[1, 2, 3]);
-        assert_eq!(Body::decode(KIND_TAG_ADD, &bytes).unwrap(), Body::TagAdd { note: Key::of("n"), tag: "t".into() });
+        assert_eq!(
+            Body::decode(KIND_TAG_ADD, &bytes).unwrap(),
+            Body::TagAdd {
+                note: Key::of("n"),
+                tag: "t".into()
+            }
+        );
     }
 
     #[test]
@@ -808,19 +995,43 @@ pub(crate) mod tests {
         let mut deps = Vv::new();
         deps.set(Id([2; 16]), 5);
         let op = Op {
-            id: OpId { device: Id([1; 16]), seq: 3 },
-            hlc: Hlc { wall: 10, logical: 2, device: Id([1; 16]) },
+            id: OpId {
+                device: Id([1; 16]),
+                seq: 3,
+            },
+            hlc: Hlc {
+                wall: 10,
+                logical: 2,
+                device: Id([1; 16]),
+            },
             deps: Arc::new(deps),
             kind: KIND_TAG_ADD,
             schema: SCHEMA,
-            payload: Body::TagAdd { note: Key::of("n"), tag: "t".into() }.encode().into(),
+            payload: Body::TagAdd {
+                note: Key::of("n"),
+                tag: "t".into(),
+            }
+            .encode()
+            .into(),
             purged: false,
         };
         let bytes = op.encode();
         assert_eq!(Op::read(&mut Reader::new(&bytes)).unwrap(), op);
-        assert!(op.saw(&OpId { device: Id([1; 16]), seq: 2 }));
-        assert!(!op.saw(&OpId { device: Id([1; 16]), seq: 3 }));
-        assert!(op.saw(&OpId { device: Id([2; 16]), seq: 5 }));
-        assert!(!op.saw(&OpId { device: Id([2; 16]), seq: 6 }));
+        assert!(op.saw(&OpId {
+            device: Id([1; 16]),
+            seq: 2
+        }));
+        assert!(!op.saw(&OpId {
+            device: Id([1; 16]),
+            seq: 3
+        }));
+        assert!(op.saw(&OpId {
+            device: Id([2; 16]),
+            seq: 5
+        }));
+        assert!(!op.saw(&OpId {
+            device: Id([2; 16]),
+            seq: 6
+        }));
     }
 }

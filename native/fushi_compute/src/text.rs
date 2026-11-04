@@ -1135,9 +1135,7 @@ pub unsafe extern "C" fn ffc_text_align_positions(
             std::slice::from_raw_parts(b_units, b_units_len)
         };
         let valid = |off: &[i32], len: usize| {
-            off[0] == 0
-                && off.windows(2).all(|w| w[0] <= w[1])
-                && off[count] as i64 == len as i64
+            off[0] == 0 && off.windows(2).all(|w| w[0] <= w[1]) && off[count] as i64 == len as i64
         };
         if !valid(a_off, a_all.len()) || !valid(b_off, b_all.len()) {
             return status::INVALID_ARGUMENT;
@@ -1296,18 +1294,32 @@ mod tests {
         let mut out = vec![-1i32; 4 + 3];
         let st = unsafe {
             ffc_text_align_positions(
-                a.as_ptr(), a.len(), a_off.as_ptr(),
-                b.as_ptr(), b.len(), b_off.as_ptr(),
-                3, 400_000, out.as_mut_ptr(), out.len(),
+                a.as_ptr(),
+                a.len(),
+                a_off.as_ptr(),
+                b.as_ptr(),
+                b.len(),
+                b_off.as_ptr(),
+                3,
+                400_000,
+                out.as_mut_ptr(),
+                out.len(),
             )
         };
         assert_eq!(st, status::OK);
         assert_eq!(out, vec![0, 1, 2, 1, 0, 0, 0]);
         let st = unsafe {
             ffc_text_align_positions(
-                a.as_ptr(), a.len(), a_off.as_ptr(),
-                b.as_ptr(), b.len(), b_off.as_ptr(),
-                3, 400_000, out.as_mut_ptr(), out.len() - 1,
+                a.as_ptr(),
+                a.len(),
+                a_off.as_ptr(),
+                b.as_ptr(),
+                b.len(),
+                b_off.as_ptr(),
+                3,
+                400_000,
+                out.as_mut_ptr(),
+                out.len() - 1,
             )
         };
         assert_eq!(st, status::INVALID_ARGUMENT);

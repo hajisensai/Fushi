@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::sync2::op::Body;
 use crate::sync2::segment;
@@ -45,8 +45,17 @@ fn load(dir: &Path, max: usize) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     files(&dir.join("devices"), &mut all);
     all.sort();
     let name = |p: &PathBuf| p.file_name().unwrap().to_string_lossy().into_owned();
-    let heads = all.iter().filter(|p| segment::parse_head_file_name(&name(p)).is_some()).map(|p| std::fs::read(p).unwrap()).collect();
-    let segs = all.iter().filter(|p| name(p).starts_with("seg-")).take(max).map(|p| std::fs::read(p).unwrap()).collect();
+    let heads = all
+        .iter()
+        .filter(|p| segment::parse_head_file_name(&name(p)).is_some())
+        .map(|p| std::fs::read(p).unwrap())
+        .collect();
+    let segs = all
+        .iter()
+        .filter(|p| name(p).starts_with("seg-"))
+        .take(max)
+        .map(|p| std::fs::read(p).unwrap())
+        .collect();
     (heads, segs)
 }
 
@@ -55,7 +64,10 @@ fn ms(t: Instant) -> u128 {
 }
 
 fn env_usize(k: &str) -> usize {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX)
 }
 
 fn size_mb(p: &Path) -> u64 {
@@ -64,10 +76,21 @@ fn size_mb(p: &Path) -> u64 {
 
 fn setup() -> (PathBuf, String, Vec<Vec<u8>>, Vec<Vec<u8>>) {
     let dir = PathBuf::from(std::env::var("SRS_BENCH_DIR").expect("SRS_BENCH_DIR"));
-    let profile = dir.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+    let profile = dir
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     let (heads, segs) = load(&dir, env_usize("SRS_BENCH_SEGS"));
     let bytes: usize = segs.iter().map(Vec::len).sum();
-    println!("PROBE profile={profile} heads={} segs={} bytes={}MB", heads.len(), segs.len(), bytes >> 20);
+    println!(
+        "PROBE profile={profile} heads={} segs={} bytes={}MB",
+        heads.len(),
+        segs.len(),
+        bytes >> 20
+    );
     (dir, profile, heads, segs)
 }
 
@@ -86,10 +109,16 @@ fn probe_oneshot_env() {
         let w = core.writer().unwrap();
         let names = |sql: &str| -> Vec<String> {
             let mut s = w.prepare(sql).unwrap();
-            let v = s.query_map([], |r| r.get::<_, String>(0)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+            let v = s
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
             v
         };
-        let dg = names("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync2_dg_%'");
+        let dg = names(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync2_dg_%'",
+        );
         let tmpt = names("SELECT name FROM sqlite_temp_master WHERE type = 'trigger'");
         for n in &dg {
             w.execute_batch(&format!("DROP TRIGGER main.{n}")).unwrap();
@@ -98,7 +127,11 @@ fn probe_oneshot_env() {
             w.execute_batch(&format!("DROP TRIGGER temp.{n}")).unwrap();
         }
         w.execute_batch("PRAGMA synchronous = OFF; PRAGMA wal_autocheckpoint = 65536; PRAGMA cache_size = -262144;").unwrap();
-        println!("PROBE lean: dropped {} digest + {} temp triggers", dg.len(), tmpt.len());
+        println!(
+            "PROBE lean: dropped {} digest + {} temp triggers",
+            dg.len(),
+            tmpt.len()
+        );
     }
     let t = Instant::now();
     let r = core.sync2_ingest(&profile, &segs, None, now).unwrap();
@@ -110,7 +143,11 @@ fn probe_oneshot_env() {
         super::digest::rebuild(&core.writer().unwrap()).unwrap();
         digest_ms = ms(t);
     }
-    let ops: i64 = core.writer().unwrap().query_row("SELECT COUNT(*) FROM sync2_ops", [], |r| r.get(0)).unwrap();
+    let ops: i64 = core
+        .writer()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM sync2_ops", [], |r| r.get(0))
+        .unwrap();
     println!(
         "PROBE oneshot mode={} ops={ops} ingest={ingest}ms digest_rebuild={digest_ms}ms applied={} pending={} db={}MB wal={}MB",
         if lean { "lean" } else { "base" },
@@ -164,7 +201,11 @@ fn probe_fold_floor() {
         *kinds.entry(k).or_default() += 1;
     }
     let payload: usize = ops.iter().map(|o| o.payload.len()).sum();
-    println!("PROBE ops={} payload_raw={}MB kinds={kinds:?}", ops.len(), payload >> 20);
+    println!(
+        "PROBE ops={} payload_raw={}MB kinds={kinds:?}",
+        ops.len(),
+        payload >> 20
+    );
 
     // 3. 投影行（生产的 edit_row / log_row，同一份 JSON）+ 按实体分组一次折叠（生产的 land_stored）。
     let tmp = super::tests::tempdir::new("probe-fold");
@@ -181,9 +222,16 @@ fn probe_fold_floor() {
                 groups
                     .entry((e.kind.wire(), e.entity.text()))
                     .or_default()
-                    .push((super::canonical(&row), e.legacy.as_ref().and_then(|l| l.server_time)));
+                    .push((
+                        super::canonical(&row),
+                        e.legacy.as_ref().and_then(|l| l.server_time),
+                    ));
             }
-            Body::Log(l) => logs.push((l.id.text(), l.card.text(), super::canonical(&super::log_row(&profile, op, l)))),
+            Body::Log(l) => logs.push((
+                l.id.text(),
+                l.card.text(),
+                super::canonical(&super::log_row(&profile, op, l)),
+            )),
             _ => {}
         }
     }
@@ -192,7 +240,8 @@ fn probe_fold_floor() {
     let mut kept: Vec<String> = Vec::new();
     let mut edits = 0;
     for v in groups.values() {
-        let items: Vec<crate::registers::StoredEdit<'_>> = v.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
+        let items: Vec<crate::registers::StoredEdit<'_>> =
+            v.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
         let (landed, deleted) = crate::registers::land_stored(&items, 0).unwrap();
         let gone: HashSet<usize> = deleted.iter().flatten().copied().collect();
         for (i, l) in landed.iter().enumerate() {
@@ -203,7 +252,12 @@ fn probe_fold_floor() {
         edits += v.len();
     }
     let fold = ms(t);
-    println!("PROBE fold: entities={} edits={edits} survivors={} logs={}", groups.len(), kept.len(), logs.len());
+    println!(
+        "PROBE fold: entities={} edits={edits} survivors={} logs={}",
+        groups.len(),
+        kept.len(),
+        logs.len()
+    );
     drop(w);
 
     // 4. 批量写：一个新库、一个事务、主键有序插入、写完再建二级索引。
@@ -220,7 +274,9 @@ fn probe_fold_floor() {
     .unwrap();
     let tx = c.unchecked_transaction().unwrap();
     {
-        let mut ins = tx.prepare("INSERT INTO ops VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)").unwrap();
+        let mut ins = tx
+            .prepare("INSERT INTO ops VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
+            .unwrap();
         for op in &ops {
             ins.execute(params![
                 op.id.device.0.to_vec(),
@@ -243,7 +299,8 @@ fn probe_fold_floor() {
             ins.execute(params![id, card, j]).unwrap();
         }
     }
-    tx.execute_batch("CREATE INDEX logs_card ON logs (card);").unwrap();
+    tx.execute_batch("CREATE INDEX logs_card ON logs (card);")
+        .unwrap();
     tx.commit().unwrap();
     let write = ms(t);
     println!(
@@ -288,7 +345,11 @@ fn probe_ops_store() {
     w.execute_batch("COMMIT").unwrap();
     let total = ms(t);
     let (raw, stored): (i64, i64) = w
-        .query_row("SELECT COUNT(*), TOTAL(LENGTH(payload)) FROM sync2_ops", [], |r| Ok((r.get(0)?, r.get::<_, f64>(1)? as i64)))
+        .query_row(
+            "SELECT COUNT(*), TOTAL(LENGTH(payload)) FROM sync2_ops",
+            [],
+            |r| Ok((r.get(0)?, r.get::<_, f64>(1)? as i64)),
+        )
         .unwrap();
     drop(w);
     println!(
@@ -328,10 +389,21 @@ fn probe_sliced() {
         let (mut prepare, mut commit, mut ckpt, mut slices) = (0u128, 0u128, 0u128, 0usize);
         cmd(serde_json::json!({"op": "plan"}), heads.clone());
         cmd(serde_json::json!({"op": "ingest_begin"}), vec![]);
-        let slice_ms: Option<u64> = std::env::var("PROBE_SLICE_MS").ok().and_then(|v| v.parse().ok());
-        let pacer_pages: usize = std::env::var("PROBE_PACER_PAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(8192);
-        if let Some(mb) = std::env::var("PROBE_CACHE_MB").ok().and_then(|v| v.parse::<i64>().ok()) {
-            core.writer().unwrap().execute_batch(&format!("PRAGMA cache_size = -{}", mb * 1024)).unwrap();
+        let slice_ms: Option<u64> = std::env::var("PROBE_SLICE_MS")
+            .ok()
+            .and_then(|v| v.parse().ok());
+        let pacer_pages: usize = std::env::var("PROBE_PACER_PAGES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(8192);
+        if let Some(mb) = std::env::var("PROBE_CACHE_MB")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+        {
+            core.writer()
+                .unwrap()
+                .execute_batch(&format!("PRAGMA cache_size = -{}", mb * 1024))
+                .unwrap();
         }
         let mut batch: Vec<Vec<u8>> = Vec::new();
         let mut bytes = 0usize;
@@ -341,7 +413,10 @@ fn probe_sliced() {
             let t = Instant::now();
             cmd(serde_json::json!({"op": "ingest_prepare"}), batch);
             prepare += ms(t);
-            core.writer().unwrap().execute_batch("PRAGMA wal_autocheckpoint = 16384").unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch("PRAGMA wal_autocheckpoint = 16384")
+                .unwrap();
             let (mut every, mut since) = (1usize, 0usize);
             loop {
                 let t = Instant::now();
@@ -358,17 +433,26 @@ fn probe_sliced() {
                 since += 1;
                 if since >= every {
                     let t = Instant::now();
-                    let log = cmd(serde_json::json!({"op": "wal_checkpoint"}), vec![])["log"].as_u64().unwrap_or(0) as usize;
+                    let log = cmd(serde_json::json!({"op": "wal_checkpoint"}), vec![])["log"]
+                        .as_u64()
+                        .unwrap_or(0) as usize;
                     ckpt += ms(t);
                     let per = log / since.max(1);
-                    every = if per == 0 { 64 } else { (pacer_pages / per).clamp(1, 64) };
+                    every = if per == 0 {
+                        64
+                    } else {
+                        (pacer_pages / per).clamp(1, 64)
+                    };
                     since = 0;
                 }
             }
             let t = Instant::now();
             cmd(serde_json::json!({"op": "wal_checkpoint"}), vec![]);
             ckpt += ms(t);
-            core.writer().unwrap().execute_batch("PRAGMA wal_autocheckpoint = 1000").unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch("PRAGMA wal_autocheckpoint = 1000")
+                .unwrap();
         };
         for s in &segs {
             bytes += s.len();
@@ -382,15 +466,24 @@ fn probe_sliced() {
             flush(batch);
         }
         if let Ok(keep) = std::env::var("PROBE_KEEP") {
-            core.writer().unwrap().execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+                .unwrap();
             std::fs::copy(&db, &keep).unwrap();
-            println!("PROBE kept pre-finish db at {keep} ({}MB)", size_mb(Path::new(&keep)));
+            println!(
+                "PROBE kept pre-finish db at {keep} ({}MB)",
+                size_mb(Path::new(&keep))
+            );
             if std::env::var("PROBE_KEEP_ONLY").as_deref() == Ok("1") {
                 return;
             }
         }
         let t = Instant::now();
-        let mut r = cmd(serde_json::json!({"op": "ingest_finish", "now": now}), vec![]);
+        let mut r = cmd(
+            serde_json::json!({"op": "ingest_finish", "now": now}),
+            vec![],
+        );
         let mut finish_calls = 1usize;
         while r["more"] == serde_json::json!(true) {
             r = cmd(serde_json::json!({"op": "replay_pending"}), vec![]);
@@ -410,7 +503,11 @@ fn probe_sliced() {
         run();
     }
     let w = core.writer().unwrap();
-    println!("PROBE sliced db={}MB wal={}MB", size_mb(&db), size_mb(&tmp.0.join("srs.db-wal")));
+    println!(
+        "PROBE sliced db={}MB wal={}MB",
+        size_mb(&db),
+        size_mb(&tmp.0.join("srs.db-wal"))
+    );
     table_hashes(&w);
 }
 
@@ -418,16 +515,30 @@ fn probe_sliced() {
 fn table_hashes(w: &Connection) {
     let tables: Vec<String> = {
         let mut s = w.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").unwrap();
-        let v = s.query_map([], |r| r.get::<_, String>(0)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        let v = s
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         v
     };
     for t in tables {
         let cols: Vec<String> = {
-            let mut s = w.prepare(&format!("SELECT name FROM pragma_table_info('{t}') ORDER BY cid")).unwrap();
-            let v = s.query_map([], |r| r.get::<_, String>(0)).unwrap().map(|c| format!("quote({})", c.unwrap())).collect();
+            let mut s = w
+                .prepare(&format!(
+                    "SELECT name FROM pragma_table_info('{t}') ORDER BY cid"
+                ))
+                .unwrap();
+            let v = s
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(|c| format!("quote({})", c.unwrap()))
+                .collect();
             v
         };
-        let mut s = w.prepare(&format!("SELECT {} FROM {t}", cols.join(" || '|' || "))).unwrap();
+        let mut s = w
+            .prepare(&format!("SELECT {} FROM {t}", cols.join(" || '|' || ")))
+            .unwrap();
         let mut q = s.query([]).unwrap();
         let (mut n, mut sum) = (0u64, 0u128);
         while let Some(r) = q.next().unwrap() {
@@ -445,7 +556,7 @@ fn table_hashes(w: &Connection) {
 #[test]
 #[ignore]
 fn probe_finish_floor() {
-    use crate::sync2::replay::{infer_intent, Row};
+    use crate::sync2::replay::{Row, infer_intent};
     let src = PathBuf::from(std::env::var("PROBE_FINISH_DB").expect("PROBE_FINISH_DB"));
     let tmp = super::tests::tempdir::new("probe-finish-floor");
     let db = tmp.0.join("srs.db");
@@ -456,7 +567,14 @@ fn probe_finish_floor() {
 
     // 1. 日志整表顺扫（连服务器时刻、意图、拼回的 json）。
     let t = Instant::now();
-    type L = (String, Option<i64>, Option<crate::history::LogCols>, String, Option<i64>, Option<i64>);
+    type L = (
+        String,
+        Option<i64>,
+        Option<crate::history::LogCols>,
+        String,
+        Option<i64>,
+        Option<i64>,
+    );
     let mut logs: HashMap<String, Vec<L>> = HashMap::new();
     let mut bytes = 0usize;
     {
@@ -472,7 +590,14 @@ fn probe_finish_floor() {
             let (j, cols) = crate::store::slim::log_row(r, 2).unwrap();
             let json: String = r.get(12).unwrap();
             bytes += j.len() + json.len();
-            logs.entry(card).or_default().push((j, r.get(1).unwrap(), cols, json, r.get(13).unwrap(), r.get(14).unwrap()));
+            logs.entry(card).or_default().push((
+                j,
+                r.get(1).unwrap(),
+                cols,
+                json,
+                r.get(13).unwrap(),
+                r.get(14).unwrap(),
+            ));
         }
     }
     let scan_logs = ms(t);
@@ -489,11 +614,18 @@ fn probe_finish_floor() {
                 server_time: *s,
                 intent: match code {
                     Some(k) => super::intent_of(*k, *arg),
-                    None => infer_intent(&serde_json::from_str(json).unwrap_or(serde_json::Value::Null)),
+                    None => {
+                        infer_intent(&serde_json::from_str(json).unwrap_or(serde_json::Value::Null))
+                    }
                 },
             })
             .collect();
-        changed += crate::sync2::replay::replay(&input).unwrap().rows.iter().filter(|r| r.is_some()).count();
+        changed += crate::sync2::replay::replay(&input)
+            .unwrap()
+            .rows
+            .iter()
+            .filter(|r| r.is_some())
+            .count();
     }
     let replay = ms(t);
 
@@ -501,7 +633,10 @@ fn probe_finish_floor() {
     let t = Instant::now();
     let mut stat_rows = 0usize;
     for rows in logs.values() {
-        let stored: Vec<crate::history::StoredLog<'_>> = rows.iter().map(|(j, s, c, ..)| (j.as_str(), *s, c.as_ref())).collect();
+        let stored: Vec<crate::history::StoredLog<'_>> = rows
+            .iter()
+            .map(|(j, s, c, ..)| (j.as_str(), *s, c.as_ref()))
+            .collect();
         let _ = crate::history::state_from_stored(&stored).unwrap();
         stat_rows += crate::history::stats_from_stored(&stored).unwrap().len();
     }
@@ -511,9 +646,17 @@ fn probe_finish_floor() {
 
     // 4. 笔记：身份记录 + 修改记录整表顺扫，按笔记分组，物化视图。
     let t = Instant::now();
-    let mut notes: HashMap<String, (Option<serde_json::Value>, Vec<(String, Option<i64>, Option<crate::registers::EditCols>)>)> = HashMap::new();
+    let mut notes: HashMap<
+        String,
+        (
+            Option<serde_json::Value>,
+            Vec<(String, Option<i64>, Option<crate::registers::EditCols>)>,
+        ),
+    > = HashMap::new();
     {
-        let mut s = w.prepare("SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE kind = 'note'").unwrap();
+        let mut s = w
+            .prepare("SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE kind = 'note'")
+            .unwrap();
         let mut it = s.query([]).unwrap();
         while let Some(r) = it.next().unwrap() {
             let id: String = r.get(0).unwrap();
@@ -530,7 +673,11 @@ fn probe_finish_floor() {
         while let Some(r) = it.next().unwrap() {
             let id: String = r.get(0).unwrap();
             let (j, cols) = crate::store::slim::edit_row(r, 2).unwrap();
-            notes.entry(id).or_default().1.push((j, r.get(1).unwrap(), cols));
+            notes
+                .entry(id)
+                .or_default()
+                .1
+                .push((j, r.get(1).unwrap(), cols));
         }
     }
     let scan_notes = ms(t);
@@ -538,7 +685,10 @@ fn probe_finish_floor() {
     let mut views = 0usize;
     for (payload, es) in notes.values() {
         let Some(p) = payload else { continue };
-        let stored: Vec<crate::registers::StoredEdit<'_>> = es.iter().map(|(j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
+        let stored: Vec<crate::registers::StoredEdit<'_>> = es
+            .iter()
+            .map(|(j, s, c)| (j.as_str(), *s, c.as_ref()))
+            .collect();
         let _ = crate::registers::note_view_of(p, &stored).unwrap();
         views += 1;
     }
@@ -558,9 +708,15 @@ fn probe_finish_floor() {
 #[test]
 #[ignore]
 fn probe_finish() {
-    use super::transport::{replay_pending, take_cache_pending, CommitBudget};
+    use super::transport::{CommitBudget, replay_pending, take_cache_pending};
     let dir = PathBuf::from(std::env::var("SRS_BENCH_DIR").expect("SRS_BENCH_DIR"));
-    let profile = dir.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+    let profile = dir
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     let src = PathBuf::from(std::env::var("PROBE_FINISH_DB").expect("PROBE_FINISH_DB"));
     let mode = std::env::var("PROBE_FINISH").unwrap_or_else(|_| "prod".to_owned());
     let tmp = super::tests::tempdir::new("probe-finish");
@@ -581,12 +737,20 @@ fn probe_finish() {
         n("SELECT count(*) FROM srs_entities WHERE kind = 'note'"),
         n("SELECT count(*) FROM srs_entities WHERE kind = 'card'"),
     );
-    let cfg = crate::store::caches::CacheConfig::parse(&serde_json::json!({"defaultDeck": super::config::default_deck_id(&profile)}))
-        .unwrap();
+    let cfg = crate::store::caches::CacheConfig::parse(
+        &serde_json::json!({"defaultDeck": super::config::default_deck_id(&profile)}),
+    )
+    .unwrap();
     let t0 = Instant::now();
-    let (replayed, _) = super::in_savepoint(&w, |c| replay_pending(c, &profile, &mut CommitBudget::unlimited())).unwrap();
+    let (replayed, _) = super::in_savepoint(&w, |c| {
+        replay_pending(c, &profile, &mut CommitBudget::unlimited())
+    })
+    .unwrap();
     let replay = ms(t0);
-    println!("PROBE finish replay={replay}ms changed_cards={}", replayed.len());
+    println!(
+        "PROBE finish replay={replay}ms changed_cards={}",
+        replayed.len()
+    );
     let t = Instant::now();
     let mut chunks = 0;
     match mode.as_str() {
@@ -648,7 +812,7 @@ fn probe_channel_floor() {
     use crate::sync2::segment::Chain;
     use crate::sync2::vv::Vv;
     use rusqlite::config::DbConfig;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     let (_dir, profile, heads, segs) = setup();
     let now = 1_800_000_000_000i64;
@@ -777,14 +941,23 @@ fn probe_channel_floor() {
     for b in &bodies {
         match b {
             Body::Edit(e) => {
-                let synth = e.legacy.as_ref().is_some_and(|l| super::is_synthetic_writer(&l.writer));
+                let synth = e
+                    .legacy
+                    .as_ref()
+                    .is_some_and(|l| super::is_synthetic_writer(&l.writer));
                 let why = if e.key == "deleted" {
                     Some(format!("deleted:{}", e.kind.wire()))
                 } else if synth && (strict_synth || e.key != "tags") {
-                    Some(format!("synthetic:{}:{}", e.kind.wire(), if e.key == "tags" { "tags" } else { "other" }))
+                    Some(format!(
+                        "synthetic:{}:{}",
+                        e.kind.wire(),
+                        if e.key == "tags" { "tags" } else { "other" }
+                    ))
                 } else {
                     if synth {
-                        *reasons.entry("synthetic_tags_ignored".to_owned()).or_default() += 1;
+                        *reasons
+                            .entry("synthetic_tags_ignored".to_owned())
+                            .or_default() += 1;
                     }
                     None
                 };
@@ -863,7 +1036,10 @@ fn probe_channel_floor() {
             Body::Edit(e) => {
                 if let Some(l) = &e.legacy {
                     // `note_legacy` 的同一算法，行在内存里。
-                    let cur = legacy.remove(&op.id.device).map(|(_, d)| d).unwrap_or_default();
+                    let cur = legacy
+                        .remove(&op.id.device)
+                        .map(|(_, d)| d)
+                        .unwrap_or_default();
                     let mut d = cur;
                     d.merge(&Dvv::parse(&l.ctx_json));
                     if !super::is_synthetic_writer(&l.writer) {
@@ -873,19 +1049,27 @@ fn probe_channel_floor() {
                     legacy.insert(op.id.device, (op.id.seq as i64, d));
                 }
                 let ent = e.entity.text();
-                if complex.contains(&(e.kind.wire(), ent.clone())) || (e.kind == EntKind::Note && e.key == "tags") {
+                if complex.contains(&(e.kind.wire(), ent.clone()))
+                    || (e.kind == EntKind::Note && e.key == "tags")
+                {
                     per_op.push(k);
                     continue;
                 }
                 let (eid, v) = super::edit_row_with(&profile, op, e, |vv| {
-                    super::legacy_closure_with(&w, &profile, vv, |d| Ok(legacy.get(d).map(|(u, x)| (*u, x.clone()))))
+                    super::legacy_closure_with(&w, &profile, vv, |d| {
+                        Ok(legacy.get(d).map(|(u, x)| (*u, x.clone())))
+                    })
                 })
                 .unwrap();
                 edit_ops.insert(eid.clone(), (dev.clone(), seq));
-                ent_ops.entry((e.kind.wire(), ent.clone(), dev.clone(), seq)).or_insert_with(|| e.key.clone());
+                ent_ops
+                    .entry((e.kind.wire(), ent.clone(), dev.clone(), seq))
+                    .or_insert_with(|| e.key.clone());
                 if e.kind == EntKind::Card && e.key == "deck" {
                     if let Ok(Value::String(d)) = serde_json::from_str::<Value>(&e.value) {
-                        ent_ops.entry(("deck", d, dev.clone(), seq)).or_insert_with(|| "#move".to_owned());
+                        ent_ops
+                            .entry(("deck", d, dev.clone(), seq))
+                            .or_insert_with(|| "#move".to_owned());
                     }
                 }
                 groups.entry((e.kind, ent)).or_default().push(Arr {
@@ -900,16 +1084,26 @@ fn probe_channel_floor() {
             Body::Log(l) => {
                 let card = l.card.text();
                 let note = l.note.as_ref().map(|n| n.text());
-                if complex.contains(&("card", card.clone())) || note.as_ref().is_some_and(|n| complex.contains(&("note", n.clone()))) {
+                if complex.contains(&("card", card.clone()))
+                    || note
+                        .as_ref()
+                        .is_some_and(|n| complex.contains(&("note", n.clone())))
+                {
                     per_op.push(k);
                     continue;
                 }
                 let lid = l.id.text();
                 let (intent, arg) = super::intent_code(&l.intent);
-                log_meta.entry(lid.clone()).or_insert_with(|| (card.clone(), note.clone(), intent, arg, dev.clone(), seq));
-                ent_ops.entry(("card", card.clone(), dev.clone(), seq)).or_insert_with(|| "#log".to_owned());
+                log_meta
+                    .entry(lid.clone())
+                    .or_insert_with(|| (card.clone(), note.clone(), intent, arg, dev.clone(), seq));
+                ent_ops
+                    .entry(("card", card.clone(), dev.clone(), seq))
+                    .or_insert_with(|| "#log".to_owned());
                 if let Some(n) = &note {
-                    ent_ops.entry(("note", n.clone(), dev.clone(), seq)).or_insert_with(|| "#log".to_owned());
+                    ent_ops
+                        .entry(("note", n.clone(), dev.clone(), seq))
+                        .or_insert_with(|| "#log".to_owned());
                 }
                 if !logs.contains_key(&lid) {
                     let row = super::log_row(&profile, op, l);
@@ -940,13 +1134,22 @@ fn probe_channel_floor() {
                     continue;
                 }
                 let d: Value = serde_json::from_str(data).unwrap_or(Value::Null);
-                let rec = super::canonical(&json!({"id": idt, "p": profile, "k": kind.wire(), "d": d}));
+                let rec =
+                    super::canonical(&json!({"id": idt, "p": profile, "k": kind.wire(), "d": d}));
                 let write = match entities.get(&idt) {
                     None => true,
                     Some(old) => rec < old.1,
                 };
                 if write {
-                    entities.insert(idt.clone(), (kind.wire(), rec, super::canonical(&d), d["createdAt"].as_i64().unwrap_or(0)));
+                    entities.insert(
+                        idt.clone(),
+                        (
+                            kind.wire(),
+                            rec,
+                            super::canonical(&d),
+                            d["createdAt"].as_i64().unwrap_or(0),
+                        ),
+                    );
                     touched.marks.entity(*kind, &idt);
                 }
             }
@@ -960,7 +1163,10 @@ fn probe_channel_floor() {
     let mut fe: Vec<(String, &'static str, String, String, String, i64, String)> = Vec::new();
     let (mut arrived, mut landed_n) = (0usize, 0usize);
     for ((kind, ent), arrs) in groups {
-        let items: Vec<crate::registers::StoredEdit<'_>> = arrs.iter().map(|a| (a.text.as_str(), a.server, None)).collect();
+        let items: Vec<crate::registers::StoredEdit<'_>> = arrs
+            .iter()
+            .map(|a| (a.text.as_str(), a.server, None))
+            .collect();
         let (landed, deleted) = crate::registers::land_stored(&items, 0).unwrap();
         let gone: HashSet<usize> = deleted.iter().flatten().copied().collect();
         arrived += arrs.len();
@@ -980,7 +1186,15 @@ fn probe_channel_floor() {
                 }
             }
             if !gone.contains(&i) {
-                fe.push((a.eid, kind.wire(), ent.clone(), a.key, a.writer, a.seq, a.text));
+                fe.push((
+                    a.eid,
+                    kind.wire(),
+                    ent.clone(),
+                    a.key,
+                    a.writer,
+                    a.seq,
+                    a.text,
+                ));
             }
         }
     }
@@ -1000,13 +1214,18 @@ fn probe_channel_floor() {
     // 5. 有序写。
     let names = |sql: &str| -> Vec<String> {
         let mut s = w.prepare(sql).unwrap();
-        let v = s.query_map([], |r| r.get::<_, String>(0)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        let v = s
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         v
     };
     for n in names("SELECT name FROM sqlite_temp_master WHERE type = 'trigger'") {
         w.execute_batch(&format!("DROP TRIGGER temp.{n}")).unwrap();
     }
-    w.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false).unwrap();
+    w.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false)
+        .unwrap();
     let drop_indexes = std::env::var("PROBE_DROP_INDEXES").as_deref() == Ok("1");
     let written = [
         "srs_entities",
@@ -1020,10 +1239,18 @@ fn probe_channel_floor() {
     let indexes: Vec<(String, String)> = if drop_indexes {
         let q = format!(
             "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL AND tbl_name IN ({})",
-            written.iter().map(|t| format!("'{t}'")).collect::<Vec<_>>().join(", ")
+            written
+                .iter()
+                .map(|t| format!("'{t}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         let mut s = w.prepare(&q).unwrap();
-        let v = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        let v = s
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         v
     } else {
         Vec::new()
@@ -1042,7 +1269,8 @@ fn probe_channel_floor() {
             .prepare("INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, ?5)")
             .unwrap();
         for (id, (kind, _, payload, created)) in &v {
-            s.execute(params![id, profile, kind, payload, created]).unwrap();
+            s.execute(params![id, profile, kind, payload, created])
+                .unwrap();
         }
     }
     per_table.push(("entities", ms(t)));
@@ -1056,7 +1284,8 @@ fn probe_channel_floor() {
             )
             .unwrap();
         for (eid, kind, ent, key, writer, seq, text) in &fe {
-            s.execute(params![eid, profile, kind, ent, key, writer, seq, text]).unwrap();
+            s.execute(params![eid, profile, kind, ent, key, writer, seq, text])
+                .unwrap();
         }
     }
     per_table.push(("field_edits", ms(t)));
@@ -1071,7 +1300,10 @@ fn probe_channel_floor() {
             )
             .unwrap();
         for (lid, r) in &v {
-            s.execute(params![lid, profile, r.card, r.kind, r.rating, r.at, r.rtype, r.origin, r.dur, r.text]).unwrap();
+            s.execute(params![
+                lid, profile, r.card, r.kind, r.rating, r.at, r.rtype, r.origin, r.dur, r.text
+            ])
+            .unwrap();
         }
     }
     per_table.push(("review_logs", ms(t)));
@@ -1122,7 +1354,8 @@ fn probe_channel_floor() {
             )
             .unwrap();
         for (lid, (card, note, intent, arg, d, sq)) in &v {
-            s.execute(params![lid, profile, card, note, intent, arg, d, sq]).unwrap();
+            s.execute(params![lid, profile, card, note, intent, arg, d, sq])
+                .unwrap();
         }
     }
     per_table.push(("log_meta", ms(t)));
@@ -1149,7 +1382,9 @@ fn probe_channel_floor() {
             _ => "other",
         };
         match &bodies[k] {
-            Body::Edit(e) => super::project_edit_noted(&w, &profile, op, e, now, true, &mut touched).unwrap(),
+            Body::Edit(e) => {
+                super::project_edit_noted(&w, &profile, op, e, now, true, &mut touched).unwrap()
+            }
             b => super::project_body(&w, &profile, op, b.clone(), now, true, &mut touched).unwrap(),
         }
         let e = by_kind.entry(name).or_default();
@@ -1159,7 +1394,14 @@ fn probe_channel_floor() {
     let per_op_ms = ms(t);
     println!(
         "PROBE channel per_op by kind {:?}",
-        by_kind.iter().map(|(k, (n, us))| format!("{k}: n={n} {}ms {:.0}us/op", us / 1000, *us as f64 / *n as f64)).collect::<Vec<_>>()
+        by_kind
+            .iter()
+            .map(|(k, (n, us))| format!(
+                "{k}: n={n} {}ms {:.0}us/op",
+                us / 1000,
+                *us as f64 / *n as f64
+            ))
+            .collect::<Vec<_>>()
     );
 
     // 7. 旧修改记录闭包写回 + 摘要重建。
@@ -1173,7 +1415,8 @@ fn probe_channel_floor() {
     }
     super::digest::rebuild(&w).unwrap();
     let digest_ms = ms(t);
-    w.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true).unwrap();
+    w.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)
+        .unwrap();
     let t = Instant::now();
     w.execute_batch("COMMIT").unwrap();
     let commit_ms = ms(t);
@@ -1191,7 +1434,9 @@ fn probe_channel_floor() {
     let mut dirty = crate::store::caches::Dirty::default();
     dirty.notes.extend(touched.marks.notes.iter().cloned());
     dirty.cards.extend(touched.marks.cards.iter().cloned());
-    dirty.note_types.extend(touched.marks.note_types.iter().cloned());
+    dirty
+        .note_types
+        .extend(touched.marks.note_types.iter().cloned());
     for (kind, id) in &touched.entities_changed {
         match kind.as_str() {
             "note" => dirty.notes.insert(id.clone()),
@@ -1202,12 +1447,20 @@ fn probe_channel_floor() {
     }
     super::in_savepoint(&w, |c| {
         super::transport::defer_replay(c, &profile, &replay)?;
-        super::transport::defer_cache_refresh(c, &profile, std::mem::take(&mut dirty), false).map(|_| ())
+        super::transport::defer_cache_refresh(c, &profile, std::mem::take(&mut dirty), false)
+            .map(|_| ())
     })
     .unwrap();
-    let cfg = crate::store::caches::CacheConfig::parse(&json!({"defaultDeck": super::config::default_deck_id(&profile)})).unwrap();
+    let cfg = crate::store::caches::CacheConfig::parse(
+        &json!({"defaultDeck": super::config::default_deck_id(&profile)}),
+    )
+    .unwrap();
     let (replayed, _) = super::in_savepoint(&w, |c| {
-        super::transport::replay_pending(c, &profile, &mut super::transport::CommitBudget::unlimited())
+        super::transport::replay_pending(
+            c,
+            &profile,
+            &mut super::transport::CommitBudget::unlimited(),
+        )
     })
     .unwrap();
     let replay_ms = ms(t);
@@ -1245,7 +1498,13 @@ fn probe_channel_floor() {
 fn probe_channel_finish() {
     use rusqlite::OptionalExtension;
     let dir = PathBuf::from(std::env::var("SRS_BENCH_DIR").expect("SRS_BENCH_DIR"));
-    let profile = dir.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+    let profile = dir
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     let src = PathBuf::from(std::env::var("PROBE_FINISH_DB").expect("PROBE_FINISH_DB"));
     let tmp = super::tests::tempdir::new("probe-channel-finish");
     let db = tmp.0.join("srs.db");
@@ -1254,25 +1513,35 @@ fn probe_channel_finish() {
     // 与收段会话里一样：会话收完之前写连接放回时留着页缓存（ffi.rs 收尾刷完才放）。
     {
         let mut phase = core.ingest_phase().unwrap();
-        core.set_ingest_phase(&mut phase, super::transport::IngestPhase::Draining(profile.clone()));
+        core.set_ingest_phase(
+            &mut phase,
+            super::transport::IngestPhase::Draining(profile.clone()),
+        );
     }
     let deck = super::config::default_deck_id(&profile);
-    let slice_ms: Option<u64> = std::env::var("PROBE_SLICE_MS").ok().and_then(|v| v.parse().ok());
+    let slice_ms: Option<u64> = std::env::var("PROBE_SLICE_MS")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let phase = || -> &'static str {
         let w = core.writer().unwrap();
-        let boot: Option<i64> = w.query_row("SELECT phase FROM sync2_boot", [], |r| r.get(0)).optional().unwrap();
+        let boot: Option<i64> = w
+            .query_row("SELECT phase FROM sync2_boot", [], |r| r.get(0))
+            .optional()
+            .unwrap();
         match boot {
             Some(0) => "append",
             Some(1) => "fold",
             Some(2) => "merge",
             Some(_) => "one",
             None => {
-                let rp: bool = w.query_row("SELECT EXISTS(SELECT 1 FROM sync2_replay_pending)", [], |r| r.get(0)).unwrap();
-                if rp {
-                    "replay"
-                } else {
-                    "cache"
-                }
+                let rp: bool = w
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sync2_replay_pending)",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                if rp { "replay" } else { "cache" }
             }
         }
     };
@@ -1312,7 +1581,8 @@ fn probe_channel_finish() {
             req["sliceMs"] = serde_json::json!(s);
         }
         let t = Instant::now();
-        let r = crate::store::ffi::sync2_dispatch(&core, &req, &mut Vec::new(), &mut Vec::new()).unwrap();
+        let r = crate::store::ffi::sync2_dispatch(&core, &req, &mut Vec::new(), &mut Vec::new())
+            .unwrap();
         let d = t.elapsed().as_micros();
         let e = acc.entry(p).or_default();
         e.0 += d;
@@ -1324,9 +1594,17 @@ fn probe_channel_finish() {
     }
     let total = ms(t0);
     for (p, (us, n, max)) in &acc {
-        println!("PROBE cfinish phase={p} ms={} calls={n} max_call_ms={}", us / 1000, max / 1000);
+        println!(
+            "PROBE cfinish phase={p} ms={} calls={n} max_call_ms={}",
+            us / 1000,
+            max / 1000
+        );
     }
     let w = core.writer().unwrap();
-    println!("PROBE cfinish total={total}ms db={}MB wal={}MB", size_mb(&db), size_mb(&tmp.0.join("srs.db-wal")));
+    println!(
+        "PROBE cfinish total={total}ms db={}MB wal={}MB",
+        size_mb(&db),
+        size_mb(&tmp.0.join("srs.db-wal"))
+    );
     table_hashes(&w);
 }

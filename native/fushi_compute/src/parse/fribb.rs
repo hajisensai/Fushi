@@ -518,7 +518,8 @@ pub fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>, FribbError> {
 }
 
 fn merge(rows: Vec<Vec<(usize, J)>>) -> Vec<Entry> {
-    let (tv, movie, tmdb_key, tvdb_key) = (utf16("tv"), utf16("movie"), utf16("tmdb"), utf16("tvdb"));
+    let (tv, movie, tmdb_key, tvdb_key) =
+        (utf16("tv"), utf16("movie"), utf16("tmdb"), utf16("tvdb"));
     let mut order: Vec<Entry> = Vec::new();
     let mut index: HashMap<i64, usize> = HashMap::new();
     for fields in rows {

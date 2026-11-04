@@ -65,7 +65,13 @@ fn history(cards: i64, days: i64) -> Vec<ReviewInput> {
 #[test]
 fn long_histories_keep_compact_states_bounded() {
     let model = small_model();
-    let (cards, days): (i64, i64) = (6, std::env::var("LONG_DAYS").ok().and_then(|v| v.parse().ok()).unwrap_or(2500));
+    let (cards, days): (i64, i64) = (
+        6,
+        std::env::var("LONG_DAYS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2500),
+    );
     let reviews = history(cards, days);
     let peaks = |precision: StatePrecision| {
         let mut runtime = SmallInference::new(&model, precision);
@@ -90,7 +96,13 @@ fn long_histories_keep_compact_states_bounded() {
 /// 免得有人以为换了量化器就能放开。`LONG_DAYS=10000` 可加长（本地 ~1 分钟）。
 #[test]
 fn long_histories_keep_large_model_compact_states_bounded() {
-    let (cards, days): (i64, i64) = (6, std::env::var("LONG_DAYS").ok().and_then(|v| v.parse().ok()).unwrap_or(2500));
+    let (cards, days): (i64, i64) = (
+        6,
+        std::env::var("LONG_DAYS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2500),
+    );
     let reviews = history(cards, days);
     let peaks = |precision: StatePrecision| {
         let mut runtime = RwkvInference::new(model(), precision);

@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn files(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in std::fs::read_dir(dir).unwrap() {
@@ -28,8 +28,16 @@ fn load(dir: &Path) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     files(&dir.join("devices"), &mut all);
     all.sort();
     let name = |p: &PathBuf| p.file_name().unwrap().to_string_lossy().into_owned();
-    let heads = all.iter().filter(|p| crate::sync2::segment::parse_head_file_name(&name(p)).is_some()).map(|p| std::fs::read(p).unwrap()).collect();
-    let segs = all.iter().filter(|p| name(p).starts_with("seg-")).map(|p| std::fs::read(p).unwrap()).collect();
+    let heads = all
+        .iter()
+        .filter(|p| crate::sync2::segment::parse_head_file_name(&name(p)).is_some())
+        .map(|p| std::fs::read(p).unwrap())
+        .collect();
+    let segs = all
+        .iter()
+        .filter(|p| name(p).starts_with("seg-"))
+        .map(|p| std::fs::read(p).unwrap())
+        .collect();
     (heads, segs)
 }
 
@@ -41,10 +49,21 @@ fn ms(t: Instant) -> u128 {
 #[ignore]
 fn bench_real_folder() {
     let dir = PathBuf::from(std::env::var("SRS_BENCH_DIR").expect("SRS_BENCH_DIR"));
-    let profile = dir.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+    let profile = dir
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     let (heads, segs) = load(&dir);
     let bytes: usize = segs.iter().map(Vec::len).sum();
-    println!("BENCH profile={profile} heads={} segs={} bytes={}MB", heads.len(), segs.len(), bytes >> 20);
+    println!(
+        "BENCH profile={profile} heads={} segs={} bytes={}MB",
+        heads.len(),
+        segs.len(),
+        bytes >> 20
+    );
     let deck = super::config::default_deck_id(&profile);
     let now = 1_800_000_000_000i64;
     let only = std::env::var("SRS_BENCH_ONLY").unwrap_or_default();
@@ -59,16 +78,26 @@ fn bench_real_folder() {
             crate::store::ffi::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
         };
         if let Ok(n) = std::env::var("SRS_BENCH_WAL_AUTOCKPT") {
-            core.writer().unwrap().execute_batch(&format!("PRAGMA wal_autocheckpoint = {n}")).unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch(&format!("PRAGMA wal_autocheckpoint = {n}"))
+                .unwrap();
         }
-        let max_segs: usize = std::env::var("SRS_BENCH_SEGS").ok().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
+        let max_segs: usize = std::env::var("SRS_BENCH_SEGS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(usize::MAX);
         let t0 = Instant::now();
         cmd(json!({"op": "identity", "now": now}), vec![]);
         cmd(json!({"op": "plan"}), heads.clone());
         cmd(json!({"op": "ingest_begin"}), vec![]);
         let (mut prep, mut commit, mut slices) = (0u128, 0u128, 0usize);
-        let ckpt_every: usize = std::env::var("SRS_BENCH_CKPT_EVERY").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
-        let (mut ckpt_ms, mut ckpt_n, mut ckpt_log_max, mut ckpt_log_sum) = (0u128, 0usize, 0i64, 0i64);
+        let ckpt_every: usize = std::env::var("SRS_BENCH_CKPT_EVERY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let (mut ckpt_ms, mut ckpt_n, mut ckpt_log_max, mut ckpt_log_sum) =
+            (0u128, 0usize, 0i64, 0i64);
         let mut batch: Vec<Vec<u8>> = Vec::new();
         let mut i = 0;
         while i < segs.len() {
@@ -101,7 +130,10 @@ fn bench_real_folder() {
                 }
             }
             commit += ms(t);
-            println!("BENCH batch upto seg {i}: prepare {prep}ms commit {commit}ms slices {slices} ckpt {ckpt_n}x {ckpt_ms}ms walframes avg {} max {ckpt_log_max}", ckpt_log_sum / ckpt_n.max(1) as i64);
+            println!(
+                "BENCH batch upto seg {i}: prepare {prep}ms commit {commit}ms slices {slices} ckpt {ckpt_n}x {ckpt_ms}ms walframes avg {} max {ckpt_log_max}",
+                ckpt_log_sum / ckpt_n.max(1) as i64
+            );
             if i >= max_segs {
                 return;
             }
@@ -131,9 +163,14 @@ fn bench_real_folder() {
         core.sync2_ingest(&profile, &segs, None, now).unwrap();
         let ingest = ms(t);
         let t = Instant::now();
-        let req = json!({"op": "rebuild_caches", "profile": profile, "caches": {"defaultDeck": deck}});
+        let req =
+            json!({"op": "rebuild_caches", "profile": profile, "caches": {"defaultDeck": deck}});
         let (mut b, mut f) = (Vec::new(), Vec::new());
         crate::store::ffi::sync2_dispatch(&core, &req, &mut b, &mut f).unwrap();
-        println!("BENCH oneshot total {}ms = ingest {ingest} + rebuild_caches {}", ms(t0), ms(t));
+        println!(
+            "BENCH oneshot total {}ms = ingest {ingest} + rebuild_caches {}",
+            ms(t0),
+            ms(t)
+        );
     }
 }

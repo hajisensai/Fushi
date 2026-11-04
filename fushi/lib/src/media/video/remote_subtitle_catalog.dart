@@ -87,6 +87,37 @@ List<RemoteSubtitleFileEntry> remoteSubtitleFileEntries({
   return entries;
 }
 
+/// 起播时后端默认外挂字幕（互联 host 的 sidecar、媒体服务器的外挂轨……）怎么处理。
+enum RemoteBackendDefaultSubtitlePlan {
+  /// 后端这一集没有默认字幕。
+  none,
+
+  /// 只下载、登记成字幕菜单里的一行，不挂到播放上：用户已有别的选择
+  /// （显式关闭 / 内嵌轨 / 本机字幕档 / 预解析轨）。
+  listOnly,
+
+  /// 下载并作为本集主字幕起播。
+  apply,
+}
+
+/// 纯函数：后端默认字幕的**可选**与**是否自动挂上**是两件事（反馈 1QkmT2vVTm）。
+///
+/// 旧实现只在「没有持久化选择」时才下载后端默认字幕，而 `_remoteSubtitlePath`
+/// （菜单「服务端字幕」行的唯一来源）只在那条分支里赋值：用户关过一次字幕、或选过
+/// 一次内嵌英文轨，重进后 host 上的日语 sidecar 就从菜单里消失，再也选不回来。
+/// 「尊重上次选择」只该决定挂不挂，不该决定列不列。
+RemoteBackendDefaultSubtitlePlan planRemoteBackendDefaultSubtitle({
+  required bool backendOffersDefault,
+  required bool selectionRestored,
+  required bool hasPreresolvedCues,
+}) {
+  if (!backendOffersDefault) return RemoteBackendDefaultSubtitlePlan.none;
+  if (selectionRestored || hasPreresolvedCues) {
+    return RemoteBackendDefaultSubtitlePlan.listOnly;
+  }
+  return RemoteBackendDefaultSubtitlePlan.apply;
+}
+
 /// 纯函数：持久化的本机档路径列表 → 字幕轨列表里的本机档（只留磁盘上还在的）。
 /// [exists] 由调用方注入（真实 IO / 测试桩）。顺序保持持久化顺序。
 List<SubtitleSource> restoreRemoteLocalSubtitleFiles(

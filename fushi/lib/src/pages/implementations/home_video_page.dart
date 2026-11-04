@@ -191,23 +191,30 @@ import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
 /// 在路由层中和全局缩放（video_render_fixes_guard 守卫的接线）。
-/// [playlistCollectionId] 非空 = 作为合集一集打开（剧集面板/上下集/连播），
-/// null = 散卡单视频。返回的 Future 在播放页关闭后完成（调用方据此刷新）。
+/// [playlistCollectionId] 非空 = 调用方已知的系列上下文，照用；null = 由本入口按视频库
+/// 折叠归属自己解析（[resolveVideoPlaylistCollectionId]，散片解析为 null 即单视频打开）。
+/// 系列上下文不再靠每个入口各自记得去查：侧边栏「继续观看」、统计页、发现页等入口此前
+/// 只传 bookUid，合集里的一集进播放页没有剧集列表 / 上下集 / 连播（BUG-4024）。
+/// 返回的 Future 在播放页关闭后完成（调用方据此刷新）。
 Future<void> openLocalVideoBook({
   required BuildContext context,
   required VideoBookRepository repo,
   required String bookUid,
   int? playlistCollectionId,
   bool openBlurayMenu = false,
-}) {
-  return Navigator.push(
+}) async {
+  final int? collectionId =
+      playlistCollectionId ??
+      await resolveVideoPlaylistCollectionId(repo: repo, bookUid: bookUid);
+  if (!context.mounted) return;
+  await Navigator.push(
     context,
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => VideoFushiPage.neutralized(
         bookUid: bookUid,
         repo: repo,
-        playlistCollectionId: playlistCollectionId,
+        playlistCollectionId: collectionId,
         openBlurayMenu: openBlurayMenu,
       ),
     ),

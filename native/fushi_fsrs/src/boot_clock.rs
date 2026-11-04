@@ -26,7 +26,10 @@ mod imp {
     }
 
     pub(super) fn read(clock: libc::clockid_t) -> Option<i64> {
-        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         // SAFETY: ts 是本函数里的局部变量，clock_gettime 只写它。
         let rc = unsafe { libc::clock_gettime(clock, &mut ts) };
         (rc == 0).then(|| ts.tv_sec as i64 * 1000 + ts.tv_nsec as i64 / 1_000_000)
@@ -36,7 +39,10 @@ mod imp {
 #[cfg(target_vendor = "apple")]
 mod imp {
     pub(super) fn now_ms() -> Option<i64> {
-        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         // SAFETY: ts 是本函数里的局部变量，clock_gettime 只写它。
         let rc = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
         (rc == 0).then(|| ts.tv_sec as i64 * 1000 + ts.tv_nsec as i64 / 1_000_000)
@@ -71,8 +77,16 @@ mod tests {
         let elapsed = started.elapsed().as_millis() as i64;
         assert!(b >= a, "boot clock went backwards: {a} -> {b}");
         // Windows GetTickCount64 的分辨率约 16 ms：两边各留一格。
-        assert!(b - a >= elapsed - 40, "boot clock advanced {} ms, expected ~{elapsed}", b - a);
-        assert!(b - a <= elapsed + 40, "boot clock advanced {} ms, expected ~{elapsed}", b - a);
+        assert!(
+            b - a >= elapsed - 40,
+            "boot clock advanced {} ms, expected ~{elapsed}",
+            b - a
+        );
+        assert!(
+            b - a <= elapsed + 40,
+            "boot clock advanced {} ms, expected ~{elapsed}",
+            b - a
+        );
     }
 
     /// 开机时钟 ≥ 不计睡眠的单调时钟（两者同一起点：开机；前者多出睡眠时长）。

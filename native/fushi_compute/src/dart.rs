@@ -34,11 +34,7 @@ pub fn compare_f64(a: f64, b: f64) -> i32 {
             0
         }
     } else if a.is_nan() {
-        if b.is_nan() {
-            0
-        } else {
-            1
-        }
+        if b.is_nan() { 0 } else { 1 }
     } else {
         -1
     }
