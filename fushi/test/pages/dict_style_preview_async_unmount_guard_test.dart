@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 反馈 63DhJLTAHW 日志（Linux 3.0.1）：
 /// `Null check operator used on a null value`
 /// `State.context ← _DictStylePreviewState._pushTheme ← _bootstrap`（UncaughtZone）。
@@ -19,11 +21,8 @@ void main() {
   late String source;
 
   setUpAll(() {
-    // 去掉 `//` 行注释：注释里提到 `Theme.of(context)` / `await` 不算代码。
-    source = File(previewPath)
-        .readAsLinesSync()
-        .where((String l) => !l.trimLeft().startsWith('//'))
-        .join('\n');
+    // 注释掩成空白：注释里提到 `Theme.of(context)` / `await` 不算代码。
+    source = maskComments(File(previewPath).readAsStringSync());
   });
 
   /// [name] 方法体（首个 `{` 到配对的 `}`）。
