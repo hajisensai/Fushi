@@ -330,8 +330,8 @@ namespace flutter_inappwebview_plugin
     // 引擎拆除的 registrar，命中 flutter_windows.dll c0000005（2026-06-11 退出 dump
     // 实证）。这是第七修「不显式 Close 帧池、靠在途 deferral 强引用收尾」唯一漏掉的
     // 消费者侧缺口：WGC 侧的 null-delegate 已根除，但消费者边从未断开。置空回调后，
-    // Timer pump callback 里的 frame_available_ 守卫直接短路，任何迟到 tick
-    // 都不再触碰 registrar。先切断、再 Stop（WGC 销毁序见 texture_bridge.cc）、最后
+    // 平台线程上报（DeliverFrameLocked，BUG-4079）里的 frame_available_ 守卫直接
+    // 短路，取帧线程任何迟到的投递都不再触碰 registrar。先切断、再 Stop（WGC 销毁序见 texture_bridge.cc）、最后
     // 注销 texture——三步单调缩小 teardown 竞态窗口。
     if (texture_endpoint_) {
 #ifdef HAVE_FLUTTER_D3D_TEXTURE

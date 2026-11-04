@@ -50,8 +50,9 @@ namespace flutter_inappwebview_plugin
       Size content) const;
     bool RequestMatches(Size surface, size_t request_width,
       size_t request_height) const;
-    void ProcessFrame(winrt::com_ptr<ID3D11Texture2D> src_texture,
-      size_t request_width, size_t request_height);
+    void ProcessFrame(ID3D11Texture2D* src_texture,
+      ABI::Windows::Graphics::SizeInt32 content_size, size_t request_width,
+      size_t request_height);
     void CopyIntoSurface(ID3D11Texture2D* src, Size visible);
 #ifdef HAVE_LIBPLACEBO_HEADERS
     // 计划 P2：libplacebo 着色器通道，首次 SetShaders 非空时才加载 DLL / 建设备。
