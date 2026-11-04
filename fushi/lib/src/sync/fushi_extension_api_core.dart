@@ -347,7 +347,7 @@ class FushiExtensionApiCore {
     } on GraphicSubtitleOcrUnavailable catch (e) {
       return FushiExtensionApiResponse.json(<String, dynamic>{
         'error': e.reason.name,
-        'blocks': <Object?>[],
+        'blocks': const <Object?>[],
       });
     }
     return FushiExtensionApiResponse.json(extensionOcrFrameJson(frame));

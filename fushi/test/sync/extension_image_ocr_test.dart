@@ -19,7 +19,6 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_messages.dart';
-import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 final Uint8List _png = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 1, 2]);
