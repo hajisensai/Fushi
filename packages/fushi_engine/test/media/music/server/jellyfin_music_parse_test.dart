@@ -98,6 +98,59 @@ void main() {
     expect(t.coverRef, 'al1');
   });
 
+  test('歌单：剥 HTML 简介、MediaType 非音频丢掉、缺失时保留', () {
+    final MusicServerPlaylist p = parseJellyfinMusicPlaylist(<String, Object?>{
+      'Id': 'p1',
+      'Name': 'Mix',
+      'MediaType': 'Audio',
+      'Overview': 'A<br/>B &lt;3',
+      'ChildCount': 7,
+      'RunTimeTicks': 6000000000,
+      'ImageTags': <String, Object?>{'Primary': 't'},
+    })!;
+    expect(p.title, 'Mix');
+    expect(p.description, 'A\nB <3');
+    expect(p.trackCount, 7);
+    expect(p.durationMs, 600000);
+    expect(p.coverRef, 'p1');
+    expect(p.curator, isNull);
+    expect(p.editable, isFalse);
+    expect(
+      parseJellyfinMusicPlaylist(<String, Object?>{
+        'Id': 'v',
+        'Name': 'Clips',
+        'MediaType': 'Video',
+      }),
+      isNull,
+    );
+    final MusicServerPlaylist bare = parseJellyfinMusicPlaylist(
+      <String, Object?>{'Id': 'x', 'Name': 'Old', 'Overview': '  '},
+    )!;
+    expect(bare.coverRef, isNull);
+    expect(bare.description, isNull);
+    expect(parseJellyfinMusicPlaylist(<String, Object?>{'Name': 'n'}), isNull);
+  });
+
+  test('歌单曲目：保持服务器顺序（不按轨号排）、只留音频', () {
+    final List<MusicServerTrack> tracks = parseJellyfinPlaylistTracks(
+      <String, Object?>{
+        'Items': <Object?>[
+          <String, Object?>{'Id': 'b', 'Name': 'B', 'IndexNumber': 9},
+          <String, Object?>{'Id': 'v', 'Name': 'V', 'Type': 'Video'},
+          <String, Object?>{
+            'Id': 'a',
+            'Name': 'A',
+            'IndexNumber': 1,
+            'Type': 'Audio',
+            'MediaType': 'Audio',
+          },
+        ],
+      },
+    );
+    expect(tracks.map((MusicServerTrack t) => t.id), <String>['b', 'a']);
+    expect(parseJellyfinPlaylistTracks(null), isEmpty);
+  });
+
   test('播放流：原样直出 static=true；给了上限走 universal 请服务器转码', () {
     final ({String path, Map<String, String> query, bool transcoded}) direct =
         jellyfinMusicStreamRequest(

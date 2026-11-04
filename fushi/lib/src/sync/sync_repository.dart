@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey;
+    show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
@@ -1891,6 +1891,8 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
+    kWorkProfileSessionPrefKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,

@@ -484,6 +484,8 @@
   favorite_failed: 'Couldn\'t add to favorites — is Fushi running?',
   favorite_failed_old_app: 'Favorites from the browser need a newer Fushi — please update Fushi',
   conn_no_response: 'Fushi is running but not responding — bring the Fushi window to the front and try again',
+  canvas_ocr_no_engine: "No OCR engine is set up in Fushi — set one up in Fushi's manga OCR settings to look up words in page images",
+  canvas_ocr_failed: "Couldn't read any text in this page image",
   conn_state_no_response_title: 'Fushi is not responding',
   conn_state_no_response_detail: 'Something is listening on the port but did not answer in time. Fushi may be busy or suspended by the system; bring its window to the front and check again.',
   opt_popupFontSize_title: 'Dictionary font size',

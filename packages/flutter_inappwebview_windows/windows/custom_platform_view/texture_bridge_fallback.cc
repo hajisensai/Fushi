@@ -18,8 +18,7 @@ namespace flutter_inappwebview_plugin
     const std::lock_guard<std::mutex> lock(buffer_mutex_);
   }
 
-  void TextureBridgeFallback::ProcessFrame(
-    winrt::com_ptr<ID3D11Texture2D> src_texture)
+  void TextureBridgeFallback::ProcessFrame(ID3D11Texture2D* src_texture)
   {
     D3D11_TEXTURE2D_DESC desc;
     src_texture->GetDesc(&desc);
@@ -34,7 +33,7 @@ namespace flutter_inappwebview_plugin
     auto staging_texture = staging_texture_.get();
 
     if (is_exact_size) {
-      device_context->CopyResource(staging_texture, src_texture.get());
+      device_context->CopyResource(staging_texture, src_texture);
     }
     else {
       D3D11_BOX client_box;
@@ -45,7 +44,7 @@ namespace flutter_inappwebview_plugin
       client_box.front = 0;
       client_box.back = 1;
       device_context->CopySubresourceRegion(staging_texture, 0, 0, 0, 0,
-        src_texture.get(), 0, &client_box);
+        src_texture, 0, &client_box);
     }
 
     D3D11_MAPPED_SUBRESOURCE mappedResource;
@@ -129,8 +128,11 @@ namespace flutter_inappwebview_plugin
       return nullptr;
     }
 
-    if (last_frame_) {
-      ProcessFrame(last_frame_);
+    {
+      StagedFrame staged = AcquireStagedFrame();
+      if (staged.texture) {
+        ProcessFrame(staged.texture);
+      }
     }
 
     auto buffer = pixel_buffer_.get();

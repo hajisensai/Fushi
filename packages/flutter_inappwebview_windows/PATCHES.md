@@ -115,3 +115,49 @@ verified at runtime on this machine.
   are then copied into the shared texture.
 - Tests: `test/texture_capacity_test.dart` (policy), source guard
   `fushi/test/build/webview_texture_capacity_guard_test.dart`.
+
+## WGC frames pulled on a compositor-clocked worker thread (BUG-4108, 2026-11-05)
+
+- `texture_bridge.cc`: frames used to be pulled by a `DispatcherQueueTimer` on
+  the platform thread (merged with the Dart UI thread), with a single-buffer
+  frame pool, and the raster callback copied straight out of the WGC buffer.
+  The tick phase had nothing to do with DWM frames, so `MarkTextureFrameAvailable`
+  landed before or after the next Flutter vsync at random: ~10 of every ~57
+  captured frames per second were overwritten or repeated (raster interval p95
+  33.8 ms during lyrics wheel scrolling, page rAF a steady 16.7 ms).
+- Each frame pool now has its own worker thread (`RunFrameWorker`) that waits
+  on `DCompositionWaitForCompositorClock` (high-resolution waitable timer at the
+  DWM refresh period as a fallback) together with a stop event, drains a
+  free-threaded 2-buffer pool keeping only the newest frame, copies it into a
+  private staging texture (`WgcFrameMailbox`) and releases the WGC frame at
+  once. There is still no `FrameArrived` subscription (BUG-209/BUG-163).
+- Delivery hops back to the platform thread through an agile
+  `IDispatcherQueueHandler`: `DeliverFrameLocked` keeps every old check
+  (invalidation gate, resize/recreate, fps limit, `IsProcessExiting`) before
+  `frame_available_()`. The raster callback copies staging → the fixed-handle
+  shared texture under the mailbox lock. The plugin D3D11 device has
+  `SetMultithreadProtected(TRUE)`.
+- Retire order: invalidate delivery → signal stop → join the worker → close
+  session → close pool → registry `MarkRetired`.
+- Diagnostics: `windows/utils/wgc_pacing_probe.h` (`FUSHI_WGC_PACING_PROBE=1`,
+  off by default) writes a once-per-second `evt=pacing` line to
+  `wgc_capture.log`.
+- Tests: source guards `fushi/test/widgets/texture_bridge_stop_guard_test.dart`,
+  `wgc_pump_tick_agile_guard_test.dart`, `wgc_pump_interval_guard_test.dart`,
+  `wgc_capture_logging_guard_test.dart`, `inappwebview_windows_native_guards_test.dart`.
+
+## `contentEncoding` is the charset (BUG-4108, 2026-11-05)
+
+- `windows/utils/content_type.h` `contentTypeWithCharset`, used by
+  `types/web_resource_response.cpp` and `types/custom_scheme_response.cpp`.
+  Upstream appended `contentEncoding` as an HTTP `Content-Encoding` header. In
+  the platform interface it is the response charset (Android
+  `WebResourceResponse`'s `encoding`, iOS `textEncodingName`), so it now rides
+  as the `charset=` parameter of `Content-Type` and no `Content-Encoding` header
+  is emitted. Without it WebView2 decoded intercepted documents lacking
+  `<meta charset>` with the system ANSI code page (GBK on zh-CN): EPUB chapters
+  showed UTF-8 curly quotes as mojibake. Unchanged when the type already has a
+  `charset=` parameter, or when `contentEncoding` is empty or `binary`.
+  The Linux fork carries the same helper (`linux/utils/content_type.h`).
+- Keep `content_type.h` pure ASCII: MSVC reads sources in the system code page
+  and the plugin builds with `/WX`, so a non-ASCII comment fails with C4819.

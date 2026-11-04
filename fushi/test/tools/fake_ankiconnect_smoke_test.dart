@@ -345,10 +345,11 @@ void main() {
     expect(cards, hasLength(1));
     final List<AnkiCardInfo> infos = await service.cardsInfo(cards);
     expect(infos.single.noteId, noteId);
-    final List<AnkiConnectBatchResult> due = await service.setCardsDueMany(
+    expect(await service.supportsNativeRepositionNewCards(), isTrue);
+    final List<AnkiConnectBatchResult> due = await service.repositionNewCards(
       <AnkiCardDueUpdate>[AnkiCardDueUpdate(cardId: cards.single, due: 7)],
     );
-    expect(ankiSetSpecificValueFailure(due.single), isNull);
+    expect(due.single.error, isNull);
     expect(server.notes.single['due'], 7);
     expect(await service.guiBrowseQuery('nid:$noteId'), cards);
 

@@ -136,6 +136,8 @@ Unknown fields are rejected. Dependencies between declarations:
 - `login` ⇔ `account` (declare both), and they need the `credentials` permission.
 - `library` and `like` need `login` + `account`.
 - `artistAlbums` / `artistMvs` need `artist`; `artistMvs` needs `mvStream`.
+- `playlistEdit` needs `login` + `account` and `playlist`; `collect` needs `login` + `account`.
+- `radio` needs `stream`; `artistSimilar` needs `artist`.
 - `searchBest` needs `search`.
 - `lyricsSearch` ⇔ `lyricsFetch` (declare both). They need nothing else: a lyrics-only plugin declares just these
   two (plus `network`), needs no `searchTypes`, and shows up only as a lyrics source in Settings, not in browsing.
@@ -228,6 +230,10 @@ Throwing an `Error` shows `error.message` to the user.
 | `home` | `{ refresh? }` — `refresh: true` when the user asks for new picks | `{ sections: Section[] }` (first 12 sections, 50 items each) | Music page › For you |
 | `library` | `{ page, pageSize }` | `{ items: Playlist[], hasMore }` — the account's own + saved playlists, "liked" first; empty page when logged out | Music page › your playlists |
 | `like` | `{ op: 'list' }` / `{ op: 'set', id, liked }` | list → `{ ids: string[], playlist?: Playlist }` or `null` (logged out); set → `null`, throw on failure | Heart button = the platform account's "liked songs" |
+| `playlistEdit` | `{ op: 'create', name, description?, trackIds? }` / `{ op: 'add' \| 'remove', playlistId, trackIds }` / `{ op: 'delete', playlistId }` | create → `{ playlist: Playlist }` (with `editable: true`); others → `null`; throw on failure / logged out | Create playlists, add / remove tracks, delete playlists. Mark playlists the account can edit with `editable: true` in `library` / `playlist` results |
+| `radio` | `{ op: 'next', seedTrackId?, count? }` / `{ op: 'trash', id }` | next → `{ tracks: Track[], title? }` — the next batch (first 100 used), empty = no more; no `seedTrackId` = personal radio (throw if it needs login), with it = radio seeded by that track; `count` is only a hint. trash → `null` | Radio queue: the host asks for the next batch when it runs low; "don't recommend" |
+| `artistSimilar` | `{ id }` | `{ items: Artist[] }` — first 50 used | Artist page › Similar artists |
+| `collect` | `{ op: 'set', type: 'playlist' \| 'album' \| 'artist', id, on }` | `null`; throw on failure / logged out | Save playlists / albums, follow artists. Report the current state as `collected: boolean` on Playlist / Album / Artist (omit when logged out / unknown) |
 | `account` | `{}` | `{ loggedIn, name?, avatarUrl?, badge? }` | Settings › plugin account row |
 | `login` | see section 6 | | Sign-in screen |
 
@@ -240,11 +246,12 @@ are dropped. Text is trimmed; empty strings count as missing.
 Track    { id*, title*, artists?: [{ id?, name* }], album?: { id?, title? }, durationMs?, coverUrl?,
            trackNo?, discNo?, isrc?, playable? (default true), note? ("VIP"), mvId? }
 Album    { id*, title*, artists?, coverUrl?, year?, trackCount?, releaseDate? ('YYYY'|'YYYY-MM'|'YYYY-MM-DD'),
-           company? (≤200 chars), description? (≤20000) }
+           company? (≤200 chars), description? (≤20000), collected?: bool (account saved it; omit if unknown) }
 Artist   { id*, name*, coverUrl?, aliases?: string[] (≤10), description?, intro?: [{ title?, text* }] (≤20),
-           stats?: { trackCount?, albumCount?, mvCount?, fanCount? } }
+           stats?: { trackCount?, albumCount?, mvCount?, fanCount? }, collected?: bool (account follows it) }
 Playlist { id*, title*, coverUrl?, trackCount?, owner?, description?, playCount?, tags?: string[] (≤10),
-           previewTracks?: Track[] (first 3, text only — e.g. a chart's top 3) }
+           previewTracks?: Track[] (first 3, text only — e.g. a chart's top 3),
+           editable?: bool (account can add / remove tracks; default false), collected?: bool (account saved it) }
 Mv       { id*, title*, artists?, coverUrl? (16:9), durationMs?, playCount?, publishDate? ('YYYY-MM-DD') }
 Stream   { url*, headers?, expiresAt?, codec?, bitrateKbps?, sampleRate?, bitDepth?, sizeBytes?,
            trial?: { startMs, endMs } (only a preview is available) }

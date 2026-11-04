@@ -101,6 +101,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.bookmarks = const <Bookmark>[],
     this.resolveBookmarkPage,
     this.openBookmarks = false,
+    this.openPositionJump = false,
     this.onAddBookmark,
     this.onDeleteBookmark,
     this.onJumpToBookmark,
@@ -197,6 +198,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   /// 打开即落在「收藏」页的「书签」段（工具栏「书签」按钮）。
   final bool openBookmarks;
+
+  /// 打开即落在「搜索」页（「按字数跳转」段所在页；歌词模式的「进度跳转」键）。
+  /// 与 [autofocusSearch] 不同：不聚焦搜索框（不弹软键盘）。
+  final bool openPositionJump;
 
   /// 在当前页加书签并落库，返回带 id 的书签；拿不到位置时 null。为 null（书没有
   /// 稳定 uid）时整段书签不出现，「收藏」页只显示收藏句（旧形态）。
@@ -702,7 +707,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // 工具栏「书签」键直达「收藏」页（分段初值见 [_favoritesSegment]）。
     final int initial = widget.openBookmarks
         ? _navTabs.indexOf(_ReaderNavTab.favorites)
-        : widget.autofocusSearch
+        : widget.autofocusSearch || widget.openPositionJump
         ? _navTabs.indexOf(_ReaderNavTab.search)
         : 0;
     return _navTabController = TabController(

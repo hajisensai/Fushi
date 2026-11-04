@@ -35,7 +35,10 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+    show
+        FushiTitleBarColorScope,
+        FushiTitleBarDragBandScope,
+        fushiTitleBarColorsOn;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -1870,16 +1873,21 @@ class _GameStreamPageState extends State<GameStreamPage>
     // 跟着变黑，否则画面顶上压一条浅色带。
     return FushiTitleBarColorScope(
       colors: fushiTitleBarColorsOn(Colors.black),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        // Autofocus: controller buttons must reach the game as soon as the
-        // stream opens, before anything inside the page was tapped. Kept out
-        // of traversal so Tab / D-pad focus moves skip this wrapper.
-        body: Focus(
-          autofocus: true,
-          skipTraversal: true,
-          onKeyEvent: _onHardwareKey,
-          child: _buildBody(theme),
+      // 返回 / 动作工具栏常驻，画面经 SafeArea 排在标题行之下、那一条只是黑底：
+      // 标题行是隐形拖动条——始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入
+      // （BUG-4115）。不用「按钮常显」：用户 2026-11-04 否决。
+      child: FushiTitleBarDragBandScope(
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          // Autofocus: controller buttons must reach the game as soon as the
+          // stream opens, before anything inside the page was tapped. Kept out
+          // of traversal so Tab / D-pad focus moves skip this wrapper.
+          body: Focus(
+            autofocus: true,
+            skipTraversal: true,
+            onKeyEvent: _onHardwareKey,
+            child: _buildBody(theme),
+          ),
         ),
       ),
     );

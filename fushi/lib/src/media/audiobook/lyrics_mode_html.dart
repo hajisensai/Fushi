@@ -752,7 +752,6 @@ $selectionJs
 // scrollBy」。delta 是轴无关的相对量，竖排 vertical-rl 的 scrollX 是负向坐标，
 // 用相对 delta 增量滚动绕开 RTL 绝对坐标符号坑（参考正文横排亚像素累积教训）。
 var __lyricsVertical = $verticalJs;
-var _animId = 0;
 // 返回元素中心相对视口中线的偏移（沿当前滚动轴）：>0 表示需正向 scrollBy。
 // 当前行对齐到视口的哪个比例处：主题的 --ly-anchor（Apple 0.46 / MD3 0.42），无主题 0.5。
 // 对齐口径同 SwiftUI scrollTo(anchor:)：元素自身 a 处对齐视口 a 处。
@@ -804,43 +803,112 @@ function _lyricsScrollByAxis(d) {
   if (__lyricsVertical) s.scrollLeft += d;
   else s.scrollTop += d;
 }
+function _lyricsScrollByAxisMeasured(d) {
+  var s = _lyricsScrollTarget();
+  var before = _lyAxisPos(s);
+  _lyricsScrollByAxis(d);
+  return _lyAxisPos(s) - before;
+}
 // 行切换滚动：弹簧（Niratan lineChangeAnimation：mass 1 / stiffness 100 / damping 18，
-// ζ≈0.9 轻微欠阻尼），按帧半隐式积分，跨帧时长被钳住防卡顿后一步飞过头。相距很远
-// （>3 屏，例如拖进度 / 跳章）直接落位，不做长距离动画。
+// ζ≈0.9 轻微欠阻尼）。相距很远（>3 屏，例如拖进度 / 跳章）直接落位，不做长距离动画。
+//
+// 帧率：以前每帧 requestAnimationFrame 积分一步再改 scrollTop——每一帧都要等主线程
+// 空闲。换行那一刻主线程正好最忙（换 class 触发几百行样式重算、扫过层重建、Dart
+// 桥消息），弹簧帧一帧帧被挤掉，看着就是「推动时帧率不够」。现在滚动位置**一次**
+// 落到终点，再给 #lc 一条反向的 transform 关键帧动画把视觉从起点送到终点：
+// transform 动画由合成器按显示器刷新率独立推进，主线程忙不忙都不掉帧。
+// 视觉位置 = 布局位置 − 滚动量 + 位移；落位时按实际滚动量（边界会钳）补等量位移，
+// 视觉连续。动画中途换目标：读出当下的位移与速度（解析解按动画 currentTime 求），
+// 从那里接着弹，速度也连续。
+var _LY_SPRING_K = 100, _LY_SPRING_C = 18;
+var _LY_SPRING_A = _LY_SPRING_C / 2;
+var _LY_SPRING_WD = Math.sqrt(_LY_SPRING_K - _LY_SPRING_A * _LY_SPRING_A);
+// 纯函数：欠阻尼弹簧 x'' = -K x - C x' 自 (x0, v0) 起经过 t 秒的位移与速度（px, px/s）。
+function __lyricsSpringAt(x0, v0, t) {
+  var a = x0, b = (v0 + _LY_SPRING_A * x0) / _LY_SPRING_WD;
+  var e = Math.exp(-_LY_SPRING_A * t);
+  var c = Math.cos(_LY_SPRING_WD * t), s = Math.sin(_LY_SPRING_WD * t);
+  return {
+    x: e * (a * c + b * s),
+    v: e * ((b * _LY_SPRING_WD - _LY_SPRING_A * a) * c -
+        (a * _LY_SPRING_WD + _LY_SPRING_A * b) * s),
+  };
+}
+// 纯函数：停稳时长（秒）——包络 R·e^(−αt) 进 0.5px、速度包络 R·√K·e^(−αt) 进 4px/s
+// （与旧积分版同一停稳判据），上限 1.5 s。
+function __lyricsSpringSettleSec(x0, v0) {
+  var b = (v0 + _LY_SPRING_A * x0) / _LY_SPRING_WD;
+  var r = Math.sqrt(x0 * x0 + b * b);
+  var k = Math.max(r / 0.5, r * Math.sqrt(_LY_SPRING_K) / 4);
+  return k <= 1 ? 0 : Math.min(1.5, Math.log(k) / _LY_SPRING_A);
+}
+// 纯函数：把弹簧按 120 Hz 采样成关键帧（合成器在相邻帧间线性插值），末帧恒为 0。
+function __lyricsSpringKeyframes(x0, v0, dur, vertical) {
+  var n = Math.max(2, Math.min(180, Math.ceil(dur * 120)));
+  var fn = vertical ? 'translateX(' : 'translateY(';
+  var frames = [];
+  for (var i = 0; i <= n; i++) {
+    var x = i === n ? 0 : __lyricsSpringAt(x0, v0, dur * i / n).x;
+    frames.push({transform: fn + x.toFixed(2) + 'px)', offset: i / n});
+  }
+  return frames;
+}
+var _lyShift = null;  // {anim, x0, v0, dur}
+// 在途位移动画当下的位移与速度；没有 / 已走完时为 0。
+function _lyShiftState() {
+  var sh = _lyShift;
+  if (!sh) return {x: 0, v: 0};
+  var t = (sh.anim.currentTime || 0) / 1000;
+  if (t >= sh.dur) return {x: 0, v: 0};
+  return __lyricsSpringAt(sh.x0, sh.v0, t);
+}
+// 丢掉在途位移（视觉会跳到无位移的位置）：只在紧接着按布局重新落位时用。
+function _lyShiftCancel() {
+  var sh = _lyShift;
+  _lyShift = null;
+  if (sh) sh.anim.cancel();
+}
+function _lyShiftStart(x0, v0) {
+  _lyShiftCancel();
+  var lc = document.getElementById('lc');
+  if (!lc || typeof lc.animate !== 'function') return;
+  var dur = __lyricsSpringSettleSec(x0, v0);
+  if (dur <= 0) return;
+  var anim = lc.animate(
+      __lyricsSpringKeyframes(x0, v0, dur, __lyricsVertical),
+      {duration: dur * 1000, easing: 'linear', fill: 'none'});
+  var sh = {anim: anim, x0: x0, v0: v0, dur: dur};
+  _lyShift = sh;
+  anim.onfinish = function() { if (_lyShift === sh) _lyShift = null; };
+}
+// 停在当下的视觉位置（手动浏览接管时）：把在途位移折进滚动量。滚动被边界钳住
+// 吸收不完的余量，从余量处以零速度弹回（不跳）。
+function _lyShiftFreeze() {
+  if (!_lyShift) return;
+  var x = _lyShiftState().x;
+  _lyShiftCancel();
+  var moved = _lyricsScrollByAxisMeasured(-x);
+  var rest = x + moved;
+  if (Math.abs(rest) >= 0.5) _lyShiftStart(rest, 0);
+}
 // force=true（显式回中：跟随开关 snap / 焦点 caret / 点「回到当前行」）无视手动浏览态。
 function scrollToCenter(el, duration, force) {
   if (!el) return;
   if (_lyBrowsing && !force) return;
   _lyWheelStop();
-  _animId++;
-  var myId = _animId;
-  var diff = _lyricsCenterDelta(el);
-  if (Math.abs(diff) < 1) return;
   var extent = __lyricsVertical ? window.innerWidth : window.innerHeight;
+  var cur = _lyShiftState();
+  // 量出的是视觉偏移（含在途位移）；布局上还需滚 diff − cur.x。
+  var diff = _lyricsCenterDelta(el);
   if (Math.abs(diff) > extent * 3 || window.__lyricsReduceMotion) {
-    _lyricsScrollByAxis(diff);
+    _lyShiftCancel();
+    _lyricsScrollByAxis(_lyricsCenterDelta(el));
     return;
   }
-  var x = 0, v = 0, last = performance.now();
-  var K = 100, C = 18;
-  function step(now) {
-    if (myId !== _animId) return;
-    var dt = Math.min(0.034, Math.max(0.001, (now - last) / 1000));
-    last = now;
-    // 两个子步，60Hz 下也足够稳定。
-    for (var i = 0; i < 2; i++) {
-      var h = dt / 2;
-      v += (-K * (x - diff) - C * v) * h;
-      x += v * h;
-    }
-    var applied = x;
-    if (Math.abs(diff - x) < 0.5 && Math.abs(v) < 4) applied = diff;
-    _lyricsScrollByAxis(applied - (step.done || 0));
-    step.done = applied;
-    if (applied !== diff) requestAnimationFrame(step);
-  }
-  step.done = 0;
-  requestAnimationFrame(step);
+  if (Math.abs(diff) < 1 && !_lyShift) return;
+  _lyShiftCancel();
+  var moved = _lyricsScrollByAxisMeasured(diff - cur.x);
+  _lyShiftStart(cur.x + moved, cur.v);
 }
 
 // ── 手动滚动脱离跟随（Niratan isFollowingPlayback）──
@@ -872,7 +940,7 @@ function _lySetBrowsing(on) {
 }
 function _lyEnterBrowse() {
   if (!_lyThemed() || window.__lyricsCaretActive) return;
-  _animId++;
+  _lyShiftFreeze();
   _lySetBrowsing(true);
   _lyScheduleResume();
 }
@@ -1189,7 +1257,7 @@ function _lyReanchorAfterResize() {
   if (!__lyricsHasViewport()) return;
   var cur = (_currentIdx >= 0 && _currentIdx < _cues.length) ? _cues[_currentIdx] : null;
   if (cur && !_lyBrowsing) {
-    _animId++;
+    _lyShiftCancel();
     _lyricsScrollByAxis(_lyricsCenterDelta(cur));
   } else if (_lyCenterCue && _lyCenterCue.isConnected) {
     var r = _lyCenterCue.getBoundingClientRect();
@@ -1687,8 +1755,7 @@ function _lyTapEnd(x, y) {
   var cueEl = el ? el.closest('.cue') : null;
   if (!cueEl) {
     // BUG-756: 歌词是独立文档，没有正文的 fushiReader tap 桥（onTap/onTapEmpty）。
-    // 命中空白必须显式回 Dart：① 唤出/收起隐藏的底栏（正文靠 onTapEmpty，歌词此前
-    // 完全无此通道 → 底栏一旦隐藏就再也叫不出来）；② 让 Dart reclaim 阅读焦点——桌面
+    // 命中空白必须显式回 Dart，让 Dart reclaim 阅读焦点——桌面
     // WebView2 在本次 pointer 手势里抢走了 OS 焦点，不夺回 Flutter _focusNode 就永远
     // 收不到 ESC，全局「Esc 退出整页」处理器再不触发（正文每个手势 handler 都 reclaim，
     // 歌词 tap 路径此前一处都没有 → esc 退不出）。与正文 onTapEmpty 同款语义。

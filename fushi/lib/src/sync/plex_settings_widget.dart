@@ -457,7 +457,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
       context: context,
       builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.plex_sign_in_failed),
-        content: SingleChildScrollView(child: SelectableText(message)),
+        content: SelectableText(message),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),

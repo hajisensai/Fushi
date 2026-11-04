@@ -128,6 +128,10 @@ require('./relative')   // 只能加载包内已校验的 .js
 | `home` | `{}` | `{ sections: [Section] }`：音乐页「推荐」页签的内容（每日推荐、推荐歌单、榜单等）；登录后可给个性化内容 |
 | `library` | `{ page: 0 起, pageSize }` | `{ items: [Playlist], hasMore: bool }`：已登录账号自己的歌单与收藏的歌单（「我喜欢」排第一）；未登录返回空页。需同时声明 `account` |
 | `like` | `{ op: 'list' }` / `{ op: 'set', id, liked: bool }` | list → `{ ids: [曲目 id], playlist?: Playlist }`（平台账号喜欢的全部曲目 + 承载它们的「喜欢」歌单），未登录返回 `null`；set → `null`，未登录或平台拒绝时抛错（消息给用户看）。需同时声明 `login` / `account` |
+| `playlistEdit` | `{ op: 'create', name, description?, trackIds?: [曲目 id] }` / `{ op: 'add'\|'remove', playlistId, trackIds: [曲目 id] }` / `{ op: 'delete', playlistId }` | create → `{ playlist: Playlist }`（新歌单，`editable: true`）；add / remove / delete → `null`。未登录或平台拒绝时抛错（消息给用户看）。需同时声明 `login` / `account` 与 `playlist` |
+| `radio` | `{ op: 'next', seedTrackId?, count? }` / `{ op: 'trash', id }` | next → `{ tracks: [Track], title? }`：每次给「接下来的一批」（宿主快播完时再调、拼进队列，取前 100 首，坏项丢弃），空数组 = 没有更多；无 `seedTrackId` 是个人电台（如网易云私人 FM，需要登录时抛错），有则以这首为种子；`count` 只是建议值，宿主默认不传。trash → `null`：不喜欢 / 不再推荐这首，需要登录时抛错。需同时声明 `stream` |
+| `artistSimilar` | `{ id }` | `{ items: [Artist] }`：相似艺人（宿主取前 50，坏项丢弃）。需同时声明 `artist` |
+| `collect` | `{ op: 'set', type: 'playlist'\|'album'\|'artist', id, on: bool }` | `null`：收藏 / 取消收藏歌单、专辑，关注 / 取消关注艺人；未登录或平台拒绝时抛错。需同时声明 `login` / `account` |
 
 实体（`id` 一律字符串，由插件定义，宿主只做不透明键）：
 
@@ -136,15 +140,19 @@ Track    { id, title, artists: [{ id?, name }], album?: { id?, title }, duration
            trackNo?, discNo?, isrc?, playable?: bool /* 缺省 true */, note?: string /* 如「VIP」 */,
            mvId?: string /* 这首歌的 MV，插件声明了 mvStream 才会被用到 */ }
 Album    { id, title, artists: [{ id?, name }], coverUrl?, year?, trackCount?,
-           releaseDate?: 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD', company?, description? }
+           releaseDate?: 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD', company?, description?,
+           collected?: bool /* 当前账号已收藏；未登录或不知道时省略 */ }
 Artist   { id, name, coverUrl?, aliases?: [string] /* 别名 + 译名 */, description?: string /* 简介全文 */,
            intro?: [{ title?, text }] /* 其它介绍段落 */,
-           stats?: { trackCount?, albumCount?, mvCount?, fanCount? } }
+           stats?: { trackCount?, albumCount?, mvCount?, fanCount? },
+           collected?: bool /* 当前账号已关注；未登录或不知道时省略 */ }
 Mv       { id, title, artists?: [{ id?, name }], coverUrl? /* 16:9 */, durationMs?, playCount?,
            publishDate?: 'YYYY-MM-DD' }
 MvStream { url, headers?: {k: v}, expiresAt?: epochMs, width?, height? }
 Playlist { id, title, coverUrl?, trackCount?, owner?, description?, playCount?, tags?: [string],
-           previewTracks?: [{ id, title, artists: [{ id?, name }], ...Track 其余字段可选 }] }
+           previewTracks?: [{ id, title, artists: [{ id?, name }], ...Track 其余字段可选 }],
+           editable?: bool /* 当前账号能加 / 删歌（自建歌单；「我喜欢的音乐」这类特殊歌单为 false），缺省 false */,
+           collected?: bool /* 当前账号已收藏；未登录或不知道时省略 */ }
            /* previewTracks：卡片上直接显示的前几首（如榜单前三），只显示文字。宿主丢掉缺 id/title 的
               坏条目、截断到前 3 条、丢弃其中的 coverUrl；主要用于 home 的 playlists 段 */
 Stream   { url, headers?: {k: v}, expiresAt?: epochMs, codec?, bitrateKbps?, sampleRate?, bitDepth?,
@@ -225,6 +233,18 @@ Challenge {
   `media/music/plugin/music_plugin_favorites.dart`：喜欢集合按插件缓存在内存（首次被问到才拉；登录 /
   退出、装卸 / 启停插件后重拉），喜欢 / 取消喜欢调 `like` 成功后才改缓存。本地 / 服务器曲目不能收藏。
   推荐页顶部「我喜欢的音乐」快捷格直接打开 `like` 给的平台歌单（插件歌单详情页），未登录时去登录。
+
+- 「更多」动作（2026-11-05，与 Apple Music 共用 `pages/implementations/music/music_track_actions.dart`
+  的菜单 / 选歌单 / 新建歌单流程；插件侧在 `music_plugin_actions.dart`）：每项只在声明了对应能力时出现——
+  曲目：喜欢（`like`）、减少推荐（`radio` trash）、加入歌单 / 从自己的歌单移除（`playlistEdit`，只列
+  `editable` 歌单）、以这首起电台（`radio`）、去艺人（`artist`）/ 去专辑（`album`）；专辑 / 歌单页：
+  收藏 / 取消收藏（`collect`，按 `collected` 只给一项，未知时两项都给）、删除自己的歌单；艺人页：关注 /
+  取消关注、「相似艺人」页签（`artistSimilar`，取不到不出页签）；「我的歌单」：新建歌单；推荐页插件段头：
+  个人电台。
+- 电台播放：`radio` 不走 MusicKit 那种自管队列，队列仍在 Fushi 手里——`media/music/music_queue_feed.dart`
+  的 `MusicQueueFeedRunner` 在离队尾不到 2 首时调 `radio next` 并 `MusicPlayerEngine.appendToQueue`
+  追加；用户换了别的队列即停。
+- 兼容：旧版宿主的清单校验不认识这四个新能力名，会拒装声明了它们的插件包（网易云插件 0.6.0 起需要本版宿主）。
 
 ## 5.1 第三方开发包
 

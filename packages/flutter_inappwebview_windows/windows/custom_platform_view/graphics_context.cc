@@ -1,5 +1,7 @@
 #include "graphics_context.h"
 
+#include <d3d11_4.h>
+
 #include "util/d3dutil.h"
 #include "util/direct3d11.interop.h"
 
@@ -13,6 +15,13 @@ namespace flutter_inappwebview_plugin
     }
 
     device_->GetImmediateContext(device_context_.put());
+    // BUG-4114：WGC 取帧线程（每个帧池一条）与 Flutter 栅格线程都在这个立即上下文
+    // 上提交拷贝。打开 D3D11 的多线程保护，让每次调用在设备内部串行化；取帧线程只
+    // 发不依赖管线状态的 CopySubresourceRegion / Flush，不会和栅格线程的着色器管线
+    // 状态互相踩。
+    if (auto multithread = device_context_.try_as<ID3D11Multithread>()) {
+      multithread->SetMultithreadProtected(TRUE);
+    }
     if (FAILED(CreateDirect3D11DeviceFromDXGIDevice(
       device_.try_as<IDXGIDevice>().get(),
       (IInspectable**)device_winrt_.put()))) {

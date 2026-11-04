@@ -195,42 +195,40 @@ class _SourceLibraryPrivacyDialogState
       title: Text('${t.media_source_privacy_action} · ${widget.source.label}'),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FushiSwitchListTile(
-                key: const ValueKey<String>('media-source-privacy-switch'),
-                value: _private,
-                onChanged: _writing ? null : (bool v) => unawaited(_set(v)),
-                contentPadding: EdgeInsets.zero,
-                secondary: FushiIcon(
-                  _private ? FushiIcons.lock : FushiIcons.lockOpen,
-                ),
-                title: Text(t.media_source_privacy_switch),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiSwitchListTile(
+              key: const ValueKey<String>('media-source-privacy-switch'),
+              value: _private,
+              onChanged: _writing ? null : (bool v) => unawaited(_set(v)),
+              contentPadding: EdgeInsets.zero,
+              secondary: FushiIcon(
+                _private ? FushiIcons.lock : FushiIcons.lockOpen,
               ),
-              FushiAnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                curve: FushiMotion.standard,
-                alignment: Alignment.topCenter,
-                child: _writing
-                    ? const Padding(
-                        key: ValueKey<String>('media-source-privacy-busy'),
-                        padding: EdgeInsets.only(top: 4),
-                        child: FushiLinearProgressIndicator(),
-                      )
-                    : const SizedBox(width: double.infinity),
+              title: Text(t.media_source_privacy_switch),
+            ),
+            FushiAnimatedSize(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              alignment: Alignment.topCenter,
+              child: _writing
+                  ? const Padding(
+                      key: ValueKey<String>('media-source-privacy-busy'),
+                      padding: EdgeInsets.only(top: 4),
+                      child: FushiLinearProgressIndicator(),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                t.media_source_privacy_hint,
+                style: theme.textTheme.bodyMedium,
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  t.media_source_privacy_hint,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

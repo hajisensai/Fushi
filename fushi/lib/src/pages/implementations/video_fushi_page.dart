@@ -379,6 +379,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -3891,6 +3892,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           languageTag: languageTag,
           mediaType: ProfileMediaKind.video,
         );
+    // 反馈 kEFPY4cuKZ：字幕样式随作品级配置走。会话与视频加载并行解析，加载那边可能已经按
+    // 全局样式解码过一次（_subtitleStyle），会话就绪后按生效值重取。
+    if (!mounted) return;
+    setState(() {
+      _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
+    });
   }
 
   /// TODO-1213：切换加载阶段并刷新加载态 UI（mounted 守卫）。离开「下载字幕」阶段时
@@ -12224,8 +12231,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 控制条浮出时沉浸标题行一起浮出：窗口按钮与拖动区随控制条出现，
             // 不必先摸到窗口顶边停留（反馈 BEX2_5K1zV「播放器里窗口拖不动」，
             // BUG-3929）。用控制条真实可见态，不用字幕避让那份门控派生值。
-            child: FushiTitleBarRevealScope(
-              revealed: _mediaKitControlsVisible,
+            // 控制条显隐不重建本页，只重建这一层表态（child 预先建好）。
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _mediaKitControlsVisible,
+              builder: (BuildContext context, bool visible, Widget? page) =>
+                  FushiTitleBarRevealScope(revealed: visible, child: page!),
               child: _wrapDiscLaunchTransition(
                 _buildScaffold(controller, videoController, cs),
               ),
