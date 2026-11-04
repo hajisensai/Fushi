@@ -1409,7 +1409,8 @@ class ThemeNotifier extends ChangeNotifier {
     }
   }
 
-  /// 按当前横屏图重取候选种子色（没选自定义图片时清空）。先同步套用缓存，再核对
+  /// 按当前横屏图重取候选种子色（没选自定义图片时清空），并异步核对全局与各模块
+  /// 的背景图还在不在。先同步套用缓存，再核对
   /// 文件修改时间 / 大小，变了才在后台重取（与「主题色跟随图标」同一做法）。
   Future<void> refreshPageBackdropSeeds() async {
     final int generation = ++_pageBackdropSeedGeneration;
@@ -1427,6 +1428,8 @@ class ThemeNotifier extends ChangeNotifier {
     final String? path = currentPath();
     if (path == null) {
       clearSeeds();
+      // 全局没有图也要核对各模块单独的图（不在就让那个模块退回全局）。
+      await _verifyPageBackdropImages();
       return;
     }
     // 同步段：先套缓存（冷启动首帧就是缓存里的颜色，不先闪一下原主题）。
