@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3617 条。点号进各自文件。
+> 共 3618 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4015](bugs/BUG-4015-ass-style-transfer-japanese-italic.md) | ✅ | ✅ | 参考英语ASS生成的日语ASS整行变斜体 |
 | [BUG-4014](bugs/BUG-4014-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
 | [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
 | [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |

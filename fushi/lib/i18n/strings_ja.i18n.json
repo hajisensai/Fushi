@@ -10596,6 +10596,7 @@
   "video_subtitle_ai_stage_consistency": "表記の統一",
   "video_subtitle_ai_stage_export": "書き出し",
   "video_subtitle_ai_stage_glossary": "固有名詞表の作成",
+  "video_subtitle_ai_stage_lyrics": "Filling lyrics",
   "video_subtitle_ai_stage_proofread": "校正",
   "video_subtitle_ai_stage_recognize": "音声認識",
   "video_subtitle_ai_stage_split": "長い行の分割",

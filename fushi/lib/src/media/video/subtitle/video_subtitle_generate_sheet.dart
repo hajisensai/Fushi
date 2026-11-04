@@ -92,6 +92,7 @@ String videoSubtitleStageLabel(VideoSubtitleStage stage) => switch (stage) {
   VideoSubtitleStage.glossary => t.video_subtitle_ai_stage_glossary,
   VideoSubtitleStage.proofread => t.video_subtitle_ai_stage_proofread,
   VideoSubtitleStage.consistency => t.video_subtitle_ai_stage_consistency,
+  VideoSubtitleStage.lyrics => t.video_subtitle_ai_stage_lyrics,
   VideoSubtitleStage.songCheck ||
   VideoSubtitleStage.split => t.video_subtitle_ai_stage_split,
   VideoSubtitleStage.export => t.video_subtitle_ai_stage_export,
@@ -821,14 +822,15 @@ class _VideoSubtitleGenerateSheetState
     VideoSubtitleStage.glossary,
     VideoSubtitleStage.proofread,
     VideoSubtitleStage.consistency,
+    VideoSubtitleStage.lyrics,
     VideoSubtitleStage.split,
     VideoSubtitleStage.export,
   ];
 
-  /// 歌曲判定算在拆分里。
+  /// 歌曲判定算在补歌词里（紧挨着，且都只在开 AI 时出现）。
   static int _stageRank(VideoSubtitleStage s) =>
       s == VideoSubtitleStage.songCheck
-      ? VideoSubtitleStage.split.index
+      ? VideoSubtitleStage.lyrics.index
       : s.index;
 
   Widget _jobCard(BuildContext context, AppVideoSubtitleJob job) {
@@ -863,7 +865,8 @@ class _VideoSubtitleGenerateSheetState
               if (aiStages ||
                   (stage != VideoSubtitleStage.glossary &&
                       stage != VideoSubtitleStage.proofread &&
-                      stage != VideoSubtitleStage.consistency))
+                      stage != VideoSubtitleStage.consistency &&
+                      stage != VideoSubtitleStage.lyrics))
                 _stageRow(stage, current),
             FushiLinearProgressIndicator(value: progress?.fraction),
           ],

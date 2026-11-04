@@ -4,9 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_proofreader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:path/path.dart' as p;
@@ -33,6 +36,29 @@ class _FakeRecognizer implements VideoSubtitleRecognizer {
     calls.add(p.basename(videoPath));
     onProgress(0.5, 'half');
     return drafts[p.basename(videoPath)]!;
+  }
+}
+
+/// 证据来源替身：给固定轨，记 load 次数。
+class _FakeEvidence implements SubtitleEvidenceSource {
+  _FakeEvidence(this.tracks, {this.key = 'v1'});
+
+  final List<SubtitleEvidenceTrack> tracks;
+  final String key;
+  int loads = 0;
+
+  @override
+  Future<String> sourceKey(
+    String videoPath, {
+    required bool Function(String path) isOwnOutput,
+  }) async => key;
+
+  @override
+  Future<List<SubtitleEvidenceTrack>> load(
+    SubtitleEvidenceLoadRequest request,
+  ) async {
+    loads++;
+    return tracks;
   }
 }
 
@@ -119,10 +145,12 @@ void main() {
     _FakeRecognizer recognizer, {
     AiTextCompleter? ai,
     SubtitleDisplaySplitter? splitter,
+    SubtitleEvidenceSource? evidence,
   }) => VideoSubtitlePipeline(
     recognizer: recognizer,
     jobsRoot: jobs,
     styleReference: null,
+    evidence: evidence,
     ai: ai == null
         ? null
         : VideoSubtitleAiConfig(completer: ai, glossaryStore: store),
@@ -403,5 +431,69 @@ void main() {
     // 实测：1,587,877 输入（缓存写入 + 读取）/ 124,189 输出。
     expect(est.inputTokens, inInclusiveRange(1270000, 1900000));
     expect(est.outputTokens, inInclusiveRange(100000, 150000));
+  });
+
+  test('既存字幕证据：补回 ASR 漏的行、证据进 S3 提示词；证据变了从校对重跑', () async {
+    List<SubtitleEvidenceTrack> tracks(String gap) => <SubtitleEvidenceTrack>[
+      SubtitleEvidenceTrack(
+        label: 'ep01.ja.srt',
+        kind: SubtitleEvidenceKind.text,
+        language: 'ja',
+        cues: <SubtitleEvidenceCue>[
+          const SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+          SubtitleEvidenceCue(startMs: 20000, endMs: 22000, text: gap),
+        ],
+      ),
+      const SubtitleEvidenceTrack(
+        label: 'ep01.en.srt',
+        kind: SubtitleEvidenceKind.text,
+        language: 'en',
+        cues: <SubtitleEvidenceCue>[
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: 'Yui is here'),
+        ],
+      ),
+    ];
+    String srt() => File(p.join(videos.path, 'ep01.ja.srt')).readAsStringSync();
+    String s3Of(FakeAiCompleter ai) =>
+        ai.prompts.firstWhere((String s) => s.startsWith('あなたは日本語アニメ字幕の校正者'));
+
+    final FakeAiCompleter ai = FakeAiCompleter(_answer);
+    final _FakeEvidence ev = _FakeEvidence(tracks('先生、待って'));
+    final VideoSubtitlePipelineResult r = await pipeline(
+      _FakeRecognizer(drafts),
+      ai: ai,
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    final VideoSubtitleEpisodeResult e = r.episodes.single;
+    expect(e.gapFilledCount, 1);
+    expect(e.evidenceLabels, <String>['ep01.ja.srt', 'ep01.en.srt']);
+    expect(srt(), contains('先生、待って'));
+    final String s3 = s3Of(ai);
+    expect(s3, contains(kSubtitleProofreadEvidenceRules));
+    expect(s3, contains('    同言語字幕[字幕]: 唯が来た'));
+    expect(s3, contains('    他言語字幕(en): Yui is here'));
+    expect(s3, contains('主(既存字幕から補完): 先生、待って'));
+
+    // 证据没变：evidence.json 复用、全部阶段走缓存，不发请求。
+    final ExplodingAiCompleter none = ExplodingAiCompleter();
+    await pipeline(
+      _FakeRecognizer(drafts),
+      ai: none,
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(ev.loads, 1);
+    expect(none.calls, 0);
+
+    // 证据变了（来源身份变）：重收证据，从校对起重跑。
+    final FakeAiCompleter ai2 = FakeAiCompleter(_answer);
+    final _FakeEvidence ev2 = _FakeEvidence(tracks('先生、待ってよ'), key: 'v2');
+    await pipeline(
+      _FakeRecognizer(drafts),
+      ai: ai2,
+      evidence: ev2,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(ev2.loads, 1);
+    expect(s3Of(ai2), contains('主(既存字幕から補完): 先生、待ってよ'));
+    expect(srt(), contains('先生、待ってよ'));
   });
 }

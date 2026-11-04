@@ -36,6 +36,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
@@ -43,6 +44,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossar
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
+    show buildSubtitleLyricsFinder;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
@@ -396,9 +399,9 @@ Future<int> runSubgen(
   final SubtitleGlossaryDriftStore glossaryStore = SubtitleGlossaryDriftStore(
     rt.db,
   );
-  final List<WebKnowledgeSite> sites = ServerAiSettings(
-    () => rt.config.ai,
-  ).aiWebKnowledgeSites;
+  final ServerAiSettings aiSettings = ServerAiSettings(() => rt.config.ai);
+  final List<WebKnowledgeSite> sites = aiSettings.aiWebKnowledgeSites;
+  final WebSearchConfig? searchConfig = aiSettings.aiWebSearch;
 
   final List<Map<String, Object?>> report = <Map<String, Object?>>[];
   final SubtitleAiUsageTally total = SubtitleAiUsageTally();
@@ -423,6 +426,10 @@ Future<int> runSubgen(
     final WebKnowledgeClient? web = client == null || sites.isEmpty
         ? null
         : WebKnowledgeClient(sites: sites);
+    final WebSearchClient? search =
+        client == null || searchConfig == null || !searchConfig.isUsable
+        ? null
+        : WebSearchClient(config: searchConfig);
     final VideoSubtitlePipeline pipeline = VideoSubtitlePipeline(
       recognizer: choice.recognizer,
       jobsRoot: jobsRoot,
@@ -441,6 +448,10 @@ Future<int> runSubgen(
               proofreadConcurrency: provider.batchConcurrency,
               regenerateGlossary: options.regenerateGlossary,
             ),
+      // 歌词补齐要 AI 认歌 / 对齐：没开 AI（含 dry-run）不装。
+      lyricsFinder: provider == null || options.dryRun
+          ? null
+          : buildSubtitleLyricsFinder(webSearch: search),
     );
     try {
       if (options.dryRun) {
@@ -486,6 +497,9 @@ Future<int> runSubgen(
               if (e.styledOutputPath != null)
                 'styledOutput': e.styledOutputPath,
               if (e.styleReference != null) 'styleReference': e.styleReference,
+              if (e.evidenceLabels.isNotEmpty) 'evidence': e.evidenceLabels,
+              if (e.gapFilledCount > 0) 'gapFilled': e.gapFilledCount,
+              if (e.lyricsCueCount > 0) 'lyricsCues': e.lyricsCueCount,
               if (e.styledError != null) 'styledError': e.styledError,
               if (e.reason != null) 'reason': e.reason,
               'cues': e.cueCount,
@@ -542,6 +556,7 @@ Future<int> runSubgen(
     } finally {
       client?.close();
       web?.close();
+      search?.close();
     }
   }
 
