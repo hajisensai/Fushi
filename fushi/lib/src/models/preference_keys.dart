@@ -43,6 +43,13 @@ const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 /// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
 const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 
+/// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
+/// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
+/// 设备本地：同意的是这台设备上配的那个后端。
+const String kAiWebSearchPageFetchPref = 'ai_web_search_page_fetch';
+const String kAiWebSearchPageFetchAllow = 'allow';
+const String kAiWebSearchPageFetchDeny = 'deny';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -98,6 +105,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // String（JSON）：AI 通用联网搜索后端 `{kind: searxng|brave, endpoint, apiKey}`
+  // （`WebSearchConfig`）。Brave API key 以 base64 `apiKeyB64` 存（与 ai_providers 同
+  // 口径）→ 凭据 + 设备本地。
+  'ai_web_search',
+  // String：见 [kAiWebSearchPageFetchPref]。非凭据，设备本地。
+  kAiWebSearchPageFetchPref,
   // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
   kAnkiSettingsPrefKey,
   'app_locale',
@@ -1060,6 +1073,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // 联网搜索配置 JSON 里的 Brave API key。
+  'ai_web_search',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

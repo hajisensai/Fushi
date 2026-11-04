@@ -37,7 +37,13 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
+    show SubtitleLyricsFinder, buildSubtitleLyricsFinder;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
+    show isImportedExternalSubtitlePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
@@ -87,6 +93,9 @@ abstract interface class AppVideoSubtitleSettings {
 
   /// 专名表生成时抓百科页用的站点（空 = 只用刮削数据）。
   List<WebKnowledgeSite> get webKnowledgeSites;
+
+  /// 通用联网搜索（歌词补齐查网页用）；null / 没配全 = 只查 LRCLIB。
+  WebSearchConfig? get webSearch;
 }
 
 /// 生产实现：现读偏好仓（指派 / 站点改了下一次调用即生效）。
@@ -101,6 +110,9 @@ class PrefsVideoSubtitleSettings implements AppVideoSubtitleSettings {
 
   @override
   List<WebKnowledgeSite> get webKnowledgeSites => prefs.aiWebKnowledgeSites;
+
+  @override
+  WebSearchConfig? get webSearch => prefs.aiWebSearch;
 }
 
 /// UI 与 ctl 取服务的唯一入口（同一个库共用一个实例，任务表跨页面存活）。
@@ -488,8 +500,13 @@ class AppVideoSubtitleService {
     this.asrModelPort = const AppVideoSubtitleAsrModelPort(),
     VideoRemoteJobRegistry? jobRegistry,
     WebKnowledgeClient Function(List<WebKnowledgeSite> sites)? webKnowledge,
+    SubtitleEvidenceSource? Function(AppVideoSubtitleTarget target)?
+    evidenceSource,
+    SubtitleLyricsFinder Function({WebSearchClient? webSearch})? lyricsFinder,
     int Function()? nowMs,
-  }) : _resolveRecognizer = recognizerResolver ?? _defaultResolver,
+  }) : _evidenceSource = evidenceSource,
+       _lyricsFinder = lyricsFinder ?? buildSubtitleLyricsFinder,
+       _resolveRecognizer = recognizerResolver ?? _defaultResolver,
        _completerFactory = completerFactory ?? _defaultCompleter,
        _jobsRoot = jobsRoot ?? defaultVideoSubtitleJobsRoot,
        _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
@@ -529,7 +546,36 @@ class AppVideoSubtitleService {
   final AppVideoSubtitleDurationProbe _probeDurationMs;
   final VideoRemoteJobRegistry _jobRegistry;
   final WebKnowledgeClient Function(List<WebKnowledgeSite> sites) _webKnowledge;
+
+  /// 证据来源（测试注入）；null = 生产实现 [_defaultEvidenceSource]。
+  final SubtitleEvidenceSource? Function(AppVideoSubtitleTarget target)?
+  _evidenceSource;
+
+  /// 歌词补齐的查词后端装配（生产 [buildSubtitleLyricsFinder]：LRCLIB + 配了联网搜索时
+  /// 的网页搜索）。每次运行按当时的「设置 › AI › 联网搜索」现建。
+  final SubtitleLyricsFinder Function({WebSearchClient? webSearch})
+  _lyricsFinder;
   final int Function() _nowMs;
+
+  /// 生产证据来源：视频旁 / 内嵌字幕之外，再加这一集在库里登记的导入字幕（手动导入、
+  /// Jimaku 下载、播放时图形字幕 OCR 出的 SRT 都住在 app 文档目录里，扫视频目录扫不到）。
+  SubtitleEvidenceSource _defaultEvidenceSource(
+    AppVideoSubtitleTarget target,
+  ) => SubtitleEvidenceCollector(
+    extraSubtitleFiles: (String videoPath) async {
+      final AppVideoSubtitleEpisode? episode = target.episodes
+          .where((AppVideoSubtitleEpisode e) => e.videoPath == videoPath)
+          .firstOrNull;
+      if (episode == null) return const <String>[];
+      final VideoBookRow? row = await database.getVideoBookByBookUid(
+        episode.bookUid,
+      );
+      final String? source = row?.subtitleSource;
+      return source != null && isImportedExternalSubtitlePath(source)
+          ? <String>[source]
+          : const <String>[];
+    },
+  );
 
   AppVideoSubtitleSettings get _settings => settings;
 
@@ -1001,6 +1047,7 @@ class AppVideoSubtitleService {
   Future<void> _run(AppVideoSubtitleJob job, AiProviderConfig? provider) async {
     ({AiTextCompleter completer, void Function() close})? ai;
     WebKnowledgeClient? web;
+    WebSearchClient? search;
     try {
       final Directory root = await _jobsRoot();
       final AppVideoSubtitleTarget target = job.target;
@@ -1051,6 +1098,10 @@ class AppVideoSubtitleService {
         ai = _completerFactory(provider);
         final List<WebKnowledgeSite> sites = _settings.webKnowledgeSites;
         web = sites.isEmpty ? null : _webKnowledge(sites);
+        final WebSearchConfig? searchConfig = _settings.webSearch;
+        search = searchConfig != null && searchConfig.isUsable
+            ? WebSearchClient(config: searchConfig)
+            : null;
         aiConfig = VideoSubtitleAiConfig(
           completer: ai.completer,
           glossaryStore: glossaryStore,
@@ -1064,6 +1115,13 @@ class AppVideoSubtitleService {
         jobsRoot: root,
         ai: aiConfig,
         probeDurationMs: _probeDurationMs,
+        evidence: _evidenceSource == null
+            ? _defaultEvidenceSource(target)
+            : _evidenceSource(target),
+        // 歌词补齐要 AI 认歌 / 对齐：没开 AI 不装。
+        lyricsFinder: aiConfig == null
+            ? null
+            : _lyricsFinder(webSearch: search),
       );
       final VideoSubtitlePipelineResult result = await pipeline.run(
         videoPaths: videoPaths,
@@ -1127,6 +1185,7 @@ class AppVideoSubtitleService {
     } finally {
       ai?.close();
       web?.close();
+      search?.close();
       if (identical(_active, job)) _active = null;
     }
   }

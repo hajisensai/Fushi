@@ -32,6 +32,9 @@ class _Prefs implements VideoSubtitleGeneratePrefs {
   @override
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value) async =>
       segmenter = value;
+
+  @override
+  Future<void> ensureWebSearchPageFetchDecided(BuildContext context) async {}
 }
 
 class _Host implements RemoteVideoSubtitleHostPort {

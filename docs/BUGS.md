@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4078](bugs/BUG-4078-ass-style-transfer-japanese-italic.md) | ✅ | ✅ | 参考英语ASS生成的日语ASS整行变斜体 |
 | [BUG-4078](bugs/BUG-4078-tv-job-single-movie-file-organize-fails.md) | ✅ | ✅ | 剧集身份的下载任务下到单文件剧场版，整理报 unable to determine episode number |
 | [BUG-4078](bugs/BUG-4078-ms-translator-tts-tfettts-500.md) | ✅ | ✅ | 微软翻译朗读恒失败：bing tfettts 接口已弃用 |
 > 共 3677 条。点号进各自文件。
