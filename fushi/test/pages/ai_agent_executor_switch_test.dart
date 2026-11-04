@@ -5,6 +5,7 @@ import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
@@ -91,6 +92,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// MD3 走 `Tooltip`，Apple（玻璃）走 `FushiTooltip`。
+  Finder tooltip(String message) => find.byWidgetPredicate(
+    (Widget w) =>
+        (w is Tooltip && w.message == message) ||
+        (w is FushiTooltip && w.message == message),
+  );
+
+  // 一轮跑着时有进度动画，pumpAndSettle 等不到静止：按固定时长推帧。
+  Future<void> settleRunning(WidgetTester tester) =>
+      tester.pump(const Duration(milliseconds: 500));
+
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
@@ -120,19 +132,21 @@ void main() {
         apple: apple,
       );
       expect(find.byKey(kAiAgentExecutorSwitchKey), findsOneWidget);
-      expect(find.byTooltip('Use the AI on PC'), findsOneWidget);
+      expect(tooltip('Use the AI on PC'), findsOneWidget);
       await tester.tap(find.byKey(kAiAgentExecutorSwitchKey));
       await tester.pumpAndSettle();
       expect(switched, 1);
 
       controller.running = true;
-      await tester.pumpAndSettle();
+      await settleRunning(tester);
       await tester.tap(
         find.byKey(kAiAgentExecutorSwitchKey),
         warnIfMissed: false,
       );
-      await tester.pumpAndSettle();
+      await settleRunning(tester);
       expect(switched, 1, reason: '一轮跑着时不切');
+      controller.running = false;
+      await tester.pumpAndSettle();
     });
 
     testWidgets('$ds：整页页头的切换按钮', (WidgetTester tester) async {
@@ -154,13 +168,15 @@ void main() {
       expect(switched, 1);
 
       controller.running = true;
-      await tester.pumpAndSettle();
+      await settleRunning(tester);
       await tester.tap(
         find.byKey(kAiAgentExecutorSwitchKey),
         warnIfMissed: false,
       );
-      await tester.pumpAndSettle();
+      await settleRunning(tester);
       expect(switched, 1);
+      controller.running = false;
+      await tester.pumpAndSettle();
     });
   }
 }
