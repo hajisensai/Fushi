@@ -439,6 +439,25 @@ void main() {
         ),
       );
       expect(shadow.width, closeTo(width * 1.07, 0.01));
+      // 径向渐变半径按短边算：不横向拉伸就只剩盒子正中一颗短边直径的圆点
+      // （库页封面底下的「黑点」）。拉伸后圆的右端要落到盒子右边。
+      final DecoratedBox shadowBox = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byType(ShelfContactShadow),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      final RadialGradient gradient =
+          (shadowBox.decoration as BoxDecoration).gradient! as RadialGradient;
+      final Rect box = Offset.zero & Size(shadow.width, 16);
+      final Matrix4? stretch = gradient.transform?.transform(box);
+      expect(stretch, isNotNull);
+      final Offset rimRight = MatrixUtils.transformPoint(
+        stretch!,
+        Offset(box.center.dx + box.height / 2, box.center.dy),
+      );
+      expect(rimRight.dx, closeTo(box.right, 0.01));
+      expect(rimRight.dy, closeTo(box.center.dy, 0.01));
       // 悬停扫光在横版里同样铺满封面、不溢出。
       final TestGesture mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
