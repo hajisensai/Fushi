@@ -137,6 +137,20 @@ const List<ReaderControlItem> kLyricsOverlayMenuItems = <ReaderControlItem>[
   ReaderControlItem.settings,
 ];
 
+/// 这一次 ⋯ 菜单实际列出的阅读器操作。[relativeSeekOnScreen]（按下 ⋯ 的那套
+/// 布局此刻摆着 ±10 秒键，见 [LyricsMenuAnchor.relativeSeekOnScreen]）时去掉
+/// 「后退 / 前进 10 秒」：同一动作在播放器和菜单里各出现一次（反馈 MnVAGO_nry）。
+/// 没摆的形态（经典 Apple、新版窄屏收起的迷你条）照列，触屏仍有入口。
+List<ReaderControlItem> lyricsOverlayMenuItems({
+  required bool relativeSeekOnScreen,
+}) => <ReaderControlItem>[
+  for (final ReaderControlItem item in kLyricsOverlayMenuItems)
+    if (!relativeSeekOnScreen ||
+        (item != ReaderControlItem.audiobookSeekBack &&
+            item != ReaderControlItem.audiobookSeekForward))
+      item,
+];
+
 /// 覆盖层读数的读口：**只读**阅读器现成的数据——StudyClock 的会话累计（时长 /
 /// 字数）与正文进度（全书已读 / 总字数）。歌词层不产生、不写入任何统计，这些数
 /// 全由下面照常跟随音频的正文产生。
@@ -871,7 +885,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
                 .lyricsControlLayoutFor(compact: !wide)
                 .itemsIn(LyricsControlSlot.overflow))
           ?_lyricsControlMenuAction(item, ctrl, menuAnchor, wide: wide),
-      for (final ReaderControlItem item in kLyricsOverlayMenuItems)
+      for (final ReaderControlItem item in lyricsOverlayMenuItems(
+        relativeSeekOnScreen: menuAnchor.relativeSeekOnScreen,
+      ))
         if (_shouldRenderReaderControl(item)) _readerControlAction(item),
       ..._jumpHistoryMenuActions(),
     ];
@@ -1272,8 +1288,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   ) {
     _endLyricsIllustrationStay();
     ctrl.triggerImagePause();
-    // 「图片暂停」关着（0 秒）/ 阅读器不可见时控制器不停：卡照样弹出，不停留。
+    // 「图片暂停」关着（0 秒）/ 阅读器不可见时控制器不停：卡照样弹出、不停留，
+    // 由状态机的展示时长计时自动收起（kLyricsIllustrationCardAutoClose）。
     if (!ctrl.isImagePaused) return;
+    // 停留接管卡的收起：停留结束（[_onLyricsIllustrationStayChanged]）再收。
+    illustrations.holdCardOpen();
     _lyricsIllustrationStay = (ctrl: ctrl, ill: illustrations);
     ctrl.addListener(_onLyricsIllustrationStayChanged);
     illustrations.addListener(_onLyricsIllustrationStayChanged);

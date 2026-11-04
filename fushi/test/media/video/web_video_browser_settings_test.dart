@@ -32,9 +32,9 @@ class _MemPrefs implements PrefStore {
 }
 
 class _Policy implements WebAdblockPolicy {
-  _Policy({this.rules = const <Map<String, Object?>>[]});
+  _Policy({this.ruleList});
 
-  final List<Map<String, Object?>> rules;
+  final String? ruleList;
 
   @override
   bool get isActive => true;
@@ -59,15 +59,10 @@ class _Policy implements WebAdblockPolicy {
   }) => null;
 
   @override
-  List<Map<String, Object?>> get contentBlockingRules => rules;
+  String? get contentRuleListIdentifier => ruleList;
 }
 
-const List<Map<String, Object?>> _rules = <Map<String, Object?>>[
-  <String, Object?>{
-    'trigger': <String, Object?>{'url-filter': 'ads\\.example'},
-    'action': <String, Object?>{'type': 'block'},
-  },
-];
+const String _ruleList = 'fushi-adblock-0123abcd';
 
 void _expectRequired(InAppWebViewSettings s) {
   expect(s.javaScriptEnabled, isTrue);
@@ -87,7 +82,7 @@ void main() {
           debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
           addTearDown(() => debugDefaultTargetPlatformOverride = null);
         }
-        final _Policy policy = _Policy(rules: _rules);
+        final _Policy policy = _Policy(ruleList: _ruleList);
         final WebAdblockWiring browser = applyAdblockTo(
           InAppWebViewSettings(javaScriptEnabled: true),
           policy: policy,

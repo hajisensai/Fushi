@@ -16,6 +16,7 @@
 //   GET  /v1/feedback/mine?cursor&limit       [签名] 本账户提交过的反馈（跨设备看自己的工单），摘要 + 游标分页
 //   GET  /v1/feedback/:id                     [凭据] 详情 + 时间线
 //   POST /v1/feedback/:id/messages            [凭据] {body} 追加说明
+//   DELETE /v1/feedback/:id/messages/:mid     [凭据] 反馈人删除自己的一条追加说明（开发者已在其后回复则 409）
 //   GET  /v1/feedback/:id/attachments/:slot   [凭据] 本人取回自己的截图（s0..s2；日志 / 视频不回传）
 //   POST /v1/feedback/:id/close               [凭据] 反馈人标记完成：open / in_progress → closed
 //   [凭据] = X-Fushi-Ticket（本条回执），或提交时所用账户的签名（feedbackForReporter）；二者择一，
@@ -103,6 +104,8 @@ export const FEEDBACK_LIMITS = {
   attachmentRetentionMs: 90 * 24 * HOUR,
   /** 单条反馈追加说明的累计上限（防止一张回执被拿来无限灌消息）。 */
   messagesPerFeedbackTotal: 100,
+  /** 反馈人删除自己追加说明的次数上限（单条反馈每小时）。 */
+  messageDeletesPerFeedbackHour: 20,
   /** 反馈人取回自己截图的次数上限（单条反馈每小时；详情页每次最多 3 张）。 */
   reporterDownloadsPerFeedbackHour: 60,
   /** 反馈人「标记完成」的次数上限（单条反馈每小时；正常只会点一次）。 */
@@ -803,6 +806,31 @@ export async function addReporterMessage(env, row, body, now) {
   ]);
 }
 
+/**
+ * DELETE /v1/feedback/:id/messages/:mid：反馈人（或代提交的机器人）收回自己追加错的一条说明。
+ * 只能删 author = 'user' 且有正文的消息；开发者已在其后回复则 409（不让反馈人改历史）。
+ * 带 status 的那条顺带把结案拉回了 open，属于状态事件：只清空 body，保留事件。
+ * 不回退 message_count，防止删了再发绕过累计上限。
+ */
+export async function deleteReporterMessage(env, row, mid, now) {
+  await hit(env, `feedback:msgdel:${row.id}`, HOUR, FEEDBACK_LIMITS.messageDeletesPerFeedbackHour, now);
+  const msg = await env.DB.prepare(
+    'SELECT id, author, body, status FROM feedback_messages WHERE id = ?1 AND feedback_id = ?2',
+  ).bind(mid, row.id).first();
+  if (!msg || msg.author !== 'user' || !msg.body) throw new HttpError(404, 'not_found');
+  const later = await env.DB.prepare(
+    "SELECT 1 FROM feedback_messages WHERE feedback_id = ?1 AND author = 'dev' AND id > ?2 LIMIT 1",
+  ).bind(row.id, mid).first();
+  if (later) throw new HttpError(409, 'dev_replied');
+  await spend(env, 'write_rows', 2, now);
+  if (msg.status == null) {
+    await env.DB.prepare('DELETE FROM feedback_messages WHERE id = ?1 AND feedback_id = ?2').bind(mid, row.id).run();
+  } else {
+    await env.DB.prepare("UPDATE feedback_messages SET body = '' WHERE id = ?1 AND feedback_id = ?2").bind(mid, row.id).run();
+  }
+  await env.DB.prepare('UPDATE feedback SET updated_at = ?2 WHERE id = ?1').bind(row.id, now).run();
+}
+
 /** 反馈人能自己标记完成的状态（开发者已给出结论的不再让反馈人改）。 */
 export const REPORTER_CLOSABLE = ['open', 'in_progress'];
 
@@ -1292,6 +1320,7 @@ const RE = {
   one: new RegExp(`^/v1/feedback/${ID}$`),
   attach: new RegExp(`^/v1/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
   messages: new RegExp(`^/v1/feedback/${ID}/messages$`),
+  message: new RegExp(`^/v1/feedback/${ID}/messages/([1-9][0-9]{0,15})$`),
   push: new RegExp(`^/v1/feedback/${ID}/push$`),
   close: new RegExp(`^/v1/feedback/${ID}/close$`),
   devList: /^\/v1\/dev\/feedback$/,
@@ -1388,6 +1417,12 @@ export async function routeFeedback(request, env, url, now, io) {
     const row = await feedbackForReporter(request, env, m[1], io, bytes, { mutating: true });
     await addReporterMessage(env, row, io.parse(bytes), now);
     return json(await reporterView(env, await feedbackById(env, row.id)), 201, noStore);
+  }
+  if (method === 'DELETE' && (m = RE.message.exec(path))) {
+    const bytes = await io.readBody(4 * 1024);
+    const row = await feedbackForReporter(request, env, m[1], io, bytes, { mutating: true });
+    await deleteReporterMessage(env, row, Number(m[2]), now);
+    return json(await reporterView(env, await feedbackById(env, row.id)), 200, noStore);
   }
 
   if ((method === 'PUT' || method === 'DELETE') && (m = RE.push.exec(path))) {

@@ -43,6 +43,13 @@ const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 /// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
 const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 
+/// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
+/// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
+/// 设备本地：同意的是这台设备上配的那个后端。
+const String kAiWebSearchPageFetchPref = 'ai_web_search_page_fetch';
+const String kAiWebSearchPageFetchAllow = 'allow';
+const String kAiWebSearchPageFetchDeny = 'deny';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -52,6 +59,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 字符串数组，缺键 = 从没选过）：「高级制卡」卡片字段分区里显示（可编辑）
   // 的 Anki 字段名（反馈 -K86qlwBg6）。缺键时对话框按映射挑释义类字段作默认。
   'advanced_mining_visible_fields',
+  // String（默认 '' = 自动）：AI 助手在哪执行（BUG-4067「本地 AI / 远端 AI」切换）。
+  // 'local' = 本机指派的提供商；'remote' = 「下载执行设备」那台已配对设备；'' = 本机
+  // 配了 AI 就本机、否则远端（升级前的行为）。设备本地：远端指向的是这台设备的配对。
+  'ai_agent_executor',
   // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
@@ -98,6 +109,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // String（JSON）：AI 通用联网搜索后端 `{kind: searxng|brave, endpoint, apiKey}`
+  // （`WebSearchConfig`）。Brave API key 以 base64 `apiKeyB64` 存（与 ai_providers 同
+  // 口径）→ 凭据 + 设备本地。
+  'ai_web_search',
+  // String：见 [kAiWebSearchPageFetchPref]。非凭据，设备本地。
+  kAiWebSearchPageFetchPref,
   // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
   kAnkiSettingsPrefKey,
   'app_locale',
@@ -124,8 +141,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
   'audiobookshelf_show_in_home',
   'auto_add_book_name_to_tags',
-  // bool：小说阅读器制卡时给卡片追加「制卡所在字符数」标签（`chars_12345`，
-  // countStudyChars 口径的全书绝对位置）。默认开。
+  // bool：小说阅读器制卡时把制卡位置（countStudyChars 口径的全书绝对位置）写进
+  // MiscInfo（等价）字段。冻结键名：原语义是 `chars_12345` 标签（反馈 MhQHXQI-sB 改）。
   'auto_add_char_position_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
@@ -572,6 +589,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'page_backdrop_image_landscape',
   'page_backdrop_image_portrait',
   'page_backdrop_image_scrim',
+  // String（JSON）：按模块单独设的背景（反馈 DYI1IOZxSM）。图片路径表设备本地，
+  // 预设表随 Profile；没出现的模块跟随全局。
+  'page_backdrop_module_images',
+  'page_backdrop_module_presets',
   'page_backdrop_motion',
   'page_backdrop_preset',
   'page_backdrop_seed_cache',
@@ -1062,6 +1083,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // 联网搜索配置 JSON 里的 Brave API key。
+  'ai_web_search',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

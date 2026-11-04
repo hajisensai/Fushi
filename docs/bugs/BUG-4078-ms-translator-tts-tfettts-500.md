@@ -1,0 +1,6 @@
+## BUG-4078 · 微软翻译朗读恒失败：bing tfettts 接口已弃用
+- **报告**：2026-11-04（用户：应用内反馈 zK7AJLTl3q，请求按 Hoshi-Reader-Android 的做法接入微软翻译朗读）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/tts/providers/translate_tts_providers.dart` 旧 `MicrosoftTranslatorTtsProvider._synthesizeWith` 先抓 `www.bing.com/translator` 取 IG / IID / `params_AbusePreventionHelper`，再 POST `/tfettts`。2026-11-04 实测：页面参数仍能取到，但 `tfettts` 对合法 SSML 回 HTTP 500 空正文 → 朗读 / 试听恒报「服务器错误」。
+- **[x] ① 已修复** — 换成微软翻译 Android 客户端的协议（Hoshi-Reader-Android 同法）：向 `dev.microsofttranslator.com/apps/endpoint?api-version=1.0` 发 HMAC-SHA256 签名（`X-MT-Signature`）的空 POST 换 `{r: 区域, t: JWT}`，再以 `Authorization: Bearer` 调 `<区域>.tts.speech.microsoft.com/cognitiveservices/v1`（MP3）与 `voices/list`。令牌只在内存、进程内 single-flight 共享、临期一分钟视作过期；合成端 401/403 时作废并换一次令牌（JWT 约十分钟寿命，属协议续期），仍被拒如实上报。区域名按 `^[a-z][a-z0-9]{1,39}$` 校验后才拼进主机名。providerId `ms_translator` 冻结不变，已有预设直接可用。出网仍经 `TtsHost.httpClientFactory`（`createAppHttpClient`，走 app 代理）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/tts/translate_tts_providers_test.dart`：签名对独立 Python 实现算出的向量；令牌解析拒非法区域 / 坏 JWT / 已过期；本机假服务端到端验签名头、Bearer、SSML 转义、MP3 落盘、并发共用一枚令牌、401 换令牌一次后再拒上报、令牌端点 503 → serverError、400 不换令牌、声音列表。
+- **备注**：非官方接口，微软可能随时变更或封禁；设置页对它显示「非官方接口」提示。2026-11-04 用真实网络跑过一次（合成 26784 字节 MP3、声音列表 1015 个，其中 ja-JP 10 个）。

@@ -58,8 +58,13 @@ class VideoDiscoveryService {
     VideoSourceScrapeGlobalConfig config, {
     required bool discoveryAvailable,
   }) {
+    // 发现页**不**跟随作品原语言（BUG-4056 只改刮削）：显式给 locale = 资料语言
+    // 兜底（app 里就是界面语言），TMDB 详情 / MAL 搜索标题都按它取，和详情合并用
+    // 的 [metadataLocale] 同源。留空 locale 会让 registry 跟随
+    // `config.followsWorkOriginalLanguage`——中文界面看日本动画拿到日文简介、
+    // 英文界面的 MAL 结果标题变成日文原名。
     final VideoMetadataProviderRegistry catalog =
-        VideoMetadataProviderRegistry.production(config);
+        VideoMetadataProviderRegistry.production(config, locale: config.locale);
     final AniListVideoMetadataProvider anilist = AniListVideoMetadataProvider();
     // iOS 上不登记任何**发现** provider（app 的 `StoreRestrictedCapability.externalDiscovery`）；
     // metadata provider 照常保留——那条链路服务的是本地媒体库的刮削（MAL / TMDB /
@@ -150,6 +155,13 @@ class VideoDiscoveryService {
   List<String> get providerIdsForTesting => _providers
       .map((VideoDiscoveryProvider provider) => provider.id)
       .toList(growable: false);
+
+  /// 详情 / 身份解析用的 metadata provider（与搜索源共用同一实例）；守卫钉住
+  /// 发现页不跟随作品原语言（BUG-4056 只改刮削）。
+  @visibleForTesting
+  VideoMetadataProvider? metadataProviderForTesting(
+    VideoMetadataProviderKind kind,
+  ) => _metadataProviders[kind];
 
   /// provider id -> 用户可见来源名。找不到时退回 id（服务自身产生的 failure，例如
   /// `discovery` 这个合成 id，本来就没有对应的来源）。

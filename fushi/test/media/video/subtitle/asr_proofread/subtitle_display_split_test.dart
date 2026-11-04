@@ -99,6 +99,7 @@ void main() {
       jobsRoot: Directory(p.join(tmp.path, 'jobs')),
       probeDurationMs: (String _) async => 1440000,
       styleReference: null,
+      evidence: null,
     );
     final VideoSubtitlePipelineResult r = await pipeline.run(
       videoPaths: <String>[video.path],
@@ -157,6 +158,7 @@ void main() {
           jobsRoot: jobs,
           probeDurationMs: (String _) async => 1440000,
           styleReference: null,
+          evidence: null,
           ai: ai == null
               ? null
               : VideoSubtitleAiConfig(completer: ai, glossaryStore: store),
@@ -212,6 +214,7 @@ void main() {
       jobsRoot: Directory(p.join(tmp.path, 'jobs')),
       probeDurationMs: (String _) async => 1440000,
       styleReference: null,
+      evidence: null,
       ai: VideoSubtitleAiConfig(
         completer: ai,
         glossaryStore: SubtitleGlossaryFileStore(

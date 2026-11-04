@@ -11,8 +11,11 @@
 /// - 颜色、字体、描边、默认位置来自参考的 Style 行（整段原样拷贝，不改写）；
 ///   单行的对齐 / 颜色 / 字体来自参考事件行首的覆盖标签。
 /// - 覆盖标签走**白名单**（`_inheritableTag`）：只继承静态的对齐（`\an`）、淡入淡出
-///   （`\fad`）、颜色（`\c` `\1c`–`\4c`）、字体 / 字号 / 粗斜体（`\fn` `\fs` `\b` `\i`）、
-///   描边 / 阴影 / 模糊（`\bord` `\shad` `\blur` `\be`）。其余一律丢弃：卡拉 OK（`\k`
+///   （`\fad`）、颜色（`\c` `\1c`–`\4c`）、字体 / 字号 / 粗体（`\fn` `\fs` `\b`）、
+///   描边 / 阴影 / 模糊（`\bord` `\shad` `\blur` `\be`），且只认**作用于整行**的：行中被
+///   同名标签改掉或被 `\r` 复位的行首标签是给开头几个词的强调（`{\i1}That{\i0} song.`），
+///   不继承。斜体一律不继承，样式本身是斜体时日语行写 `\i0`：日文排版没有斜体
+///   （BUG-4078）。其余一律丢弃：卡拉 OK（`\k`
 ///   系）、`\t` 动画、`\p` 绘图只对参考原文的字 / 时间有意义；透明度（`\alpha`
 ///   `\1a`–`\4a`）与裁剪（`\clip` `\iclip`）常是 `\t` 动画的起点
 ///   （`{\alpha&HFF&\t(0,200,\alpha&H00&)}`），去掉 `\t` 只留起点会让日语行整行不可见
@@ -110,6 +113,7 @@ class AssStyledCue {
 AssStyleReference? parseAssStyleReference(
   String content, {
   required String label,
+  int minEvents = kAssStyleReferenceMinEvents,
 }) {
   final List<String> lines = content
       .replaceFirst('\uFEFF', '')
@@ -167,7 +171,7 @@ AssStyleReference? parseAssStyleReference(
   }
   flush();
 
-  if (!hasStyles || events.length < kAssStyleReferenceMinEvents) return null;
+  if (!hasStyles || events.length < minEvents) return null;
   if (!hasScriptInfo) {
     sections.insert(0, '[Script Info]\nScriptType: v4.00+');
   } else {
@@ -201,6 +205,7 @@ String renderAssWithReferenceStyle({
   required AssStyleReference reference,
 }) {
   final Map<String, int> styleCounts = _styleCounts(reference.events);
+  final Set<String> italicStyles = _italicStyles(reference.headerSections);
   final StringBuffer out = StringBuffer();
   for (final String section in reference.headerSections) {
     out
@@ -222,13 +227,15 @@ String renderAssWithReferenceStyle({
       events: reference.events,
       styleCounts: styleCounts,
     );
-    final String tags = ref == null
-        ? ''
-        : _inheritableTags(assLeadingOverrideTags(ref.text));
+    final String style = ref?.style ?? reference.defaultStyle;
+    // 样式本身是斜体（字幕组的 Italics / 内心独白样式）：日语行显式关掉（BUG-4078）。
+    final String tags =
+        '${ref == null ? '' : _inheritableTags(lineLevelLeadingTags(ref.text))}'
+        '${italicStyles.contains(style) ? r'\i0' : ''}';
     out.writeln(
       'Dialogue: ${ref?.layer ?? '0'},'
       '${formatAssTime(cue.startMs)},${formatAssTime(cue.endMs)},'
-      '${ref?.style ?? reference.defaultStyle},${ref?.name ?? ''},'
+      '$style,${ref?.name ?? ''},'
       '${ref?.marginL ?? '0'},${ref?.marginR ?? '0'},${ref?.marginV ?? '0'},'
       '${ref?.effect ?? ''},'
       '${tags.isEmpty ? '' : '{$tags}'}$text',
@@ -325,6 +332,9 @@ final RegExp _drawingTag = RegExp(r'\\p[1-9]');
 final RegExp _positionTag = RegExp(r'\\(pos|move|i?clip)\(');
 
 /// 可继承的行首覆盖标签（白名单，整条标签全匹配）；不在表里的一律丢弃，理由见文件头。
+///
+/// 不含斜体 `\i`（BUG-4078）：日文排版没有斜体，假名被斜切只会难看；英文字幕组
+/// 的斜体（强调词、内心独白、画外音）对日语行没有对应含义。
 final RegExp _inheritableTag = RegExp(
   r'^\\(?:'
   r'an[1-9]'
@@ -333,10 +343,78 @@ final RegExp _inheritableTag = RegExp(
   r'|fn[^\\(){}]+'
   r'|fs\d+(?:\.\d+)?'
   r'|b\d+'
-  r'|i[01]'
   r'|(?:bord|shad|blur|be)\d+(?:\.\d+)?'
   r')$',
 );
+
+/// 覆盖标签的名字（`\1c&H…` 与 `\c&H…` 同名 `1c`；`\fnArial` → `fn`）。认不出 → null。
+String? _tagName(String tag) {
+  final RegExpMatch? m = RegExp(
+    r'^\\(bord|shad|blur|be|fad|fn|fs|an|[1-4]c|c|b|i|r)',
+  ).firstMatch(tag);
+  final String? name = m?.group(1);
+  return name == 'c' ? '1c' : name;
+}
+
+/// 参考事件里真正作用于整行的行首标签：行中又被同名标签改掉（`{\i1}That{\i0} song.`、
+/// `{\c&HFF&}名字{\c}…`）或被 `\r` 复位的，只是给开头几个词的强调 / 着色，不继承
+/// （BUG-4078）。
+List<String> lineLevelLeadingTags(String text) {
+  final List<String> leading = assLeadingOverrideTags(text);
+  int i = 0;
+  while (i < text.length && text[i] == '{') {
+    final int close = text.indexOf('}', i);
+    if (close < 0) break;
+    i = close + 1;
+  }
+  final Set<String> laterNames = <String>{
+    for (final RegExpMatch m in RegExp(
+      r'\{([^}]*)\}',
+    ).allMatches(text.substring(i)))
+      for (final String t in _splitTags(m.group(1)!)) ?_tagName(t),
+  };
+  if (laterNames.contains('r')) return const <String>[];
+  return <String>[
+    for (final String t in leading)
+      if (!laterNames.contains(_tagName(t))) t,
+  ];
+}
+
+/// `[V4+ Styles]` / `[V4 Styles]` 段里 Italic 为真的样式名。
+Set<String> _italicStyles(List<String> headerSections) {
+  final Set<String> out = <String>{};
+  for (final String section in headerSections) {
+    final List<String> lines = section.split(RegExp(r'\r?\n'));
+    if (lines.isEmpty ||
+        !RegExp(
+          r'^\s*\[v4\+? styles\]',
+          caseSensitive: false,
+        ).hasMatch(lines.first)) {
+      continue;
+    }
+    List<String>? format;
+    for (final String line in lines.skip(1)) {
+      final int colon = line.indexOf(':');
+      if (colon < 0) continue;
+      final String key = line.substring(0, colon).trim().toLowerCase();
+      final List<String> values = line
+          .substring(colon + 1)
+          .split(',')
+          .map((String v) => v.trim())
+          .toList();
+      if (key == 'format') {
+        format = values.map((String v) => v.toLowerCase()).toList();
+      } else if (key == 'style' && format != null) {
+        final int nameAt = format.indexOf('name');
+        final int italicAt = format.indexOf('italic');
+        if (nameAt < 0 || italicAt < 0 || italicAt >= values.length) continue;
+        final int? italic = int.tryParse(values[italicAt]);
+        if (italic != null && italic != 0) out.add(values[nameAt]);
+      }
+    }
+  }
+  return out;
+}
 
 String _overrideBlocks(String text) => RegExp(
   r'\{[^}]*\}',
