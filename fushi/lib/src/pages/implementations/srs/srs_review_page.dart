@@ -440,7 +440,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   void _onRwkvStatus(SrsRwkvStatus status) {
     if (!mounted) return;
     setState(() => _rwkvStatus = status);
-    // 等的就是它：就绪后重新排队，RWKV 牌组的复习卡按此刻的回忆率出。
+    // 等的就是它：就绪后重新排队，RWKV 牌组的复习卡按 RWKV 回忆率出（今天答过的按此刻 R，其余按今天结束时的 R）。
     if (status.phase == SrsRwkvPhase.ready && _finished && _rwkvPending) {
       unawaited(_loadNext());
     }
