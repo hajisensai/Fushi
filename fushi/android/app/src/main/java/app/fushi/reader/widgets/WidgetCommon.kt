@@ -76,9 +76,14 @@ internal fun openLink(context: Context, url: String): Action = actionStartActivi
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
 )
 
+/** The card's Dart-built link; pre-link snapshots fall back to `continue?kind=&id=`. */
 internal fun mediaUrl(m: WidgetMedia): String =
-    Uri.Builder().scheme("fushi").authority("widget").appendPath("continue")
-        .appendQueryParameter("kind", m.kind).appendQueryParameter("id", m.id).build().toString()
+    if (m.link.isNotEmpty()) {
+        m.link
+    } else {
+        Uri.Builder().scheme("fushi").authority("widget").appendPath("continue")
+            .appendQueryParameter("kind", m.kind).appendQueryParameter("id", m.id).build().toString()
+    }
 
 internal fun lookupUrl(word: String): String =
     Uri.Builder().scheme("fushi").authority("widget").appendPath("lookup")

@@ -4,7 +4,9 @@
 /// - 外挂文件不保证与这份视频同步（别的压制版本、带片头的 BD 版、文件名配错集…）：
 ///   把识别稿的开始时刻当参考轨，交上游 `decideSubtitleSync` 判偏移（不在本仓写对齐
 ///   算法）。**只有判 `autoApply` 的外挂轨才收**（按对齐结果改写时间）；判
-///   `needsConfirmation` / `refused`、参考行数不够没法判、或字幕本身读不出可对齐的行，
+///   `needsConfirmation` / `refused`、识别稿相对外挂轨太稀疏没法判（上游
+///   `isUsableReferenceTrack`，按外挂轨自己的行数折算，短片不会因为台词少被挡）、
+///   或字幕本身读不出可对齐的行，
 ///   一律丢掉——证据的下游（缺口补齐、校对的同时段原文、歌词段检测）全按时间取行，
 ///   时间轴不可信的轨会把别处的台词确定性地插进字幕稿。内嵌轨与视频同容器，本来就同步。
 /// - 图形轨的 OCR 由宿主注入（[SubtitleGraphicTrackRecognizer]）：引擎没有 OCR 推理，
@@ -23,7 +25,6 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
         SubtitleReferenceTrack,
         SubtitleRetimeOutcome,
         SubtitleSyncDecisionKind,
-        kMinReferenceCues,
         uniqueCueStarts;
 import 'package:fushi_audio/fushi_audio_core.dart' show readTextWithEncoding;
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
@@ -229,18 +230,6 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
   ) async {
     final SubtitleFormat? format = subtitleFormatForPath(path);
     if (format == null) return null;
-    // 参考太少（短片）：上游 `decideSubtitleSync` 在 `groupReferenceTracks` 里把少于
-    // kMinReferenceCues（30）行的参考轨整条滤掉（那条门槛本是挡内嵌 forced 轨的），
-    // 这里传进去也只会得到空分组 → refused。上游逐条的对齐质量判定
-    // （`judgeSubtitleReferenceFit`）对 12–24 行的识别稿其实分得开（对得上的 accepted、
-    // 别集的 refused），改成「按对齐质量判」要先在上游给参考门槛开参数，本仓不复写判定。
-    if (asrReference.first.starts.length < kMinReferenceCues) {
-      fushiDebugPrint(
-        '[SubtitleEvidence] skip sidecar "$path": too few recognized cues '
-        'to verify its timing',
-      );
-      return null;
-    }
     final String original = await readTextWithEncoding(File(path));
     final Uint8List bytes = Uint8List.fromList(utf8.encode(original));
     final EmbeddedReferenceSyncResult sync = await Isolate.run(

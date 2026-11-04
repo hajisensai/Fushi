@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -21,6 +22,9 @@ import 'package:fushi/src/webview/web_payload_limits.dart';
 
 /// 页内脚本调 Dart 的唯一 JS 处理器名（宿主运行时 `__fushiExtSend`）。
 const String kWebBrowserExtensionHandler = 'fushiExt';
+
+/// canvas 阅读器抓图取词截屏兜底（`canvasOcrCapture`）的单次截图上限。
+const Duration _kCanvasOcrCaptureTimeout = Duration(seconds: 8);
 
 /// 应用内浏览器运行浏览器扩展的内容脚本栈（「扩展宿主」）。
 ///
@@ -343,6 +347,7 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
           if (s != null && s.session) lookup?.closeAll();
         },
         recordStudy: !tab.incognito,
+        captureViewport: () => _captureTabViewport(tab),
         onStudySample: (Map<String, dynamic> sample) {
           if (tab.incognito) return;
           videoActivity.report(
@@ -351,6 +356,18 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
           );
         },
       );
+
+  /// [tab] 的 WebView 可视区截图（PNG）。截的是这个标签页自己的 WebView，不会截到别的页；
+  /// WebView 还没建好回 null。原生截图偶有不回的情况（同有声书竖排截帧 TODO-1167），
+  /// 设上限：超时当截不到，content 如实提示识别失败，下次翻页 / 回到窗口后重试。
+  Future<Uint8List?> _captureTabViewport(WebBrowserTab tab) async {
+    final InAppWebViewController? controller = tab.controller;
+    if (controller == null) return null;
+    return controller.takeScreenshot().timeout(
+      _kCanvasOcrCaptureTimeout,
+      onTimeout: () => null,
+    );
+  }
 
   /// 以 [tab] 的身份发一条扩展后台消息（`chrome.runtime.sendMessage` 同一份路由）：
   /// 字幕侧栏之外的 app 侧调用方（手机视频遥控的在线搜字幕）用。

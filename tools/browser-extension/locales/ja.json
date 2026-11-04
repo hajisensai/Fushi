@@ -459,6 +459,8 @@
   "favorite_failed": "お気に入りに追加できませんでした。Fushi が起動しているか確認してください",
   "favorite_failed_old_app": "ブラウザからのお気に入りには新しい Fushi が必要です。Fushi を更新してください",
   "conn_no_response": "Fushi は起動していますが応答がありません。Fushi のウィンドウを前面に出してから再試行してください",
+  "canvas_ocr_no_engine": "Fushi で使える OCR エンジンがありません。Fushi の漫画 OCR 設定で用意すると、ページ画像の単語を検索できます",
+  "canvas_ocr_failed": "このページ画像から文字を読み取れませんでした",
   "conn_state_no_response_title": "Fushi が応答しません",
   "conn_state_no_response_detail": "ポートで待ち受けている何かが時間内に応答しませんでした。Fushi がビジー状態かシステムに一時停止されている可能性があります。ウィンドウを前面に出してから再確認してください。",
   "opt_popupFontSize_title": "辞書の文字サイズ",
