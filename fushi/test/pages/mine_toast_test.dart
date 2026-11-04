@@ -326,11 +326,15 @@ void main() {
           reason: '命中区占满行高，卡片不因按钮长过 48',
         );
 
-        // 视觉按钮下沿外 6px（仍在 48 命中带内）也要点中。
+        // 视觉按钮上沿外 / 下沿外 6px（仍在 48 命中带内）都要点中；下沿外
+        // 那一点落在倒计时条上，锁住装饰条不吞命中。
         final Rect visual = tester.getRect(button);
+        await tester.tapAt(Offset(visual.center.dx, visual.top - 6));
+        await tester.pump();
+        expect(pressed, 1, reason: '48dp 命中带里视觉按钮上方的触点也算点中');
         await tester.tapAt(Offset(visual.center.dx, visual.bottom + 6));
         await tester.pump();
-        expect(pressed, 1, reason: '48dp 命中带里视觉按钮外的触点也算点中');
+        expect(pressed, 2, reason: '倒计时条不能吞掉命中带底边的触点');
       });
     }
   }

@@ -256,19 +256,24 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
                 ),
               ),
               if (motion)
+                // 倒计时条纯装饰、叠在按钮行上方：不接命中，否则它的实色底
+                // （ColoredBox 不透明命中）会吞掉卡片底边 2–3px 里本属于按钮
+                // 48dp 命中带的触点。
                 Positioned.fill(
-                  child: Align(
-                    alignment: AlignmentDirectional.bottomStart,
-                    child: AnimatedBuilder(
-                      animation: _countdown,
-                      builder: (BuildContext context, Widget? _) =>
-                          FractionallySizedBox(
-                            widthFactor: _countdown.value,
-                            child: Container(
-                              height: compact ? 2 : 3,
-                              color: accent.withValues(alpha: 0.55),
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: AlignmentDirectional.bottomStart,
+                      child: AnimatedBuilder(
+                        animation: _countdown,
+                        builder: (BuildContext context, Widget? _) =>
+                            FractionallySizedBox(
+                              widthFactor: _countdown.value,
+                              child: Container(
+                                height: compact ? 2 : 3,
+                                color: accent.withValues(alpha: 0.55),
+                              ),
                             ),
-                          ),
+                      ),
                     ),
                   ),
                 ),
