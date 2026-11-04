@@ -28,6 +28,7 @@ class HostAssistantTarget {
     this.reasons = const <String, String>{},
     this.fingerprintSha256,
     this.agentHistoryVersion = 0,
+    this.pairedToken = false,
   });
 
   final String baseUrl;
@@ -49,9 +50,13 @@ class HostAssistantTarget {
   /// 没有存档，不发 `history` 路由、不发 `resume`。
   final int agentHistoryVersion;
 
+  /// 这台设备用的是 host 派给它的 per-peer 口令（不是老版本的共享口令）。host 按
+  /// 口令认设备、按设备列会话历史；共享口令认不出是谁，历史路由一律 403。
+  final bool pairedToken;
+
   /// 这台 host 能列 / 续接 / 改名 / 删除这台设备发起的 AI 助手会话。
   bool get supportsAgentHistory =>
-      agentHistoryVersion >= kHostAssistantAgentHistoryVersion;
+      pairedToken && agentHistoryVersion >= kHostAssistantAgentHistoryVersion;
 
   String get label => deviceName ?? baseUrl;
 
@@ -179,6 +184,7 @@ class InterconnectAssistantClient {
           fingerprintSha256: candidate.fingerprintSha256,
           agentHistoryVersion:
               (assistant[kHostAssistantAgentHistoryKey] as num?)?.toInt() ?? 0,
+          pairedToken: (candidate.token ?? '').isNotEmpty,
         );
       } catch (_) {
         return null;

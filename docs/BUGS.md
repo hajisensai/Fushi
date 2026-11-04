@@ -47,7 +47,7 @@
 | [BUG-4070](bugs/BUG-4070-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
 | [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
 | [BUG-4068](bugs/BUG-4068-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
-| [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | 🚧 | 🚧 | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
+| [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | ✅ | ✅ | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
 | [BUG-4066](bugs/BUG-4066-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |
 | [BUG-4065](bugs/BUG-4065-feedback-bottom-left-image-no-material.md) | 🚧 | 🚧 | 左下角图片不自动消失（反馈材料拉取失败，未定位） |
 | [BUG-4064](bugs/BUG-4064-video-volume-popover-md2-slider.md) | ✅ | ✅ | 视频音量浮层仍是 MD2 圆钮细轨、外框不分设计系统 |

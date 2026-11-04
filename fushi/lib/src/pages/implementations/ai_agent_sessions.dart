@@ -87,6 +87,9 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
   /// 正在切过去的那一场（行转圈、防连点）。
   String? _switching;
 
+  /// 最近一次读列表失败（远端执行设备连不上）。
+  bool _loadFailed = false;
+
   AiAgentSessionLibrary get _library => widget.library;
 
   @override
@@ -130,11 +133,20 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
 
   Future<void> _reload() async {
     final int seq = ++_loadSeq;
-    final List<AiAgentSessionSummary> sessions = await _library.listSessions();
+    final List<AiAgentSessionSummary> sessions;
+    try {
+      sessions = await _library.listSessions();
+    } on Object catch (error, stack) {
+      // 远端会话库连不上执行设备：说明原因，列表保留上一次读到的。
+      ErrorLogService.instance.log('AiAgentSessionList.reload', error, stack);
+      if (mounted && seq == _loadSeq) setState(() => _loadFailed = true);
+      return;
+    }
     if (!mounted || seq != _loadSeq) return;
     setState(() {
       if (_sessions == null) _generation++;
       _sessions = sessions;
+      _loadFailed = false;
     });
   }
 
@@ -264,7 +276,9 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
   }
 
   Widget _body(BuildContext context, FushiDesignTokens tokens) {
-    final List<AiAgentSessionSummary>? sessions = _sessions;
+    // 第一次就读失败（远端执行设备连不上）：按空列表画，底部说明原因。
+    final List<AiAgentSessionSummary>? sessions =
+        _sessions ?? (_loadFailed ? const <AiAgentSessionSummary>[] : null);
     if (sessions == null) {
       return const Center(child: FushiCircularProgressIndicator());
     }
@@ -327,9 +341,14 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
               0,
             ),
             child: Text(
-              _library.storedOn == null
+              _loadFailed
+                  ? t.ai_agent_remote_unreachable(
+                      device: _library.storedOn ?? '',
+                    )
+                  : _library.storedOn == null
                   ? t.ai_agent_sessions_retention_hint
                   : t.ai_agent_sessions_remote_hint(device: _library.storedOn!),
+              key: const ValueKey<String>('ai-agent-sessions-hint'),
               style: hintStyle,
             ),
           ),
