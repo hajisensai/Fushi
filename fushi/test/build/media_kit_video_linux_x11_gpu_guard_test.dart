@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-4008: under X11 (Steam Game Mode / gamescope Xwayland) video fell back to
+/// BUG-4082: under X11 (Steam Game Mode / gamescope Xwayland) video fell back to
 /// mpv's software renderer.
 ///
 /// Flutter's Linux embedder renders through EGL on X11 too, but there it

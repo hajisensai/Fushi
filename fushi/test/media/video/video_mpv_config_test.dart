@@ -837,7 +837,7 @@ keep-open=yes
       );
       // 流缓存显式开启。
       expect(m['cache'], 'yes');
-      // 内存缓存：media_kit 的 cache-on-disk=yes 没有 cache-dir，开流必报错（BUG-4009）。
+      // 内存缓存：media_kit 的 cache-on-disk=yes 没有 cache-dir，开流必报错（BUG-4083）。
       expect(m['cache-on-disk'], 'no');
       // 预读时长目标（受字节上限封顶）。
       expect(m['cache-secs'], '30');

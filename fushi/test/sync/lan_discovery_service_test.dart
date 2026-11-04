@@ -43,7 +43,7 @@ void main() {
       expect(service.currentDevices, isEmpty);
     });
 
-    // BUG-4004：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
+    // BUG-4078：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
     // 没有 Avahi 守护进程（WSL / 精简安装）时 initialize 抛错，旧实现已把这台未初始化
     // 的 discovery 挂到 _discovery 上，之后 stop / dispose 就抛空检查异常（UncaughtZone）。
     test(
