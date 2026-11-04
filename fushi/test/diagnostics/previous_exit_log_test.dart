@@ -720,6 +720,112 @@ void main() {
     expect(payload.existsSync(), isFalse);
   });
 
+  group('BUG-4102：MetricKit 摘要', () {
+    // 一条深 [depth] 的单链调用树：头三帧是 abort 的系统帧，后面都是 Runner。
+    Map<String, Object?> chain(int depth) {
+      Map<String, Object?>? node;
+      for (int i = depth - 1; i >= 0; i--) {
+        final String bin = i < 3 ? 'libsystem_c.dylib' : 'Runner';
+        node = <String, Object?>{
+          'binaryName': bin,
+          'binaryUUID': bin == 'Runner'
+              ? 'AAAAAAAA-0000-0000-0000-000000000001'
+              : 'BBBBBBBB-0000-0000-0000-000000000002',
+          'offsetIntoBinaryTextSegment': 1000 + i,
+          if (node != null) 'subFrames': <Object?>[node],
+        };
+      }
+      return node!;
+    }
+
+    test('原生只留崩溃线程的调用树：深帧、镜像 UUID、丢掉的线程数都进摘要', () {
+      final String? s = summarizeMetricKitCrash(
+        jsonEncode(<String, Object?>{
+          'diagnosticMetaData': <String, Object?>{
+            'appVersion': '3.3.0',
+            'appBuildVersion': '23480',
+            'osVersion': 'iPhone OS 27.2 (24B119)',
+            'deviceType': 'iPhone18,3',
+            'exceptionType': 10,
+            'exceptionCode': 0,
+            'signal': 6,
+            'terminationReason': 'Namespace SIGNAL, Code 0x6',
+          },
+          'callStackTree': <String, Object?>{
+            'callStacksDropped': 41,
+            'callStacks': <Object?>[
+              <String, Object?>{
+                'threadAttributed': true,
+                'callStackRootFrames': <Object?>[chain(20)],
+              },
+            ],
+          },
+        }),
+      );
+      expect(s, isNotNull);
+      expect(s, contains('app=3.3.0(23480) os=iPhone OS 27.2 (24B119)'));
+      expect(s, contains('device=iPhone18,3'));
+      // 第 20 帧（旧上限 12 会截掉）。
+      expect(s, contains('Runner+1019'));
+      expect(s, contains('Runner=AAAAAAAA-0000-0000-0000-000000000001'));
+      expect(s, contains('libsystem_c.dylib=BBBBBBBB'));
+      expect(s, contains('other threads dropped: 41'));
+      // 没有 VM 区域信息时不写空的 `vm region:` 行。
+      expect(s, isNot(contains('vm region')));
+    });
+
+    test('只剩元数据时明说调用树被丢、带上机型 / 系统 / 构建号', () {
+      final String? s = summarizeMetricKitCrash(
+        jsonEncode(<String, Object?>{
+          'diagnosticMetaData': <String, Object?>{
+            'appVersion': '3.3.0',
+            'appBuildVersion': '23480',
+            'osVersion': 'iPhone OS 27.2 (24B119)',
+            'deviceType': 'iPhone18,3',
+            'exceptionType': 10,
+            'exceptionCode': 0,
+            'signal': 6,
+            'terminationReason': 'Namespace SIGNAL, Code 0x6',
+            'virtualMemoryRegionInfo': '',
+            'callStackTreeDropped': 912345,
+          },
+        }),
+      );
+      expect(s, contains('app=3.3.0(23480)'));
+      expect(s, isNot(contains('null')));
+      expect(s, contains('call stack tree dropped: 912345 bytes'));
+      expect(s, isNot(contains('vm region')));
+    });
+
+    test('原生的元数据兜底写全了 Dart 摘要读的每个键', () {
+      final String swift = File(
+        'ios/Runner/AppDelegate.swift',
+      ).readAsStringSync();
+      final int at = swift.indexOf('final class FushiCrashDiagnostics');
+      expect(at, isNonNegative);
+      final String body = swift.substring(at);
+      // 超限先只丢别的线程，再退到元数据。
+      final int slim = body.indexOf('attributedThreadOnly(data)');
+      final int meta = body.indexOf('"callStackTreeDropped"');
+      expect(slim, isNonNegative);
+      expect(meta, greaterThan(slim));
+      expect(body, contains(r'$0["threadAttributed"] as? Bool'));
+      for (final String key in <String>[
+        'appVersion',
+        'appBuildVersion',
+        'osVersion',
+        'deviceType',
+        'exceptionType',
+        'exceptionCode',
+        'signal',
+        'terminationReason',
+        'virtualMemoryRegionInfo',
+      ]) {
+        expect(body, contains('"$key":'), reason: '兜底元数据缺 $key');
+      }
+    });
+  });
+
   test('折入后的摘要出现在反馈上传的日志文本里', () async {
     await ErrorLogService.instance.init(directoryOverride: tmp);
     await PreviousExitLog.foldIntoErrorLog(
