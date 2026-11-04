@@ -12,4 +12,5 @@
 - **[x] ② 已加自动化测试** — `fushi/test/srs/srs_card_lookup_test.dart`：
   - widget 行为「原生区：查到结果后卡面高亮被查词（注音段 + 普通字），关弹窗后清掉」：真卡面点「通」查「通う」，断言高亮矩形覆盖注音段「通」和普通段「う」，`closeAll` 后清空；
   - 纯函数「SrsLookupTextData.outerRangesFor」。
+- **第二轮截图核对**（`hbre3AQKXS_s0.png`）：被查词「カセット」位于原生例句块（带原生发音键的 `SrsNativeLookupRegion`），弹窗已出、例句上没有任何高亮，与上面的根因一致。
 - **备注**：未在真机肉眼复测（无 Android 设备在本轮会话里）。
