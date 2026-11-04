@@ -60,6 +60,7 @@ void main() {
     bool multiProfile = false,
     WidgetDownloadsInput downloads = const WidgetDownloadsInput(),
     WidgetOnDeckInput onDeck = const WidgetOnDeckInput(),
+    int? nextDayAt,
   }) => buildWidgetSnapshot(
     day: day,
     generatedAt: generatedAt,
@@ -100,6 +101,7 @@ void main() {
     hideTitles: hideTitles,
     hideDefinitions: hideDefinitions,
     hideProfile: hideProfile,
+    nextDayAt: nextDayAt,
   );
 
   List<Map<String, Object?>> listOf(Object? v) =>
@@ -183,6 +185,7 @@ void main() {
         'position': '25%',
         'lastActive': 'age:10',
         'remaining': '',
+        'link': 'fushi://widget/continue?kind=book&id=b1',
       });
       expect(
         (json['today'] as Map<String, dynamic>).keys,
@@ -1088,6 +1091,330 @@ void main() {
     expect(clampWidgetFraction(double.infinity), 0);
   });
 
+  group('shelf links and the single continue source', () {
+    test('local items link to continue; explicit links pass through', () {
+      final Map<String, Object?> s = build(
+        media: <WidgetMediaInput>[
+          item('v1', kind: WidgetMediaKind.video, recentAt: 3),
+          const WidgetMediaInput(
+            kind: WidgetMediaKind.video,
+            id: 'server:mediaServer|s1|i1',
+            title: 'Remote episode',
+            recentAt: 2,
+            link: 'fushi://widget/server?source=mediaServer&server=s1&item=i1',
+          ),
+          const WidgetMediaInput(
+            kind: WidgetMediaKind.book,
+            id: 'remote:epub:k1',
+            title: 'Host book',
+            recentAt: 1,
+            link: 'fushi://widget/tab/books',
+          ),
+        ],
+      );
+      final List<Object?> links = <Object?>[
+        for (final Map<String, Object?> e in shelfOf(s)) e['link'],
+      ];
+      expect(links, <String>[
+        'fushi://widget/continue?kind=video&id=v1',
+        'fushi://widget/server?source=mediaServer&server=s1&item=i1',
+        'fushi://widget/tab/books',
+      ]);
+      for (final Object? link in links) {
+        expect(
+          WidgetLink.tryParse(link! as String),
+          isNotNull,
+          reason: '$link',
+        );
+      }
+    });
+
+    test('games join the shelf and follow the games module', () {
+      final List<WidgetMediaInput> media = <WidgetMediaInput>[
+        item('g1', kind: WidgetMediaKind.game, recentAt: 9, progress: 0),
+        item('b1', recentAt: 1),
+      ];
+      final Map<String, Object?> on = build(media: media);
+      expect(mapOf(on['continue'])['kind'], 'game');
+      expect(
+        mapOf(on['continue'])['link'],
+        'fushi://widget/continue?kind=game&id=g1',
+      );
+      expect(mapOf(on['continue'])['position'], '');
+      final Map<String, Object?> off = build(
+        media: media,
+        modules: const WidgetModulesInput(games: false),
+      );
+      expect(mapOf(off['continue'])['id'], 'b1');
+    });
+  });
+
+  group('srs due timeline', () {
+    const int minute = 60 * 1000;
+    const int hour = 60 * minute;
+    // SRS 日序号：每 24 小时一天，从 now 起 10 小时后翻日。
+    const int now = 1000 * hour;
+    int dayOf(int ms) => (ms - (now + 10 * hour)) >= 0
+        ? 1 + (ms - (now + 10 * hour)) ~/ (24 * hour)
+        : 0;
+
+    test('learning steps ripen one by one, same minute merged', () {
+      final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+        nowMs: now,
+        dueNow: 3,
+        learningDueAts: <int>[
+          now + 5 * minute + 10,
+          now + 5 * minute + 20,
+          now + 30 * minute,
+          now - minute, // already due: part of dueNow, ignored
+          now + 30 * hour, // beyond the horizon
+        ],
+        dayIndexOf: (int ms) => 0,
+        reviewsDueNextDay: 0,
+      );
+      expect(steps, <WidgetSrsDueStep>[
+        (at: now, due: 3),
+        (at: now + 6 * minute, due: 5),
+        (at: now + 30 * minute, due: 6),
+      ]);
+    });
+
+    test('the SRS day boundary adds the next day reviews', () {
+      final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+        nowMs: now,
+        dueNow: 0,
+        learningDueAts: <int>[now + 11 * hour],
+        dayIndexOf: dayOf,
+        reviewsDueNextDay: 20,
+      );
+      expect(steps.first, (at: now, due: 0));
+      expect(steps[1].due, 20);
+      // 整分钟的真实边界原样落出（不再晚几十秒）。
+      expect(steps[1].at, now + 10 * hour);
+      expect(steps.last, (at: now + 11 * hour, due: 21));
+    });
+
+    test('the day boundary does not drift with the sample time', () {
+      // 回归：二分起点是 nowMs 时，now 差几秒换日点就晚 28~38 秒不等。
+      for (final int jitter in <int>[0, 3000, 10000, 47000, 300000, 59999]) {
+        final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+          nowMs: now + jitter,
+          dueNow: 0,
+          learningDueAts: const <int>[],
+          dayIndexOf: dayOf,
+          reviewsDueNextDay: 20,
+        );
+        expect(steps[1], (at: now + 10 * hour, due: 20), reason: '$jitter');
+      }
+    });
+
+    test('a boundary off the minute grid rounds up to the next minute', () {
+      const int edge = now + 10 * hour + 1500;
+      int offGrid(int ms) => ms >= edge ? 1 : 0;
+      for (final int jitter in <int>[0, 7000, 41000]) {
+        final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+          nowMs: now + jitter,
+          dueNow: 0,
+          learningDueAts: const <int>[],
+          dayIndexOf: offGrid,
+          reviewsDueNextDay: 4,
+        );
+        expect(steps[1], (at: now + 10 * hour + minute, due: 4));
+      }
+    });
+
+    test('snapshots sampled seconds apart keep the same signature', () {
+      String signatureAt(int sampleAt) {
+        final List<WidgetSrsDueStep> timeline = buildWidgetSrsDueTimeline(
+          nowMs: sampleAt,
+          dueNow: 2,
+          learningDueAts: <int>[now + 5 * hour + 123],
+          dayIndexOf: dayOf,
+          reviewsDueNextDay: 20,
+        );
+        return widgetSnapshotSignature(
+          build(
+            generatedAt: sampleAt,
+            srs: WidgetSrsInput(
+              provider: WidgetSrsProvider.fushi,
+              reviewCount: 2,
+              timeline: timeline,
+            ),
+          ),
+        );
+      }
+
+      final String base = signatureAt(now);
+      for (final int jitter in <int>[3000, 10000, 47000, 300000]) {
+        expect(signatureAt(now + jitter), base, reason: '$jitter');
+      }
+    });
+
+    test('too many steps merge to the hour and keep the boundary', () {
+      final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+        nowMs: now,
+        dueNow: 0,
+        learningDueAts: <int>[
+          for (int i = 1; i <= 23 * 60; i += 7) now + i * minute,
+        ],
+        dayIndexOf: dayOf,
+        reviewsDueNextDay: 100,
+        maxSteps: 10,
+      );
+      expect(steps.length, lessThanOrEqualTo(11));
+      expect(steps.any((WidgetSrsDueStep s) => s.due >= 100), isTrue);
+      for (int i = 1; i < steps.length; i++) {
+        expect(steps[i].at, greaterThan(steps[i - 1].at));
+        expect(steps[i].due, greaterThan(steps[i - 1].due));
+      }
+    });
+
+    test('snapshot keeps only future changes after due, fushi only', () {
+      final Map<String, Object?> s = build(
+        generatedAt: now,
+        srs: const WidgetSrsInput(
+          provider: WidgetSrsProvider.fushi,
+          newCount: 1,
+          learnCount: 1,
+          reviewCount: 1,
+          timeline: <WidgetSrsDueStep>[
+            (at: now - hour, due: 99), // stale step: dropped
+            (at: now + hour, due: 3), // no change: dropped
+            (at: now + 2 * hour, due: 5),
+          ],
+        ),
+      );
+      // 「现在」就是 due（3）；不含生成时刻，签名才不会每次采集都变。
+      expect(mapOf(s['srs'])['due'], 3);
+      expect(mapOf(s['srs'])['timeline'], <Map<String, int>>[
+        <String, int>{'at': now + 2 * hour, 'due': 5},
+      ]);
+      final Map<String, Object?> anki = build(
+        srs: const WidgetSrsInput(
+          provider: WidgetSrsProvider.anki,
+          timeline: <WidgetSrsDueStep>[(at: 2000, due: 5)],
+        ),
+      );
+      expect(mapOf(anki['srs']).containsKey('timeline'), isFalse);
+    });
+  });
+
+  group('heatmap (16 weeks)', () {
+    test('112 fixed-threshold levels, oldest first, today last', () {
+      final Map<String, Object?> s = build(
+        immersion: WidgetImmersionInput(
+          msByDay: <String, Map<WidgetImmersionCategory, int>>{
+            today: day(70),
+            '2026-10-22': day(20),
+            '2026-10-21': day(5),
+            '2026-07-04': day(40), // 111 天前 = 第一格
+            '2026-07-03': day(40), // 窗口外
+          },
+          activeDays: const <String>{'2026-10-20'}, // 只有字数，没计时
+        ),
+      );
+      final Map<String, Object?> h = mapOf(s['heatmap']);
+      final List<int> levels = (h['levels']! as List<Object?>).cast<int>();
+      expect(levels, hasLength(kWidgetHeatmapDays));
+      expect(levels.last, 4);
+      expect(levels[levels.length - 2], 2);
+      expect(levels[levels.length - 3], 1);
+      expect(levels[levels.length - 4], 1);
+      expect(levels.first, 3);
+      expect(h['firstWeekday'], 6); // 2026-07-04 是周六
+      expect(h['activeDays'], 5);
+      expect(h['time'], '${70 + 20 + 5 + 40}m');
+    });
+
+    test('widgetHeatLevel thresholds', () {
+      expect(widgetHeatLevel(0), 0);
+      expect(widgetHeatLevel(0, active: true), 1);
+      expect(widgetHeatLevel(14 * 60000), 1);
+      expect(widgetHeatLevel(15 * 60000), 2);
+      expect(widgetHeatLevel(30 * 60000), 3);
+      expect(widgetHeatLevel(60 * 60000), 4);
+    });
+  });
+
+  group('midnight rollover', () {
+    const int boundary = 5000;
+
+    test('absent without a future boundary', () {
+      expect(build()['rollover'], isNull);
+      expect(build(nextDayAt: 1000)['rollover'], isNull);
+    });
+
+    test('next stat day: today zeroed, streak carried, arrays shifted', () {
+      final Map<String, Object?> s = build(
+        nextDayAt: boundary,
+        immersion: WidgetImmersionInput(
+          msByDay: <String, Map<WidgetImmersionCategory, int>>{
+            today: day(30),
+            '2026-10-22': day(10),
+          },
+          charsByDay: const <String, int>{today: 500},
+          activeDays: const <String>{today, '2026-10-22'},
+        ),
+        goals: const WidgetGoalsInput(minedCards: 5, minedToday: 3),
+        srs: const WidgetSrsInput(
+          provider: WidgetSrsProvider.fushi,
+          reviewedToday: 4,
+          streakCurrent: 6,
+          reviewsByDay: <int>[1, 2, 3],
+        ),
+      );
+      final Map<String, Object?> r = mapOf(s['rollover']);
+      expect(r['at'], boundary);
+      expect(r['day'], '2026-10-24');
+      expect(mapOf(r['today'])['totalMs'], 0);
+      expect(mapOf(r['today'])['chars'], '0 chars');
+      // 今天学过：明天连续天数延续（明天还没学，不中断）。
+      expect(mapOf(r['today'])['streak'], 2);
+      expect(mapOf(r['streak'])['current'], 2);
+      expect(mapOf(r['streak'])['srsCurrent'], 6);
+      expect(mapOf(r['streak'])['week'], <bool>[
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+      ]);
+      expect(mapOf(r['week'])['minutes'], <int>[0, 0, 0, 0, 10, 30, 0]);
+      expect(
+        (mapOf(r['month'])['reviews']! as List<Object?>).sublist(32),
+        <int>[2, 3, 0],
+      );
+      final List<Object?> levels =
+          mapOf(r['heatmap'])['levels']! as List<Object?>;
+      expect(levels.sublist(levels.length - 3), <int>[1, 3, 0]);
+      final Map<String, Object?> mined = listOf(
+        r['goals'],
+      ).firstWhere((Map<String, Object?> g) => g['id'] == 'mined');
+      expect(mined['value'], '#0');
+      // 顶层仍是今天。
+      expect(mapOf(s['today'])['totalMs'], 30 * 60000);
+    });
+
+    test('a day without study breaks the streak at the boundary', () {
+      final Map<String, Object?> s = build(
+        nextDayAt: boundary,
+        immersion: const WidgetImmersionInput(
+          activeDays: <String>{'2026-10-22', '2026-10-21'},
+        ),
+        srs: const WidgetSrsInput(
+          provider: WidgetSrsProvider.fushi,
+          streakCurrent: 3,
+        ),
+      );
+      expect(mapOf(s['streak'])['current'], 2);
+      final Map<String, Object?> r = mapOf(s['rollover']);
+      expect(mapOf(r['streak'])['current'], 0);
+      expect(mapOf(r['streak'])['srsCurrent'], 0);
+    });
+  });
+
   group('WidgetSnapshotPublisher', () {
     final List<MethodCall> calls = <MethodCall>[];
     bool failNext = false;
@@ -1707,6 +2034,7 @@ void main() {
       'book',
       'manga',
       'video',
+      'game',
     ]);
   });
 }

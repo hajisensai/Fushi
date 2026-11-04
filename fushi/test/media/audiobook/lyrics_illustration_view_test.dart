@@ -252,8 +252,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ImageActionsSheet), findsNothing);
     // 两张卡都没进停留：到展示时长自动收起（BUG-4065），计时不留到测试结束。
-    await tester.pump(kLyricsIllustrationCardAutoClose);
+    await tester.pump(lyricsIllustrationCardDisplayDuration(0));
     expect(c.cardVisible, isFalse);
     expect(noFile.cardVisible, isFalse);
+  });
+  testWidgets('插图卡没进停留时按「图片暂停」秒数自动收起', (WidgetTester tester) async {
+    final ValueNotifier<int> pause = ValueNotifier<int>(9);
+    addTearDown(pause.dispose);
+    final LyricsIllustrationController c = _controller()..imagePauseSec = pause;
+    _playPastTwo(c);
+    await tester.pumpWidget(_slotApp(c));
+    await tester.pumpAndSettle();
+    expect(find.byKey(_cardKey), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 8));
+    await tester.pumpAndSettle();
+    expect(c.cardVisible, isTrue, reason: '9 秒停留设置下 8 秒时卡还在（旧实现固定 5 秒就收）');
+    expect(find.byKey(_cardKey), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(c.cardVisible, isFalse);
+    expect(c.shown, 0, reason: '只收卡，插图位仍是这张插图');
   });
 }

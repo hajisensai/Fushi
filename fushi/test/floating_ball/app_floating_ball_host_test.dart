@@ -33,6 +33,7 @@ import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 class _ReadyAppModel extends AppModel {
@@ -48,35 +49,14 @@ class _ReadyAppModel extends AppModel {
 
 /// 两份配置（Default 激活中 + Lapis）的配置仓库桩：只答视图模型首装与悬浮球
 /// 「切换配置」要读的几样。
-class _TwoProfilesRepository implements ProfileRepository {
-  @override
-  Future<void> ensureDefaultProfile() async {}
-
-  @override
-  Future<List<ProfileRow>> getAllProfiles() async => const <ProfileRow>[
-    ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
-    ProfileRow(id: 2, name: 'Lapis', createdAt: 0, updatedAt: 0),
-  ];
-
-  @override
-  Future<int> getActiveProfileId() async => 1;
-
-  @override
-  Future<Map<String, int>> getAllMediaTypeBindings() async =>
-      const <String, int>{};
-
-  @override
-  Future<Map<String, int>> getAllLanguageBindings() async =>
-      const <String, int>{};
-
-  @override
-  Stream<void> watchProfilesChanged() => const Stream<void>.empty();
-
-  @override
-  Future<void> snapshotCurrentSettings(int profileId) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+class _TwoProfilesRepository extends InertProfileRepository {
+  _TwoProfilesRepository()
+    : super(
+        profiles: const <ProfileRow>[
+          ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
+          ProfileRow(id: 2, name: 'Lapis', createdAt: 0, updatedAt: 0),
+        ],
+      );
 }
 
 /// 只记下切到了哪份配置的视图模型（真切换要整套 Anki / 偏好重装，不是这里测的）。

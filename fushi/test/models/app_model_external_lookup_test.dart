@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4103：app 外来的显式查词（`fushi://lookup` 深链、`fushi_cli lookup`）以前只
+/// BUG-4117：app 外来的显式查词（`fushi://lookup` 深链、`fushi_cli lookup`）以前只
 /// 排队不切 tab。唯一消费者 HomeDictionaryPage 不保活，用户不在查词 tab 上时词就
 /// 一直挂着、什么都不显示。现在统一走 [AppModel.queueExternalLookup]。
 void main() {

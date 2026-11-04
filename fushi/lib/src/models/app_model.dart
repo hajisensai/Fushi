@@ -161,6 +161,10 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart'
+    show GoogleLensDisclosureScene, hasGoogleLensDisclosure;
+import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
+    show MangaStreamOcrSetup, prepareMangaStreamOcr;
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -333,6 +337,13 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart'
+    show appleMusicTokenSource;
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show AppleMusicCatalogClient;
+import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
+    show AppleMusicPersonalClient;
 import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart'
     show createAppleMusicBridge;
 import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dart'
@@ -417,6 +428,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
+import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -1794,6 +1806,9 @@ class AppModel with ChangeNotifier {
         setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
       );
   AppleMusicAccount? _appleMusicAccount;
+
+  /// 播放器「喜欢」用的 Apple Music 评分客户端（懒建，跨账号复用：token 每次现取）。
+  AppleMusicPersonalClient? _appleMusicRatingsClient;
   late final AnkiIntegration ankiIntegration = AnkiIntegration();
 
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
@@ -1926,6 +1941,23 @@ class AppModel with ChangeNotifier {
                   ErrorLogService.instance.log('MusicPluginFavorites', e, st),
             )
           : null,
+      // Apple Music 整曲的「喜欢」= Apple Music 评分（要已连接账号）；iOS 上同样可用。
+      appleMusicFavorites: AppleMusicFavorites(
+        available: () =>
+            isPreferencesReady &&
+            prefsRepo.musicAppleMusicEnabled &&
+            appleMusicAccount.canPlayFullTracks,
+        client: () => _appleMusicRatingsClient ??= AppleMusicPersonalClient(
+          credentials: appleMusicAccount.userCredentials,
+          catalog: AppleMusicCatalogClient(
+            tokens: appleMusicTokenSource,
+            fullTracks: true,
+          ),
+        ),
+        accountChanges: appleMusicAccount,
+        onError: (Object e, StackTrace st) =>
+            ErrorLogService.instance.log('AppleMusicFavorites', e, st),
+      ),
     );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
@@ -2759,7 +2791,7 @@ class AppModel with ChangeNotifier {
   /// 排队待查词，再请求打开查词 tab。
   ///
   /// 只排队不切 tab 时，词会一直挂在 [DesktopLookupService.pendingText] 上——唯一的
-  /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4103）。
+  /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4117）。
   /// 唤前台由调用方负责（深链由原生层前置主窗，ctl 先调 `_focusMainWindowForCtl`）。
   void queueExternalLookup(String text) {
     if (DesktopLookupService.instance.triggerLookup(text)) {
@@ -4414,6 +4446,13 @@ class AppModel with ChangeNotifier {
       _srsCardFontFamilies = await srsCardFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
+      // 反馈 kEFPY4cuKZ：作品会话只活在主进程内存里——上次进程被杀时发布的会话已经不存在，
+      // 先清掉，再把此后的会话变化发布给 `:popup` 进程 / 悬浮词典（[kWorkProfileSessionPrefKey]）。
+      _publishWorkProfileSession();
+      WorkProfileScope.instance.addListener(_publishWorkProfileSession);
+      WorkProfileScope.instance.writeRevision.addListener(
+        _publishWorkProfileSession,
+      );
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
@@ -4848,6 +4887,12 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
+      // 反馈 kEFPY4cuKZ：主进程正打开一部带作品级配置的作品时，本进程的查词 / 制卡 / 主题
+      // 按同一份作品配置生效（镜像进本 isolate 的 [WorkProfileScope]）。
+      _isDictionaryPopupProcess = true;
+      WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
+      await mirrorMainProcessWorkSession();
+
       debugPrint('[Fushi-popup] init: DONE');
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
@@ -4919,7 +4964,8 @@ class AppModel with ChangeNotifier {
   /// Android app 外查词（`:popup` 进程）热复用前的跨进程对账：常驻进程只在冷启动
   /// 装载一次状态，主进程之后的改动它都看不见。三件事：
   ///
-  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）。
+  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）；变过时顺带按主进程
+  ///    发布的作品会话重新镜像（[mirrorMainProcessWorkSession]）。
   /// 2. 词典元数据（顺序 / 启用 / 折叠 / 改名 / 增删）：住在 `dictionary_metadata`
   ///    表、不抬 `prefs_version`，以前只在冷启动读一次——主进程「词典管理」改完，
   ///    app 外查词要杀进程才生效（BUG-3662）。变了就照 [reloadDictionariesFromDb]
@@ -4930,6 +4976,8 @@ class AppModel with ChangeNotifier {
   /// （[invalidateAnkiStateAfterPrefsChange]）。
   Future<bool> refreshForWarmDictionaryPopup() async {
     final bool prefsChanged = await refreshPrefCacheIfChanged();
+    // 主进程发布的作品会话随 `prefs_version` 一起变：偏好变过才可能要换镜像。
+    if (prefsChanged) await mirrorMainProcessWorkSession();
     if (await dictRepo.reloadMetadataIfChangedInDb()) {
       await _rebuildDictPathsCacheAsync();
       dictRepo.clearDictionaryResultsCache();
@@ -9757,9 +9805,65 @@ class AppModel with ChangeNotifier {
     await ReaderFushiSource.instance.refreshPreferencesFromDb();
     await ReaderFushiSource.readerSettings?.refreshFromDb();
     prefsRepo.notifyWorkProfileScopeChanged();
+    // 主题键（[ThemeNotifier.isProfileThemePrefKey]）的生效值换了一份：重建主题。
+    themeNotifier.onWorkProfileScopeChanged();
+    // 弹窗进程不承载 App 界面字体 / 有声书悬浮字幕（那些只在主进程里装配）。
+    if (_isDictionaryPopupProcess) return;
+    // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
+    await refreshAppFont();
     if (audiobookSession.isActive && showFloatingLyric) {
       await audiobookSession.applyFloatingLyricStyle();
     }
+  }
+
+  /// 本实例跑在 Android `:popup` 进程 / 悬浮词典 engine（[initialiseForDictionaryPopup]）里。
+  bool _isDictionaryPopupProcess = false;
+
+  /// 主进程：最近一次发布的作品会话（[kWorkProfileSessionPrefKey] 的值）。
+  String? _publishedWorkSession;
+
+  /// 主进程：发布串行化（两次发布的写入不能乱序落库）。
+  Future<void> _workSessionPublish = Future<void>.value();
+
+  /// 主进程把当前生效的作品会话（配置 id + 会话内写入次数）写进共享偏好表，`:popup` 进程 /
+  /// 悬浮词典下一次查词时经 `prefs_version` 看到并镜像。值没变就不写。
+  void _publishWorkProfileSession() {
+    final String value = WorkProfileScope.instance.publishedSessionValue;
+    if (value == _publishedWorkSession) return;
+    _publishedWorkSession = value;
+    _workSessionPublish = _workSessionPublish
+        .then((_) => prefsRepo.setWorkProfileSession(value))
+        .catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('publishWorkProfileSession', e, stack);
+        });
+  }
+
+  /// 主进程最近一次发布的作品会话已落库时（测试 / 诊断用）。
+  @visibleForTesting
+  Future<void> get workProfileSessionPublished => _workSessionPublish;
+
+  /// 弹窗进程镜像主进程作品会话用的持有者。
+  final Object _mainProcessWorkSessionOwner = Object();
+
+  /// 弹窗进程：已镜像的发布值（null = 还没镜像过）。
+  String? _mirroredWorkSession;
+
+  /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
+  Future<void> mirrorMainProcessWorkSession() async {
+    final String published = prefsRepo.workProfileSession;
+    if (published == _mirroredWorkSession) return;
+    _mirroredWorkSession = published;
+    await WorkProfileScope.instance.mirrorPublishedSession(
+      owner: _mainProcessWorkSessionOwner,
+      published: published,
+      repository: ProfileRepository(
+        _database,
+        platformServices.createAnkiRepository(),
+      ),
+    );
+    await _workProfileScopeReload;
   }
 
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
@@ -10333,6 +10437,8 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_extensionImageOcr?.close());
+    _extensionImageOcr = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -10488,6 +10594,22 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
+  /// 不叠本机作品会话的挖词目标（激活配置的值）：替别的设备 / 浏览器扩展 / 游戏串流接收端
+  /// 制卡（`hostMiningAnkiRepositoryProvider`）用——主机此刻打开着哪本书与对端无关。
+  SrsMiningTarget get hostSrsMiningTarget {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return SrsMiningTarget.anki;
+    return SrsMiningTarget.fromWire(
+      prefs.withoutWorkScope(() => prefs.srsMiningTarget),
+    );
+  }
+
+  // 挖词目标 = Fushi 复习时的「后台制卡」（透传 prefsRepo）。可空读同上：装饰链每次制卡
+  // 现读它，prefs 未装配时按关（同步写入，现状）。
+  bool get srsMiningBackground => _prefsRepo?.srsMiningBackground ?? false;
+  Future<void> setSrsMiningBackground(bool value) =>
+      prefsRepo.setSrsMiningBackground(value: value);
+
   // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
   HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
       decodeHomeDashboardPanelModes(
@@ -10594,6 +10716,13 @@ class AppModel with ChangeNotifier {
     final PreferencesRepository? prefs = _prefsRepo;
     if (prefs == null) return const SrsMiningDestination();
     return srsMiningDestinationIn(prefs);
+  }
+
+  /// 不叠本机作品会话的复习制卡落点（激活配置的值），与 [hostSrsMiningTarget] 同一用途。
+  SrsMiningDestination get hostSrsMiningDestination {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return const SrsMiningDestination();
+    return prefs.withoutWorkScope(() => srsMiningDestinationIn(prefs));
   }
 
   Future<void> setSrsMiningDeckId(String id) =>
@@ -11506,7 +11635,46 @@ class AppModel with ChangeNotifier {
               repository: FavoriteSentenceRepository(database),
               request: request,
             ),
+        // canvas 渲染的网页阅读器（BookWalker 等）抓图取词：与漫画 / 视频暂停帧同一套 OCR。
+        imageOcr: (Uint8List image) =>
+            _ensureExtensionImageOcr().recognize(image),
       );
+
+  /// 浏览器扩展 / app 内浏览器抓图取词的识别会话（懒建，设置变了自动换会话；
+  /// [dispose] 时关掉，释放模型 isolate 与临时目录）。
+  ExtensionImageOcrService? _extensionImageOcr;
+
+  ExtensionImageOcrService _ensureExtensionImageOcr() =>
+      _extensionImageOcr ??= ExtensionImageOcrService(
+        prepare: _prepareExtensionImageOcr,
+        configKey: () =>
+            '$mangaOcrEnginePreference|$mangaOcrLocalModel|'
+            '$mangaOcrLensLanguage|$mangaOcrIgnoreFurigana',
+      );
+
+  /// 抓图取词的引擎解析：与漫画在线直读同一口径（引擎偏好 / 本机模型），但用户此刻
+  /// 在浏览器里、不在 app 里——不弹任何框：Lens 只在本机已同意过上传漫画页面时才用
+  /// （网页阅读器的内容就是漫画 / 书页），不做大模型重读。
+  ///
+  /// 引擎装配要一个能拿到 `ProviderContainer` 的 context（同
+  /// [_autoOcrDownloadedMangaChapter]）；app 还没起完时抛错，这次请求失败、下次重探。
+  Future<MangaStreamOcrSetup> _prepareExtensionImageOcr(String workDirPath) {
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null) {
+      throw StateError('No navigator context to assemble OCR engines');
+    }
+    return prepareMangaStreamOcr(
+      imageDirPath: workDirPath,
+      engines: MangaOcrWizardEngines.resolve(
+        context: context,
+        db: database,
+      ).withoutAiRefinement(),
+      preference: MangaOcrEnginePreferenceKey.fromKey(mangaOcrEnginePreference),
+      lensLanguage: mangaOcrLensLanguage,
+      confirmLensUpload: () =>
+          hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.mangaPages),
+    );
+  }
 
   FushiApiServerManager _ensureYomitanManager() {
     final FushiApiServerManager? existing = _yomitanServerManager;

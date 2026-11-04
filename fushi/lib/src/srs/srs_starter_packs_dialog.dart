@@ -69,41 +69,39 @@ Future<void> openSrsStarterPacks(BuildContext context, WidgetRef ref) {
       title: Text(t.srs_starter_title),
       content: SizedBox(
         width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(t.srs_starter_body),
-              const SizedBox(height: 12),
-              if (packs.isEmpty)
-                Text(t.srs_starter_empty)
-              else
-                FushiEntranceScope(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      for (int i = 0; i < packs.length; i++)
-                        FushiStaggeredEntrance(
-                          key: ValueKey<String>(
-                            'srs-starter-entry-${packs[i].id}',
-                          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.srs_starter_body),
+            const SizedBox(height: 12),
+            if (packs.isEmpty)
+              Text(t.srs_starter_empty)
+            else
+              FushiEntranceScope(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (int i = 0; i < packs.length; i++)
+                      FushiStaggeredEntrance(
+                        key: ValueKey<String>(
+                          'srs-starter-entry-${packs[i].id}',
+                        ),
+                        index: i,
+                        child: FushiGroupedListItem(
                           index: i,
-                          child: FushiGroupedListItem(
-                            index: i,
-                            count: packs.length,
-                            child: SrsStarterPackRow(
-                              pack: packs[i],
-                              controller: controller,
-                            ),
+                          count: packs.length,
+                          child: SrsStarterPackRow(
+                            pack: packs[i],
+                            controller: controller,
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
       actions: <Widget>[
