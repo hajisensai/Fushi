@@ -4007,6 +4007,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 挖词目标 = Fushi 复习时的「后台制卡」（反馈 Rl00Di264R）：开着时制卡请求冻结进后台
+  // 写入队列立即返回，不等截图之后的媒体存盘 / 单词音频下载 / 落库。默认关：关着时制卡
+  // 照旧同步返回笔记句柄（弹窗可立即覆写 / 撤销）。
+  bool get srsMiningBackground =>
+      getPref('srs_mining_background', defaultValue: false) as bool;
+
+  Future<void> setSrsMiningBackground({required bool value}) async {
+    await setPref('srs_mining_background', value);
+    notifyListeners();
+  }
+
   // 挖词目标 = Fushi 复习时，卡落进哪个 SRS 牌组 / 用哪个笔记类型（SRS 实体 id；
   // 空串 = 默认牌组 / 内置 Fushi 卡片）。id 自带 profileUid，随 Profile 快照走。
   String get srsMiningDeckId =>
