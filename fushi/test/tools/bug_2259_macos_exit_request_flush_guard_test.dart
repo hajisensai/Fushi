@@ -20,6 +20,25 @@ import 'package:flutter_test/flutter_test.dart';
 /// 这层守卫是本 bug **可落地的最强层**：真正的行为验证要求进程真的走到
 /// `exit(0)`，没有任何单测宿主能容纳；而「注册了没有、注册在哪个平台、回调是不是
 /// 同一条退出链」恰好全是源码层的静态事实。
+/// 从 [open]（方法签名里那个 `{` 的下标）起按花括号配平截出整个方法体。
+///
+/// 用固定字符窗口（「签名后 500 字符」）去找方法体里的某一行，会在别人往方法体前面
+/// 插几行无关清理时误报——#2819 在 `dispose()` 前段加了 `_widgetSnapshots.dispose()`，
+/// 注销语句本身没动就被挤出了窗口。按配平截出的方法体只随方法边界变，不随行数变。
+String _methodBody(String src, int open) {
+  int depth = 0;
+  for (int i = open; i < src.length; i++) {
+    final String c = src[i];
+    if (c == '{') {
+      depth++;
+    } else if (c == '}') {
+      depth--;
+      if (depth == 0) return src.substring(open, i + 1);
+    }
+  }
+  fail('方法体花括号不配平（从下标 $open 起），守卫需同步更新');
+}
+
 void main() {
   group('BUG-2259 macOS 退出请求 → 退出 flush', () {
     late String src;
@@ -59,7 +78,7 @@ void main() {
         'Future<AppExitResponse> _handleExitRequested() async {',
       );
       expect(at, greaterThan(-1), reason: '回调改名了，守卫需同步更新');
-      final String body = src.substring(at, at + 400);
+      final String body = _methodBody(src, src.indexOf('{', at));
       expect(
         body.contains('await _flushAndExitForWindowClose()'),
         isTrue,
@@ -78,7 +97,10 @@ void main() {
       final int at = src.indexOf('void dispose() {');
       expect(at, greaterThan(-1));
       expect(
-        src.substring(at, at + 500).contains('_exitRequestListener?.dispose()'),
+        _methodBody(
+          src,
+          src.indexOf('{', at),
+        ).contains('_exitRequestListener?.dispose()'),
         isTrue,
         reason: '不注销会把监听器留在 binding 上（热重载 / 重建后累积）',
       );
