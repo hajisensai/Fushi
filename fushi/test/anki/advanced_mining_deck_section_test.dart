@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// 「高级制卡」卡组分区的组装：可选卡组按名字排序，默认卡组与后端
@@ -64,5 +66,37 @@ void main() {
     );
     await section.setDefaultDeck!('Default');
     expect(written, <String>['Default']);
+  });
+
+  group('挖词目标 = Fushi 复习（反馈 0h0e_6fqhY）', () {
+    test('列复习牌组全名，默认 = 实际落地牌组，不看 Anki 卡组', () {
+      final AdvancedMiningDeckSection section =
+          buildSrsAdvancedMiningDeckSection(
+            const SrsMiningChoices(
+              decks: <(String, String)>[
+                ('d0', 'Default'),
+                ('d2', 'Books::Novel'),
+              ],
+              noteTypes: [],
+              resolved: SrsResolvedMiningDestination(
+                deckId: 'd2',
+                deckName: 'Books::Novel',
+                noteType: null,
+                deckFellBack: false,
+                noteTypeFellBack: false,
+              ),
+              lapisNoteTypeId: 'lapis',
+            ),
+          );
+      expect(section.decks, <String>['Default', 'Books::Novel']);
+      expect(section.defaultDeckName, 'Books::Novel');
+    });
+
+    test('复习存储打不开：没有可选项也没有默认名', () {
+      final AdvancedMiningDeckSection section =
+          buildSrsAdvancedMiningDeckSection(null);
+      expect(section.decks, isEmpty);
+      expect(section.defaultDeckName, isNull);
+    });
   });
 }

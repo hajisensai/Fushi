@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// 「高级制卡」对话框的卡组分区：从 Anki 设置组装（纯函数，可单测）。
@@ -35,12 +37,59 @@ AdvancedMiningDeckSection buildAdvancedMiningDeckSection(
   );
 }
 
-/// 开窗函数用：读当前 Anki 设置并组装卡组分区。「同时设为默认卡组」走
-/// [AnkiViewModel.selectDeck]（与设置页同一条持久化路径，id + 名字一起写），
-/// 名字在这次读到的列表里找不到就不写（不凭空造卡组）。
+/// 挖词目标是 Fushi 复习时的卡组分区（反馈 0h0e_6fqhY，纯函数，可单测）。
+///
+/// 卡真正落在哪由 `SrsMiner` 按复习的挖词去向决定，Anki 的卡组列表与这张卡无关——
+/// 此前这里照样列 Anki 卡组、按钮写「制卡到 <Anki 卡组>」，卡却进了复习默认牌组。
+///
+/// * 可选卡组 = 复习牌组的「父::子」全名（[SrsMiningChoices.decks] 已按全名排）。
+/// * 默认卡组 = 偏好解析后的实际落地牌组（被删时已回落默认牌组）。
+/// * [choices] 为 null（复习存储打不开）时没有可选项，也没有默认名。
+AdvancedMiningDeckSection buildSrsAdvancedMiningDeckSection(
+  SrsMiningChoices? choices, {
+  Future<void> Function(String deckName)? setDefaultDeck,
+}) {
+  if (choices == null) {
+    return AdvancedMiningDeckSection(
+      decks: const <String>[],
+      defaultDeckName: null,
+      setDefaultDeck: setDefaultDeck,
+    );
+  }
+  return AdvancedMiningDeckSection(
+    decks: <String>[for (final (String, String) deck in choices.decks) deck.$2],
+    defaultDeckName: choices.resolved.deckName,
+    setDefaultDeck: setDefaultDeck,
+  );
+}
+
+/// 开窗函数用：按当前挖词目标组装卡组分区。
+///
+/// * 目标是 Fushi 复习（[srsMiningToReviewProvider]）：列复习牌组，「同时设为默认卡组」
+///   写复习的挖词牌组（[AppModel.setSrsMiningDeckId]，与设置页同一条持久化路径）。
+/// * 否则读当前 Anki 设置。「同时设为默认卡组」走 [AnkiViewModel.selectDeck]（与设置页
+///   同一条持久化路径，id + 名字一起写）。
+///
+/// 两边都是名字在这次读到的列表里找不到就不写（不凭空造卡组）。
 Future<AdvancedMiningDeckSection> loadAdvancedMiningDeckSection(
   WidgetRef ref,
 ) async {
+  if (ref.read(srsMiningToReviewProvider)) {
+    final SrsMiningChoices? choices = await ref.read(
+      srsMiningChoicesProvider.future,
+    );
+    return buildSrsAdvancedMiningDeckSection(
+      choices,
+      setDefaultDeck: (String deckName) async {
+        final String? id = choices?.decks
+            .where(((String, String) d) => d.$2 == deckName)
+            .firstOrNull
+            ?.$1;
+        if (id == null) return;
+        await ref.read(appProvider).setSrsMiningDeckId(id);
+      },
+    );
+  }
   final AnkiSettings settings = await ref
       .read(ankiRepositoryProvider)
       .loadSettings();
