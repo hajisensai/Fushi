@@ -538,7 +538,6 @@ class SrsMiner with AnkiNoteComposer {
         nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
   static MineOutcome? _parse(

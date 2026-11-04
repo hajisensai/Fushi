@@ -922,7 +922,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
-    this.charPositionTag,
+    this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
     this.sourceLink,
@@ -962,16 +962,19 @@ class AnkiMiningContext {
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
 
-  /// 「制卡位置标签」开关开启时，调用方（小说阅读器）算好的**制卡所在字符数标签**
-  /// （`chars_12345`，见 [BaseAnkiRepository.formatCharPositionTag]）：这张卡是在全书
-  /// 第几个学习字（`countStudyChars` 口径）处制的。开关关闭、非小说来源、或锚点取不到
-  /// （章字数未算完 / JS 拿不到 caret）时为 `null`，[BaseAnkiRepository.buildNoteTags]
-  /// 不追加——宁可不打标签，也不打一个 `chars_0` 冒充书首。
+  /// 「制卡位置写入 MiscInfo」开关（冻结偏好键 `auto_add_char_position_to_tags`）开启时，
+  /// 调用方（小说阅读器）按界面语言格式化好的**制卡位置文本**（如「制卡位置：第 12345 字」）：
+  /// 这张卡是在全书第几个学习字（`countStudyChars` 口径）处制的。开关关闭、非小说来源、
+  /// 或锚点取不到（章字数未算完 / JS 拿不到 caret）时为 `null`，什么都不写——宁可不写，
+  /// 也不写一个「第 0 字」冒充书首。
   ///
-  /// 与 [bookTitleTag] / [collectionTag] 同构：真值源（`countStudyChars` 口径的章内锚 +
-  /// 每章累计前缀）都在主 app 的阅读器 state 里，fushi_anki 是独立包拿不到，故由调用方
-  /// 算好字面量后注入，本包只负责按既有去重规则追加。
-  final String? charPositionTag;
+  /// 落点由 [AnkiNoteComposer.charPositionTargetField] 判定（Lapis = `MiscInfo`，其它笔记
+  /// 类型 = 映射里的 MiscInfo 等价字段，没有就不写），追加在该字段渲染值之后。不再进 Anki
+  /// 标签（反馈 MhQHXQI-sB：`chars_12345` 一卡一个，把标签列表撑爆）。
+  ///
+  /// 真值源（章内锚 + 每章累计前缀）与 i18n 都在主 app，fushi_anki 是独立包拿不到，故由
+  /// 调用方算好文本后注入。
+  final String? charPositionText;
 
   /// 本张卡截取的媒体片段起止（毫秒，媒体时间轴上的**偏移**，非 wall-clock 时刻，
   /// 故按术语表用 `Ms` 后缀）。渲染 `{clip-timestamp}` 用。
@@ -1010,7 +1013,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
-    charPositionTag: charPositionTag,
+    charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: value,
@@ -1041,7 +1044,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
-    charPositionTag: charPositionTag,
+    charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: sourceLink,

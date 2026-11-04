@@ -583,8 +583,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       AnkiSectionRow.tagCharPosition => SettingsSearchTarget(
         id: 'card_creation.anki.tag_char_position',
         child: AdaptiveSettingsSwitchRow(
-          title: t.auto_add_char_position_to_tags,
-          subtitle: t.auto_add_char_position_to_tags_hint,
+          title: t.anki_char_position_misc_info,
+          subtitle: t.anki_char_position_misc_info_hint,
           icon: FushiIcons.pin,
           value: appModel.autoAddCharPositionToTags,
           onChanged: (bool value) {

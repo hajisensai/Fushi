@@ -578,7 +578,6 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
       // `x-success` 是 AnkiMobile「卡已经加进去了」的权威信号（手册：use to
       // automatically return to another app **after the note is added**），带回的
