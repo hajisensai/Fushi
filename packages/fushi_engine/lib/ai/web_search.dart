@@ -18,9 +18,11 @@
 ///   IPv4-mapped IPv6 还原成 IPv4 再判，`0.0.0.0` / `::` 一律拒）；
 /// * 重定向不交给 HTTP 栈自动跟：手动逐跳跟（最多 [kWebSearchMaxRedirects] 跳），每一跳都
 ///   重新过上面两道；
-/// * 直连时按已校验的地址建连（[webSearchPinnedConnectionFactory]），解析与建连之间被
-///   DNS rebinding 换成内网地址也连不过去。走应用代理时 DNS 在代理那头解析，本机只能做
-///   解析前置校验。
+/// * 建连时按已校验的地址连（[webSearchPinnedConnectionFactory]），解析与建连之间被
+///   DNS rebinding 换成内网地址也连不过去。走应用代理时同样钉死：抓页客户端不让 HTTP 栈
+///   去问代理（那样代理拿到的是主机名，会在它那头重新解析），而是自己向代理发
+///   `CONNECT <已校验的 IP>:<端口>`，https 再在隧道上按原主机名做 TLS（SNI 与证书校验
+///   不变）。代理收到的只有校验过的公网 IP，没有可以被重新解析的名字。
 ///
 /// SearXNG 实例地址是用户自己配的（常是局域网自建），搜索请求不受这套限制。
 library;
@@ -28,10 +30,13 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/ai/web_knowledge.dart' show webKnowledgeHtmlToText;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart'
+    show appManualProxyBasicCredentials, resolveAppProxyDirective;
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -41,6 +46,14 @@ const int kWebSearchMaxResponseBytes = 4 * 1024 * 1024;
 
 /// 抓结果页时最多跟几跳重定向。
 const int kWebSearchMaxRedirects = 5;
+
+/// 代理隧道响应头（`HTTP/1.1 200 …` 到空行）的字节上限。
+const int kWebSearchMaxProxyResponseHeaderBytes = 8 * 1024;
+
+/// 某个 URL 此刻该走的出口，`HttpClient.findProxy` 指令格式（`DIRECT` /
+/// `PROXY host:port` / `PROXY user:pass@host:port`，`;` 分隔取第一条）。生产用
+/// [resolveAppProxyDirective]（应用代理设置），测试注入。
+typedef WebSearchProxyDirective = String Function(Uri url);
 
 /// 主机名 → 地址（生产用 [InternetAddress.lookup]；测试注入）。
 typedef WebSearchHostResolver =
@@ -211,13 +224,15 @@ class WebSearchPage {
 /// 不能让调用它的 AI 流程（字幕生成等）整体失败。
 class WebSearchClient {
   /// [client] 发搜索请求；抓结果页用 [pageClient]，没给就用 [client]；两个都没给时
-  /// 另建一个按已校验地址建连的客户端（见库注释）。[resolveHost] 是抓页前校验主机名
-  /// 用的解析器。
+  /// 另建一个按已校验地址建连的客户端（[createWebSearchPageHttpClient]，见库注释）。
+  /// [resolveHost] 是抓页前校验主机名用的解析器，[proxyDirective] 是抓页出口
+  /// （默认应用代理设置）。
   WebSearchClient({
     required this.config,
     http.Client? client,
     http.Client? pageClient,
     WebSearchHostResolver? resolveHost,
+    WebSearchProxyDirective? proxyDirective,
     this.requestTimeout = const Duration(seconds: 20),
   }) : _client = client ?? createAppHttpIoClient(),
        _ownsClient = client == null,
@@ -226,10 +241,10 @@ class WebSearchClient {
            pageClient ??
            client ??
            IOClient(
-             createAppHttpClient()
-               ..connectionFactory = webSearchPinnedConnectionFactory(
-                 resolveHost ?? _systemLookup,
-               ),
+             createWebSearchPageHttpClient(
+               resolveHost: resolveHost ?? _systemLookup,
+               proxyDirective: proxyDirective ?? _appProxyDirective,
+             ),
            ),
        _ownsPageClient = pageClient == null && client == null;
 
@@ -476,36 +491,347 @@ bool _isPublicIpv4(List<int> b) =>
         (b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||
         b[0] >= 224);
 
-/// 抓页客户端的建连函数：直连时自己解析主机名、要求全部地址是公网地址，再**按校验过
-/// 的地址**建连（https 用 [SecureSocket]，证书仍按原主机名校验），解析与建连之间被
-/// DNS rebinding 换地址也连不到内网。走代理（`proxyHost` 非 null）时连代理本身。
+String _appProxyDirective(Uri url) => resolveAppProxyDirective(url);
+
+/// 抓结果页用的 [HttpClient]：连接超时同 [createAppHttpClient]，但 `findProxy` 恒为
+/// `DIRECT`——走不走代理由 [webSearchPinnedConnectionFactory] 自己按 [proxyDirective]
+/// 决定并自己建隧道。交给 HTTP 栈去连代理的话，它会把**主机名**发给代理
+/// （`CONNECT host:443` / `GET http://host/…`），代理那头重新解析，本机的地址校验就成了
+/// 只管一次的前置检查。
+HttpClient createWebSearchPageHttpClient({
+  required WebSearchHostResolver resolveHost,
+  required WebSearchProxyDirective proxyDirective,
+}) => createAppHttpClient()
+  ..findProxy = ((Uri _) => 'DIRECT')
+  ..connectionFactory = webSearchPinnedConnectionFactory(
+    resolveHost,
+    proxyDirective: proxyDirective,
+  );
+
+/// 抓页客户端的建连函数：自己解析主机名、要求全部地址是公网地址，再**按校验过的地址**
+/// 建连，解析与建连之间被 DNS rebinding 换地址也连不到内网。
+///
+/// * [proxyDirective] 给 `DIRECT`：直连那个 IP（https 用 [SecureSocket]，证书仍按原
+///   主机名校验——lookup 出来的 [InternetAddress] 带着原主机名）；
+/// * 给 `PROXY host:port`：连代理，发 `CONNECT <IP>:<端口>`（手填代理的 Basic 凭据照
+///   应用代理设置带上），2xx 后 https 在隧道上按原主机名做 TLS，http 直接在隧道上发
+///   请求。代理只拿到校验过的 IP。
+///
+/// 只能装在 `findProxy` 恒为 `DIRECT` 的客户端上（[createWebSearchPageHttpClient]）：
+/// HTTP 栈要是自己选了代理（`proxyHost` 非 null），隧道会用主机名去建，这里直接拒。
 Future<ConnectionTask<Socket>> Function(
   Uri url,
   String? proxyHost,
   int? proxyPort,
 )
-webSearchPinnedConnectionFactory(WebSearchHostResolver resolve) =>
-    (Uri url, String? proxyHost, int? proxyPort) async {
-      if (proxyHost != null && proxyPort != null) {
-        return Socket.startConnect(proxyHost, proxyPort);
+webSearchPinnedConnectionFactory(
+  WebSearchHostResolver resolve, {
+  WebSearchProxyDirective proxyDirective = _appProxyDirective,
+}) => (Uri url, String? proxyHost, int? proxyPort) async {
+  if (proxyHost != null) {
+    throw StateError(
+      'web search page client must use findProxy DIRECT; '
+      'proxying is done by the pinned connection factory',
+    );
+  }
+  final InternetAddress? literal = _ipLiteral(url.host);
+  final List<InternetAddress> addresses = literal != null
+      ? <InternetAddress>[literal]
+      : await resolve(url.host);
+  if (!isFetchableWebSearchUrl(url) ||
+      addresses.isEmpty ||
+      !addresses.every(isPublicWebSearchAddress)) {
+    throw SocketException(
+      'web search: refused connection to non-public address',
+      address: addresses.isEmpty ? null : addresses.first,
+    );
+  }
+  final InternetAddress target = addresses.first;
+  final _WebSearchProxy? proxy = _parseProxyDirective(proxyDirective(url));
+  if (proxy == null) {
+    return url.scheme == 'https'
+        ? SecureSocket.startConnect(target, url.port)
+        : Socket.startConnect(target, url.port);
+  }
+  Socket? opened;
+  bool cancelled = false;
+  final Future<Socket> socket = _openPinnedProxyTunnel(
+    proxy: proxy,
+    target: target,
+    url: url,
+    onConnected: (Socket s) {
+      opened = s;
+      if (cancelled) s.destroy();
+    },
+  );
+  return ConnectionTask.fromSocket(socket, () {
+    cancelled = true;
+    opened?.destroy();
+  });
+};
+
+/// findProxy 指令里的一个代理。
+class _WebSearchProxy {
+  const _WebSearchProxy(this.host, this.port, this.credentials);
+
+  final String host;
+  final int port;
+  final ({String username, String password})? credentials;
+}
+
+/// 指令 → 代理；第一条是 `DIRECT` → null。认不出的指令抛 [SocketException]（不悄悄
+/// 改成直连：那会绕过用户的代理设置）。
+_WebSearchProxy? _parseProxyDirective(String directive) {
+  final String first = directive.split(';').first.trim();
+  if (first.toUpperCase() == 'DIRECT') return null;
+  if (!first.toUpperCase().startsWith('PROXY ')) {
+    throw SocketException('web search: unsupported proxy directive "$first"');
+  }
+  String spec = first.substring('PROXY '.length).trim();
+  ({String username, String password})? credentials;
+  final int at = spec.lastIndexOf('@');
+  if (at >= 0) {
+    final String userInfo = spec.substring(0, at);
+    spec = spec.substring(at + 1);
+    final int sep = userInfo.indexOf(':');
+    credentials = sep < 0
+        ? (username: userInfo, password: '')
+        : (
+            username: userInfo.substring(0, sep),
+            password: userInfo.substring(sep + 1),
+          );
+  }
+  final int colon = spec.lastIndexOf(':');
+  final int? port = colon < 0 ? null : int.tryParse(spec.substring(colon + 1));
+  String host = colon < 0 ? spec : spec.substring(0, colon);
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.substring(1, host.length - 1);
+  }
+  if (host.isEmpty || port == null || port < 1 || port > 65535) {
+    throw SocketException('web search: bad proxy directive "$first"');
+  }
+  return _WebSearchProxy(
+    host,
+    port,
+    credentials ?? appManualProxyBasicCredentials(host, port),
+  );
+}
+
+/// 连 [proxy]，建一条到 [target]（已校验的 IP）的 `CONNECT` 隧道；https 在隧道上按
+/// [url] 的主机名做 TLS（与 `dart:_http` 自己建代理隧道的做法一致）。
+Future<Socket> _openPinnedProxyTunnel({
+  required _WebSearchProxy proxy,
+  required InternetAddress target,
+  required Uri url,
+  required void Function(Socket socket) onConnected,
+}) async {
+  final Socket socket = await Socket.connect(proxy.host, proxy.port);
+  onConnected(socket);
+  try {
+    final String authority = target.type == InternetAddressType.IPv6
+        ? '[${target.address}]:${url.port}'
+        : '${target.address}:${url.port}';
+    final StringBuffer request = StringBuffer()
+      ..write('CONNECT $authority HTTP/1.1\r\n')
+      ..write('Host: $authority\r\n');
+    final ({String username, String password})? credentials = proxy.credentials;
+    if (credentials != null) {
+      final String token = base64Encode(
+        utf8.encode('${credentials.username}:${credentials.password}'),
+      );
+      request.write('Proxy-Authorization: Basic $token\r\n');
+    }
+    request.write('\r\n');
+    socket.add(utf8.encode(request.toString()));
+    // 这条（已暂停的）订阅交给上层接着读隧道（[_TunneledSocket]；https 由 TLS 接管原
+    // 连接），不能在这里 cancel：cancel 会关掉连接的读方向。连接由 HTTP 栈关。
+    // ignore: cancel_subscriptions
+    final StreamSubscription<Uint8List> subscription = await _awaitProxyTunnel(
+      socket,
+    );
+    if (url.scheme == 'https') {
+      return await SecureSocket.secure(socket, host: url.host);
+    }
+    return _TunneledSocket(socket, subscription);
+  } catch (_) {
+    socket.destroy();
+    rethrow;
+  }
+}
+
+/// 读代理对 `CONNECT` 的响应头：2xx → 暂停读并交回订阅（隧道里此后的字节归上层）；
+/// 别的状态 / 头太长 / 头后面跟了多余字节（隧道没开就送数据，协议错）/ 连接断开 →
+/// 抛 [SocketException]。
+Future<StreamSubscription<Uint8List>> _awaitProxyTunnel(Socket socket) {
+  final Completer<StreamSubscription<Uint8List>> done =
+      Completer<StreamSubscription<Uint8List>>();
+  final BytesBuilder header = BytesBuilder(copy: false);
+  late final StreamSubscription<Uint8List> subscription;
+  void fail(String message) {
+    // 隧道没建成：这条连接作废（调用方随后 destroy），订阅不再交给任何人。
+    unawaited(subscription.cancel());
+    if (!done.isCompleted) done.completeError(SocketException(message));
+  }
+
+  subscription = socket.listen(
+    (Uint8List chunk) {
+      if (done.isCompleted) return;
+      header.add(chunk);
+      final Uint8List bytes = header.toBytes();
+      final int end = _headerEnd(bytes);
+      if (end < 0) {
+        if (bytes.length > kWebSearchMaxProxyResponseHeaderBytes) {
+          fail('web search: proxy tunnel response header too large');
+        }
+        return;
       }
-      final InternetAddress? literal = _ipLiteral(url.host);
-      final List<InternetAddress> addresses = literal != null
-          ? <InternetAddress>[literal]
-          : await resolve(url.host);
-      if (!isFetchableWebSearchUrl(url) ||
-          addresses.isEmpty ||
-          !addresses.every(isPublicWebSearchAddress)) {
-        throw SocketException(
-          'web search: refused connection to non-public address',
-          address: addresses.isEmpty ? null : addresses.first,
+      if (end != bytes.length) {
+        fail('web search: proxy sent data before the tunnel was established');
+        return;
+      }
+      final String text = latin1.decode(bytes);
+      final String statusLine = text.substring(0, text.indexOf('\r\n'));
+      final RegExpMatch? m = RegExp(
+        r'^HTTP/1\.[01] (\d{3})',
+      ).firstMatch(statusLine);
+      final int status = m == null ? 0 : int.parse(m.group(1)!);
+      if (status < 200 || status > 299) {
+        fail('web search: proxy refused tunnel ($statusLine)');
+        return;
+      }
+      subscription.pause();
+      done.complete(subscription);
+    },
+    onError: (Object error, StackTrace stack) {
+      if (!done.isCompleted) done.completeError(error, stack);
+    },
+    onDone: () {
+      if (!done.isCompleted) {
+        done.completeError(
+          const SocketException(
+            'web search: proxy closed the connection before the tunnel opened',
+          ),
         );
       }
-      final InternetAddress target = addresses.first;
-      return url.scheme == 'https'
-          ? SecureSocket.startConnect(target, url.port)
-          : Socket.startConnect(target, url.port);
-    };
+    },
+  );
+  return done.future;
+}
+
+/// 响应头结束（`\r\n\r\n` 之后）的下标；没有 → -1。
+int _headerEnd(Uint8List bytes) {
+  for (int i = 3; i < bytes.length; i++) {
+    if (bytes[i] == 10 &&
+        bytes[i - 1] == 13 &&
+        bytes[i - 2] == 10 &&
+        bytes[i - 3] == 13) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+/// 明文 http 走代理隧道时交给 HTTP 栈的 [Socket]：读侧接着用读隧道响应时那个（已暂停
+/// 的）订阅——[Socket] 是单订阅流，读过响应头就不能再 `listen` 一次；写侧与选项原样
+/// 委托给底下的连接。（https 不需要它：[SecureSocket.secure] 直接接管原连接。）
+final class _TunneledSocket extends Stream<Uint8List> implements Socket {
+  _TunneledSocket(this._inner, this._subscription);
+
+  final Socket _inner;
+  StreamSubscription<Uint8List>? _subscription;
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    final StreamSubscription<Uint8List>? subscription = _subscription;
+    if (subscription == null) {
+      throw StateError('Stream has already been listened to.');
+    }
+    _subscription = null;
+    subscription
+      ..onData(onData)
+      ..onError((Object error, StackTrace stack) {
+        if (cancelOnError ?? false) unawaited(subscription.cancel());
+        if (onError is void Function(Object, StackTrace)) {
+          onError(error, stack);
+        } else if (onError is void Function(Object)) {
+          onError(error);
+        } else {
+          Zone.current.handleUncaughtError(error, stack);
+        }
+      })
+      ..onDone(onDone)
+      ..resume();
+    return subscription;
+  }
+
+  @override
+  Encoding get encoding => _inner.encoding;
+
+  @override
+  set encoding(Encoding value) => _inner.encoding = value;
+
+  @override
+  void add(List<int> data) => _inner.add(data);
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) =>
+      _inner.addError(error, stackTrace);
+
+  @override
+  Future<void> addStream(Stream<List<int>> stream) => _inner.addStream(stream);
+
+  @override
+  Future<void> close() => _inner.close();
+
+  @override
+  Future<void> get done => _inner.done;
+
+  @override
+  Future<void> flush() => _inner.flush();
+
+  @override
+  void write(Object? object) => _inner.write(object);
+
+  @override
+  void writeAll(Iterable<Object?> objects, [String separator = '']) =>
+      _inner.writeAll(objects, separator);
+
+  @override
+  void writeCharCode(int charCode) => _inner.writeCharCode(charCode);
+
+  @override
+  void writeln([Object? object = '']) => _inner.writeln(object);
+
+  @override
+  InternetAddress get address => _inner.address;
+
+  @override
+  int get port => _inner.port;
+
+  @override
+  InternetAddress get remoteAddress => _inner.remoteAddress;
+
+  @override
+  int get remotePort => _inner.remotePort;
+
+  @override
+  void destroy() => _inner.destroy();
+
+  @override
+  bool setOption(SocketOption option, bool enabled) =>
+      _inner.setOption(option, enabled);
+
+  @override
+  Uint8List getRawOption(RawSocketOption option) => _inner.getRawOption(option);
+
+  @override
+  void setRawOption(RawSocketOption option) => _inner.setRawOption(option);
+}
 
 /// SearXNG `format=json` → 结果。坏 JSON 抛 [FormatException]。
 List<WebSearchHit> parseSearxngResults(String body) {

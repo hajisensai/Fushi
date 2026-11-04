@@ -345,6 +345,181 @@ void main() {
     });
   });
 
+  group('抓页走代理：按已校验的 IP 建隧道（DNS rebinding）', () {
+    /// 假代理：读 CONNECT 请求头并记下，回 [status]；2xx 后把隧道接到 [upstreamPort]
+    /// （本机 HttpServer，不管 CONNECT 要的是哪个 IP），并记下隧道里客户端发的头几个字节。
+    Future<_FakeProxy> startProxy({
+      int? upstreamPort,
+      String status = '200 Connection established',
+    }) async {
+      final _FakeProxy proxy = _FakeProxy(
+        await ServerSocket.bind(InternetAddress.loopbackIPv4, 0),
+      );
+      proxy.server.listen((Socket client) {
+        proxy.connections++;
+        final List<int> buffered = <int>[];
+        Socket? upstream;
+        bool tunnelled = false;
+        client.listen(
+          (List<int> chunk) async {
+            if (tunnelled) {
+              proxy.tunnelBytes.addAll(chunk);
+              upstream?.add(chunk);
+              return;
+            }
+            buffered.addAll(chunk);
+            final String text = latin1.decode(buffered);
+            final int end = text.indexOf('\r\n\r\n');
+            if (end < 0) return;
+            proxy.requests.add(text.substring(0, end));
+            tunnelled = true;
+            if (!status.startsWith('2') || upstreamPort == null) {
+              client.add(latin1.encode('HTTP/1.1 $status\r\n\r\n'));
+              if (!status.startsWith('2')) await client.close();
+              return;
+            }
+            upstream = await Socket.connect(
+              InternetAddress.loopbackIPv4,
+              upstreamPort,
+            );
+            upstream!.listen(
+              client.add,
+              onDone: () => client.close(),
+              onError: (Object _) => client.destroy(),
+            );
+            client.add(latin1.encode('HTTP/1.1 $status\r\n\r\n'));
+          },
+          onDone: () => upstream?.close(),
+          onError: (Object _) => upstream?.destroy(),
+        );
+      });
+      addTearDown(proxy.server.close);
+      return proxy;
+    }
+
+    test('http：CONNECT 的是校验过的 IP，不是主机名；页面经隧道取回，凭据不进源站', () async {
+      final HttpServer origin = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final List<HttpRequest> seen = <HttpRequest>[];
+      origin.listen((HttpRequest r) {
+        seen.add(r);
+        r.response
+          ..headers.contentType = ContentType.html
+          ..write('<html><body><p>歌詞 ほんもの</p></body></html>')
+          ..close();
+      });
+      addTearDown(() => origin.close(force: true));
+      final _FakeProxy proxy = await startProxy(upstreamPort: origin.port);
+
+      final WebSearchClient c = WebSearchClient(
+        config: const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'k'),
+        resolveHost: (String _) async => <InternetAddress>[
+          InternetAddress('93.184.216.34'),
+        ],
+        proxyDirective: (Uri _) => 'PROXY u:p@127.0.0.1:${proxy.server.port}',
+      );
+      addTearDown(c.close);
+      final WebSearchPage? page = await c.fetchPage(
+        Uri.parse('http://lyrics.example:${origin.port}/song?id=1'),
+      );
+      expect(page, isNotNull);
+      expect(page!.text, contains('歌詞 ほんもの'));
+
+      expect(proxy.requests, hasLength(1));
+      final List<String> lines = proxy.requests.single.split('\r\n');
+      expect(lines.first, 'CONNECT 93.184.216.34:${origin.port} HTTP/1.1');
+      expect(
+        lines,
+        contains(
+          'Proxy-Authorization: Basic ${base64Encode(utf8.encode('u:p'))}',
+        ),
+      );
+      expect(proxy.requests.single, isNot(contains('lyrics.example')));
+      // 源站看到的是 origin-form 请求 + 原主机名，代理凭据不外泄。
+      expect(seen.single.uri.path, '/song');
+      expect(seen.single.headers.host, 'lyrics.example');
+      expect(seen.single.headers.value('proxy-authorization'), isNull);
+    });
+
+    test('https：CONNECT 的是 IP:443 形式，隧道里按原主机名发 TLS（SNI）', () async {
+      final _FakeProxy proxy = await startProxy();
+      final WebSearchClient c = WebSearchClient(
+        config: const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'k'),
+        resolveHost: (String _) async => <InternetAddress>[
+          InternetAddress('93.184.216.34'),
+        ],
+        proxyDirective: (Uri _) => 'PROXY 127.0.0.1:${proxy.server.port}',
+        requestTimeout: const Duration(seconds: 3),
+      );
+      addTearDown(c.close);
+      // 假代理不接上游：TLS 握手不会完成，抓页失败返回 null；要看的是隧道里发了什么。
+      expect(await c.fetchPage(Uri.parse('https://lyrics.example/a')), isNull);
+      expect(
+        proxy.requests.single.split('\r\n').first,
+        'CONNECT 93.184.216.34:443 HTTP/1.1',
+      );
+      expect(proxy.tunnelBytes, isNotEmpty);
+      expect(proxy.tunnelBytes.first, 0x16, reason: 'TLS handshake record');
+      expect(latin1.decode(proxy.tunnelBytes), contains('lyrics.example'));
+    });
+
+    test('建连时被换成回环地址：连代理都不连', () async {
+      final _FakeProxy proxy = await startProxy();
+      int lookups = 0;
+      final WebSearchClient c = WebSearchClient(
+        config: const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'k'),
+        resolveHost: (String _) async => lookups++ == 0
+            ? <InternetAddress>[InternetAddress('93.184.216.34')]
+            : <InternetAddress>[InternetAddress.loopbackIPv4],
+        proxyDirective: (Uri _) => 'PROXY 127.0.0.1:${proxy.server.port}',
+      );
+      addTearDown(c.close);
+      expect(await c.fetchPage(Uri.parse('http://rebind.example/')), isNull);
+      expect(lookups, greaterThanOrEqualTo(2));
+      expect(proxy.connections, 0);
+    });
+
+    test('代理拒绝隧道（407）/ 认不出的指令：抓页失败，不改走直连', () async {
+      final _FakeProxy proxy = await startProxy(
+        status: '407 Proxy Authentication Required',
+      );
+      final WebSearchClient refused = WebSearchClient(
+        config: const WebSearchConfig(kind: WebSearchKind.brave, apiKey: 'k'),
+        resolveHost: (String _) async => <InternetAddress>[
+          InternetAddress('93.184.216.34'),
+        ],
+        proxyDirective: (Uri _) => 'PROXY 127.0.0.1:${proxy.server.port}',
+      );
+      addTearDown(refused.close);
+      expect(await refused.fetchPage(Uri.parse('http://a.example/')), isNull);
+      expect(proxy.requests, hasLength(1));
+
+      await expectLater(
+        webSearchPinnedConnectionFactory(
+          (String _) async => <InternetAddress>[
+            InternetAddress('93.184.216.34'),
+          ],
+          proxyDirective: (Uri _) => 'SOCKS 127.0.0.1:1080',
+        )(Uri.parse('http://a.example/'), null, null),
+        throwsA(isA<SocketException>()),
+      );
+    });
+
+    test('装在会自己选代理的客户端上（proxyHost 非 null）：拒绝', () async {
+      await expectLater(
+        webSearchPinnedConnectionFactory(
+          (String _) async => <InternetAddress>[
+            InternetAddress('93.184.216.34'),
+          ],
+          proxyDirective: (Uri _) => 'DIRECT',
+        )(Uri.parse('http://a.example/'), '127.0.0.1', 8080),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
   group('WebSearchClient.search', () {
     test('SearXNG 请求带 format=json 与 q', () async {
       late Uri seen;
@@ -418,4 +593,18 @@ void main() {
       expect(calls, 1);
     });
   });
+}
+
+/// 测试用假代理的记录。
+class _FakeProxy {
+  _FakeProxy(this.server);
+
+  final ServerSocket server;
+
+  /// 每条连接的 CONNECT 请求头（到空行为止）。
+  final List<String> requests = <String>[];
+
+  /// 隧道建成后客户端发来的字节。
+  final List<int> tunnelBytes = <int>[];
+  int connections = 0;
 }
