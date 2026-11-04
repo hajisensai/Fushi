@@ -101,6 +101,19 @@ void main() {
           'pushed route，只切 tab 的话 tab 在底下换了、用户还停在详情页上，'
           '看起来什么都没发生。内联在 home 里的发现页已在栈顶，popUntil 是 no-op。',
     );
+    final int external = source.indexOf('void _onExternalBrowseRequest() {');
+    expect(external, greaterThan(0), reason: '小组件深链的浏览页落地点应存在');
+    final String externalFn = source
+        .substring(external, source.indexOf('\n  }', external))
+        .replaceAll(RegExp(r'\s+'), ' ');
+    expect(
+      externalFn.contains('_popToBrowseTab( request.tab,'),
+      isTrue,
+      reason:
+          '外部（小组件深链）的 externalBrowseRequest 是全局 notifier，任何代码都能写：'
+          '落地点必须自己走 _popToBrowseTab 判可达性，浏览模块关着（功能模块隐藏 / '
+          'iOS 商店合规下不存在）时裸 _openBrowseTab 会被 _selectTab 静默吞掉。',
+    );
   });
 
   test('② onOpenSubscriptions 端口同样按下载可达性接线', () {
