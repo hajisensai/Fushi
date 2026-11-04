@@ -107,8 +107,9 @@ class AniDbVideoMetadataProvider
   final String imageBaseUrl;
   final String language;
 
-  /// true = 标题按作品原语言选（资料语言留空，BUG-4056），[language] 只在原语言
-  /// 推不出来时兜底。原语言见 [_originalLanguageOf]。
+  /// true = 标题按作品原语言选（资料语言留空，BUG-4056）。原语言见
+  /// [_workOriginalLanguageOf]——与产出的 [VideoMetadataWork.originalLanguage]
+  /// 同一个值，协调器的合并 / 选图语言序靠它和 TMDB 请求端对齐。
   final bool followOriginalLanguage;
   final AniDbProviderNow _now;
   final AniDbProviderSleep _sleep;
@@ -719,7 +720,10 @@ class AniDbVideoMetadataProvider
           ? anime.episodes.first.runtimeMinutes
           : null,
       contentRating: anime.restricted ? 'R18+' : null,
-      originalLanguage: 'ja',
+      // 与 [_selectTitles] 选标题同一个值（主标题 xml:lang 推出）：协调器
+      // `_localeOf` 先取它当合并 / 选图语言，写死 'ja' 会让 x-zht / x-kot 作品
+      // 的图被日语序重排，而 TMDB 请求端按 original_language=zh / ko 取回。
+      originalLanguage: _workOriginalLanguageOf(titles),
       homepage: anime.homepage ?? 'https://anidb.net/anime/${anime.animeId}',
       seasonCount: kind == VideoMetadataMediaKind.tv ? 1 : null,
       episodeCount: kind == VideoMetadataMediaKind.tv
@@ -1049,9 +1053,7 @@ class AniDbVideoMetadataProvider
 
   _SelectedTitles _selectTitles(AniDbTitleRecord record) {
     final List<String> preferredLanguages = _preferredLanguages(
-      followOriginalLanguage
-          ? _originalLanguageOf(record) ?? language
-          : language,
+      followOriginalLanguage ? _workOriginalLanguageOf(record) : language,
     );
     AniDbTitle? selected;
     for (final String preferred in preferredLanguages) {
@@ -1125,6 +1127,12 @@ class AniDbVideoMetadataProvider
       final String other => other,
     };
   }
+
+  /// 作品级原语言：[_originalLanguageOf] 推得出就用它，推不出（无主标题 / 未知
+  /// `x-*` 转写）落回 'ja'——AniDB 只收动画，绝大多数是日本动画。选标题与产出的
+  /// [VideoMetadataWork.originalLanguage] 都取这一个值。
+  static String _workOriginalLanguageOf(AniDbTitleRecord record) =>
+      _originalLanguageOf(record) ?? 'ja';
 
   List<String> _preferredLanguages(String locale) {
     final String normalized = locale.trim().replaceAll('_', '-').toLowerCase();

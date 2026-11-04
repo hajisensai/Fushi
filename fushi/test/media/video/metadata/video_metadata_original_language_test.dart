@@ -9,6 +9,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
@@ -126,6 +127,36 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  // 发现页不跟随作品原语言（BUG-4056 只改刮削）：资料语言留空时发现页的详情 /
+  // 身份解析 provider 仍按资料语言兜底（界面语言）取，和详情合并的
+  // metadataLocale 同源。
+  test('发现页：资料语言留空也按资料语言兜底取，不跟随原语言', () {
+    const VideoSourceScrapeGlobalConfig follow = VideoSourceScrapeGlobalConfig(
+      tmdbApiKey: 'KEY',
+      locale: 'zh-CN',
+      followsWorkOriginalLanguage: true,
+    );
+    final VideoDiscoveryService service = VideoDiscoveryService.production(
+      follow,
+      discoveryAvailable: true,
+    );
+    addTearDown(service.close);
+    final TmdbVideoMetadataProvider tmdb =
+        service.metadataProviderForTesting(VideoMetadataProviderKind.tmdb)!
+            as TmdbVideoMetadataProvider;
+    expect(tmdb.followOriginalLanguage, isFalse);
+    expect(tmdb.language, 'zh-CN');
+    final MalVideoMetadataProvider mal =
+        service.metadataProviderForTesting(VideoMetadataProviderKind.mal)!
+            as MalVideoMetadataProvider;
+    expect(mal.followOriginalLanguage, isFalse);
+    final AniDbVideoMetadataProvider anidb =
+        service.metadataProviderForTesting(VideoMetadataProviderKind.anidb)!
+            as AniDbVideoMetadataProvider;
+    expect(anidb.followOriginalLanguage, isFalse);
+    expect(anidb.language, 'zh-CN');
   });
 
   group('TMDB：按作品 original_language 请求文字与图片', () {
