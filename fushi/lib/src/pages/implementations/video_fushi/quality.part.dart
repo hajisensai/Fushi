@@ -686,7 +686,7 @@ extension _VideoQuality on _VideoFushiPageState {
           if (server.offersOriginalQuality)
             _buildMediaServerQualityTile(
               selectedFg,
-              icon: Icons.hd_outlined,
+              icon: FushiIcons.originalQuality,
               label: t.video_quality_original,
               subtitle: _originalQualitySubtitle,
               index: kRemoteVideoQualityOriginal,
