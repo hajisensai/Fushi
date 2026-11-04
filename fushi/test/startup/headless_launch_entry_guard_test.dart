@@ -27,7 +27,7 @@ void main() {
   }
 
   test('精简入口是 binding 初始化之后的第一步', () {
-    final int binding = at('WidgetsFlutterBinding.ensureInitialized();');
+    final int binding = at('FushiWidgetsBinding.ensureInitialized();');
     final int gate = at('await holdHeadlessLaunchUntilUi(binding: binding);');
     expect(gate, greaterThan(binding));
     // binding 与这一关之间不许夹别的语句（只允许空白）。

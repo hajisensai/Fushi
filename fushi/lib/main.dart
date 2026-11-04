@@ -69,6 +69,7 @@ import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
+import 'package:fushi/src/utils/misc/semantics_ax_tree_contract.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
 import 'package:fushi/src/utils/settled_theme.dart';
@@ -338,7 +339,9 @@ void main([List<String> args = const <String>[]]) {
     () async {
       /// Necessary to initialise Flutter when running native code before
       /// starting the application.
-      final binding = WidgetsFlutterBinding.ensureInitialized();
+      // BUG-4073：主入口 binding 在桌面端逐帧复核发往引擎 AXTree 的语义更新，
+      // 会让引擎失步的帧记进错误日志（引擎自己的报错只进 stderr，用户报告里看不到）。
+      final binding = FushiWidgetsBinding.ensureInitialized();
       // BUG-4072 方案 C：无界面拉起（Android audio_service 的 MediaBrowserService 被媒体
       // 续播 / 媒体键 / 车机绑、iOS 后台拉起）的引擎停在精简入口，界面接上来（第一个
       // resumed / inactive）之前不往下跑：不 runApp、不读写会话标记、不判闪退 / 不提示 /
