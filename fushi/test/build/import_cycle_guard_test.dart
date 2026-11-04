@@ -23,12 +23,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// fushi_header_search → app_model` 之类），于是整个底层都被拖进环。2026-11-05
 /// 把底层用到的符号挪到更底层的文件、读 AppModel 的件挪到上层或改成参数注入后，
 /// 这三个目录（278 个文件）的闭包全部碰不到 app_model，最大环降到 2435 个文件里
-/// 的 716 个。剩下的环由 AppModel 直接 import 页面 / 媒体源 / 制卡字段撑着，要再缩
+/// 的 710 个。剩下的环由 AppModel 直接 import 页面 / 媒体源 / 制卡字段撑着，要再缩
 /// 得拆 AppModel 本身。
 ///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 716;
+const int kMaxCycleFiles = 710;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
