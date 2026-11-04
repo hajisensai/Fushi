@@ -118,6 +118,13 @@ final int _kWindowMs =
     ) ??
     1500;
 
+/// `SUBLIST_SHAM=true`：空白对照——走完全相同的计时 / 记帧流程，但不按 `L`、不断言
+/// 列表可见性，量「不开关时」同一窗口里的尖峰基线。
+final bool _kSham = _flag(
+  'SUBLIST_SHAM',
+  const bool.fromEnvironment('SUBLIST_SHAM'),
+);
+
 /// `SUBLIST_LAYERS=true`：关列表的轮次逐帧抓 layer 树（离屏层 / 纹理 / 平台视图）。
 final bool _kLayers = _flag(
   'SUBLIST_LAYERS',
@@ -572,7 +579,8 @@ void main() {
       '${tester.view.physicalSize.height.round()} nativeDpr=$nativeDpr '
       'dpr=${tester.view.devicePixelRatio} '
       'probeVideo=${_kProbeVideo.isNotEmpty} play=$_kPlay '
-      'seedPrefs=${_seedPrefs().length} widgetTrace=$_kWidgetTrace',
+      'seedPrefs=${_seedPrefs().length} widgetTrace=$_kWidgetTrace '
+      'sham=$_kSham windowMs=$_kWindowMs',
     );
 
     Future<void> toggle(
@@ -604,7 +612,7 @@ void main() {
         debugProfilePaintsEnabled = _kWidgetTrace;
         try {
           tl = await binding.traceTimeline(() async {
-            await _pressL(tester);
+            if (!_kSham) await _pressL(tester);
             await _wait(_kWindowMs);
           }, streams: const <String>['Dart', 'Embedder', 'GC']);
         } finally {
@@ -613,12 +621,14 @@ void main() {
           debugProfilePaintsEnabled = false;
         }
       } else {
-        await _pressL(tester);
+        if (!_kSham) await _pressL(tester);
         await _wait(_kWindowMs);
       }
       log.stop();
       layers.active = false;
-      expect(_panelMounted(), expectOpen, reason: '$label 后列表可见性');
+      if (!_kSham) {
+        expect(_panelMounted(), expectOpen, reason: '$label 后列表可见性');
+      }
       log.report(label, t0);
       if (recordLayers && before != null) {
         _reportLayers(label, t0, before, beforeOwners, layers);
@@ -638,6 +648,7 @@ void main() {
       await toggle('close#$i', expectOpen: false, trace: _kTraceAll);
     }
 
+    if (_kSham) return;
     // 3. 关闭动画中段抓一帧真像素：看被收缩的那一列画的是什么（真时钟，不用假时间泵）。
     await _pressL(tester);
     await _wait(1000);
