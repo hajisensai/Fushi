@@ -4,9 +4,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
+import 'package:fushi/src/startup/headless_launch_gate.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_launch_presence/fushi_launch_presence.dart';
 
@@ -507,6 +509,66 @@ void main() {
       answerExits(null);
       await launchProcess(nowMs: 2);
       expect(readMarker().lifecycle, 'launching');
+    });
+
+    // 方案 C：无界面引擎停在精简入口（lib/src/startup/headless_launch_gate.dart），会话标记
+    // 要等界面接上来才 start。上一个有界面会话的标记在这期间原样保留，交给真正有界面的那次
+    // 启动判定——不会被无界面引擎消费掉、也不会被它的 `headless` 初值覆写。
+    test('方案 C：精简入口等界面期间不读不写上一个会话的标记，界面接上后照常判定', () async {
+      final String previousMarker = jsonEncode(<String, Object?>{
+        'pid': 777,
+        'startedAt': 1000,
+        'version': '3.3.0-debug.23025',
+        'lifecycle': 'resumed',
+        'lifecycleAt': 1500,
+        'clean': false,
+        'initialised': true,
+      });
+      final File f = File('${tmp.path}/session_marker.json')
+        ..writeAsStringSync(previousMarker);
+      final TestWidgetsFlutterBinding binding =
+          TestWidgetsFlutterBinding.instance;
+      addTearDown(
+        () => binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed),
+      );
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      answerLaunch(hasUi: false);
+      answerExits(null);
+
+      bool fullStartupBegan = false;
+      final Future<List<ExitReportEntry>> startup =
+          holdHeadlessLaunchUntilUi(
+            binding: binding,
+            mobile: true,
+            channel: launch,
+          ).then((HeadlessLaunchOutcome o) {
+            expect(o.deferred, isTrue);
+            fullStartupBegan = true;
+            return launchProcess(nowMs: 9000);
+          });
+      await pumpEventQueue();
+      expect(fullStartupBegan, isFalse);
+      expect(
+        f.readAsStringSync(),
+        previousMarker,
+        reason: '无界面引擎不许消费 / 覆写上一个会话的标记',
+      );
+
+      // 用户点开 app：Activity 接管这个缓存引擎，resumed 到达，完整初始化开始。
+      answerLaunch(hasUi: true);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final PreviousExitVerdict? v = classifyPreviousExit(
+        await startup,
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+      expect(fullStartupBegan, isTrue);
+      expect(v, isNotNull);
+      expect(v!.kind, PreviousExitKind.unexpected, reason: '上一个有界面会话照常判定');
+      expect(v.summary, contains('pid=777'));
+      expect(v.summary, contains('lastLifecycle=resumed'));
+      expect(readMarker().pid, isNot(777));
+      expect(readMarker().lifecycle, 'launching', reason: '标记初值按有界面记');
     });
   });
 
