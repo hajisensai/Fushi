@@ -54,6 +54,9 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show showFushiConfirmDialog;
 
 part 'music_plugin_actions.dart';
 part 'music_plugin_detail_pages.dart';
