@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4004](bugs/BUG-4004-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
 | [BUG-4004](bugs/BUG-4004-page-curl-back-bleed-and-manga-letterbox.md) | ✅ | ✅ | page-curl-back-bleed-and-manga-letterbox |
 | [BUG-4004](bugs/BUG-4004-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
 > 共 3609 条。点号进各自文件。

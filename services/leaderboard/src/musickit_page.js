@@ -252,7 +252,10 @@ export function renderMusicKitPage(path) {
   }
   const common = {
     'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
+    // Apple 授权弹窗（authorize.music.apple.com）靠 document.referrer 认出 opener 并对它建
+    // JSON-RPC 回传通道（sessionStorage `ac`）；no-referrer 下通道建不起来，登录完 token 回不到
+    // 页面（反馈 FK0EFFDLIS）。只给源、不给路径和 query；降级到 http 不发。
+    'Referrer-Policy': 'strict-origin',
     // 桥接脚本与 app 版本强相关：不让边缘 / WebView 长期缓存旧版。
     'Cache-Control': 'no-cache',
   };
