@@ -3,6 +3,15 @@ part of '../reader_fushi_page.dart';
 
 const int kLyricsModeMaxInitialCues = 600;
 
+/// 滑动窗口一次原地补装的 cue 数（[kLyricsModeMaxInitialCues] 是窗口常驻上限）。
+const int kLyricsWindowChunk = 200;
+
+/// 播放推进时，当前句离窗口边缘不足这么多句就先补装（不等视口碰到边）。
+const int kLyricsWindowEdgeMargin = 120;
+
+/// 卸载远端时，当前句身后 / 身前至少保留的句数。
+const int kLyricsWindowKeep = 150;
+
 /// 歌词文档键桥（`onLyricsKey`）里裸 Space 的 token：按 `KeyboardEvent.key` 匹配，
 /// 回到 Dart 后走与正文 `onSpaceKey` 同一个 `_resolveWebViewSpaceAction`（有声书激活 →
 /// 播放 / 暂停）。
@@ -291,6 +300,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       book: _book,
       currentIndex: cueWindow.currentIndex,
       loadGeneration: loadGeneration,
+      hasCuesBefore: cueWindow.usesAllBookCues && cueWindow.indexOffset > 0,
+      hasCuesAfter:
+          cueWindow.usesAllBookCues &&
+          cueWindow.indexOffset + cueWindow.cues.length <
+              ctrl.allBookCuesSnapshot.length,
       // 覆盖层：歌词 WebView 透明底，背景由设计系统（模糊封面 / 动态取色）画。
       backgroundColor: 'transparent',
       textColor: colorToCss(_lyricsTextColor()),
@@ -913,6 +927,80 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     );
   }
 
+  /// 歌词滑动窗口：往 [forward] 方向原地补装 [kLyricsWindowChunk] 句（JS
+  /// `__lyricsSpliceCues`，不重载文档），窗口超出 [kLyricsModeMaxInitialCues] 时从另一端
+  /// 卸掉离当前句足够远（> [kLyricsWindowKeep]）的句子。触发：播放走近边缘
+  /// （[_syncLyricsOverlayCue]）或窗口首 / 末句进入视口外扩一屏（JS `onLyricsEdge`，
+  /// 手动浏览也算）。整书 cue 换了（重新对齐）时退回整页重载。
+  void _slideLyricsWindow({required bool forward}) {
+    final InAppWebViewController? lyrics = _lyricsController;
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (lyrics == null ||
+        ctrl == null ||
+        !_lyricsPageReady ||
+        !_lyricsCueWindowUsesAllBookCues ||
+        _lyricsCueList.isEmpty) {
+      return;
+    }
+    final List<AudioCue> all = ctrl.allBookCuesSnapshot;
+    final int start = _lyricsCueIndexOffset;
+    final int end = start + _lyricsCueList.length;
+    if (end > all.length ||
+        !identical(all[start], _lyricsCueList.first) ||
+        !identical(all[end - 1], _lyricsCueList.last)) {
+      unawaited(_loadLyricsPage());
+      return;
+    }
+    if (forward ? end >= all.length : start <= 0) return;
+    final int newStart = forward
+        ? start
+        : math.max(0, start - kLyricsWindowChunk);
+    final int newEnd = forward
+        ? math.min(all.length, end + kLyricsWindowChunk)
+        : end;
+    final int cur = ctrl.lyricsCueAllBookIdx;
+    final int over = (newEnd - newStart) - kLyricsModeMaxInitialCues;
+    int trimHead = 0;
+    int trimTail = 0;
+    if (over > 0) {
+      if (forward) {
+        final int limit = cur >= 0 ? cur - kLyricsWindowKeep - newStart : over;
+        trimHead = math.max(0, math.min(over, limit));
+      } else {
+        final int limit = cur >= 0
+            ? newEnd - (cur + kLyricsWindowKeep + 1)
+            : over;
+        trimTail = math.max(0, math.min(over, limit));
+      }
+    }
+    final String rows = forward
+        ? LyricsModeHtml.cueRowsHtml(
+            cues: all.sublist(end, newEnd),
+            book: _book,
+            before: all[end - 1],
+          )
+        : LyricsModeHtml.cueRowsHtml(
+            cues: all.sublist(newStart, start),
+            book: _book,
+            after: all[start],
+          );
+    final int keptStart = newStart + trimHead;
+    final int keptEnd = newEnd - trimTail;
+    _lyricsCueList = all.sublist(keptStart, keptEnd);
+    _lyricsCueIndexOffset = keptStart;
+    final String prepend = jsonEncode(forward ? '' : rows);
+    final String append = jsonEncode(forward ? rows : '');
+    _evalLyrics(
+      lyrics,
+      'if(window.__lyricsSpliceCues)window.__lyricsSpliceCues('
+          '$prepend,$append,$trimHead,$trimTail,'
+          '${keptStart > 0},${keptEnd < all.length});',
+      'spliceCues',
+    );
+    // 新进来的句子按收藏重新标一遍。
+    unawaited(_applyLyricsFavorites());
+  }
+
   /// 歌词 WebView 上的 fire-and-forget 求值：半销毁 WebView 抛的异常就地记录，
   /// 不逃出当前 zone（与 `_selectTextAt` 同款兜底）。
   void _evalLyrics(InAppWebViewController lyrics, String source, String tag) {
@@ -956,6 +1044,17 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     // BUG-767: sourceIdx < 0 = 当前 cue 暂不可解析（cue 间隙 / 尚未匹配）。此时保位
     // 不跳、绝不重载（旧码在此重开歌词页 → 无限重载、高亮恒回第一句）。
     if (sourceIdx < 0) return;
+    // 滑动窗口：播放走近窗口边缘就原地补装下一段（不重载、后面不留空白）。
+    if (_lyricsCueWindowUsesAllBookCues) {
+      final int rel = sourceIdx - _lyricsCueIndexOffset;
+      if (rel >= 0 && rel < _lyricsCueList.length) {
+        if (_lyricsCueList.length - rel <= kLyricsWindowEdgeMargin) {
+          _slideLyricsWindow(forward: true);
+        } else if (rel < kLyricsWindowEdgeMargin) {
+          _slideLyricsWindow(forward: false);
+        }
+      }
+    }
     final int idx = sourceIdx - _lyricsCueIndexOffset;
     if (idx < 0 || idx >= _lyricsCueList.length) {
       // cue 真的移出已载窗口 → 重开窗口居中当前 cue（唯一合法的重载）。
@@ -1453,6 +1552,22 @@ extension _ReaderLyrics on _ReaderFushiPageState {
               controller,
               generation: generation,
             );
+          },
+        );
+        // 滑动窗口：窗口首 / 末句进入视口外扩一屏 → 原地补装那一侧（args = [方向, 文档代号]）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsEdge',
+          callback: (List<dynamic> args) {
+            if (args.length < 2 ||
+                !_lyricsMode ||
+                !identical(controller, _lyricsController)) {
+              return;
+            }
+            final num? dir = args[0] is num ? args[0] as num : null;
+            final num? gen = args[1] is num ? args[1] as num : null;
+            if (dir == null || gen == null) return;
+            if (gen.toInt() != _lyricsLoadGeneration) return;
+            _slideLyricsWindow(forward: dir > 0);
           },
         );
         // BUG-3777 R2：歌词文档变回可见（visibilitychange）→ 重推快照。

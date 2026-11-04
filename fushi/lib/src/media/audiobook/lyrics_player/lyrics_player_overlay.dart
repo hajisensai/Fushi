@@ -8,6 +8,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_apple.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_md3.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_modern_shared.dart'
+    show LyricsModernWideGeometry;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show gamepadInputActivity;
@@ -29,7 +31,7 @@ const Duration kLyricsChromeIdleHideDelay = Duration(seconds: 3);
 ///  * 把歌词 WebView 放进外观给出的矩形——**它在 Stack 里的位置恒定**（第 2 个
 ///    孩子），宽窄布局切换 / 旋转只改矩形，不重建平台视图；
 ///  * 外观算出的歌词 HTML 主题变化时回调 [onHtmlThemeChanged]，由页面热更 CSS；
-///  * MD3 新版宽屏底栏的空闲自动隐藏：播放中 [kLyricsChromeIdleHideDelay] 内没有
+///  * 新版（MD3 / Apple 两套设计系统）宽屏底栏的空闲自动隐藏：播放中 [kLyricsChromeIdleHideDelay] 内没有
 ///    底栏相关活动 → 底栏淡出，淡完再一次性把歌词矩形伸到底。**隐藏后只有指针进入
 ///    歌词区下方的底边带子（或按 Tab）才唤出**：正文上的移动 / 点击 / 查词不唤出——
 ///    唤出会把歌词矩形缩回去、竖排正文重排，鼠标下的字会挪位，查词就点不准了。
@@ -67,10 +69,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   int _schemeRequest = 0;
   LyricsHtmlTheme? _lastReportedTheme;
 
-  /// 底栏已淡出（[Md3ModernLyricsPlayerDesign.wideChromeHidden]）。
+  /// 底栏已淡出（新版外观的 `wideChromeHidden`）。
   bool _chromeHidden = false;
 
-  /// 歌词矩形已伸到底（[Md3ModernLyricsPlayerDesign.wideLyricsExpanded]）。
+  /// 歌词矩形已伸到底（新版外观的 `wideLyricsExpanded`）。
   bool _lyricsExpanded = false;
 
   /// 空闲计时器：每次活动重排（取消 + 新建，比逐帧轮询便宜）。
@@ -128,7 +130,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     });
   }
 
-  /// 只有 MD3 新版布局宽屏播放中才自动隐藏（Apple / 经典 / 暂停 / 窄屏一律常显）。
+  /// 只有新版布局（MD3 / Apple）宽屏播放中才自动隐藏（经典 / 暂停 / 窄屏一律常显）。
   /// 无障碍导航（读屏）开着时也常显：淡到 0 的子树会退出语义树，读屏的探索 /
   /// 双击走无障碍动作、不产生指针事件，隐藏后既找不到也唤不回。
   ///
@@ -140,7 +142,6 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
       widget.data.playbackActive &&
       widget.data.controlsStyle == LyricsControlsStyle.modern &&
       _wide &&
-      !isGlassDesign(context) &&
       !MediaQuery.accessibleNavigationOf(context);
 
   /// 上次依赖变化时的读屏开关：开关切换时重排计时（并立即复位底栏）。
@@ -376,15 +377,18 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     EdgeInsets padding,
   ) {
     final bool wide =
-        design is Md3ModernLyricsPlayerDesign && lyricsPlayerIsWide(size);
+        (design is Md3ModernLyricsPlayerDesign ||
+            design is AppleModernLyricsPlayerDesign) &&
+        lyricsPlayerIsWide(size);
     if (wide) {
-      _chromeZoneTop = Md3ModernLyricsPlayerDesign(
-        compactExpanded: widget.data.compactControlsExpanded,
-      ).lyricsRect(context, size, padding).bottom;
-      _revealZoneTop = Md3ModernLyricsPlayerDesign(
-        compactExpanded: widget.data.compactControlsExpanded,
-        wideLyricsExpanded: true,
-      ).lyricsRect(context, size, padding).bottom;
+      // 两套新版外观的宽屏歌词矩形出自同一份几何（底栏显示 / 隐藏两档）。
+      final LyricsModernWideGeometry g = LyricsModernWideGeometry.of(
+        context,
+        size,
+        padding,
+      );
+      _chromeZoneTop = g.lyrics.bottom;
+      _revealZoneTop = g.immersiveLyrics(size, padding).bottom;
     } else {
       _chromeZoneTop = double.infinity;
       _revealZoneTop = double.infinity;
@@ -400,10 +404,18 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     required bool apple,
     required double mirror,
   }) {
-    // MD3 按偏好选新版 / 经典布局；Apple 不读这项偏好（设置面板在 Apple 下隐藏）。
+    // 两套设计系统都按偏好选新版 / 经典布局（`lyrics_controls_style`）。
+    final bool classic =
+        widget.data.controlsStyle == LyricsControlsStyle.classic;
     final LyricsPlayerDesign design = apple
-        ? AppleLyricsPlayerDesign(mirrorProgress: mirror)
-        : widget.data.controlsStyle == LyricsControlsStyle.classic
+        ? classic
+              ? AppleLyricsPlayerDesign(mirrorProgress: mirror)
+              : AppleModernLyricsPlayerDesign(
+                  compactExpanded: widget.data.compactControlsExpanded,
+                  wideChromeHidden: _chromeHidden,
+                  wideLyricsExpanded: _lyricsExpanded,
+                )
+        : classic
         ? Md3LyricsPlayerDesign(mirrorProgress: mirror)
         : Md3ModernLyricsPlayerDesign(
             compactExpanded: widget.data.compactControlsExpanded,
