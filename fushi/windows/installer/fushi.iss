@@ -281,6 +281,9 @@ Filename: "{app}\fushi.exe"; Description: "{cm:LaunchProgram,Fushi}"; Flags: now
 const
   FushiAppMutexName = 'FushiSingleInstanceMutex';
   LegacyAppMutexName = 'HibikiSingleInstanceMutex';
+  { BUG-4007：「正在替换安装目录」门。名字与 windows/runner/main.cpp 的
+    kInstallInProgressMutex 逐字一致。 }
+  FushiInstallGateMutexName = 'FushiInstallInProgressMutex';
   SyncMutexAccess = $00100000; { SYNCHRONIZE }
   MutexReleasePollAttempts = 40; { 40 * 250ms = up to ~10s waiting for the kernel to reclaim the mutex }
   MutexReleasePollIntervalMs = 250;
@@ -298,6 +301,50 @@ function OpenMutexW(dwDesiredAccess: Cardinal; bInheritHandle: Boolean;
 
 function CloseHandle(hObject: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
+
+function CreateMutexW(lpMutexAttributes: Cardinal; bInitialOwner: Boolean;
+  lpName: String): THandle;
+  external 'CreateMutexW@kernel32.dll stdcall';
+
+{ BUG-4007：安装目录替换期间的「请勿启动」门。
+
+  现场（反馈 umcyzpaebn，23025→23080）：旧实例 10:31:30.44 退出、launcher 拉起安装器，
+  约 0.5 s 后一个由 explorer.exe 拉起的新 fushi.exe 落在 InitializeSetup / PrepareToInstall
+  的一次性清场**之后**、复制**之前**，把 fbdaom.dll 映射进去 → DeleteFile code 5 →
+  /SUPPRESSMSGBOXES 默认 Abort → 整包回滚，留下「新 exe + 旧 app.so」半更新态。
+  清场是快照式的：它只能处理**当时**已存在的进程，挡不住之后启动的（用户点任务栏 /
+  文件关联 / 任何 shell 启动都可能）。根因是更新链上没有任何东西告诉一个新启动的
+  fushi.exe「安装目录正在被替换」。
+
+  修法：PrepareToInstall **先**建这个命名互斥量、**再**清场；ssPostInstall（全部文件已
+  落地）第一件事关掉它。fushi.exe 启动第一步看到它存在就立即退出（不建引擎、不加载
+  插件以外的任何东西，见 main.cpp InstallInProgress）。于是：
+    - 门建好之前启动的进程，清场时一定在快照里 → 被 KillProcessesUnderDir 结束；
+    - 门建好之后启动的进程，自己看到门就退出 → 不会活到复制阶段。
+  复制失败回滚 / 用户取消时本进程退出，句柄随之关闭，门不会残留；launcher 的
+  EnsureAppBack 在安装器退出后才拉 app，[Run] 在 ssPostInstall 之后，都不受门影响。 }
+var
+  FushiInstallGate: THandle;
+
+procedure OpenFushiInstallGate();
+begin
+  if FushiInstallGate <> 0 then
+    Exit;
+  FushiInstallGate := CreateMutexW(0, False, FushiInstallGateMutexName);
+  if FushiInstallGate = 0 then
+    Log('install gate: CreateMutexW failed; a Fushi started now could still lock {app}')
+  else
+    Log('install gate: opened');
+end;
+
+procedure CloseFushiInstallGate();
+begin
+  if FushiInstallGate = 0 then
+    Exit;
+  CloseHandle(FushiInstallGate);
+  FushiInstallGate := 0;
+  Log('install gate: closed');
+end;
 
 { Probe whether a named mutex exists; close the handle immediately to avoid
   leaking (and to avoid the probe itself keeping a reference alive). }
@@ -481,6 +528,8 @@ var
   NL: String;
 begin
   Result := '';
+  { BUG-4007：门必须先于清场建好——清场之后才启动的 fushi.exe 由门挡住。 }
+  OpenFushiInstallGate();
   { 逐个 TerminateProcess 后同步等进程对象回收（镜像文件锁随之释放），不需要再睡。 }
   KillProcessesUnderDir(ExpandConstant('{app}'));
   { KillProcessesUnderDir 杀不到 launcher，也**不该**杀它（见上）。改名让路。 }
@@ -512,6 +561,8 @@ begin
     Result := CustomMessage('FushiLockedHead') + NL + Locked + NL + NL +
       CustomMessage('FushiLockedBody') + NL + NL +
       CustomMessage('FushiLockedNoChange');
+    { 本次不装了：磁盘保持旧版，不再挡用户启动。 }
+    CloseFushiInstallGate();
   end;
 end;
 
@@ -752,6 +803,9 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
+
+  { BUG-4007：新文件已全部落地，放开启动门（[Run] 拉起新版在此之后）。 }
+  CloseFushiInstallGate();
 
   WriteDataRootBootstrap();
   CleanupStaleElevatedInstallLogs();

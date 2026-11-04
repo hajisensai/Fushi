@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3610 条。点号进各自文件。
+> 共 3612 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4008](bugs/BUG-4008-gal-subtitle-drops-leading-quote.md) | 🚧 | 🚧 | 游戏抓取文本进字幕窗后丢句首「、偶尔先重复上一句三遍 |
+| [BUG-4007](bugs/BUG-4007-windows-update-new-instance-locks-dll.md) | ✅ | ✅ | Windows 应用内更新：安装期间新启动的 Fushi 占用 DLL 致整包回滚 |
 | [BUG-4006](bugs/BUG-4006-lyrics-modern-wide-missing-stats.md) | ✅ | ✅ | 歌词模式新版宽屏缺阅读速度 / 已读字数 / 阅读时长 |
 | [BUG-4005](bugs/BUG-4005-lyrics-esc-exits-book.md) | ✅ | ✅ | 歌词模式按 Esc 先回阅读器、要再按一次才回书架 |
 | [BUG-4004](bugs/BUG-4004-manga-download-bytes-as-pages.md) | ✅ | ✅ | 漫画下载进度把字节数显示成页数 |
