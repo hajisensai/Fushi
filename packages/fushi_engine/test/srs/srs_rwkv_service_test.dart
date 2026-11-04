@@ -1152,6 +1152,59 @@ void main() {
       expect(backend.replayedCards, await _fullReplayOrder(f));
     });
 
+    test('收段会话期间：要退回重放的对齐推到会话结束后做一次、再报就绪；分数表刷新并成一次', () async {
+      final String deck = f.store.defaultDeckId;
+      final String a = (await f.store.nextCard(deck))!;
+      final SrsReviewLog la = await f.store.answer(a, 3);
+      f.advance(40000);
+      final String b = (await f.store.nextCard(deck, exclude: <String>{a}))!;
+      await f.store.answer(b, 3);
+      expect(await service.refresh(), isTrue);
+      final String keyBefore = f.store.rwkvScoresKey;
+
+      await f.store.sync2IngestBegin();
+      expect(f.store.sync2Ingesting, isTrue);
+      // 撤更早的作答：只能退回重放（整 profile 扫日志）。会话里不做，这次没有可用状态。
+      expect(await f.store.undo(a, la.id), isTrue);
+      expect(await service.refresh(), isFalse);
+      expect(await service.refresh(), isFalse);
+      expect(backend.rewinds, 0);
+      expect(service.ready, isTrue, reason: 'state is kept, not rebuilt');
+      // 会话里推进分数表刷新的写入（牌组设置）先攒着。
+      await f.store.editFields(SrsEntityKind.deck, deck, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.rwkv.wire,
+          'auto': false,
+        },
+      });
+      expect(f.store.rwkvScoresKey, keyBefore);
+      // 整 profile 的回放等会话结束。
+      bool replayed = false;
+      final Future<void> replay = f.store
+          .rwkvReplay(
+            <String>[a],
+            const <int>[1, 2, 3, 4],
+            await f.store.dayContext(),
+            since: 0,
+          )
+          .then((_) => replayed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(replayed, isFalse);
+
+      final Future<SrsRwkvStatus> readyAgain = service.statusChanges.firstWhere(
+        (SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready,
+      );
+      await f.store.sync2IngestEnd();
+      await replay;
+      await readyAgain;
+      int rev(String key) => int.parse(key.split(':').last);
+      expect(rev(f.store.rwkvScoresKey), rev(keyBefore) + 1);
+      expect(backend.rewinds, 1);
+      expect(backend.resets, 1, reason: 'no full rebuild');
+      expect(await service.refresh(), isTrue);
+      expect(backend.replayedCards, await _fullReplayOrder(f));
+    });
+
     test('同一批里答了又撤回：相互抵消，不碰状态', () async {
       final String deck = f.store.defaultDeckId;
       final String a = (await f.store.nextCard(deck))!;

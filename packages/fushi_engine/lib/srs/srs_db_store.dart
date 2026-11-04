@@ -522,6 +522,51 @@ class SrsDbStore implements SrsSync2Host {
   /// [_rwkvScoresRevision] 连同纪元：变了 = 分数表整表按此刻重查。
   String get rwkvScoresKey => '$_epoch:$_rwkvScoresRevision';
 
+  /// 收段会话（[sync2IngestBegin] … [sync2IngestEnd]）期间攒下的分数表刷新：会话里每片投递 / 收尾重放都可能
+  /// 推进它，以前每片 +1，整表重查跟着每片来一次、与下一片抢内存（35 万条日志的 iPhone 收尾 OOM）。会话结束时
+  /// 并成一次（[_endIngestSession]）。只在内存：进程死在会话中途时下次启动 [_loadLocal] 本来就 +1、原生分数表
+  /// 也是空的，不会漏刷新。
+  int _rwkvScoresDeferred = 0;
+
+  /// 推进 [_rwkvScoresRevision]；收段会话里先攒着，会话结束时并成一次。
+  void _bumpRwkvScores([int n = 1]) {
+    if (n <= 0) return;
+    if (_ingestSession != null) {
+      _rwkvScoresDeferred += n;
+    } else {
+      _rwkvScoresRevision += n;
+    }
+  }
+
+  /// 正在进行的收段会话；完成 = 会话结束。RWKV 回放（[rwkvReplay]，整 profile 扫一遍日志）等它结束才跑，
+  /// 会话开始前等在途的回放跑完（[_rwkvReplaysIdle]）：两者都随日志总量线性占内存，不能叠在一起。
+  Completer<void>? _ingestSession;
+
+  /// 在途的 [rwkvReplay] 个数与「全部跑完」信号（收段会话开始时等它）。
+  int _rwkvReplaysInFlight = 0;
+  Completer<void>? _rwkvReplaysIdle;
+
+  /// 正在收段（[sync2IngestBegin] 之后、[sync2IngestEnd] 之前）。RWKV 对齐据此把要整 profile 重放的那一步
+  /// 推到会话结束之后（`SrsRwkvService`）。
+  bool get sync2Ingesting => _ingestSession != null;
+
+  /// 当前没有收段会话时立即完成，否则在会话（及紧接着的下一场）结束后完成。
+  Future<void> sync2IngestSettled() async {
+    for (Completer<void>? s = _ingestSession; s != null; s = _ingestSession) {
+      await s.future;
+    }
+  }
+
+  void _endIngestSession(Completer<void> session) {
+    if (!identical(_ingestSession, session)) return;
+    _ingestSession = null;
+    if (_rwkvScoresDeferred > 0) {
+      _rwkvScoresDeferred = 0;
+      _rwkvScoresRevision++;
+    }
+    session.complete();
+  }
+
   /// 纪元：变了（覆盖恢复后本机状态重建）= 分数表清空、按历史重算。
   String get rwkvScoresClearKey => _epoch;
 
@@ -690,7 +735,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 读本机状态；返回之前是否存过。
   Future<bool> _loadLocal() async {
     _contentRevision++;
-    _rwkvScoresRevision++;
+    _bumpRwkvScores();
     final SrsLocalStateRow? row = await (db.select(
       db.srsLocalState,
     )..where((t) => t.profileUid.equals(profileUid))).getSingleOrNull();
@@ -1174,7 +1219,7 @@ class SrsDbStore implements SrsSync2Host {
     _revision += landed;
     _contentRevision += (m['content'] as int?) ?? 0;
     _viewRevision += (m['view'] as int?) ?? 0;
-    _rwkvScoresRevision += (m['rwkv'] as int?) ?? 0;
+    _bumpRwkvScores((m['rwkv'] as int?) ?? 0);
     for (final Object? c in (r['changed'] as List?) ?? const <Object?>[]) {
       if (c is List &&
           c.length == 2 &&
@@ -1310,42 +1355,65 @@ class SrsDbStore implements SrsSync2Host {
     'open_file',
   };
 
+  /// 开一场收段会话。先登记会话（之后来的 [rwkvReplay] 排到会话结束），再等在途的回放跑完，然后才让内核开始：
+  /// 收段的投递 / 收尾与整 profile 的 RWKV 回放不会同时在内存里。开不成（抛错）时会话随即结束——调用方只在
+  /// 这一步成功后才配对 [sync2IngestEnd]。
   @override
-  Future<void> sync2IngestBegin() => runExclusive(() async {
-    final Map<String, Object?> r = await _sync2(const <String, Object?>{
-      'op': 'ingest_begin',
-    });
-    _ingestOpen = true;
-    // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
-    // 事务前要先把它按片做完（[_transactionOrReload]）。
-    if (r['channel'] == true) _channelLive = true;
-  });
+  Future<void> sync2IngestBegin() async {
+    final Completer<void> session = Completer<void>();
+    await sync2IngestSettled();
+    _ingestSession = session;
+    try {
+      final Completer<void>? replays = _rwkvReplaysIdle;
+      if (replays != null) await replays.future;
+      await runExclusive(() async {
+        final Map<String, Object?> r = await _sync2(const <String, Object?>{
+          'op': 'ingest_begin',
+        });
+        _ingestOpen = true;
+        // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
+        // 事务前要先把它按片做完（[_transactionOrReload]）。
+        if (r['channel'] == true) _channelLive = true;
+      });
+    } catch (_) {
+      _endIngestSession(session);
+      rethrow;
+    }
+  }
 
   /// 本副本开着内核收段会话（[sync2IngestBegin] 之后、[sync2IngestEnd] / [retire] 放掉之前）。
+  /// [_ingestSession] 是 Dart 侧的会话（攒分数表刷新、让 RWKV 回放排队），比它早开、不晚于它结束。
   bool _ingestOpen = false;
 
   /// 测试：[_ingestOpen]。
   @visibleForTesting
   bool get debugIngestOpen => _ingestOpen;
 
-  /// 放掉收段会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了会话：这里无事可做，不再进独占区
-  /// （进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
+  /// 结束收段会话：会话里攒下的分数表刷新并成一次（[_rwkvScoresDeferred]），等着的 RWKV 回放放行；内核命令失败
+  /// 也照样结束 Dart 侧会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了内核会话：这里不再进
+  /// 独占区（进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
   @override
   Future<void> sync2IngestEnd() async {
-    if (!_ingestOpen) return;
+    final Completer<void>? session = _ingestSession;
     try {
+      if (!_ingestOpen) return;
       await runExclusive(_releaseIngestSession);
     } on SrsStoreRetiredError catch (e) {
       // 排队期间被作废：会话由 [retire] 放掉了（[_ingestOpen] 已清）。别的原因（会话仍开着）照常抛。
       if (!identical(e.store, this) || _ingestOpen) rethrow;
+    } finally {
+      if (session != null) _endIngestSession(session);
     }
   }
 
-  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。
+  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。内核会话放掉的同时结束 Dart 侧
+  /// 会话：[retire] 走这条路时，攒着的分数表刷新与排队的 RWKV 回放也随之放行，不必等那一轮的 [sync2IngestEnd]。
   Future<void> _releaseIngestSession() async {
     if (!_ingestOpen) return;
     await _sync2(const <String, Object?>{'op': 'ingest_end'});
     _ingestOpen = false;
+    final Completer<void>? session = _ingestSession;
+    if (session != null) _endIngestSession(session);
   }
 
   /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
@@ -1521,7 +1589,7 @@ class SrsDbStore implements SrsSync2Host {
     final Object? persisted = r['localRevision'];
     if (persisted is int) _revision = persisted;
     if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
-      _rwkvScoresRevision++;
+      _bumpRwkvScores();
     }
     await _notifyPurged();
     return r;
@@ -1620,7 +1688,7 @@ class SrsDbStore implements SrsSync2Host {
         blobs: <Uint8List>[bytes],
       );
       _absorbProjection(r);
-      _rwkvScoresRevision++;
+      _bumpRwkvScores();
       await _saveLocal();
     });
     final Map<String, Object?> id = await _sync2(<String, Object?>{
@@ -2585,20 +2653,33 @@ class SrsDbStore implements SrsSync2Host {
     required int since,
     int? rebaseSince,
     int? rowsFrom,
-  }) async => srsDecodeRwkvReplay(
-    await _coreRwkvReplay(
-      core.address,
-      core.libraryPath,
-      profileUid,
-      _seedGroups(cardIds),
-      ids,
-      day.utcOffsetMin,
-      day.rolloverHour,
-      since,
-      rebaseSince,
-      rowsFrom,
-    ),
-  );
+  }) async {
+    // 收段会话期间不扫：等会话结束（[sync2IngestBegin] 反过来等在途的回放）。
+    await sync2IngestSettled();
+    _rwkvReplaysInFlight++;
+    _rwkvReplaysIdle ??= Completer<void>();
+    try {
+      return srsDecodeRwkvReplay(
+        (await _coreRwkvReplay(
+          core.address,
+          core.libraryPath,
+          profileUid,
+          _seedGroups(cardIds),
+          ids,
+          day.utcOffsetMin,
+          day.rolloverHour,
+          since,
+          rebaseSince,
+          rowsFrom,
+        )).materialize().asUint8List(),
+      );
+    } finally {
+      if (--_rwkvReplaysInFlight == 0) {
+        _rwkvReplaysIdle?.complete();
+        _rwkvReplaysIdle = null;
+      }
+    }
+  }
 
   /// RWKV 对齐：本 profile 日志的指纹与 rowid 在 [since] 之后的行数（同一个快照），[withRows] 时连同这些行。
   Future<SrsRwkvLogTail> rwkvLogTail({
@@ -4679,7 +4760,7 @@ class SrsDbStore implements SrsSync2Host {
         serverTimes: serverTimes,
       );
       // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-      if (landed > 0) _rwkvScoresRevision++;
+      if (landed > 0) _bumpRwkvScores();
       for (final SrsEvent e in mine) {
         final Hlc? h = switch (e) {
           SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
@@ -5351,7 +5432,7 @@ Future<Uint8List> _coreRwkvCards(
   ),
 );
 
-Future<Uint8List> _coreRwkvReplay(
+Future<TransferableTypedData> _coreRwkvReplay(
   int address,
   String? libraryPath,
   String profileUid,
@@ -5362,7 +5443,7 @@ Future<Uint8List> _coreRwkvReplay(
   int since,
   int? rebaseSince,
   int? rowsFrom,
-) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+) => SrsCoreWorkers.of(libraryPath).run<TransferableTypedData>(
   address,
   (SrsCore c) => c.rwkvReplay(
     profileUid,
