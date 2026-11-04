@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
@@ -39,6 +40,36 @@ class _StubLlm implements AgentLlm {
       text: _replies.removeFirst(),
       toolCalls: const <AiChatToolCall>[],
       usage: const AiChatUsage(inputTokens: 1, outputTokens: 1),
+    );
+  }
+}
+
+/// 头 [answered] 次照常答，之后的请求一直挂着（模拟 host 还在跑这一轮）。
+class _HangingLlm implements AgentLlm {
+  _HangingLlm({this.answered = 1});
+
+  final int answered;
+  int calls = 0;
+
+  @override
+  bool get supportsTools => true;
+
+  @override
+  AiModelPricing get pricing => const AiModelPricing();
+
+  @override
+  Future<AiChatTurn> chat(
+    List<AiChatMessage> messages,
+    List<AiChatToolSpec> tools,
+  ) {
+    calls++;
+    if (calls > answered) return Completer<AiChatTurn>().future;
+    return Future<AiChatTurn>.value(
+      AiChatTurn(
+        text: 'a$calls',
+        toolCalls: const <AiChatToolCall>[],
+        usage: const AiChatUsage(inputTokens: 1, outputTokens: 1),
+      ),
     );
   }
 }
@@ -349,6 +380,59 @@ void main() {
       reason: '那边收尾时会把它写回来：不删',
     );
     live.release('rm1');
+  });
+
+  test('同一台设备接管时旧连接还有没落盘的条目：续接拿到的是接管后存下的那份', () async {
+    final _HangingLlm hanging = _HangingLlm();
+    final AgentAssistantHost h = AgentAssistantHost(
+      blocker: () async => null,
+      source: 'test',
+      history: history,
+      live: live,
+      newSessionId: () => 'rm${nextId++}',
+      open: (String locale) async =>
+          AgentSessionParts(llm: hanging, toolbox: _Toolbox()),
+    );
+    final HostAssistantSession old = await h.open(
+      kHostAssistantFeatureAgent,
+      locale: 'zh',
+      caller: _phone,
+    );
+    await old.act(<String, Object?>{'type': 'text', 'text': '第一句'});
+    await _until(
+      () =>
+          old.snapshot()['running'] == false && history.rows.containsKey('rm1'),
+    );
+    // 第二轮：host 还在等模型，用户消息只在内存里、没落盘，手机这时断线重开。
+    await old.act(<String, Object?>{'type': 'text', 'text': '第二句'});
+    await _until(() => hanging.calls == 2);
+    expect(_texts(old), contains('user:第二句'));
+    expect(
+      (history.rows['rm1']!.payload['entries']! as List).length,
+      2,
+      reason: '前提：第二句还没存进历史',
+    );
+
+    final HostAssistantSession resumed = await h.resume(
+      kHostAssistantFeatureAgent,
+      'rm1',
+      locale: 'zh',
+      caller: _phone,
+    );
+    expect((old as AgentAssistantHostSession).isClosed, isTrue);
+    expect(
+      _texts(resumed),
+      containsAllInOrder(<String>['user:第一句', 'assistant:a1', 'user:第二句']),
+      reason: '接管前读的旧快照会把第二句盖掉',
+    );
+    await resumed.close();
+    expect(
+      (history.rows['rm1']!.payload['entries']! as List)
+          .map((Object? e) => (e! as Map)['text'])
+          .toList(),
+      contains('第二句'),
+      reason: '续接会话收尾写回的也带着第二句',
+    );
   });
 
   test('改名 / 删除只认发起设备；删掉开着的那场：关掉且不再写回', () async {

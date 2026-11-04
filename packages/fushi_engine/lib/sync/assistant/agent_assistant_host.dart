@@ -243,10 +243,13 @@ class AgentAssistantHost
       feature,
       caller,
     );
-    final AgentArchivedSession record = await _owned(history, id, origin);
+    await _owned(history, id, origin);
     final String? reason = await _blocker();
     if (reason != null) throw HostAssistantUnavailable(reason);
+    // 先接管（旧连接 close() 会把尚未落盘的条目存进历史），再读存档：
+    // 在接管前读到的是旧快照，用它建会话、下次保存就会盖掉那些条目。
     await _takeOver(id, origin);
+    final AgentArchivedSession record = await _owned(history, id, origin);
     final AgentSessionParts parts = await _open(locale);
     final AgentCompleterHost host = AgentCompleterHost();
     final AgentSession session = AgentSession.fromJson(
