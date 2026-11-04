@@ -81,6 +81,9 @@ add_fushi_test(media_import_query_test media_import_query_test.cpp)
 # BUG-4013: 词典映射按文件身份进程内共享（重载期 shadow 引擎不再把整套词典的虚拟
 # 地址翻倍），media.bin 不映射、按请求定位读。
 add_fushi_test(shared_mapping_test shared_mapping_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 32 位进程的 blobs.bin 窗口映射与整份映射逐字节同结果（含跨窗口、超窗口
+# 堆读、LRU 压到 1 个窗口时的持续淘汰）。
+add_fushi_test(blob_window_test blob_window_test.cpp "${FUSHI_SRC}")
 # Re-zipping an extracted dictionary wraps every entry in one directory; the
 # importer must address entries by their dictionary-relative name so such an
 # archive imports identically (media keys included), while an archive spanning

@@ -30,6 +30,13 @@ struct GlossaryEntry {
   std::string term_tags;
   const uint8_t* compressed_data = nullptr;
   uint32_t compressed_size = 0;
+  // 压缩 blob 在 blobs.bin 里的身份（来源文件 + 偏移）：同一 blob 的判等用它，不用
+  // compressed_data 指针——32 位进程按窗口映射 blobs.bin（BUG-4013），同一 blob 可能
+  // 落在不同窗口 / 堆缓冲里。compressed_owner 撑住那份窗口直到懒解压完成；64 位整份
+  // 映射时为空。
+  const void* compressed_source = nullptr;
+  uint64_t compressed_offset = 0;
+  std::shared_ptr<const void> compressed_owner;
   // v2 词典的 term glossary 用训练字典压缩（上游 8993838）；v1 恒为 nullptr，
   // usingDDict(nullptr) 等价普通解压。
   const ZSTD_DDict_s* zstd_dict = nullptr;

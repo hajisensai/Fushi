@@ -19,4 +19,6 @@
   - Swift 补丁本机（Windows）未编译，靠 PR 的 iOS / macOS 构建确认；adblock-rust 导出 JSON 直接交 WebKit 编译未在真机验证。
   - 待真机复测：开 entitlement 后用 Instruments VM Tracker 复测同步、长时间播歌、浏览器搜索三个原始场景。
   - 未做：符号化 23315 构建 Rust 那几次 abort（需 dSYM）。
-  - 已知同类遗留：32 位 Android 上单本 blobs.bin 过大时映射失败、该词典静默不装载（整套 3.8 GB 本就放不进 3 GB 地址空间），需要非映射的 blob 读取路径，另案处理。
+  - 32 位 Android（armeabi-v7a，约 3 GB 地址空间）同类问题一并修：原先大的 blobs.bin 整份映射失败 → 该词典静默不装载（整套约 1.9 GB blobs 也放不进去）。现由 `memory::blob_file` 读取：64 位照旧整份映射（`view()` 内联指针运算）；32 位按 1 MB 对齐映射 2 MB 窗口，进程级 LRU 封顶 96 MB 地址，超过 1 MB 的块读进堆；查询期 string_view 由局部 pin、懒解压的 glossary 由 `GlossaryEntry::compressed_owner` 撑住窗口；lookup 去重改按 blob 身份（来源 + 偏移）比较。测试 `native/fushidicts/tests/blob_window_test.cpp`（多窗口、跨窗口、超窗口堆读、LRU 压到 1 个窗口持续淘汰，与整份映射逐字节同结果）；整套原生测试另以 `FUSHIDICTS_BLOB_WINDOWED=1` 跑一遍窗口路径，49/49。
+  - 性能实测（Windows x64 Release，4 万词条，5 万次 query，临时基准）：develop 原版 vs 本修复 64 位路径中位数 1273–1497 ns vs 1273–1341 ns，在噪声内持平；窗口路径（仅 32 位）约 1480–1520 ns，约 +15%。
+  - 32 位上 hash.table / bloom.filter 仍整份映射（远小于 blobs.bin）。

@@ -66,6 +66,24 @@ ZSTD_DCtx* thread_dctx() {
   return ctx.get();
 }
 
+// blobs.bin 里 [u32 count][u64 x count] 的偏移表。span 覆盖 u64 数组（文件被截断时
+// 比 count*8 短，与旧的「BlobReader 读到文件尾」同口径）；表头读不到时 span 为空。
+struct OffsetList {
+  memory::blob_span span;
+  uint32_t count = 0;
+};
+
+OffsetList read_offset_list(const memory::blob_file& blobs, uint64_t at) {
+  OffsetList out;
+  const memory::blob_span head = blobs.view(at, sizeof(uint32_t));
+  if (head.size < sizeof(uint32_t)) {
+    return out;
+  }
+  std::memcpy(&out.count, head.data, sizeof(uint32_t));
+  out.span = blobs.view(at + sizeof(uint32_t), static_cast<size_t>(out.count) * sizeof(uint64_t));
+  return out;
+}
+
 }
 
 struct DictionaryQuery::DictionaryData {
@@ -74,7 +92,8 @@ struct DictionaryQuery::DictionaryData {
   // BUG-4013：映射经 map_rd_shared 按文件身份进程内共享——词典重载时 shadow 引擎与
   // 旧引擎 / 后台借用句柄同时在世，私有映射会让整套词典的虚拟地址占用翻倍，iOS 上把
   // 地址空间吃满后任何分配都 abort。
-  memory::shared_mapping blobs;
+  // blobs.bin：64 位整份映射、32 位按窗口映射（memory::blob_file，BUG-4013）。
+  memory::shared_blob_file blobs;
   memory::shared_mapping hash_table;
   memory::shared_mapping bloom_filter;
   memory::shared_mapping media_index;
@@ -142,8 +161,8 @@ int dict_format_version(const std::string& path) {
 // probe_dict_content 一样，记录区没有边界元数据、glossary blob 交错，不能顺序扫）。
 // 带词性的词典（日语词典动词/形容词占三成）几个槽位就命中退出；只有真正无词性
 // 的词典才付一次全扫，结果随后被 add_dict 写回 sidecar，下次启动不再扫。
-bool scan_term_rules_present(const memory::mapped_file& hash_table, const memory::mapped_file& blobs) {
-  if (!hash_table || hash_table.size < sizeof(uint32_t) || !blobs) {
+bool scan_term_rules_present(const memory::mapped_file& hash_table, const memory::blob_file& blobs) {
+  if (!hash_table || hash_table.size < sizeof(uint32_t)) {
     return true;  // 读不到就按 Yomitan 既有语义走，不放宽过滤。
   }
   uint32_t capacity = 0;
@@ -164,22 +183,23 @@ bool scan_term_rules_present(const memory::mapped_file& hash_table, const memory
       continue;
     }
     std::memcpy(&bucket, slot + sizeof(uint64_t), sizeof(uint64_t));
-    if (bucket + sizeof(uint32_t) > blobs.size) {
+    const OffsetList list = read_offset_list(blobs, bucket);
+    if (!list.span) {
       continue;
     }
-    BlobReader idx(blobs.data + bucket, blobs.size - bucket);
-    const uint32_t count = idx.read<uint32_t>();
+    BlobReader idx(list.span.data, list.span.size);
+    const uint32_t count = list.count;
     for (uint32_t k = 0; k < count; k++) {
       if (!idx.has(sizeof(uint64_t))) {
         break;
       }
-      const uint64_t rec = idx.read<uint64_t>();
-      if (rec + 1 > blobs.size) {
+      const memory::blob_span rec = blobs.record(idx.read<uint64_t>());
+      if (!rec) {
         continue;
       }
       // 与 query_raw 逐字段同布局：type, expr, reading, glossary offset/size,
       // definition tags, rules。
-      BlobReader blob(blobs.data + rec, blobs.size - rec);
+      BlobReader blob(rec.data, rec.size);
       if (blob.read<uint8_t>() != 0) {
         continue;
       }
@@ -250,7 +270,7 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   }
   dict.data->table.set_bloom(&dict.data->bloom);
 
-  dict.data->blobs = memory::map_rd_shared(path + "/blobs.bin");
+  dict.data->blobs = memory::open_blob_file(path + "/blobs.bin");
   if (!dict.data->blobs) {
     return;
   }
@@ -258,7 +278,7 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   // 词性有无（util/term_rules_flag.hpp）：导入端写好的 sidecar 直接读；存量词典
   // 缺 sidecar 就扫一次记录并回填（回填失败只是下次再扫，不影响本次装载）。
   if (type == TERM) {
-    const uint64_t blobs_size = dict.data->blobs->size;
+    const uint64_t blobs_size = dict.data->blobs->size();
     std::optional<bool> rules_present = fushi::term_rules_flag::read(path, blobs_size);
     if (!rules_present.has_value()) {
       rules_present = scan_term_rules_present(*dict.data->hash_table, *dict.data->blobs);
@@ -340,26 +360,31 @@ std::vector<TermResult> DictionaryQuery::query(const std::string& expression) co
 
 std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression) const {
   std::map<std::pair<std::string_view, std::string_view>, TermResult> term_map;
+  // term_map 的键是指向记录的 string_view：窗口映射（32 位）下要撑住这些窗口到函数
+  // 返回；64 位整份映射时 owner 恒空、不进这里。
+  std::vector<std::shared_ptr<const void>> pins;
   for (const auto& [name, styles, data] : term_dicts_) {
     uint64_t offset_addr = data->table(expression);
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
+    const OffsetList list = read_offset_list(*data->blobs, offset_addr);
+    if (!list.span) {
       continue;
     }
-    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
+    BlobReader idx(list.span.data, list.span.size);
 
-    auto count = idx.read<uint32_t>();
+    auto count = list.count;
     for (uint32_t i = 0; i < count; i++) {
       if (!idx.has(sizeof(uint64_t))) {
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs->size) {
+      const memory::blob_span rec = data->blobs->record(offset);
+      if (!rec) {
         continue;
       }
-      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
+      BlobReader blob(rec.data, rec.size);
 
       auto type = blob.read<uint8_t>();
       if (type != 0) {
@@ -404,11 +429,18 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
       entry.dict_name = name;
       entry.definition_tags = definition_tags;
       entry.term_tags = term_tags;
-      entry.compressed_data = data->blobs->data + glossary_offset;
-      entry.compressed_size = glossary_size;
+      memory::blob_span glossary = data->blobs->view(glossary_offset, glossary_size);
+      entry.compressed_data = glossary.data;
+      entry.compressed_size = static_cast<uint32_t>(glossary.size);
+      entry.compressed_source = data->blobs.get();
+      entry.compressed_offset = glossary_offset;
+      entry.compressed_owner = std::move(glossary.owner);
       entry.zstd_dict = data->zstd_dict;
       entry.dict_redirect_free = data->redirect_free;
 
+      if (rec.owner) {
+        pins.push_back(rec.owner);
+      }
       auto [it, inserted] = term_map.try_emplace({expr, reading});
       if (inserted) {
         it->second = {.expression = std::string(expr),
@@ -444,21 +476,23 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
+    const OffsetList list = read_offset_list(*data->blobs, offset_addr);
+    if (!list.span) {
       continue;
     }
-    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
+    BlobReader idx(list.span.data, list.span.size);
 
-    auto count = idx.read<uint32_t>();
+    auto count = list.count;
     for (uint32_t i = 0; i < count; i++) {
       if (!idx.has(sizeof(uint64_t))) {
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs->size) {
+      const memory::blob_span rec = data->blobs->record(offset);
+      if (!rec) {
         continue;
       }
-      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
+      BlobReader blob(rec.data, rec.size);
 
       auto type = blob.read<uint8_t>();
       if (type != 2) {
@@ -510,9 +544,11 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
         }
       }
 
-      if (meanings_size > 0 && meanings_offset < data->blobs->size) {
+      const memory::blob_span meanings =
+          meanings_size > 0 ? data->blobs->view(meanings_offset, meanings_size) : memory::blob_span{};
+      if (meanings) {
         // kanji meanings 恒为普通 zstd 帧（训练字典只用于 term glossary）。
-        std::string joined = decompress_glossary(data->blobs->data + meanings_offset, meanings_size, nullptr);
+        std::string joined = decompress_glossary(meanings.data, meanings.size, nullptr);
         size_t start = 0;
         while (start <= joined.size()) {
           size_t nl = joined.find('\n', start);
@@ -545,11 +581,12 @@ void DictionaryQuery::enrich_freq(TermResult& term) const {
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
+    const OffsetList list = read_offset_list(*data->blobs, offset_addr);
+    if (!list.span) {
       continue;
     }
-    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
-    auto count = idx.read<uint32_t>();
+    BlobReader idx(list.span.data, list.span.size);
+    auto count = list.count;
 
     std::vector<Frequency> frequencies;
     for (uint32_t i = 0; i < count; i++) {
@@ -557,10 +594,11 @@ void DictionaryQuery::enrich_freq(TermResult& term) const {
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs->size) {
+      const memory::blob_span rec = data->blobs->record(offset);
+      if (!rec) {
         continue;
       }
-      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
+      BlobReader blob(rec.data, rec.size);
 
       auto type = blob.read<uint8_t>();
       if (type != 1) {
@@ -609,11 +647,12 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
     if (offset_addr == 0) {
       continue;
     }
-    if (offset_addr + sizeof(uint32_t) > data->blobs->size) {
+    const OffsetList list = read_offset_list(*data->blobs, offset_addr);
+    if (!list.span) {
       continue;
     }
-    BlobReader idx(data->blobs->data + offset_addr, data->blobs->size - offset_addr);
-    auto count = idx.read<uint32_t>();
+    BlobReader idx(list.span.data, list.span.size);
+    auto count = list.count;
 
     std::vector<Pitch> pitches;
     std::vector<std::string> transcriptions;
@@ -646,10 +685,11 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
         break;
       }
       auto offset = idx.read<uint64_t>();
-      if (offset + 1 > data->blobs->size) {
+      const memory::blob_span rec = data->blobs->record(offset);
+      if (!rec) {
         continue;
       }
-      BlobReader blob(data->blobs->data + offset, data->blobs->size - offset);
+      BlobReader blob(rec.data, rec.size);
 
       auto type = blob.read<uint8_t>();
       if (type != 1) {
@@ -873,12 +913,12 @@ int probe_dict_content(const std::string& dir) {
   if (!hash_owner || hash_owner->size < sizeof(uint32_t)) {
     return 0;
   }
-  const memory::shared_mapping blobs_owner = memory::map_rd_shared(dir + "/blobs.bin");
+  const memory::shared_blob_file blobs_owner = memory::open_blob_file(dir + "/blobs.bin");
   if (!blobs_owner) {
     return 0;
   }
   const memory::mapped_file& hash_table = *hash_owner;
-  const memory::mapped_file& blobs = *blobs_owner;
+  const memory::blob_file& blobs = *blobs_owner;
 
   int mask = 0;
   uint32_t capacity = 0;
@@ -902,20 +942,21 @@ int probe_dict_content(const std::string& dir) {
     }
     std::memcpy(&bucket, slot + sizeof(uint64_t), sizeof(uint64_t));
 
-    if (bucket + sizeof(uint32_t) > blobs.size) {
+    const OffsetList list = read_offset_list(blobs, bucket);
+    if (!list.span) {
       continue;
     }
-    BlobReader idx(blobs.data + bucket, blobs.size - bucket);
-    uint32_t count = idx.read<uint32_t>();
+    BlobReader idx(list.span.data, list.span.size);
+    uint32_t count = list.count;
     for (uint32_t k = 0; k < count && mask != 0x3; k++) {
       if (!idx.has(sizeof(uint64_t))) {
         break;
       }
-      uint64_t rec = idx.read<uint64_t>();
-      if (rec + 1 > blobs.size) {
+      const memory::blob_span rec = blobs.view(idx.read<uint64_t>(), 1);
+      if (!rec) {
         continue;
       }
-      uint8_t type = blobs.data[rec];
+      uint8_t type = rec.data[0];
       if (type == 0) {
         mask |= 0x1;  // has term
       } else if (type == 2) {
