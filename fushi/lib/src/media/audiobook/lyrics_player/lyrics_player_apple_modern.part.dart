@@ -1,7 +1,7 @@
 part of 'lyrics_player_apple.dart';
 
 // Apple 设计系统的歌词模式「新版」播放控件（`LyricsControlsStyle.modern`；经典见
-// [AppleLyricsPlayerDesign]）。布局、交互、自动隐藏与 MD3 新版一致——几何 / 测宽 /
+// [AppleLyricsPlayerDesign]）。布局与交互与 MD3 新版一致——几何 / 测宽 /
 // 读数 / 卡片展开交互出自共享的 lyrics_player_modern_shared.dart，这里只换成 Apple
 // 现有的件：模糊封面背景、白字透明度阶梯、无底 / 实色圆底的白色图标键、Niratan
 // 胶囊进度条、实色悬浮卡片（`fushiAppleSolidFloatingDecoration`）。
@@ -9,8 +9,7 @@ part of 'lyrics_player_apple.dart';
 // 宽屏：正文横向占满；底部无底板（一层渐隐压暗），上方整宽进度线 + 两端时间、
 // 中间一行读数；左：完整封面 + 书名 / 章名；中：实色圆底的 −10 秒 / 上一句 /
 // 下一句 / +10 秒 + 更大的播放键（Apple 原样白色大字形，不用多边形）；右：圆角
-// 方块按钮组（全部次要动作，放不下按优先级收进 ⋯）+ 关闭。播放中空闲自动隐藏，
-// 只留贴底细进度线（覆盖层驱动 [wideChromeHidden] / [wideLyricsExpanded]）。
+// 方块按钮组（全部次要动作，放不下按优先级收进 ⋯）+ 关闭。底栏常驻、不自动收起。
 //
 // 窄屏：页眉沿用经典（返回 · 书名读数 · 顶部区按钮 · ⋯ · ×）；底部实色悬浮卡两态：
 // 收起 = 迷你条（封面 · 章名时间 · 重播 · 上一句 · 播放 · 下一句 + 底边细进度），
@@ -70,22 +69,11 @@ class _AppleModernText {
 
 /// 新版 Apple 歌词播放器外观。
 class AppleModernLyricsPlayerDesign extends LyricsPlayerDesign {
-  const AppleModernLyricsPlayerDesign({
-    required this.compactExpanded,
-    this.wideChromeHidden = false,
-    this.wideLyricsExpanded = false,
-  });
+  const AppleModernLyricsPlayerDesign({required this.compactExpanded});
 
   /// 窄屏播放卡展开（目标态）。歌词矩形直接按目标态算：WebView 不随卡片高度逐帧
   /// 改尺寸，卡片自己做高度动画。
   final bool compactExpanded;
-
-  /// 宽屏底栏已自动隐藏：淡出、不吃指针，只留一根贴底细进度线。窄屏忽略。
-  final bool wideChromeHidden;
-
-  /// 宽屏歌词矩形伸到底（[LyricsModernWideGeometry.immersiveLyrics]）。外壳等底栏
-  /// 淡出完再一次性改矩形（WebView 只 resize 一次）。
-  final bool wideLyricsExpanded;
 
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
@@ -95,7 +83,7 @@ class AppleModernLyricsPlayerDesign extends LyricsPlayerDesign {
         size,
         padding,
       );
-      return wideLyricsExpanded ? g.immersiveLyrics(size, padding) : g.lyrics;
+      return g.lyrics;
     }
     final _AppleModernNarrowGeometry g = _AppleModernNarrowGeometry.of(
       context,
@@ -136,7 +124,6 @@ class AppleModernLyricsPlayerDesign extends LyricsPlayerDesign {
               size: size,
               padding: padding,
               geometry: LyricsModernWideGeometry.of(context, size, padding),
-              hidden: wideChromeHidden,
             )
           : _AppleModernNarrowChrome(
               data: data,
@@ -266,28 +253,55 @@ List<Widget> _appleModernTransport(
   ];
 }
 
-/// 进度细线（只看不点）：Niratan 轨道配色的 3dp 胶囊，每秒刷新一次。
+/// 进度细线（只看不点）：Niratan 轨道配色的 3dp 胶囊，每秒刷新一次。跳转落点
+/// 刻度比线高，上下溢出画，不改线占的高度（与有声书迷你播放条同一口径）。
 class _AppleModernProgressLine extends StatelessWidget {
-  const _AppleModernProgressLine({required this.clock, super.key});
+  const _AppleModernProgressLine({required this.clock, this.jumpMarks});
 
   final LyricsPlayerClock clock;
 
+  /// 跳转记录的落点刻度（[FushiJumpProgressMarks]）；null / 两边都空 = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
+
   @override
-  Widget build(BuildContext context) => LyricsClockSecondsBuilder(
-    clock: clock,
-    builder: (BuildContext context, Duration position, Duration total) =>
-        CustomPaint(
-          size: Size.infinite,
-          painter: _TrackPainter(
-            fraction: total.inSeconds > 0
-                ? (position.inSeconds / total.inSeconds).clamp(0.0, 1.0)
-                : 0,
-            thickness: 3,
-            fillAlpha: 0.72,
-            focusColor: null,
+  Widget build(BuildContext context) {
+    final Widget line = LyricsClockSecondsBuilder(
+      clock: clock,
+      builder: (BuildContext context, Duration position, Duration total) =>
+          CustomPaint(
+            size: Size.infinite,
+            painter: _TrackPainter(
+              fraction: total.inSeconds > 0
+                  ? (position.inSeconds / total.inSeconds).clamp(0.0, 1.0)
+                  : 0,
+              thickness: 3,
+              fillAlpha: 0.72,
+              focusColor: null,
+            ),
+          ),
+    );
+    final ({List<double> back, List<double> forward})? marks = jumpMarks;
+    if (marks == null || (marks.back.isEmpty && marks.forward.isEmpty)) {
+      return line;
+    }
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        Positioned.fill(child: line),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: -4,
+          bottom: -4,
+          child: FushiJumpProgressMarks(
+            back: marks.back,
+            forward: marks.forward,
+            tickHeight: 11,
           ),
         ),
-  );
+      ],
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +315,6 @@ class _AppleModernWideChrome extends StatelessWidget {
     required this.size,
     required this.padding,
     required this.geometry,
-    required this.hidden,
   });
 
   final LyricsPlayerData data;
@@ -309,9 +322,6 @@ class _AppleModernWideChrome extends StatelessWidget {
   final Size size;
   final EdgeInsets padding;
   final LyricsModernWideGeometry geometry;
-
-  /// 底栏已自动隐藏（见 [AppleModernLyricsPlayerDesign.wideChromeHidden]）。
-  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
@@ -336,22 +346,17 @@ class _AppleModernWideChrome extends StatelessWidget {
       g.right - centerRight - kLyricsModernIslandGap,
     );
     final Size popup = g.popupSize(size, padding);
-    Widget chrome(Widget child) =>
-        LyricsModernChromeFade(hidden: hidden, child: child);
     return Stack(
       clipBehavior: Clip.none,
       children: <Widget>[
         // 无底板：底下一层渐隐压暗（模糊封面本就偏暗，压得比 MD3 再深一点，
-        // 白字在亮封面上也读得清）。随底栏一起淡出，不吃指针。
+        // 白字在亮封面上也读得清）。不吃指针。
         Positioned(
           left: 0,
           right: 0,
           top: g.timeTop - 32,
           bottom: 0,
-          child: LyricsModernBottomScrim(
-            hidden: hidden,
-            color: const Color(0x52000000),
-          ),
+          child: const LyricsModernBottomScrim(color: Color(0x52000000)),
         ),
         // 插图弹出卡：从左岛缩略图上方弹出，贴左。
         Positioned(
@@ -378,64 +383,43 @@ class _AppleModernWideChrome extends StatelessWidget {
           right: size.width - g.right,
           top: g.timeTop,
           height: g.seekBand.top - g.timeTop,
-          child: chrome(
-            IgnorePointer(
-              child: LyricsClockSecondsBuilder(
-                clock: data.clock,
-                builder:
-                    (BuildContext context, Duration position, Duration total) =>
-                        Row(
-                          children: <Widget>[
-                            Text(
-                              formatLyricsPlayerTime(position),
-                              style: timeStyle,
-                            ),
-                            Expanded(
-                              child: Center(
-                                child: LyricsModernStatsLine(
-                                  clock: data.clock,
-                                  style: timeStyle,
-                                ),
+          child: IgnorePointer(
+            child: LyricsClockSecondsBuilder(
+              clock: data.clock,
+              builder:
+                  (BuildContext context, Duration position, Duration total) =>
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            formatLyricsPlayerTime(position),
+                            style: timeStyle,
+                          ),
+                          Expanded(
+                            child: Center(
+                              child: LyricsModernStatsLine(
+                                clock: data.clock,
+                                style: timeStyle,
                               ),
                             ),
-                            Text(
-                              lyricsRemainingText(position, total),
-                              style: timeStyle,
-                            ),
-                          ],
-                        ),
-              ),
+                          ),
+                          Text(
+                            lyricsRemainingText(position, total),
+                            style: timeStyle,
+                          ),
+                        ],
+                      ),
             ),
           ),
         ),
         // 整宽进度线：Niratan 胶囊轨道（悬停 / 拖动 / 键盘焦点加粗）。
         Positioned.fromRect(
           rect: g.seekBand,
-          child: chrome(
-            _LyricsScrubber(
-              clock: data.clock,
-              onSeek: callbacks.onSeek,
-              showTimes: false,
-              trackHeight: g.seekBand.height,
-            ),
-          ),
-        ),
-        // 底栏隐藏时贴底的细进度线（只看不点：点哪儿都先唤出底栏）。
-        Positioned(
-          left: g.left,
-          right: size.width - g.right,
-          bottom: padding.bottom + (kLyricsModernImmersiveBottom - 3) / 2,
-          height: 3,
-          child: IgnorePointer(
-            child: AnimatedOpacity(
-              opacity: hidden ? 1 : 0,
-              duration: fushiMotionDuration(context, FushiMotion.medium),
-              curve: FushiMotion.standard,
-              child: _AppleModernProgressLine(
-                key: const ValueKey<String>('lyrics_modern_immersive_progress'),
-                clock: data.clock,
-              ),
-            ),
+          child: _LyricsScrubber(
+            clock: data.clock,
+            onSeek: callbacks.onSeek,
+            jumpMarks: data.jumpMarks,
+            showTimes: false,
+            trackHeight: g.seekBand.height,
           ),
         ),
         if (leftWidth >= g.islandHeight)
@@ -444,13 +428,11 @@ class _AppleModernWideChrome extends StatelessWidget {
             top: g.islandTop,
             width: leftWidth,
             height: g.islandHeight,
-            child: chrome(
-              LyricsSpringEntrance(
-                child: _AppleModernInfoIsland(
-                  data: data,
-                  callbacks: callbacks,
-                  text: g.text,
-                ),
+            child: LyricsSpringEntrance(
+              child: _AppleModernInfoIsland(
+                data: data,
+                callbacks: callbacks,
+                text: g.text,
               ),
             ),
           ),
@@ -459,19 +441,17 @@ class _AppleModernWideChrome extends StatelessWidget {
           top: g.islandTop,
           width: centerWidth,
           height: g.islandHeight,
-          child: chrome(
-            LyricsSpringEntrance(
-              delay: 0.08,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: _appleModernTransport(
-                    data,
-                    callbacks,
-                    side: kLyricsModernWideTransportSize,
-                    play: kLyricsModernWidePlaySize,
-                  ),
+          child: LyricsSpringEntrance(
+            delay: 0.08,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: _appleModernTransport(
+                  data,
+                  callbacks,
+                  side: kLyricsModernWideTransportSize,
+                  play: kLyricsModernWidePlaySize,
                 ),
               ),
             ),
@@ -481,14 +461,12 @@ class _AppleModernWideChrome extends StatelessWidget {
           right: size.width - g.right,
           top: g.islandTop,
           height: g.islandHeight,
-          child: chrome(
-            LyricsSpringEntrance(
-              delay: 0.16,
-              child: _AppleModernActionIsland(
-                data: data,
-                callbacks: callbacks,
-                budget: rightBudget,
-              ),
+          child: LyricsSpringEntrance(
+            delay: 0.16,
+            child: _AppleModernActionIsland(
+              data: data,
+              callbacks: callbacks,
+              budget: rightBudget,
             ),
           ),
         ),
@@ -999,7 +977,10 @@ class _AppleModernMiniContent extends StatelessWidget {
           right: 18,
           bottom: 6,
           height: 3,
-          child: _AppleModernProgressLine(clock: data.clock),
+          child: _AppleModernProgressLine(
+            clock: data.clock,
+            jumpMarks: data.jumpMarks,
+          ),
         ),
       ],
     );
@@ -1082,7 +1063,11 @@ class _AppleModernFullContent extends StatelessWidget {
           const SizedBox(height: _kAppleModernFullGap),
           SizedBox(
             height: kLyricsShellAppleScrubberHeight,
-            child: _LyricsScrubber(clock: data.clock, onSeek: callbacks.onSeek),
+            child: _LyricsScrubber(
+              clock: data.clock,
+              onSeek: callbacks.onSeek,
+              jumpMarks: data.jumpMarks,
+            ),
           ),
           const SizedBox(height: _kAppleModernFullGap),
           SizedBox(

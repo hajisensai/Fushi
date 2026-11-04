@@ -3,15 +3,14 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show RendererBinding;
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_modern_shared.dart'
+    show lyricsSessionText;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
-import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show gamepadInputActivity;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -21,7 +20,8 @@ import 'package:material_ui/material_ui.dart';
 ///  * 宽屏：三浮岛，关闭键在底部右岛、不再在右上角，没有「左右互换」，放不下的
 ///    动作按优先级收进 ⋯ 并交给页面；
 ///  * 经典布局原样保留，可切回；
-///  * 插图：「弹出停留 / 红点」两种提示方式的状态机，竖排书翻页方向镜像。
+///  * 插图：「弹出停留 / 红点」两种提示方式的状态机，竖排书翻页方向镜像；
+///  * 宽屏底栏常驻（播放中闲置再久也不收起），读数一行在宽 / 窄屏都看得见。
 class _Clock implements LyricsPlayerClock {
   @override
   Duration get position => const Duration(minutes: 3);
@@ -49,6 +49,31 @@ Future<ImageProvider> _image(WidgetTester tester) async {
     provider = MemoryImage(bytes!.buffer.asUint8List());
   });
   return provider;
+}
+
+/// 读数一行（阅读速度 · 进度 · 时间）真的看得见：在窗口里、有尺寸、没被缩成一条线，
+/// 祖先里没有透明度为 0 的层。
+void _expectStatsVisible(WidgetTester tester, Finder stat) {
+  expect(stat, findsOneWidget);
+  final Rect rect = tester.getRect(stat);
+  final Rect window = Offset.zero & tester.view.physicalSize;
+  expect(
+    window.contains(rect.topLeft) && window.contains(rect.bottomRight),
+    isTrue,
+    reason: '$rect 不在窗口 $window 内',
+  );
+  expect(rect.height, greaterThan(8));
+  expect(rect.width, greaterThan(40));
+  for (final Opacity o in tester.widgetList<Opacity>(
+    find.ancestor(of: stat, matching: find.byType(Opacity)),
+  )) {
+    expect(o.opacity, greaterThan(0));
+  }
+  for (final AnimatedOpacity o in tester.widgetList<AnimatedOpacity>(
+    find.ancestor(of: stat, matching: find.byType(AnimatedOpacity)),
+  )) {
+    expect(o.opacity, greaterThan(0));
+  }
 }
 
 void main() {
@@ -204,6 +229,17 @@ void main() {
       );
     });
 
+    testWidgets('reading stats (speed · progress · time) show in the header '
+        '(collapsed and expanded)', (WidgetTester tester) async {
+      final Finder stats = find.textContaining(
+        lyricsSessionText(LyricsPlayerStats.empty),
+      );
+      await pumpAt(tester, const Size(390, 844), app());
+      _expectStatsVisible(tester, stats);
+      await pumpAt(tester, const Size(390, 844), app(expanded: true));
+      _expectStatsVisible(tester, stats);
+    });
+
     testWidgets('360 wide collapsed bar does not overflow', (
       WidgetTester tester,
     ) async {
@@ -286,77 +322,28 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    double chromeOpacity(WidgetTester tester) => tester
-        .widget<AnimatedOpacity>(
-          find
-              .ancestor(
-                of: find.text('book'),
-                matching: find.byType(AnimatedOpacity),
-              )
-              .first,
-        )
-        .opacity;
-
-    Future<void> idleUntilHidden(WidgetTester tester) async {
-      await tester.pump(kLyricsChromeIdleHideDelay);
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
-    }
-
-    testWidgets('playing: bottom chrome auto-hides and lyrics extend; '
-        'only the bottom edge band brings it back', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('playing: bottom chrome stays however long it idles; '
+        'lyrics rect never changes', (WidgetTester tester) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
       final Rect shown = tester.getRect(key('lyrics_view_probe'));
-      expect(chromeOpacity(tester), 1);
-
-      await idleUntilHidden(tester);
-      expect(chromeOpacity(tester), 0);
-      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
-      expect(hidden.top, shown.top);
-      expect(hidden.bottom, closeTo(900 - 24, 0.5));
-      // 隐藏时看不见的钮不吃点击，也不唤出底栏（点在底栏原位置、带子之上）。
-      await tester.tap(key('lyrics_close_button'), warnIfMissed: false);
-      await tester.pump();
-      expect(calls, isNot(contains('exit')));
-      expect(chromeOpacity(tester), 0);
-
-      // 查词场景：鼠标在正文上移动 / 点击，底栏不出来、歌词矩形不变（不重排）。
+      final Rect close = tester.getRect(key('lyrics_close_button'));
       final TestGesture mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
       );
       await mouse.addPointer(location: const Offset(800, 300));
-      await mouse.moveTo(const Offset(820, 320));
-      await mouse.moveTo(const Offset(840, 860));
-      await tester.pump();
-      await tester.tapAt(const Offset(820, 320));
-      await tester.pump();
-      expect(chromeOpacity(tester), 0);
-      expect(tester.getRect(key('lyrics_view_probe')), hidden);
-      // 普通快捷键也不唤出。
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-      await tester.pump();
-      expect(chromeOpacity(tester), 0);
-
-      // 移到底边带子 → 唤出，歌词矩形复位。
-      await mouse.moveTo(const Offset(800, 890));
-      await tester.pump();
-      expect(chromeOpacity(tester), 1);
+      await tester.pump(const Duration(seconds: 30));
+      await tester.pump(const Duration(seconds: 1));
       expect(tester.getRect(key('lyrics_view_probe')), shown);
-
-      // 鼠标停在底栏上不动：不在它底下收走。
-      await mouse.moveTo(const Offset(800, 850));
-      await idleUntilHidden(tester);
-      expect(chromeOpacity(tester), 1);
-
-      // 回到正文上，空闲后照常隐藏；Tab 唤出。
-      await mouse.moveTo(const Offset(800, 300));
-      await idleUntilHidden(tester);
-      expect(chromeOpacity(tester), 0);
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pump();
-      expect(chromeOpacity(tester), 1);
+      expect(tester.getRect(key('lyrics_close_button')), close);
+      // 反馈 njN2KIQS_j：读数（速度 · 进度 · 时间）在进度线上方一直看得见。
+      _expectStatsVisible(tester, key('lyrics_modern_stats_line'));
+      expect(
+        tester.getRect(key('lyrics_modern_stats_line')).top,
+        greaterThanOrEqualTo(shown.bottom),
+      );
+      // 底栏钮照常可点（没有「先唤出再点」）。
+      await tester.tap(key('lyrics_close_button'));
+      expect(calls.last, 'exit');
       await mouse.removePointer();
       expect(tester.takeException(), isNull);
     });
@@ -374,110 +361,47 @@ void main() {
       await tester.pump();
       expect(activeCursor(), isNot(SystemMouseCursors.none));
 
-      await tester.pump(kLyricsChromeIdleHideDelay);
+      final Rect lyrics = tester.getRect(key('lyrics_view_probe'));
+      await tester.pump(kLyricsCursorIdleHideDelay);
       await tester.pump();
       expect(activeCursor(), SystemMouseCursors.none);
-      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
+      // 只藏光标：底栏与歌词矩形不动。
+      expect(tester.getRect(key('lyrics_view_probe')), lyrics);
+      expect(key('lyrics_close_button'), findsOneWidget);
 
-      // 正文上一动光标就回来，但底栏不出来、歌词矩形不变。
+      // 正文上一动光标就回来，歌词矩形不变。
       await mouse.moveTo(const Offset(810, 300));
       await tester.pump();
       expect(activeCursor(), isNot(SystemMouseCursors.none));
-      expect(chromeOpacity(tester), 0);
-      expect(tester.getRect(key('lyrics_view_probe')), hidden);
+      expect(tester.getRect(key('lyrics_view_probe')), lyrics);
 
       // 暂停：光标常显。
       await pumpAt(tester, const Size(1600, 900), app());
       await mouse.moveTo(const Offset(820, 300));
-      await tester.pump(kLyricsChromeIdleHideDelay * 2);
+      await tester.pump(kLyricsCursorIdleHideDelay * 2);
       await tester.pump();
       expect(activeCursor(), isNot(SystemMouseCursors.none));
       await mouse.removePointer();
     });
 
-    testWidgets('playing: desktop gamepad activity (no KeyEvent) reveals '
-        'the hidden chrome, like Tab', (WidgetTester tester) async {
+    testWidgets('lookup-held pause keeps the cursor hidden; a real pause '
+        'shows it', (WidgetTester tester) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      await tester.pump(kLyricsChromeIdleHideDelay);
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(chromeOpacity(tester), 0);
-      // 桌面手柄轮询派发只经 gamepadInputActivity，不经 HardwareKeyboard。
-      gamepadInputActivity.value++;
-      await tester.pump();
-      expect(chromeOpacity(tester), 1);
-    });
-
-    testWidgets('playing: an Android gamepad key event reveals the hidden '
-        'chrome, a keyboard arrow does not', (WidgetTester tester) async {
-      await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      await tester.pump(kLyricsChromeIdleHideDelay);
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(chromeOpacity(tester), 0);
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-      expect(chromeOpacity(tester), 0);
-      await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonA);
-      await tester.pump();
-      expect(chromeOpacity(tester), 1);
-    });
-
-    testWidgets('screen reader on: chrome never auto-hides (a 0-opacity '
-        'subtree leaves the semantics tree)', (WidgetTester tester) async {
-      tester.platformDispatcher.accessibilityFeaturesTestValue =
-          const FakeAccessibilityFeatures(accessibleNavigation: true);
-      addTearDown(
-        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
       );
-      await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      await tester.pump(kLyricsChromeIdleHideDelay * 3);
-      expect(chromeOpacity(tester), 1);
-    });
-
-    // 反馈 awLXfD49Ep / M8YDOqJ5Bm：查词默认暂停播放（pause_on_lookup）。这段临时暂停
-    // 属于查词会话：底栏不弹回、歌词矩形不缩回（被查的词不在弹窗下挪位），恢复播放后
-    // 仍保持隐藏；只有真正的用户暂停才复位。
-    testWidgets('lookup-held pause keeps the hidden chrome and lyrics rect '
-        'frozen; a real pause still resets', (WidgetTester tester) async {
-      await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      final Rect shown = tester.getRect(key('lyrics_view_probe'));
-      await idleUntilHidden(tester);
-      expect(chromeOpacity(tester), 0);
-      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
-      expect(hidden, isNot(shown));
-
-      // 查词：播放器暂停，但被查词按住。
+      await mouse.addPointer(location: const Offset(800, 300));
+      await tester.pump(kLyricsCursorIdleHideDelay);
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.none);
       await tester.pumpWidget(app(heldForLookup: true));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(chromeOpacity(tester), 0, reason: '查词暂停不唤出底栏');
-      expect(tester.getRect(key('lyrics_view_probe')), hidden);
-
-      // 关弹窗、恢复在途（仍按住）→ 起播落定：都不动布局。
-      await tester.pumpWidget(app(playing: true, heldForLookup: true));
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpWidget(app(playing: true));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(chromeOpacity(tester), 0, reason: '恢复播放后保持隐藏');
-      expect(tester.getRect(key('lyrics_view_probe')), hidden);
-
-      // 对照：用户暂停（没被查词按住）照旧立即复位。
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.none, reason: '查词暂停不算暂停');
       await tester.pumpWidget(app());
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(chromeOpacity(tester), 1);
-      expect(tester.getRect(key('lyrics_view_probe')), shown);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('paused: bottom chrome never auto-hides', (
-      WidgetTester tester,
-    ) async {
-      await pumpAt(tester, const Size(1600, 900), app());
-      final Rect shown = tester.getRect(key('lyrics_view_probe'));
-      await tester.pump(kLyricsChromeIdleHideDelay * 3);
-      expect(chromeOpacity(tester), 1);
-      expect(tester.getRect(key('lyrics_view_probe')), shown);
+      await tester.pump();
+      await tester.pump();
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+      await mouse.removePointer();
     });
   });
 

@@ -4662,6 +4662,7 @@
   "lyrics_artist": "艺术家",
   "lyrics_blur": "模糊歌词",
   "lyrics_blur_hint": "听力沉浸：模糊当前句，悬停或点击显形",
+  "lyrics_control_item_position_jump": "进度跳转",
   "lyrics_control_item_study_timer": "统计计时",
   "lyrics_control_layout": "按钮布局",
   "lyrics_control_layout_hint": "把按钮拖到顶部、播放卡工具条或 ⋯ 菜单，或移出歌词页，改动立即生效。移出的按钮仍可用快捷键触发。",

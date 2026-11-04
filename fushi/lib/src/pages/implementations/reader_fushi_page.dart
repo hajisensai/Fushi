@@ -4232,22 +4232,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
-                  // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）的
-                  // 阶梯与 Esc 不同（NJIIDAhIZL）：词典弹窗先关；歌词覆盖层**不**拦，
-                  // 系统返回在歌词模式下直接退书回书架。判定单点在
+                  // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）与
+                  // Esc 同一条阶梯：词典弹窗先关；歌词覆盖层**不**拦，歌词模式下
+                  // 直接退书回书架（NJIIDAhIZL / NaFaJbaAdc）。判定单点在
                   // [resolveReaderBackStep]；程序化退书（[_exitReaderBook]）带着
                   // [_exitBookRequested] 进来，整条阶梯跳过。
                   switch (resolveReaderBackStep(
-                    source: ReaderBackSource.route,
                     dictionaryShown: isDictionaryShown,
-                    lyricsMode: _lyricsMode,
                     explicitExit: _exitBookRequested,
                   )) {
                     case ReaderBackStep.closeDictionary:
                       clearDictionaryResult();
-                      return;
-                    case ReaderBackStep.closeLyrics:
-                      unawaited(_toggleLyricsMode());
                       return;
                     case ReaderBackStep.exitBook:
                       break;

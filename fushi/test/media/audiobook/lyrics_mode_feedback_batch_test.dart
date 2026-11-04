@@ -315,7 +315,7 @@ void main() {
       // 程序化回中接管时停掉在途滚轮动画。
       final int center = html.indexOf('function scrollToCenter(');
       expect(
-        html.substring(center, html.indexOf('_animId++;', center)),
+        html.substring(center, html.indexOf('var diff', center)),
         contains('_lyWheelStop();'),
       );
     });

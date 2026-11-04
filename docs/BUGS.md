@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3617 条。点号进各自文件。
+> 共 3619 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4016](bugs/BUG-4016-lyrics-modern-stats-hidden.md) | ✅ | ✅ | 歌词模式新版底栏自动收起，阅读速度/进度/时间读数随之消失 |
+| [BUG-4015](bugs/BUG-4015-lyrics-esc-exits-book.md) | ✅ | ✅ | 歌词模式 Esc 先退歌词层再退书，要按两次才回书架 |
 | [BUG-4014](bugs/BUG-4014-srs-sync2-device-names.md) | ✅ | ✅ | srs-sync2-device-names |
 | [BUG-4012](bugs/BUG-4012-srs-rwkv-replay-oom.md) | ✅ | ✅ | srs-rwkv-replay-oom |
 | [BUG-4011](bugs/BUG-4011-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |

@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// pumpWidget 过重，沿用本目录 `reader_lyrics_*_static_test` 的源码切片范式）。
 ///
 /// ① 退出不被返回阶梯截胡：阅读器 PopScope 的返回阶梯（`resolveReaderBackStep`，
-///    路由返回只先关词典弹窗；歌词层不再拦，NJIIDAhIZL）只该拦用户的系统返回。
+///    只先关词典弹窗；歌词层不再拦，NJIIDAhIZL / NaFaJbaAdc）只该拦用户的系统返回。
 ///    面板「退出」（chrome.part.dart 的 `onExitReader`）与重导入后正文作废
 ///    （audiobook.part.dart 的 `bodyRebuilt` 分支）是**显式退书**：两处都走
 ///    `_exitReaderBook()`，在 maybePop 在途期间挂 `_exitBookRequested`，PopScope
@@ -37,16 +37,11 @@ void main() {
   }
 
   group('① 显式退书绕过 PopScope 的歌词层拦截', () {
-    test('PopScope 走路由来源的阶梯，并以 _exitBookRequested 为显式退书门', () {
+    test('PopScope 的阶梯以 _exitBookRequested 为显式退书门', () {
       final String popScope = slice(
         read(pagePath),
         'onPopInvokedWithResult:',
         'exitAfterPersist(',
-      );
-      expect(
-        popScope.contains('source: ReaderBackSource.route'),
-        isTrue,
-        reason: '系统返回必须按路由来源判阶梯（歌词模式直接退书，NJIIDAhIZL）',
       );
       expect(
         popScope.contains('explicitExit: _exitBookRequested'),
@@ -60,15 +55,18 @@ void main() {
       );
     });
 
-    test('globalBack 快捷键走快捷键来源的阶梯（Esc 先退歌词）', () {
+    test('globalBack 快捷键走同一条阶梯：歌词模式下 Esc 直接退书（NaFaJbaAdc）', () {
       final String body = slice(
         read('lib/src/pages/implementations/reader_fushi/caret.part.dart'),
         'case ShortcutAction.globalBack:',
         'case ShortcutAction.readerToggleChrome:',
       );
-      expect(body.contains('source: ReaderBackSource.shortcut'), isTrue);
-      expect(body.contains('case ReaderBackStep.closeLyrics:'), isTrue);
-      expect(body.contains('_toggleLyricsMode()'), isTrue);
+      expect(body.contains('resolveReaderBackStep('), isTrue);
+      expect(
+        body.contains('_toggleLyricsMode()'),
+        isFalse,
+        reason: 'Esc 不许先掀开歌词层，要一次回书架',
+      );
       expect(body.contains('_exitWindowFullscreenOrPopReader()'), isTrue);
     });
 

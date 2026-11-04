@@ -27,7 +27,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiLinearProgressIndicator, FushiTooltip;
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -437,6 +437,7 @@ class _WidePanel extends StatelessWidget {
                   debugLabel: 'lyrics-md3-seek',
                   clock: data.clock,
                   isPlaying: data.isPlaying,
+                  jumpMarks: data.jumpMarks,
                   onSeek: callbacks.onSeek,
                   strokeWidth: 5,
                   barHeight: 32,
@@ -1050,7 +1051,7 @@ Widget? _md3ControlButton(
   Widget iconButton({
     required Key key,
     required String tooltip,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     required IconData icon,
   }) => tonal
       ? FushiIconButtonControl.filledTonal(
@@ -1128,6 +1129,23 @@ Widget? _md3ControlButton(
         tooltip: t.lyrics_layout_swap_sides,
         onPressed: onSwap,
         icon: FushiIcons.swap,
+      );
+    case LyricsControlItem.positionJump:
+      final VoidCallback? onJump = callbacks.onPositionJump;
+      if (onJump == null) return null;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_position_jump_button'),
+        tooltip: t.lyrics_control_item_position_jump,
+        onPressed: onJump,
+        icon: FushiIcons.myLocation,
+      );
+    case LyricsControlItem.jumpHistory:
+      // 没有跳转记录时置灰，不消失（布局里摆了它就该看得见）。
+      return iconButton(
+        key: const ValueKey<String>('lyrics_jump_history_button'),
+        tooltip: t.media_jump_history_title,
+        onPressed: callbacks.onOpenJumpHistory,
+        icon: FushiIcons.history,
       );
   }
 }
@@ -1488,6 +1506,7 @@ class _NarrowControlBar extends StatelessWidget {
                           debugLabel: 'lyrics-md3-seek',
                           clock: data.clock,
                           isPlaying: data.isPlaying,
+                          jumpMarks: data.jumpMarks,
                           onSeek: callbacks.onSeek,
                           strokeWidth: 5,
                           barHeight: _kNarrowSeekBarHeight,

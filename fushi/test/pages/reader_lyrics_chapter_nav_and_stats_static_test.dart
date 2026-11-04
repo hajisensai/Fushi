@@ -84,21 +84,86 @@ void main() {
       );
     });
 
-    test('导航抽屉在歌词模式不接书内搜索 / 字数跳转（歌词里没有落点）', () {
+    test('导航抽屉在歌词模式不接书内搜索；字数跳转照常接（落到音频）', () {
       final String sheet = methodBody(
         src,
         '  Widget _buildQuickSettingsSheet({',
       );
       expect(
         containsCodeLine(sheet, 'onJumpToCharOffset: _lyricsMode'),
-        isTrue,
+        isFalse,
+        reason: '反馈「歌词模式进度跳转看不到」：字数跳转不再按歌词模式摘掉',
       );
+      expect(containsIdentifierCall(sheet, '_jumpToGlobalCharOffset'), isTrue);
       expect(
         containsCodeLine(
           sheet,
           'onSearchJump: _lyricsMode ? null : _jumpToSearchResult',
         ),
         isTrue,
+      );
+    });
+
+    test('字数跳转在歌词模式先分流到音频定位，再碰任何正文导航', () {
+      final String body = methodBody(
+        src,
+        '  Future<void> _jumpToGlobalCharOffset(',
+      );
+      final int gate = body.indexOf('if (_lyricsMode)');
+      expect(gate, greaterThan(0));
+      expect(
+        containsIdentifierCall(body, '_jumpToGlobalCharOffsetInLyricsMode'),
+        isTrue,
+      );
+      for (final String textNav in <String>[
+        '_recordTextJumpDeparture(',
+        '_navigateToChapterAndWait(',
+        'restoreProgress(',
+      ]) {
+        expect(
+          body.indexOf(textNav),
+          greaterThan(gate),
+          reason: '$textNav 必须在歌词分流之后——正文导航会把歌词文档换成 EPUB 章',
+        );
+      }
+      final String lyrics = methodBody(
+        src,
+        '  Future<void> _jumpToGlobalCharOffsetInLyricsMode(',
+      );
+      expect(containsIdentifierCall(lyrics, '_audioCueNearCharOffset'), isTrue);
+      expect(containsIdentifierCall(lyrics, '_firstCueOfSection'), isTrue);
+      final int seek = lyrics.indexOf('skipToCue(');
+      final int leave = lyrics.indexOf('_toggleLyricsMode(');
+      expect(seek, greaterThan(0));
+      expect(leave, greaterThan(seek), reason: '有 cue 就定位；整章没 cue 才退回正文');
+    });
+
+    test('歌词覆盖层接「进度跳转」与「跳转记录」，⋯ 不重复追加跳转记录', () {
+      final String callbacks = methodBody(
+        src,
+        '  LyricsPlayerCallbacks _lyricsPlayerCallbacks(',
+      );
+      expect(
+        containsIdentifierCall(callbacks, '_openLyricsPositionJump'),
+        isTrue,
+      );
+      expect(
+        containsIdentifierCall(callbacks, '_openJumpHistoryPanel'),
+        isTrue,
+      );
+      final String open = methodBody(
+        src,
+        '  Future<void> _openLyricsPositionJump()',
+      );
+      expect(open, contains('_ReaderNavLanding.positionJump'));
+      final String menu = methodBody(
+        src,
+        '  Future<void> _showLyricsMoreMenu(',
+      );
+      expect(
+        containsIdentifierCall(menu, '_jumpHistoryMenuActions'),
+        isFalse,
+        reason: '跳转记录是布局里的歌词按钮（出厂在「更多」），再追加会出现两条',
       );
     });
 
