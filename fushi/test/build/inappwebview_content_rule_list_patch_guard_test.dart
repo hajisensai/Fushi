@@ -117,6 +117,48 @@ void main() {
         }
       });
 
+      // 上游的两条回退编译路径（初始加载 / setSettings）原本直接
+      // `WKContentRuleListStore.default().compileContentRuleList(...)` 并
+      // `add(contentRuleList!)`：store 或编译结果为 nil 时强解包崩溃。它们也必须
+      // 经 `FushiContentRuleLists.defaultStore()` 取 store、可选绑定编译结果。
+      test('upstream compile paths never force-unwrap store or list', () {
+        for (final String file in <String>[
+          'InAppWebView.swift',
+          'FlutterWebViewController.swift',
+        ]) {
+          final List<String> code = read('$classes/InAppWebView/$file')
+              .split('\n')
+              .where((String line) => !line.trimLeft().startsWith('//'))
+              .toList();
+          final String joined = code.join('\n');
+          expect(
+            joined,
+            isNot(contains('WKContentRuleListStore.default()')),
+            reason: '$file 必须经 FushiContentRuleLists.defaultStore() 取 store',
+          );
+          expect(
+            joined,
+            contains('let store = FushiContentRuleLists.defaultStore()'),
+            reason: file,
+          );
+          expect(joined, contains('store.compileContentRuleList('));
+          expect(joined, isNot(contains('contentRuleList!')), reason: file);
+          expect(
+            joined,
+            contains('if let contentRuleList = contentRuleList {'),
+            reason: file,
+          );
+        }
+        final String helper = read(
+          '$classes/InAppWebView/FushiContentRuleLists.swift',
+        );
+        expect(
+          helper,
+          contains('    static func defaultStore() -> WKContentRuleListStore?'),
+          reason: 'defaultStore() 要对上游文件可见（非 private）',
+        );
+      });
+
       test('plugin registers the channel', () {
         final String plugin = read(
           platform == 'ios'

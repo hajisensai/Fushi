@@ -120,11 +120,15 @@ public class FlutterWebViewController: NSObject, FlutterPlatformView, Disposable
                    }) {
                     return
                 }
-                if let contentBlockers = webView.settings?.contentBlockers, contentBlockers.count > 0 {
+                // Fushi patch (BUG-4013): no force-unwrap of the IUO default
+                // store or of the compiled list; a nil either way loads the
+                // page without blockers.
+                if let contentBlockers = webView.settings?.contentBlockers, contentBlockers.count > 0,
+                   let store = FushiContentRuleLists.defaultStore() {
                     do {
                         let jsonData = try JSONSerialization.data(withJSONObject: contentBlockers, options: [])
                         let blockRules = String(data: jsonData, encoding: .utf8)
-                        WKContentRuleListStore.default().compileContentRuleList(
+                        store.compileContentRuleList(
                             forIdentifier: "ContentBlockingRules",
                             encodedContentRuleList: blockRules) { (contentRuleList, error) in
 
@@ -133,8 +137,9 @@ public class FlutterWebViewController: NSObject, FlutterPlatformView, Disposable
                                     return
                                 }
 
-                                let configuration = webView.configuration
-                                configuration.userContentController.add(contentRuleList!)
+                                if let contentRuleList = contentRuleList {
+                                    webView.configuration.userContentController.add(contentRuleList)
+                                }
 
                                 self.load(initialUrlRequest: initialUrlRequest, initialFile: initialFile, initialData: initialData)
                         }

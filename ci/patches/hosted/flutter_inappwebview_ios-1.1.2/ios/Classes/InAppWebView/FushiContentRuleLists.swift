@@ -59,10 +59,11 @@ public final class FushiContentRuleLists: NSObject {
 
     /// `WKContentRuleListStore.default()` is imported as an implicitly
     /// unwrapped optional: WebKit returns nil when the persistent store cannot
-    /// be opened. Every caller goes through here and degrades to "no shared
-    /// list" (the WebView then loads without content blockers) instead of
-    /// trapping on a nil force-unwrap.
-    private static func defaultStore() -> WKContentRuleListStore? {
+    /// be opened. Every caller -- this helper and the upstream compile paths in
+    /// InAppWebView.swift / FlutterWebViewController.swift -- goes through here
+    /// and degrades to "no content blockers" instead of trapping on a nil
+    /// force-unwrap.
+    static func defaultStore() -> WKContentRuleListStore? {
         guard let store = WKContentRuleListStore.default() else {
             print("Fushi content rule list store is unavailable: WebKit returned no default store")
             return nil

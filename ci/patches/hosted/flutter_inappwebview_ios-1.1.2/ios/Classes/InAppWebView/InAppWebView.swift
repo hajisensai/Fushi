@@ -1257,18 +1257,22 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
            !applyFushiContentRuleList(newSettings.contentBlockers, completion: {}) {
             configuration.userContentController.removeAllContentRuleLists()
             let contentBlockers = newSettings.contentBlockers
-            if contentBlockers.count > 0 {
+            // Fushi patch (BUG-4013): no force-unwrap of the IUO default store
+            // or of the compiled list; a nil either way means no blockers.
+            if contentBlockers.count > 0, let store = FushiContentRuleLists.defaultStore() {
                 do {
                     let jsonData = try JSONSerialization.data(withJSONObject: contentBlockers, options: [])
                     let blockRules = String(data: jsonData, encoding: .utf8)
-                    WKContentRuleListStore.default().compileContentRuleList(
+                    store.compileContentRuleList(
                         forIdentifier: "ContentBlockingRules",
                         encodedContentRuleList: blockRules) { (contentRuleList, error) in
                             if let error = error {
                                 print(error.localizedDescription)
                                 return
                             }
-                            self.configuration.userContentController.add(contentRuleList!)
+                            if let contentRuleList = contentRuleList {
+                                self.configuration.userContentController.add(contentRuleList)
+                            }
                     }
                 } catch {
                     print(error.localizedDescription)
