@@ -1208,6 +1208,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     fushiInjectEmbeddedFrame(tabId, frameId).then((ok) => sendResponse({ ok }), () => sendResponse({ ok: false }));
     return true;
   }
+  // canvas 阅读器抓图取词（canvas-ocr.js）：canvas 被跨源图片污染、toDataURL 读不出像素时，
+  // 截发消息那个标签页的可视区，由 content 按 canvas 的视口矩形裁剪。captureVisibleTab 截的是
+  // **窗口里的活动标签页**：发消息的页不是活动页（后台标签）就不截，否则截到的是别的页面；
+  // 子 frame 的视口坐标与整页截图对不上，也不截。
+  if (msg && msg.type === 'canvasOcrCapture') {
+    const tab = _sender && _sender.tab;
+    if (!tab || tab.active !== true || (_sender.frameId || 0) !== 0) {
+      sendResponse({ ok: false, error: 'tab-not-visible' });
+      return false;
+    }
+    try {
+      Promise.resolve(chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })).then(
+        (dataUrl) => sendResponse(typeof dataUrl === 'string' && dataUrl
+          ? { ok: true, dataUrl }
+          : { ok: false, error: 'empty-capture' }),
+        (e) => sendResponse({ ok: false, error: String(e && e.message || e) }));
+    } catch (e) {
+      sendResponse({ ok: false, error: String(e && e.message || e) });
+      return false;
+    }
+    return true;
+  }
   // TODO-1184：来自 action popup「开始生成/录制」按钮的手势入口（替代已失效的 onClicked）。
   // popup 已 query 到当前 tab（{id,url}），这里直接跑原 fushiIconClick（Netflix 就地录 / YouTube 队列）。
   if (msg && msg.type === 'fushiIconAction') {
@@ -1604,6 +1626,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ videoId: msg.videoId || '', preferLang: msg.preferLang || 'ja' }),
+        }));
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
+      } else if (msg.type === 'ocrImage') {
+        // canvas 阅读器抓图取词：截图（base64 PNG）→ POST /api/ocr/image → app 用漫画 / 视频
+        // 暂停帧同一套 OCR 识别，回每个字在截图里的位置。首次识别要加载本机模型（可达十几秒），
+        // 上限放宽到 60s；超时由下方 catch 回 {ok:false, connection:no-response}。
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/ocr/image', {
+          method: 'POST',
+          signal: AbortSignal.timeout(60000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ image: typeof msg.image === 'string' ? msg.image : '' }),
         }));
         sendResponse({
           ok: r.ok,

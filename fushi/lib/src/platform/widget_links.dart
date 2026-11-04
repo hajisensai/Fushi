@@ -10,10 +10,14 @@ import 'package:fushi/src/platform/app_shortcut_router.dart'
 
 /// 桌面小组件里一条「继续」卡的媒体种类（同时是快照 JSON 的 `kind` 值与深链
 /// `kind=` 参数）。书与漫画在数据层同属 EPUB 行，靠 [ModuleId] 区分门控。
+///
+/// [game] 与首页「继续」的游戏卡同一落地：只切到游戏 tab，不从小组件直接拉起游戏
+/// （启动要走位数探测 / helper 确认，见 `home_dashboard_page.dart` BUG-1111）。
 enum WidgetMediaKind {
   book(ModuleId.books, HomeTab.books),
   manga(ModuleId.manga, HomeTab.manga),
-  video(ModuleId.video, HomeTab.video);
+  video(ModuleId.video, HomeTab.video),
+  game(ModuleId.games, HomeTab.games);
 
   const WidgetMediaKind(this.module, this.homeTab);
 
@@ -118,7 +122,8 @@ enum WidgetServerSource {
 /// 小组件的点按目标不该混进去。入口是同一个：原生侧把链接当 ACTION_VIEW intent
 /// 交给 `receive_intent`，落在 main.dart 的 `handleIncomingUrl`。
 ///
-/// - `fushi://widget/continue?kind=<book|manga|video>&id=<id>`：打开该条目。
+/// - `fushi://widget/continue?kind=<book|manga|video|game>&id=<id>`：打开该条目
+///   （游戏只切到游戏 tab，与首页游戏卡一致）。
 /// - `fushi://widget/srs`：开始内置复习。
 /// - `fushi://widget/stats`：打开学习统计。
 /// - `fushi://widget/open`：只把 app 带到前台。
@@ -226,8 +231,8 @@ final class WidgetContinueLink extends WidgetLink {
 
   final WidgetMediaKind kind;
 
-  /// 书 / 漫画 = `MediaItem.mediaIdentifier`，视频 = `VideoBookRow.bookUid`；
-  /// 空串 = 没有具体条目。
+  /// 书 / 漫画 = `MediaItem.mediaIdentifier`，视频 = `VideoBookRow.bookUid`，
+  /// 游戏 = `GalgameEntry.id`；空串 = 没有具体条目。
   final String id;
 
   /// 小组件 / 原生侧使用的完整深链。

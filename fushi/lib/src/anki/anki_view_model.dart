@@ -33,6 +33,7 @@ class AnkiUiState {
     this.isFetching = false,
     this.errorMessage,
     this.mediaMaintenanceAvailable,
+    this.deckRepositionAvailable,
     this.settingsLoaded = false,
   });
   final AnkiSettings settings;
@@ -42,6 +43,11 @@ class AnkiUiState {
   /// 媒体去重此刻真能不能用；null = 还没探测出结论（没探过 / 后端不可达）。
   /// 设置页用它做区块门控，未知时回落到后端静态能力。
   final bool? mediaMaintenanceAvailable;
+
+  /// 新卡重排此刻真能不能用（[BaseAnkiRepository.probeDeckReposition]）；null =
+  /// 还没探测出结论（没探过 / 后端不可达）。只有明确 false 才置灰入口——未知时
+  /// 入口照常可点，真跑时 runner 会当场再探一次。
+  final bool? deckRepositionAvailable;
 
   /// [settings] 是否已从仓库装载过一次。视图模型构造时 state 是空的
   /// [AnkiSettings]，真值由异步的 `_loadSettings` 填进来；空列表在装载前后语义不同
@@ -61,6 +67,8 @@ class AnkiUiState {
     bool clearError = false,
     bool? mediaMaintenanceAvailable,
     bool clearMediaMaintenanceAvailable = false,
+    bool? deckRepositionAvailable,
+    bool clearDeckRepositionAvailable = false,
     bool? settingsLoaded,
   }) => AnkiUiState(
     settings: settings ?? this.settings,
@@ -69,6 +77,9 @@ class AnkiUiState {
     mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
         ? null
         : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
+    deckRepositionAvailable: clearDeckRepositionAvailable
+        ? null
+        : (deckRepositionAvailable ?? this.deckRepositionAvailable),
     settingsLoaded: settingsLoaded ?? this.settingsLoaded,
   );
 }
@@ -515,6 +526,45 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
   bool get supportsAutoReposition => _repository.supportsAutoReposition;
 
+  /// 后端类型支持重排、但探测明确说此刻不能（新版 AnkiConnect 没有原生
+  /// `scheduling.repositionNewCards`）。UI 据此置灰入口并给出版本提示。
+  bool get deckRepositionBlockedByBackend =>
+      _repository.supportsDeckReposition &&
+      state.deckRepositionAvailable == false;
+
+  /// 「按词频重排新卡」入口此刻可用：后端类型支持，且探测没有明确说不能。
+  bool get canRepositionDeck =>
+      _repository.supportsDeckReposition && !deckRepositionBlockedByBackend;
+
+  /// 「制卡后自动重排」开关此刻可用（同 [canRepositionDeck] 的探测判据）。
+  bool get canAutoReposition =>
+      _repository.supportsAutoReposition && !deckRepositionBlockedByBackend;
+
+  Future<void>? _deckRepositionProbe;
+
+  /// 探测新卡重排此刻真能不能用，结论落进 [AnkiUiState.deckRepositionAvailable]。
+  ///
+  /// 与 [probeMediaMaintenance] 同一套语义：后端不可达时保持「未知」，不记成
+  /// 「不支持」。同一时刻多行同时要结论（重排行 + 自动重排开关）只发一次探测。
+  Future<void> probeDeckReposition() => _deckRepositionProbe ??=
+      _probeDeckReposition().whenComplete(() => _deckRepositionProbe = null);
+
+  Future<void> _probeDeckReposition() async {
+    if (!_repository.supportsDeckReposition) {
+      state = state.copyWith(deckRepositionAvailable: false);
+      return;
+    }
+    try {
+      final bool available = await _repository.probeDeckReposition();
+      if (!mounted) return;
+      state = state.copyWith(deckRepositionAvailable: available);
+    } catch (e, stack) {
+      debugPrint('AnkiViewModel.probeDeckReposition: $e\n$stack');
+      if (!mounted) return;
+      state = state.copyWith(clearDeckRepositionAvailable: true);
+    }
+  }
+
   /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
   AnkiDeckRepositionRunner get deckRepositionRunner => AnkiDeckRepositionRunner(
     _repository,
@@ -693,6 +743,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     return _withSrsMining(
       ref,
       _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      background: true,
     );
   }
   final AppModel appModel = ref.read(appProvider);
@@ -709,6 +760,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   return _withSrsMining(
     ref,
     _withPendingQueue(ref, _withAutoReposition(ref, remote)),
+    background: true,
   );
 });
 
@@ -733,17 +785,50 @@ final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
 /// = 按词频」，见 `SrsDbStore.nextCard`），刚挖的卡立刻就在对的位置，不需要事后改写新卡位置——
 /// 那样每挖一个词都会产生要同步的位置修改记录，而且各设备用各自的词典现查，排出来的顺序未必一致。
 /// 里层那份（绑 Anki）只看得到经待发队列补发给 Anki 的卡，复习制卡不经过它。
-BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
+///
+/// [background]：本机制卡链路（[ankiRepositoryProvider]）接上「后台制卡」开关（反馈
+/// Rl00Di264R，每次制卡现读 [AppModel.srsMiningBackground]）。替别的设备制卡的
+/// [hostMiningAnkiRepositoryProvider] 不接：对端要确定的结果，不能回「已入队」。
+BaseAnkiRepository _withSrsMining(
+  Ref ref,
+  BaseAnkiRepository repo, {
+  bool background = false,
+}) {
   if (!ref.watch(srsMiningToReviewProvider)) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
+  final AppModel appModel = ref.read(appProvider);
   return SrsMiningAnkiRepository(
     inner: repo,
     miner: () => _readSrsMiner(ref),
     onCardsAdded: () => revision.state++,
+    backgroundMining: background ? () => appModel.srsMiningBackground : null,
+    onBackgroundOutcome: background ? showSrsBackgroundMineOutcome : null,
     // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
     openNote: (String noteId) async =>
         await SrsAppHost.current?.openNote(noteId) ?? false,
+  );
+}
+
+/// 后台制卡（[SrsMiningAnkiRepository] 的后台队列）写完一张后的提示：入队时已经提示过
+/// 「已加入后台制卡」，成功且无音频警告时不再打扰；失败 / 重复 / 音频缺失必须让用户看见
+/// （失败原因经 [describeMineOutcome] 同时进错误日志）。
+void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
+  final described = describeMineOutcome(outcome);
+  if (outcome.result == MineResult.success &&
+      described.status != MineToastStatus.addedWithWarning) {
+    return;
+  }
+  FushiToast.showMine(
+    msg: described.success
+        ? described.message
+        : t.srs_mining_background_failed(
+            word: expression,
+            reason: described.message,
+          ),
+    status: described.success || outcome.result == MineResult.duplicate
+        ? described.status
+        : MineToastStatus.failed,
   );
 }
 

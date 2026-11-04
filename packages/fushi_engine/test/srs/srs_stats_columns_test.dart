@@ -88,7 +88,10 @@ void main() {
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');
-    expect((jsonDecode(json) as Map)['cacheRev'], 9);
+    expect(
+      (jsonDecode(json) as Map)['cacheRev'],
+      SrsDbStore.currentCacheRevision,
+    );
   });
 
   // 反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡（经 Anki 迁进来）没有出处记录，只有制卡标签，
