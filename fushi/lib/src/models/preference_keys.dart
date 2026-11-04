@@ -124,8 +124,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
   'audiobookshelf_show_in_home',
   'auto_add_book_name_to_tags',
-  // bool：小说阅读器制卡时给卡片追加「制卡所在字符数」标签（`chars_12345`，
-  // countStudyChars 口径的全书绝对位置）。默认开。
+  // bool：小说阅读器制卡时把制卡位置（countStudyChars 口径的全书绝对位置）写进
+  // MiscInfo（等价）字段。冻结键名：原语义是 `chars_12345` 标签（反馈 MhQHXQI-sB 改）。
   'auto_add_char_position_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
