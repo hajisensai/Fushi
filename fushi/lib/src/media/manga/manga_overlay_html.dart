@@ -1849,6 +1849,24 @@ String _mangaGestureJs({
   window.__mangaCurlRevert = function(){
     _curlPlaceStrip(CURRENT);
   };
+  // 卷页的纸面：跨页 i 的页图（一页或两页）在视口里的外接框，按视口比例
+  // [l, t, r, b] 返回；黑边不是纸，不跟着卷。.manga-page 的盒子就是页图本身
+  // （_layoutSource 按页图比例定宽高，没有内部信箱留白）。量不到返回 null。
+  window.__mangaCurlPaperRect = function(i){
+    var pages = document.querySelectorAll('.manga-page[data-spread="'+i+'"]');
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (var k = 0; k < pages.length; k++) {
+      var rc = pages[k].getBoundingClientRect();
+      if (!(rc.width > 0 && rc.height > 0)) continue;
+      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
+      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+    }
+    l = Math.max(0, l); t = Math.max(0, t);
+    r = Math.min(w, r); b = Math.min(h, b);
+    if (!(r > l && b > t)) return null;
+    return [l / w, t / h, r / w, b / h];
+  };
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
     // 翻到含失败页的跨页 = 读者要看它：重取一次。

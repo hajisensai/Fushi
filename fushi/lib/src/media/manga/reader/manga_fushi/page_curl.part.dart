@@ -21,6 +21,20 @@ class _MangaPageCurlHost implements PageCurlHost {
   @override
   Future<ui.Image?> capturePage() => capturePageCurlWebView(_state._controller);
 
+  /// 正在显示的跨页（往回翻时是预览中的上一跨页）的页图外接框：只卷页图，黑边
+  /// 不卷。
+  @override
+  Future<Rect?> paperRect() async {
+    final InAppWebViewController? controller = _state._controller;
+    final Size size = _state._mangaCurlSize;
+    if (controller == null || size.isEmpty) return null;
+    final int spread = _previewTarget ?? _state._currentSpread;
+    final Object? raw = await controller.evaluateJavascript(
+      source: mangaCurlPaperRectInvocation(spread),
+    );
+    return mangaCurlPaperRectFrom(raw, size);
+  }
+
   @override
   Future<bool> previewNeighbour({required bool forward}) async {
     final _MangaFushiPageState s = _state;
@@ -98,6 +112,28 @@ String mangaApplyTranslateInvocation(int target) =>
 /// 卷页预览：strip 瞬时挪到目标跨页、不记任何翻页账（返回 true = 已落位）。
 String mangaCurlPreviewInvocation(int target) =>
     '!!(window.__mangaCurlPreview && window.__mangaCurlPreview($target));';
+
+/// 卷页纸面：跨页 [spread] 的页图外接框（视口比例 [l, t, r, b] 或 null）。
+String mangaCurlPaperRectInvocation(int spread) =>
+    '(window.__mangaCurlPaperRect ? window.__mangaCurlPaperRect($spread) : null);';
+
+/// 把 [mangaCurlPaperRectInvocation] 的返回值换算成覆盖层坐标；形状不对返回 null
+/// （卷页退回整个视口当纸面）。
+Rect? mangaCurlPaperRectFrom(Object? raw, Size size) {
+  if (raw is! List || raw.length != 4) return null;
+  final List<double> v = <double>[];
+  for (final Object? e in raw) {
+    if (e is! num || !e.isFinite) return null;
+    v.add(e.toDouble());
+  }
+  final Rect rect = Rect.fromLTRB(
+    v[0] * size.width,
+    v[1] * size.height,
+    v[2] * size.width,
+    v[3] * size.height,
+  );
+  return rect.isEmpty ? null : rect;
+}
 
 /// 撤销卷页预览：strip 挪回 CURRENT。
 const String kMangaCurlRevertInvocation =
