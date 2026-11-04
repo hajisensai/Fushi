@@ -30,6 +30,7 @@ void main() {
       'engine-hdr-output.patch',
       'engine-underlay-composition.patch',
       'engine-impeller-hdr.patch',
+      'engine-d3d-keyed-mutex.patch',
       'angle-scrgb-swapchain.patch',
       'README.md',
     ]) {
@@ -59,6 +60,7 @@ void main() {
       'engine-hdr-output.patch',
       'engine-underlay-composition.patch',
       'engine-impeller-hdr.patch',
+      'engine-d3d-keyed-mutex.patch',
       'angle-scrgb-swapchain.patch',
     ]) {
       final List<int> bytes = File('$patchDir/$name').readAsBytesSync();
@@ -158,6 +160,9 @@ void main() {
     expect(hdr, greaterThan(0));
     expect(underlay, greaterThan(hdr));
     expect(port, greaterThan(underlay));
+    // 第四份（BUG-3888 keyed mutex）叠在前三份之上。
+    final int keyed = script.indexOf("'engine-d3d-keyed-mutex.patch'");
+    expect(keyed, greaterThan(port));
   });
 
   test('media_kit：半浮点纹理与 mpv 渲染目标同一任务内切换', () {

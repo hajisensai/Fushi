@@ -203,6 +203,9 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   bool get supportsDeckReposition => inner.supportsDeckReposition;
 
   @override
+  Future<bool> probeDeckReposition() => inner.probeDeckReposition();
+
+  @override
   bool get supportsAutoReposition => inner.supportsAutoReposition;
 
   @override
