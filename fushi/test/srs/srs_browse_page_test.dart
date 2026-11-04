@@ -781,7 +781,8 @@ void main() {
       find.byKey(const ValueKey<String>('srs-browse-chip-0')),
       findsNothing,
     );
-    expect(_row('食べる'), findsOneWidget);
+    // 卡片模式：「食べる」这条笔记有 3 张卡（Lapis 本身 + 两个释义模板），各占一行。
+    expect(_row('食べる'), findsWidgets);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('srs-browse-health-empty-view')),
