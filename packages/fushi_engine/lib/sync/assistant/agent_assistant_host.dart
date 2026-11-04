@@ -20,6 +20,11 @@
 /// 确认卡片与候选卡片由一个 Completer 型 [AgentHost] 等手机作答；会话关闭 / 取消时
 /// 一律按「拒绝 / 取消」收尾，**绝不替用户同意**。
 ///
+/// 会话历史（BUG-4067，能力位 [kHostAssistantAgentHistoryKey] = 协议版本）：host 把远端
+/// 会话按**发起设备**存档（[AgentSessionHistoryStore]），已配对设备能列出 / 续接 /
+/// 改名 / 删除自己发起的那些（[HostAssistantHistoryProvider]）；共享口令开的会话认不出
+/// 设备，不给任何设备列。同一场会话一个进程里只许一处打开（[AgentLiveSessions]）。
+///
 /// 另有 [CompositeHostAssistantProvider]：把多个 provider（AI 下视频、AI 助手…）按
 /// feature 合成一个，让一台 host 同时宣告多种会话。
 library;
@@ -27,7 +32,9 @@ library;
 import 'dart:async';
 import 'dart:math';
 
+import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
@@ -41,6 +48,16 @@ const String kHostAssistantAgentToolsKey = 'agentTools';
 /// 能力位里按 feature 给的不可用短码：`{feature: reason}`。一台 host 可以 AI 下视频
 /// 能开、AI 助手没指派提供商——顶层 `reason` 只在全部开不了时才有，客户端靠它分辨。
 const String kHostAssistantReasonsKey = 'reasons';
+
+/// 能力位里远端会话历史的协议版本键（BUG-4067）。没有这个键的 host（老版本 / 没有
+/// 存档的装配）不支持 `/api/assistant/history` 与 `resume`。
+const String kHostAssistantAgentHistoryKey = 'agentHistory';
+
+/// 当前的会话历史协议版本：1 = 列表 / 续接 / 改名 / 删除。
+const int kHostAssistantAgentHistoryVersion = 1;
+
+/// 409 短码：要续接（或删除）的会话此刻正在别处打开着（host 本机 / 另一台设备）。
+const String kHostAssistantReasonInUse = 'in_use';
 
 /// 快照里待答卡片的种类。
 const String kAgentPendingConfirm = 'confirm';
@@ -70,18 +87,19 @@ class AgentSessionParts {
 /// 按客户端语言开会话的零件（host 现取指派与工具箱）。
 typedef AgentSessionOpener = Future<AgentSessionParts> Function(String locale);
 
-/// 把一场 host 会话的快照存档（host 自己的「AI 操作记录」页能看到远端会话做过的
-/// 事、过了会话也能撤销）。可空：服务端没有对话存档页。
+/// 把一场 host 会话的快照存档（每轮之后、关闭时）。
 typedef AgentSessionPersister = Future<void> Function(AgentSession session);
 
-/// 远端 AI 助手的 provider：能力 / 前置短码 + 开 [AgentAssistantHostSession]。
-class AgentAssistantHost implements HostAssistantProvider {
+/// 远端 AI 助手的 provider：能力 / 前置短码 + 开 / 续接 [AgentAssistantHostSession]。
+class AgentAssistantHost
+    implements HostAssistantProvider, HostAssistantHistoryProvider {
   AgentAssistantHost({
     required Future<String?> Function() blocker,
     required AgentSessionOpener open,
     required String source,
     int Function()? toolCount,
-    AgentSessionPersister? persist,
+    AgentSessionHistoryStore? history,
+    AgentLiveSessions? live,
     AgentLimits limits = const AgentLimits(),
     DateTime Function()? clock,
     String Function()? newSessionId,
@@ -89,7 +107,8 @@ class AgentAssistantHost implements HostAssistantProvider {
        _open = open,
        _source = source,
        _toolCount = toolCount,
-       _persist = persist,
+       _history = history,
+       _live = live ?? AgentLiveSessions(),
        _limits = limits,
        _clock = clock ?? DateTime.now,
        _newSessionId = newSessionId;
@@ -99,10 +118,20 @@ class AgentAssistantHost implements HostAssistantProvider {
   final AgentSessionOpener _open;
   final String _source;
   final int Function()? _toolCount;
-  final AgentSessionPersister? _persist;
+
+  /// 远端会话存档（null = 不存档、不宣告会话历史）。
+  final AgentSessionHistoryStore? _history;
+  final AgentLiveSessions _live;
   final AgentLimits _limits;
   final DateTime Function() _clock;
   final String Function()? _newSessionId;
+
+  /// 本 provider 开着的会话：agent 会话 id → (会话, 发起设备)。
+  final Map<String, ({AgentAssistantHostSession session, String origin})>
+  _hosted = <String, ({AgentAssistantHostSession session, String origin})>{};
+
+  /// 已删掉存档的会话 id：还开着的那份收尾时不再写回。
+  final Set<String> _deleted = <String>{};
 
   @override
   Future<Map<String, Object?>> capability() async {
@@ -124,14 +153,12 @@ class AgentAssistantHost implements HostAssistantProvider {
           'source': _source,
           'count': ?count,
         },
+      if (reason == null && _history != null)
+        kHostAssistantAgentHistoryKey: kHostAssistantAgentHistoryVersion,
     };
   }
 
-  @override
-  Future<HostAssistantSession> open(
-    String feature, {
-    required String locale,
-  }) async {
+  void _checkFeature(String feature) {
     if (feature != kHostAssistantFeatureAgent) {
       throw ArgumentError.value(
         feature,
@@ -139,8 +166,59 @@ class AgentAssistantHost implements HostAssistantProvider {
         'unknown assistant feature',
       );
     }
+  }
+
+  /// 发请求的设备在配对表里的稳定 id；认不出 → null。
+  Future<String?> _originOf(HostAssistantCaller caller) async {
+    final String? token = caller.peerToken;
+    final AgentSessionHistoryStore? history = _history;
+    if (token == null || history == null) return null;
+    return history.peerIdForToken(token);
+  }
+
+  /// 历史操作的门：有存档、认得出设备。
+  Future<(AgentSessionHistoryStore, String)> _historyFor(
+    String feature,
+    HostAssistantCaller caller,
+  ) async {
+    _checkFeature(feature);
+    final AgentSessionHistoryStore? history = _history;
+    if (history == null) throw const HostAssistantHistoryNotFound();
+    final String? origin = await _originOf(caller);
+    if (origin == null || origin.isEmpty) {
+      throw const HostAssistantPeerRequired();
+    }
+    return (history, origin);
+  }
+
+  /// [id] 是 [origin] 发起的存档会话才返回它；不在 / 不是它的一律
+  /// [HostAssistantHistoryNotFound]（不泄露别的设备有哪些会话）。
+  Future<AgentArchivedSession> _owned(
+    AgentSessionHistoryStore history,
+    String id,
+    String origin,
+  ) async {
+    final AgentArchivedSession? record = await history.load(id);
+    if (record == null || record.originPeerId != origin) {
+      throw const HostAssistantHistoryNotFound();
+    }
+    return record;
+  }
+
+  @override
+  bool hasHistory(String feature) =>
+      feature == kHostAssistantFeatureAgent && _history != null;
+
+  @override
+  Future<HostAssistantSession> open(
+    String feature, {
+    required String locale,
+    HostAssistantCaller caller = HostAssistantCaller.anonymous,
+  }) async {
+    _checkFeature(feature);
     final String? reason = await _blocker();
     if (reason != null) throw HostAssistantUnavailable(reason);
+    final String origin = await _originOf(caller) ?? '';
     final AgentSessionParts parts = await _open(locale);
     final AgentCompleterHost host = AgentCompleterHost();
     final AgentSession session = AgentSession(
@@ -151,6 +229,66 @@ class AgentAssistantHost implements HostAssistantProvider {
       limits: _limits,
       clock: _clock,
     );
+    return _host(session, host: host, parts: parts, origin: origin);
+  }
+
+  @override
+  Future<HostAssistantSession> resume(
+    String feature,
+    String id, {
+    required String locale,
+    required HostAssistantCaller caller,
+  }) async {
+    final (AgentSessionHistoryStore history, String origin) = await _historyFor(
+      feature,
+      caller,
+    );
+    final AgentArchivedSession record = await _owned(history, id, origin);
+    final String? reason = await _blocker();
+    if (reason != null) throw HostAssistantUnavailable(reason);
+    await _takeOver(id, origin);
+    final AgentSessionParts parts = await _open(locale);
+    final AgentCompleterHost host = AgentCompleterHost();
+    final AgentSession session = AgentSession.fromJson(
+      record.payload,
+      llm: parts.llm,
+      toolbox: parts.toolbox,
+      host: host,
+      limits: _limits,
+      clock: _clock,
+    );
+    // 读 JSON 与开零件之间被别处抢先打开了：不开第二份。
+    if (_live.contains(session.id)) {
+      session.dispose();
+      parts.release?.call();
+      throw const HostAssistantUnavailable(kHostAssistantReasonInUse);
+    }
+    return _host(session, host: host, parts: parts, origin: origin);
+  }
+
+  /// [id] 正打开着时：是同一台设备在这里开着的那份（多半是断线遗孤 / 手机重开了
+  /// app）就关掉它、由这次接管；别处开着的（host 本机 / 别的设备）→ `in_use`。
+  Future<void> _takeOver(String id, String origin) async {
+    if (!_live.contains(id)) return;
+    final ({AgentAssistantHostSession session, String origin})? hosted =
+        _hosted[id];
+    if (hosted == null || hosted.origin != origin) {
+      throw const HostAssistantUnavailable(kHostAssistantReasonInUse);
+    }
+    await hosted.session.close();
+  }
+
+  AgentAssistantHostSession _host(
+    AgentSession session, {
+    required AgentCompleterHost host,
+    required AgentSessionParts parts,
+    required String origin,
+  }) {
+    if (!_live.claim(session.id)) {
+      session.dispose();
+      parts.release?.call();
+      throw const HostAssistantUnavailable(kHostAssistantReasonInUse);
+    }
     parts.attach?.call(session);
     int? count;
     try {
@@ -158,13 +296,87 @@ class AgentAssistantHost implements HostAssistantProvider {
     } on Object catch (error, stack) {
       engineLog.log('AgentAssistantHost.toolCount', error, stack);
     }
-    return AgentAssistantHostSession(
+    final AgentSessionHistoryStore? history = _history;
+    late final AgentAssistantHostSession hosted;
+    hosted = AgentAssistantHostSession(
       session,
       host: host,
       tools: <String, Object?>{'source': _source, 'count': ?count},
-      persist: _persist,
-      onClose: parts.release,
+      persist: history == null
+          ? null
+          : (AgentSession s) async {
+              if (_deleted.contains(s.id)) return;
+              await history.save(s, originPeerId: origin);
+            },
+      onClose: () {
+        if (identical(_hosted[session.id]?.session, hosted)) {
+          _hosted.remove(session.id);
+          _live.release(session.id);
+        }
+        parts.release?.call();
+      },
     );
+    _hosted[session.id] = (session: hosted, origin: origin);
+    return hosted;
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> listHistory(
+    String feature,
+    HostAssistantCaller caller,
+  ) async {
+    final (AgentSessionHistoryStore history, String origin) = await _historyFor(
+      feature,
+      caller,
+    );
+    return <Map<String, Object?>>[
+      for (final AiAgentSessionSummary s in await history.list(origin))
+        <String, Object?>{
+          'id': s.id,
+          'title': s.title,
+          'createdAt': s.createdAt,
+          'updatedAt': s.updatedAt,
+          'tokens': s.totalTokens,
+        },
+    ];
+  }
+
+  @override
+  Future<void> renameHistory(
+    String feature,
+    String id,
+    String title,
+    HostAssistantCaller caller,
+  ) async {
+    final (AgentSessionHistoryStore history, String origin) = await _historyFor(
+      feature,
+      caller,
+    );
+    await _owned(history, id, origin);
+    if (title.trim().isEmpty) {
+      throw ArgumentError.value(title, 'title', 'empty');
+    }
+    await history.rename(id, title);
+  }
+
+  @override
+  Future<void> deleteHistory(
+    String feature,
+    String id,
+    HostAssistantCaller caller,
+  ) async {
+    final (AgentSessionHistoryStore history, String origin) = await _historyFor(
+      feature,
+      caller,
+    );
+    await _owned(history, id, origin);
+    // host 本机 / 别的连接正开着这场：不删（那边收尾时会把它写回来）。
+    if (_live.contains(id) && _hosted[id]?.origin != origin) {
+      throw const HostAssistantUnavailable(kHostAssistantReasonInUse);
+    }
+    _deleted.add(id);
+    await _hosted[id]?.session.close();
+    await history.delete(id);
   }
 
   String _defaultSessionId() {
@@ -257,7 +469,8 @@ class AgentCompleterHost implements AgentHost {
 }
 
 /// 把一个 host 上的 [AgentSession] 暴露成互联会话。
-class AgentAssistantHostSession implements HostAssistantSession {
+class AgentAssistantHostSession
+    implements HostAssistantSession, HostAssistantSessionLifecycle {
   AgentAssistantHostSession(
     this._session, {
     required AgentCompleterHost host,
@@ -286,6 +499,9 @@ class AgentAssistantHostSession implements HostAssistantSession {
 
   /// 包着的会话（测试 / 装配用）。
   AgentSession get session => _session;
+
+  @override
+  bool get isClosed => _closed;
 
   @override
   int get revision => _revision;
@@ -467,7 +683,10 @@ class AgentAssistantHostSession implements HostAssistantSession {
 /// - `reasons` = 每个开不了的 feature 的短码；顶层 `reason` 只在全部开不了时才给
 ///   （取 [byFeature] 里第一个 feature 的短码——老客户端只认它，第一个放 AI 下视频）；
 /// - 其余字段（如 [kHostAssistantAgentToolsKey]）原样并入。
-class CompositeHostAssistantProvider implements HostAssistantProvider {
+///
+/// 会话历史（[HostAssistantHistoryProvider]）按 feature 转给实现了它的那个 provider。
+class CompositeHostAssistantProvider
+    implements HostAssistantProvider, HostAssistantHistoryProvider {
   CompositeHostAssistantProvider(Map<String, HostAssistantProvider> byFeature)
     : _byFeature = Map<String, HostAssistantProvider>.unmodifiable(byFeature);
 
@@ -535,8 +754,7 @@ class CompositeHostAssistantProvider implements HostAssistantProvider {
     };
   }
 
-  @override
-  Future<HostAssistantSession> open(String feature, {required String locale}) {
+  HostAssistantProvider _providerFor(String feature) {
     final HostAssistantProvider? provider = _byFeature[feature];
     if (provider == null) {
       throw ArgumentError.value(
@@ -545,6 +763,59 @@ class CompositeHostAssistantProvider implements HostAssistantProvider {
         'unknown assistant feature',
       );
     }
-    return provider.open(feature, locale: locale);
+    return provider;
   }
+
+  HostAssistantHistoryProvider _historyFor(String feature) {
+    if (_providerFor(feature) case final HostAssistantHistoryProvider history
+        when history.hasHistory(feature)) {
+      return history;
+    }
+    throw const HostAssistantHistoryNotFound();
+  }
+
+  @override
+  Future<HostAssistantSession> open(
+    String feature, {
+    required String locale,
+    HostAssistantCaller caller = HostAssistantCaller.anonymous,
+  }) => _providerFor(feature).open(feature, locale: locale, caller: caller);
+
+  @override
+  bool hasHistory(String feature) {
+    return switch (_byFeature[feature]) {
+      final HostAssistantHistoryProvider history => history.hasHistory(feature),
+      _ => false,
+    };
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> listHistory(
+    String feature,
+    HostAssistantCaller caller,
+  ) => _historyFor(feature).listHistory(feature, caller);
+
+  @override
+  Future<HostAssistantSession> resume(
+    String feature,
+    String id, {
+    required String locale,
+    required HostAssistantCaller caller,
+  }) =>
+      _historyFor(feature).resume(feature, id, locale: locale, caller: caller);
+
+  @override
+  Future<void> renameHistory(
+    String feature,
+    String id,
+    String title,
+    HostAssistantCaller caller,
+  ) => _historyFor(feature).renameHistory(feature, id, title, caller);
+
+  @override
+  Future<void> deleteHistory(
+    String feature,
+    String id,
+    HostAssistantCaller caller,
+  ) => _historyFor(feature).deleteHistory(feature, id, caller);
 }
