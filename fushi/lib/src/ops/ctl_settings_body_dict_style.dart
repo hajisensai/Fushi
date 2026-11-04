@@ -4,7 +4,7 @@ import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_cli_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 
 /// 词典样式编辑器「可视化」页（`DictStyleVisualEditor`，规则表）在控制通道上的

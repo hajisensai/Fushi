@@ -4,7 +4,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/storage/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 设置 →「存储」页（`StorageUsageView`，经 `SettingsDestination.body` 逃生口
 /// 渲染）在控制通道上的条目。

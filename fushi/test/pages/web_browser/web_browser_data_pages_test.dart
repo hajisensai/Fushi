@@ -13,7 +13,8 @@ import 'package:fushi/src/web_browser/data/memory_web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_site_settings.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 class _MapPrefStore implements PrefStore {
   final Map<String, dynamic> values = <String, dynamic>{};

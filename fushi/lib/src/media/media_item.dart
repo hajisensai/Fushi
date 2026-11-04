@@ -1,8 +1,9 @@
 import 'dart:convert';
 
 import 'package:json_annotation/json_annotation.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/models/app_model.dart';
 part 'media_item.g.dart';
 
 /// An item representable in media history from which a media source may

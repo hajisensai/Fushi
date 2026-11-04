@@ -5,7 +5,7 @@ import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「设置 › 在线服务 › BT 站」页的目的地：正文就是 [BtSiteSettingsSection]。
 /// 设置树（`services.bt_sites`）与下面的跳转入口共用这一份。

@@ -23,7 +23,6 @@ import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_schema_home_widgets.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/utils.dart';
 
 /// 记忆化的 schema 快照：整棵声明树 + 两张按 [ReaderPlacement] / [VideoPlacement]
 /// 投影出来的分组表（后两者惰性算，用到才付钱）。

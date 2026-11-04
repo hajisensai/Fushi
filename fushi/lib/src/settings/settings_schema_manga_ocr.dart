@@ -13,7 +13,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_page_reset.dart'
     show settingsSectionModifiedSummary;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「漫画 OCR」设置组（隶属**漫画**设置分类，入口始终可见）。
 ///

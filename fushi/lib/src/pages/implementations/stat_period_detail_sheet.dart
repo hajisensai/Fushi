@@ -8,7 +8,9 @@ import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 时段明细 sheet（阶段 1，统计中心大改造）：点「今日/本周/本月/全部」时段卡

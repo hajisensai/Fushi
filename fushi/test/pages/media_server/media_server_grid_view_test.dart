@@ -4,7 +4,9 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 import 'fake_media_server_browser.dart';
 

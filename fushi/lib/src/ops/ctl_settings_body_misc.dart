@@ -6,7 +6,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/misc/app_icon_apply.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 应用图标页（`MiscellaneousSettingsPage`，「外观 › 应用图标」，正文是图标网格
 /// 走 body 逃生口）在控制通道上的条目。

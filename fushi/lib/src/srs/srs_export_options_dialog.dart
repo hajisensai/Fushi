@@ -14,7 +14,13 @@ import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 偏好键：上次导出 Anki 包时的选项（String，[SrsAnkiExportOptions.toJson] 的 JSON）。
 /// 与导入选项同理是普通偏好（随 Profile 快照 / 备份走），不进复习的事件存储。

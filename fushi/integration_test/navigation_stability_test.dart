@@ -20,7 +20,7 @@ import 'package:fushi/src/settings/settings_destination.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/settings/settings_detail_page.dart'
     show SettingsDetailPage;
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show seedReaderBook;

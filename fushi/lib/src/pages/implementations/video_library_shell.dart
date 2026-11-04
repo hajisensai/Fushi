@@ -23,7 +23,11 @@ import 'package:fushi/src/utils/components/fushi_header_search.dart'
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/section_visibility.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 
 /// 视频专用分区壳。
 ///

@@ -2,7 +2,9 @@
 // 视图列表中间时，已选中的视图不能被下标错位顶掉，保活的访问记录也要跟着重新定位。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/library_section_tabs.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {

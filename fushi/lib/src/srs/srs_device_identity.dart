@@ -12,7 +12,7 @@ import 'package:fushi_engine/sync/interconnect_device_name.dart'
     show isMeaninglessDeviceName;
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'package:fushi/utils.dart' show ErrorLogService;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 本机自报的设备信息。
 typedef SrsLocalDeviceInfo = ({String model, String app, String platform});

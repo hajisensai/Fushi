@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/statistics_center_page.dart'
     show StatisticsCenterPage;
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show seedDictionary, seedReaderBook;

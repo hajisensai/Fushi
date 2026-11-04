@@ -4,7 +4,8 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart'
     show AdvancedMiningChoiceChip;
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
 

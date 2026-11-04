@@ -21,7 +21,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_favicon.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
-import 'package:fushi/utils.dart' show WheelToHorizontalScroll;
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 侧边栏 / 顶部标签栏 / 标签页网格共用的标签操作。

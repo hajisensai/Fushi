@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/utils.dart' show ErrorLogService;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// TODO-1303：远端制卡（浏览器扩展）失败必须**写进错误日志 + 回带诊断**，不再只
 /// `debugPrint` 进黑洞。`remoteMineResultFromOutcome` / `remoteMineError` 是那条真相路径：

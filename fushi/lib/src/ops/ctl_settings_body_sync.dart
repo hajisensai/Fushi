@@ -2,7 +2,7 @@ import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/sync_compare_cli.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「同步差异对比」对话框的「应用」按钮在控制通道上的条目（列出差异是 schema 行
 /// `sync.compare` 本身）。实现见 `sync_compare_cli.dart`。

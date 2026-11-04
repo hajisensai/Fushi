@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 
 /// 本机 OCR 模型的显示名（设置区引擎下拉 / 「设置 › 存储」/ OCR 向导共用）。

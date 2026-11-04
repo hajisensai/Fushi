@@ -25,7 +25,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 /// 「游戏」一级设置分类（审计 K / Phase 3.12：游戏域此前没有任何 destination，
 /// 游戏库 / 捕获工作台 / 兼容性诊断从设置主页既不可达也不可搜）。

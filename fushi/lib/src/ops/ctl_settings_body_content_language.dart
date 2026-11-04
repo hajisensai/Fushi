@@ -6,7 +6,8 @@ import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
 
 /// 内容语言选择器（[showContentLanguagePicker]）在设置里的两处全局用法在控制
 /// 通道上的条目：外观 › 默认内容语言、查词 › 查词输入法语言。

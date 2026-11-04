@@ -17,7 +17,14 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/web_browser_chrome_colors.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 /// 侧栏一条字幕。
 @immutable

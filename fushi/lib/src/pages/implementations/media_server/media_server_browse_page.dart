@@ -15,7 +15,9 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart'
     show ModuleRootAwayReporter;
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 export 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart'
     show MediaServerEntry;

@@ -6,7 +6,8 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:material_ui/material_ui.dart';
 

@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 扩展行以前的副标题是「语言 · 版本」+ 硬 `\n` + **完整 URL** 两行，配上
 /// standard 密度（上下各 12、下限 56）和 17px 标题，单行高度冲到 ~89px：手机一屏

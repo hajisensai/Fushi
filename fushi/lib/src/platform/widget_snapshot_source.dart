@@ -25,7 +25,9 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
     show AudiobookPlayerController;
 import 'package:fushi/src/media/audiobook/audiobook_session.dart'

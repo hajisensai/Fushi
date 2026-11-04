@@ -7,7 +7,8 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/reader/reader_chrome_floating.dart'
     show kTopProgressFontSize;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 
 /// 各平台共用的阅读器底部状态行。
 ///

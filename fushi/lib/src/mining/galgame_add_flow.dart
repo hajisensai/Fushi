@@ -5,7 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 「添加游戏」共用动作：文件选择器选一个 `.exe` → 查重 → 落库 → 后台补封面。
 ///

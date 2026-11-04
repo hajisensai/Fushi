@@ -11,7 +11,10 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// TODO-898：手动「立即检查更新」防连点旗标（模块级）。UI 重入保护真正靠它——
 /// UpdateChecker 内部的 `_activeCheckCancellation` 是「中断」语义、不挡重入。

@@ -9,9 +9,12 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:progress_indicators/progress_indicators.dart';
 import 'package:gap/gap.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/enhancements/crop_image_enhancement.dart';
+import 'package:fushi/src/creator/image_export_field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/creator_model.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 
 /// Returns audio information from context.

@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/reader/manga_chapter_drawer.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 反馈 zRXJNN2Zp-：漫画目录是逆序、太长难翻。阅读器章节抽屉要能切正 / 逆序（记住

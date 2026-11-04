@@ -1,4 +1,4 @@
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../../test/helpers/test_platform_services.dart';

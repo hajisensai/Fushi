@@ -10,7 +10,12 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage_provider.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 // 「浏览器设置」里扩展的那几组：查词 / 字幕 / 字幕外观 / 外观 / 快捷键 / 沉浸时间。
 //

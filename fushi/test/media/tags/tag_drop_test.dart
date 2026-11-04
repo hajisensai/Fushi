@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 拖标签落库失败不再静默的守卫。

@@ -14,7 +14,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsMiningToReviewProvider;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 SettingsDestination buildCardCreationDestination() {
   return SettingsDestination(

@@ -33,7 +33,9 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi/src/media/novel/web/web_novel_library.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/pages/implementations/collections_page.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, deriveSurfaceRolesFrom;

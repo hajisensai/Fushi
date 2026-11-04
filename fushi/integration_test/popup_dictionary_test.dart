@@ -8,8 +8,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';

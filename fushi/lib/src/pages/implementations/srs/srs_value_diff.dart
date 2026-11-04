@@ -4,7 +4,9 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 
 /// 做差异的单边长度上限（字符；LCS 是 O(n·m)）。
 const int kSrsDiffMaxChars = 600;

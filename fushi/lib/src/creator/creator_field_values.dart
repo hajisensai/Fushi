@@ -1,4 +1,4 @@
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 
 /// A collection of values that can be used to mutate the current context of
 /// the creator.

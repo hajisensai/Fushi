@@ -1,8 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/export_field_search.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/creator_model.dart';
 
 /// A special kind of field that has a special widget at the top of the creator.
 /// For example, the audio field has a media player that can be controlled

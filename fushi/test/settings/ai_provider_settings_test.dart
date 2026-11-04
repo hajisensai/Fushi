@@ -40,7 +40,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
 import 'package:fushi/src/settings/settings_destination.dart'
     show debugSettingsForceExpandAllSections;
 import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';

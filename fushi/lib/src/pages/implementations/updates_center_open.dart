@@ -22,7 +22,7 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// 打开更新中心页（首页横幅、系统通知的「查看更新」都落到这里）。
 Future<void> openUpdatesCenter(

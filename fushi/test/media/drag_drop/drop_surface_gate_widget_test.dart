@@ -15,7 +15,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/library_section_tabs.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/source_guard.dart';

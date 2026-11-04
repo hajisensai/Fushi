@@ -9,7 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// BT 来源设置页在「在线服务」schema 里的条目 id。
 const String kVideoResourceSiteSettingsItemId = 'services.bt_sites';

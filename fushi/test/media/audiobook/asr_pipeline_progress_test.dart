@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/asr_pipeline_progress.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show AudiobookAlignmentStep;

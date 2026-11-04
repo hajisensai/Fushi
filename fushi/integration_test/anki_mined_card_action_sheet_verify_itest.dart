@@ -9,7 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'support/test_app_launcher.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
 

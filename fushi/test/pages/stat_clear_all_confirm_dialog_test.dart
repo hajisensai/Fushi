@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// TODO-1322: 「清空全部统计」危险操作确认弹窗——必须先弹确认框，只有用户点破坏性
 /// 「清空」按钮才返回 true（点「取消」/ 关窗返回 false），防误触把统计一键清光。

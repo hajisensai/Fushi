@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 字体库页（[CustomFontsPage]，外观 / 阅读 / 查词 / 游戏 / 听力五个入口是同一个
 /// 库、只差新增字体默认挂的用途）在控制通道上的条目。

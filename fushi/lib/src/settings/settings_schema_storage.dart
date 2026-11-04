@@ -7,7 +7,7 @@ import 'package:fushi/src/storage/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「存储」一级设置分类：数据存储位置（数据根在哪）+ 磁盘占用总览（每个类目
 /// 都可展开明细，书/词典可单条删除）+ 随包组件展示。模型的选择与下载在

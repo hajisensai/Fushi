@@ -5,7 +5,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
     show deliverExternalLookup;
 import 'package:fushi/src/anki/source_review_navigation.dart'

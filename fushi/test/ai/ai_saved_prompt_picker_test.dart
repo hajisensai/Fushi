@@ -3,7 +3,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
-import 'package:fushi/utils.dart' show FushiFilledButton;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 内存实现：记录每次写回。

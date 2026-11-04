@@ -19,7 +19,9 @@ import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 class InterconnectDownloadTasksPage extends StatelessWidget {
   const InterconnectDownloadTasksPage({super.key});

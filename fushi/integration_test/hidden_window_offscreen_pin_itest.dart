@@ -7,7 +7,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

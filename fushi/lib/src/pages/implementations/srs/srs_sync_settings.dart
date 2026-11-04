@@ -19,7 +19,13 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsProfileConflict;
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_list_tile.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 复习数据随之同步的设置分类（按模块可见性过滤：同步模块关掉时一个也没有）。

@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 媒体导出字段（音频 / 图片）共用的搜索状态与回退取词逻辑。
 ///

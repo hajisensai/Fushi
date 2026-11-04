@@ -15,7 +15,10 @@ import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_audiobook_export.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 导出 [bookKey] 的有声书为 M4B：桌面选保存位置直接写；移动端写进 app 自管的
 /// 暂存目录再走系统分享（暂存目录每次导出前清空，见

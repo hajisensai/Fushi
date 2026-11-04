@@ -44,7 +44,12 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:path/path.dart' as p;
 
 typedef GalHookPreferenceReader =

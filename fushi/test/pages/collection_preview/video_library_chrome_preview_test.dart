@@ -29,7 +29,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 const String _fontFamily = 'PreviewCJK';
 

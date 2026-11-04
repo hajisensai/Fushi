@@ -4,7 +4,7 @@ import 'package:fushi/src/anki/sync_client/anki_sync_client_actions.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// Anki 设置页「Anki 同步（无需安装 Anki）」节在控制通道上的条目：切后端、
 /// 登录（密码只经 stdin / 环境变量，不回显）、退出、立即同步、状态。动作与设置节

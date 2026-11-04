@@ -13,7 +13,7 @@ library;
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 偏好键：用户保存的提示词（JSON 列表）。
 const String kAiSavedPromptsPrefKey = 'ai_saved_prompts';

@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// An entity that represents a broad characteristic of an item being
 /// exported that is distinguishable enough to deserve its own core

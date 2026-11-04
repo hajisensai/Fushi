@@ -9,7 +9,13 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// AI 操作记录（spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §5.3）：
 /// AI 助手历次会话做过的写操作，过了会话也能逐条 / 整场撤销，也能接着某场对话说。
