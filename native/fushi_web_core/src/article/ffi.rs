@@ -4,13 +4,13 @@
 //! `[u32 LE 头长度][JSON 头][正文 XHTML UTF-8]`（见 `encode_framed`），正文不进 JSON。
 //! 提取是毫秒级的慢调用（整页 DOM 解析）：Dart 侧放后台 isolate，不用 leaf 调用。
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 
 use serde::Serialize;
 
 use super::session::{IngestOutcome, NovelSession};
-use super::{encode_framed, extract, work_key_for_url, Article};
+use super::{Article, encode_framed, extract, work_key_for_url};
 use crate::ffi_util::{
     bytes_in, clear_last_error, hand_out, panic_message, set_last_error, str_in,
 };

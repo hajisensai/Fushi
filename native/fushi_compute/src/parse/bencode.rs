@@ -497,7 +497,7 @@ fn inspect_files<'a>(
                 ListLike::List(at) => at,
                 ListLike::Bytes(0) => return Err(format!("info.files[{index}] has an empty path")),
                 ListLike::Bytes(_) => {
-                    return Err(format!("info.files[{index}] has an invalid path component"))
+                    return Err(format!("info.files[{index}] has an invalid path component"));
                 }
             };
             walker.list_items(path_at, &mut components);

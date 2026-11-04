@@ -14,7 +14,7 @@
 //! 所以它们不会把新格式误报成「确定性 bug」；新设备也只比两边都是新格式的摘要。
 
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use super::sql;
 
@@ -63,7 +63,9 @@ pub fn bucket_of(id: &str) -> i64 {
 /// 触发器用的 SQL 函数（每条连接打开时注册；写连接上没有它们，三张投影表的写入会报错——这是故意的：宁可报错也不能
 /// 让摘要静默漏记）。
 pub fn register(conn: &Connection) -> rusqlite::Result<()> {
-    let flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
+    let flags = FunctionFlags::SQLITE_UTF8
+        | FunctionFlags::SQLITE_DETERMINISTIC
+        | FunctionFlags::SQLITE_INNOCUOUS;
     conn.create_scalar_function("sync2_dg_bucket", 1, flags, |ctx| {
         // ID 列存的是编码后的值（store/ids.rs）：按 ID 文本求桶，摘要与旧版本逐位相同。
         let id = crate::store::ids::text(ctx.get_raw(0)).unwrap_or_default();
@@ -73,7 +75,11 @@ pub fn register(conn: &Connection) -> rusqlite::Result<()> {
         let tag: String = ctx.get(0)?;
         let id = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
         let body: Option<String> = ctx.get(2)?;
-        Ok(bytes_of(&row_hash(tag.as_bytes().first().copied().unwrap_or(0), &id, body.as_deref().unwrap_or(""))))
+        Ok(bytes_of(&row_hash(
+            tag.as_bytes().first().copied().unwrap_or(0),
+            &id,
+            body.as_deref().unwrap_or(""),
+        )))
     })?;
     for (name, sign) in [("sync2_dg_add", false), ("sync2_dg_sub", true)] {
         conn.create_scalar_function(name, 2, flags, move |ctx| {
@@ -82,7 +88,11 @@ pub fn register(conn: &Connection) -> rusqlite::Result<()> {
             let (a, b) = (sum_of(&a), sum_of(&b));
             let mut out = [0u64; 4];
             for i in 0..4 {
-                out[i] = if sign { a[i].wrapping_sub(b[i]) } else { a[i].wrapping_add(b[i]) };
+                out[i] = if sign {
+                    a[i].wrapping_sub(b[i])
+                } else {
+                    a[i].wrapping_add(b[i])
+                };
             }
             Ok(bytes_of(&out))
         })?;
@@ -110,8 +120,14 @@ pub fn install(c: &Connection) -> Result<(), String> {
     )
     .map_err(sql)?;
     for (table, tag, body) in TABLES {
-        let new = body.replace("kind", "NEW.kind").replace("payload_json", "NEW.payload_json");
-        let new = if body == "json" { "NEW.json".to_owned() } else { new };
+        let new = body
+            .replace("kind", "NEW.kind")
+            .replace("payload_json", "NEW.payload_json");
+        let new = if body == "json" {
+            "NEW.json".to_owned()
+        } else {
+            new
+        };
         let old = new.replace("NEW.", "OLD.");
         let add = |side: &str, expr: &str| {
             format!(
@@ -145,10 +161,16 @@ pub fn install(c: &Connection) -> Result<(), String> {
 
 /// 从三张表全量重建桶表（升级时一次；之后由触发器维护）。
 pub fn rebuild(c: &Connection) -> Result<(), String> {
-    c.execute("DELETE FROM sync2_digest_buckets", []).map_err(sql)?;
-    let mut acc: std::collections::BTreeMap<(String, i64), (Sum, i64)> = std::collections::BTreeMap::new();
+    c.execute("DELETE FROM sync2_digest_buckets", [])
+        .map_err(sql)?;
+    let mut acc: std::collections::BTreeMap<(String, i64), (Sum, i64)> =
+        std::collections::BTreeMap::new();
     for (table, tag, body) in TABLES {
-        let mut stmt = c.prepare(&format!("SELECT srs_idt(profile_uid) AS profile_uid, srs_idt(id) AS id, {body} FROM {table}")).map_err(sql)?;
+        let mut stmt = c
+            .prepare(&format!(
+                "SELECT srs_idt(profile_uid) AS profile_uid, srs_idt(id) AS id, {body} FROM {table}"
+            ))
+            .map_err(sql)?;
         let mut q = stmt.query([]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let profile: String = r.get(0).map_err(sql)?;
@@ -166,7 +188,8 @@ pub fn rebuild(c: &Connection) -> Result<(), String> {
         .prepare("INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) VALUES (srs_id(?1), ?2, ?3, ?4)")
         .map_err(sql)?;
     for ((profile, bucket), (s, n)) in acc {
-        ins.execute(params![profile, bucket, bytes_of(&s), n]).map_err(sql)?;
+        ins.execute(params![profile, bucket, bytes_of(&s), n])
+            .map_err(sql)?;
     }
     Ok(())
 }
@@ -188,7 +211,10 @@ impl Deltas {
     }
 
     fn apply(&mut self, profile: &str, id: &str, row: Option<(u8, &str)>) {
-        let e = self.0.entry((profile.to_owned(), bucket_of(id))).or_insert(([0; 4], 0));
+        let e = self
+            .0
+            .entry((profile.to_owned(), bucket_of(id)))
+            .or_insert(([0; 4], 0));
         let Some((tag, body)) = row else { return };
         let h = row_hash(tag, id, body);
         for i in 0..4 {
@@ -206,7 +232,8 @@ impl Deltas {
             )
             .map_err(sql)?;
         for ((profile, bucket), (s, n)) in self.0 {
-            stmt.execute(params![profile, bucket, bytes_of(&s), n]).map_err(sql)?;
+            stmt.execute(params![profile, bucket, bytes_of(&s), n])
+                .map_err(sql)?;
         }
         Ok(())
     }
@@ -228,7 +255,11 @@ pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>,
 /// 根：全部桶值按桶号顺序（空桶 = 0）接起来 BLAKE3。
 pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
-    let mut stmt = c.prepare_cached("SELECT bucket, sum FROM sync2_digest_buckets WHERE profile_uid = srs_id(?1)").map_err(sql)?;
+    let mut stmt = c
+        .prepare_cached(
+            "SELECT bucket, sum FROM sync2_digest_buckets WHERE profile_uid = srs_id(?1)",
+        )
+        .map_err(sql)?;
     let mut q = stmt.query([profile]).map_err(sql)?;
     while let Some(r) = q.next().map_err(sql)? {
         let b: i64 = r.get(0).map_err(sql)?;
@@ -250,7 +281,11 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
 pub fn root_by_scan(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     for (table, tag, body) in TABLES {
-        let mut stmt = c.prepare(&format!("SELECT srs_idt(id) AS id, {body} FROM {table} WHERE profile_uid = srs_id(?1)")).map_err(sql)?;
+        let mut stmt = c
+            .prepare(&format!(
+                "SELECT srs_idt(id) AS id, {body} FROM {table} WHERE profile_uid = srs_id(?1)"
+            ))
+            .map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;

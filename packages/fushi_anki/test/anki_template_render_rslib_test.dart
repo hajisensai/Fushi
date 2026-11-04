@@ -1,6 +1,6 @@
 // Anki 模式模板渲染对拍：用例移植自 ankitects/anki rslib
 // `template.rs` / `template_filters.rs` / `cloze.rs` / `text.rs` 的单测。
-// 与 rslib 有意不同的地方（type: 输出空串、hint 的 id 哈希、partial 渲染）在
+// 与 rslib 有意不同的地方（hint 的 id 哈希、partial 渲染）在
 // 用例旁注明。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -223,17 +223,19 @@ $''');
       expect(ankiHintFilter('  ', 'field'), '  ');
     });
 
-    test('type: 暂不支持，输出空串（rslib 输出 [[type:…]]）', () {
+    test('type: 与 rslib 一样输出 [[type:…]] 标记（内层过滤器按书写顺序保留）', () {
       final Map<String, String> f = <String, String>{'Text': 'x'};
-      for (final String tpl in <String>[
-        '{{type:Text}}',
-        '{{type:cloze:Text}}',
-        '{{type:nc:ci:Text}}',
-        '{{type-nc:Text}}',
+      for (final (String tpl, String out) in <(String, String)>[
+        ('{{type:Text}}', '[[type:Text]]'),
+        ('{{type:cloze:Text}}', '[[type:cloze:Text]]'),
+        ('{{type:nc:Text}}', '[[type:nc:Text]]'),
+        ('{{type:nc:ci:Text}}', '[[type:nc:ci:Text]]'),
+        // 旧写法 type-nc 不是 type: 过滤器，按未知过滤器链处理（输出空串）。
+        ('{{type-nc:Text}}', ''),
       ]) {
         expect(
           renderAnkiCardSide(template: tpl, fields: f, cardOrd: 0),
-          '',
+          out,
           reason: tpl,
         );
       }

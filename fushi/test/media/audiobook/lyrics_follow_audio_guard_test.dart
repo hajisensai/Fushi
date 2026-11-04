@@ -83,8 +83,23 @@ void main() {
       // 歌词分支必须把跟随开关透传进 JS scroll 形参（否则自动滚动永远发生）。
       // BUG-757 后 scroll = followAudio || forceReveal（snap 也放行），故断言从
       // 旧的 `${controller.followAudio.value}` 直插改成新的派生变量与推导式。
-      expect(src, contains(r'__lyricsSetCue($idx, $scroll)'));
+      // BUG-4007 R2：同步脚本统一由 LyricsModeHtml.overlaySyncScript 拼，reader 只透传。
+      expect(src, contains('scroll: scroll,'));
       expect(src, contains('controller.followAudio.value || forceReveal'));
+      expect(
+        LyricsModeHtml.overlaySyncScript(
+          playing: true,
+          cue: (
+            index: 4,
+            scroll: false,
+            forceReveal: false,
+            fraction: 0,
+            ratePerSec: 0,
+            sentAtMs: 0,
+          ),
+        ),
+        contains('window.__lyricsSetCue(4, false);'),
+      );
     },
   );
 
@@ -103,8 +118,36 @@ void main() {
       );
       // ② snap 那刻 cue 常没变，__lyricsSetCue 的 index===_currentIdx 早退会吞掉回中；
       //   forceReveal 下必须再显式 __lyricsScrollToCue 强制居中（绕过早退）。
-      //   该调用只在 reader 页 Dart 侧（语料）出现，HTML 生成器的函数定义不在语料内。
-      expect(src, contains(r'window.__lyricsScrollToCue($idx)'));
+      //   reader 把 forceReveal 透传进 overlaySyncScript，由它拼出显式回中调用。
+      expect(src, contains('forceReveal: forceReveal,'));
+      expect(
+        LyricsModeHtml.overlaySyncScript(
+          playing: false,
+          cue: (
+            index: 4,
+            scroll: true,
+            forceReveal: true,
+            fraction: 0,
+            ratePerSec: 0,
+            sentAtMs: 0,
+          ),
+        ),
+        contains('window.__lyricsScrollToCue(4);'),
+      );
+      expect(
+        LyricsModeHtml.overlaySyncScript(
+          playing: false,
+          cue: (
+            index: 4,
+            scroll: true,
+            forceReveal: false,
+            fraction: 0,
+            ratePerSec: 0,
+            sentAtMs: 0,
+          ),
+        ),
+        isNot(contains('__lyricsScrollToCue')),
+      );
     },
   );
 

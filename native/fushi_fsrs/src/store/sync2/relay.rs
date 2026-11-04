@@ -22,10 +22,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
 
-use super::{in_savepoint, sql, Local};
+use super::{Local, in_savepoint, sql};
 use crate::store::SrsCore;
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
@@ -39,7 +39,10 @@ fn names_of(h: &Head) -> String {
 }
 
 fn parse_names(s: &str) -> BTreeSet<String> {
-    serde_json::from_str::<Vec<String>>(s).unwrap_or_default().into_iter().collect()
+    serde_json::from_str::<Vec<String>>(s)
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
 }
 
 fn id_of(b: Vec<u8>) -> Result<Id, String> {
@@ -49,18 +52,28 @@ fn id_of(b: Vec<u8>) -> Result<Id, String> {
 /// 转发目标：本机同步的全部位置里最近 [ACTIVE_WINDOW_MS] 内成功过的（还没成功过的也算）。
 fn active_locations(c: &Connection, profile: &str) -> Result<Vec<String>, String> {
     let rows: Vec<(String, Option<i64>)> = c
-        .prepare_cached("SELECT location, last_ok FROM sync2_locations WHERE profile_uid = srs_id(?1)")
+        .prepare_cached(
+            "SELECT location, last_ok FROM sync2_locations WHERE profile_uid = srs_id(?1)",
+        )
         .map_err(sql)?
         .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     let newest = rows.iter().filter_map(|r| r.1).max().unwrap_or(0);
-    Ok(rows.into_iter().filter(|(_, ok)| ok.is_none_or(|t| t >= newest - ACTIVE_WINDOW_MS)).map(|(l, _)| l).collect())
+    Ok(rows
+        .into_iter()
+        .filter(|(_, ok)| ok.is_none_or(|t| t >= newest - ACTIVE_WINDOW_MS))
+        .map(|(l, _)| l)
+        .collect())
 }
 
 /// 一台设备的转发源 head：`(代号, 序号, 段名)`。
-fn relay_head(c: &Connection, profile: &str, device: &Id) -> Result<Option<(u64, u64, BTreeSet<String>)>, String> {
+fn relay_head(
+    c: &Connection,
+    profile: &str,
+    device: &Id,
+) -> Result<Option<(u64, u64, BTreeSet<String>)>, String> {
     Ok(c
         .prepare_cached("SELECT gen, seq, segments FROM sync2_relay_heads WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
@@ -71,7 +84,12 @@ fn relay_head(c: &Connection, profile: &str, device: &Id) -> Result<Option<(u64,
 }
 
 /// [location] 上 [device] 已有的段（上一轮看到的 head 引用的 + 本机转发上去的）与那份 head 的序号。
-fn present_at(c: &Connection, profile: &str, location: &str, device: &Id) -> Result<(u64, BTreeSet<String>), String> {
+fn present_at(
+    c: &Connection,
+    profile: &str,
+    location: &str,
+    device: &Id,
+) -> Result<(u64, BTreeSet<String>), String> {
     let (seq, mut names) = c
         .prepare_cached("SELECT seq, segments FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3")
         .map_err(sql)?
@@ -91,8 +109,16 @@ fn present_at(c: &Connection, profile: &str, location: &str, device: &Id) -> Res
 }
 
 /// 还有没有位置缺 [device] 的段 [name]（它在转发源 head 里，而某个活跃位置上那台设备的 head 落后、也没有这个段）。
-fn needed(c: &Connection, profile: &str, locations: &[String], device: &Id, name: &str) -> Result<bool, String> {
-    let Some((_, seq, names)) = relay_head(c, profile, device)? else { return Ok(false) };
+fn needed(
+    c: &Connection,
+    profile: &str,
+    locations: &[String],
+    device: &Id,
+    name: &str,
+) -> Result<bool, String> {
+    let Some((_, seq, names)) = relay_head(c, profile, device)? else {
+        return Ok(false);
+    };
     if !names.contains(name) {
         return Ok(false);
     }
@@ -111,7 +137,9 @@ fn relayable(c: &Connection, profile: &str, local: &Local, device: &Id) -> Resul
         return Ok(false);
     }
     let frozen: Option<i64> = c
-        .prepare_cached("SELECT frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
+        .prepare_cached(
+            "SELECT frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2",
+        )
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec()], |r| r.get(0))
         .optional()
@@ -145,10 +173,16 @@ pub(crate) fn note_heads(
             prune(c, profile, &h.device)?;
         }
     }
-    let Some(location) = location else { return Ok(BTreeMap::new()) };
+    let Some(location) = location else {
+        return Ok(BTreeMap::new());
+    };
     // 这个位置此刻有什么以这一轮看到的为准（被外部清掉的 head 不再算在）。本机转发上去的 head 已经看不到了（被删 /
     // 列目录还没跟上）：这个位置上本机的转发记账作废，缺的下次重传。
-    let seen: BTreeMap<Id, u64> = heads.iter().filter(|(h, _)| h.device != local.device).map(|(h, _)| (h.device, h.gen)).collect();
+    let seen: BTreeMap<Id, u64> = heads
+        .iter()
+        .filter(|(h, _)| h.device != local.device)
+        .map(|(h, _)| (h.device, h.gen))
+        .collect();
     let relayed: Vec<(Vec<u8>, i64)> = c
         .prepare_cached(
             "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
@@ -168,7 +202,11 @@ pub(crate) fn note_heads(
             .map_err(sql)?;
         }
     }
-    c.execute("DELETE FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2", params![profile, location]).map_err(sql)?;
+    c.execute(
+        "DELETE FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2",
+        params![profile, location],
+    )
+    .map_err(sql)?;
     for (h, _) in heads.iter().filter(|(h, _)| h.device != local.device) {
         c.prepare_cached(
             "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
@@ -182,14 +220,26 @@ pub(crate) fn note_heads(
 
 /// [note_heads] 这一次什么都不会改（各设备的转发源 head 不比这些旧、这个位置上记的 head 与这一轮看到的相同、本机转发
 /// 上去的 head 都还看得到）：`plan` 的只读快路径据此不拿写锁（审查 S-8）。
-pub(crate) fn heads_noted(c: &Connection, profile: &str, local: &Local, location: Option<&str>, heads: &[(&Head, &[u8])]) -> Result<bool, String> {
+pub(crate) fn heads_noted(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    location: Option<&str>,
+    heads: &[(&Head, &[u8])],
+) -> Result<bool, String> {
     for (h, _) in heads.iter().filter(|(h, _)| h.device != local.device) {
         if relay_head(c, profile, &h.device)?.is_none_or(|(g, _, _)| g < h.gen) {
             return Ok(false);
         }
     }
-    let Some(location) = location else { return Ok(true) };
-    let seen: BTreeMap<Id, u64> = heads.iter().filter(|(h, _)| h.device != local.device).map(|(h, _)| (h.device, h.gen)).collect();
+    let Some(location) = location else {
+        return Ok(true);
+    };
+    let seen: BTreeMap<Id, u64> = heads
+        .iter()
+        .filter(|(h, _)| h.device != local.device)
+        .map(|(h, _)| (h.device, h.gen))
+        .collect();
     let relayed: Vec<(Vec<u8>, i64)> = c
         .prepare_cached(
             "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
@@ -214,13 +264,23 @@ pub(crate) fn heads_noted(c: &Connection, profile: &str, local: &Local, location
     let want: BTreeMap<Vec<u8>, (i64, i64, String)> = heads
         .iter()
         .filter(|(h, _)| h.device != local.device)
-        .map(|(h, _)| (h.device.0.to_vec(), (h.gen as i64, h.seq as i64, names_of(h))))
+        .map(|(h, _)| {
+            (
+                h.device.0.to_vec(),
+                (h.gen as i64, h.seq as i64, names_of(h)),
+            )
+        })
         .collect();
     Ok(have == want)
 }
 
 /// 这个位置上就是某设备最新的 head：别的位置缺、本机又没留原文的段，从这里拉（只为转发）。只读。
-pub(crate) fn relay_fetch(c: &Connection, profile: &str, local: &Local, heads: &[(&Head, &[u8])]) -> Result<BTreeMap<Id, Vec<String>>, String> {
+pub(crate) fn relay_fetch(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    heads: &[(&Head, &[u8])],
+) -> Result<BTreeMap<Id, Vec<String>>, String> {
     let locations = active_locations(c, profile)?;
     let mut fetch: BTreeMap<Id, Vec<String>> = BTreeMap::new();
     for (h, _) in heads {
@@ -231,7 +291,9 @@ pub(crate) fn relay_fetch(c: &Connection, profile: &str, local: &Local, heads: &
             continue;
         }
         for name in h.segment_files() {
-            if held(c, profile, &h.device, &name)? || !needed(c, profile, &locations, &h.device, &name)? {
+            if held(c, profile, &h.device, &name)?
+                || !needed(c, profile, &locations, &h.device, &name)?
+            {
                 continue;
             }
             fetch.entry(h.device).or_default().push(name);
@@ -252,12 +314,27 @@ fn held(c: &Connection, profile: &str, device: &Id, name: &str) -> Result<bool, 
 
 /// 收段时（[bytes] 已验过签名与链）：别的设备的段若还有位置缺它，留下原文（[key] = 它所在位置的密钥，用来解出
 /// 密文原段的明文压缩体）。
-pub(crate) fn keep(c: &Connection, profile: &str, local: &Local, header: &SegmentHeader, bytes: &[u8], key: Option<&CollectionKey>) -> Result<(), String> {
+pub(crate) fn keep(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    header: &SegmentHeader,
+    bytes: &[u8],
+    key: Option<&CollectionKey>,
+) -> Result<(), String> {
     if !relayable(c, profile, local, &header.device)? {
         return Ok(());
     }
     let name = header.file_name();
-    if held(c, profile, &header.device, &name)? || !needed(c, profile, &active_locations(c, profile)?, &header.device, &name)? {
+    if held(c, profile, &header.device, &name)?
+        || !needed(
+            c,
+            profile,
+            &active_locations(c, profile)?,
+            &header.device,
+            &name,
+        )?
+    {
         return Ok(());
     }
     let (orig, plain) = segment::relay_parts(bytes, key).map_err(|e| e.to_string())?;
@@ -271,7 +348,9 @@ pub(crate) fn keep(c: &Connection, profile: &str, local: &Local, header: &Segmen
 /// 删掉 [device] 不再有位置需要的原段。
 fn prune(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     let names: Vec<String> = c
-        .prepare_cached("SELECT name FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2")
+        .prepare_cached(
+            "SELECT name FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2",
+        )
         .map_err(sql)?
         .query_map(params![profile, device.0.to_vec()], |r| r.get(0))
         .map_err(sql)?
@@ -309,7 +388,13 @@ impl SrsCore {
     /// 转发发件（每轮自己的段与 head 写完之后）：[location] 缺的别的设备的段（装成转发件，[key] = 该位置的密钥）
     /// 与段都已到位的 head 原文，凑够 [max_bytes] 就停（一批至少一个文件）。head 只在它引用的段都已确认传上
     /// （[SrsCore::sync2_relay_ack]）之后才给，读者永远看到的是一致前缀。
-    pub fn sync2_relay_outbox(&self, profile: &str, location: &str, key: Option<[u8; 32]>, max_bytes: u64) -> Result<RelayBatch, String> {
+    pub fn sync2_relay_outbox(
+        &self,
+        profile: &str,
+        location: &str,
+        key: Option<[u8; 32]>,
+        max_bytes: u64,
+    ) -> Result<RelayBatch, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
@@ -321,7 +406,10 @@ impl SrsCore {
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
-            let mut batch = RelayBatch { files: Vec::new(), more: false };
+            let mut batch = RelayBatch {
+                files: Vec::new(),
+                more: false,
+            };
             let mut total: u64 = 0;
             'devices: for (d, _gen, seq, names, head_bytes) in devices {
                 let device = id_of(d)?;
@@ -333,7 +421,8 @@ impl SrsCore {
                     continue;
                 }
                 let wanted = parse_names(&names);
-                let missing: Vec<&String> = wanted.iter().filter(|n| !present.contains(*n)).collect();
+                let missing: Vec<&String> =
+                    wanted.iter().filter(|n| !present.contains(*n)).collect();
                 // 缺的段本机得全都有原文，否则这台设备这一轮不转发（缺的由持有最新 head 的位置的 plan 补拉）。
                 let mut parts = Vec::with_capacity(missing.len());
                 for n in &missing {
@@ -351,17 +440,23 @@ impl SrsCore {
                 let dir = format!("devices/{}", device.text());
                 if parts.is_empty() {
                     let head = Head::decode(&head_bytes)?;
-                    batch.files.push((format!("{dir}/{}", head.file_name()), head_bytes.clone()));
+                    batch
+                        .files
+                        .push((format!("{dir}/{}", head.file_name()), head_bytes.clone()));
                     continue;
                 }
                 for (n, (orig, plain)) in parts {
-                    if !batch.files.is_empty() && total.saturating_add(orig.len() as u64) > max_bytes {
+                    if !batch.files.is_empty()
+                        && total.saturating_add(orig.len() as u64) > max_bytes
+                    {
                         batch.more = true;
                         break 'devices;
                     }
                     let bytes = segment::relay_pack(&orig, plain.as_deref(), ck.as_ref())?;
                     total += bytes.len() as u64;
-                    batch.files.push((format!("{dir}/{}", segment::relay_file_name(&n)), bytes));
+                    batch
+                        .files
+                        .push((format!("{dir}/{}", segment::relay_file_name(&n)), bytes));
                 }
                 batch.more = true;
             }
@@ -372,7 +467,12 @@ impl SrsCore {
     /// 确认一批转发已经写到 [location]（[paths] = 那一批的相对路径）。返回 `{"delete": [相对路径]}`：被新转发的 head
     /// 取代的、本机之前转发到这个位置的旧 head 与旧转发件（归档位置由调用方跳过删除）。清单里的文件留在待删表
     /// （`sync2_relay_gone`）里，调用方删成功（或归档位置按策略跳过）后发 `obsolete_ack` 才移除。
-    pub fn sync2_relay_ack(&self, profile: &str, location: &str, paths: &[String]) -> Result<Value, String> {
+    pub fn sync2_relay_ack(
+        &self,
+        profile: &str,
+        location: &str,
+        paths: &[String],
+    ) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             for path in paths {
@@ -383,7 +483,9 @@ impl SrsCore {
                     .map_err(sql)?;
             }
             for path in paths {
-                let Some((device, file)) = split_path(path) else { continue };
+                let Some((device, file)) = split_path(path) else {
+                    continue;
+                };
                 if let Some(rest) = file.strip_prefix("rly-") {
                     c.prepare_cached(
                         "INSERT OR IGNORE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (srs_id(?1), ?2, ?3, ?4, 0)",
@@ -393,7 +495,9 @@ impl SrsCore {
                     .map_err(sql)?;
                     continue;
                 }
-                let Some(gen) = segment::parse_head_file_name(file) else { continue };
+                let Some(gen) = segment::parse_head_file_name(file) else {
+                    continue;
+                };
                 let Some(row) = c
                     .prepare_cached("SELECT gen, seq, segments FROM sync2_relay_heads WHERE profile_uid = srs_id(?1) AND device = ?2")
                     .map_err(sql)?
@@ -423,7 +527,12 @@ impl SrsCore {
                     .map_err(sql)?
                     .collect::<Result<_, _>>()
                     .map_err(sql)?;
-                let prev_head = old.iter().filter(|(n, _)| n.starts_with("head-")).map(|(_, g)| *g).max().unwrap_or(0);
+                let prev_head = old
+                    .iter()
+                    .filter(|(n, _)| n.starts_with("head-"))
+                    .map(|(_, g)| *g)
+                    .max()
+                    .unwrap_or(0);
                 let dir = format!("devices/{}", device.text());
                 for (n, g) in &old {
                     let gone = if n.starts_with("head-") {
@@ -433,7 +542,14 @@ impl SrsCore {
                     };
                     if gone {
                         // 两段式：先记进待删表，Dart 删成功后 `obsolete_ack` 才移除（删到一半失败的下一轮再删）。
-                        let file = format!("{dir}/{}", if n.starts_with("head-") { n.clone() } else { segment::relay_file_name(n) });
+                        let file = format!(
+                            "{dir}/{}",
+                            if n.starts_with("head-") {
+                                n.clone()
+                            } else {
+                                segment::relay_file_name(n)
+                            }
+                        );
                         c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_gone (profile_uid, location, path) VALUES (srs_id(?1), ?2, ?3)")
                             .map_err(sql)?
                             .execute(params![profile, location, file])

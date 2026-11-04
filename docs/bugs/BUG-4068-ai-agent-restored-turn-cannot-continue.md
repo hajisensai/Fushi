@@ -1,0 +1,16 @@
+## BUG-4068 · AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上
+- **报告**：2026-11-02（应用内反馈 qg_L2sVx3p，开发者自提：「ai助手操作失败不会继续操作吗？」，Windows，3.3.0-debug.23079）
+- **真实性**：✅ 真 bug（截图 + 代码路径推出；没有当时的存档原文，「进程在一轮中途没了」是由截图状态反推，见备注）。
+  - **截图里的状态只可能来自存档读回，不是活的会话**：`skill.subtitles.fill` 显示「失败：」（错误码为空）却排在它自己后面还在跑的子步骤（fetch×3、search、generate）之前；`video.subtitle.generate 失败：` 紧跟一张显示「已拒绝」的确认卡。活的路径里技能条目要等全部子步骤结束才改状态，确认被拒时工具条目是「未执行」而不是「失败」，失败条目的错误码也不可能为空（`AgentToolResult.error` / `AgentSkillFailure` 的 code 都必填）。只有 `AgentEntry.fromJson` 会把存档里的 `running` 改成 `failed`、`pending` 改成 `declined` 且不写错误码（`packages/fushi_engine/lib/ai/agent/agent_session.dart:230-231`，修前）。
+  - **存档确实会在一轮中途落盘**：长任务结束时 `AiAgentController._onTaskFinished` 调 `continueAfterTask(...).whenComplete(() => _save(session))`（`fushi/lib/src/ai/agent/ai_agent_controller.dart:252`）；这一轮正在跑（截图里第一个 `video.subtitle.generate` 的任务在第二张确认卡等用户时结束），事件只排队、马上存档——截图最底下那条「已完成：video.subtitle.generate subtitleGenerate succeeded」就是这时插的通知。之后进程没了（这次反馈的进程 23:11:54 才 init），下次打开读回的就是这份半截存档。
+  - **根因 1（续不上）**：一轮里先把 assistant 的 tool_calls 记进历史（`agent_session.dart:615`，修前），每个工具跑完才补 tool_result。半截存档读回后历史停在「有 tool_use、没 tool_result」，`AgentSession.fromJson` 原样照收；用户下一句话发出去，Anthropic / OpenAI 都按协议拒收（400），会话只剩「AI 请求失败」，再也续不上——这才是「失败后不会继续操作」。
+  - **根因 2（误导）**：读回时在途条目被收成无错误码的 `failed` / `declined`，界面显示空白的「失败：」和用户从没点过的「已拒绝」，用户与模型都不知道是中断。
+  - **根因 3（丢事件）**：那时排队的任务结果（`_pendingTaskEvents`）不进存档，读回后模型永远不知道第一个生成任务已经成功。
+  - 「工具失败作为结果交还模型继续」这条本身是对的：活的 loop 里工具出错一直是以 `isError` 的 tool_result 交回模型继续（`agent_session.dart` `_runTurn` / `_runTool`；截图里技能内部 fetch 失败后照常继续 search / generate 就是证据），委托方怀疑的「失败就终止」不是这次的原因。
+- **[x] ① 已修复** — 提交 f0f83e07f3：
+  - `AgentEntry.fromJson(json, {settleInterrupted = true})`：读回时在途条目照旧收尾，但记 `AgentStopCode.interrupted`；远端会话的活快照传 `false` 原样还原（`RemoteAiAgentSession._liveEntry` 不再先收尾再改回）。
+  - `repairInterruptedAgentHistory`：`AgentSession.fromJson` 读历史时给每个缺结果的工具调用补一条 `interrupted` 错误结果（告诉模型这一步可能生效也可能没有、先查状态），结尾不是 assistant 时补一句 assistant（与 `_stop` 同一个交替约定）；完整结束的历史原样不动。
+  - `_pendingTaskEvents` 随 `toJson` 落盘（`pendingTaskEvents`），读回后随下一句用户话一起交给模型（活的会话在跑一轮时不接受新话，这一支只在读回后走到）。
+  - 界面：`interrupted` 的工具条目显示「已中断：这一步完成前应用关闭了」，没作答的确认 / 候选卡片显示「未作答：对话在等待时中断了」（新 i18n key `ai_agent_tool_interrupted` / `ai_agent_confirm_interrupted`）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/ai/agent/agent_session_test.dart`「反馈 qg_L2sVx3p：一轮中途落盘后进程没了，读回的会话能接着说」（真实 loop：长任务 + 不可逆确认卡等待中、任务结束排队、取存档；断言存档里确有缺结果的调用、读回条目是 interrupted、下一次请求每个 tool_use 都有 tool_result 且角色交替、任务结果随新话交出）、「完整结束的存档读回不改历史」「活的快照（远端视图）不按中断收尾」；`fushi/test/pages/ai_agent_interrupted_entries_test.dart`（真 widget：读回的在途条目显示「已中断」/「未作答」，不再出现空白失败与「已拒绝」）。
+- **备注**：没有用户当时的会话存档原文，「进程在一轮中途没了」由截图状态与代码路径反推（活的会话画不出截图里的组合）。未在真机复测「关 app → 重开 → 续聊」整条路径；单测覆盖的是同一个存档读回入口 `AgentSession.fromJson`。

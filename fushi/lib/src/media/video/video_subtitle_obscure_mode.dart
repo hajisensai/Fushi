@@ -51,3 +51,20 @@ enum VideoSubtitleObscureMode {
     }
   }
 }
+
+/// 遮蔽是否让位给「用户在看」（字幕 overlay 与图形字幕遮蔽层共用的**唯一**判据）。
+///
+/// 让位来源：暂停（BUG-2198，含查词自动暂停）、查词浮层还开着（BUG-2235）、移动端控制条
+/// （进度条）正显示（aJqIVUPxnd：触屏无悬停，隐藏态字幕又不绘制、点击热区无从找起，
+/// 点开进度条是用户唯一自然的「我想看一眼」动作）。全部受该层「临时显形」开关
+/// [revealOnInteraction] 管（BUG-2256：关掉就是要遮蔽恒定生效）。
+/// [touchControlsVisible] 由调用方只在触屏控制条下传真：桌面鼠标一动控制条就出来，
+/// 计入就等于遮蔽失效（桌面另有悬停显形）。
+bool videoSubtitleViewerIsLooking({
+  required bool revealOnInteraction,
+  required bool isPlaying,
+  required bool lookupPopupVisible,
+  required bool touchControlsVisible,
+}) =>
+    revealOnInteraction &&
+    (!isPlaying || lookupPopupVisible || touchControlsVisible);

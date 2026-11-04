@@ -22,6 +22,7 @@
   if (root) {
     root.FUSHI_VIDEO_TARGET = api;
     root.fushiMainVideo = api.mainVideo;
+    root.fushiControlledVideo = api.controlledVideo;
     root.fushiFixedOrigin = api.fixedOrigin;
     root.fushiVideoAnchor = { host: api.overlayHost, mode: api.anchorMode, placeAt: api.placeAt, watch: api.watch };
   }
@@ -53,11 +54,18 @@
     try { return !!v && !v.paused && !v.ended && v.readyState > 2; } catch (_) { return false; }
   }
 
-  function mainVideo() {
-    if (typeof document === 'undefined') return null;
+  function isMuted(v) {
+    try { return !!v && (v.muted === true || v.volume === 0); } catch (_) { return false; }
+  }
+
+  // 页面上的 <video> 候选（mainVideo / controlledVideo 共用）：全屏元素本身是 <video> 时
+  // fsVideo 就是它；全屏容器时只收其内部的。candidates 带几何 / 在播 / 静音。
+  function collectVideos() {
+    var out = { fsVideo: null, list: [], candidates: [], viewport: { width: 0, height: 0 } };
+    if (typeof document === 'undefined') return out;
     var fs = null;
     try { fs = document.fullscreenElement || null; } catch (_) { fs = null; }
-    if (fs && String(fs.tagName || '').toUpperCase() === 'VIDEO') return fs;
+    if (fs && String(fs.tagName || '').toUpperCase() === 'VIDEO') { out.fsVideo = fs; return out; }
     var list = [];
     try {
       var all = document.querySelectorAll ? document.querySelectorAll('video') : null;
@@ -67,20 +75,48 @@
       var inside = list.filter(function (v) { try { return fs.contains(v); } catch (_) { return false; } });
       if (inside.length) list = inside;
     }
-    var viewport = {
+    out.list = list;
+    out.viewport = {
       width: (typeof window !== 'undefined' && window.innerWidth) || 0,
       height: (typeof window !== 'undefined' && window.innerHeight) || 0,
     };
-    var candidates = [];
     for (var j = 0; j < list.length; j++) {
       var rect = null;
       try { rect = list[j].getBoundingClientRect(); } catch (_) { rect = null; }
-      candidates.push({ el: list[j], rect: rect, playing: isPlaying(list[j]) });
+      out.candidates.push({ el: list[j], rect: rect, playing: isPlaying(list[j]), muted: isMuted(list[j]) });
     }
-    var picked = pickMainVideo(candidates, viewport);
+    return out;
+  }
+
+  // 浮层定位用的正片：没有可见候选时退回第一个 <video>（浮层总得有个锚，旧行为）。
+  function mainVideo() {
+    var c = collectVideos();
+    if (c.fsVideo) return c.fsVideo;
+    var picked = pickMainVideo(c.candidates, c.viewport);
     if (picked) return picked;
-    if (list.length) return list[0];
+    if (c.list.length) return c.list[0];
     try { return document.querySelector('video'); } catch (_) { return null; }
+  }
+
+  // 纯函数：「替用户操控」的目标视频——视频页快捷键（变速 / 快进 / 按住倍速 / 隐藏字幕……）
+  // 只认它。与 mainVideo 不同，这里**不回落**：页面上只有隐藏 / 视口外 / 零尺寸的 <video>，或
+  // 可见的只有静音预览 / 静音广告位时返回 null = 没有受 Fushi 控制的视频，键盘事件原样放行给站点。
+  // 静音判据：Fushi 已给这一页挂上字幕轨（fushiTracked）时用户就是在用 Fushi 看它，静音也算；
+  // 否则静音的（首页悬停预览、自动播放的 hero / 广告位都是静音起播）不算目标。
+  function pickControlledVideo(candidates, viewport, fushiTracked) {
+    var eligible = [];
+    for (var i = 0; i < (candidates || []).length; i++) {
+      var c = candidates[i];
+      if (c && (fushiTracked || !c.muted)) eligible.push(c);
+    }
+    return pickMainVideo(eligible, viewport);
+  }
+
+  // 运行时：全屏的 <video> 是用户显式选中的，直接是目标；否则按 pickControlledVideo。
+  function controlledVideo(fushiTracked) {
+    var c = collectVideos();
+    if (c.fsVideo) return c.fsVideo;
+    return pickControlledVideo(c.candidates, c.viewport, fushiTracked === true);
   }
 
   var IDENTITY = { x: 0, y: 0, sx: 1, sy: 1 };
@@ -278,6 +314,8 @@
   return {
     pickMainVideo: pickMainVideo,
     mainVideo: mainVideo,
+    pickControlledVideo: pickControlledVideo,
+    controlledVideo: controlledVideo,
     fixedOrigin: fixedOrigin,
     probeOrigin: probeOrigin,
     overlayHost: overlayHost,

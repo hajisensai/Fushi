@@ -19,14 +19,14 @@ const INIT_S_MAX: f32 = 100.0;
 const FSRS5_DEFAULT_DECAY: f32 = 0.5;
 
 pub const FSRS6_DEFAULT: [f32; 21] = [
-    0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629,
-    1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542,
+    0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835,
+    0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542,
 ];
 
 pub const FSRS7_DEFAULT: [f32; 34] = [
-    0.1104, 2.2395, 3.9221, 11.7841, 6.1686, 0.6457, 3.6807, 1.9795, 0.0, 1.3826, 0.7024, 0.5999, 0.8146, 0.6398,
-    1.0, 1.3207, 0.6707, 3.8668, 0.4416, 0.0934, 1.8631, 0.6162, 1.0869, 0.1567, 0.0801, 0.2421, 0.9464, 0.1433,
-    0.7145, 0.0, 0.5667, 0.3734, 0.5333, 0.3048,
+    0.1104, 2.2395, 3.9221, 11.7841, 6.1686, 0.6457, 3.6807, 1.9795, 0.0, 1.3826, 0.7024, 0.5999,
+    0.8146, 0.6398, 1.0, 1.3207, 0.6707, 3.8668, 0.4416, 0.0934, 1.8631, 0.6162, 1.0869, 0.1567,
+    0.0801, 0.2421, 0.9464, 0.1433, 0.7145, 0.0, 0.5667, 0.3734, 0.5333, 0.3048,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -37,7 +37,11 @@ pub struct Memory {
 }
 
 impl Memory {
-    const ZERO: Memory = Memory { s: 0.0, d: 0.0, sf: 0.0 };
+    const ZERO: Memory = Memory {
+        s: 0.0,
+        d: 0.0,
+        sf: 0.0,
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,7 +69,11 @@ fn clamp(v: f32, lo: f32, hi: f32) -> f32 {
 impl Model {
     /// `FSRS::new`：补全参数（空 = FSRS-7 默认；17 / 19 / 21 = FSRS-6；34 = FSRS-7）、校验有限、裁剪。
     pub fn new(params: &[f32]) -> Result<Model, String> {
-        let version = if params.is_empty() || params.len() == 34 { Version::Fsrs7 } else { Version::Fsrs6 };
+        let version = if params.is_empty() || params.len() == 34 {
+            Version::Fsrs7
+        } else {
+            Version::Fsrs6
+        };
         let mut w: Vec<f32> = match (version, params.len()) {
             (Version::Fsrs7, 0) => FSRS7_DEFAULT.to_vec(),
             (Version::Fsrs7, _) => params.to_vec(),
@@ -129,26 +137,42 @@ impl Model {
             let r = rating.clamp(1, 4);
             next.s = clamp(self.init_stability(r), S_MIN, S_MAX);
             next.d = clamp(self.init_difficulty(r), D_MIN, D_MAX);
-            next.sf = if self.version == Version::Fsrs7 { clamp(next.s * 0.8, S_MIN, S_MAX) } else { next.s };
+            next.sf = if self.version == Version::Fsrs7 {
+                clamp(next.s * 0.8, S_MIN, S_MAX)
+            } else {
+                next.s
+            };
         }
         if rating == 0 { last } else { next }
     }
 
     fn init_from_first(&self, rating: u32) -> Memory {
         if rating == 0 {
-            return Memory { s: S_MIN, d: D_MIN, sf: S_MIN };
+            return Memory {
+                s: S_MIN,
+                d: D_MIN,
+                sf: S_MIN,
+            };
         }
         let r = rating.clamp(1, 4);
         let s = clamp(self.init_stability(r), S_MIN, S_MAX);
         Memory {
             s,
             d: clamp(self.init_difficulty(r), D_MIN, D_MAX),
-            sf: if self.version == Version::Fsrs7 { clamp(s * 0.8, S_MIN, S_MAX) } else { s },
+            sf: if self.version == Version::Fsrs7 {
+                clamp(s * 0.8, S_MIN, S_MAX)
+            } else {
+                s
+            },
         }
     }
 
     /// `FSRS::memory_state`（`forward_reviews` + 校验有限）。
-    pub fn memory_state(&self, reviews: &[(u32, f32)], starting: Option<Memory>) -> Result<Memory, String> {
+    pub fn memory_state(
+        &self,
+        reviews: &[(u32, f32)],
+        starting: Option<Memory>,
+    ) -> Result<Memory, String> {
         let (mut state, start) = match starting {
             Some(s) => (s, 0),
             None if reviews.is_empty() => (Memory::ZERO, 0),
@@ -161,7 +185,10 @@ impl Model {
     }
 
     fn validate(&self, m: Memory) -> Result<Memory, String> {
-        if m.s.is_finite() && m.d.is_finite() && (self.version == Version::Fsrs6 || m.sf.is_finite()) {
+        if m.s.is_finite()
+            && m.d.is_finite()
+            && (self.version == Version::Fsrs6 || m.sf.is_finite())
+        {
             Ok(m)
         } else {
             Err("invalid memory state".into())
@@ -183,32 +210,54 @@ impl Model {
     }
 
     /// `FSRS::next_states_with_elapsed_days`：四个评分（again..easy）的记忆状态与间隔。
-    pub fn next_states(&self, current: Option<Memory>, desired_retention: f32, days_elapsed: f32) -> Result<[Item; 4], String> {
+    pub fn next_states(
+        &self,
+        current: Option<Memory>,
+        desired_retention: f32,
+        days_elapsed: f32,
+    ) -> Result<[Item; 4], String> {
         let (cur, nth) = match current {
             Some(s) => (s, 1),
             None => (Memory::ZERO, 0),
         };
-        let mut out = [Item { memory: Memory::ZERO, interval: 0.0 }; 4];
+        let mut out = [Item {
+            memory: Memory::ZERO,
+            interval: 0.0,
+        }; 4];
         for rating in 1..=4u32 {
             let memory = self.validate(self.step(days_elapsed, rating, cur, nth))?;
-            out[rating as usize - 1] = Item { memory, interval: self.next_interval(memory, desired_retention) };
+            out[rating as usize - 1] = Item {
+                memory,
+                interval: self.next_interval(memory, desired_retention),
+            };
         }
         Ok(out)
     }
 
     /// `FSRS::memory_state_from_sm2`。
-    pub fn memory_state_from_sm2(&self, ease: f32, interval: f32, sm2_retention: f32) -> Result<Memory, String> {
+    pub fn memory_state_from_sm2(
+        &self,
+        ease: f32,
+        interval: f32,
+        sm2_retention: f32,
+    ) -> Result<Memory, String> {
         match self.version {
             Version::Fsrs6 => {
                 let w = &self.w;
                 let decay = -w[20];
                 let factor = powf(0.9, 1.0 / decay) - 1.0;
                 let s = interval.max(S_MIN) * factor / (powf(sm2_retention, 1.0 / decay) - 1.0);
-                let d = 11.0 - (ease - 1.0) / (expf(w[8]) * powf(s, -w[9]) * expm1f((1.0 - sm2_retention) * w[10]));
+                let d = 11.0
+                    - (ease - 1.0)
+                        / (expf(w[8]) * powf(s, -w[9]) * expm1f((1.0 - sm2_retention) * w[10]));
                 if !s.is_finite() || !d.is_finite() {
                     Err("invalid sm2 input".into())
                 } else {
-                    Ok(Memory { s, d: clamp(d, D_MIN, D_MAX), sf: s })
+                    Ok(Memory {
+                        s,
+                        d: clamp(d, D_MIN, D_MAX),
+                        sf: s,
+                    })
                 }
             }
             Version::Fsrs7 => v7_from_sm2(&self.w, interval, sm2_retention),
@@ -253,7 +302,11 @@ fn clip6(p: &mut [f32]) {
 fn clamp_safe(value: f32, low: f32, high: f32) -> f32 {
     let low = if low.is_finite() { low } else { 0.0 };
     let high = if high.is_finite() { high } else { low };
-    let (low, high) = if low <= high { (low, high) } else { (high, low) };
+    let (low, high) = if low <= high {
+        (low, high)
+    } else {
+        (high, low)
+    };
     let value = if value.is_finite() { value } else { low };
     value.clamp(low, high)
 }
@@ -316,7 +369,13 @@ fn v6_next_interval(w: &[f32], stability: f32, desired_retention: f32) -> f32 {
 fn v6_success(w: &[f32], s: f32, r: f32, d: f32, rating: usize) -> f32 {
     let hard_penalty = if rating == 2 { w[15] } else { 1.0 };
     let easy_bonus = if rating == 4 { w[16] } else { 1.0 };
-    (s * (expf(w[8]) * (11.0 - d) * powf(s, -w[9]) * (expf((1.0 - r) * w[10]) - 1.0) * hard_penalty * easy_bonus + 1.0))
+    (s * (expf(w[8])
+        * (11.0 - d)
+        * powf(s, -w[9])
+        * (expf((1.0 - r) * w[10]) - 1.0)
+        * hard_penalty
+        * easy_bonus
+        + 1.0))
         .clamp(S_MIN, S_MAX)
 }
 
@@ -350,7 +409,11 @@ fn v6_next_state(w: &[f32], state: Memory, delta_t: f32, rating: u32) -> Memory 
     } else {
         v6_success(w, s, r, d, rating)
     };
-    Memory { s: stability, d: v6_next_difficulty(w, d, rating), sf: stability }
+    Memory {
+        s: stability,
+        d: v6_next_difficulty(w, d, rating),
+        sf: stability,
+    }
 }
 
 // ---------------------------------------------------------------- FSRS-7（model_v7.rs）
@@ -369,16 +432,28 @@ fn v7_init_difficulty(w: &[f32], rating: usize) -> f32 {
 fn v7_next_difficulty(w: &[f32], d: f32, rating: usize, retention: f32) -> f32 {
     let rating = rating.clamp(1, 4);
     let delta_d = -w[6] * (rating as f32 - 3.0);
-    let delta_d = if rating == 1 { delta_d * (retention + 0.1) } else { delta_d };
+    let delta_d = if rating == 1 {
+        delta_d * (retention + 0.1)
+    } else {
+        delta_d
+    };
     let new_d = d + (10.0 - d) * delta_d / 9.0;
     (v7_init_difficulty(w, 4) * 0.01 + new_d * 0.99).clamp(D_MIN, D_MAX)
 }
 
-fn v7_stability_for_set(w: &[f32], last_s: f32, last_d: f32, r: f32, rating: usize, start: usize) -> f32 {
+fn v7_stability_for_set(
+    w: &[f32],
+    last_s: f32,
+    last_d: f32,
+    r: f32,
+    rating: usize,
+    start: usize,
+) -> f32 {
     let rating = rating.clamp(1, 4);
     let hard_penalty = if rating == 2 { w[start + 6] } else { 1.0 };
     let easy_bonus = if rating == 4 { w[start + 7] } else { 1.0 };
-    let new_s_fail = w[start + 3] * (powf(last_s + 1.0, w[start + 4]) - 1.0) * expf((1.0 - r) * w[start + 5]);
+    let new_s_fail =
+        w[start + 3] * (powf(last_s + 1.0, w[start + 4]) - 1.0) * expf((1.0 - r) * w[start + 5]);
     let pls = last_s.min(new_s_fail);
     let sinc = expf(w[start] - 1.5)
         * (11.0 - last_d)
@@ -406,8 +481,16 @@ fn v7_next_state(w: &[f32], state: Memory, delta_t: f32, rating: usize) -> Memor
     let new_s_slow = v7_stability_for_set(w, state.s, state.d, r, rating, 7);
     let r_fast = v7_fast_recall(w, delta_t, state.sf);
     let new_s_fast = v7_stability_for_set(w, state.sf, state.d, r_fast, rating, 15);
-    let new_s_fast = if rating == 1 { new_s_fast.min(new_s_slow * 0.8) } else { new_s_fast };
-    Memory { s: new_s_slow, d: v7_next_difficulty(w, state.d, rating, r), sf: new_s_fast.clamp(S_MIN, S_MAX) }
+    let new_s_fast = if rating == 1 {
+        new_s_fast.min(new_s_slow * 0.8)
+    } else {
+        new_s_fast
+    };
+    Memory {
+        s: new_s_slow,
+        d: v7_next_difficulty(w, state.d, rating, r),
+        sf: new_s_fast.clamp(S_MIN, S_MAX),
+    }
 }
 
 fn v7_forgetting_curve(w: &[f32], t: f32, state: Memory) -> f32 {
@@ -478,7 +561,11 @@ fn v7_next_interval(w: &[f32], state: Memory, desired_retention: f32) -> f32 {
     if dr >= DR_MAX {
         return 0.0;
     }
-    let state = Memory { s: state.s.clamp(S_MIN, S_MAX), d: state.d.clamp(D_MIN, D_MAX), sf: state.sf.clamp(S_MIN, S_MAX) };
+    let state = Memory {
+        s: state.s.clamp(S_MIN, S_MAX),
+        d: state.d.clamp(D_MIN, D_MAX),
+        sf: state.sf.clamp(S_MIN, S_MAX),
+    };
     let min_log_t = logf(MIN_T);
     let max_log_t = logf(S_MAX);
     let mut log_t = logf(state.s.max(state.sf).max(MIN_T));
@@ -495,7 +582,11 @@ fn v7_next_interval(w: &[f32], state: Memory, desired_retention: f32) -> f32 {
     }
     let interval = expf(log_t).clamp(0.0, S_MAX);
     let r = v7_forgetting_curve(w, interval, state);
-    if r.is_finite() && (r - dr).abs() <= 1e-3 { interval } else { v7_bisection(w, state, dr) }
+    if r.is_finite() && (r - dr).abs() <= 1e-3 {
+        interval
+    } else {
+        v7_bisection(w, state, dr)
+    }
 }
 
 fn v7_from_sm2(w: &[f32], interval: f32, sm2_retention: f32) -> Result<Memory, String> {
@@ -505,7 +596,11 @@ fn v7_from_sm2(w: &[f32], interval: f32, sm2_retention: f32) -> Result<Memory, S
     let interval = interval.max(S_MIN).clamp(S_MIN, S_MAX);
     let state_at = |log_s: f32| {
         let s = expf(log_s).clamp(S_MIN, S_MAX);
-        Memory { s, d: 5.0, sf: (s * 0.8).clamp(S_MIN, S_MAX) }
+        Memory {
+            s,
+            d: 5.0,
+            sf: (s * 0.8).clamp(S_MIN, S_MAX),
+        }
     };
     let mut low = logf(S_MIN);
     let mut high = logf(S_MAX);
@@ -544,7 +639,7 @@ fn v7_from_sm2(w: &[f32], interval: f32, sm2_retention: f32) -> Result<Memory, S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsrs::{MemoryState, FSRS};
+    use fsrs::{FSRS, MemoryState};
 
     fn close(a: f32, b: f32) -> bool {
         a == b || (a - b).abs() <= 1e-5 * a.abs().max(b.abs()).max(1e-3)
@@ -557,7 +652,9 @@ mod tests {
     }
 
     fn lcg(seed: &mut u64) -> f32 {
-        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((*seed >> 40) as f32) / (1u64 << 24) as f32
     }
 
@@ -585,21 +682,44 @@ mod tests {
                     let mem = Memory { s, d, sf };
                     let a = ours.next_states(Some(mem), dr, elapsed).unwrap();
                     let b = theirs
-                        .next_states_with_elapsed_days(Some(MemoryState { stability: s, difficulty: d, stability_fast: sf }), dr, elapsed)
+                        .next_states_with_elapsed_days(
+                            Some(MemoryState {
+                                stability: s,
+                                difficulty: d,
+                                stability_fast: sf,
+                            }),
+                            dr,
+                            elapsed,
+                        )
                         .unwrap();
                     for (x, y) in a.iter().zip([b.again, b.hard, b.good, b.easy]) {
                         total += 1;
-                        assert!(close(x.memory.s, y.memory.stability), "{version:?} s {} vs {}", x.memory.s, y.memory.stability);
+                        assert!(
+                            close(x.memory.s, y.memory.stability),
+                            "{version:?} s {} vs {}",
+                            x.memory.s,
+                            y.memory.stability
+                        );
                         assert!(close(x.memory.d, y.memory.difficulty), "{version:?} d");
-                        assert!(close(x.memory.sf, y.memory.stability_fast), "{version:?} sf");
-                        assert!(close_ivl(x.interval, y.interval), "{version:?} ivl {} vs {}", x.interval, y.interval);
+                        assert!(
+                            close(x.memory.sf, y.memory.stability_fast),
+                            "{version:?} sf"
+                        );
+                        assert!(
+                            close_ivl(x.interval, y.interval),
+                            "{version:?} ivl {} vs {}",
+                            x.interval,
+                            y.interval
+                        );
                         if x.memory.s == y.memory.stability && x.interval == y.interval {
                             identical += 1;
                         }
                     }
                 }
                 let new_a = ours.next_states(None, 0.9, 0.0).unwrap();
-                let new_b = theirs.next_states_with_elapsed_days(None, 0.9, 0.0).unwrap();
+                let new_b = theirs
+                    .next_states_with_elapsed_days(None, 0.9, 0.0)
+                    .unwrap();
                 assert!(close_ivl(new_a[2].interval, new_b.good.interval));
                 for (ease, ivl) in [(2.5f32, 10.0f32), (1.3, 1.0), (3.0, 200.0)] {
                     let x = ours.memory_state_from_sm2(ease, ivl, 0.9).unwrap();
@@ -610,15 +730,26 @@ mod tests {
                 let x = ours.memory_state(&reviews, None).unwrap();
                 let y = theirs
                     .memory_state(
-                        fsrs::FSRSItem { reviews: reviews.iter().map(|&(rating, delta_t)| fsrs::FSRSReview { rating, delta_t }).collect() },
+                        fsrs::FSRSItem {
+                            reviews: reviews
+                                .iter()
+                                .map(|&(rating, delta_t)| fsrs::FSRSReview { rating, delta_t })
+                                .collect(),
+                        },
                         None,
                     )
                     .unwrap();
-                assert!(close(x.s, y.stability) && close(x.d, y.difficulty), "history {x:?} vs {y:?}");
+                assert!(
+                    close(x.s, y.stability) && close(x.d, y.difficulty),
+                    "history {x:?} vs {y:?}"
+                );
             }
         }
         // 大多数应当逐位相同（libm 与平台 libm 在常见输入上通常一致）。
-        assert!(identical * 2 > total, "only {identical}/{total} bit-identical");
+        assert!(
+            identical * 2 > total,
+            "only {identical}/{total} bit-identical"
+        );
     }
 
     /// 固定向量（跨平台确定性，设计 §12.5）：这组输入的输出位模式写死在这里，任何平台、任何构建
@@ -649,5 +780,6 @@ mod tests {
         assert_eq!(got, FIXED_VECTOR_HASH, "deterministic FSRS output changed");
     }
 
-    const FIXED_VECTOR_HASH: &str = "1b14c39546457d0d723c16d19fe33fcdafed4e098458b6c229406728dce3da19";
+    const FIXED_VECTOR_HASH: &str =
+        "1b14c39546457d0d723c16d19fe33fcdafed4e098458b6c229406728dce3da19";
 }

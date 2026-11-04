@@ -8,9 +8,9 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{deck_entity, edit, Bucket, Device, P};
+use super::tests::{Bucket, Device, P, deck_entity, edit};
 
 struct Counting;
 
@@ -82,8 +82,12 @@ pub(crate) fn measure<T>(f: impl FnOnce() -> T) -> (T, Mem) {
     let t = std::time::Instant::now();
     let out = f();
     let ms = t.elapsed().as_millis();
-    let (sq_peak, sq_now) =
-        unsafe { (rusqlite::ffi::sqlite3_memory_highwater(0), rusqlite::ffi::sqlite3_memory_used()) };
+    let (sq_peak, sq_now) = unsafe {
+        (
+            rusqlite::ffi::sqlite3_memory_highwater(0),
+            rusqlite::ffi::sqlite3_memory_used(),
+        )
+    };
     let now = CUR.load(Ordering::Relaxed);
     let m = Mem {
         rust_peak: PEAK.load(Ordering::Relaxed).saturating_sub(base) as f64 / MIB,
@@ -110,7 +114,14 @@ fn write_notes(d: &Device, tag: &str, mb: usize, at: i64) {
     let mut batch = 0;
     while i < ops {
         let events: Vec<Value> = (i..(i + 250).min(ops))
-            .map(|k| edit("note", &format!("{tag}{k}"), "f/s", json!(format!("{filler}{k}"))))
+            .map(|k| {
+                edit(
+                    "note",
+                    &format!("{tag}{k}"),
+                    "f/s",
+                    json!(format!("{filler}{k}")),
+                )
+            })
             .collect();
         i += events.len();
         d.apply(at + batch, events);
@@ -119,7 +130,12 @@ fn write_notes(d: &Device, tag: &str, mb: usize, at: i64) {
 }
 
 fn heads(bucket: &Bucket) -> Vec<Vec<u8>> {
-    bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect()
+    bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.contains("/head-"))
+        .map(|(_, v)| v.clone())
+        .collect()
 }
 
 fn device_text(d: &Device) -> String {
@@ -128,7 +144,12 @@ fn device_text(d: &Device) -> String {
 }
 
 fn segments_of(bucket: &Bucket, dev: &str) -> Vec<Vec<u8>> {
-    bucket.0.iter().filter(|(k, _)| k.contains(dev) && k.contains("/seg-")).map(|(_, v)| v.clone()).collect()
+    bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.contains(dev) && k.contains("/seg-"))
+        .map(|(_, v)| v.clone())
+        .collect()
 }
 
 fn run(mb: usize) {
@@ -149,7 +170,12 @@ fn run(mb: usize) {
     let (a_dev, b_dev) = (device_text(&a), device_text(&b));
 
     // 1. 新设备一次收齐两台设备的全部段。
-    let all: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    let all: Vec<Vec<u8>> = bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.contains("/seg-"))
+        .map(|(_, v)| v.clone())
+        .collect();
     let c = Device::new("mem-c");
     c.core.sync2_identity(P, now).unwrap();
     c.core.sync2_plan(P, &heads(&bucket)).unwrap();
@@ -227,26 +253,45 @@ fn bench_memory() {
 #[ignore]
 fn bench_writer_reads() {
     use super::tests::review;
-    let cards: i64 = std::env::var("SRS_BENCH_CARDS").ok().and_then(|v| v.parse().ok()).unwrap_or(5000);
+    let cards: i64 = std::env::var("SRS_BENCH_CARDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5000);
     let a = Device::new("mem-reads");
     let deck = super::config::default_deck_id(P);
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "name", json!("Default")),
+        ],
+    );
     for chunk in 0..(cards + 99) / 100 {
         let mut input = Vec::new();
         for c in chunk * 100..((chunk + 1) * 100).min(cards) {
             input.push(json!({"e": edit("note", &format!("N{c}"), "f/s", json!(format!("例文{c}"))), "note": format!("N{c}")}));
             for r in 0..20 {
                 let at = T0 + r * DAY + c;
-                let e = review(&format!("r{c}-{r}"), &format!("C{c}"), at, 3, if r == 0 { "learn" } else { "review" });
+                let e = review(
+                    &format!("r{c}-{r}"),
+                    &format!("C{c}"),
+                    at,
+                    3,
+                    if r == 0 { "learn" } else { "review" },
+                );
                 input.push(json!({"e": e, "note": format!("N{c}")}));
             }
         }
-        a.core.sync2_apply_local(P, T0 + chunk, &Value::Array(input).to_string()).unwrap();
+        a.core
+            .sync2_apply_local(P, T0 + chunk, &Value::Array(input).to_string())
+            .unwrap();
     }
     let cfg = crate::store::caches::CacheConfig::parse(&json!({"defaultDeck": deck})).unwrap();
     for round in 0..3 {
         let w = a.core.writer().unwrap();
-        let (_, m) = measure(|| super::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &cfg)).unwrap());
+        let (_, m) = measure(|| {
+            super::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &cfg)).unwrap()
+        });
         drop(w);
         report(&format!("cache rebuild #{round}"), cards as usize, m);
         let (_, m) = measure(|| a.core.sync2_replay_all(P).unwrap());

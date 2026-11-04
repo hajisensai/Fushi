@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use super::sql;
 use crate::sync2::codec::Reader;
@@ -60,14 +60,28 @@ pub(crate) fn writes(conn: &Connection, profile: &str, reg: &str) -> Result<Vec<
         .map_err(sql)?;
     let rows = stmt
         .query_map(params![profile, reg], |r| {
-            Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?, r.get::<_, Vec<u8>>(4)?))
+            Ok((
+                r.get::<_, Vec<u8>>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, Vec<u8>>(4)?,
+            ))
         })
         .map_err(sql)?;
     let mut out = Vec::new();
     for row in rows {
         let (d, seq, wall, logical, vv) = row.map_err(sql)?;
         let deps = Vv::read(&mut Reader::new(&vv)).map_err(|e| e.to_string())?;
-        out.push(Write { id: OpId { device: id_of(d)?, seq: seq as u64 }, wall, logical, deps: Arc::new(deps) });
+        out.push(Write {
+            id: OpId {
+                device: id_of(d)?,
+                seq: seq as u64,
+            },
+            wall,
+            logical,
+            deps: Arc::new(deps),
+        });
     }
     Ok(out)
 }
@@ -75,16 +89,29 @@ pub(crate) fn writes(conn: &Connection, profile: &str, reg: &str) -> Result<Vec<
 /// 并入一条写入，返回并入后的当前值（反链里 HLC 最大的写入）。重复并入同一条无副作用。
 pub(crate) fn write(conn: &Connection, profile: &str, reg: &str, op: &Op) -> Result<Write, String> {
     let mut set = writes(conn, profile, reg)?;
-    let me = Write { id: op.id, wall: op.hlc.wall, logical: i64::from(op.hlc.logical), deps: op.deps.clone() };
+    let me = Write {
+        id: op.id,
+        wall: op.hlc.wall,
+        logical: i64::from(op.hlc.logical),
+        deps: op.deps.clone(),
+    };
     let known = set.iter().any(|w| w.id == op.id);
     let dominated = set.iter().any(|w| covers(&w.id, &w.deps, &op.id));
     if !known && !dominated {
-        let (gone, kept): (Vec<Write>, Vec<Write>) = set.into_iter().partition(|w| covers(&me.id, &me.deps, &w.id));
+        let (gone, kept): (Vec<Write>, Vec<Write>) = set
+            .into_iter()
+            .partition(|w| covers(&me.id, &me.deps, &w.id));
         let mut del = conn
             .prepare_cached("DELETE FROM sync2_mvr WHERE profile_uid = srs_id(?1) AND reg = ?2 AND device = ?3 AND seq = ?4")
             .map_err(sql)?;
         for w in &gone {
-            del.execute(params![profile, reg, w.id.device.0.to_vec(), w.id.seq as i64]).map_err(sql)?;
+            del.execute(params![
+                profile,
+                reg,
+                w.id.device.0.to_vec(),
+                w.id.seq as i64
+            ])
+            .map_err(sql)?;
         }
         set = kept;
         conn.prepare_cached("INSERT OR IGNORE INTO sync2_mvr (profile_uid, reg, device, seq) VALUES (srs_id(?1), ?2, ?3, ?4)")
@@ -93,7 +120,9 @@ pub(crate) fn write(conn: &Connection, profile: &str, reg: &str, op: &Op) -> Res
             .map_err(sql)?;
         set.push(me);
     }
-    set.into_iter().max_by_key(Write::stamp).ok_or_else(|| "mvr: empty register after write".to_owned())
+    set.into_iter()
+        .max_by_key(Write::stamp)
+        .ok_or_else(|| "mvr: empty register after write".to_owned())
 }
 
 /// 从日志重建三个寄存器的反链与投影（schema V10 升级时跑一次；幂等）：反链是操作集合的函数，按任意顺序并入
@@ -129,14 +158,21 @@ pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
         let mut at: std::collections::BTreeSet<(String, String)> = Default::default();
         let mut notes: std::collections::BTreeSet<String> = Default::default();
         for (d, seq) in ids {
-            let id = OpId { device: id_of(d)?, seq: seq as u64 };
-            let Some(op) = super::load_op(conn, profile, &id)? else { continue };
+            let id = OpId {
+                device: id_of(d)?,
+                seq: seq as u64,
+            };
+            let Some(op) = super::load_op(conn, profile, &id)? else {
+                continue;
+            };
             match op.body() {
                 Ok(Body::Media { name, .. }) => {
                     write(conn, profile, &reg("m", &[&name]), &op)?;
                     media.insert(name);
                 }
-                Ok(Body::MediaAt { location, names, .. }) => {
+                Ok(Body::MediaAt {
+                    location, names, ..
+                }) => {
                     for n in names {
                         write(conn, profile, &reg("a", &[&location, &n]), &op)?;
                         at.insert((location.clone(), n));
@@ -147,7 +183,9 @@ pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
                     write(conn, profile, &reg("t", &[&n]), &op)?;
                     notes.insert(n);
                 }
-                Ok(Body::Edit(e)) if e.kind == crate::sync2::op::EntKind::Note && e.key == "tags" => {
+                Ok(Body::Edit(e))
+                    if e.kind == crate::sync2::op::EntKind::Note && e.key == "tags" =>
+                {
                     let n = e.entity.text();
                     write(conn, profile, &reg("t", &[&n]), &op)?;
                     notes.insert(n);
@@ -155,7 +193,11 @@ pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
                 _ => {}
             }
         }
-        let top = |r: &str| -> Result<Option<Write>, String> { Ok(writes(conn, profile, r)?.into_iter().max_by_key(Write::stamp)) };
+        let top = |r: &str| -> Result<Option<Write>, String> {
+            Ok(writes(conn, profile, r)?
+                .into_iter()
+                .max_by_key(Write::stamp))
+        };
         for name in &media {
             if let Some(w) = top(&reg("m", &[name]))? {
                 super::land_media_binding(conn, profile, name, &w)?;
@@ -169,7 +211,12 @@ pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
         for note in &notes {
             if let Some(w) = top(&reg("t", &[note]))? {
                 if super::semantics::land_tag_order(conn, profile, note, &w, None)? {
-                    super::semantics::refresh_tags_row(conn, profile, note, &mut super::Touched::default())?;
+                    super::semantics::refresh_tags_row(
+                        conn,
+                        profile,
+                        note,
+                        &mut super::Touched::default(),
+                    )?;
                 }
             }
         }
@@ -197,9 +244,25 @@ mod tests {
         let b = Id([2; 16]);
         let mut deps = Vv::new();
         deps.set(b, 5);
-        assert!(covers(&OpId { device: a, seq: 3 }, &deps, &OpId { device: a, seq: 2 }));
-        assert!(!covers(&OpId { device: a, seq: 3 }, &deps, &OpId { device: a, seq: 3 }));
-        assert!(covers(&OpId { device: a, seq: 1 }, &deps, &OpId { device: b, seq: 5 }));
-        assert!(!covers(&OpId { device: a, seq: 1 }, &deps, &OpId { device: b, seq: 6 }));
+        assert!(covers(
+            &OpId { device: a, seq: 3 },
+            &deps,
+            &OpId { device: a, seq: 2 }
+        ));
+        assert!(!covers(
+            &OpId { device: a, seq: 3 },
+            &deps,
+            &OpId { device: a, seq: 3 }
+        ));
+        assert!(covers(
+            &OpId { device: a, seq: 1 },
+            &deps,
+            &OpId { device: b, seq: 5 }
+        ));
+        assert!(!covers(
+            &OpId { device: a, seq: 1 },
+            &deps,
+            &OpId { device: b, seq: 6 }
+        ));
     }
 }

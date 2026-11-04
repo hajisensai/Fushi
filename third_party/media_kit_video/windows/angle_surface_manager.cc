@@ -56,17 +56,24 @@ void ANGLESurfaceManager::SetSize(int32_t width, int32_t height) {
   Create();
 }
 
+// FUSHI FORK (BUG-3888): the copy into the texture Flutter samples happens
+// here, on media_kit's render thread, right after libmpv finished the frame.
+//
+// Upstream did the copy in a |Read()| called from Flutter's texture callback,
+// i.e. on Flutter's raster thread in the middle of |LayerTree::Paint|, and that
+// |Read()| waited (INFINITE) on |mutex_| — which |Draw| holds across the whole
+// |mpv_render_context_render| plus |glFinish|. Every slow libmpv frame (heavy
+// scalers / user shaders, decoder threads holding the multithread-protected
+// device) therefore stalled Flutter's raster thread for as long as libmpv's
+// GPU work took, and Flutter's own late frames in turn lengthened libmpv's
+// |glFinish|: field logs show 300–880 ms raster frames in bursts of 1–3 s.
+// Flutter's raster thread now never touches |mutex_| nor this D3D11 device.
 void ANGLESurfaceManager::Draw(std::function<void()> callback) {
   ::WaitForSingleObject(mutex_, INFINITE);
   MakeCurrent(true);
   callback();
   SwapBuffers();
   MakeCurrent(false);
-  ::ReleaseMutex(mutex_);
-}
-
-void ANGLESurfaceManager::Read() {
-  ::WaitForSingleObject(mutex_, INFINITE);
   if (d3d_11_device_context_ != nullptr) {
     d3d_11_device_context_->CopyResource(d3d_11_texture_2D_.Get(),
                                          internal_d3d_11_texture_2D_.Get());

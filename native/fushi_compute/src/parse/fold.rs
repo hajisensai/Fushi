@@ -19,7 +19,7 @@
 //! 码点只会原样保留或丢弃，所以输出码元数永远不超过输入码元数，且被保留码点的输出宽度
 //! 等于输入宽度。
 
-use crate::parse::{study_char_class, StudyCharClass};
+use crate::parse::{StudyCharClass, study_char_class};
 use crate::{guard, status};
 
 /// 半角片假名 U+FF66..U+FF9D → 全角片假名（索引 = 码点 - 0xFF66，56 项）。

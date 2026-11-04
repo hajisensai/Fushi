@@ -973,6 +973,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         : _systemBallColors;
     // 开着的查词卡会被截进图里，而且它挡着的字点不到。
     await target.dismissLookup();
+    // 反馈 Eemf0HOZhj（macOS 4K 屏截屏识字要一分钟以上才出行框）：分段计时记进
+    // 诊断日志，下一份反馈能直接看出时间花在截图 / 传图还是识别上。
+    final Stopwatch captureClock = Stopwatch()..start();
     final DesktopScreenOcrCapture capture =
         await FloatingBallChannel.startScreenOcrCapture(
           anchor: anchor,
@@ -1008,11 +1011,19 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       png,
     );
     _desktopOcr = session;
+    final int captureMs = captureClock.elapsedMilliseconds;
+    final Stopwatch recognizeClock = Stopwatch()..start();
     String? message;
     List<SystemOcrTextLine> lines = const <SystemOcrTextLine>[];
     try {
       final SystemOcrPageResult result = await target.recognize(png);
       lines = result.lines;
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_timing',
+        'capture=${captureMs}ms recognize=${recognizeClock.elapsedMilliseconds}ms '
+            'image=${result.imageWidth}x${result.imageHeight} '
+            'png=${png.length}B lines=${result.lines.length}',
+      );
       if (result.isEmpty) message = t.floating_ball_ocr_empty;
     } on SystemOcrUnavailableException catch (error) {
       message = error.reason == kSystemOcrLanguageUnavailableReason
@@ -1051,6 +1062,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       return;
     }
     final String text = hit.line.text;
+    // 反馈 Eemf0HOZhj（macOS 点字查出来总是「ー」）：记下命中的那一行识别原文与
+    // 落点，下一份反馈能分清是识别文本错了还是命中 / 查词错了。只记这一行的前
+    // 32 个字。
+    final String linePreview = text.characters.take(32).toString();
+    ErrorLogService.instance.logDiagnostic(
+      'floating_ball.screen_ocr_tap',
+      'point=(${point.dx.round()},${point.dy.round()}) '
+          'line=${_rectSummary(hit.line.rect)} '
+          'vertical=${hit.line.isVertical} charIndex=${hit.charIndex} '
+          'text="$linePreview"',
+    );
     unawaited(
       target.lookupText(
         text.substring(hit.charIndex),
@@ -1736,6 +1758,11 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
 }
 
 /// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
+/// 诊断日志里的像素框：`[l,t,r,b]` 取整。
+String _rectSummary(Rect rect) =>
+    '[${rect.left.round()},${rect.top.round()},'
+    '${rect.right.round()},${rect.bottom.round()}]';
+
 class _DesktopScreenOcrSession {
   _DesktopScreenOcrSession(this.screen, this.png);
 

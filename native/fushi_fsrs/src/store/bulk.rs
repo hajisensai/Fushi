@@ -18,9 +18,9 @@
 //! ```
 //!
 //! 一个结果可以有几张表（统计：卡 / 复习 / 出处），各自一块，放在 sync2 命令结果的 `files` 里。
-use rusqlite::types::ValueRef;
 use rusqlite::Connection;
-use serde_json::{json, Value};
+use rusqlite::types::ValueRef;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 use super::sync2::sql;
@@ -56,9 +56,14 @@ impl Columns {
     }
 
     fn head(&mut self, name: &str, kind: u32, len: usize) {
-        assert_eq!(len, self.rows, "column {name}: {len} values for {} rows", self.rows);
+        assert_eq!(
+            len, self.rows,
+            "column {name}: {len} values for {} rows",
+            self.rows
+        );
         self.cols += 1;
-        self.buf.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(name.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(name.as_bytes());
         self.pad();
         self.buf.extend_from_slice(&kind.to_le_bytes());
@@ -170,7 +175,12 @@ const CARD_COLUMNS: [(&str, u32); 23] = [
     ("freq_rank", KIND_OPT_I64),
 ];
 
-fn read_cols(c: &Connection, q: &str, params: &[&dyn rusqlite::ToSql], kinds: &[u32]) -> Result<(usize, Vec<Col>), String> {
+fn read_cols(
+    c: &Connection,
+    q: &str,
+    params: &[&dyn rusqlite::ToSql],
+    kinds: &[u32],
+) -> Result<(usize, Vec<Col>), String> {
     let mut cols: Vec<Col> = kinds
         .iter()
         .map(|k| match *k {
@@ -250,7 +260,10 @@ pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
     let mut names = Vec::with_capacity(wanted.len());
     let mut kinds = Vec::with_capacity(wanted.len());
     for w in &wanted {
-        let (n, k) = CARD_COLUMNS.iter().find(|(n, _)| n == w).ok_or_else(|| format!("card_columns: unknown column {w}"))?;
+        let (n, k) = CARD_COLUMNS
+            .iter()
+            .find(|(n, _)| n == w)
+            .ok_or_else(|| format!("card_columns: unknown column {w}"))?;
         names.push(*n);
         kinds.push(*k);
     }
@@ -272,14 +285,50 @@ pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
 /// - `reviews`：有效复习投影（`srs_stat_reviews`）按时刻升序；`card` 是归属卡在「卡 ID 表」里的下标——可见卡就是
 ///   它在 `cards` 里的行号，不可见的归属卡在 `cards` 行数之后、按 `extra_ids` 的顺序编号。
 /// - `extra_ids`：复习归属到的、不在 `cards` 里的卡 ID。
-pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<u8>)>) -> Result<Value, String> {
+pub fn stats_bundle(
+    c: &Connection,
+    profile: &str,
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<Value, String> {
     const CARD_NAMES: [&str; 17] = [
-        "id", "note_id", "deck_id", "queue", "scheduled_days", "suspended", "buried_until_day", "scheduler", "due_day",
-        "due_at", "stability", "difficulty", "last_reviewed_at", "lapses", "reps", "added_at", "last_log_id",
+        "id",
+        "note_id",
+        "deck_id",
+        "queue",
+        "scheduled_days",
+        "suspended",
+        "buried_until_day",
+        "scheduler",
+        "due_day",
+        "due_at",
+        "stability",
+        "difficulty",
+        "last_reviewed_at",
+        "lapses",
+        "reps",
+        "added_at",
+        "last_log_id",
     ];
     const CARD_KINDS: [u32; 19] = [
-        KIND_STR, KIND_STR, KIND_STR, KIND_STR, KIND_I64, KIND_I64, KIND_OPT_I64, KIND_STR, KIND_OPT_I64, KIND_OPT_I64,
-        KIND_OPT_F64, KIND_OPT_F64, KIND_OPT_I64, KIND_I64, KIND_I64, KIND_I64, KIND_OPT_STR, KIND_OPT_STR, KIND_OPT_STR,
+        KIND_STR,
+        KIND_STR,
+        KIND_STR,
+        KIND_STR,
+        KIND_I64,
+        KIND_I64,
+        KIND_OPT_I64,
+        KIND_STR,
+        KIND_OPT_I64,
+        KIND_OPT_I64,
+        KIND_OPT_F64,
+        KIND_OPT_F64,
+        KIND_OPT_I64,
+        KIND_I64,
+        KIND_I64,
+        KIND_I64,
+        KIND_OPT_STR,
+        KIND_OPT_STR,
+        KIND_OPT_STR,
     ];
     let (rows, mut cols) = read_cols(
         c,
@@ -344,8 +393,16 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
         )
         .map_err(sql)?;
     let mut it = stmt.query([profile]).map_err(sql)?;
-    let (mut card, mut at, mut off, mut rating, mut kind, mut dur, mut prev, mut mat) =
-        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut card, mut at, mut off, mut rating, mut kind, mut dur, mut prev, mut mat) = (
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
     let mut extra: Vec<String> = Vec::new();
     while let Some(r) = it.next().map_err(sql)? {
         let id = super::ids::col(r, 0).map_err(sql)?;
@@ -391,7 +448,9 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
 pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let mut out = serde_json::Map::new();
     for (key, table) in [("notes", "srs_notes_cache"), ("cards", "srs_cards_cache")] {
-        let Some(xs) = req.get(key).and_then(Value::as_array) else { continue };
+        let Some(xs) = req.get(key).and_then(Value::as_array) else {
+            continue;
+        };
         let mut stmt = c
             .prepare_cached(&format!(
                 "SELECT srs_idt(MIN(id)) FROM {table} WHERE profile_uid = srs_id(?1) AND anki_id = ?2"
@@ -400,7 +459,9 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
         let mut ids = Vec::with_capacity(xs.len());
         for x in xs {
             let id: Option<String> = match x.as_i64() {
-                Some(n) => stmt.query_row(rusqlite::params![profile, n], |r| r.get(0)).map_err(sql)?,
+                Some(n) => stmt
+                    .query_row(rusqlite::params![profile, n], |r| r.get(0))
+                    .map_err(sql)?,
                 None => None,
             };
             ids.push(id.map_or(Value::Null, Value::String));
@@ -419,18 +480,29 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
 /// 物化后再连同修改记录列表建 `SrsNoteView`，另读一遍卡片缓存行；这里在只读快照上直接读、物化（与缓存行刷新
 /// 同一个寄存器内核与同一套 SQL，store/caches.rs [super::caches::note_infos]），只交回要用的值。
 pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
-    let nums: Vec<Option<i64>> =
-        req.get("notes").and_then(Value::as_array).map(|a| a.iter().map(Value::as_i64).collect()).unwrap_or_default();
+    let nums: Vec<Option<i64>> = req
+        .get("notes")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().map(Value::as_i64).collect())
+        .unwrap_or_default();
     let mut resolve =
         c.prepare_cached("SELECT srs_idt(MIN(id)) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND anki_id = ?2").map_err(sql)?;
     let mut ids: Vec<Option<String>> = Vec::with_capacity(nums.len());
     for n in &nums {
         ids.push(match n {
-            Some(n) => resolve.query_row(rusqlite::params![profile, n], |r| r.get(0)).map_err(sql)?,
+            Some(n) => resolve
+                .query_row(rusqlite::params![profile, n], |r| r.get(0))
+                .map_err(sql)?,
             None => None,
         });
     }
-    let known: Vec<String> = ids.iter().flatten().cloned().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    let known: Vec<String> = ids
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let mut views: HashMap<String, super::caches::NoteInfo> = HashMap::with_capacity(known.len());
     let mut cards: HashMap<String, Vec<Value>> = HashMap::new();
     for chunk in known.chunks(200) {
@@ -439,14 +511,21 @@ pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Val
         }
         let q = format!(
             "SELECT srs_idt(note_id) AS note_id, anki_id, srs_idt(template_id) AS template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
-            (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
+            (2..chunk.len() + 2)
+                .map(|i| format!("srs_id(?{i})"))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let args = std::iter::once(profile).chain(chunk.iter().map(String::as_str));
         let mut rows = stmt.query(rusqlite::params_from_iter(args)).map_err(sql)?;
         while let Some(r) = rows.next().map_err(sql)? {
             let note: String = r.get(0).map_err(sql)?;
-            let (num, tpl, ord): (i64, String, i64) = (r.get(1).map_err(sql)?, r.get(2).map_err(sql)?, r.get(3).map_err(sql)?);
+            let (num, tpl, ord): (i64, String, i64) = (
+                r.get(1).map_err(sql)?,
+                r.get(2).map_err(sql)?,
+                r.get(3).map_err(sql)?,
+            );
             cards.entry(note).or_default().push(json!([num, tpl, ord]));
         }
     }
@@ -487,7 +566,10 @@ mod tests {
         for &b in &d[..7] {
             v = (v << 8) | u64::from(b);
         }
-        assert_eq!(crate::store::schema::anki_numeric_id(id) as u64, v & ((1 << 53) - 1));
+        assert_eq!(
+            crate::store::schema::anki_numeric_id(id) as u64,
+            v & ((1 << 53) - 1)
+        );
         assert!(crate::store::schema::anki_numeric_id(id) > 0);
     }
 
@@ -503,7 +585,14 @@ mod tests {
         assert_eq!(u32::from_le_bytes(b[8..12].try_into().unwrap()), 3);
         assert_eq!(b.len() % 8, 0);
         // a：名字 1 字节补到 8，类型 8 字节，3 × 8 数据。
-        assert_eq!(i64::from_le_bytes(b[16 + 4 + 4 + 8 + 8..16 + 4 + 4 + 8 + 16].try_into().unwrap()), -2);
+        assert_eq!(
+            i64::from_le_bytes(
+                b[16 + 4 + 4 + 8 + 8..16 + 4 + 4 + 8 + 16]
+                    .try_into()
+                    .unwrap()
+            ),
+            -2
+        );
     }
 
     #[test]
@@ -553,11 +642,22 @@ mod tests {
         )
         .unwrap();
         crate::store::schema::migrate(&mut c).unwrap();
-        let got: i64 = c.query_row("SELECT anki_id FROM srs_cards_cache WHERE id = 'c1'", [], |r| r.get(0)).unwrap();
+        let got: i64 = c
+            .query_row(
+                "SELECT anki_id FROM srs_cards_cache WHERE id = 'c1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(got, crate::store::schema::anki_numeric_id("c1"));
-        c.execute("UPDATE srs_meta SET value = '12' WHERE key = 'schema'", []).unwrap();
+        c.execute("UPDATE srs_meta SET value = '12' WHERE key = 'schema'", [])
+            .unwrap();
         crate::store::schema::migrate(&mut c).unwrap();
-        let v: String = c.query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get(0)).unwrap();
+        let v: String = c
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(v, crate::store::schema::SCHEMA_VERSION.to_string());
     }
 }

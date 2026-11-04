@@ -368,7 +368,10 @@ CREATE TABLE IF NOT EXISTS sync2_relay_gone (
 /// 宁可多等一轮，不能让 head 引用缺的段。
 pub fn migrate_v23(c: &rusqlite::Connection) -> Result<(), String> {
     if !has_column(c, "sync2_rewrites", "restamp")? {
-        c.execute_batch("ALTER TABLE sync2_rewrites ADD COLUMN restamp INTEGER NOT NULL DEFAULT 0;").map_err(|e| e.to_string())?;
+        c.execute_batch(
+            "ALTER TABLE sync2_rewrites ADD COLUMN restamp INTEGER NOT NULL DEFAULT 0;",
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -412,9 +415,13 @@ pub const REWRITE_GAP_SQL: &str = "INSERT INTO sync2_rewrites (profile_uid, loca
 
 /// 表 [table] 有没有列 [column]（ALTER 不带 IF NOT EXISTS，靠它让迁移可重放）。
 fn has_column(c: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
-    c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0))
-        .map(|n| n > 0)
-        .map_err(|e| e.to_string())
+    c.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+        [column],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|n| n > 0)
+    .map_err(|e| e.to_string())
 }
 
 /// 升到 V12：每一步都按「已经做过就跳过」写，重放结果相同。
@@ -424,7 +431,10 @@ pub fn migrate_v12(c: &rusqlite::Connection) -> Result<(), String> {
     // 设备 ack。升级前已登记的行两列为空，下一次写 head 时按那一刻补上（从那时起算宽限期）。
     for col in ["since_gen", "since_at"] {
         if !has_column(c, "sync2_obsolete", col)? {
-            c.execute_batch(&format!("ALTER TABLE sync2_obsolete ADD COLUMN {col} INTEGER NULL;")).map_err(|e| e.to_string())?;
+            c.execute_batch(&format!(
+                "ALTER TABLE sync2_obsolete ADD COLUMN {col} INTEGER NULL;"
+            ))
+            .map_err(|e| e.to_string())?;
         }
     }
     // S-7：摘要改按卡 ID 分桶、触发器增量维护（digest.rs）。建表 + 触发器后从三张投影表全量重建一次（升级时唯一一次

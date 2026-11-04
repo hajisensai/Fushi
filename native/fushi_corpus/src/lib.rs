@@ -15,7 +15,7 @@
 //!   [status::PANIC]，不越过 FFI 边界。
 //! - **硬依赖、无 Dart 回退**：Dart 侧加载失败抛带原因的 `FushiCorpusUnavailableError`。
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
 pub mod corpus;
@@ -142,8 +142,11 @@ pub unsafe extern "C" fn fcorp_put(
     terms_len: usize,
 ) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
-        let (Some(doc), Some(terms)) = (slice_arg(doc, doc_len), slice_arg(terms, terms_len)) else {
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
+        let (Some(doc), Some(terms)) = (slice_arg(doc, doc_len), slice_arg(terms, terms_len))
+        else {
             return status::NULL_ARGUMENT;
         };
         match corpus.put(doc, terms) {
@@ -168,7 +171,9 @@ pub unsafe extern "C" fn fcorp_remove(
     all_parts: u8,
 ) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
         let key = match str_arg(key, key_len) {
             Ok(k) => k,
             Err(code) => return code,
@@ -185,7 +190,9 @@ pub unsafe extern "C" fn fcorp_remove(
 #[no_mangle]
 pub unsafe extern "C" fn fcorp_remove_kinds(handle: *const Corpus, kind_mask: u32) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
         corpus.remove_kinds(kind_mask).min(i32::MAX as usize) as i32
     })
 }
@@ -204,7 +211,9 @@ pub unsafe extern "C" fn fcorp_docs(
     out_len: *mut usize,
 ) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
         if out.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
@@ -212,7 +221,11 @@ pub unsafe extern "C" fn fcorp_docs(
             Ok(k) => k,
             Err(code) => return code,
         };
-        let kind = if (0..=255).contains(&kind) { Some(kind as u8) } else { None };
+        let kind = if (0..=255).contains(&kind) {
+            Some(kind as u8)
+        } else {
+            None
+        };
         let json = corpus.docs_json(kind, if key.is_empty() { None } else { Some(key) });
         hand_over_bytes(json.into_bytes(), out, out_len);
         status::OK
@@ -235,7 +248,9 @@ pub unsafe extern "C" fn fcorp_export(
     out_len: *mut usize,
 ) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
         if out.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
@@ -258,9 +273,15 @@ pub unsafe extern "C" fn fcorp_export(
 /// # Safety
 /// `out` / `out_len` 可写。
 #[no_mangle]
-pub unsafe extern "C" fn fcorp_stats(handle: *const Corpus, out: *mut *mut u8, out_len: *mut usize) -> i32 {
+pub unsafe extern "C" fn fcorp_stats(
+    handle: *const Corpus,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
         if out.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
@@ -282,11 +303,15 @@ pub unsafe extern "C" fn fcorp_query(
     out_len: *mut usize,
 ) -> i32 {
     guard(|| {
-        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        let Some(corpus) = corpus_arg(handle) else {
+            return status::NULL_ARGUMENT;
+        };
         if out.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        let Some(query) = slice_arg(query, query_len) else { return status::NULL_ARGUMENT };
+        let Some(query) = slice_arg(query, query_len) else {
+            return status::NULL_ARGUMENT;
+        };
         match corpus.query_json(query) {
             Ok(json) => {
                 hand_over_bytes(json.into_bytes(), out, out_len);
