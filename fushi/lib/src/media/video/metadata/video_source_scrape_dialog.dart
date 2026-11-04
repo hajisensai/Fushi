@@ -941,21 +941,8 @@ class _VideoSourceScrapeTaskPanelState
     if (changed && mounted) await _reloadHistory();
   }
 
-  String _phaseLabel(VideoSourceScrapePhase phase) => switch (phase) {
-    VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
-    VideoSourceScrapePhase.recognizing =>
-      t.video_source_scrape_phase_recognizing,
-    VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
-    VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
-    VideoSourceScrapePhase.writingSidecars =>
-      t.video_source_scrape_phase_writing_sidecars,
-    VideoSourceScrapePhase.completed => t.download_task_status_completed,
-    VideoSourceScrapePhase.cancelled => t.download_status_cancelled,
-    VideoSourceScrapePhase.interrupted =>
-      t.video_source_scrape_status_interrupted,
-    VideoSourceScrapePhase.failed => t.download_task_status_error,
-    VideoSourceScrapePhase.idle => t.video_source_scrape_tasks_empty,
-  };
+  String _phaseLabel(VideoSourceScrapePhase phase) =>
+      videoSourceScrapePhaseLabel(phase);
 
   IconData _runIcon(String status) => switch (status) {
     'completed' => FushiIcons.success,
@@ -1196,3 +1183,21 @@ class _QueuePositionBadge extends StatelessWidget {
     );
   }
 }
+
+/// 补刮阶段的给人看的名字（任务面板与首页「后台任务」入口共用）。
+String videoSourceScrapePhaseLabel(VideoSourceScrapePhase phase) =>
+    switch (phase) {
+      VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
+      VideoSourceScrapePhase.recognizing =>
+        t.video_source_scrape_phase_recognizing,
+      VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
+      VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
+      VideoSourceScrapePhase.writingSidecars =>
+        t.video_source_scrape_phase_writing_sidecars,
+      VideoSourceScrapePhase.completed => t.download_task_status_completed,
+      VideoSourceScrapePhase.cancelled => t.download_status_cancelled,
+      VideoSourceScrapePhase.interrupted =>
+        t.video_source_scrape_status_interrupted,
+      VideoSourceScrapePhase.failed => t.download_task_status_error,
+      VideoSourceScrapePhase.idle => t.video_source_scrape_tasks_empty,
+    };

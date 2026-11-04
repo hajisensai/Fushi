@@ -53,6 +53,15 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 桌面小组件隐私（仅 Android）：生效点是推给原生侧的快照 `privacy` 字段与 Glance
+  // 小组件渲染，harness 设置页里没有小组件。偏好 → 快照字段由快照单测咬住，原生侧
+  // 隐藏标题 / 释义 / Profile 名见 docs/agent/android-widgets.md（设备验证）。
+  'widgets/Hide titles':
+      'test/platform/widget_snapshot_test.dart（privacy 原样进快照，内容不随之改变）',
+  'widgets/Hide definitions':
+      'test/platform/widget_snapshot_test.dart（privacy 原样进快照，内容不随之改变）',
+  'widgets/Hide profile name':
+      'test/platform/widget_snapshot_test.dart（privacy / profile 原样进快照）',
   // 首页「继续」混排 Audiobookshelf（opt-in）：生效点是首页 dashboard 的取数与混排，
   // harness 设置页里没有首页。
   'services/Show in Home Continue':

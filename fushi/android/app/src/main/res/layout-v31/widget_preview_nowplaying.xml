@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_bg"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp">
+    <FrameLayout android:layout_width="56dp" android:layout_height="56dp"
+        android:background="@drawable/widget_preview_chip" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:layout_marginStart="12dp" android:orientation="vertical">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Now playing" android:textSize="12sp" android:textColor="@android:color/system_accent1_600" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Song title" android:textSize="15sp" android:textColor="@android:color/system_neutral1_900" android:textStyle="bold" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Artist" android:textSize="12sp" android:textColor="@android:color/system_neutral2_700" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="8dp"
+        android:background="@drawable/widget_preview_bar" />
+    </LinearLayout>
+</LinearLayout>

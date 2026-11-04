@@ -243,6 +243,7 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.syncBackup => SettingsIconTone.blue,
   SettingsDestinationId.interconnect => SettingsIconTone.teal,
   SettingsDestinationId.storage => SettingsIconTone.gray,
+  SettingsDestinationId.widgets => SettingsIconTone.blue,
   SettingsDestinationId.system ||
   SettingsDestinationId.readerQuickSettings ||
   SettingsDestinationId.videoQuickSettings ||

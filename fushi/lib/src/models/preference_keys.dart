@@ -437,6 +437,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
   'mining_audio_tail_pad_ms',
+  // int（0 = 关）：桌面小组件的「每日制卡张数」目标（2026-11，Profile 内）。
+  'mining_goal_daily_cards',
   // 封面模式迁到片段默认的一次性标记（历史键名），见
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
@@ -658,6 +660,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
   // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
   'srs_card_appearance',
+  // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
+  'srs_goal_daily_reviews',
   'srs_import_anki_options',
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
@@ -726,6 +730,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。
   // 设备本地键：值是本库自增 id，不进 Profile 快照、不随备份 / 分享出境。
   'stats_legacy_profile_id',
+  // int（0 = 关）：每日学习目标分钟数（沉浸总时长 / 阅读 / 听力 / 视频；Profile 内），
+  // 桌面小组件「目标」卡的数据源。
+  'study_goal_daily_listening_minutes',
+  'study_goal_daily_minutes',
+  'study_goal_daily_reading_minutes',
+  'study_goal_daily_video_minutes',
   // bool，默认 true：自动下载的外挂字幕按视频内嵌字幕轨对时间轴
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',
@@ -973,6 +983,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
+  // bool（默认 false）：Android 桌面小组件默认隐藏书名 / 视频标题 / 释义 / Profile 名。
+  // 描述这台设备的桌面，设备本地（deviceLocalPrefKeys + ProfileKeys 排除）。
+  'widget_privacy_hide_definitions',
+  'widget_privacy_hide_profile',
+  'widget_privacy_hide_titles',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',

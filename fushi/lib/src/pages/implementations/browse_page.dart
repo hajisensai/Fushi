@@ -156,6 +156,11 @@ class BrowseNavigationRequest {
   final DownloadTaskWorkFocus? downloadsWorkFocus;
 }
 
+/// 非页面代码（桌面小组件深链等）想把浏览页切到某页签时写这里；首页挂载后监听它，
+/// 转成 [BrowseNavigationRequest] 并清空（用后即清，同 `HomePage._openBrowseTab`）。
+final ValueNotifier<BrowseNavigationRequest?> externalBrowseRequest =
+    ValueNotifier<BrowseNavigationRequest?>(null);
+
 class _BrowsePageState extends ConsumerState<BrowsePage>
     with TickerProviderStateMixin {
   /// 页签控制器由本页持有（不用 DefaultTabController）：页签随平台 / 模块开关增减

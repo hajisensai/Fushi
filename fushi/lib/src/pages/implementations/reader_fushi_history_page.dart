@@ -144,7 +144,6 @@ import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -969,9 +968,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           _buildTagBar(allTags.valueOrNull ?? const []),
                         ] else
                           _buildSearchBar(allTags.valueOrNull ?? const []),
-                        // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时
-                        // 零高度。
-                        SyncProgressBanner(compact: _compactLibraryToolbar),
                       ],
                     ),
                     // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出

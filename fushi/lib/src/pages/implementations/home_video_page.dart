@@ -158,7 +158,6 @@ import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/jellyfin_library_scope.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinVideoClient;
@@ -4939,7 +4938,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ///
   /// 这些作品刮不出资料**没有任何其他可见症状**——封面照样有（抽帧兜底的那张），
   /// 卡片照样进库，用户只会觉得「封面怎么是视频截图」而不知道有个确认队列在等他
-  /// （BUG-2201）。数量为 0 时零高度，与相邻的 [SyncProgressBanner] 一致。
+  /// （BUG-2201）。数量为 0 时零高度。
   ///
   /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]），出现 / 收起都带尺寸 +
   /// 淡入淡出过渡。
@@ -5147,8 +5146,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                       ),
                     ],
                   ],
-                  // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-                  const SyncProgressBanner(),
                   VideoOnlineServicesBanner(
                     preferences: ref.read(appProvider).prefsRepo,
                     onRegister: () async {

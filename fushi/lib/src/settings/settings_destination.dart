@@ -47,6 +47,9 @@ enum SettingsDestinationId {
   // 哪家」的映射。归在 services 模块下（同 Jimaku / OpenSubtitles / Torznab 一类
   // 第三方在线服务），见 module_registry.dart。
   ai,
+  // 「主屏幕小组件」一级分类（仅 Android，settings_schema_widgets.dart）：小组件读的每日
+  // 目标、默认隐私与添加方法。
+  widgets,
   syncBackup,
   // 「存储」一级分类：磁盘占用总览（书/词典单条删除）+ 可选模块（OCR 模型 /
   // Anime4K 着色器删除恢复）+ 随包组件展示（构建函数在 settings_schema_storage.dart）。
