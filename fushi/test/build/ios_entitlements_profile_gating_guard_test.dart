@@ -81,6 +81,60 @@ void main() {
     },
   );
 
+  test('App Group is kept only when both profiles grant it', () {
+    const String appGroup = 'com.apple.security.application-groups';
+    expect(entitlementKeys(), contains(appGroup));
+    final String step = signingStep();
+    // 主 app 描述文件与扩展描述文件都得带 group（值也要对得上）才算授予。
+    expect(
+      step,
+      contains(
+        "Print :Entitlements:$appGroup' \"\$PROFILE_PLIST\" 2>/dev/null "
+        '| grep -qF "\$APP_GROUP"',
+      ),
+    );
+    expect(
+      step,
+      contains(
+        "Print :Entitlements:$appGroup' \"\$W_PLIST\" 2>/dev/null "
+        '| grep -qF "\$APP_GROUP"',
+      ),
+    );
+    // 没授予：删掉这项并把扩展整个摘掉，不能只删 key 留下读不到快照的扩展。
+    final int drop = step.indexOf("Delete :$appGroup' \"\$ENTITLEMENTS_FILE\"");
+    final int strip = step.indexOf('widgets_target.rb strip ios');
+    expect(drop, isNonNegative);
+    expect(strip, greaterThan(drop));
+  });
+
+  test('every widgets extension entitlement is probed in its own profile', () {
+    final String widgetsEntitlements = File(
+      'ios/FushiWidgets/FushiWidgets.entitlements',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final List<String> keys = RegExp(r'<key>([^<]+)</key>')
+        .allMatches(
+          widgetsEntitlements.replaceAll(RegExp(r'<!--[\s\S]*?-->'), ''),
+        )
+        .map((RegExpMatch m) => m.group(1)!)
+        .toList();
+    expect(keys, isNotEmpty);
+    final String step = signingStep();
+    final int wire = step.indexOf(
+      'echo "CODE_SIGN_ENTITLEMENTS = FushiWidgets/FushiWidgets.entitlements"',
+    );
+    expect(wire, isNonNegative);
+    expect(
+      step.substring(0, wire).lastIndexOf(r'if [ "$WIDGETS" = true ]; then'),
+      isNonNegative,
+      reason: '扩展 entitlements 只在扩展描述文件通过对照后才接入',
+    );
+    for (final String key in keys) {
+      final int probe = step.indexOf("Print :Entitlements:$key' \"\$W_PLIST\"");
+      expect(probe, isNonNegative, reason: '$key 没有对照扩展描述文件');
+      expect(wire, greaterThan(probe), reason: '$key 要在接入前对照');
+    }
+  });
+
   test('entitlements are wired only when the profile grants at least one', () {
     final String step = signingStep();
     final int wire = step.indexOf(

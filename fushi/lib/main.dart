@@ -128,6 +128,7 @@ import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
+import 'package:fushi/src/platform/home_widgets/apple_widgets_host.dart';
 import 'package:fushi/src/platform/widget_link_actions.dart';
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_snapshot_source.dart';
@@ -949,13 +950,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     run: _runAppShortcut,
   );
 
-  /// Android 桌面小组件点按的深链（`fushi://widget/...`），冷启动排队同上。
+  /// 桌面小组件 / 控制中心控件点按的深链（`fushi://widget/...`，Android 与 Apple 同一套
+  /// 语法），冷启动排队同上。
   late final WidgetLinkQueue _widgetLinks = WidgetLinkQueue(
     isActive: () => mounted,
     run: _runWidgetLink,
   );
 
-  /// Android 桌面小组件的快照采集 / 推送；非 Android 平台整个不工作。
+  /// 桌面小组件的快照采集 / 推送（Android / iOS / macOS 同一份 JSON）；其余平台整个不工作。
   late final WidgetSnapshotSource _widgetSnapshots = WidgetSnapshotSource(
     ref: ref,
     isActive: () => mounted,
@@ -1184,8 +1186,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       });
     }
     if (Platform.isMacOS) {
+      // 原生侧只转交 Fushi 自己认的 host（卡片出处 + 小组件 / 菜单栏链接，见
+      // macos/Runner/AppDelegate.swift），统一走 [handleIncomingUrl] 分流。
       _sourceUrlSubscription = SourceUrlChannel.urls.listen(
-        _queueCardSourceUrl,
+        (String url) => handleIncomingUrl(data: url, isInitial: false),
       );
     }
     if (Platform.isIOS) {
@@ -1710,6 +1714,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           openWidgetServerItem(appModel, target),
       isContinueItemOpen: (WidgetContinueLink target) =>
           isWidgetContinueItemCurrentlyOpen(appModel, target),
+      // 悬浮球宿主在 app 就绪后的首帧消费这两个标记（开相机 / 读剪贴板）。
+      openCameraLookup: () => pendingCameraOcr.value = true,
+      openClipboardLookup: () => pendingClipboardLookup.value = true,
     );
   }
 
@@ -3137,7 +3144,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   // 全局浮层），见 captureFeedbackScreenshot。
                                   RepaintBoundary(
                                     key: feedbackScreenshotBoundaryKey,
-                                    child: child!,
+                                    // iOS / macOS 的 Live Activity / 菜单栏播放条与小组件按钮
+                                    // 回调宿主（其它平台原样透传）；快照走 [WidgetSnapshotSource]。
+                                    child: AppleWidgetsHost(child: child!),
                                   ),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),
