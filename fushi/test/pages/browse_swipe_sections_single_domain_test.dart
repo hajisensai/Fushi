@@ -2,7 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/browse_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 
 /// 浏览页「二级标签 + 横滑页面」（`_BrowseSwipeSections`）：只剩一个内容域时
 /// （其余库模块被关掉，2026-10-05 移动端截图里只开了视频模块）不画那一排只有

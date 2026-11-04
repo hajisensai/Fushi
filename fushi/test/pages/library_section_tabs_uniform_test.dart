@@ -7,7 +7,8 @@ import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
-import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 
 import '../helpers/source_guard.dart';
 import '../helpers/glass_unwrap.dart';
@@ -431,7 +432,7 @@ void main() {
     // horizontal`，`isScrollable: true` 这一形态结构上落在它的扫描面外——所以那次
     // 回归 CI 一声不响。这条补的就是那个缺口。
     final String src = File(
-      'lib/src/utils/components/library_section_tabs.dart',
+      'lib/src/pages/shared/library_section_tabs.dart',
     ).readAsStringSync();
     // 2026-10-04 起可滚动与否随档位切换（`isScrollable: scrollable`），可滚动档
     // （fill: false / 等分放不下的 natural 档）仍在。

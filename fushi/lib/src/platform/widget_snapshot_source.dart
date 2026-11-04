@@ -843,7 +843,10 @@ class WidgetSnapshotSource {
   Future<WidgetOnDeckInput> _collectOnDeck(AppModel appModel) async {
     final ModuleVisibility modules = appModel.moduleVisibility;
     final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
-        serverContinueGates(appModel);
+        serverContinueGates(
+          prefs: appModel.isPreferencesReady ? appModel.prefsRepo : null,
+          visibility: appModel.moduleVisibility,
+        );
     bool hasMedia = false;
     if (modules.isEnabled(ModuleId.video)) {
       try {

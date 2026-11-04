@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
 import 'package:fushi/src/models/preference_keys.dart'
     show kSectionTabOrderPrefKeyPrefix;
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -16,7 +14,7 @@ import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 库页顶部页签的用户自定义顺序（反馈 ndQ5eXLcqp：「视频除了在线源其他基本不会
@@ -70,8 +68,9 @@ abstract interface class SectionTabOrderStore {
   Future<void> write(String orderKey, List<String> ids);
 }
 
-class _PrefsSectionTabOrderStore implements SectionTabOrderStore {
-  _PrefsSectionTabOrderStore(this._prefs);
+/// 生产实现：读写 [PreferencesRepository] 里的 `<kSectionTabOrderPrefKeyPrefix><orderKey>`。
+class PrefsSectionTabOrderStore implements SectionTabOrderStore {
+  PrefsSectionTabOrderStore(this._prefs);
 
   final PreferencesRepository _prefs;
 
@@ -102,27 +101,6 @@ class SectionTabOrderScope extends InheritedWidget {
   @override
   bool updateShouldNotify(SectionTabOrderScope oldWidget) =>
       store != oldWidget.store;
-}
-
-/// 当前上下文可用的顺序存储：显式 [SectionTabOrderScope] 优先；否则有
-/// ProviderScope 且偏好已装载时走偏好；都没有（启动早期 / 裸组件）返回 null，
-/// 页签按宿主顺序显示、不提供排序入口。
-SectionTabOrderStore? resolveSectionTabOrderStore(BuildContext context) {
-  final SectionTabOrderStore? scoped = SectionTabOrderScope.maybeOf(context);
-  if (scoped != null) return scoped;
-  final bool hasScope =
-      context
-          .getElementForInheritedWidgetOfExactType<
-            UncontrolledProviderScope
-          >() !=
-      null;
-  if (!hasScope) return null;
-  final AppModel app = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appProvider);
-  if (!app.isPreferencesReady) return null;
-  return _PrefsSectionTabOrderStore(app.prefsRepo);
 }
 
 /// 弹出页签排序面板。[tabs] 是当前显示顺序；每次调整都经 [onChanged] 交回新的

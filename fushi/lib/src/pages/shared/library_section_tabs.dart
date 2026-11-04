@@ -24,6 +24,9 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_tab_order.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
@@ -95,28 +98,6 @@ class LibrarySectionFollowScope extends InheritedWidget {
   @override
   bool updateShouldNotify(LibrarySectionFollowScope oldWidget) =>
       current != oldWidget.current;
-}
-
-/// [LibrarySectionTabs] 的一段：值 + 用户可读标签。
-class LibrarySectionTab<T> {
-  const LibrarySectionTab({
-    required this.value,
-    required this.label,
-    this.labelKey,
-    this.orderId,
-  });
-
-  final T value;
-  final String label;
-
-  /// 用户自定义顺序里这一段的稳定身份（见 [LibrarySectionTabs.orderKey]）。值
-  /// 会随状态变的段（如「在线源」组页签的值是组内上次停留的分区）必须给；
-  /// null = 用 `value.toString()`。
-  final String? orderId;
-
-  /// 挂在这一段文字上的稳定 key（测试 / 焦点驱动按 id 命中某段，不依赖文案）；
-  /// null 不挂。
-  final Key? labelKey;
 }
 
 /// 库页（书架 / 漫画 / 视频 / 游戏）顶栏共用的分区导航，形态是 MD3 primary tabs。
@@ -1794,4 +1775,25 @@ class _CompactSecondaryTabsFrame extends StatelessWidget {
       },
     );
   }
+}
+
+/// 当前上下文可用的顺序存储：显式 [SectionTabOrderScope] 优先；否则有
+/// ProviderScope 且偏好已装载时走偏好；都没有（启动早期 / 裸组件）返回 null，
+/// 页签按宿主顺序显示、不提供排序入口。
+SectionTabOrderStore? resolveSectionTabOrderStore(BuildContext context) {
+  final SectionTabOrderStore? scoped = SectionTabOrderScope.maybeOf(context);
+  if (scoped != null) return scoped;
+  final bool hasScope =
+      context
+          .getElementForInheritedWidgetOfExactType<
+            UncontrolledProviderScope
+          >() !=
+      null;
+  if (!hasScope) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  if (!app.isPreferencesReady) return null;
+  return PrefsSectionTabOrderStore(app.prefsRepo);
 }

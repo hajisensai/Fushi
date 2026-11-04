@@ -1262,7 +1262,7 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_placeholder_message.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_tag.dart': kSharedComponentImplementation,
-      'lib/src/utils/components/library_section_tabs.dart':
+      'lib/src/pages/shared/library_section_tabs.dart':
           kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
@@ -1644,9 +1644,7 @@ class AnotherPopupPart {
         'SwitchListTile(',
         'CheckboxListTile(',
       },
-      'lib/src/utils/components/library_section_tabs.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/pages/shared/library_section_tabs.dart': <String>{'fontSize:'},
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
     };
 

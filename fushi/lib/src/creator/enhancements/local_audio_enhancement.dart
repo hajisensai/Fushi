@@ -16,7 +16,7 @@ import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show kLocalAudioQueryBudget, resolveLookupAudioUrl;
 import 'package:fushi/src/utils/misc/system_tts.dart'
     show resolveSystemTtsLanguageTag;

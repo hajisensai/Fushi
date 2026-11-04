@@ -1412,7 +1412,10 @@ class _HomeDashboardPageState
   ///   默认关）。
   /// 各自还要所属模块开着（视频模块关着不问媒体服务器，书模块关着不问 ABS）。
   ({bool mediaServers, bool audiobookshelf, String signature})
-  _serverContinueGates(AppModel appModel) => serverContinueGates(appModel);
+  _serverContinueGates(AppModel appModel) => serverContinueGates(
+    prefs: appModel.isPreferencesReady ? appModel.prefsRepo : null,
+    visibility: appModel.moduleVisibility,
+  );
 
   /// 取用户自配服务器上进行中的条目，到达后 setState 混进「继续」。失败静默：
   /// 离线 / 令牌失效的服务器只是不贡献条目（各服务器独立吞错，互不拖累）。

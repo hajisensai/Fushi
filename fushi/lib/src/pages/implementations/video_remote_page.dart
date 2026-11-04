@@ -46,7 +46,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart'
     show FushiAppUiScaleNeutralizer;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show playResolvedLookupAudio;
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';

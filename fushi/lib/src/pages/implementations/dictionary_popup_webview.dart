@@ -40,7 +40,7 @@ import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/i18n/strings.g.dart';
