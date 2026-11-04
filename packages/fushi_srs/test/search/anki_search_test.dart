@@ -138,11 +138,8 @@ void main() {
     for (final String q in <String>[
       'prop:ease>2',
       'prop:pos=1',
-      'prop:r<0.9',
       'prop:rated=1',
       'deck:A (expression:x or prop:ease=1)',
-      '-rated:1',
-      'rated:1',
       'resched:1',
       'introduced:1',
       'did:1',
@@ -168,6 +165,69 @@ void main() {
         );
       });
     }
+  });
+
+  group('浏览会话的新词（rated / prop:r / is:emptyfield / is:dupe / has: / src:）', () {
+    test('解析成对应节点', () {
+      final SrsSearchRated r = parseAnkiSearch('rated:7') as SrsSearchRated;
+      expect((r.days, r.rating), (7, null));
+      final SrsSearchRated e = parseAnkiSearch('rated:3:4') as SrsSearchRated;
+      expect((e.days, e.rating), (3, 4));
+      expect((parseAnkiSearch('rated:0') as SrsSearchRated).days, 1);
+      final SrsSearchProp p = parseAnkiSearch('prop:r<0.7') as SrsSearchProp;
+      expect(p.property, SrsSearchProperty.retrievability);
+      expect(p.compare, SrsSearchCompare.lt);
+      expect(p.value, 0.7);
+      expect(parseAnkiSearch('is:emptyfield'), isA<SrsSearchEmptyField>());
+      expect(parseAnkiSearch('is:dupe'), isA<SrsSearchDuplicate>());
+      expect(
+        (parseAnkiSearch('has:audio') as SrsSearchHasMedia).media,
+        SrsSearchMedia.audio,
+      );
+      expect(
+        (parseAnkiSearch('has:image') as SrsSearchHasMedia).media,
+        SrsSearchMedia.image,
+      );
+      expect((parseAnkiSearch('src:none') as SrsSearchSource).value, 'none');
+      expect((parseAnkiSearch('src:book') as SrsSearchSource).value, 'book');
+      expect(
+        (parseAnkiSearch(r'src:"book:a\\b\*c\_d \"e\""') as SrsSearchSource)
+            .value,
+        r'book:a\b*c_d "e"',
+      );
+      expect(
+        srsSearchNodeJson(parseAnkiSearch('-rated:2:1 has:image')),
+        <String, Object?>{
+          't': 'and',
+          'c': <Object?>[
+            <String, Object?>{
+              't': 'not',
+              'c': <String, Object?>{'t': 'rated', 'd': 2, 'e': 1},
+            },
+            <String, Object?>{'t': 'has', 'v': 'image'},
+          ],
+        },
+      );
+    });
+
+    test('写错报 syntax', () {
+      for (final String q in <String>[
+        'rated:x',
+        'rated:1:5',
+        'rated:1:0',
+        'rated:-1',
+        'has:video',
+        'src:',
+        'prop:r<x',
+        'is:dupes',
+      ]) {
+        expect(
+          () => parseAnkiSearch(q),
+          throwsSearch(SrsSearchErrorKind.syntax),
+          reason: q,
+        );
+      }
+    });
   });
 
   group('求值用例里的解析断言（原样留在解析器测试里）', () {

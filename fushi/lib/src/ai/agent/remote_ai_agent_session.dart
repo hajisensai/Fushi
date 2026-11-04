@@ -6,11 +6,17 @@
 /// 断线时在条目里**固定位置**插一条本地提示（`errorCode` =
 /// [kAiAgentRemoteUnavailableCode]），并把 running / 待答卡片放开，用户能重试或停止；
 /// 恢复后提示留在原处。host 上的会话没了（闲置回收 / host 重启）就不再轮询。
+///
+/// 会话历史（BUG-4067）：host 宣告了 `agentHistory`（[HostAssistantTarget.supportsAgentHistory]）
+/// 时，本对象同时是会话库（[AiAgentSessionLibrary]）——列出 / 续接 / 改名 / 删除这台
+/// 设备在 host 上发起的会话，界面与本机会话列表同一套。老 host 没有这一面，
+/// [sessionLibrary] 为 null，行为同升级前。
 library;
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
@@ -25,7 +31,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 const String kAiAgentRemoteUnavailableCode = 'remote_unavailable';
 
 class RemoteAiAgentSession extends ChangeNotifier
-    implements AiAgentConversationController {
+    implements AiAgentConversationController, AiAgentSessionLibrary {
   RemoteAiAgentSession._({
     required InterconnectAssistantClient client,
     required HostAssistantTarget target,
@@ -102,9 +108,114 @@ class RemoteAiAgentSession extends ChangeNotifier
   @override
   String? get executorLabel => _target.label;
 
-  /// 整场对话存在执行设备上，这台设备没有存档可列（见接口注释）。
+  /// 执行设备宣告了会话历史才有会话库（列的是 host 上这台设备发起的会话）。
   @override
-  AiAgentSessionLibrary? get sessionLibrary => null;
+  AiAgentSessionLibrary? get sessionLibrary =>
+      _target.supportsAgentHistory ? this : null;
+
+  @override
+  String? get storedOn => _target.label;
+
+  final ValueNotifier<int> _sessionsRevision = ValueNotifier<int>(0);
+
+  @override
+  ValueListenable<int> get sessionsRevision => _sessionsRevision;
+
+  /// host 上这一场的会话 id（快照 `id`）；还没开上时为 null。
+  @override
+  String? get currentSessionId {
+    final Object? id = _view['id'];
+    return id is String && id.isNotEmpty ? id : null;
+  }
+
+  /// 还没说过话：host 不落库空会话，列表里单独画一行「新对话」。
+  @override
+  bool get currentSessionUnsaved => _hostEntries.isEmpty;
+
+  void _bumpSessions() {
+    if (!_disposed) _sessionsRevision.value++;
+  }
+
+  @override
+  Future<List<AiAgentSessionSummary>> listSessions() =>
+      _client.listHistory(_target, feature: kHostAssistantFeatureAgent);
+
+  /// 续接 host 上的一场存档会话：先在 host 上开成活的，开上了再关掉手上这场
+  /// （续接失败时手上这场不动）。跑着时不切（与本机同一判据）。
+  @override
+  Future<bool> switchToSession(String sessionId) async {
+    if (_disposed) return false;
+    if (sessionId == currentSessionId) return true;
+    if (running) return false;
+    final HostAssistantEnvelope envelope;
+    try {
+      envelope = await _client.open(
+        _target,
+        feature: kHostAssistantFeatureAgent,
+        locale: _locale,
+        resume: sessionId,
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'RemoteAiAgent.resume',
+        '${_target.label}: $error',
+      );
+      return false;
+    }
+    if (_disposed) {
+      unawaited(_closeHost(envelope.id));
+      return false;
+    }
+    final String? old = _id;
+    final bool wasLost = _lost;
+    _resetState();
+    _id = envelope.id;
+    _apply(envelope, force: true);
+    unawaited(_pollLoop(_generation));
+    if (old != null && !wasLost) await _closeHost(old);
+    _bumpSessions();
+    return true;
+  }
+
+  @override
+  Future<void> renameSession(String sessionId, String title) async {
+    final String trimmed = title.trim();
+    if (trimmed.isEmpty) return;
+    try {
+      await _client.renameHistory(
+        _target,
+        sessionId,
+        feature: kHostAssistantFeatureAgent,
+        title: trimmed,
+      );
+    } on Object catch (error) {
+      _logHistoryError('rename', error);
+    }
+    _bumpSessions();
+  }
+
+  /// 删的是手上这场：先换成一场新对话（等 host 把旧的关掉收尾），再删存档——不然
+  /// 关闭时的收尾存档可能晚于删除把它写回来。
+  @override
+  Future<bool> deleteSession(String sessionId) async {
+    if (sessionId == currentSessionId) await _reopen(awaitClose: true);
+    try {
+      await _client.deleteHistory(
+        _target,
+        sessionId,
+        feature: kHostAssistantFeatureAgent,
+      );
+      return true;
+    } on Object catch (error) {
+      _logHistoryError('delete', error);
+      return false;
+    } finally {
+      _bumpSessions();
+    }
+  }
+
+  void _logHistoryError(String what, Object error) => ErrorLogService.instance
+      .logDiagnostic('RemoteAiAgent.$what', '${_target.label}: $error');
 
   @override
   List<AgentEntry> get entries {
@@ -249,9 +360,10 @@ class RemoteAiAgentSession extends ChangeNotifier
 
   /// 开一场新对话：关掉 host 上的旧会话，在同一台设备上再开一场。
   @override
-  Future<void> newSession() async {
-    if (_disposed) return;
-    final String? old = _id;
+  Future<void> newSession() => _reopen();
+
+  /// 丢掉手上这一场的本地状态（换场 / 新对话之前）。
+  void _resetState() {
     _generation++;
     _id = null;
     _revision = 0;
@@ -259,10 +371,23 @@ class RemoteAiAgentSession extends ChangeNotifier
     _hostEntries = const <AgentEntry>[];
     _notices.clear();
     _unreachable = false;
-    final bool wasLost = _lost;
     _lost = false;
+  }
+
+  Future<void> _reopen({bool awaitClose = false}) async {
+    if (_disposed) return;
+    final String? old = _id;
+    final bool wasLost = _lost;
+    _resetState();
     notifyListeners();
-    if (old != null && !wasLost) unawaited(_closeHost(old));
+    _bumpSessions();
+    if (old != null && !wasLost) {
+      if (awaitClose) {
+        await _closeHost(old);
+      } else {
+        unawaited(_closeHost(old));
+      }
+    }
     try {
       await _start();
     } on Object catch (error) {
@@ -326,6 +451,12 @@ class RemoteAiAgentSession extends ChangeNotifier
     final bool recovered = _unreachable;
     _unreachable = false;
     if (!force && envelope.revision <= _revision && !recovered) return;
+    // 一轮跑完 / 第一次落库：host 那边的存档变了，会话列表重读。
+    final bool settled =
+        (_view['running'] == true && envelope.view['running'] != true) ||
+        (_hostEntries.isEmpty &&
+            (envelope.view['entries'] as List? ?? const <Object?>[])
+                .isNotEmpty);
     _revision = envelope.revision;
     _view = envelope.view;
     _hostEntries = <AgentEntry>[
@@ -334,6 +465,7 @@ class RemoteAiAgentSession extends ChangeNotifier
         if (raw is Map) _liveEntry(Map<String, Object?>.from(raw)),
     ];
     notifyListeners();
+    if (settled) _bumpSessions();
   }
 
   /// 这里是活的快照：不按存档的中断规则收尾，状态与错误码原样还原。
@@ -388,6 +520,7 @@ class RemoteAiAgentSession extends ChangeNotifier
     // 退出即关 host 上的会话（待答卡片在 host 上按拒绝收尾）；失败只记诊断，
     // host 闲置回收兜底。
     if (id != null && !_lost) unawaited(_closeHost(id));
+    _sessionsRevision.dispose();
     super.dispose();
   }
 }

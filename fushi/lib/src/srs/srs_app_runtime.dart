@@ -34,8 +34,6 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show homeShellTabNotifier;
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart'
     show
         SrsProfileConflictAdopt,

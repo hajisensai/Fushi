@@ -229,12 +229,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     await h.press(LogicalKeyboardKey.gameButtonSelect);
-    // Cursor at 0 (the full-width space): the query starts at 1.
+    // Cursor at 0 (the full-width space): the query skips the blank and the
+    // leading 「 the engine strips anyway, so it starts at 2 (お).
     await h.press(LogicalKeyboardKey.gameButtonA);
-    // The cursor moved to where the query started, so right goes to 2.
+    // The cursor moved to where the query started, so right goes to 3 (は).
+    // Had it stayed at 0, right would land on 「 and query おはよう」 again.
     await h.press(LogicalKeyboardKey.arrowRight);
     await h.press(LogicalKeyboardKey.gameButtonA);
-    expect(h.lookup.terms, <String>['「おはよう」', 'おはよう」']);
+    expect(h.lookup.terms, <String>['おはよう」', 'はよう」']);
   });
 
   testWidgets('the mode chip appears with the first controller press', (

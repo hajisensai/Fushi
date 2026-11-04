@@ -372,20 +372,27 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                 ),
               ),
         body: FushiEntranceScope(
-          child: ListView.separated(
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.section,
+          // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
+          // 不是本页 build 的外层 context。
+          child: Builder(
+            builder: (BuildContext context) => ListView.separated(
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  // MD3 下 FushiPageScaffold 把正文铺到悬浮页头底下，页头高度经
+                  // MediaQuery 顶部 padding 传下来，必须让出，否则封面被顶栏盖住
+                  // （反馈 yglXWr9DTq）。与同目录其它页同一约定。
+                  MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                ),
               ),
-            ),
-            itemCount: children.length,
-            separatorBuilder: (_, _) => SizedBox(height: tokens.spacing.gap),
-            itemBuilder: fushiStaggeredItemBuilder(
-              (BuildContext context, int i) => children[i],
+              itemCount: children.length,
+              separatorBuilder: (_, _) => SizedBox(height: tokens.spacing.gap),
+              itemBuilder: fushiStaggeredItemBuilder(
+                (BuildContext context, int i) => children[i],
+              ),
             ),
           ),
         ),

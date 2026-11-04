@@ -262,9 +262,79 @@ void main() {
           r'\frz12\frx3\fry4\fax0.1\fay0.2\org(10,10)\fscx120\fscy90'
           r'\fade(255,0,255,0,100,200,300)\u1\s1',
         ),
+        // 斜体 \i 不在白名单（BUG-4091）：日文排版没有斜体。
         r'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,'
         r'{\an7\fad(120,80)\1c&HFFFFFF&\3c&H000000&\4c&H202020&'
-        r'\fnNoto Serif\fs60\b1\i1\bord2.5\shad1\blur0.6\be1}セリフ',
+        r'\fnNoto Serif\fs60\b1\bord2.5\shad1\blur0.6\be1}セリフ',
+      );
+    });
+
+    /// 一份只有一条正文为 [text]（含覆盖标签）的对白（0:20–0:22）的参考。
+    String renderWithText(String text) {
+      final AssStyleReference r = parseAssStyleReference(
+        _withExtraEvent('0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,$text'),
+        label: 'x',
+      )!;
+      return _dialogues(
+        renderAssWithReferenceStyle(
+          cues: const <AssStyledCue>[
+            AssStyledCue(startMs: 20000, endMs: 22000, text: 'あの曲。'),
+          ],
+          reference: r,
+        ),
+      ).single;
+    }
+
+    test(r'BUG-4091：英文强调词的斜体 {\i1}That{\i0} song. 不让整行日语变斜', () {
+      expect(
+        renderWithText(r'{\i1}That{\i0} song.'),
+        'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,あの曲。',
+      );
+      // 整行斜体（内心独白）同样不继承。
+      expect(renderWithText(r'{\i1}That song.'), isNot(contains(r'\i1')));
+    });
+
+    test(r'BUG-4091：行中被同名标签改掉 / 被 \r 复位的行首标签只是词级强调，不继承', () {
+      expect(
+        renderWithText(r'{\an8\b1}That{\b0} song.'),
+        r'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,{\an8}あの曲。',
+      );
+      expect(
+        renderWithText(r'{\c&H00FFFF&}Kasumi{\c&HFFFFFF&}, that song.'),
+        'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,あの曲。',
+      );
+      expect(
+        renderWithText(r'{\an8\fs60}That{\r} song.'),
+        'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,あの曲。',
+      );
+      // 整行生效的标签照常继承。
+      expect(
+        renderWithText(r'{\an8\b1}That song.'),
+        r'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,{\an8\b1}あの曲。',
+      );
+    });
+
+    test('BUG-4091：继承到 Italic=-1 的样式时显式 \\i0', () {
+      final String ass =
+          _withExtraEvent(
+            '0,0:00:20.00,0:00:22.00,Thoughts,,0,0,0,,That song.',
+          ).replaceFirst(
+            'Style: Top,',
+            'Style: Thoughts,Noto Sans,70,&H00FFFFFF,&H000000FF,&H00000000,'
+                '&H00000000,0,-1,0,0,100,100,0,0,1,3,0,2,10,10,40,1\n'
+                'Style: Top,',
+          );
+      final AssStyleReference r = parseAssStyleReference(ass, label: 'x')!;
+      expect(
+        _dialogues(
+          renderAssWithReferenceStyle(
+            cues: const <AssStyledCue>[
+              AssStyledCue(startMs: 20000, endMs: 22000, text: 'あの曲。'),
+            ],
+            reference: r,
+          ),
+        ).single,
+        r'Dialogue: 0,0:00:20.00,0:00:22.00,Thoughts,,0,0,0,,{\i0}あの曲。',
       );
     });
 
@@ -367,6 +437,7 @@ void main() {
       recognizer: _FakeRecognizer(drafts),
       jobsRoot: Directory(p.join(tmp.path, 'jobs')),
       displaySplitter: null,
+      evidence: null,
       probeDurationMs: (String _) async => 1440000,
       styleReference:
           (String path, {required bool Function(String) isOwnOutput}) async {
@@ -464,6 +535,7 @@ void main() {
         recognizer: _FakeRecognizer(drafts),
         jobsRoot: Directory(p.join(tmp.path, 'jobs')),
         displaySplitter: null,
+        evidence: null,
         probeDurationMs: (String _) async => 1440000,
         styleReference:
             (String path, {required bool Function(String) isOwnOutput}) =>

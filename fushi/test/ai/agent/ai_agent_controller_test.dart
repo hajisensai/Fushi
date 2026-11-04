@@ -18,6 +18,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 
 class _UnusedRef implements WidgetRef {
   @override
@@ -37,6 +38,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 class _StubLlm implements AgentLlm {
@@ -164,7 +168,9 @@ void main() {
   AiAgentController controller(
     List<AiChatTurn> turns, {
     DateTime Function()? clock,
+    AgentLiveSessions? live,
   }) => AiAgentController.forTesting(
+    live: live,
     database: db,
     settings: _Settings(<AiProviderConfig>[
       AiProviderConfig(
@@ -346,34 +352,70 @@ void main() {
       expect(ids(await c.listSessions()), <String>[second]);
     });
 
-    test('互联 host 替远端跑的会话（remote 场景）不进本机会话列表，操作记录页照列', () async {
+    test('BUG-4067：互联 host 替已配对设备跑的会话进本机会话列表，标发起设备名', () async {
       final AiAgentController c = controller(const <AiChatTurn>[], clock: tick);
       addTearDown(c.dispose);
       await c.send('本机的会话');
       final String local = c.currentSessionId!;
-      // 与 host 的远端会话同一个写入口、同一个 Profile 归属，只是场景不同。
-      await db.saveAiAgentSessionSnapshot(
-        id: 'remote-1',
-        title: '对端的会话',
-        scene: kAiAgentRemoteScene,
-        payloadJson: '{}',
-        totalTokens: 0,
-        createdAt: 1,
-        updatedAt: now + 60000,
-      );
-      expect(ids(await c.listSessions()), <String>[local]);
-      expect(ids(await db.listAiAgentSessionSummaries()), <String>[
-        'remote-1',
-        local,
-      ], reason: '操作记录页按全部会话配标题，远端会话照列');
-      expect(
-        await db.listAiAgentSessionSummaries(
-          excludeScenes: kAiAgentLocalLibraryExcludedScenes,
-          limit: 1,
+      await db.upsertPairedPeer(
+        FushiPairedPeersCompanion.insert(
+          peerId: 'phone-1',
+          deviceName: const Value<String?>(' Pixel '),
+          token: 'tok',
+          pairedAtMs: 1,
         ),
-        hasLength(1),
-        reason: 'limit 按过滤后的行计，远端会话不挤占名额',
       );
+      // 与 host 的远端会话同一个写入口、同一个 Profile 归属。
+      for (final (String id, String origin) in <(String, String)>[
+        ('remote-1', 'phone-1'),
+        ('remote-2', 'gone-peer'),
+      ]) {
+        await db.saveAiAgentSessionSnapshot(
+          id: id,
+          title: '对端的会话',
+          scene: kAiAgentRemoteScene,
+          payloadJson: '{}',
+          totalTokens: 0,
+          createdAt: 1,
+          updatedAt: now + (id == 'remote-1' ? 60000 : 30000),
+          originPeerId: origin,
+        );
+      }
+      final List<AiAgentSessionSummary> listed = await c.listSessions();
+      expect(ids(listed), <String>['remote-1', 'remote-2', local]);
+      expect(listed[0].originDeviceName, 'Pixel');
+      expect(listed[1].originPeerId, 'gone-peer');
+      expect(listed[1].originDeviceName, isNull, reason: '配对已解除：认不出名字');
+      expect(listed[2].originPeerId, isEmpty);
+    });
+
+    test('同一场会话只许一处打开：已配对设备正经互联开着 → 本机不续接、不删', () async {
+      final AgentLiveSessions live = AgentLiveSessions();
+      final AiAgentController c = controller(
+        const <AiChatTurn>[],
+        clock: tick,
+        live: live,
+      );
+      addTearDown(c.dispose);
+      await c.send('第一场');
+      final String first = c.currentSessionId!;
+      expect(live.contains(first), isTrue, reason: '手上这场占着');
+      await c.newSession();
+      expect(live.contains(first), isFalse, reason: '换走就释放');
+
+      // 手机经互联续接了它（host 侧占用）。
+      expect(live.claim(first), isTrue);
+      expect(await c.switchToSession(first), isFalse);
+      expect(c.currentSessionId, isNot(first));
+      expect(await c.deleteSession(first), isFalse);
+      expect(await db.getAiAgentSession(first), isNotNull);
+
+      live.release(first);
+      expect(await c.switchToSession(first), isTrue);
+      expect(c.currentSessionId, first);
+      expect(live.claim(first), isFalse, reason: '本机开着时远端开不了第二份');
+      expect(await c.deleteSession(first), isTrue);
+      expect(live.contains(first), isFalse);
     });
 
     test('删掉正在跑的会话：收尾存档不把它写回，操作记录保留', () async {

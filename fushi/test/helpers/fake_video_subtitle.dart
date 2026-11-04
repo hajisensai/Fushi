@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
@@ -54,6 +55,9 @@ class FakeVideoSubtitleSettings implements AppVideoSubtitleSettings {
 
   @override
   List<WebKnowledgeSite> get webKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? webSearch;
 }
 
 class MemoryGlossaryStore implements SubtitleGlossaryStore {

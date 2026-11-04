@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		macOS 的 WidgetKit 扩展必须在沙盒里（主 app 去沙盒是为了自动更新，扩展不受影响）。
+		App Group 是它唯一能读的共享目录：主 app 写快照与封面，扩展只读。
+
+		组名带 Team ID 前缀：`$(TeamIdentifierPrefix)app.fushi.reader`（FushiWidgets.xcconfig）。
+		本地 / ad-hoc 构建没有 Team，前缀为空。CI 的 Developer ID 重签不读这份文件里的变量，
+		由 tool/apple/macos_widgets_sign.sh 按 APPLE_TEAM_ID 生成展开后的副本再签。
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(FUSHI_APP_GROUP)</string>
+	</array>
+</dict>
+</plist>
