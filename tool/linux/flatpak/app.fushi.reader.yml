@@ -20,6 +20,8 @@ finish-args:
   - --filesystem=home
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.Notifications
+  # Keep the screen awake while reading / playing (screen_wakelock.dart).
+  - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.kde.StatusNotifierWatcher
   - --system-talk-name=org.freedesktop.Avahi
 cleanup:
