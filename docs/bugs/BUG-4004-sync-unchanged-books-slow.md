@@ -23,7 +23,7 @@
      即使读到的基线已是同一个值。
   6. **导入 / 导出一本书的统计整表扫描**：`sync_manager.dart:1114` `getAllReadingStatistics()` 再按书名过滤，
      每本 O(全表)。
-- **[x] ① 已修复** — 提交见下方「提交」。
+- **[x] ① 已修复** — `6c8010d5be`。
   - `SyncFileTrio.fileNames` + 唯一装配点 `syncFileTrioFromFiles`（`sync_utils.dart`）：七个后端的
     `listSyncFiles` 与快照 `trioFor` 都交出同一次回包里的完整文件名（Drive 只取第一页，有下一页时交 null）。
     `_exportContentIfMissing` 直接用它判「远端有没有」，不再重列；列举方给不出完整清单时照旧自己列。
