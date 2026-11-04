@@ -698,6 +698,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     return _withSrsMining(
       ref,
       _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      followWorkSession: true,
     );
   }
   final AppModel appModel = ref.read(appProvider);
@@ -714,6 +715,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   return _withSrsMining(
     ref,
     _withPendingQueue(ref, _withAutoReposition(ref, remote)),
+    followWorkSession: true,
   );
 });
 
@@ -721,10 +723,15 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
 /// 不套待发队列 / 制卡到主机（对端有自己的队列，主机再排一次会让「送没送到」不确定），
 /// 但必须遵守本机的挖词目标——主机已迁到 Fushi 复习时，替对端制的卡也落复习，
 /// 再经复习同步回到各设备；否则会继续写进主机已弃用的 Anki。
+///
+/// 整条链读**激活配置**的设置、不叠主机本机的作品会话（反馈 kEFPY4cuKZ）：Anki 侧是裸 live
+/// 存储，复习侧的挖词目标 / 落点 / 复习副本同样按激活配置（`followWorkSession: false`）——
+/// 主机此刻打开着哪本书与对端无关，两侧必须读同一份配置。
 final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
   (Ref ref) => _withSrsMining(
     ref,
     ref.watch(platformServicesProvider).createAnkiRepository(),
+    followWorkSession: false,
   ),
 );
 
@@ -738,26 +745,41 @@ final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
 /// = 按词频」，见 `SrsDbStore.nextCard`），刚挖的卡立刻就在对的位置，不需要事后改写新卡位置——
 /// 那样每挖一个词都会产生要同步的位置修改记录，而且各设备用各自的词典现查，排出来的顺序未必一致。
 /// 里层那份（绑 Anki）只看得到经待发队列补发给 Anki 的卡，复习制卡不经过它。
-BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
-  if (!ref.watch(srsMiningToReviewProvider)) return repo;
+///
+/// [followWorkSession]：true = 本机制卡链，挖词目标 / 落点 / 复习副本跟着本机作品会话走；
+/// false = 替对端制卡链，一律按激活配置（[hostSrsMiningToReviewProvider]）。
+BaseAnkiRepository _withSrsMining(
+  Ref ref,
+  BaseAnkiRepository repo, {
+  required bool followWorkSession,
+}) {
+  final bool toReview = followWorkSession
+      ? ref.watch(srsMiningToReviewProvider)
+      : ref.watch(hostSrsMiningToReviewProvider);
+  if (!toReview) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
   return SrsMiningAnkiRepository(
     inner: repo,
-    miner: () => _readSrsMiner(ref),
+    miner: () => _readSrsMiner(ref, followWorkSession: followWorkSession),
     onCardsAdded: () => revision.state++,
     // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。作品会话期间
     // 卡在作品配置的复习副本里，编辑页套那份副本打开。
-    openNote: (String noteId) => _openSrsNote(ref, noteId),
+    openNote: (String noteId) =>
+        _openSrsNote(ref, noteId, followWorkSession: followWorkSession),
   );
 }
 
-Future<bool> _openSrsNote(Ref ref, String noteId) async {
-  if (WorkProfileScope.instance.active != null) {
+Future<bool> _openSrsNote(
+  Ref ref,
+  String noteId, {
+  required bool followWorkSession,
+}) async {
+  if (followWorkSession && WorkProfileScope.instance.active != null) {
     final AppModel app = ref.read(appProvider);
     final Future<bool> Function(SrsMiner, String)? open =
         app.srsProfileNoteOpener;
-    final SrsMiner? miner = await _readSrsMiner(ref);
+    final SrsMiner? miner = await _readSrsMiner(ref, followWorkSession: true);
     return open != null && miner != null && await open(miner, noteId);
   }
   return await SrsAppHost.current?.openNote(noteId) ?? false;
@@ -792,12 +814,18 @@ String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
 }
 
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
-Future<SrsMiner?> _readSrsMiner(Ref ref) async {
+/// [followWorkSession] 见 [_withSrsMining]。
+Future<SrsMiner?> _readSrsMiner(
+  Ref ref, {
+  required bool followWorkSession,
+}) async {
   try {
     // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
     // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
     // 绑定的就是激活配置时没有会话，走下面的激活副本。
-    final WorkProfileSession? session = WorkProfileScope.instance.active;
+    final WorkProfileSession? session = followWorkSession
+        ? WorkProfileScope.instance.active
+        : null;
     if (session != null) {
       final AppModel app = ref.read(appProvider);
       return await ref
@@ -811,11 +839,15 @@ Future<SrsMiner?> _readSrsMiner(Ref ref) async {
     final SrsDbStore? store = await ref.read(srsStoreProvider.future);
     final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
     if (store == null || media == null) return null;
-    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
+    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。替对端制卡读激活
+    // 配置的落点（不叠本机作品会话）。
+    final AppModel app = ref.read(appProvider);
     return SrsMiner(
       store: store,
       media: media,
-      destination: ref.read(appProvider).srsMiningDestination,
+      destination: followWorkSession
+          ? app.srsMiningDestination
+          : app.hostSrsMiningDestination,
     );
   } catch (e, stack) {
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);

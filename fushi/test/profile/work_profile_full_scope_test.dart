@@ -317,6 +317,133 @@ void main() {
     expect(await store.read(), live.json, reason: '与 live 逐字节一致');
   });
 
+  test('快照没有 Anki 字段：只改设备本地字段不把全局牌组固化进作品配置，改牌组才接管', () async {
+    final _MemoryAnkiStore live = _MemoryAnkiStore(
+      const AnkiSettings(
+        selectedDeckId: 1,
+        selectedDeckName: 'Global',
+        ankiConnectApiKey: 'k1',
+      ),
+    );
+    final WorkScopedAnkiSettingsStore store = WorkScopedAnkiSettingsStore(
+      live: () => live,
+    );
+    AnkiSettings decode(String? raw) =>
+        AnkiSettings.fromJson(jsonDecode(raw!) as Map<String, dynamic>);
+    await openBook();
+
+    // 只改 AnkiConnect key（设备本地）。
+    await store.write(
+      jsonEncode(
+        decode(await store.read()).copyWith(ankiConnectApiKey: 'k2').toJson(),
+      ),
+    );
+    expect(live.settings.ankiConnectApiKey, 'k2');
+    expect(
+      await snapshotValue(
+        boundId,
+        ProfileKeys.categoryAnki,
+        'selectedDeckName',
+      ),
+      isNull,
+      reason: '没改配置拥有的字段，作品配置不接管',
+    );
+    expect(scope.ankiOverrides, isNull);
+    // 全局随后换了牌组，书里照样跟着 live。
+    live.json = jsonEncode(
+      live.settings.copyWith(selectedDeckName: 'Global2').toJson(),
+    );
+    expect(decode(await store.read()).selectedDeckName, 'Global2');
+
+    // 书里明确改牌组：接管。
+    await store.write(
+      jsonEncode(
+        decode(
+          await store.read(),
+        ).copyWith(selectedDeckId: 5, selectedDeckName: 'InBook').toJson(),
+      ),
+    );
+    expect(
+      await snapshotValue(
+        boundId,
+        ProfileKeys.categoryAnki,
+        'selectedDeckName',
+      ),
+      'InBook',
+    );
+    expect(live.settings.selectedDeckName, 'Global2', reason: '全局牌组不动');
+  });
+
+  test('另一进程（弹窗）改过绑定配置的牌组：主进程读改写不覆盖它', () async {
+    final _MemoryAnkiStore live = _MemoryAnkiStore(
+      const AnkiSettings(selectedDeckName: 'Global', tags: 'g'),
+    );
+    final WorkScopedAnkiSettingsStore store = WorkScopedAnkiSettingsStore(
+      live: () => live,
+    );
+    AnkiSettings decode(String? raw) =>
+        AnkiSettings.fromJson(jsonDecode(raw!) as Map<String, dynamic>);
+    await putSnapshot(
+      boundId,
+      ProfileKeys.categoryAnki,
+      'selectedDeckName',
+      'Bound',
+    );
+    await openBook();
+    expect(decode(await store.read()).selectedDeckName, 'Bound');
+
+    // 弹窗进程在同一会话里选了牌组：直接落进绑定配置的持久层，主进程内存没有收到。
+    final Map<String, String> popupMap = ProfileKeys.ankiSettingsToMap(
+      decode(await store.read()).copyWith(selectedDeckName: 'Popup'),
+    );
+    await repo.writeWorkScopedAnkiSettings(boundId, popupMap);
+
+    final AnkiSettings seen = decode(await store.read());
+    expect(seen.selectedDeckName, 'Popup', reason: '主进程读到弹窗的改动');
+    await store.write(jsonEncode(seen.copyWith(tags: 'book-tag').toJson()));
+    expect(
+      await snapshotValue(
+        boundId,
+        ProfileKeys.categoryAnki,
+        'selectedDeckName',
+      ),
+      'Popup',
+      reason: '主进程改标签不能把弹窗选的牌组覆盖回去',
+    );
+    expect(
+      await snapshotValue(boundId, ProfileKeys.categoryAnki, 'tags'),
+      'book-tag',
+    );
+  });
+
+  test('withoutWorkScope：替对端制卡读激活配置的挖词目标 / 落点，不叠本机作品会话', () async {
+    await db.setPref(
+      PreferencesRepository.srsMiningTargetKey,
+      PrefCodec.encode('srs'),
+    );
+    await db.setPref('srs_mining_deck_id', PrefCodec.encode('global-deck'));
+    await putSnapshot(
+      boundId,
+      ProfileKeys.categoryPref,
+      PreferencesRepository.srsMiningTargetKey,
+      PrefCodec.encode('anki'),
+    );
+    await putSnapshot(
+      boundId,
+      ProfileKeys.categoryPref,
+      'srs_mining_deck_id',
+      PrefCodec.encode('bound-deck'),
+    );
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    await openBook();
+    expect(prefs.srsMiningTarget, 'anki');
+    expect(prefs.srsMiningDeckId, 'bound-deck');
+    expect(prefs.withoutWorkScope(() => prefs.srsMiningTarget), 'srs');
+    expect(prefs.withoutWorkScope(() => prefs.srsMiningDeckId), 'global-deck');
+    expect(prefs.srsMiningTarget, 'anki', reason: '只在回调期间绕开会话');
+  });
+
   test('writeWorkScopedAnkiSettings：非激活配置写快照，激活配置写 live', () async {
     final FakeAnkiRepository anki = FakeAnkiRepository();
     final ProfileRepository r = ProfileRepository(db, anki);
@@ -345,26 +472,34 @@ void main() {
     expect(parseWorkProfileSessionProfileId('junk'), isNull);
     expect(parseWorkProfileSessionProfileId('$boundId:7'), boundId);
 
+    // 主进程：发布值随会话装上 / 会话内写入 / 离开变化。
+    expect(scope.publishedSessionValue, '');
+    await openBook();
+    expect(scope.publishedSessionValue, '$boundId:0');
+    await scope.write('video_subtitle_style', PrefCodec.encode('{"x":1}'));
+    final String published = scope.publishedSessionValue;
+    expect(published, '$boundId:1', reason: '会话内写入让弹窗重新镜像');
+    vm.leaveWorkSession(reader);
+    expect(scope.publishedSessionValue, '');
+
+    // 弹窗进程：按发布值镜像（同一条 enterProfile，读到主进程写进快照的值）。
     final Object popup = Object();
-    expect(
-      await scope.enterProfile(
-        owner: popup,
-        repository: repo,
-        resolveProfileId: () async =>
-            parseWorkProfileSessionProfileId('$boundId:0'),
-      ),
-      isTrue,
+    await scope.mirrorPublishedSession(
+      owner: popup,
+      published: published,
+      repository: repo,
     );
     expect(scope.active?.profileId, boundId);
     expect(
-      await scope.enterProfile(
-        owner: popup,
-        repository: repo,
-        resolveProfileId: () async => parseWorkProfileSessionProfileId(''),
-      ),
-      isTrue,
+      scope.scopedRaw('video_subtitle_style'),
+      PrefCodec.encode('{"x":1}'),
     );
-    expect(scope.active, isNull);
+    await scope.mirrorPublishedSession(
+      owner: popup,
+      published: '',
+      repository: repo,
+    );
+    expect(scope.active, isNull, reason: '主进程离开作品，弹窗撤掉镜像');
   });
 
   test('发布作品会话：值不变不写库（不白抬 prefs_version）', () async {
@@ -397,10 +532,39 @@ void main() {
       isTrue,
       reason: '本机制卡链的 Anki 设置要叠作品会话',
     );
+    final int hostChain = anki.indexOf(
+      'final hostMiningAnkiRepositoryProvider',
+    );
+    expect(hostChain, greaterThan(0));
     expect(
-      anki.contains('WorkProfileScope.instance.active'),
+      anki
+          .substring(hostChain, hostChain + 600)
+          .contains('followWorkSession: false'),
       isTrue,
-      reason: '复习制卡在作品会话里落进作品配置的复习副本',
+      reason: '替对端制卡链的复习侧不叠本机作品会话',
+    );
+    expect(
+      'followWorkSession: true,'.allMatches(anki).length,
+      2,
+      reason: '本机制卡链（本地 / 制卡到主机）两条返回路径都跟着作品会话',
+    );
+    final String floating = File(
+      'lib/src/pages/implementations/floating_dict_page.dart',
+    ).readAsStringSync();
+    expect(
+      floating.contains('appModel.refreshForWarmDictionaryPopup()'),
+      isTrue,
+      reason: '悬浮词典热复用与 :popup 同一条对账（含镜像主进程作品会话）',
+    );
+    final String videoMining = File(
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    ).readAsStringSync();
+    expect(
+      videoMining.contains(
+        'createAnkiRepository(settingsStore: WorkScopedAnkiSettingsStore())',
+      ),
+      isTrue,
+      reason: '视频遥控制卡与普通制卡同一份作品会话 Anki 设置',
     );
     final String vmSrc = File(
       'lib/src/profile/profile_view_model.dart',

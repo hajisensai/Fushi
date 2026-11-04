@@ -379,6 +379,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';

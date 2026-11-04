@@ -9784,11 +9784,7 @@ class AppModel with ChangeNotifier {
   /// 主进程把当前生效的作品会话（配置 id + 会话内写入次数）写进共享偏好表，`:popup` 进程 /
   /// 悬浮词典下一次查词时经 `prefs_version` 看到并镜像。值没变就不写。
   void _publishWorkProfileSession() {
-    final WorkProfileScope scope = WorkProfileScope.instance;
-    final WorkProfileSession? session = scope.active;
-    final String value = session == null
-        ? ''
-        : '${session.profileId}:${scope.writeRevision.value}';
+    final String value = WorkProfileScope.instance.publishedSessionValue;
     if (value == _publishedWorkSession) return;
     _publishedWorkSession = value;
     _workSessionPublish = _workSessionPublish
@@ -9815,19 +9811,14 @@ class AppModel with ChangeNotifier {
     final String published = prefsRepo.workProfileSession;
     if (published == _mirroredWorkSession) return;
     _mirroredWorkSession = published;
-    final int? profileId = parseWorkProfileSessionProfileId(published);
-    if (profileId == null) {
-      WorkProfileScope.instance.leave(_mainProcessWorkSessionOwner);
-    } else {
-      await WorkProfileScope.instance.enterProfile(
-        owner: _mainProcessWorkSessionOwner,
-        repository: ProfileRepository(
-          _database,
-          platformServices.createAnkiRepository(),
-        ),
-        resolveProfileId: () async => profileId,
-      );
-    }
+    await WorkProfileScope.instance.mirrorPublishedSession(
+      owner: _mainProcessWorkSessionOwner,
+      published: published,
+      repository: ProfileRepository(
+        _database,
+        platformServices.createAnkiRepository(),
+      ),
+    );
     await _workProfileScopeReload;
   }
 
@@ -10553,6 +10544,16 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
+  /// 不叠本机作品会话的挖词目标（激活配置的值）：替别的设备 / 浏览器扩展 / 游戏串流接收端
+  /// 制卡（`hostMiningAnkiRepositoryProvider`）用——主机此刻打开着哪本书与对端无关。
+  SrsMiningTarget get hostSrsMiningTarget {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return SrsMiningTarget.anki;
+    return SrsMiningTarget.fromWire(
+      prefs.withoutWorkScope(() => prefs.srsMiningTarget),
+    );
+  }
+
   // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
   HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
       decodeHomeDashboardPanelModes(
@@ -10659,6 +10660,13 @@ class AppModel with ChangeNotifier {
     final PreferencesRepository? prefs = _prefsRepo;
     if (prefs == null) return const SrsMiningDestination();
     return srsMiningDestinationIn(prefs);
+  }
+
+  /// 不叠本机作品会话的复习制卡落点（激活配置的值），与 [hostSrsMiningTarget] 同一用途。
+  SrsMiningDestination get hostSrsMiningDestination {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return const SrsMiningDestination();
+    return prefs.withoutWorkScope(() => srsMiningDestinationIn(prefs));
   }
 
   Future<void> setSrsMiningDeckId(String id) =>

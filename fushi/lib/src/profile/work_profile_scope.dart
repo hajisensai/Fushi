@@ -27,6 +27,10 @@ typedef WorkProfilePrefWriter =
 typedef WorkProfileAnkiWriter =
     Future<void> Function(int profileId, Map<String, String> ankiMap);
 
+/// 从持久层现读作品级配置此刻拥有的 Anki 字段（空 = 快照没有 Anki 字段）。
+typedef WorkProfileAnkiReader =
+    Future<Map<String, String>> Function(int profileId);
+
 /// 解析 [kWorkProfileSessionPrefKey] 的值；空 / 坏值 = 没有会话。
 int? parseWorkProfileSessionProfileId(String raw) {
   final int colon = raw.indexOf(':');
@@ -55,8 +59,10 @@ class WorkProfileSession {
     required this.view,
     required WorkProfilePrefWriter writer,
     WorkProfileAnkiWriter? ankiWriter,
+    WorkProfileAnkiReader? ankiReader,
   }) : _writer = writer,
        _ankiWriter = ankiWriter,
+       _ankiReader = ankiReader,
        prefs = <String, String>{
          for (final MapEntry<String, String> e in view.prefsMap.entries)
            if (WorkProfileScope.isWorkScopedPrefKey(e.key)) e.key: e.value,
@@ -85,6 +91,7 @@ class WorkProfileSession {
 
   final WorkProfilePrefWriter _writer;
   final WorkProfileAnkiWriter? _ankiWriter;
+  final WorkProfileAnkiReader? _ankiReader;
 }
 
 /// 进程内唯一的作品级配置覆盖层登记处（见 [WorkProfileSession]）。
@@ -195,6 +202,26 @@ class WorkProfileScope extends ChangeNotifier {
   /// 当前会话接管的 Anki 字段；null = 没有会话，或绑定配置不覆盖 Anki 设置。
   Map<String, String>? get ankiOverrides => active?.ankiOverrides;
 
+  /// 现读当前会话接管的 Anki 字段（经会话的持久层读取器，读到后刷新 [ankiOverrides]）；null =
+  /// 没有会话，或绑定配置不覆盖 Anki 设置。读失败留痕后用内存里的那份。
+  ///
+  /// 制卡链的读改写（`WorkScopedAnkiSettingsStore`）走这里而不是 [ankiOverrides]：Android 弹窗
+  /// 进程在同一会话里改过绑定配置的牌组时，主进程内存里那份是旧的，拿它读改写会把弹窗的改动
+  /// 整组覆盖掉。
+  Future<Map<String, String>?> readAnki() async {
+    final WorkProfileSession? session = active;
+    if (session == null) return null;
+    final WorkProfileAnkiReader? reader = session._ankiReader;
+    if (reader == null) return session.ankiOverrides;
+    try {
+      final Map<String, String> fresh = await reader(session.profileId);
+      session.ankiOverrides = fresh.isEmpty ? null : fresh;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('WorkProfileScope.readAnki', e, stack);
+    }
+    return session.ankiOverrides;
+  }
+
   /// 会话内写入 Anki 制卡设置里配置拥有的字段 [ankiMap]：内存同步改、绑定配置的持久层异步写。
   /// 没有会话时什么都不做（调用方写 live）。
   Future<void> writeAnki(Map<String, String> ankiMap) async {
@@ -238,6 +265,7 @@ class WorkProfileScope extends ChangeNotifier {
             view: view,
             writer: repository.writeWorkScopedPref,
             ankiWriter: repository.writeWorkScopedAnkiSettings,
+            ankiReader: repository.readWorkScopedAnkiSettings,
           );
         }
       }
@@ -245,6 +273,34 @@ class WorkProfileScope extends ChangeNotifier {
       ErrorLogService.instance.log('WorkProfileScope.enterProfile', e, stack);
     }
     return install(owner, session);
+  }
+
+  /// 主进程要发布给 Android 弹窗进程的当前会话值（[kWorkProfileSessionPrefKey]）：
+  /// `<配置 id>:<会话内写入次数>`，没有会话 = 空串。写入次数让弹窗进程在同一会话里改过
+  /// 绑定配置快照后也能经 `prefs_version` 看到变化、重新镜像。
+  String get publishedSessionValue {
+    final WorkProfileSession? session = active;
+    return session == null ? '' : '${session.profileId}:${writeRevision.value}';
+  }
+
+  /// 弹窗进程：按主进程发布的值 [published]（[publishedSessionValue] 形）装上 / 换掉 / 撤下
+  /// [owner] 的会话——走与主进程同一条 [enterProfile]，不另写一份作品配置逻辑。坏值 / 空值 =
+  /// 主进程没有会话，撤掉。
+  Future<void> mirrorPublishedSession({
+    required Object owner,
+    required String published,
+    required ProfileRepository repository,
+  }) async {
+    final int? profileId = parseWorkProfileSessionProfileId(published);
+    if (profileId == null) {
+      leave(owner);
+      return;
+    }
+    await enterProfile(
+      owner: owner,
+      repository: repository,
+      resolveProfileId: () async => profileId,
+    );
   }
 
   /// 登记 [owner] 即将进入（视图解析前调用），与 [install] 配对。
