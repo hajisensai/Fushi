@@ -3123,6 +3123,14 @@ class VideoDownloadPipelineService {
         request.kind == VideoOrganizationKind.movie) {
       job = await _reclassifyMovieJobAsEpisodic(job);
     }
+    // 反方向（9Fpg5zXriP）：剧集身份下到了单部无集号正片（单文件剧场版）。
+    // 同样先落任务形态（含按文件取的作品名），再落文件计划。
+    final String? featureTitle = planned.standaloneFeatureTitle;
+    if (planned.kind == VideoOrganizationKind.movie &&
+        request.kind == VideoOrganizationKind.episodic &&
+        featureTitle != null) {
+      job = await _reclassifySeriesJobAsStandaloneFeature(job, featureTitle);
+    }
     await _persistOrganizationIntent(job, planned, backendFiles);
     _ensureLeaseHeld();
     final VideoOrganizationResult result = await _organizer.organize(
@@ -3403,6 +3411,46 @@ class VideoDownloadPipelineService {
         identityJson: job.identityJson == null
             ? Value<String?>(encodeVideoMediaReference(_mediaReference(job)))
             : const Value<String?>.absent(),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+      ),
+    );
+    _ensureLeaseHeld();
+    return await database.getVideoDownloadJob(job.jobId) ?? job;
+  }
+
+  /// 把剧集任务改成单部正片的电影任务（9Fpg5zXriP，整理器判定种子里只有一部
+  /// 无集号正片，见 [VideoOrganizationPlan.standaloneFeatureTitle]）。
+  ///
+  /// 剧集身份描述的是**另一部作品**（TV 版），它的 TMDB / IMDb / MAL / AniDB id、
+  /// 原名与别名都不属于这部正片：由 [videoDownloadJobMediaReference] 在「快照是
+  /// 剧集、任务是电影」时整份丢弃，刮削改走媒体库自动识别（AniDB ED2K 哈希按文件
+  /// 认得出剧场版自己的条目）。任务标题 / 年份 / 季号同步改成按文件取的名字、无
+  /// 年份、无季——它们是整理目标路径的输入，崩溃重放以电影请求重算必须得到同一
+  /// 条路径。旧行没有快照时先按改判前的形态补写一份，让上述判据对它同样成立，
+  /// 也让手动任务的显式 AniDB 身份不再被当作确认身份。
+  Future<VideoDownloadJobRow> _reclassifySeriesJobAsStandaloneFeature(
+    VideoDownloadJobRow job,
+    String featureTitle,
+  ) async {
+    _ensureLeaseHeld();
+    fushiDebugPrint(
+      '[download-organize] ${job.jobId}: tv job holds a single standalone '
+      'feature, reclassifying as movie "$featureTitle"',
+    );
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        mediaKind: Value<String>(VideoMetadataMediaKind.movie.name),
+        discoveryCategory:
+            job.discoveryCategory == VideoDiscoveryCategory.tv.name
+            ? Value<String?>(VideoDiscoveryCategory.movie.name)
+            : const Value<String?>.absent(),
+        identityJson: job.identityJson == null
+            ? Value<String?>(encodeVideoMediaReference(_mediaReference(job)))
+            : const Value<String?>.absent(),
+        title: Value<String>(featureTitle),
+        year: const Value<int?>(null),
+        season: const Value<int?>(null),
         updatedAt: Value<int>(_now().millisecondsSinceEpoch),
       ),
     );
