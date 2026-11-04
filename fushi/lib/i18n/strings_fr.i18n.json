@@ -8184,6 +8184,8 @@
   "srs_review_layout_volume": "Audio volume",
   "srs_review_layout_volume_hint": "Volume of card audio, both when tapped and when played automatically",
   "srs_review_pending_decision": "Needs your decision",
+  "srs_review_rated": "Rated: ${rating}",
+  "srs_review_rated_interval": "Rated: ${rating} · due in ${interval}",
   "srs_review_replay_audio": "Replay audio",
   "srs_review_rwkv_pending": "RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.",
   "srs_review_show_answer": "Show answer",

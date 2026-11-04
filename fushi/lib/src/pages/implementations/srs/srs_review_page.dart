@@ -13,7 +13,7 @@
 /// - 卡面音频：当前卡所在牌组（取参数继承的 own 祖先，[SrsDeckTree.paramsOwner]）开着
 ///   「自动播放音频」时，出题 / 翻面自动按顺序播卡上的音频；「重播音频」随时手动再播（规则见
 ///   srs_card_autoplay.dart，对齐 Anki 按预设的 autoplay / replayq）。
-/// - 撤销栈是会话级：撤评分调 [SrsDbStore.undo]（别的设备已复习过这张卡时返回
+/// - 撤销栈挂在 store 上（srs_review_undo.dart，退出复习页再进来仍可撤）：撤评分调 [SrsDbStore.undo]（别的设备已复习过这张卡时返回
 ///   false，提示后丢掉这一步）；撤暂停 / 埋卡 / 旗标 / 移牌组 / 编辑 = 再写一次
 ///   改回原值。
 library;
@@ -84,6 +84,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
+import 'package:fushi/src/srs/srs_review_undo.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -104,15 +105,6 @@ String srsIntervalLabel(({String amount, SrsIntervalUnit unit}) p) =>
       SrsIntervalUnit.months => t.srs_interval_months(n: p.amount),
       SrsIntervalUnit.years => t.srs_interval_years(n: p.amount),
     };
-
-/// 撤销栈的一步。[logId] 非 null = 撤一条评分 / 重置日志；否则执行 [revert] 改回原值。
-class _UndoStep {
-  const _UndoStep({required this.cardId, this.logId, this.revert});
-
-  final String cardId;
-  final String? logId;
-  final Future<void> Function(SrsDbStore store)? revert;
-}
 
 /// 预取好的下一张（数据层：详情 + 渲染结果）。
 class _PrefetchedCard {
@@ -294,7 +286,22 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   SrsCustomStudyProgress? _customProgress;
   int _reviewedThisSession = 0;
 
-  final List<_UndoStep> _undo = <_UndoStep>[];
+  /// 撤销栈挂在 store 上（[SrsReviewUndoStack]），退出复习页再进来照样能撤上一次评分
+  /// （反馈 gvyN7EzzDD；以前是本 State 的字段，dispose 即丢）。
+  SrsReviewUndoStack? get _undoStack {
+    final SrsDbStore? store = _store;
+    return store == null ? null : SrsReviewUndoStack.of(store);
+  }
+
+  bool get _canUndo => _undoStack?.isNotEmpty ?? false;
+
+  /// 最近一次评分的结果（反馈 fiTLYrWbDW：点完评分界面直接换下一张，看不出点的是哪一档）。
+  /// 下一张的问题面上方显示「已评：良好 · 3 天后到期」，翻面 / 撤销时收起
+  /// （[SrsRatedFeedbackChip]）。[SrsRatedFeedback.serial] 每次评分递增，连续两次同档也重放进场。
+  SrsRatedFeedback? _lastRated;
+  int _ratedSerial = 0;
+
+  void _pushUndo(SrsReviewUndoStep step) => _undoStack?.push(step);
 
   /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
   ///
@@ -754,7 +761,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   void _showAnswer() {
     if (_detail == null || _showingAnswer) return;
-    setState(() => _showingAnswer = true);
+    setState(() {
+      _showingAnswer = true;
+      _lastRated = null;
+    });
     _autoplayAudio();
   }
 
@@ -957,6 +967,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final SrsDbStore? store = _store;
     if (detail == null || store == null || !_showingAnswer) return;
     if (!store.canSchedule) return;
+    // 评分结果提示用按钮上看到的那个间隔（出题时的预览；关了「显示间隔」就只报评分名）。
+    final String ratedInterval = ref.read(srsReviewShowIntervalsProvider)
+        ? _ratingInterval(rating)
+        : '';
     unawaited(
       _guarded('answer', () async {
         _answerClock.stop();
@@ -986,8 +1000,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           return;
         }
         SrsReviewPage.debugPhase?.call('answer:done');
-        _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
+        _pushUndo(SrsReviewUndoStep(cardId: detail.card.id, logId: out.log.id));
         _reviewedThisSession++;
+        _lastRated = SrsRatedFeedback(
+          serial: ++_ratedSerial,
+          rating: rating,
+          interval: ratedInterval,
+        );
         await _loadNext(usePrefetch: true, planned: out.study);
       }),
     );
@@ -995,10 +1014,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   void _undoLast() {
     final SrsDbStore? store = _store;
-    if (store == null || _undo.isEmpty) return;
+    if (store == null || !_canUndo) return;
     unawaited(
       _guarded('undo', () async {
-        final _UndoStep step = _undo.removeLast();
+        final SrsReviewUndoStep? step = SrsReviewUndoStack.of(store).pop();
+        if (step == null) return;
+        _lastRated = null;
         if (step.logId != null) {
           final bool ok = await store.undo(step.cardId, step.logId!);
           if (!ok) {
@@ -1030,8 +1051,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       case _CardAction.suspend:
         await _guarded('suspend', () async {
           await store.setSuspended(card.id, true);
-          _undo.add(
-            _UndoStep(
+          _pushUndo(
+            SrsReviewUndoStep(
               cardId: card.id,
               revert: (SrsDbStore s) => s.setSuspended(card.id, false),
             ),
@@ -1044,8 +1065,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           final int today = day.dayIndexOf(store.now().$1);
           final int? before = card.buriedUntilDay;
           await store.buryUntil(card.id, today + 1);
-          _undo.add(
-            _UndoStep(
+          _pushUndo(
+            SrsReviewUndoStep(
               cardId: card.id,
               revert: (SrsDbStore s) => s.buryUntil(card.id, before),
             ),
@@ -1069,8 +1090,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _guarded('flag', () async {
           final int before = card.flag;
           await store.setFlag(card.id, flag);
-          _undo.add(
-            _UndoStep(
+          _pushUndo(
+            SrsReviewUndoStep(
               cardId: card.id,
               revert: (SrsDbStore s) => s.setFlag(card.id, before),
             ),
@@ -1092,8 +1113,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _guarded('move', () async {
           final String before = card.deckId;
           await store.moveCard(card.id, target);
-          _undo.add(
-            _UndoStep(
+          _pushUndo(
+            SrsReviewUndoStep(
               cardId: card.id,
               revert: (SrsDbStore s) => s.moveCard(card.id, before),
             ),
@@ -1118,7 +1139,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           // 重置也是一条日志：撤销 = 撤这条日志。
           final String? logId = (await store.cardRow(card.id))?.lastLogId;
           if (logId != null) {
-            _undo.add(_UndoStep(cardId: card.id, logId: logId));
+            _pushUndo(SrsReviewUndoStep(cardId: card.id, logId: logId));
           }
           await _loadNext();
         });
@@ -1137,8 +1158,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         if (!ok || !mounted) return;
         await _guarded('deleteNote', () async {
           await store.deleteNote(detail.note.id);
-          _undo.add(
-            _UndoStep(
+          _pushUndo(
+            SrsReviewUndoStep(
               cardId: card.id,
               revert: (SrsDbStore s) => s.restoreNote(detail.note.id),
             ),
@@ -1231,8 +1252,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       detail.note.id,
       fieldsById: <String, String>{fieldId: after},
     );
-    _undo.add(
-      _UndoStep(
+    _pushUndo(
+      SrsReviewUndoStep(
         cardId: detail.card.id,
         revert: (SrsDbStore s) => s.updateNote(
           detail.note.id,
@@ -1374,8 +1395,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         ) ||
         after.tags.join('\u0000') != tagsBefore.join('\u0000');
     if (changed) {
-      _undo.add(
-        _UndoStep(
+      _pushUndo(
+        SrsReviewUndoStep(
           cardId: detail.card.id,
           revert: (SrsDbStore s) => s.updateNote(
             detail.note.id,
@@ -1650,7 +1671,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 操作与设置在 [_menuItems]，优先级最低、宽度不够时先收。撤销在没有可撤销的评分时不占位
   /// （Ctrl+Z 照常）。
   List<FushiToolbarItem> _actionItems() => <FushiToolbarItem>[
-    if (_undo.isNotEmpty)
+    if (_canUndo)
       FushiToolbarItem(
         key: const ValueKey<String>('srs_review_undo'),
         icon: FushiIcons.undo,
@@ -2252,7 +2273,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             action: Wrap(
               spacing: FushiDesignTokens.of(context).spacing.gap,
               children: <Widget>[
-                if (_undo.isNotEmpty)
+                if (_canUndo)
                   FushiOutlinedButton.icon(
                     onPressed: _busy ? null : _undoLast,
                     icon: const FushiIcon(FushiIcons.undo),
@@ -2428,6 +2449,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                     // 结构恒定：没在滑时位移为零，卡面平台视图不因手势重挂。
                     SrsSwipeFollow(hint: _swipeHint, child: cardFace),
                     SrsSwipeHintBadge(hint: _swipeHint),
+                    SrsRatedFeedbackChip(
+                      // 原生卡面铺在底栏背后：提示抬到底栏上沿，不被底栏盖住。
+                      bottomInset: underBar ? _bottomBarHeight : 0,
+                      feedback: _showingAnswer || detail == null
+                          ? null
+                          : _lastRated,
+                    ),
                     IgnorePointer(
                       child: AnimatedSwitcher(
                         duration: fushiMotionDuration(
@@ -2738,28 +2766,29 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
-  Widget _buildRatingRow(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  /// 评分按钮上的下次间隔文案（出题时的预览）；预览缺失 / RWKV 复习队列给空串。
+  String _ratingInterval(int rating) {
     final SrsAnswerPreview? preview = _preview;
     final SrsDayContext? day = _day;
-    String interval(int rating) {
-      if (preview == null || day == null) return '';
-      final SrsScheduleResult next = preview.plan[rating];
-      // RWKV 牌组（RWKV-Instant）：进复习队列的卡在估计回忆率降到目标时出现，不看到期日，
-      // FSRS-7 算的天数不是它真正回来的时间，不显示。学习 / 重学步仍按步长计时，照常显示。
-      if (preview.algorithm == SrsAlgorithm.rwkv &&
-          next.queue == SrsQueue.review) {
-        return '';
-      }
-      return srsIntervalLabel(
-        srsIntervalParts(
-          next,
-          nowMs: preview.nowMs,
-          today: day.dayIndexOf(preview.nowMs),
-        ),
-      );
+    if (preview == null || day == null) return '';
+    final SrsScheduleResult next = preview.plan[rating];
+    // RWKV 牌组（RWKV-Instant）：进复习队列的卡在估计回忆率降到目标时出现，不看到期日，
+    // FSRS-7 算的天数不是它真正回来的时间，不显示。学习 / 重学步仍按步长计时，照常显示。
+    if (preview.algorithm == SrsAlgorithm.rwkv &&
+        next.queue == SrsQueue.review) {
+      return '';
     }
+    return srsIntervalLabel(
+      srsIntervalParts(
+        next,
+        nowMs: preview.nowMs,
+        today: day.dayIndexOf(preview.nowMs),
+      ),
+    );
+  }
 
+  Widget _buildRatingRow(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 评分按钮的下次间隔可在 ⋯「复习选项」里关掉；关掉或调度器给不出间隔（预览缺失）
     // 时按钮只剩评价词一行。
     final bool showIntervals = ref.watch(srsReviewShowIntervalsProvider);
@@ -2767,7 +2796,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       child: SrsRatingButton(
         key: ValueKey<String>('srs-rate-$rating'),
         tone: tone,
-        interval: showIntervals ? interval(rating) : '',
+        interval: showIntervals ? _ratingInterval(rating) : '',
         label: label,
         tooltip: _withKeyHint(label, switch (rating) {
           1 => ShortcutAction.srsReviewAgain,
@@ -3039,6 +3068,125 @@ class SrsSwipeFollow extends StatelessWidget {
       );
     },
   );
+}
+
+/// 一次评分的结果（[SrsRatedFeedbackChip] 显示）。
+@immutable
+class SrsRatedFeedback {
+  const SrsRatedFeedback({
+    required this.serial,
+    required this.rating,
+    required this.interval,
+  });
+
+  /// 每次评分递增：连续两次评同一档时也按新的一次重放进场。
+  final int serial;
+
+  /// 1–4（重来 / 困难 / 良好 / 简单）。
+  final int rating;
+
+  /// 评分时按钮上显示的下次间隔；空串 = 不报间隔。
+  final String interval;
+}
+
+/// 评分档的显示名（与评分按钮同一套文案）。
+String srsRatingLabel(int rating) => switch (rating) {
+  1 => t.srs_rating_again,
+  2 => t.srs_rating_hard,
+  3 => t.srs_rating_good,
+  _ => t.srs_rating_easy,
+};
+
+/// 评分结果提示（反馈 fiTLYrWbDW）：评分后下一张的问题面卡面底部居中一枚胶囊
+/// 「已评：良好 · 3天后到期」，配色与那颗评分按钮同一套（[srsRatingColors]，MD3 / Apple
+/// 各自的色调），翻面 / 撤销时收起。进出场走 [FushiMotion]（淡入 + 由 0.9 放大到位），
+/// 减弱动态效果下直接到位；读屏经 liveRegion 播报。不吃指针，不挡卡面点按与手势。
+class SrsRatedFeedbackChip extends StatelessWidget {
+  const SrsRatedFeedbackChip({
+    super.key,
+    required this.feedback,
+    this.bottomInset = 0,
+  });
+
+  final SrsRatedFeedback? feedback;
+
+  /// 卡面区底部被底栏盖住的高度（原生卡面铺在底栏背后时）。
+  final double bottomInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final SrsRatedFeedback? f = feedback;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: EdgeInsets.all(
+            tokens.spacing.gap * 1.5,
+          ).copyWith(bottom: tokens.spacing.gap * 1.5 + bottomInset),
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            reverseDuration: fushiMotionDuration(context, FushiMotion.micro),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            transitionBuilder: (Widget child, Animation<double> a) =>
+                FadeTransition(
+                  opacity: a,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.9, end: 1).animate(a),
+                    child: child,
+                  ),
+                ),
+            child: f == null
+                ? const SizedBox.shrink(key: ValueKey<String>('srs-rated-none'))
+                : _chip(context, f),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, SrsRatedFeedback f) {
+    final ({Color background, Color foreground}) c = srsRatingColors(
+      SrsRatingTone.values[(f.rating - 1).clamp(0, 3)],
+      Theme.of(context).colorScheme,
+      apple: isGlassDesign(context),
+    );
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String rating = srsRatingLabel(f.rating);
+    final String text = f.interval.isEmpty
+        ? t.srs_review_rated(rating: rating)
+        : t.srs_review_rated_interval(rating: rating, interval: f.interval);
+    return Semantics(
+      key: ValueKey<String>('srs-rated-${f.serial}'),
+      liveRegion: true,
+      label: text,
+      child: ExcludeSemantics(
+        child: DecoratedBox(
+          key: ValueKey<String>('srs-rated-chip-${f.rating}'),
+          decoration: ShapeDecoration(
+            color: c.background,
+            shape: const StadiumBorder(),
+            shadows: kElevationToShadow[1],
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.page,
+              vertical: tokens.spacing.gap,
+            ),
+            child: Text(
+              text,
+              style: context.fushiType.labelLargeEmphasized.copyWith(
+                color: c.foreground,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 滑动途中卡面中央的动作提示：评分按评分按钮同一套色调（两套设计系统各自的配色），
