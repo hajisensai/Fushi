@@ -229,7 +229,11 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
   ) async {
     final SubtitleFormat? format = subtitleFormatForPath(path);
     if (format == null) return null;
-    // 参考太少（短片）判不出可靠偏移：上游要求参考轨至少 kMinReferenceCues 条。
+    // 参考太少（短片）：上游 `decideSubtitleSync` 在 `groupReferenceTracks` 里把少于
+    // kMinReferenceCues（30）行的参考轨整条滤掉（那条门槛本是挡内嵌 forced 轨的），
+    // 这里传进去也只会得到空分组 → refused。上游逐条的对齐质量判定
+    // （`judgeSubtitleReferenceFit`）对 12–24 行的识别稿其实分得开（对得上的 accepted、
+    // 别集的 refused），改成「按对齐质量判」要先在上游给参考门槛开参数，本仓不复写判定。
     if (asrReference.first.starts.length < kMinReferenceCues) {
       fushiDebugPrint(
         '[SubtitleEvidence] skip sidecar "$path": too few recognized cues '
