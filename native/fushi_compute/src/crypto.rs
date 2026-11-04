@@ -22,8 +22,8 @@ pub mod ecdsa;
 pub mod sync_xor;
 
 use aes::cipher::{
-    block_padding::{NoPadding, Pkcs7},
     BlockDecrypt, BlockDecryptMut, BlockEncrypt, KeyInit, KeyIvInit,
+    block_padding::{NoPadding, Pkcs7},
 };
 use aes::{Aes128, Aes192, Aes256};
 
@@ -54,8 +54,7 @@ compile_error!(concat!(
 
 /// AACS 1 aligned-unit 内容加密的固定 IV（libaacs crypto.c 同值）。
 const AACS_IV: [u8; 16] = [
-    0x0b, 0xa0, 0xf8, 0xdd, 0xfe, 0xa6, 0x1f, 0xb3, 0xd8, 0xdf, 0x9f, 0x56, 0x6a, 0x05, 0x0f,
-    0x78,
+    0x0b, 0xa0, 0xf8, 0xdd, 0xfe, 0xa6, 0x1f, 0xb3, 0xd8, 0xdf, 0x9f, 0x56, 0x6a, 0x05, 0x0f, 0x78,
 ];
 
 /// 一张盘的 unit key 集合 + 上次命中的 key（下一单元从它开始试）。
@@ -70,10 +69,7 @@ pub struct AacsDecoder {
 impl AacsDecoder {
     pub fn new(unit_keys: &[[u8; 16]]) -> Self {
         AacsDecoder {
-            keys: unit_keys
-                .iter()
-                .map(|k| Aes128::new(k.into()))
-                .collect(),
+            keys: unit_keys.iter().map(|k| Aes128::new(k.into())).collect(),
             last_key: 0,
             decrypted_any: false,
             candidate: Box::new([0u8; AACS_UNIT_LEN]),
@@ -95,10 +91,7 @@ impl AacsDecoder {
         for attempt in 0..count {
             let index = (self.last_key + attempt) % count;
             let mut content_key = [0u8; 16];
-            self.keys[index].encrypt_block_b2b(
-                (&unit[..16]).into(),
-                (&mut content_key).into(),
-            );
+            self.keys[index].encrypt_block_b2b((&unit[..16]).into(), (&mut content_key).into());
             for (k, u) in content_key.iter_mut().zip(&unit[..16]) {
                 *k ^= *u;
             }
@@ -450,7 +443,14 @@ mod tests {
             .unwrap();
         let mut n = 0usize;
         let code = unsafe {
-            ffc_crypto_aes_cbc_pkcs7_decrypt(key.as_ptr(), 16, iv.as_ptr(), data.as_mut_ptr(), 32, &mut n)
+            ffc_crypto_aes_cbc_pkcs7_decrypt(
+                key.as_ptr(),
+                16,
+                iv.as_ptr(),
+                data.as_mut_ptr(),
+                32,
+                &mut n,
+            )
         };
         assert_eq!(code, status::BAD_INPUT);
     }

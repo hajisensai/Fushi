@@ -10,9 +10,9 @@
 
 use rusqlite::types::Value;
 
+use super::SrsCore;
 use super::projections::RwkvRange;
 use super::sync2::mem_bench::measure;
-use super::SrsCore;
 use crate::projection::{Alg, Day};
 
 /// 确定性伪随机（splitmix64）。
@@ -100,13 +100,22 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
         let mut last_id: Option<String> = None;
         let mut learning = true;
         for k in 0..n {
-            at += if learning { 60_000 + rng.below(600_000) as i64 } else { DAY_MS * (1 + rng.below(20) as i64) };
+            at += if learning {
+                60_000 + rng.below(600_000) as i64
+            } else {
+                DAY_MS * (1 + rng.below(20) as i64)
+            };
             let id = rng.uuid();
             let writer = &writers[rng.below(writers.len() as u64) as usize];
             let roll = rng.below(100);
             let wall = rng.below(10) == 0;
             let mut m = serde_json::Map::new();
-            let (kind, rtype, origin, rating): (&'static str, &'static str, &'static str, Option<i64>);
+            let (kind, rtype, origin, rating): (
+                &'static str,
+                &'static str,
+                &'static str,
+                Option<i64>,
+            );
             if roll < 3 && k > 0 {
                 // 手动重置：新卡、reps 归零；之后重新学习。
                 kind = "manual";
@@ -121,7 +130,10 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
                 rtype = "manual";
                 origin = "fushi";
                 rating = None;
-                m.insert("revokes".into(), serde_json::json!(last_id.clone().unwrap()));
+                m.insert(
+                    "revokes".into(),
+                    serde_json::json!(last_id.clone().unwrap()),
+                );
             } else if roll < 8 {
                 kind = "suspend";
                 rtype = "manual";
@@ -149,13 +161,20 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
                     m.insert("ankiId".into(), serde_json::json!(at + rng.below(3) as i64));
                 }
                 if rng.below(3) == 0 {
-                    m.insert("alg".into(), serde_json::json!(["fsrs7", "fsrs6", "rwkv"][rng.below(3) as usize]));
+                    m.insert(
+                        "alg".into(),
+                        serde_json::json!(["fsrs7", "fsrs6", "rwkv"][rng.below(3) as usize]),
+                    );
                 }
                 if rng.below(50) == 0 {
                     m.insert("memAlg".into(), serde_json::json!("fsrs6"));
                 }
             }
-            let dur = if kind == "review" { 800 + rng.below(20_000) as i64 } else { 0 };
+            let dur = if kind == "review" {
+                800 + rng.below(20_000) as i64
+            } else {
+                0
+            };
             m.insert("id".into(), serde_json::json!(id));
             m.insert("p".into(), serde_json::json!("p"));
             m.insert("card".into(), serde_json::json!(card));
@@ -163,9 +182,15 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
             if let Some(r) = rating {
                 m.insert("rating".into(), serde_json::json!(r));
             }
-            m.insert("hlc".into(), serde_json::json!(format!("{}:{}:{}", at, rng.below(3), writer)));
+            m.insert(
+                "hlc".into(),
+                serde_json::json!(format!("{}:{}:{}", at, rng.below(3), writer)),
+            );
             m.insert("at".into(), serde_json::json!(at));
-            m.insert("ts".into(), serde_json::json!(if wall { "wall" } else { "anchored" }));
+            m.insert(
+                "ts".into(),
+                serde_json::json!(if wall { "wall" } else { "anchored" }),
+            );
             m.insert("origin".into(), serde_json::json!(origin));
             m.insert("rtype".into(), serde_json::json!(rtype));
             if dur != 0 {
@@ -262,7 +287,11 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
     }
     c.exec("COMMIT", &[], false).unwrap();
     let ids: Vec<i64> = (0..groups.len() * 4).map(|i| 1000 + i as i64).collect();
-    Synth { groups, ids, rows: pending.len() as i64 }
+    Synth {
+        groups,
+        ids,
+        rows: pending.len() as i64,
+    }
 }
 
 fn core(name: &str) -> SrsCore {
@@ -287,29 +316,73 @@ fn digest(b: &[u8]) -> (usize, u64) {
     (b.len(), h)
 }
 
-const D: Day = Day { utc_offset_min: 540, rollover_hour: 4 };
+const D: Day = Day {
+    utc_offset_min: 540,
+    rollover_hour: 4,
+};
 
 /// 一组调用的输出摘要（顺序固定，见 [SCAN_VECTORS]）。
 fn scan_outputs(c: &SrsCore, s: &Synth) -> Vec<(usize, u64)> {
     let n = s.rows;
     let since = n / 2;
     let mut out = Vec::new();
-    let replay = |since: i64, range: RwkvRange| digest(&c.rwkv_replay("p", &s.groups, &s.ids, &D, since, range).unwrap());
+    let replay = |since: i64, range: RwkvRange| {
+        digest(
+            &c.rwkv_replay("p", &s.groups, &s.ids, &D, since, range)
+                .unwrap(),
+        )
+    };
     out.push(replay(since, RwkvRange::default()));
     out.push(replay(n, RwkvRange::default()));
     for base in [n * 9 / 10, n * 99 / 100, n - 3] {
-        out.push(replay(base, RwkvRange { rebase_since: Some(base), rows_from: None }));
-        out.push(replay(base, RwkvRange { rebase_since: Some(base), rows_from: Some(T0 + 200 * DAY_MS) }));
+        out.push(replay(
+            base,
+            RwkvRange {
+                rebase_since: Some(base),
+                rows_from: None,
+            },
+        ));
+        out.push(replay(
+            base,
+            RwkvRange {
+                rebase_since: Some(base),
+                rows_from: Some(T0 + 200 * DAY_MS),
+            },
+        ));
     }
-    out.push(replay(n, RwkvRange { rebase_since: Some(n), rows_from: None }));
+    out.push(replay(
+        n,
+        RwkvRange {
+            rebase_since: Some(n),
+            rows_from: None,
+        },
+    ));
     // 只给部分卡（其余都成了漏卡）。
     let half: Vec<Vec<String>> = s.groups[..s.groups.len() / 2].to_vec();
-    out.push(digest(&c.rwkv_replay("p", &half, &s.ids[..half.len() * 4], &D, 0, RwkvRange::default()).unwrap()));
+    out.push(digest(
+        &c.rwkv_replay(
+            "p",
+            &half,
+            &s.ids[..half.len() * 4],
+            &D,
+            0,
+            RwkvRange::default(),
+        )
+        .unwrap(),
+    ));
     let card_ids: Vec<i64> = (0..s.groups.len() as i64).collect();
-    out.push(digest(&c.optimizer_items(&s.groups, &card_ids, Alg::Fsrs7, &D).unwrap()));
-    out.push(digest(&c.optimizer_items(&s.groups, &card_ids, Alg::Fsrs6, &D).unwrap()));
+    out.push(digest(
+        &c.optimizer_items(&s.groups, &card_ids, Alg::Fsrs7, &D)
+            .unwrap(),
+    ));
+    out.push(digest(
+        &c.optimizer_items(&s.groups, &card_ids, Alg::Fsrs6, &D)
+            .unwrap(),
+    ));
     let some = &s.groups[..s.groups.len().min(300)];
-    out.push(digest(&c.rwkv_cards(some, &s.ids[..some.len() * 4], &D).unwrap()));
+    out.push(digest(
+        &c.rwkv_cards(some, &s.ids[..some.len() * 4], &D).unwrap(),
+    ));
     out
 }
 
@@ -336,14 +409,21 @@ fn scan_outputs_match_the_vectors_recorded_from_the_json_holding_implementation(
     let s = synth(&c, 600, 9_000, 0x5eed_2026_1103);
     // 九成按生产写法瘦存、一成原文：两条解析路径都走到（页首行是列名）。
     let count = |sql: &str| -> i64 {
-        match &super::rows::decode(&c.exec(sql, &[], true).unwrap()).unwrap().1[1][0] {
+        match &super::rows::decode(&c.exec(sql, &[], true).unwrap())
+            .unwrap()
+            .1[1][0]
+        {
             Value::Integer(n) => *n,
             v => panic!("{v:?}"),
         }
     };
     let slim = count("SELECT count(*) FROM srs_review_logs WHERE substr(jslim, 1, 1) = '~'");
     assert_eq!(count("SELECT count(*) FROM srs_review_logs"), s.rows);
-    assert!(slim > s.rows * 8 / 10 && slim < s.rows, "slim {slim} of {}", s.rows);
+    assert!(
+        slim > s.rows * 8 / 10 && slim < s.rows,
+        "slim {slim} of {}",
+        s.rows
+    );
     let got = scan_outputs(&c, &s);
     assert_eq!(got, SCAN_VECTORS);
 }
@@ -352,24 +432,51 @@ fn scan_outputs_match_the_vectors_recorded_from_the_json_holding_implementation(
 #[test]
 #[ignore]
 fn rwkv_replay_bench() {
-    let logs: usize = std::env::var("FFSRS_BENCH_LOGS").ok().and_then(|v| v.parse().ok()).unwrap_or(350_000);
+    let logs: usize = std::env::var("FFSRS_BENCH_LOGS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(350_000);
     let c = core("bench");
     let t = std::time::Instant::now();
     let s = synth(&c, logs / 10, logs, 0xbe4c_2026);
-    eprintln!("synth: {} rows, {} groups in {:?}", s.rows, s.groups.len(), t.elapsed());
+    eprintln!(
+        "synth: {} rows, {} groups in {:?}",
+        s.rows,
+        s.groups.len(),
+        t.elapsed()
+    );
     for (label, range, since) in [
         ("full", RwkvRange::default(), s.rows),
-        ("rebase", RwkvRange { rebase_since: Some(s.rows - 50), rows_from: None }, s.rows - 50),
+        (
+            "rebase",
+            RwkvRange {
+                rebase_since: Some(s.rows - 50),
+                rows_from: None,
+            },
+            s.rows - 50,
+        ),
     ] {
         for _ in 0..3 {
-            let (out, m) = measure(|| c.rwkv_replay("p", &s.groups, &s.ids, &D, since, range).unwrap());
+            let (out, m) = measure(|| {
+                c.rwkv_replay("p", &s.groups, &s.ids, &D, since, range)
+                    .unwrap()
+            });
             println!(
                 "BENCH rwkv_replay {label:<7} rust_peak={:>6.1}MiB sqlite_peak={:>5.1}MiB {}ms output={:.1}MiB",
-                m.rust_peak, m.sqlite_peak, m.ms, out.len() as f64 / 1048576.0
+                m.rust_peak,
+                m.sqlite_peak,
+                m.ms,
+                out.len() as f64 / 1048576.0
             );
         }
     }
     let card_ids: Vec<i64> = (0..s.groups.len() as i64).collect();
-    let (_, m) = measure(|| c.optimizer_items(&s.groups, &card_ids, Alg::Fsrs7, &D).unwrap());
-    println!("BENCH optimizer_items rust_peak={:>6.1}MiB sqlite_peak={:>5.1}MiB {}ms", m.rust_peak, m.sqlite_peak, m.ms);
+    let (_, m) = measure(|| {
+        c.optimizer_items(&s.groups, &card_ids, Alg::Fsrs7, &D)
+            .unwrap()
+    });
+    println!(
+        "BENCH optimizer_items rust_peak={:>6.1}MiB sqlite_peak={:>5.1}MiB {}ms",
+        m.rust_peak, m.sqlite_peak, m.ms
+    );
 }

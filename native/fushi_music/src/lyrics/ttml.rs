@@ -127,7 +127,10 @@ fn push_text(el: &mut El, s: &str) {
 }
 
 fn start_el(e: &quick_xml::events::BytesStart<'_>) -> El {
-    let mut el = El { name: local(e.name().as_ref()), ..El::default() };
+    let mut el = El {
+        name: local(e.name().as_ref()),
+        ..El::default()
+    };
     for a in e.attributes().flatten() {
         let k = a.key.as_ref().to_owned();
         let v = a
@@ -201,7 +204,9 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
 
     let mut body = Vec::new();
     root.find_all("body", &mut body);
-    let Some(body) = body.first() else { return Some(t) };
+    let Some(body) = body.first() else {
+        return Some(t);
+    };
     let mut ps = Vec::new();
     body.find_all("p", &mut ps);
     let mut any_timed = false;
@@ -211,7 +216,9 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
         let mut b = Build::default();
         walk(p, start, end, false, &mut b);
         any_timed |= b.timed;
-        let agent = p.attr("agent").map(|id| t.agent_index(id, AgentKind::Person));
+        let agent = p
+            .attr("agent")
+            .map(|id| t.agent_index(id, AgentKind::Person));
         let mut line = Line {
             start_ms: start,
             end_ms: end,
@@ -231,7 +238,10 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
                 }
             }
             if line.romanization.is_none() {
-                line.romanization = keyed_roman.iter().find(|(k, _)| k == key).map(|(_, r)| r.clone());
+                line.romanization = keyed_roman
+                    .iter()
+                    .find(|(k, _)| k == key)
+                    .map(|(_, r)| r.clone());
             }
         }
         if line.syllables.is_empty() && b.bg.is_empty() {
@@ -295,7 +305,10 @@ fn walk(el: &El, inh_start: i64, inh_end: i64, in_bg: bool, b: &mut Build) {
                     }
                 } else {
                     let collapsed = collapse_ws(txt);
-                    if let Some(last) = target.last_mut().filter(|l| l.start_ms == inh_start && l.ruby.is_none()) {
+                    if let Some(last) = target
+                        .last_mut()
+                        .filter(|l| l.start_ms == inh_start && l.ruby.is_none())
+                    {
                         last.text.push_str(&collapsed);
                     } else {
                         target.push(Syllable::new(collapsed, inh_start, inh_end));
@@ -306,7 +319,10 @@ fn walk(el: &El, inh_start: i64, inh_end: i64, in_bg: bool, b: &mut Build) {
                 let role = e.attr("role");
                 match role {
                     Some("x-translation") => {
-                        b.translations.push((e.attr("lang").unwrap_or("und").to_owned(), e.text().trim().to_owned()));
+                        b.translations.push((
+                            e.attr("lang").unwrap_or("und").to_owned(),
+                            e.text().trim().to_owned(),
+                        ));
                         continue;
                     }
                     Some("x-roman") | Some("x-romanization") => {
@@ -326,24 +342,50 @@ fn walk(el: &El, inh_start: i64, inh_end: i64, in_bg: bool, b: &mut Build) {
                 }
                 let bg = in_bg || role == Some("x-bg");
                 if e.attr("ruby") == Some("container") {
-                    let base: String = e.elements().filter(|c| c.attr("ruby") == Some("base")).map(El::text).collect();
-                    let rt: String = e.elements().filter(|c| c.attr("ruby") == Some("text")).map(El::text).collect();
+                    let base: String = e
+                        .elements()
+                        .filter(|c| c.attr("ruby") == Some("base"))
+                        .map(El::text)
+                        .collect();
+                    let rt: String = e
+                        .elements()
+                        .filter(|c| c.attr("ruby") == Some("text"))
+                        .map(El::text)
+                        .collect();
                     let base_el = e.elements().find(|c| c.attr("ruby") == Some("base"));
-                    let bs = base_el.and_then(|x| x.attr("begin")).and_then(ttml_time).unwrap_or(st);
-                    let be = base_el.and_then(|x| x.attr("end")).and_then(ttml_time).unwrap_or(et);
+                    let bs = base_el
+                        .and_then(|x| x.attr("begin"))
+                        .and_then(ttml_time)
+                        .unwrap_or(st);
+                    let be = base_el
+                        .and_then(|x| x.attr("end"))
+                        .and_then(ttml_time)
+                        .unwrap_or(et);
                     if base_el.and_then(|x| x.attr("begin")).is_some() {
                         b.timed = true;
                     }
                     let mut syl = Syllable::new(base, bs, be);
                     syl.ruby = (!rt.trim().is_empty()).then(|| rt.trim().to_owned());
-                    if bg { b.bg.push(syl) } else { b.syllables.push(syl) }
+                    if bg {
+                        b.bg.push(syl)
+                    } else {
+                        b.syllables.push(syl)
+                    }
                     continue;
                 }
-                let has_timed_child = e.elements().any(|c| c.attr("begin").is_some() || c.attr("ruby").is_some() || c.attr("role").is_some());
+                let has_timed_child = e.elements().any(|c| {
+                    c.attr("begin").is_some()
+                        || c.attr("ruby").is_some()
+                        || c.attr("role").is_some()
+                });
                 if s.is_some() && !has_timed_child {
                     let mut syl = Syllable::new(collapse_ws(&e.text()), st, et);
                     syl.fill = Fill::Sweep;
-                    if bg { b.bg.push(syl) } else { b.syllables.push(syl) }
+                    if bg {
+                        b.bg.push(syl)
+                    } else {
+                        b.syllables.push(syl)
+                    }
                 } else {
                     walk(e, st, et, bg, b);
                 }
@@ -393,7 +435,10 @@ mod tests {
         let l0 = &t.lines[0];
         assert_eq!(l0.text(), "Hello world");
         assert_eq!(l0.syllables[1].text, "lo ");
-        assert_eq!(l0.translations, vec![("zh-CN".to_string(), "你好世界".to_string())]);
+        assert_eq!(
+            l0.translations,
+            vec![("zh-CN".to_string(), "你好世界".to_string())]
+        );
         assert_eq!(l0.romanization.as_deref(), Some("harou"));
         let bg = &t.lines[1];
         assert_eq!(bg.role, Role::Background);
@@ -411,6 +456,9 @@ mod tests {
         let t = parse(x, None).unwrap();
         assert_eq!(t.timing_quality, TimingQuality::Line);
         assert_eq!(t.lines[0].text(), "やあ");
-        assert_eq!(t.lines[0].translations, vec![("en".to_string(), "Hi".to_string())]);
+        assert_eq!(
+            t.lines[0].translations,
+            vec![("en".to_string(), "Hi".to_string())]
+        );
     }
 }

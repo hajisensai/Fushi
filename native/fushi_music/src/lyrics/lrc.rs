@@ -75,11 +75,18 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
         let first = stamps[0];
         for &stamp in &stamps {
             if text_empty {
-                entries.push(Entry { start: stamp, line: None, line_level: true });
+                entries.push(Entry {
+                    start: stamp,
+                    line: None,
+                    line_level: true,
+                });
                 continue;
             }
             let shift = stamp - first;
-            let mut line = Line { start_ms: stamp, ..Line::default() };
+            let mut line = Line {
+                start_ms: stamp,
+                ..Line::default()
+            };
             match inline {
                 None => {
                     line.syllables.push(Syllable::new(rest.trim(), stamp, 0));
@@ -92,7 +99,11 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
                     build_inline_syllables(&mut line, &syllables, stamp, shift);
                 }
             }
-            entries.push(Entry { start: stamp, line: Some(line), line_level: inline.is_none() });
+            entries.push(Entry {
+                start: stamp,
+                line: Some(line),
+                line_level: inline.is_none(),
+            });
         }
     }
 
@@ -200,7 +211,11 @@ fn split_inline(body: &str) -> (Vec<(String, i64)>, Option<Inline>) {
 fn build_inline_syllables(line: &mut Line, segs: &[(String, i64)], line_start: i64, shift: i64) {
     let n = segs.len();
     for (i, (text, start)) in segs.iter().enumerate() {
-        let start = if *start < 0 { line_start } else { start + shift };
+        let start = if *start < 0 {
+            line_start
+        } else {
+            start + shift
+        };
         let next = segs.get(i + 1).map(|(_, s)| s + shift);
         if text.is_empty() {
             // 末尾的终点时间戳。
@@ -233,7 +248,11 @@ mod tests {
         );
         assert_eq!(t.timing_quality, TimingQuality::Line);
         assert_eq!(t.meta.title.as_deref(), Some("Song"));
-        let texts: Vec<_> = t.lines.iter().map(|l| (l.text(), l.start_ms, l.end_ms)).collect();
+        let texts: Vec<_> = t
+            .lines
+            .iter()
+            .map(|l| (l.text(), l.start_ms, l.end_ms))
+            .collect();
         assert_eq!(
             texts,
             vec![
@@ -242,21 +261,41 @@ mod tests {
                 ("End".to_string(), 6500, 10_000),
             ]
         );
-        assert_eq!(t.lines[0].translations, vec![("und".to_string(), "你好".to_string())]);
+        assert_eq!(
+            t.lines[0].translations,
+            vec![("und".to_string(), "你好".to_string())]
+        );
     }
 
     #[test]
     fn enhanced_a2_word_level() {
-        let t = parse("[00:01.00]<00:01.00>Hel<00:01.50>lo <00:02.00>world<00:03.00>", None);
+        let t = parse(
+            "[00:01.00]<00:01.00>Hel<00:01.50>lo <00:02.00>world<00:03.00>",
+            None,
+        );
         assert_eq!(t.timing_quality, TimingQuality::Word);
-        let s: Vec<_> = t.lines[0].syllables.iter().map(|s| (s.text.as_str(), s.start_ms, s.end_ms)).collect();
-        assert_eq!(s, vec![("Hel", 1000, 1500), ("lo ", 1500, 2000), ("world", 2000, 3000)]);
+        let s: Vec<_> = t.lines[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.start_ms, s.end_ms))
+            .collect();
+        assert_eq!(
+            s,
+            vec![
+                ("Hel", 1000, 1500),
+                ("lo ", 1500, 2000),
+                ("world", 2000, 3000)
+            ]
+        );
         assert_eq!(t.lines[0].end_ms, 3000);
     }
 
     #[test]
     fn eslyric_square_inline() {
-        let t = parse("[00:10.00]夜[00:10.40]に[00:10.80]駆[00:11.20]け[00:11.50]る[00:12.00]", None);
+        let t = parse(
+            "[00:10.00]夜[00:10.40]に[00:10.80]駆[00:11.20]け[00:11.50]る[00:12.00]",
+            None,
+        );
         assert_eq!(t.timing_quality, TimingQuality::Syllable);
         assert_eq!(t.lines[0].text(), "夜に駆ける");
         assert_eq!(t.lines[0].syllables.len(), 5);

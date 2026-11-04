@@ -29,7 +29,15 @@ fn ffi_parse(bytes: &[u8], hint: &str, duration: i64) -> Result<Timeline, String
     let mut out: *mut u8 = std::ptr::null_mut();
     let mut len = 0usize;
     let code = unsafe {
-        ffi::ffm_lyrics_parse(bytes.as_ptr(), bytes.len(), hint.as_ptr(), hint.len(), duration, &mut out, &mut len)
+        ffi::ffm_lyrics_parse(
+            bytes.as_ptr(),
+            bytes.len(),
+            hint.as_ptr(),
+            hint.len(),
+            duration,
+            &mut out,
+            &mut len,
+        )
     };
     let buf = take(out, len);
     if code != status::OK {
@@ -63,7 +71,9 @@ fn dump(t: &Timeline) -> String {
             "L {}-{} agent={} role={:?} style={}",
             l.start_ms,
             l.end_ms,
-            l.agent.map(|a| t.agents[a].id.clone()).unwrap_or_else(|| "-".into()),
+            l.agent
+                .map(|a| t.agents[a].id.clone())
+                .unwrap_or_else(|| "-".into()),
             l.role,
             l.style.as_deref().unwrap_or("-")
         )
@@ -76,7 +86,10 @@ fn dump(t: &Timeline) -> String {
                 s.end_ms,
                 s.fill,
                 s.text,
-                s.ruby.as_ref().map(|r| format!(" ruby={r:?}")).unwrap_or_default()
+                s.ruby
+                    .as_ref()
+                    .map(|r| format!(" ruby={r:?}"))
+                    .unwrap_or_default()
             )
             .unwrap();
         }
@@ -111,8 +124,21 @@ fn every_sample_matches_its_golden() {
         .collect();
     names.sort();
     let required = [
-        "line.lrc", "enhanced.lrc", "eslyric.lrc", "lines.srt", "cues.vtt", "lyrics.smi", "plain.txt",
-        "amll.ttml", "song.lys", "song.qrc", "song.yrc", "song.krc", "karaoke.ass", "ultrastar.txt", "song.kar",
+        "line.lrc",
+        "enhanced.lrc",
+        "eslyric.lrc",
+        "lines.srt",
+        "cues.vtt",
+        "lyrics.smi",
+        "plain.txt",
+        "amll.ttml",
+        "song.lys",
+        "song.qrc",
+        "song.yrc",
+        "song.krc",
+        "karaoke.ass",
+        "ultrastar.txt",
+        "song.kar",
     ];
     for r in required {
         assert!(names.iter().any(|n| n == r), "missing sample {r}");
@@ -120,7 +146,8 @@ fn every_sample_matches_its_golden() {
     let mut failures = Vec::new();
     for name in &names {
         let bytes = std::fs::read(samples.join(name)).unwrap();
-        let t = ffi_parse(&bytes, &hint_for(name), 30_000).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let t =
+            ffi_parse(&bytes, &hint_for(name), 30_000).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(!t.lines.is_empty(), "{name}: no lines");
         let got = dump(&t);
         let golden_path = golden_dir.join(format!("{name}.golden"));
@@ -129,7 +156,8 @@ fn every_sample_matches_its_golden() {
             std::fs::write(&golden_path, &got).unwrap();
             continue;
         }
-        let want = std::fs::read_to_string(&golden_path).unwrap_or_else(|_| panic!("missing golden for {name}"));
+        let want = std::fs::read_to_string(&golden_path)
+            .unwrap_or_else(|_| panic!("missing golden for {name}"));
         if want != got {
             failures.push(format!("--- {name}\nwant:\n{want}\ngot:\n{got}"));
         }
@@ -140,9 +168,17 @@ fn every_sample_matches_its_golden() {
 #[test]
 fn text_decoding_matches_the_dart_reference_vectors() {
     let vectors = std::fs::read_to_string(fixtures().join("text_decode_vectors.txt")).unwrap();
-    let hex = |s: &str| -> Vec<u8> { (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect() };
+    let hex = |s: &str| -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    };
     let mut n = 0;
-    for line in vectors.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()) {
+    for line in vectors
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+    {
         let parts: Vec<&str> = line.split(' ').collect();
         let input = hex(parts[1]);
         let got = text::decode_unicode(&input);
@@ -156,19 +192,31 @@ fn text_decoding_matches_the_dart_reference_vectors() {
     }
     assert!(n >= 15, "only {n} vectors");
     // 传统多字节编码：Dart 侧交给平台插件（桌面端缺失），Rust 侧必须解对。
-    assert_eq!(text::decode_text(&encoding_rs::SHIFT_JIS.encode("[00:01.00]夜に駆ける").0), "[00:01.00]夜に駆ける");
-    assert_eq!(text::decode_text(&encoding_rs::GBK.encode("[00:01.00]你好世界").0), "[00:01.00]你好世界");
+    assert_eq!(
+        text::decode_text(&encoding_rs::SHIFT_JIS.encode("[00:01.00]夜に駆ける").0),
+        "[00:01.00]夜に駆ける"
+    );
+    assert_eq!(
+        text::decode_text(&encoding_rs::GBK.encode("[00:01.00]你好世界").0),
+        "[00:01.00]你好世界"
+    );
 }
 
 #[test]
 fn unsupported_inputs_report_errors() {
-    assert!(ffi_parse(b"\x98\x25\x00\x11garbage", "qrc", -1).unwrap_err().contains("encrypted QRC"));
+    assert!(
+        ffi_parse(b"\x98\x25\x00\x11garbage", "qrc", -1)
+            .unwrap_err()
+            .contains("encrypted QRC")
+    );
     assert!(ffi_parse(b"not midi", "kar", -1).is_err());
     assert!(ffi_parse(b"<tt><body><p>", "ttml", -1).is_err());
 }
 
 fn copy_fixture(src: &str, dir: &Path, name: &str) -> PathBuf {
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/library").join(src);
+    let from = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/library")
+        .join(src);
     let to = dir.join(name);
     std::fs::copy(from, &to).unwrap();
     to
@@ -205,11 +253,13 @@ fn ffi_embedded(path: &Path) -> Vec<(String, String, Vec<u8>, Timeline)> {
 
 #[test]
 fn embedded_lyrics_from_vorbis_id3_and_mp4() {
+    use lofty::TextEncoding;
     use lofty::config::WriteOptions;
     use lofty::file::TaggedFileExt;
-    use lofty::id3::v2::{Frame, Id3v2Tag, SyncTextContentType, SynchronizedTextFrame, TimestampFormat};
+    use lofty::id3::v2::{
+        Frame, Id3v2Tag, SyncTextContentType, SynchronizedTextFrame, TimestampFormat,
+    };
     use lofty::prelude::*;
-    use lofty::TextEncoding;
 
     let dir = std::env::temp_dir().join(format!("fushi_music_lyrics_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -218,7 +268,10 @@ fn embedded_lyrics_from_vorbis_id3_and_mp4() {
     let flac = copy_fixture("Album A/01 First Song.flac", &dir, "a.flac");
     let mut tagged = lofty::read_from_path(&flac).unwrap();
     let tag = tagged.primary_tag_mut().unwrap();
-    tag.insert_text(ItemKey::Lyrics, "[00:01.00]沈むように\n[00:03.00]溶けてゆくように".into());
+    tag.insert_text(
+        ItemKey::Lyrics,
+        "[00:01.00]沈むように\n[00:03.00]溶けてゆくように".into(),
+    );
     tagged.save_to_path(&flac, WriteOptions::default()).unwrap();
     let got = ffi_embedded(&flac);
     assert_eq!(got.len(), 1);
@@ -237,10 +290,17 @@ fn embedded_lyrics_from_vorbis_id3_and_mp4() {
         TimestampFormat::MS,
         SyncTextContentType::Lyrics,
         None,
-        vec![(1000, "沈".into()), (1400, "む".into()), (2000, "\nよう".into())],
+        vec![
+            (1000, "沈".into()),
+            (1400, "む".into()),
+            (2000, "\nよう".into()),
+        ],
     );
     let bytes = sylt.as_bytes().unwrap();
-    id3.insert(Frame::Binary(lofty::id3::v2::BinaryFrame::new(lofty::id3::v2::FrameId::Valid("SYLT".into()), bytes)));
+    id3.insert(Frame::Binary(lofty::id3::v2::BinaryFrame::new(
+        lofty::id3::v2::FrameId::Valid("SYLT".into()),
+        bytes,
+    )));
     id3.save_to_path(&mp3, WriteOptions::default()).unwrap();
     let got = ffi_embedded(&mp3);
     let uslt = got.iter().find(|e| e.0 == "lyrics").expect("USLT");
@@ -258,7 +318,10 @@ fn embedded_lyrics_from_vorbis_id3_and_mp4() {
     if tagged.primary_tag().is_none() {
         tagged.insert_tag(lofty::tag::Tag::new(tagged.primary_tag_type()));
     }
-    tagged.primary_tag_mut().unwrap().insert_text(ItemKey::Lyrics, "[00:02.00]夜に駆ける".into());
+    tagged
+        .primary_tag_mut()
+        .unwrap()
+        .insert_text(ItemKey::Lyrics, "[00:02.00]夜に駆ける".into());
     tagged.save_to_path(&m4a, WriteOptions::default()).unwrap();
     let got = ffi_embedded(&m4a);
     assert_eq!(got.len(), 1);
@@ -285,7 +348,14 @@ impl UsltCompat for lofty::id3::v2::Id3v2Tag {
 
 #[test]
 fn merge_ruby_and_export_round_trip_through_ffi() {
-    let call2 = |f: unsafe extern "C" fn(*const u8, usize, *const u8, usize, *mut *mut u8, *mut usize) -> i32,
+    let call2 = |f: unsafe extern "C" fn(
+        *const u8,
+        usize,
+        *const u8,
+        usize,
+        *mut *mut u8,
+        *mut usize,
+    ) -> i32,
                  a: &[u8],
                  b: &[u8]|
      -> Vec<u8> {
@@ -295,23 +365,51 @@ fn merge_ruby_and_export_round_trip_through_ffi() {
         assert_eq!(code, status::OK);
         take(out, len)
     };
-    let primary = wire::encode(&ffi_parse(b"[00:01.00]sinking\n[00:05.00]melting", "lrc", 9000).unwrap());
-    let secondary = wire::encode(&ffi_parse(b"[00:01.20]\xe6\xb2\x89\n[00:05.00]\xe8\x9e\x8d", "lrc", 9000).unwrap());
+    let primary =
+        wire::encode(&ffi_parse(b"[00:01.00]sinking\n[00:05.00]melting", "lrc", 9000).unwrap());
+    let secondary = wire::encode(
+        &ffi_parse(
+            b"[00:01.20]\xe6\xb2\x89\n[00:05.00]\xe8\x9e\x8d",
+            "lrc",
+            9000,
+        )
+        .unwrap(),
+    );
     let mut out: *mut u8 = std::ptr::null_mut();
     let mut len = 0usize;
     let lang = "zh";
     let code = unsafe {
-        ffi::ffm_lyrics_merge(primary.as_ptr(), primary.len(), secondary.as_ptr(), secondary.len(), lang.as_ptr(), lang.len(), &mut out, &mut len)
+        ffi::ffm_lyrics_merge(
+            primary.as_ptr(),
+            primary.len(),
+            secondary.as_ptr(),
+            secondary.len(),
+            lang.as_ptr(),
+            lang.len(),
+            &mut out,
+            &mut len,
+        )
     };
     assert_eq!(code, status::OK);
     let merged = wire::decode(&take(out, len)).unwrap();
-    assert_eq!(merged.lines[0].translations, vec![("zh".to_string(), "沉".to_string())]);
-    assert_eq!(merged.lines[1].translations, vec![("zh".to_string(), "融".to_string())]);
+    assert_eq!(
+        merged.lines[0].translations,
+        vec![("zh".to_string(), "沉".to_string())]
+    );
+    assert_eq!(
+        merged.lines[1].translations,
+        vec![("zh".to_string(), "融".to_string())]
+    );
 
     // 导出 TTML 再解析回来，时间轴不变。
     let ttml = call2(ffi::ffm_lyrics_export, &wire::encode(&merged), b"ttml");
     let back = ffi_parse(&ttml, "ttml", 5000).unwrap();
     assert_eq!(back.lines, merged.lines);
-    let lrc = String::from_utf8(call2(ffi::ffm_lyrics_export, &wire::encode(&merged), b"lrc")).unwrap();
+    let lrc = String::from_utf8(call2(
+        ffi::ffm_lyrics_export,
+        &wire::encode(&merged),
+        b"lrc",
+    ))
+    .unwrap();
     assert!(lrc.contains("[00:01.00]sinking\n[00:01.00]沉\n"), "{lrc}");
 }

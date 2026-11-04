@@ -11,15 +11,15 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use rusqlite::{params_from_iter, Connection};
+use rusqlite::{Connection, params_from_iter};
 use serde_json::Value;
 
 use crate::card_cache;
 use crate::history;
 use crate::ordering::cmp_utf16;
 use crate::registers::{self, StoredEdit};
-use crate::store::{logs_of, LogRow};
 use crate::store::sync2::sql;
+use crate::store::{LogRow, logs_of};
 
 /// 一块笔记 / 卡的数量（SQL 参数上限以内）。
 const CHUNK: usize = 200;
@@ -38,14 +38,23 @@ pub(crate) struct CacheConfig {
 impl CacheConfig {
     /// `{"defaultDeck": "...", "builtins": {"<key>": {"b": {...}, "reading": "<fieldId>"|null}}}`。
     pub(crate) fn parse(v: &Value) -> Result<CacheConfig, String> {
-        let default_deck = v["defaultDeck"].as_str().ok_or("caches: missing defaultDeck")?.to_owned();
+        let default_deck = v["defaultDeck"]
+            .as_str()
+            .ok_or("caches: missing defaultDeck")?
+            .to_owned();
         let mut builtins = HashMap::new();
         if let Some(m) = v["builtins"].as_object() {
             for (k, b) in m {
-                builtins.insert(k.clone(), (b["b"].clone(), b["reading"].as_str().map(str::to_owned)));
+                builtins.insert(
+                    k.clone(),
+                    (b["b"].clone(), b["reading"].as_str().map(str::to_owned)),
+                );
             }
         }
-        Ok(CacheConfig { default_deck, builtins })
+        Ok(CacheConfig {
+            default_deck,
+            builtins,
+        })
     }
 }
 
@@ -78,7 +87,9 @@ impl Dirty {
         ids(&r["marks"]["noteTypes"], &mut d.note_types);
         ids(&r["replayed"], &mut d.cards);
         for c in r["changed"].as_array().into_iter().flatten() {
-            let (Some(kind), Some(id)) = (c[0].as_str(), c[1].as_str()) else { continue };
+            let (Some(kind), Some(id)) = (c[0].as_str(), c[1].as_str()) else {
+                continue;
+            };
             match kind {
                 "note" => d.notes.insert(id.to_owned()),
                 "card" => d.cards.insert(id.to_owned()),
@@ -99,7 +110,11 @@ impl Dirty {
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.notes.is_empty() && self.cards.is_empty() && self.note_types.is_empty() && !self.all_notes && !self.all_stats
+        self.notes.is_empty()
+            && self.cards.is_empty()
+            && self.note_types.is_empty()
+            && !self.all_notes
+            && !self.all_stats
     }
 }
 
@@ -123,14 +138,37 @@ impl Written {
 /// 丢掉本 profile 的全部缓存行，由事件重建（Dart `rebuildCaches`）。
 pub(crate) fn rebuild(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<Written, String> {
     // 全量重建覆盖收段会话记下的待刷新实体。
-    for t in ["srs_cards_cache", "srs_notes_cache", "srs_stat_reviews", "sync2_cache_pending"] {
-        c.execute(&format!("DELETE FROM {t} WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)?;
+    for t in [
+        "srs_cards_cache",
+        "srs_notes_cache",
+        "srs_stat_reviews",
+        "sync2_cache_pending",
+    ] {
+        c.execute(
+            &format!("DELETE FROM {t} WHERE profile_uid = srs_id(?1)"),
+            [profile],
+        )
+        .map_err(sql)?;
     }
-    refresh(c, profile, cfg, Dirty { all_notes: true, all_stats: true, ..Dirty::default() })
+    refresh(
+        c,
+        profile,
+        cfg,
+        Dirty {
+            all_notes: true,
+            all_stats: true,
+            ..Dirty::default()
+        },
+    )
 }
 
 /// 按影响面刷新缓存行。调用方在写连接的事务 / savepoint 里。
-pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: Dirty) -> Result<Written, String> {
+pub(crate) fn refresh(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+    dirty: Dirty,
+) -> Result<Written, String> {
     let mut out = Written::default();
     if dirty.is_empty() {
         return Ok(out);
@@ -160,13 +198,30 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
     let notes: Vec<String> = notes.into_iter().collect();
     for chunk in notes.chunks(CHUNK) {
-        flush_notes(c, profile, cfg, chunk, &mut types, &mut refreshed, now, &mut out)?;
+        flush_notes(
+            c,
+            profile,
+            cfg,
+            chunk,
+            &mut types,
+            &mut refreshed,
+            now,
+            &mut out,
+        )?;
     }
     // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。链接从种子卡按需查（[Links]）：一次作答只碰
     // 这张卡的血统，不再把全库的前身链接读进内存；全量重建投影（`all_stats`）本来就要走遍全库，一次读完。
-    let mut links = if dirty.all_stats { Links::load_all(c)? } else { Links::default() };
+    let mut links = if dirty.all_stats {
+        Links::load_all(c)?
+    } else {
+        Links::default()
+    };
     let closure = successor_closure(c, &mut links, dirty.cards)?;
-    let rest: Vec<String> = closure.iter().filter(|c| !refreshed.contains(*c)).cloned().collect();
+    let rest: Vec<String> = closure
+        .iter()
+        .filter(|c| !refreshed.contains(*c))
+        .cloned()
+        .collect();
     for chunk in rest.chunks(CHUNK) {
         flush_cards(c, profile, cfg, chunk, &mut out)?;
     }
@@ -202,8 +257,12 @@ struct TypeInfo {
 impl TypeInfo {
     fn of(view: &Value, cfg: &CacheConfig) -> TypeInfo {
         let s = |v: &Value| v.as_str().unwrap_or("").to_owned();
-        let fields: Vec<(String, String)> =
-            view["fs"].as_array().into_iter().flatten().map(|f| (s(&f["id"]), s(&f["name"]))).collect();
+        let fields: Vec<(String, String)> = view["fs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|f| (s(&f["id"]), s(&f["name"])))
+            .collect();
         TypeInfo {
             cloze: view["nk"].as_str() == Some("cloze"),
             freq_field: view["qe"].as_str().map(str::to_owned),
@@ -215,12 +274,14 @@ impl TypeInfo {
                 .map(|t| (s(&t["id"]), t["ord"].as_i64().unwrap_or(0), s(&t["front"])))
                 .collect(),
             term_field: view["tf"].as_str().map(str::to_owned),
-            reading_field: view["bk"].as_str().and_then(|k| cfg.builtins.get(k)).and_then(|b| b.1.clone()),
+            reading_field: view["bk"]
+                .as_str()
+                .and_then(|k| cfg.builtins.get(k))
+                .and_then(|b| b.1.clone()),
             deleted: !view["da"].is_null(),
         }
     }
 }
-
 
 /// 物化好的笔记里缓存行用得到的部分。
 pub(crate) struct NoteInfo {
@@ -250,10 +311,21 @@ pub(crate) struct NoteInfo {
 /// 标签比较不分 ASCII 大小写（Anki 标签不分大小写）。
 pub(crate) fn source_from_tags(tags: &[String]) -> Option<(&'static str, String)> {
     fn category(tag: &str) -> Option<&'static str> {
-        const MAP: [(&str, &str); 5] = [("book", "book"), ("video", "video"), ("anime", "video"), ("game", "game"), ("music", "music")];
-        MAP.iter().find(|(t, _)| tag.eq_ignore_ascii_case(t)).map(|(_, k)| *k)
+        const MAP: [(&str, &str); 5] = [
+            ("book", "book"),
+            ("video", "video"),
+            ("anime", "video"),
+            ("game", "game"),
+            ("music", "music"),
+        ];
+        MAP.iter()
+            .find(|(t, _)| tag.eq_ignore_ascii_case(t))
+            .map(|(_, k)| *k)
     }
-    if !tags.iter().any(|t| t.eq_ignore_ascii_case("fushi") || t.eq_ignore_ascii_case("hibiki")) {
+    if !tags
+        .iter()
+        .any(|t| t.eq_ignore_ascii_case("fushi") || t.eq_ignore_ascii_case("hibiki"))
+    {
         return None;
     }
     let mut flat: Option<&'static str> = None;
@@ -279,8 +351,18 @@ impl NoteInfo {
             note_type: s(&v["nt"]),
             guid: s(&v["g"]),
             created_at: v["ca"].as_i64().unwrap_or(0),
-            fields: v["f"].as_array().into_iter().flatten().map(|f| (s(&f[0]), s(&f[1]))).collect(),
-            tags: v["t"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(str::to_owned)).collect(),
+            fields: v["f"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|f| (s(&f[0]), s(&f[1])))
+                .collect(),
+            tags: v["t"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|t| t.as_str().map(str::to_owned))
+                .collect(),
             deck: v["dk"].as_str().map(str::to_owned),
             deleted_at: v["da"].as_i64(),
             pending: v["pd"] == Value::Bool(true),
@@ -293,7 +375,10 @@ impl NoteInfo {
         match v["s"]["kind"].as_str().filter(|k| !k.is_empty()) {
             Some(kind) => {
                 n.source_kind = kind.to_owned();
-                n.source_title = v["s"]["title"].as_str().map(str::to_owned).unwrap_or_default();
+                n.source_title = v["s"]["title"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_default();
             }
             None => {
                 if let Some((kind, title)) = source_from_tags(&n.tags) {
@@ -307,7 +392,11 @@ impl NoteInfo {
 
     /// Dart `SrsNoteView.field`：没有 = 空串。
     fn field(&self, id: &str) -> &str {
-        self.fields.iter().rev().find(|(k, _)| k == id).map_or("", |(_, v)| v.as_str())
+        self.fields
+            .iter()
+            .rev()
+            .find(|(k, _)| k == id)
+            .map_or("", |(_, v)| v.as_str())
     }
 }
 
@@ -323,21 +412,39 @@ fn expected_cards(n: &NoteInfo, t: &TypeInfo) -> Result<Vec<(String, String, i64
         }
     }
     let mut out: Vec<(String, String, i64, bool)> = Vec::new();
-    let mut put = |card: String, tpl: &str, ord: i64, empty: bool| match out.iter_mut().find(|x| x.0 == card) {
-        Some(slot) => *slot = (card, tpl.to_owned(), ord, empty),
-        None => out.push((card, tpl.to_owned(), ord, empty)),
-    };
+    let mut put =
+        |card: String, tpl: &str, ord: i64, empty: bool| match out.iter_mut().find(|x| x.0 == card)
+        {
+            Some(slot) => *slot = (card, tpl.to_owned(), ord, empty),
+            None => out.push((card, tpl.to_owned(), ord, empty)),
+        };
     if t.cloze && !t.templates.is_empty() {
         let tpl = &t.templates[0].0;
-        let joined = by_name.iter().map(|(_, v)| v.as_str()).collect::<Vec<_>>().join("\n");
+        let joined = by_name
+            .iter()
+            .map(|(_, v)| v.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         for ord in card_cache::cloze_ordinals(&joined) {
-            put(registers::card_id(&n.id, tpl, ord as i64)?, tpl, ord as i64, false);
+            put(
+                registers::card_id(&n.id, tpl, ord as i64)?,
+                tpl,
+                ord as i64,
+                false,
+            );
         }
     } else if !t.cloze {
-        let id_to_name = |id: &str| t.fields.iter().rev().find(|(k, _)| k == id).map(|(_, name)| name.clone());
+        let id_to_name = |id: &str| {
+            t.fields
+                .iter()
+                .rev()
+                .find(|(k, _)| k == id)
+                .map(|(_, name)| name.clone())
+        };
         for (tpl, ord, front) in &t.templates {
             // 模板语法错误：Dart 侧 catch 成「不空」。
-            let empty = card_cache::card_front_is_empty(front, &id_to_name, &by_name, *ord).unwrap_or(false);
+            let empty = card_cache::card_front_is_empty(front, &id_to_name, &by_name, *ord)
+                .unwrap_or(false);
             put(registers::card_id(&n.id, tpl, 0)?, tpl, 0, empty);
         }
     }
@@ -350,8 +457,17 @@ pub(crate) fn note_infos(c: &Connection, chunk: &[String]) -> Result<Vec<NoteInf
     let edits = edits_of(c, "note", chunk)?;
     let mut views: Vec<NoteInfo> = Vec::new();
     for id in chunk {
-        let Some(payload) = rows.get(id) else { continue };
-        let es: Vec<StoredEdit<'_>> = edits.get(id).map(|v| v.iter().map(|e| (e.1.as_str(), e.2, e.3.as_ref())).collect()).unwrap_or_default();
+        let Some(payload) = rows.get(id) else {
+            continue;
+        };
+        let es: Vec<StoredEdit<'_>> = edits
+            .get(id)
+            .map(|v| {
+                v.iter()
+                    .map(|e| (e.1.as_str(), e.2, e.3.as_ref()))
+                    .collect()
+            })
+            .unwrap_or_default();
         views.push(NoteInfo::of(id, &registers::note_view_of(payload, &es)?));
     }
     Ok(views)
@@ -364,8 +480,12 @@ fn load_types<'a>(
     ids: impl Iterator<Item = &'a String>,
     types: &mut HashMap<String, Option<TypeInfo>>,
 ) -> Result<(), String> {
-    let missing: Vec<String> =
-        ids.filter(|t| !types.contains_key(*t)).cloned().collect::<BTreeSet<_>>().into_iter().collect();
+    let missing: Vec<String> = ids
+        .filter(|t| !types.contains_key(*t))
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     if missing.is_empty() {
         return Ok(());
     }
@@ -375,11 +495,22 @@ fn load_types<'a>(
         let info = match trows.get(id) {
             None => None,
             Some(payload) => {
-                let es: Vec<StoredEdit<'_>> =
-                    tedits.get(id).map(|v| v.iter().map(|e| (e.1.as_str(), e.2, e.3.as_ref())).collect()).unwrap_or_default();
-                let builtin =
-                    payload["builtin"].as_str().and_then(|k| cfg.builtins.get(k)).map_or(Value::Null, |b| b.0.clone());
-                Some(TypeInfo::of(&registers::note_type_view_of(payload, &es, &builtin)?, cfg))
+                let es: Vec<StoredEdit<'_>> = tedits
+                    .get(id)
+                    .map(|v| {
+                        v.iter()
+                            .map(|e| (e.1.as_str(), e.2, e.3.as_ref()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let builtin = payload["builtin"]
+                    .as_str()
+                    .and_then(|k| cfg.builtins.get(k))
+                    .map_or(Value::Null, |b| b.0.clone());
+                Some(TypeInfo::of(
+                    &registers::note_type_view_of(payload, &es, &builtin)?,
+                    cfg,
+                ))
             }
         };
         types.insert(id.clone(), info);
@@ -400,10 +531,20 @@ fn dupe_norm_of(n: &NoteInfo, t: Option<&TypeInfo>) -> String {
 /// 补算 `dupe_norm IS NULL` 的笔记缓存行（v15 加列后的老行；Dart 缓存修订号 8 的升级步调用）：只物化这些笔记与
 /// 它们的笔记类型、只改这一列，不重算整行与卡片（整行重算要读每张卡的血统与日志，十万卡库慢一个量级）。与
 /// [flush_notes] 写的值同一个函数（[dupe_norm_of]）。身份记录已不在的行（缓存孤行）写空串。幂等。返回补了几行。
-pub(crate) fn backfill_dupe_norms(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<usize, String> {
-    let ids = strings(c, "SELECT srs_idt(id) AS id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND dupe_norm IS NULL", &[profile])?;
+pub(crate) fn backfill_dupe_norms(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+) -> Result<usize, String> {
+    let ids = strings(
+        c,
+        "SELECT srs_idt(id) AS id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND dupe_norm IS NULL",
+        &[profile],
+    )?;
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
-    let mut up = c.prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = srs_id(?2)").map_err(sql)?;
+    let mut up = c
+        .prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = srs_id(?2)")
+        .map_err(sql)?;
     for chunk in ids.chunks(CHUNK) {
         let views = note_infos(c, chunk)?;
         load_types(c, cfg, views.iter().map(|v| &v.note_type), &mut types)?;
@@ -432,18 +573,23 @@ pub(crate) fn backfill_tag_sources(c: &Connection, profile: &str) -> Result<usiz
             )
             .map_err(sql)?;
         let it = st
-            .query_map([profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .query_map([profile], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
             .map_err(sql)?;
         it.collect::<Result<_, _>>().map_err(sql)?
     };
     let mut up = c
-        .prepare_cached("UPDATE srs_notes_cache SET source_kind = ?1, source_title = ?2 WHERE id = srs_id(?3)")
+        .prepare_cached(
+            "UPDATE srs_notes_cache SET source_kind = ?1, source_title = ?2 WHERE id = srs_id(?3)",
+        )
         .map_err(sql)?;
     let mut filled = 0;
     for (id, json) in rows {
         let tags: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
         if let Some((kind, title)) = source_from_tags(&tags) {
-            up.execute(rusqlite::params![kind, title, id]).map_err(sql)?;
+            up.execute(rusqlite::params![kind, title, id])
+                .map_err(sql)?;
             filled += 1;
         }
     }
@@ -466,7 +612,8 @@ fn flush_notes(
     load_types(c, cfg, views.iter().map(|v| &v.note_type), types)?;
     // 笔记缓存行与应有的卡。
     // (笔记下标, 应有的卡, 笔记已不在, 词频名次)。
-    let mut plans: Vec<(usize, Vec<(String, String, i64, bool)>, bool, Option<i64>)> = Vec::with_capacity(views.len());
+    let mut plans: Vec<(usize, Vec<(String, String, i64, bool)>, bool, Option<i64>)> =
+        Vec::with_capacity(views.len());
     let mut want: Vec<(String, Option<String>)> = Vec::new();
     let mut note_stmt = c.prepare_cached(NOTE_UPSERT).map_err(sql)?;
     for (k, n) in views.iter().enumerate() {
@@ -485,7 +632,9 @@ fn flush_notes(
         };
         let dupe = dupe_norm_of(n, t);
         // 名次是笔记上的值：写进这条笔记的每张卡。
-        let freq = t.and_then(|t| t.freq_field.as_deref()).and_then(|f| card_cache::freq_rank(n.field(f)));
+        let freq = t
+            .and_then(|t| t.freq_field.as_deref())
+            .and_then(|f| card_cache::freq_rank(n.field(f)));
         let expected = match t {
             Some(t) => expected_cards(n, t)?,
             None => Vec::new(),
@@ -540,7 +689,18 @@ fn flush_notes(
         let n = &views[*k];
         for (card, tpl, ord, empty) in expected {
             let m = materials.get(card).ok_or("card material missing")?;
-            write_card(&mut card_stmt, profile, card, &n.id, tpl, *ord, n.created_at, *gone || *empty, *freq, m)?;
+            write_card(
+                &mut card_stmt,
+                profile,
+                card,
+                &n.id,
+                tpl,
+                *ord,
+                n.created_at,
+                *gone || *empty,
+                *freq,
+                m,
+            )?;
             out.cards.push(card.clone());
             refreshed.insert(card.clone());
         }
@@ -558,7 +718,11 @@ struct Material {
 
 /// 一组卡（卡 ID, 笔记首选牌组）的血统、标志与当前状态：血统的修改记录按轮读（每轮把新发现的前身一起读，
 /// 只看前身键、不看值，多读不少读），血统与标志整组一次寄存器内核，日志在写连接上直读。
-fn card_materials(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<String>)]) -> Result<HashMap<String, Material>, String> {
+fn card_materials(
+    c: &Connection,
+    cfg: &CacheConfig,
+    want: &[(String, Option<String>)],
+) -> Result<HashMap<String, Material>, String> {
     let lineages = lineages(c, cfg, want)?;
     let groups: Vec<Vec<String>> = lineages.iter().map(|l| l.0.clone()).collect();
     let logs = logs_of(c, &groups)?;
@@ -585,7 +749,8 @@ pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<St
     if cards.is_empty() {
         return Ok(Vec::new());
     }
-    let mut edits: BTreeMap<String, Vec<(String, Option<i64>, Option<registers::EditCols>)>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<(String, Option<i64>, Option<registers::EditCols>)>> =
+        BTreeMap::new();
     let mut next: BTreeSet<String> = cards.iter().cloned().collect();
     for _ in 0..256 {
         if next.is_empty() {
@@ -615,19 +780,41 @@ pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<St
                     }
                 }
                 let (j, cols) = super::slim::edit_row(r, 3).map_err(sql)?;
-                edits.entry(id).or_default().push((j, r.get(2).map_err(sql)?, cols));
+                edits
+                    .entry(id)
+                    .or_default()
+                    .push((j, r.get(2).map_err(sql)?, cols));
             }
         }
         next = preds;
     }
-    let all: Vec<(String, Vec<StoredEdit<'_>>)> =
-        edits.iter().map(|(id, es)| (id.clone(), es.iter().map(|(j, s, c)| (j.as_str(), *s, c.as_ref())).collect())).collect();
-    let want: Vec<(String, Option<String>, String)> = cards.iter().map(|id| (id.clone(), None, String::new())).collect();
-    Ok(registers::card_lineage_flags(&all, &want)?.into_iter().map(|(l, _)| l).collect())
+    let all: Vec<(String, Vec<StoredEdit<'_>>)> = edits
+        .iter()
+        .map(|(id, es)| {
+            (
+                id.clone(),
+                es.iter()
+                    .map(|(j, s, c)| (j.as_str(), *s, c.as_ref()))
+                    .collect(),
+            )
+        })
+        .collect();
+    let want: Vec<(String, Option<String>, String)> = cards
+        .iter()
+        .map(|id| (id.clone(), None, String::new()))
+        .collect();
+    Ok(registers::card_lineage_flags(&all, &want)?
+        .into_iter()
+        .map(|(l, _)| l)
+        .collect())
 }
 
 /// 每个要的卡的 (血统：自己在前、再按广度优先列出全部前身, 继承后的标志 JSON)，与输入同序。
-fn lineages(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<String>)]) -> Result<Vec<(Vec<String>, Value)>, String> {
+fn lineages(
+    c: &Connection,
+    cfg: &CacheConfig,
+    want: &[(String, Option<String>)],
+) -> Result<Vec<(Vec<String>, Value)>, String> {
     if want.is_empty() {
         return Ok(Vec::new());
     }
@@ -653,16 +840,33 @@ fn lineages(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<String>)]
         }
         next = preds;
     }
-    let cards: Vec<(String, Vec<StoredEdit<'_>>)> =
-        edits.iter().map(|(id, es)| (id.clone(), es.iter().map(|e| (e.1.as_str(), e.2, e.3.as_ref())).collect())).collect();
-    let want3: Vec<(String, Option<String>, String)> =
-        want.iter().map(|(id, deck)| (id.clone(), deck.clone(), cfg.default_deck.clone())).collect();
+    let cards: Vec<(String, Vec<StoredEdit<'_>>)> = edits
+        .iter()
+        .map(|(id, es)| {
+            (
+                id.clone(),
+                es.iter()
+                    .map(|e| (e.1.as_str(), e.2, e.3.as_ref()))
+                    .collect(),
+            )
+        })
+        .collect();
+    let want3: Vec<(String, Option<String>, String)> = want
+        .iter()
+        .map(|(id, deck)| (id.clone(), deck.clone(), cfg.default_deck.clone()))
+        .collect();
     registers::card_lineage_flags(&cards, &want3)
 }
 
 /// 「只有卡片事件变了」的一块卡：已有缓存行的模板 / 序号 / 可见性不变，标志与状态按血统重算。还没有缓存行的
 /// 卡跳过（日志先于笔记到达：笔记到时一起生成）。
-fn flush_cards(c: &Connection, profile: &str, cfg: &CacheConfig, chunk: &[String], out: &mut Written) -> Result<(), String> {
+fn flush_cards(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+    chunk: &[String],
+    out: &mut Written,
+) -> Result<(), String> {
     struct Row {
         id: String,
         note: String,
@@ -699,26 +903,50 @@ fn flush_cards(c: &Connection, profile: &str, cfg: &CacheConfig, chunk: &[String
     if rows.is_empty() {
         return Ok(());
     }
-    let note_ids: Vec<String> = rows.values().map(|r| r.note.clone()).collect::<BTreeSet<_>>().into_iter().collect();
+    let note_ids: Vec<String> = rows
+        .values()
+        .map(|r| r.note.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let mut notes: HashMap<String, (Option<String>, i64)> = HashMap::new();
     for ids in note_ids.chunks(500) {
-        let q = format!("SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, created_at FROM srs_notes_cache WHERE id IN ({})", marks(ids.len()));
+        let q = format!(
+            "SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, created_at FROM srs_notes_cache WHERE id IN ({})",
+            marks(ids.len())
+        );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(ids.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
-            notes.insert(r.get(0).map_err(sql)?, (r.get(1).map_err(sql)?, r.get(2).map_err(sql)?));
+            notes.insert(
+                r.get(0).map_err(sql)?,
+                (r.get(1).map_err(sql)?, r.get(2).map_err(sql)?),
+            );
         }
     }
     let ordered: Vec<&Row> = chunk.iter().filter_map(|id| rows.get(id)).collect();
-    let want: Vec<(String, Option<String>)> =
-        ordered.iter().map(|r| (r.id.clone(), notes.get(&r.note).and_then(|n| n.0.clone()))).collect();
+    let want: Vec<(String, Option<String>)> = ordered
+        .iter()
+        .map(|r| (r.id.clone(), notes.get(&r.note).and_then(|n| n.0.clone())))
+        .collect();
     let materials = card_materials(c, cfg, &want)?;
     let mut card_stmt = c.prepare_cached(CARD_UPSERT).map_err(sql)?;
     for r in ordered {
         let created = notes.get(&r.note).map_or(r.note_created, |n| n.1);
         let m = materials.get(&r.id).ok_or("card material missing")?;
         // 名次由笔记派生：只有卡片事件变了时沿用缓存里的值（笔记变了走 [flush_notes] 重算）。
-        write_card(&mut card_stmt, profile, &r.id, &r.note, &r.template, r.ord, created, r.hidden, r.freq, m)?;
+        write_card(
+            &mut card_stmt,
+            profile,
+            &r.id,
+            &r.note,
+            &r.template,
+            r.ord,
+            created,
+            r.hidden,
+            r.freq,
+            m,
+        )?;
         out.cards.push(r.id.clone());
     }
     Ok(())
@@ -775,8 +1003,14 @@ fn write_card(
 
 fn delete_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
     for chunk in ids.chunks(500) {
-        let q = format!("DELETE FROM srs_cards_cache WHERE id IN ({})", marks(chunk.len()));
-        c.prepare_cached(&q).map_err(sql)?.execute(params_from_iter(chunk.iter())).map_err(sql)?;
+        let q = format!(
+            "DELETE FROM srs_cards_cache WHERE id IN ({})",
+            marks(chunk.len())
+        );
+        c.prepare_cached(&q)
+            .map_err(sql)?
+            .execute(params_from_iter(chunk.iter()))
+            .map_err(sql)?;
     }
     Ok(())
 }
@@ -830,7 +1064,10 @@ impl Links {
                  WHERE substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
             )
             .map_err(sql)?;
-        let mut out = Links { complete: true, ..Links::default() };
+        let mut out = Links {
+            complete: true,
+            ..Links::default()
+        };
         let mut it = stmt.query([]).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
             let succ: String = r.get(0).map_err(sql)?;
@@ -841,7 +1078,10 @@ impl Links {
     }
 
     fn add(&mut self, pred: String, succ: String) {
-        self.pred.entry(succ.clone()).or_default().push(pred.clone());
+        self.pred
+            .entry(succ.clone())
+            .or_default()
+            .push(pred.clone());
         self.succ.entry(pred).or_default().push(succ);
     }
 
@@ -850,7 +1090,11 @@ impl Links {
         if self.complete {
             return Ok(());
         }
-        let want: Vec<String> = ids.iter().filter(|id| !self.succ.contains_key(**id)).map(|id| format!("{HISTORY_FROM}{id}")).collect();
+        let want: Vec<String> = ids
+            .iter()
+            .filter(|id| !self.succ.contains_key(**id))
+            .map(|id| format!("{HISTORY_FROM}{id}"))
+            .collect();
         for chunk in want.chunks(500) {
             let q = format!(
                 "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits WHERE field_key IN ({}) \
@@ -862,10 +1106,15 @@ impl Links {
             while let Some(r) = it.next().map_err(sql)? {
                 let succ: String = r.get(0).map_err(sql)?;
                 let key: String = r.get(1).map_err(sql)?;
-                self.succ.entry(key[HISTORY_FROM.len()..].to_owned()).or_default().push(succ);
+                self.succ
+                    .entry(key[HISTORY_FROM.len()..].to_owned())
+                    .or_default()
+                    .push(succ);
             }
             for k in chunk {
-                self.succ.entry(k[HISTORY_FROM.len()..].to_owned()).or_default();
+                self.succ
+                    .entry(k[HISTORY_FROM.len()..].to_owned())
+                    .or_default();
             }
         }
         Ok(())
@@ -876,7 +1125,11 @@ impl Links {
         if self.complete {
             return Ok(());
         }
-        let want: Vec<&String> = ids.iter().copied().filter(|id| !self.pred.contains_key(*id)).collect();
+        let want: Vec<&String> = ids
+            .iter()
+            .copied()
+            .filter(|id| !self.pred.contains_key(*id))
+            .collect();
         for chunk in want.chunks(500) {
             let q = format!(
                 "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits WHERE entity_kind = 'card' AND entity_id IN ({}) \
@@ -888,7 +1141,10 @@ impl Links {
             while let Some(r) = it.next().map_err(sql)? {
                 let succ: String = r.get(0).map_err(sql)?;
                 let key: String = r.get(1).map_err(sql)?;
-                self.pred.entry(succ).or_default().push(key[HISTORY_FROM.len()..].to_owned());
+                self.pred
+                    .entry(succ)
+                    .or_default()
+                    .push(key[HISTORY_FROM.len()..].to_owned());
             }
             for id in chunk {
                 self.pred.entry((*id).clone()).or_default();
@@ -907,9 +1163,16 @@ impl Links {
 }
 
 /// [seeds] 与沿后继链接能走到的全部卡（广度优先，每一层一次批量查询）。
-fn successor_closure(c: &Connection, links: &mut Links, seeds: impl IntoIterator<Item = String>) -> Result<BTreeSet<String>, String> {
+fn successor_closure(
+    c: &Connection,
+    links: &mut Links,
+    seeds: impl IntoIterator<Item = String>,
+) -> Result<BTreeSet<String>, String> {
     let mut closure: BTreeSet<String> = BTreeSet::new();
-    let mut frontier: Vec<String> = seeds.into_iter().filter(|s| closure.insert(s.clone())).collect();
+    let mut frontier: Vec<String> = seeds
+        .into_iter()
+        .filter(|s| closure.insert(s.clone()))
+        .collect();
     while !frontier.is_empty() {
         links.load_successors(c, &frontier.iter().collect::<Vec<_>>())?;
         let mut next = Vec::new();
@@ -926,13 +1189,20 @@ fn successor_closure(c: &Connection, links: &mut Links, seeds: impl IntoIterator
 }
 
 /// [seeds] 与沿后继链接能走到的全部卡（收尾按块刷新时补刷后继用，transport.rs `settle_refreshed_cards`）。
-pub(crate) fn successors_of(c: &Connection, seeds: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
+pub(crate) fn successors_of(
+    c: &Connection,
+    seeds: &BTreeSet<String>,
+) -> Result<BTreeSet<String>, String> {
     successor_closure(c, &mut Links::default(), seeds.iter().cloned())
 }
 
 /// [seeds] 所在的「前身 ↔ 后继」连通分量（沿链接双向扩，广度优先、每一层两次批量查询）；返回里的每张卡前身 /
 /// 后继都已查过（[Links::successors] / [Links::predecessors] 可直接用）。
-fn link_family(c: &Connection, links: &mut Links, seeds: &BTreeSet<String>) -> Result<HashSet<String>, String> {
+fn link_family(
+    c: &Connection,
+    links: &mut Links,
+    seeds: &BTreeSet<String>,
+) -> Result<HashSet<String>, String> {
     let mut family: HashSet<String> = seeds.iter().cloned().collect();
     let mut frontier: Vec<String> = seeds.iter().cloned().collect();
     while !frontier.is_empty() {
@@ -967,7 +1237,10 @@ fn refresh_stats(
     ids.sort_by(|a, b| cmp_utf16(a, b));
     let mut visible: HashSet<String> = HashSet::new();
     for chunk in ids.chunks(500) {
-        let q = format!("SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE hidden = 0 AND id IN ({})", marks(chunk.len()));
+        let q = format!(
+            "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE hidden = 0 AND id IN ({})",
+            marks(chunk.len())
+        );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
@@ -975,27 +1248,39 @@ fn refresh_stats(
         }
     }
     // 真后代：p 在 X 的血统里（X ≠ p）。只有带链接的卡才可能有前身 / 后代。
-    let linked: Vec<String> =
-        ids.iter().filter(|c| !links.successors(c).is_empty() || !links.predecessors(c).is_empty()).cloned().collect();
+    let linked: Vec<String> = ids
+        .iter()
+        .filter(|c| !links.successors(c).is_empty() || !links.predecessors(c).is_empty())
+        .cloned()
+        .collect();
     let mut descendants: HashMap<String, BTreeSet<String>> = HashMap::new();
     for chunk in linked.chunks(CHUNK) {
-        let want: Vec<(String, Option<String>)> = chunk.iter().map(|id| (id.clone(), None)).collect();
+        let want: Vec<(String, Option<String>)> =
+            chunk.iter().map(|id| (id.clone(), None)).collect();
         for (k, (lineage, _)) in lineages(c, cfg, &want)?.into_iter().enumerate() {
             for p in lineage.into_iter().skip(1) {
                 descendants.entry(p).or_default().insert(chunk[k].clone());
             }
         }
     }
-    let sorted = |xs: Vec<&String>| -> Option<String> { xs.into_iter().min_by(|a, b| cmp_utf16(a, b)).cloned() };
+    let sorted = |xs: Vec<&String>| -> Option<String> {
+        xs.into_iter().min_by(|a, b| cmp_utf16(a, b)).cloned()
+    };
     let owner_of = |id: &String| -> String {
         if visible.contains(id) {
             return id.clone();
         }
-        let Some(d) = descendants.get(id).filter(|d| !d.is_empty()) else { return id.clone() };
+        let Some(d) = descendants.get(id).filter(|d| !d.is_empty()) else {
+            return id.clone();
+        };
         if let Some(o) = sorted(d.iter().filter(|x| visible.contains(*x)).collect()) {
             return o;
         }
-        if let Some(o) = sorted(d.iter().filter(|x| descendants.get(*x).is_none_or(BTreeSet::is_empty)).collect()) {
+        if let Some(o) = sorted(
+            d.iter()
+                .filter(|x| descendants.get(*x).is_none_or(BTreeSet::is_empty))
+                .collect(),
+        ) {
             return o;
         }
         sorted(d.iter().collect()).expect("non-empty")
@@ -1015,8 +1300,14 @@ fn refresh_stats(
     }
     let family: Vec<&String> = family.iter().collect();
     for chunk in family.chunks(500) {
-        let q = format!("DELETE FROM srs_stat_reviews WHERE card_id IN ({})", marks(chunk.len()));
-        c.prepare_cached(&q).map_err(sql)?.execute(params_from_iter(chunk.iter())).map_err(sql)?;
+        let q = format!(
+            "DELETE FROM srs_stat_reviews WHERE card_id IN ({})",
+            marks(chunk.len())
+        );
+        c.prepare_cached(&q)
+            .map_err(sql)?
+            .execute(params_from_iter(chunk.iter()))
+            .map_err(sql)?;
     }
     let mut ins = c
         .prepare_cached(
@@ -1091,13 +1382,19 @@ fn strings(c: &Connection, q: &str, args: &[&str]) -> Result<Vec<String>, String
 fn entity_rows(c: &Connection, ids: &[String]) -> Result<HashMap<String, Value>, String> {
     let mut out = HashMap::new();
     for chunk in ids.chunks(500) {
-        let q = format!("SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE id IN ({})", marks(chunk.len()));
+        let q = format!(
+            "SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE id IN ({})",
+            marks(chunk.len())
+        );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;
             let json: String = r.get(1).map_err(sql)?;
-            out.insert(id, serde_json::from_str(&json).map_err(|e| format!("bad entity payload: {e}"))?);
+            out.insert(
+                id,
+                serde_json::from_str(&json).map_err(|e| format!("bad entity payload: {e}"))?,
+            );
         }
     }
     Ok(out)
@@ -1108,7 +1405,11 @@ fn entity_rows(c: &Connection, ids: &[String]) -> Result<HashMap<String, Value>,
 /// [edits_of] 的一行：(字段键, 存储值, 服务器时刻, 列)。
 type EditRow = (String, String, Option<i64>, Option<registers::EditCols>);
 
-fn edits_of(c: &Connection, kind: &str, ids: &[String]) -> Result<HashMap<String, Vec<EditRow>>, String> {
+fn edits_of(
+    c: &Connection,
+    kind: &str,
+    ids: &[String],
+) -> Result<HashMap<String, Vec<EditRow>>, String> {
     let mut out: HashMap<String, Vec<EditRow>> = HashMap::new();
     for chunk in ids.chunks(500) {
         let q = format!(
@@ -1123,17 +1424,28 @@ fn edits_of(c: &Connection, kind: &str, ids: &[String]) -> Result<HashMap<String
         while let Some(r) = it.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;
             let (j, cols) = super::slim::edit_row(r, 3).map_err(sql)?;
-            out.entry(id).or_default().push((r.get(1).map_err(sql)?, j, r.get(2).map_err(sql)?, cols));
+            out.entry(id).or_default().push((
+                r.get(1).map_err(sql)?,
+                j,
+                r.get(2).map_err(sql)?,
+                cols,
+            ));
         }
     }
     Ok(out)
 }
 
 /// 一组笔记现有的卡缓存行 ID。
-fn cards_of_notes(c: &Connection, notes: &[String]) -> Result<HashMap<String, Vec<String>>, String> {
+fn cards_of_notes(
+    c: &Connection,
+    notes: &[String],
+) -> Result<HashMap<String, Vec<String>>, String> {
     let mut out: HashMap<String, Vec<String>> = HashMap::new();
     for chunk in notes.chunks(500) {
-        let q = format!("SELECT srs_idt(id) AS id, srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE note_id IN ({})", marks(chunk.len()));
+        let q = format!(
+            "SELECT srs_idt(id) AS id, srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE note_id IN ({})",
+            marks(chunk.len())
+        );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
@@ -1150,9 +1462,11 @@ mod link_tests {
 
     use rusqlite::Connection;
 
-    use super::{lineage_ids, lineages, link_family, successor_closure, CacheConfig, Links, HISTORY_FROM};
-    use serde_json::Value;
+    use super::{
+        CacheConfig, HISTORY_FROM, Links, lineage_ids, lineages, link_family, successor_closure,
+    };
     use crate::store::SrsCore;
+    use serde_json::Value;
 
     /// 改写前的实现（全库前身链接读进内存，再在内存里扩）：对拍用，逐字保留原逻辑。
     fn old_successor_index(c: &Connection) -> HashMap<String, Vec<String>> {
@@ -1167,7 +1481,9 @@ mod link_tests {
         while let Some(r) = it.next().unwrap() {
             let succ: String = r.get(0).unwrap();
             let key: String = r.get(1).unwrap();
-            out.entry(key[HISTORY_FROM.len()..].to_owned()).or_default().push(succ);
+            out.entry(key[HISTORY_FROM.len()..].to_owned())
+                .or_default()
+                .push(succ);
         }
         out
     }
@@ -1188,7 +1504,10 @@ mod link_tests {
     }
 
     /// 旧 `refresh_stats` 的连通分量与「带链接的卡」。
-    fn old_family(succ: &HashMap<String, Vec<String>>, seeds: &BTreeSet<String>) -> (BTreeSet<String>, BTreeSet<String>) {
+    fn old_family(
+        succ: &HashMap<String, Vec<String>>,
+        seeds: &BTreeSet<String>,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
         let mut pred: HashMap<&str, Vec<&str>> = HashMap::new();
         for (p, ss) in succ {
             for s in ss {
@@ -1209,14 +1528,25 @@ mod link_tests {
             }
             family.insert(id);
         }
-        let linked = family.iter().filter(|c| succ.contains_key(*c) || pred.contains_key(c.as_str())).cloned().collect();
+        let linked = family
+            .iter()
+            .filter(|c| succ.contains_key(*c) || pred.contains_key(c.as_str()))
+            .cloned()
+            .collect();
         (family.into_iter().collect(), linked)
     }
 
-    fn new_family(c: &Connection, links: &mut Links, seeds: &BTreeSet<String>) -> (BTreeSet<String>, BTreeSet<String>) {
+    fn new_family(
+        c: &Connection,
+        links: &mut Links,
+        seeds: &BTreeSet<String>,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
         let family = link_family(c, links, seeds).unwrap();
-        let linked =
-            family.iter().filter(|x| !links.successors(x).is_empty() || !links.predecessors(x).is_empty()).cloned().collect();
+        let linked = family
+            .iter()
+            .filter(|x| !links.successors(x).is_empty() || !links.predecessors(x).is_empty())
+            .cloned()
+            .collect();
         (family.into_iter().collect(), linked)
     }
 
@@ -1243,8 +1573,20 @@ mod link_tests {
         let w = core.writer().unwrap();
         let mut n = 0;
         let links: &[(&str, &str)] = &[
-            ("A", "B"), ("A", "C"), ("B", "D"), ("C", "D"), ("D", "E"), ("F", "E"), ("D", "E"),
-            ("H", "I"), ("I", "H"), ("E", "J"), ("K", "J"), ("L", "M"), ("M", "N"), ("L", "N"),
+            ("A", "B"),
+            ("A", "C"),
+            ("B", "D"),
+            ("C", "D"),
+            ("D", "E"),
+            ("F", "E"),
+            ("D", "E"),
+            ("H", "I"),
+            ("I", "H"),
+            ("E", "J"),
+            ("K", "J"),
+            ("L", "M"),
+            ("M", "N"),
+            ("L", "N"),
         ];
         for (pred, succ) in links {
             edit(&w, &mut n, "card", succ, &format!("{HISTORY_FROM}{pred}"));
@@ -1255,9 +1597,18 @@ mod link_tests {
         }
         edit(&w, &mut n, "note", "A", &format!("{HISTORY_FROM}Q"));
         edit(&w, &mut n, "note", "Q", &format!("{HISTORY_FROM}G"));
-        let all = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "Q", "Z", "none"];
+        let all = [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "Q", "Z", "none",
+        ];
         let mut seed_sets: Vec<Vec<&str>> = all.iter().map(|s| vec![*s]).collect();
-        seed_sets.extend([vec!["A", "F"], vec!["G", "H"], vec!["N", "K", "Z"], vec!["E", "M", "I"], all.to_vec(), vec![]]);
+        seed_sets.extend([
+            vec!["A", "F"],
+            vec!["G", "H"],
+            vec!["N", "K", "Z"],
+            vec!["E", "M", "I"],
+            all.to_vec(),
+            vec![],
+        ]);
         let index = old_successor_index(&w);
         for seeds in &seed_sets {
             let set: BTreeSet<String> = seeds.iter().map(|s| (*s).to_owned()).collect();
@@ -1265,13 +1616,33 @@ mod link_tests {
             let expect_family = old_family(&index, &set);
             // 每组种子用一份新的按需链接（与一次刷新相同），再用全库读入的 Links 各跑一遍。
             let mut lazy = Links::default();
-            assert_eq!(successor_closure(&w, &mut lazy, set.iter().cloned()).unwrap(), expect_closure, "closure {seeds:?}");
-            assert_eq!(new_family(&w, &mut lazy, &set), expect_family, "family after closure {seeds:?}");
+            assert_eq!(
+                successor_closure(&w, &mut lazy, set.iter().cloned()).unwrap(),
+                expect_closure,
+                "closure {seeds:?}"
+            );
+            assert_eq!(
+                new_family(&w, &mut lazy, &set),
+                expect_family,
+                "family after closure {seeds:?}"
+            );
             let mut fresh = Links::default();
-            assert_eq!(new_family(&w, &mut fresh, &set), expect_family, "family {seeds:?}");
+            assert_eq!(
+                new_family(&w, &mut fresh, &set),
+                expect_family,
+                "family {seeds:?}"
+            );
             let mut full = Links::load_all(&w).unwrap();
-            assert_eq!(successor_closure(&w, &mut full, set.iter().cloned()).unwrap(), expect_closure, "full closure {seeds:?}");
-            assert_eq!(new_family(&w, &mut full, &set), expect_family, "full family {seeds:?}");
+            assert_eq!(
+                successor_closure(&w, &mut full, set.iter().cloned()).unwrap(),
+                expect_closure,
+                "full closure {seeds:?}"
+            );
+            assert_eq!(
+                new_family(&w, &mut full, &set),
+                expect_family,
+                "full family {seeds:?}"
+            );
         }
         // 抽查：菱形 + 汇合的闭包、环的分量。
         assert_eq!(
@@ -1279,7 +1650,10 @@ mod link_tests {
             ["A", "B", "C", "D", "E", "J"].map(String::from).to_vec()
         );
         let (fam, linked) = old_family(&index, &BTreeSet::from(["H".to_owned()]));
-        assert_eq!(fam.into_iter().collect::<Vec<_>>(), ["H", "I"].map(String::from).to_vec());
+        assert_eq!(
+            fam.into_iter().collect::<Vec<_>>(),
+            ["H", "I"].map(String::from).to_vec()
+        );
         assert_eq!(linked.len(), 2);
         drop(w);
         core.close();
@@ -1309,8 +1683,22 @@ mod link_tests {
             )
             .unwrap();
         };
-        for (pred, succ) in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D"), ("D", "E"), ("H", "I"), ("I", "H"), ("X", "E")] {
-            put("card", succ, &format!("{HISTORY_FROM}{pred}"), Value::Bool(true));
+        for (pred, succ) in [
+            ("A", "B"),
+            ("A", "C"),
+            ("B", "D"),
+            ("C", "D"),
+            ("D", "E"),
+            ("H", "I"),
+            ("I", "H"),
+            ("X", "E"),
+        ] {
+            put(
+                "card",
+                succ,
+                &format!("{HISTORY_FROM}{pred}"),
+                Value::Bool(true),
+            );
         }
         // E 后来撤掉了 X 这个前身（同一写入者更新的记录支配旧的）。
         put("card", "E", &format!("{HISTORY_FROM}X"), Value::Bool(false));
@@ -1318,11 +1706,21 @@ mod link_tests {
         put("card", "D", "flag", serde_json::json!(2));
         put("note", "A", &format!("{HISTORY_FROM}Q"), Value::Bool(true));
         let cfg = CacheConfig::parse(&serde_json::json!({"defaultDeck": "d"})).unwrap();
-        let cards: Vec<String> = ["A", "B", "C", "D", "E", "H", "I", "X", "Q", "none"].map(String::from).to_vec();
+        let cards: Vec<String> = ["A", "B", "C", "D", "E", "H", "I", "X", "Q", "none"]
+            .map(String::from)
+            .to_vec();
         let want: Vec<(String, Option<String>)> = cards.iter().map(|c| (c.clone(), None)).collect();
-        let full: Vec<Vec<String>> = lineages(&w, &cfg, &want).unwrap().into_iter().map(|(l, _)| l).collect();
+        let full: Vec<Vec<String>> = lineages(&w, &cfg, &want)
+            .unwrap()
+            .into_iter()
+            .map(|(l, _)| l)
+            .collect();
         assert_eq!(lineage_ids(&w, &cards).unwrap(), full);
-        assert_eq!(full[4], ["E", "D", "B", "C", "A"].map(String::from).to_vec(), "E without the retracted X");
+        assert_eq!(
+            full[4],
+            ["E", "D", "B", "C", "A"].map(String::from).to_vec(),
+            "E without the retracted X"
+        );
         assert!(lineage_ids(&w, &[]).unwrap().is_empty());
         drop(w);
         core.close();
@@ -1339,13 +1737,23 @@ mod link_tests {
         let w = core.writer().unwrap();
         let mut n = 0;
         for i in 0..2000 {
-            edit(&w, &mut n, "card", &format!("s{i}"), &format!("{HISTORY_FROM}p{i}"));
+            edit(
+                &w,
+                &mut n,
+                "card",
+                &format!("s{i}"),
+                &format!("{HISTORY_FROM}p{i}"),
+            );
         }
         edit(&w, &mut n, "card", "y", &format!("{HISTORY_FROM}x"));
         let mut links = Links::default();
         let fam = link_family(&w, &mut links, &BTreeSet::from(["y".to_owned()])).unwrap();
         assert_eq!(fam, HashSet::from(["x".to_owned(), "y".to_owned()]));
-        assert_eq!(links.succ.len() + links.pred.len(), 4, "walked beyond the seed lineage");
+        assert_eq!(
+            links.succ.len() + links.pred.len(),
+            4,
+            "walked beyond the seed lineage"
+        );
         drop(w);
         core.close();
     }
@@ -1366,8 +1774,20 @@ mod link_tests {
         let mut k = 0;
         w.execute_batch("BEGIN").unwrap();
         for i in 0..n {
-            edit(&w, &mut k, "card", &format!("b{i}"), &format!("{HISTORY_FROM}a{i}"));
-            edit(&w, &mut k, "card", &format!("c{i}"), &format!("{HISTORY_FROM}b{i}"));
+            edit(
+                &w,
+                &mut k,
+                "card",
+                &format!("b{i}"),
+                &format!("{HISTORY_FROM}a{i}"),
+            );
+            edit(
+                &w,
+                &mut k,
+                "card",
+                &format!("c{i}"),
+                &format!("{HISTORY_FROM}b{i}"),
+            );
         }
         w.execute_batch("COMMIT").unwrap();
         let seeds = BTreeSet::from(["a7".to_owned()]);
@@ -1388,7 +1808,10 @@ mod link_tests {
             assert_eq!(fam.0.len(), 3);
         }
         let new_ms = t0.elapsed().as_secs_f64() * 1000.0 / runs as f64;
-        println!("{} 条前身链接：旧 全库读入 {old_ms:.3} ms -> 新 按需 BFS {new_ms:.3} ms（闭包 + 连通分量，{runs} 次平均）", 2 * n);
+        println!(
+            "{} 条前身链接：旧 全库读入 {old_ms:.3} ms -> 新 按需 BFS {new_ms:.3} ms（闭包 + 连通分量，{runs} 次平均）",
+            2 * n
+        );
         drop(w);
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
@@ -1397,11 +1820,11 @@ mod link_tests {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
-    use super::{refresh, CacheConfig, Dirty};
+    use super::{CacheConfig, Dirty, refresh};
     use crate::store::sync2::in_savepoint;
-    use crate::store::sync2::tests::{deck_entity, edit, review, Device, P};
+    use crate::store::sync2::tests::{Device, P, deck_entity, edit, review};
 
     const T0: i64 = 1_700_000_000_000;
     const N1: &str = "0193a1b2-0000-7000-8000-000000000001";
@@ -1432,12 +1855,27 @@ mod tests {
     #[test]
     fn source_from_tags_follows_the_mining_tag_contract() {
         use super::source_from_tags as f;
-        assert_eq!(f(&tags(&["fushi", "video"])), Some(("video", String::new())));
+        assert_eq!(
+            f(&tags(&["fushi", "video"])),
+            Some(("video", String::new()))
+        );
         assert_eq!(f(&tags(&["Hibiki", "Book"])), Some(("book", String::new())));
-        assert_eq!(f(&tags(&["hibiki", "anime"])), Some(("video", String::new())));
-        assert_eq!(f(&tags(&["fushi", "video", "video::ゆるキャン△"])), Some(("video", "ゆるキャン△".to_owned())));
-        assert_eq!(f(&tags(&["fushi", "game::Summer Pockets"])), Some(("game", "Summer Pockets".to_owned())));
-        assert_eq!(f(&tags(&["fushi", "music", "book"])), Some(("music", String::new())));
+        assert_eq!(
+            f(&tags(&["hibiki", "anime"])),
+            Some(("video", String::new()))
+        );
+        assert_eq!(
+            f(&tags(&["fushi", "video", "video::ゆるキャン△"])),
+            Some(("video", "ゆるキャン△".to_owned()))
+        );
+        assert_eq!(
+            f(&tags(&["fushi", "game::Summer Pockets"])),
+            Some(("game", "Summer Pockets".to_owned()))
+        );
+        assert_eq!(
+            f(&tags(&["fushi", "music", "book"])),
+            Some(("music", String::new()))
+        );
         // 没有制卡标记：别的工具也会打 video 之类的标签，不认。
         assert_eq!(f(&tags(&["video", "video::X"])), None);
         // 有标记但没有分类、或层级父级不是分类 / 作品名为空：认不出。
@@ -1459,7 +1897,12 @@ mod tests {
                 deck_entity(&deck),
                 note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
                 note(N1, "NT"),
-                edit("note", N1, "tags", json!(["fushi", "video", "video::ゆるキャン△"])),
+                edit(
+                    "note",
+                    N1,
+                    "tags",
+                    json!(["fushi", "video", "video::ゆるキャン△"]),
+                ),
                 note(N2, "NT"),
                 edit("note", N2, "tags", json!(["hibiki", "book"])),
                 note(N3, "NT"),
@@ -1470,9 +1913,19 @@ mod tests {
             ],
         );
         let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
-        run(&d, &cfg, Dirty { all_notes: true, ..Dirty::default() });
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_notes: true,
+                ..Dirty::default()
+            },
+        );
         let sources = |d: &Device| -> Vec<Vec<String>> {
-            d.rows("SELECT srs_idt(id), source_kind, source_title FROM srs_notes_cache ORDER BY id").into_iter().skip(1).collect()
+            d.rows("SELECT srs_idt(id), source_kind, source_title FROM srs_notes_cache ORDER BY id")
+                .into_iter()
+                .skip(1)
+                .collect()
         };
         let expect = vec![
             vec![N1.to_owned(), "video".to_owned(), "ゆるキャン△".to_owned()],

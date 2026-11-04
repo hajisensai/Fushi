@@ -63,7 +63,16 @@ fn main() {
             runtime
                 .state_ids(0)
                 .into_iter()
-                .map(|id| (id, runtime.state_peaks(0, id).unwrap().into_iter().fold(0.0, f32::max)))
+                .map(|id| {
+                    (
+                        id,
+                        runtime
+                            .state_peaks(0, id)
+                            .unwrap()
+                            .into_iter()
+                            .fold(0.0, f32::max),
+                    )
+                })
                 .collect(),
         );
     }
@@ -74,7 +83,10 @@ fn main() {
         let cols: Vec<String> = peaks.iter().map(|m| format!("{:.4}", m[&id])).collect();
         println!("{id}\t{}\t{}", reviews[&id], cols.join("\t"));
     }
-    let above: Vec<usize> = peaks.iter().map(|m| m.values().filter(|&&p| p > 2.0).count()).collect();
+    let above: Vec<usize> = peaks
+        .iter()
+        .map(|m| m.values().filter(|&&p| p > 2.0).count())
+        .collect();
     println!("cards with peak > 2: {above:?} of {}", peaks[0].len());
 
     // 最差那张卡：每次复习后（逐块回放到它的每一条）各精度的峰值。
@@ -86,14 +98,18 @@ fn main() {
         .map(|(i, _)| i)
         .collect();
     println!("trace of card {target} ({} reviews)", positions.len());
-    let mut runtimes: Vec<SmallInference> =
-        precisions.iter().map(|&p| SmallInference::new(&model, p)).collect();
+    let mut runtimes: Vec<SmallInference> = precisions
+        .iter()
+        .map(|&p| SmallInference::new(&model, p))
+        .collect();
     let mut done = 0;
     let step = (positions.len() / 40).max(1);
     for (k, &pos) in positions.iter().enumerate() {
         let upto = pos + 1;
         for runtime in &mut runtimes {
-            runtime.warm_up_reviews(inputs[done..upto].to_vec(), false).unwrap();
+            runtime
+                .warm_up_reviews(inputs[done..upto].to_vec(), false)
+                .unwrap();
         }
         done = upto;
         if k % step == 0 || k + 1 == positions.len() {
@@ -101,7 +117,11 @@ fn main() {
                 .iter()
                 .map(|r| format!("{:?}", r.state_peaks(0, target).unwrap()))
                 .collect();
-            println!("review {k}\tday {}\t{}", rows[pos].day_offset, cols.join("\t"));
+            println!(
+                "review {k}\tday {}\t{}",
+                rows[pos].day_offset,
+                cols.join("\t")
+            );
         }
     }
 }

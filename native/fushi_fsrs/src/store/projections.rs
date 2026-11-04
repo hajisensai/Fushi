@@ -10,9 +10,9 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use super::{slim, SrsCore};
-use crate::history::{parse_stored, Kind, Log, LogCols, Origin, Outcome, RType, NONE_I64};
-use crate::projection::{self, Alg, Day, EffLog, MemAlg, RwkvIds, RWKV_ROW};
+use super::{SrsCore, slim};
+use crate::history::{Kind, Log, LogCols, NONE_I64, Origin, Outcome, RType, parse_stored};
+use crate::projection::{self, Alg, Day, EffLog, MemAlg, RWKV_ROW, RwkvIds};
 
 /// [SrsCore::rwkv_replay] 取哪些行（见那里）。
 #[derive(Clone, Copy, Debug, Default)]
@@ -37,14 +37,17 @@ fn rwkv_divergence(
         if !lineage.iter().any(|c| touched.contains(c)) {
             continue;
         }
-        let (new_rows, new_at, _) = projection::rwkv_card_rows(&logs.effective(lineage, None), &zero, day)?;
-        let (old_rows, old_at, _) = projection::rwkv_card_rows(&logs.effective(lineage, Some(since)), &zero, day)?;
+        let (new_rows, new_at, _) =
+            projection::rwkv_card_rows(&logs.effective(lineage, None), &zero, day)?;
+        let (old_rows, old_at, _) =
+            projection::rwkv_card_rows(&logs.effective(lineage, Some(since)), &zero, day)?;
         let n = new_at.len().max(old_at.len());
         for i in 0..n {
             let same = i < new_at.len()
                 && i < old_at.len()
                 && new_at[i] == old_at[i]
-                && new_rows[i * RWKV_ROW..(i + 1) * RWKV_ROW] == old_rows[i * RWKV_ROW..(i + 1) * RWKV_ROW];
+                && new_rows[i * RWKV_ROW..(i + 1) * RWKV_ROW]
+                    == old_rows[i * RWKV_ROW..(i + 1) * RWKV_ROW];
             if same {
                 continue;
             }
@@ -208,7 +211,14 @@ struct LogsByCard {
 
 impl LogsByCard {
     /// 解析一条读出的日志（瘦存 + 列，或原文；与 [crate::history::parse_full] 同一套坏数据判据）并收下。
-    fn push(&mut self, card: String, rowid: i64, stored: &str, server_time: Option<i64>, cols: Option<&LogCols>) -> Result<(), String> {
+    fn push(
+        &mut self,
+        card: String,
+        rowid: i64,
+        stored: &str,
+        server_time: Option<i64>,
+        cols: Option<&LogCols>,
+    ) -> Result<(), String> {
         let (log, res, extra) = parse_stored(stored, server_time, cols)?;
         let writer = match self.writer_ix.get(&*log.writer) {
             Some(&w) => w,
@@ -257,7 +267,9 @@ impl LogsByCard {
             .filter(|l| upto.is_none_or(|u| l.rowid <= u))
             .collect();
         let logs: Vec<Log<'_>> = scans.iter().map(|l| l.log(&self.writers)).collect();
-        projection::effective_by(&logs, |i, clamped| scans[i].eff(logs[i].id.to_string(), clamped))
+        projection::effective_by(&logs, |i, clamped| {
+            scans[i].eff(logs[i].id.to_string(), clamped)
+        })
     }
 }
 
@@ -343,7 +355,10 @@ fn push_strings<'s>(out: &mut Vec<u8>, strings: impl Iterator<Item = &'s str>) {
 
 impl SrsCore {
     /// 读连接上一个读事务：多条语句看同一个 WAL 快照。
-    fn read_snapshot<T>(&self, body: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
+    fn read_snapshot<T>(
+        &self,
+        body: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         let out = body(&r);
@@ -360,7 +375,13 @@ impl SrsCore {
     /// 输出（小端，全部 8 字节字）：`[n_seq, n_reviews, n_items]`、`seq_start × (n_seq + 1)`、`seq_card × n_seq`、
     /// `rating × n_reviews`、`delta(f64) × n_reviews`、`(seq, len) × n_items`。序列 = 一张进训练集的卡的完整评审，
     /// 条目 = 它到第 len 次评分为止的前缀；条目按最后一次评分时刻升序（同一时刻按卡的输入顺序、再按评分先后）。
-    pub fn optimizer_items(&self, groups: &[Vec<String>], card_ids: &[i64], alg: Alg, day: &Day) -> Result<Vec<u8>, String> {
+    pub fn optimizer_items(
+        &self,
+        groups: &[Vec<String>],
+        card_ids: &[i64],
+        alg: Alg,
+        day: &Day,
+    ) -> Result<Vec<u8>, String> {
         if card_ids.len() != groups.len() {
             return Err("optimizer: card id count differs from group count".into());
         }
@@ -392,7 +413,9 @@ impl SrsCore {
             }
         }
         items.sort_by_key(|i| i.0);
-        let mut out = Vec::with_capacity(24 + (seq_start.len() + seq_card.len() + 2 * ratings.len() + 2 * items.len()) * 8);
+        let mut out = Vec::with_capacity(
+            24 + (seq_start.len() + seq_card.len() + 2 * ratings.len() + 2 * items.len()) * 8,
+        );
         push_i64(&mut out, seq_card.len() as i64);
         push_i64(&mut out, ratings.len() as i64);
         push_i64(&mut out, items.len() as i64);
@@ -412,7 +435,12 @@ impl SrsCore {
     ///
     /// 输出：`[i64 n_groups]`，每份 `[i64 kept, effectiveRatings, lastAt|NONE, lastRating, lastRType, 0]`，
     /// 全部保留评分行（80 字节 × 总数，份内时间顺序），保留评分的日志 ID 串表。
-    pub fn rwkv_cards(&self, groups: &[Vec<String>], ids: &[i64], day: &Day) -> Result<Vec<u8>, String> {
+    pub fn rwkv_cards(
+        &self,
+        groups: &[Vec<String>],
+        ids: &[i64],
+        day: &Day,
+    ) -> Result<Vec<u8>, String> {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
@@ -431,7 +459,10 @@ impl SrsCore {
             let (r, _, kept) = projection::rwkv_card_rows(&eff, &card, day)?;
             rows.extend_from_slice(&r);
             push_i64(&mut head, kept.len() as i64);
-            push_i64(&mut head, eff.iter().filter(|l| l.is_rating()).count() as i64);
+            push_i64(
+                &mut head,
+                eff.iter().filter(|l| l.is_rating()).count() as i64,
+            );
             match kept.last() {
                 Some(&i) => {
                     push_i64(&mut head, eff[i].at);
@@ -555,7 +586,11 @@ impl SrsCore {
                 }
                 let mut row = [0u8; RWKV_ROW];
                 row.copy_from_slice(&rows[k * RWKV_ROW..(k + 1) * RWKV_ROW]);
-                entries.push((at, row, crate::store::schema::anki_numeric_id(&eff[kept[k]].id)));
+                entries.push((
+                    at,
+                    row,
+                    crate::store::schema::anki_numeric_id(&eff[kept[k]].id),
+                ));
             }
         }
         // 日志已算完行：先放掉（整 profile 的日志与输出缓冲不同时在内存里）。
@@ -656,7 +691,11 @@ impl SrsCore {
         push_i64(&mut out, tail.len() as i64);
         tail.iter().for_each(|t| push_i64(&mut out, t.3));
         tail.iter().for_each(|t| push_i64(&mut out, t.2));
-        push_strings(&mut out, tail.iter().flat_map(|t| [t.0.as_str(), t.1.as_str(), t.4.as_str()]));
+        push_strings(
+            &mut out,
+            tail.iter()
+                .flat_map(|t| [t.0.as_str(), t.1.as_str(), t.4.as_str()]),
+        );
         Ok(out)
     }
 }
@@ -693,28 +732,72 @@ mod tests {
     }
 
     fn log(id: &str, card: &str, phys: i64, at: i64, rest: &str) -> String {
-        format!(r#"{{"id":"{id}","p":"p","card":"{card}","kind":"review","hlc":"{phys}:0:A","at":{at},"ts":"anchored"{rest}}}"#)
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"{card}","kind":"review","hlc":"{phys}:0:A","at":{at},"ts":"anchored"{rest}}}"#
+        )
     }
 
     fn i64_at(b: &[u8], k: usize) -> i64 {
         i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap())
     }
 
-    const D: Day = Day { utc_offset_min: 0, rollover_hour: 0 };
+    const D: Day = Day {
+        utc_offset_min: 0,
+        rollover_hour: 0,
+    };
 
     #[test]
     fn optimizer_items_read_the_lineage_and_sort_by_time() {
         let c = core("opt");
-        insert(&c, "a1", "pred", "review", 0, &log("a1", "pred", 1, 0, r#","rtype":"learn","rating":3"#));
-        insert(&c, "a2", "c1", "review", 86_400_000, &log("a2", "c1", 2, 86_400_000, r#","rtype":"review","rating":3"#));
-        insert(&c, "b1", "c2", "review", 1000, &log("b1", "c2", 1, 1000, r#","rtype":"learn","rating":1"#));
-        insert(&c, "b2", "c2", "review", 2000, &log("b2", "c2", 2, 2000, r#","rtype":"learn","rating":3"#));
+        insert(
+            &c,
+            "a1",
+            "pred",
+            "review",
+            0,
+            &log("a1", "pred", 1, 0, r#","rtype":"learn","rating":3"#),
+        );
+        insert(
+            &c,
+            "a2",
+            "c1",
+            "review",
+            86_400_000,
+            &log("a2", "c1", 2, 86_400_000, r#","rtype":"review","rating":3"#),
+        );
+        insert(
+            &c,
+            "b1",
+            "c2",
+            "review",
+            1000,
+            &log("b1", "c2", 1, 1000, r#","rtype":"learn","rating":1"#),
+        );
+        insert(
+            &c,
+            "b2",
+            "c2",
+            "review",
+            2000,
+            &log("b2", "c2", 2, 2000, r#","rtype":"learn","rating":3"#),
+        );
         let out = c
-            .optimizer_items(&[vec!["c1".into(), "pred".into()], vec!["c2".into()]], &[11, 22], Alg::Fsrs7, &D)
+            .optimizer_items(
+                &[vec!["c1".into(), "pred".into()], vec!["c2".into()]],
+                &[11, 22],
+                Alg::Fsrs7,
+                &D,
+            )
             .unwrap();
-        assert_eq!((i64_at(&out, 0), i64_at(&out, 1), i64_at(&out, 2)), (2, 4, 2));
+        assert_eq!(
+            (i64_at(&out, 0), i64_at(&out, 1), i64_at(&out, 2)),
+            (2, 4, 2)
+        );
         // seq_start [0, 2, 4], seq_card [11, 22]
-        assert_eq!((i64_at(&out, 3), i64_at(&out, 4), i64_at(&out, 5)), (0, 2, 4));
+        assert_eq!(
+            (i64_at(&out, 3), i64_at(&out, 4), i64_at(&out, 5)),
+            (0, 2, 4)
+        );
         assert_eq!((i64_at(&out, 6), i64_at(&out, 7)), (11, 22));
         // items: c2 第二次评分（2000）在 c1 第二次评分（1 天）之前。
         let items = 8 + 4 + 4;
@@ -725,28 +808,76 @@ mod tests {
     #[test]
     fn rwkv_replay_fingerprint_matches_the_scan_and_reports_strays() {
         let c = core("rwkv");
-        insert(&c, "a1", "c1", "review", 0, &log("a1", "c1", 1, 5000, r#","rtype":"learn","rating":3"#));
-        insert(&c, "z1", "c9", "review", 0, &log("z1", "c9", 1, 0, r#","rtype":"learn","rating":3"#));
-        insert(&c, "b1", "c2", "review", 0, &log("b1", "c2", 1, 1000, r#","rtype":"learn","rating":4"#));
+        insert(
+            &c,
+            "a1",
+            "c1",
+            "review",
+            0,
+            &log("a1", "c1", 1, 5000, r#","rtype":"learn","rating":3"#),
+        );
+        insert(
+            &c,
+            "z1",
+            "c9",
+            "review",
+            0,
+            &log("z1", "c9", 1, 0, r#","rtype":"learn","rating":3"#),
+        );
+        insert(
+            &c,
+            "b1",
+            "c2",
+            "review",
+            0,
+            &log("b1", "c2", 1, 1000, r#","rtype":"learn","rating":4"#),
+        );
         let out = c
-            .rwkv_replay("p", &[vec!["c1".into()], vec!["c2".into()]], &[1, 2, 3, 4, 5, 6, 7, 8], &D, 1, RwkvRange::default())
+            .rwkv_replay(
+                "p",
+                &[vec!["c1".into()], vec!["c2".into()]],
+                &[1, 2, 3, 4, 5, 6, 7, 8],
+                &D,
+                1,
+                RwkvRange::default(),
+            )
             .unwrap();
         assert_eq!((i64_at(&out, 0), i64_at(&out, 1)), (3, 3));
         assert_eq!(i64_at(&out, 2), 5000, "lastAt = latest kept rating");
         assert_eq!((i64_at(&out, 3), i64_at(&out, 4)), (2, 1));
-        assert_eq!((i64_at(&out, 5), i64_at(&out, 6)), (NONE_I64, 0), "full replay: no divergence");
+        assert_eq!(
+            (i64_at(&out, 5), i64_at(&out, 6)),
+            (NONE_I64, 0),
+            "full replay: no divergence"
+        );
         // 按时刻排序：c2（1000）在 c1（5000）前面。
         let rows = 7;
         assert_eq!(i64_at(&out, rows), 5);
         assert_eq!(i64_at(&out, rows + 10), 1);
         let at = 56 + 2 * RWKV_ROW;
-        assert_eq!((i64_at(&out, at / 8), i64_at(&out, at / 8 + 1)), (1000, 5000), "rating times");
+        assert_eq!(
+            (i64_at(&out, at / 8), i64_at(&out, at / 8 + 1)),
+            (1000, 5000),
+            "rating times"
+        );
         let tags = at / 8 + 2;
-        assert_eq!(i64_at(&out, tags), crate::store::schema::anki_numeric_id("b1"), "tag = numeric id of the log");
+        assert_eq!(
+            i64_at(&out, tags),
+            crate::store::schema::anki_numeric_id("b1"),
+            "tag = numeric id of the log"
+        );
         let strs = at + 4 * 8;
         assert_eq!(&out[strs + 8..], b"c9");
         let tail = c.rwkv_log_tail("p", 1, true, false).unwrap();
-        assert_eq!((i64_at(&tail, 0), i64_at(&tail, 1), i64_at(&tail, 2), i64_at(&tail, 3)), (3, 3, 2, 2));
+        assert_eq!(
+            (
+                i64_at(&tail, 0),
+                i64_at(&tail, 1),
+                i64_at(&tail, 2),
+                i64_at(&tail, 3)
+            ),
+            (3, 3, 2, 2)
+        );
     }
 
     /// 局部重放：分歧时刻 = 新日志改动的最早一行的时刻；行从那里起取，标签与时刻成对。
@@ -755,68 +886,170 @@ mod tests {
         let c = core("rebase");
         let ids = [1, 2, 3, 4, 5, 6, 7, 8];
         let groups = [vec!["c1".to_string()], vec!["c2".to_string()]];
-        insert(&c, "a1", "c1", "review", 1000, &log("a1", "c1", 1, 1000, r#","rtype":"learn","rating":3"#));
-        insert(&c, "a2", "c1", "review", 9000, &log("a2", "c1", 2, 9000, r#","rtype":"learn","rating":3"#));
-        insert(&c, "b1", "c2", "review", 5000, &log("b1", "c2", 3, 5000, r#","rtype":"learn","rating":4"#));
+        insert(
+            &c,
+            "a1",
+            "c1",
+            "review",
+            1000,
+            &log("a1", "c1", 1, 1000, r#","rtype":"learn","rating":3"#),
+        );
+        insert(
+            &c,
+            "a2",
+            "c1",
+            "review",
+            9000,
+            &log("a2", "c1", 2, 9000, r#","rtype":"learn","rating":3"#),
+        );
+        insert(
+            &c,
+            "b1",
+            "c2",
+            "review",
+            5000,
+            &log("b1", "c2", 3, 5000, r#","rtype":"learn","rating":4"#),
+        );
         let base = 3;
         // 晚到的评分：时刻 3000，落在已回放的 a2（9000）与 b1（5000）之前。
-        insert(&c, "b0", "c2", "review", 3000, &log("b0", "c2", 4, 3000, r#","rtype":"learn","rating":1"#));
-        let range = RwkvRange { rebase_since: Some(base), rows_from: None };
+        insert(
+            &c,
+            "b0",
+            "c2",
+            "review",
+            3000,
+            &log("b0", "c2", 4, 3000, r#","rtype":"learn","rating":1"#),
+        );
+        let range = RwkvRange {
+            rebase_since: Some(base),
+            rows_from: None,
+        };
         let out = c.rwkv_replay("p", &groups, &ids, &D, base, range).unwrap();
         assert_eq!(i64_at(&out, 5), 3000, "divergence = the late rating");
         assert_eq!(i64_at(&out, 6), 1, "one log after the base");
         assert_eq!(i64_at(&out, 2), 9000, "lastAt over every kept rating");
         assert_eq!(i64_at(&out, 3), 3, "b0, b1, a2 are at >= 3000");
         let at = (56 + 3 * RWKV_ROW) / 8;
-        assert_eq!((i64_at(&out, at), i64_at(&out, at + 1), i64_at(&out, at + 2)), (3000, 5000, 9000));
+        assert_eq!(
+            (i64_at(&out, at), i64_at(&out, at + 1), i64_at(&out, at + 2)),
+            (3000, 5000, 9000)
+        );
         let num = crate::store::schema::anki_numeric_id;
-        assert_eq!((i64_at(&out, at + 3), i64_at(&out, at + 5)), (num("b0"), num("a2")));
+        assert_eq!(
+            (i64_at(&out, at + 3), i64_at(&out, at + 5)),
+            (num("b0"), num("a2"))
+        );
         // 这些行就是全量回放里时刻 ≥ 3000 的那几行（含 b1 因前面多了 b0 而改变的间隔）。
-        let full = c.rwkv_replay("p", &groups, &ids, &D, base, RwkvRange::default()).unwrap();
-        let rows = |b: &[u8], n: usize, skip: usize| b[56 + skip * RWKV_ROW..56 + (skip + n) * RWKV_ROW].to_vec();
+        let full = c
+            .rwkv_replay("p", &groups, &ids, &D, base, RwkvRange::default())
+            .unwrap();
+        let rows = |b: &[u8], n: usize, skip: usize| {
+            b[56 + skip * RWKV_ROW..56 + (skip + n) * RWKV_ROW].to_vec()
+        };
         assert_eq!(i64_at(&full, 3), 4);
         assert_eq!(rows(&out, 3, 0), rows(&full, 3, 1));
 
         // 指定起点（从检查点重来）：rows_from 优先，分歧照样报出来。
-        let range = RwkvRange { rebase_since: Some(base), rows_from: Some(5001) };
+        let range = RwkvRange {
+            rebase_since: Some(base),
+            rows_from: Some(5001),
+        };
         let out = c.rwkv_replay("p", &groups, &ids, &D, base, range).unwrap();
-        assert_eq!((i64_at(&out, 5), i64_at(&out, 3)), (3000, 1), "only a2 at >= 5001");
+        assert_eq!(
+            (i64_at(&out, 5), i64_at(&out, 3)),
+            (3000, 1),
+            "only a2 at >= 5001"
+        );
 
         // 撤销一条更早的评分：分歧在被撤的那条。
         let undo = r#"{"id":"u1","p":"p","card":"c1","kind":"undo","hlc":"5:0:A","at":9500,"ts":"anchored","revokes":"a1"}"#;
         insert(&c, "u1", "c1", "undo", 9500, undo);
-        let range = RwkvRange { rebase_since: Some(4), rows_from: None };
+        let range = RwkvRange {
+            rebase_since: Some(4),
+            rows_from: None,
+        };
         let out = c.rwkv_replay("p", &groups, &ids, &D, 4, range).unwrap();
         assert_eq!(i64_at(&out, 5), 1000, "divergence = the revoked rating");
 
         // 只多了不改变行的日志：没有分歧，一行不取。
-        insert(&c, "s1", "c1", "suspend", 9600, r#"{"id":"s1","p":"p","card":"c1","kind":"suspend","hlc":"6:0:A","at":9600,"ts":"anchored"}"#);
-        let range = RwkvRange { rebase_since: Some(5), rows_from: None };
+        insert(
+            &c,
+            "s1",
+            "c1",
+            "suspend",
+            9600,
+            r#"{"id":"s1","p":"p","card":"c1","kind":"suspend","hlc":"6:0:A","at":9600,"ts":"anchored"}"#,
+        );
+        let range = RwkvRange {
+            rebase_since: Some(5),
+            rows_from: None,
+        };
         let out = c.rwkv_replay("p", &groups, &ids, &D, 5, range).unwrap();
-        assert_eq!((i64_at(&out, 5), i64_at(&out, 3), i64_at(&out, 6)), (NONE_I64, 0, 1));
+        assert_eq!(
+            (i64_at(&out, 5), i64_at(&out, 3), i64_at(&out, 6)),
+            (NONE_I64, 0, 1)
+        );
     }
 
     #[test]
     fn rwkv_log_tail_reports_kind_and_revokes_and_counts_incrementally() {
         let c = core("tail");
-        insert(&c, "a1", "c1", "review", 10, &log("a1", "c1", 1, 10, r#","rtype":"learn","rating":3"#));
-        insert(&c, "b1", "c1", "review", 20, &log("b1", "c1", 2, 20, r#","rtype":"review","rating":4"#));
+        insert(
+            &c,
+            "a1",
+            "c1",
+            "review",
+            10,
+            &log("a1", "c1", 1, 10, r#","rtype":"learn","rating":3"#),
+        );
+        insert(
+            &c,
+            "b1",
+            "c1",
+            "review",
+            20,
+            &log("b1", "c1", 2, 20, r#","rtype":"review","rating":4"#),
+        );
         let undo = r#"{"id":"u1","p":"p","card":"c1","kind":"undo","hlc":"3:0:A","at":30,"ts":"anchored","revokes":"b1"}"#;
         insert(&c, "u1", "c1", "undo", 30, undo);
-        insert(&c, "s1", "c1", "suspend", 40, r#"{"id":"s1","kind":"suspend"}"#);
+        insert(
+            &c,
+            "s1",
+            "c1",
+            "suspend",
+            40,
+            r#"{"id":"s1","kind":"suspend"}"#,
+        );
         let t = c.rwkv_log_tail("p", 1, true, false).unwrap();
-        assert_eq!((i64_at(&t, 0), i64_at(&t, 1), i64_at(&t, 2), i64_at(&t, 3)), (4, 4, 3, 3));
-        assert_eq!((i64_at(&t, 4), i64_at(&t, 5), i64_at(&t, 6)), (20, 30, 40), "at");
-        assert_eq!((i64_at(&t, 7), i64_at(&t, 8), i64_at(&t, 9)), (1, 2, 0), "kind");
+        assert_eq!(
+            (i64_at(&t, 0), i64_at(&t, 1), i64_at(&t, 2), i64_at(&t, 3)),
+            (4, 4, 3, 3)
+        );
+        assert_eq!(
+            (i64_at(&t, 4), i64_at(&t, 5), i64_at(&t, 6)),
+            (20, 30, 40),
+            "at"
+        );
+        assert_eq!(
+            (i64_at(&t, 7), i64_at(&t, 8), i64_at(&t, 9)),
+            (1, 2, 0),
+            "kind"
+        );
         // 串表：9 个串（每行 ID、卡、撤销目标）。
         let strs = 8 * 10;
-        let off = |k: usize| u32::from_le_bytes(t[strs + 4 * k..strs + 4 * k + 4].try_into().unwrap()) as usize;
+        let off = |k: usize| {
+            u32::from_le_bytes(t[strs + 4 * k..strs + 4 * k + 4].try_into().unwrap()) as usize
+        };
         let body = strs + 4 * 10;
         let s = |k: usize| std::str::from_utf8(&t[body + off(k)..body + off(k + 1)]).unwrap();
         assert_eq!((s(3), s(4), s(5)), ("u1", "c1", "b1"));
         assert_eq!(s(2), "", "评分没有撤销目标");
         let inc = c.rwkv_log_tail("p", 2, false, true).unwrap();
-        assert_eq!((i64_at(&inc, 0), i64_at(&inc, 1), i64_at(&inc, 2)), (2, 4, 2), "只数 rowid 2 之后");
+        assert_eq!(
+            (i64_at(&inc, 0), i64_at(&inc, 1), i64_at(&inc, 2)),
+            (2, 4, 2),
+            "只数 rowid 2 之后"
+        );
         let none = c.rwkv_log_tail("p", 4, false, true).unwrap();
         assert_eq!((i64_at(&none, 0), i64_at(&none, 1)), (0, 0));
     }
