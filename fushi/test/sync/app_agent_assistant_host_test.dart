@@ -191,6 +191,7 @@ void main() {
     List<AiProviderConfig>? providers,
     bool ready = true,
     void Function()? onLlm,
+    DateTime Function()? clock,
   }) => createAgentAssistantHostWith(
     aiModuleEnabled: () => aiEnabled,
     allowPeers: () => allowPeers,
@@ -201,7 +202,7 @@ void main() {
       onLlm?.call();
       return _StubLlm(turns);
     },
-    clock: () => DateTime.fromMillisecondsSinceEpoch(1700000000000),
+    clock: clock ?? () => DateTime.fromMillisecondsSinceEpoch(1700000000000),
   );
 
   Future<(FushiSyncServer, String)> startHost(
@@ -465,7 +466,16 @@ void main() {
     ];
 
     test('列出 / 续接 / 改名 / 删除手机发起的会话；host 端列表标「来自 Pixel」', () async {
-      final String url = await startPairedHost(agentHost());
+      // 每次取时间前进 1 s：两场会话的 updatedAt 不同，「最近更新在前」才确定
+      // （同一时刻按随机 id 排，列表顺序会随机翻）。
+      int tick = 0;
+      final String url = await startPairedHost(
+        agentHost(
+          clock: () => DateTime.fromMillisecondsSinceEpoch(
+            1700000000000 + 1000 * tick++,
+          ),
+        ),
+      );
       final InterconnectAssistantClient c = client();
       final HostAssistantTarget target = (await c.probeUrl(url))!;
       expect(target.supportsAgentHistory, isTrue);
