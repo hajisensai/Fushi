@@ -403,8 +403,9 @@ class _FakeDiscovery implements BonsoirDiscovery {
 
   @override
   Future<void> stop() async {
-    if (!initialized)
+    if (!initialized) {
       throw StateError('Null check operator used on a null value');
+    }
     stopCalls++;
     started = false;
   }
