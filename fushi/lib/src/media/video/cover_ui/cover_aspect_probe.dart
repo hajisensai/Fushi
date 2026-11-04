@@ -1,8 +1,92 @@
+import 'dart:collection';
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
+
+/// 一张封面的探测结论：固有宽高比 + 垫底主色（[seedAspect] 非空 = 已按该宽高比
+/// 采过色，[seed] 为 null 表示「采过、不需要底色」）。
+class _CoverProbeEntry {
+  _CoverProbeEntry(this.aspect);
+
+  double aspect;
+  double? seedAspect;
+  Color? seed;
+}
+
+/// 进程级的封面探测记忆（按 [ImageProvider] 相等性索引，LRU）。
+///
+/// 为什么需要：网格是懒建的，卡片滚出视口就卸载、滚回来重新挂载。没有记忆时每次
+/// 重挂都要 ① 先按「尺寸未知 = 合槽 cover」画一帧，解码回调到了再切 contain +
+/// 垫底——滚动途中一排卡整体跳一次布局；② 对不合槽的图重新 `toByteData` 把整张
+/// RGBA 从 GPU 读回来算主色——Impeller 上这是一次同步 GPU 回读，正好落在滚动帧
+/// 里。宽高比与主色是图本身的属性，算一次就够。
+///
+/// 失效：换封面（同路径覆盖写）由 [evictLocalCoverCache] 连同 ImageCache 一起清；
+/// 万一漏清，解码回调拿到的真实宽高比与记忆不符时也会就地纠正并重新采色。
+abstract final class CoverProbeMemo {
+  /// 条目上限：每条只有两个数，几百张封面的库也就几十 KB。
+  static const int capacity = 2048;
+
+  static final LinkedHashMap<ImageProvider, _CoverProbeEntry> _entries =
+      LinkedHashMap<ImageProvider, _CoverProbeEntry>();
+
+  static _CoverProbeEntry? _touch(ImageProvider provider) {
+    final _CoverProbeEntry? entry = _entries.remove(provider);
+    if (entry != null) _entries[provider] = entry;
+    return entry;
+  }
+
+  static _CoverProbeEntry _entryFor(ImageProvider provider, double aspect) {
+    final _CoverProbeEntry entry =
+        _touch(provider) ?? (_entries[provider] = _CoverProbeEntry(aspect));
+    if (entry.aspect != aspect) {
+      // 同一 provider 解出了别的尺寸（文件被覆盖）：旧主色作废。
+      entry
+        ..aspect = aspect
+        ..seedAspect = null
+        ..seed = null;
+    }
+    while (_entries.length > capacity) {
+      _entries.remove(_entries.keys.first);
+    }
+    return entry;
+  }
+
+  /// 记住的宽高比；没见过为 null。
+  static double? aspectOf(ImageProvider provider) => _touch(provider)?.aspect;
+
+  /// 记住的主色：`known` 为假 = 没按 [aspect] 采过。
+  static ({bool known, Color? seed}) seedOf(
+    ImageProvider provider,
+    double aspect,
+  ) {
+    final _CoverProbeEntry? entry = _touch(provider);
+    if (entry == null || entry.seedAspect != aspect) {
+      return (known: false, seed: null);
+    }
+    return (known: true, seed: entry.seed);
+  }
+
+  static void rememberAspect(ImageProvider provider, double aspect) =>
+      _entryFor(provider, aspect);
+
+  static void rememberSeed(ImageProvider provider, double aspect, Color? seed) {
+    _entryFor(provider, aspect)
+      ..seedAspect = aspect
+      ..seed = seed;
+  }
+
+  /// 换图后丢掉该 provider 的记忆。
+  static void evict(ImageProvider provider) => _entries.remove(provider);
+
+  @visibleForTesting
+  static void clear() => _entries.clear();
+
+  @visibleForTesting
+  static int get length => _entries.length;
+}
 
 /// 槽向自适应封面组件的**共享内核**（TODO-2426）。
 ///
@@ -84,11 +168,25 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   }
 
   void _resolveProbedImage() {
-    final ImageStream newStream = probedImageOf(
-      widget,
-    ).resolve(createLocalImageConfiguration(context));
+    final ImageProvider provider = probedImageOf(widget);
+    final ImageStream newStream = provider.resolve(
+      createLocalImageConfiguration(context),
+    );
     if (newStream.key == _stream?.key) return;
     _detachListener();
+    // 重挂（滚回视口）时直接用记住的结论：首帧就是终态的槽向与底色，不先画一帧
+    // cover 再跳 contain，也不再读回像素采色（见 [CoverProbeMemo]）。
+    if (_aspect == null) {
+      final double? remembered = CoverProbeMemo.aspectOf(provider);
+      if (remembered != null) {
+        _aspect = remembered;
+        final ({bool known, Color? seed}) seed = CoverProbeMemo.seedOf(
+          provider,
+          remembered,
+        );
+        if (seed.known) _backdropSeed = seed.seed;
+      }
+    }
     final ImageStreamListener listener = ImageStreamListener(
       _onImage,
       onError: _onError,
@@ -100,15 +198,30 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
 
   void _onImage(ImageInfo info, bool syncCall) {
     final double aspect = info.image.width / info.image.height;
-    // 主色采样要读像素（异步），而 info.dispose() 之后底层 image 就不能再用了。
-    // clone 拿一份自己的句柄，采样完在 [_sampleBackdrop] 里各自释放。
-    final ui.Image sample = info.image.clone();
-    info.dispose();
+    final ImageProvider provider = probedImageOf(widget);
+    CoverProbeMemo.rememberAspect(provider, aspect);
     if (needsBackdropSeed(aspect)) {
-      _sampleBackdrop(sample, _sampleGeneration);
-    } else {
-      sample.dispose();
+      final ({bool known, Color? seed}) remembered = CoverProbeMemo.seedOf(
+        provider,
+        aspect,
+      );
+      if (remembered.known) {
+        info.dispose();
+        if (!mounted) return;
+        if (_aspect != aspect || _backdropSeed != remembered.seed) {
+          setState(() {
+            _aspect = aspect;
+            _failed = false;
+            _backdropSeed = remembered.seed;
+          });
+        }
+        return;
+      }
+      // 主色采样要读像素（异步），而 info.dispose() 之后底层 image 就不能再用了。
+      // clone 拿一份自己的句柄，采样完在 [_sampleBackdrop] 里各自释放。
+      _sampleBackdrop(info.image.clone(), _sampleGeneration, provider, aspect);
     }
+    info.dispose();
     if (!mounted || _aspect == aspect) return;
     setState(() {
       _aspect = aspect;
@@ -117,9 +230,16 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   }
 
   /// 异步取垫底底色。[generation] 用来丢弃过期结果：采样期间 widget 可能已经换图。
-  Future<void> _sampleBackdrop(ui.Image image, int generation) async {
+  /// 结果按 [provider] 记进 [CoverProbeMemo]（即使本卡已卸载，下次挂载也用得上）。
+  Future<void> _sampleBackdrop(
+    ui.Image image,
+    int generation,
+    ImageProvider provider,
+    double aspect,
+  ) async {
     try {
       final CoverBackdropSeed? seed = await sampleCoverBackdropSeed(image);
+      CoverProbeMemo.rememberSeed(provider, aspect, seed?.color);
       if (!mounted || generation != _sampleGeneration) return;
       final Color? color = seed?.color;
       if (_backdropSeed == color) return;

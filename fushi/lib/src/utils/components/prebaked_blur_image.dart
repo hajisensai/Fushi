@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -56,11 +57,14 @@ class PrebakedBlurImage extends StatefulWidget {
 /// 双线性拉伸回原尺寸看不出网格；再大只是白占显存。
 const double _kBakedSigmaPx = 6;
 
-/// 烘焙结果的身份：源图 + 输出像素尺寸 + 模糊参数，任一变化都要重烘。
+/// 烘焙结果的身份：图源 + 输出像素尺寸 + 模糊参数，任一变化都要重烘。
+///
+/// 图源按 [ImageProvider] 相等性认（不按解码出的 `ui.Image` 句柄）：同一张封面在
+/// 不同卡、同一张卡卸载又重挂时都命中 [_BakedBlurCache]。
 @immutable
 class _BakeKey {
   const _BakeKey(
-    this.source,
+    this.provider,
     this.width,
     this.height,
     this.sigmaPx,
@@ -70,7 +74,7 @@ class _BakeKey {
     this.tileMode,
   );
 
-  final ui.Image source;
+  final ImageProvider provider;
   final int width;
   final int height;
   final double sigmaPx;
@@ -79,10 +83,12 @@ class _BakeKey {
   final ColorFilter? colorFilter;
   final TileMode? tileMode;
 
+  int get bytes => width * height * 4;
+
   @override
   bool operator ==(Object other) =>
       other is _BakeKey &&
-      identical(other.source, source) &&
+      other.provider == provider &&
       other.width == width &&
       other.height == height &&
       other.sigmaPx == sigmaPx &&
@@ -93,7 +99,7 @@ class _BakeKey {
 
   @override
   int get hashCode => Object.hash(
-    identityHashCode(source),
+    provider,
     width,
     height,
     sigmaPx,
@@ -168,14 +174,13 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
   }
 
   _BakeKey? _keyFor(Size size, double devicePixelRatio) {
-    final ui.Image? source = _source;
-    if (source == null || size.isEmpty || !size.isFinite) return null;
+    if (size.isEmpty || !size.isFinite) return null;
     // 每逻辑像素的烘焙像素数：模糊越大越可以降采样，但不超过屏幕本身的密度。
     final double scale = widget.sigma <= 0
         ? devicePixelRatio
         : math.min(devicePixelRatio, _kBakedSigmaPx / widget.sigma);
     return _BakeKey(
-      source,
+      widget.image,
       math.max(1, (size.width * scale).ceil()),
       math.max(1, (size.height * scale).ceil()),
       widget.sigma * scale,
@@ -188,16 +193,30 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
 
   void _ensureBaked(_BakeKey key) {
     if (key == _bakedKey || key == _pendingKey) return;
+    // 先查进程级缓存：卡片滚回视口 / 别的卡用同一张封面时直接拿现成纹理，
+    // 不再 Picture.toImage 重烘（那一步占 raster 线程），也不再播一遍淡入。
+    final ui.Image? cached = _BakedBlurCache.lookup(key);
+    if (cached != null) {
+      _baked?.dispose();
+      _baked = cached;
+      _bakedKey = key;
+      _pendingKey = null;
+      return;
+    }
+    final ui.Image? source = _source;
+    if (source == null) return; // 解码回调里 setState 会再走一遍这里。
     _pendingKey = key;
     unawaited(
-      _bake(key).then((ui.Image image) {
+      _bake(key, source).then((ui.Image image) {
+        // 即使本卡已卸载（快速滑动时常见）结果也进缓存，下次挂载直接用。
+        final ui.Image own = _BakedBlurCache.store(key, image);
         if (!mounted || _pendingKey != key) {
-          image.dispose();
+          own.dispose();
           return;
         }
         setState(() {
           _baked?.dispose();
-          _baked = image;
+          _baked = own;
           _bakedKey = key;
           _pendingKey = null;
         });
@@ -232,14 +251,84 @@ class _PrebakedBlurImageState extends State<PrebakedBlurImage> {
   }
 }
 
-/// 把 [key.source] 按 fit / alignment 铺进 `width × height` 画布并做一次模糊。
-Future<ui.Image> _bake(_BakeKey key) {
+/// 已烘焙模糊图的进程级 LRU 缓存（按字节计预算）。
+///
+/// 缓存自己持有一份 `ui.Image` 句柄，取用方拿的都是 [ui.Image.clone]，各自
+/// dispose；淘汰时只释放缓存那一份，正在屏上的卡不受影响。单张超过预算一半的
+/// （整页背景在小 sigma 下可能很大）不进缓存，原样交还调用方。
+abstract final class _BakedBlurCache {
+  static const int maxBytes = 48 << 20;
+
+  static final LinkedHashMap<_BakeKey, ui.Image> _images =
+      LinkedHashMap<_BakeKey, ui.Image>();
+  static int _bytes = 0;
+
+  /// 命中则返回一份调用方自己持有的 clone，并把条目挪到最近使用端。
+  static ui.Image? lookup(_BakeKey key) {
+    final ui.Image? image = _images.remove(key);
+    if (image == null) return null;
+    _images[key] = image;
+    return image.clone();
+  }
+
+  /// 收下 [image] 的所有权并返回一份调用方持有的句柄。
+  static ui.Image store(_BakeKey key, ui.Image image) {
+    if (key.bytes > maxBytes ~/ 2) return image;
+    final ui.Image? previous = _images.remove(key);
+    if (previous != null) {
+      _bytes -= key.bytes;
+      previous.dispose();
+    }
+    _images[key] = image;
+    _bytes += key.bytes;
+    while (_bytes > maxBytes && _images.isNotEmpty) {
+      final _BakeKey oldest = _images.keys.first;
+      _images.remove(oldest)!.dispose();
+      _bytes -= oldest.bytes;
+    }
+    return image.clone();
+  }
+
+  static void evict(ImageProvider provider) {
+    final List<_BakeKey> stale = <_BakeKey>[
+      for (final _BakeKey key in _images.keys)
+        if (key.provider == provider) key,
+    ];
+    for (final _BakeKey key in stale) {
+      _images.remove(key)!.dispose();
+      _bytes -= key.bytes;
+    }
+  }
+
+  static void clear() {
+    for (final ui.Image image in _images.values) {
+      image.dispose();
+    }
+    _images.clear();
+    _bytes = 0;
+  }
+}
+
+/// 换图（同路径覆盖写）后丢掉 [provider] 的全部烘焙结果。
+void evictPrebakedBlur(ImageProvider provider) =>
+    _BakedBlurCache.evict(provider);
+
+/// 测试用：清空烘焙缓存。
+@visibleForTesting
+void clearPrebakedBlurCache() => _BakedBlurCache.clear();
+
+/// 测试用：缓存里的条目数。
+@visibleForTesting
+int get prebakedBlurCacheLength => _BakedBlurCache._images.length;
+
+/// 把 [source] 按 fit / alignment 铺进 `width × height` 画布并做一次模糊。
+Future<ui.Image> _bake(_BakeKey key, ui.Image source) {
   final ui.PictureRecorder recorder = ui.PictureRecorder();
   final Canvas canvas = Canvas(recorder);
   final Size out = Size(key.width.toDouble(), key.height.toDouble());
   final Size imageSize = Size(
-    key.source.width.toDouble(),
-    key.source.height.toDouble(),
+    source.width.toDouble(),
+    source.height.toDouble(),
   );
   final FittedSizes fitted = applyBoxFit(key.fit, imageSize, out);
   final Rect src = key.alignment.inscribe(
@@ -263,7 +352,7 @@ Future<ui.Image> _bake(_BakeKey key) {
       ),
   );
   canvas.drawImageRect(
-    key.source,
+    source,
     src,
     dst,
     Paint()

@@ -276,16 +276,18 @@ class ShelfMaterialSurface extends StatelessWidget {
           body,
           if (material == ShelfCoverMaterial.gameCase)
             IgnorePointer(child: _GlossLayer(material: material)),
+          // 扫光与镜面高光各自只在**真正在画**时才压圆角裁切：静止时它们什么都
+          // 不画，外包一层 ClipRRect 却要每帧每本都裁一次（网格 × 叠层本数）。
           if (!compact)
             IgnorePointer(
-              child: ClipRRect(
-                borderRadius: radius,
-                child: ShelfCoverSheen(active: raised, glint: pressGlint),
+              child: ShelfCoverSheen(
+                active: raised,
+                glint: pressGlint,
+                clipRadius: radius,
               ),
             ),
           // 3D 倾斜时跟着指针走的镜面高光（只画最前那本）。
-          if (!compact && pressGlint)
-            ClipRRect(borderRadius: radius, child: const FushiTiltGlare()),
+          if (!compact && pressGlint) FushiTiltGlare(clipRadius: radius),
         ],
       ),
     );
@@ -413,9 +415,18 @@ class _GlossLayer extends StatelessWidget {
 /// 时长取 [shelfSheenDuration]，减弱动态效果 / 墨水屏下直接跳到终点（光带停在
 /// 封面外，不可见）。光带在进度 0 与 1 时都在封面之外，所以「跳回 0」不可见。
 class ShelfCoverSheen extends StatefulWidget {
-  const ShelfCoverSheen({required this.active, this.glint = true, super.key});
+  const ShelfCoverSheen({
+    required this.active,
+    this.glint = true,
+    this.clipRadius,
+    super.key,
+  });
 
   final bool active;
+
+  /// 非空 = 光带按这个圆角裁切，且只在光带可见（扫动中）时裁切；null = 由
+  /// 调用方负责裁切。
+  final BorderRadius? clipRadius;
 
   /// 是否响应按压脉冲（叠层 / 扇形里藏在后面的那几本传 false，只让最前那本闪）。
   final bool glint;
@@ -491,10 +502,14 @@ class _ShelfCoverSheenState extends State<ShelfCoverSheen>
         final double t = _sweep.value;
         // t=0 / t=1 光带都在封面之外：不画，省一层 shader。
         if (t <= 0.001 || t >= 0.999) return const SizedBox.expand();
-        return CustomPaint(
+        final Widget band = CustomPaint(
           painter: _SheenPainter(progress: t, peak: dark ? 0.11 : 0.16),
           child: const SizedBox.expand(),
         );
+        final BorderRadius? radius = widget.clipRadius;
+        return radius == null
+            ? band
+            : ClipRRect(borderRadius: radius, child: band);
       },
     );
   }

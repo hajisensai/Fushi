@@ -461,12 +461,19 @@ class FushiTilt extends StatelessWidget {
             child: child,
             builder: (BuildContext context, Offset v, Widget? child) {
               const double a = kFushiTiltMaxDegrees * math.pi / 180;
+              // 静止（绝大多数卡、滚动中的全部卡）给**纯单位矩阵**：带透视项的
+              // 矩阵哪怕旋转角为 0 也不是仿射变换，RenderTransform 识别不出「无
+              // 变换」，整摞封面（投影 / 圆角裁切 / 图片）都在透视矩阵下栅格化，
+              // Impeller 的模糊投影等快速路径因此失效，且每帧每卡都要付。单位矩阵
+              // 则直接按平移绘制。树结构不变（仍是同一个 Transform）。
               return Transform(
                 alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.0012)
-                  ..rotateX(v.dy * a)
-                  ..rotateY(-v.dx * a),
+                transform: v == Offset.zero
+                    ? Matrix4.identity()
+                    : (Matrix4.identity()
+                        ..setEntry(3, 2, 0.0012)
+                        ..rotateX(v.dy * a)
+                        ..rotateY(-v.dx * a)),
                 child: child,
               );
             },
@@ -478,13 +485,21 @@ class FushiTilt extends StatelessWidget {
 /// 倾斜时跟着指针走的镜面高光：一团径向柔光落在指针位置，越靠边越亮一点，
 /// 读作「光面封面在灯下转动」。画在封面裁切区内、点击穿透。
 class FushiTiltGlare extends StatelessWidget {
-  const FushiTiltGlare({super.key});
+  const FushiTiltGlare({super.key, this.clipRadius});
+
+  /// 非空 = 高光自己按这个圆角裁切，且**只在可见时**裁切。
+  ///
+  /// 调用方若在外面包 `ClipRRect`，静止的卡（opacity 0、什么都不画）也要每帧
+  /// 压一次圆角裁切；网格里每张卡一份，Impeller 没有 raster cache，滚动时就是
+  /// 按卡数线性的白开销。裁切放在 [AnimatedOpacity] 里面，透明度为 0 时整段不画。
+  final BorderRadius? clipRadius;
 
   @override
   Widget build(BuildContext context) {
     final ValueListenable<Offset?>? tilt = FushiHoverLift.tiltOf(context);
     if (tilt == null) return const SizedBox.shrink();
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final BorderRadius? radius = clipRadius;
     return IgnorePointer(
       child: ValueListenableBuilder<Offset?>(
         valueListenable: tilt,
@@ -495,27 +510,31 @@ class FushiTiltGlare extends StatelessWidget {
             tween: Tween<Offset>(end: p ?? Offset.zero),
             duration: kFushiTiltFollowDuration,
             curve: FushiSpringCurve.effects,
-            builder: (BuildContext context, Offset v, Widget? _) =>
-                AnimatedOpacity(
-                  opacity: p == null ? 0 : 1,
-                  duration: kFushiTiltFollowDuration,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment(v.dx, v.dy),
-                        radius: 1.1,
-                        colors: <Color>[
-                          Colors.white.withValues(
-                            alpha:
-                                (dark ? 0.16 : 0.22) +
-                                0.06 * v.distance.clamp(0.0, 1.0),
-                          ),
-                          Colors.white.withValues(alpha: 0),
-                        ],
+            builder: (BuildContext context, Offset v, Widget? _) {
+              final Widget glow = DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(v.dx, v.dy),
+                    radius: 1.1,
+                    colors: <Color>[
+                      Colors.white.withValues(
+                        alpha:
+                            (dark ? 0.16 : 0.22) +
+                            0.06 * v.distance.clamp(0.0, 1.0),
                       ),
-                    ),
+                      Colors.white.withValues(alpha: 0),
+                    ],
                   ),
                 ),
+              );
+              return AnimatedOpacity(
+                opacity: p == null ? 0 : 1,
+                duration: kFushiTiltFollowDuration,
+                child: radius == null
+                    ? glow
+                    : ClipRRect(borderRadius: radius, child: glow),
+              );
+            },
           );
         },
       ),

@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
+
 /// BUG-959：本地媒体封面统一解码上限（物理像素宽）。
 ///
 /// 封面卡槽最宽约 200 逻辑像素，最高 dpr(3) 下约 600 物理像素，720 仍有富余且清晰；
@@ -135,8 +138,17 @@ class AvifFileImage extends ImageProvider<AvifFileImage> {
 /// （[ResizeImage] 包装键）是**两个不同的 key**——只驱逐 FileImage 的话，走降采样
 /// 渲染的卡片重建时仍命中旧解码，用户看到的还是换之前那张图（游戏封面卡与视频
 /// 封面同坑，见 `setVideoCoverFromPickedFile` 注释）。两个键都清才干净。
+///
+/// 同理清掉按 provider 记忆的派生结果（宽高比 / 垫底主色、预烘焙模糊），否则换了
+/// 封面卡片仍按旧图的槽向与底色画。
 Future<void> evictLocalCoverCache(String path) async {
   final File file = File(path);
-  await FileImage(file).evict();
-  await resizedFileImage(file).evict();
+  for (final ImageProvider provider in <ImageProvider>[
+    FileImage(file),
+    resizedFileImage(file),
+  ]) {
+    CoverProbeMemo.evict(provider);
+    evictPrebakedBlur(provider);
+    await provider.evict();
+  }
 }
