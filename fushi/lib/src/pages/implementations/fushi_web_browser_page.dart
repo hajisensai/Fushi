@@ -211,8 +211,14 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
-  /// 直接进浏览页（空地址 = 只恢复上次的标签页，见 [FushiWebBrowserPage.initialUrl]）。
+  /// 进浏览页：地址栏有内容时与回车同一套判据打开它（[_openAddress]），
+  /// 空地址才只恢复上次的标签页（见 [FushiWebBrowserPage.initialUrl]）。
   Future<void> _enterBrowser() async {
+    final String input = _address.text.trim();
+    if (input.isNotEmpty) {
+      _openAddress(input);
+      return;
+    }
     _addressFocus.unfocus();
     await Navigator.of(context).push<void>(fushiWebBrowserRoute(context, ''));
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));

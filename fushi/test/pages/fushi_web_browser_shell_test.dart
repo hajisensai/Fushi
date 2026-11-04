@@ -215,6 +215,42 @@ void main() {
     ]);
   });
 
+  testWidgets('入口页地址栏有链接时点「进入浏览器」打开这个链接，不只恢复上次的标签页', (
+    WidgetTester tester,
+  ) async {
+    await store.saveSession(
+      WebBrowserSession(
+        tabs: <WebBrowserSessionTab>[
+          WebBrowserSessionTab(
+            id: 'old',
+            url: Uri.parse('https://old.example/'),
+            title: 'Old',
+          ),
+        ],
+        activeTabId: 'old',
+      ),
+    );
+    await pumpApp(
+      tester,
+      const Size(1280, 720),
+      const FushiWebBrowserHomePage(),
+    );
+    await tester.enterText(
+      find.descendant(
+        of: byKey('web-browser-address'),
+        matching: find.byType(EditableText),
+      ),
+      'https://bookwalker.jp/de123/',
+    );
+    await tester.tap(byKey('web-browser-enter'));
+    await tester.pumpAndSettle();
+    final FushiWebBrowserPageState state = page(tester);
+    expect(
+      state.tabsController.tabs.map((WebBrowserTab t) => t.url),
+      contains(Uri.parse('https://bookwalker.jp/de123/')),
+    );
+  });
+
   testWidgets('竖屏：点站点推全屏浏览页，底栏在网页下方，地址栏点开才可编辑，后退回入口页', (
     WidgetTester tester,
   ) async {
