@@ -16,6 +16,11 @@
 ///   reasoning_effort: "none"  # none / low / medium / high
 ///   allow_insecure_http: false
 ///   web_knowledge: true       # 联网资料（内置维基站）辅助识别作品 / 列系列
+///   web_search:               # 通用联网搜索（可选；不写 = 不联网搜索）。管理员亲手写进
+///                             # 配置即同意抓前 3 页网页正文交给 AI（app 侧是首次确认弹框）
+///     kind: "searxng"         # searxng / brave
+///     endpoint: "https://searx.example.org"  # searxng 实例根地址（实例需开 json 格式）
+///     api_key: ""             # brave 的 X-Subscription-Token
 ///   library_organize: false   # 扫描入库后自动 AI 整理库（把该在一起的归进合集）
 ///   agent_for_peers: false    # 允许已配对设备经 AI 助手调用本服务端的 admin 操作
 /// ```
@@ -28,6 +33,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
 
 /// 服务端那一家 AI 在引擎提供商清单里的 id（只在进程内用，不落盘）。
@@ -45,6 +51,7 @@ class ServerAiConfig {
     this.webKnowledge = true,
     this.libraryOrganize = false,
     this.agentForPeers = false,
+    this.webSearch,
   });
 
   /// 预设 id（[kAiProviderPresets]）或 [kAiCustomPresetId]。
@@ -69,6 +76,9 @@ class ServerAiConfig {
   /// 刮削），比配对本来给的权限多——服务端可能是几个人共用的，必须管理员显式打开。
   /// 凭据、配对、监听类操作无论如何都不进目录。
   final bool agentForPeers;
+
+  /// 通用联网搜索后端；null = 不联网搜索（缺省）。
+  final WebSearchConfig? webSearch;
 
   /// yaml `ai:` 段 → 配置；不是 map 或没有 `preset` → null（未配置）。解析保持宽松
   /// （手写的一条坏值不拒绝启动），地址等是否可用由 [problem] / [provider] 判。
@@ -97,6 +107,17 @@ class ServerAiConfig {
       agentForPeers:
           raw['agent_for_peers'] == true ||
           '${raw['agent_for_peers']}' == 'true',
+      webSearch: _webSearch(raw['web_search']),
+    );
+  }
+
+  /// `web_search:` 段 → 配置；不是 map / 未知 kind → null。
+  static WebSearchConfig? _webSearch(Object? raw) {
+    if (raw is! Map) return null;
+    return WebSearchConfig.fromFields(
+      kind: _text(raw['kind']),
+      endpoint: _text(raw['endpoint']),
+      apiKey: _text(raw['api_key']),
     );
   }
 
@@ -180,6 +201,8 @@ class ServerAiConfig {
     bool? webKnowledge,
     bool? libraryOrganize,
     bool? agentForPeers,
+    WebSearchConfig? webSearch,
+    bool clearWebSearch = false,
   }) => ServerAiConfig(
     preset: preset ?? this.preset,
     protocol: clearProtocol ? null : protocol ?? this.protocol,
@@ -191,6 +214,7 @@ class ServerAiConfig {
     webKnowledge: webKnowledge ?? this.webKnowledge,
     libraryOrganize: libraryOrganize ?? this.libraryOrganize,
     agentForPeers: agentForPeers ?? this.agentForPeers,
+    webSearch: clearWebSearch ? null : webSearch ?? this.webSearch,
   );
 
   /// 写进 `ai:` 段（[q] 是 ServerConfig 的 yaml 字符串转义）。
@@ -206,6 +230,15 @@ class ServerAiConfig {
     b.writeln('  web_knowledge: $webKnowledge');
     b.writeln('  library_organize: $libraryOrganize');
     b.writeln('  agent_for_peers: $agentForPeers');
+    final WebSearchConfig? search = webSearch;
+    if (search != null) {
+      b.writeln('  web_search:');
+      b.writeln('    kind: ${q(search.kind.name)}');
+      if (search.endpoint != null) {
+        b.writeln('    endpoint: ${q(search.endpoint!)}');
+      }
+      if (search.apiKey != null) b.writeln('    api_key: ${q(search.apiKey!)}');
+    }
   }
 
   /// 给 admin API 的形状：API key 只报「设过没有」，不回显。
@@ -222,6 +255,13 @@ class ServerAiConfig {
       'webKnowledge': webKnowledge,
       'libraryOrganize': libraryOrganize,
       'agentForPeers': agentForPeers,
+      if (webSearch != null)
+        'webSearch': <String, Object?>{
+          'kind': webSearch!.kind.name,
+          'endpoint': webSearch!.endpoint,
+          'apiKeySet': webSearch!.apiKey != null,
+          'usable': webSearch!.isUsable,
+        },
       'effectiveBaseUrl': effectiveBaseUrl,
       'effectiveModel': effectiveModel,
       'status': issue == null ? 'ready' : 'incomplete',
@@ -269,6 +309,9 @@ class ServerAiSettings implements AiSettingsSource {
       _config()?.webKnowledge ?? false
       ? kBuiltinWebKnowledgeSites
       : const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => _config()?.webSearch;
 }
 
 /// 扫描后自动 AI 整理库的服务（`ai.library_organize` 打开且提供商能用）；否则 null。

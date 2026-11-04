@@ -276,16 +276,18 @@ class ShelfMaterialSurface extends StatelessWidget {
           body,
           if (material == ShelfCoverMaterial.gameCase)
             IgnorePointer(child: _GlossLayer(material: material)),
+          // 扫光与镜面高光各自只在**真正在画**时才压圆角裁切：静止时它们什么都
+          // 不画，外包一层 ClipRRect 却要每帧每本都裁一次（网格 × 叠层本数）。
           if (!compact)
             IgnorePointer(
-              child: ClipRRect(
-                borderRadius: radius,
-                child: ShelfCoverSheen(active: raised, glint: pressGlint),
+              child: ShelfCoverSheen(
+                active: raised,
+                glint: pressGlint,
+                clipRadius: radius,
               ),
             ),
           // 3D 倾斜时跟着指针走的镜面高光（只画最前那本）。
-          if (!compact && pressGlint)
-            ClipRRect(borderRadius: radius, child: const FushiTiltGlare()),
+          if (!compact && pressGlint) FushiTiltGlare(clipRadius: radius),
         ],
       ),
     );
@@ -413,9 +415,18 @@ class _GlossLayer extends StatelessWidget {
 /// 时长取 [shelfSheenDuration]，减弱动态效果 / 墨水屏下直接跳到终点（光带停在
 /// 封面外，不可见）。光带在进度 0 与 1 时都在封面之外，所以「跳回 0」不可见。
 class ShelfCoverSheen extends StatefulWidget {
-  const ShelfCoverSheen({required this.active, this.glint = true, super.key});
+  const ShelfCoverSheen({
+    required this.active,
+    this.glint = true,
+    this.clipRadius,
+    super.key,
+  });
 
   final bool active;
+
+  /// 非空 = 光带按这个圆角裁切，且只在光带可见（扫动中）时裁切；null = 由
+  /// 调用方负责裁切。
+  final BorderRadius? clipRadius;
 
   /// 是否响应按压脉冲（叠层 / 扇形里藏在后面的那几本传 false，只让最前那本闪）。
   final bool glint;
@@ -491,10 +502,14 @@ class _ShelfCoverSheenState extends State<ShelfCoverSheen>
         final double t = _sweep.value;
         // t=0 / t=1 光带都在封面之外：不画，省一层 shader。
         if (t <= 0.001 || t >= 0.999) return const SizedBox.expand();
-        return CustomPaint(
+        final Widget band = CustomPaint(
           painter: _SheenPainter(progress: t, peak: dark ? 0.11 : 0.16),
           child: const SizedBox.expand(),
         );
+        final BorderRadius? radius = widget.clipRadius;
+        return radius == null
+            ? band
+            : ClipRRect(borderRadius: radius, child: band);
       },
     );
   }
@@ -588,11 +603,15 @@ class ShelfContactShadow extends StatelessWidget {
             widthFactor: widthFactor,
             child: DecoratedBox(
               decoration: BoxDecoration(
+                // RadialGradient 的半径按盒子短边算：16dp 高的扁盒里只剩正中一颗
+                // 16dp 圆点（BUG：库页封面底下的「黑点」）。横向拉伸成铺满盒宽
+                // 的椭圆，才是一团贴着封面底边的阴影。
                 gradient: RadialGradient(
                   colors: <Color>[
                     Colors.black.withValues(alpha: dark ? 0.7 : 0.26),
                     Colors.black.withValues(alpha: 0),
                   ],
+                  transform: const _StretchToEllipse(),
                 ),
               ),
             ),
@@ -600,6 +619,21 @@ class ShelfContactShadow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 把以短边为直径的圆形径向渐变绕中心横向拉伸，铺满整个盒子成椭圆。
+class _StretchToEllipse extends GradientTransform {
+  const _StretchToEllipse();
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    if (bounds.height <= 0 || bounds.width <= bounds.height) return null;
+    final double sx = bounds.width / bounds.height;
+    final double cx = bounds.center.dx;
+    return Matrix4.identity()
+      ..setEntry(0, 0, sx)
+      ..setEntry(0, 3, cx - sx * cx);
   }
 }
 
@@ -1174,6 +1208,7 @@ class LibraryShapeBackdrop extends StatelessWidget {
   const LibraryShapeBackdrop({
     required this.child,
     this.show = true,
+    this.settings,
     super.key,
   });
 
@@ -1181,6 +1216,10 @@ class LibraryShapeBackdrop extends StatelessWidget {
 
   /// false = 本页不画装饰（整页要透明的底层合成页，见 `FushiPageBackdrop`）。
   final bool show;
+
+  /// 这一页要画的设置（路由层按模块解析好传进来，反馈 DYI1IOZxSM）；null = 监听
+  /// 全局 [pageBackdropSettings]。
+  final PageBackdropSettings? settings;
 
   /// 当前主题与背景设置下是否画装饰层。
   static bool enabledOf(BuildContext context) =>
@@ -1202,21 +1241,26 @@ class LibraryShapeBackdrop extends StatelessWidget {
     // （FushiPageBackdrop）垫在每一页下面，路由给页面的是**紧约束**（整屏）；
     // Stack 默认的 loose 会把紧约束放松，根组件不是 Scaffold 的页面（按钮、
     // 按内容定尺寸的 Material 等）就缩到左上角、不再铺满路由。
+    final PageBackdropSettings? fixed = settings;
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
-          child: ValueListenableBuilder<PageBackdropSettings>(
-            valueListenable: pageBackdropSettings,
-            builder:
-                (
-                  BuildContext context,
-                  PageBackdropSettings settings,
-                  Widget? _,
-                ) => show && enabledFor(context, settings)
-                ? _LibraryShapeLayer(settings: settings)
-                : const SizedBox.shrink(),
-          ),
+          child: fixed != null
+              ? (show && enabledFor(context, fixed)
+                    ? _LibraryShapeLayer(settings: fixed)
+                    : const SizedBox.shrink())
+              : ValueListenableBuilder<PageBackdropSettings>(
+                  valueListenable: pageBackdropSettings,
+                  builder:
+                      (
+                        BuildContext context,
+                        PageBackdropSettings settings,
+                        Widget? _,
+                      ) => show && enabledFor(context, settings)
+                      ? _LibraryShapeLayer(settings: settings)
+                      : const SizedBox.shrink(),
+                ),
         ),
         child,
       ],

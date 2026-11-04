@@ -3032,19 +3032,37 @@ jobs:
             echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
             echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
           } >> fushi/ios/Flutter/Release.xcconfig
-          # APNs 推送（反馈回复，fushi/ios/Runner/Runner.entitlements）：只有描述文件本身带
-          # aps-environment（App ID 已勾 Push Notifications 并重新生成描述文件）才接入那份
-          # entitlements——描述文件没有这项却签进去，codesign 会直接失败。值取描述文件里的
-          # （App Store 描述文件 = production），不在仓库里写死。
+          # fushi/ios/Runner/Runner.entitlements 列出 app 要的全部 entitlement，但描述文件
+          # 没授予的任何一项签进去 codesign 都直接失败（App ID 勾了能力还要重新生成描述
+          # 文件并更新 IOS_PROVISIONING_PROFILE_BASE64）。所以逐项对照描述文件：授予了才
+          # 保留，没授予就从 runner 上这份 Runner.entitlements 删掉（不入库）；至少剩一项
+          # 才接入 CODE_SIGN_ENTITLEMENTS。
+          ENTITLEMENTS_FILE="fushi/ios/Runner/Runner.entitlements"
+          WIRE_ENTITLEMENTS=0
+          # APNs 推送（反馈回复）：值取描述文件里的（App Store 描述文件 = production），
+          # 不在仓库里写死。
           APS_ENV="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST" 2>/dev/null || true)"
           if [ -n "$APS_ENV" ]; then
-            {
-              echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements"
-              echo "FUSHI_APS_ENVIRONMENT = $APS_ENV"
-            } >> fushi/ios/Flutter/Release.xcconfig
+            echo "FUSHI_APS_ENVIRONMENT = $APS_ENV" >> fushi/ios/Flutter/Release.xcconfig
+            WIRE_ENTITLEMENTS=1
             echo "APNs push entitlement enabled (aps-environment=$APS_ENV)"
           else
+            /usr/libexec/PlistBuddy -c 'Delete :aps-environment' "$ENTITLEMENTS_FILE"
             echo "Provisioning profile has no aps-environment: building without push (feedback replies fall back to background checks)"
+          fi
+          # BUG-4013：扩展虚拟地址空间。iOS 进程默认的地址空间被词典映射 / WebKit / Dart
+          # 堆吃满后任何分配都 abort；这项 entitlement 让系统给更大的地址空间。
+          EXTENDED_VA="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.kernel.extended-virtual-addressing' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ "$EXTENDED_VA" = "true" ]; then
+            WIRE_ENTITLEMENTS=1
+            echo "Extended virtual addressing entitlement enabled"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.extended-virtual-addressing' "$ENTITLEMENTS_FILE"
+            echo "::warning title=Extended virtual addressing missing::The provisioning profile does not grant com.apple.developer.kernel.extended-virtual-addressing. Enable it on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4013)."
+          fi
+          if [ "$WIRE_ENTITLEMENTS" = 1 ]; then
+            echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements" >> fushi/ios/Flutter/Release.xcconfig
+            plutil -lint "$ENTITLEMENTS_FILE"
           fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>

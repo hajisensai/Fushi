@@ -49,8 +49,8 @@ struct Tally {
     due: i64,
     new_done: i64,
     review_done: i64,
-    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）。FSRS 牌组 = 到期数；
-    /// RWKV 牌组 = 今天已复习 + 今天到期（合格）的卡，按这个牌组的每日复习上限截断（见 [run]）。
+    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）：今天已复习 + 现在剩余到期
+    /// （RWKV 牌组的到期 = 合格的卡），按这个牌组的每日复习上限截断（RWKV 开了「忽略每日复习上限」的不截，见 [run]）。
     load: i64,
 }
 
@@ -1066,11 +1066,10 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
             x.review_done += 1;
         }
     }
-    // RWKV 牌组的新卡负荷：合格的卡是「还剩多少」，随作答减少，单拿它和预算比，一天里「暂停」会自己解除。改按今天
-    // 实际要做的复习量：已复习 + 合格，不超过这个牌组今天的复习上限（开了「忽略每日复习上限」的不截）——超出上限的
-    // 部分今天本来也不会出。
-    for d in instant.keys() {
-        let Some(x) = t.get_mut(d) else { continue };
+    // 新卡负荷（FSRS 与 RWKV 同一口径）：到期数 / 合格的卡是「还剩多少」，随作答减少，单拿它和预算比，复习做到一半
+    // 「暂停」就会自己解除。改按今天实际要做的复习量：已复习 + 剩余到期，不超过这个牌组今天的复习上限（RWKV 开了
+    // 「忽略每日复习上限」的不截）——超出上限的部分今天本来也不会出。
+    for (d, x) in t.iter_mut() {
         let mut load = x.due + x.review_done;
         if let Some(node) = ctx
             .tree
@@ -2209,6 +2208,120 @@ mod tests {
         // IGN 忽略每日复习上限：32 张合格 + 已复习 2 张全算 → 34 > 2 × 10，暂停。
         assert_eq!(got["counts"]["IGN"][5], json!(0), "{got}");
         assert_eq!(got["counts"]["IGN"][7], json!("paused"), "{got}");
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// FSRS 牌组「到期较多暂停出新卡」的负荷 = 今天已复习 + 现在剩余到期，按每日复习上限截断（与 RWKV 同一口径）：
+    /// - 到期远超今天的复习上限：超出上限的部分今天不会出，不算负荷，新卡照常出（以前按全部到期数比，直接暂停）；
+    /// - 复习做到一半：剩余到期减少，但已复习的照算，负荷不降，「暂停」不会在一天里自己解除。
+    #[test]
+    fn fsrs_new_card_load_counts_reviewed_today_plus_due_capped_by_review_limit() {
+        let dir =
+            std::env::temp_dir().join(format!("ffsrs_study_fsrs_load_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let now = 1_760_000_000_000i64;
+        let today = day.index(now);
+        let mut n = 0i64;
+        // 新卡上限 1 → 预算 = 10（没有复习历史），负荷超过 20 才暂停、10~20 之间缩减。
+        for (d, review_limit) in [("CAP", 3), ("FULL", 30)] {
+            exec(
+                &core,
+                "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')",
+                vec![Sql::Text(d.into()), Sql::Text(P.into())],
+            );
+            edit(
+                &core,
+                &mut n,
+                d,
+                "limits",
+                json!({"new": 1, "review": review_limit}),
+            );
+            edit(
+                &core,
+                &mut n,
+                d,
+                "algorithm",
+                json!({"alg": "fsrs7", "auto": false}),
+            );
+        }
+        let card = |id: &str, deck: &str, queue: &str, due_day: i64, k: i64| {
+            exec(
+                &core,
+                CARD_UPSERT,
+                vec![
+                    Sql::Text(id.into()),
+                    Sql::Text(P.into()),
+                    Sql::Text(deck.into()),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(0),
+                    Sql::Text(queue.into()),
+                    Sql::Integer(due_day),
+                    Sql::Null,
+                    Sql::Real(2.0),
+                    Sql::Integer(now - 5 * DAY_MS),
+                    Sql::Text("fushi".into()),
+                    Sql::Integer(k),
+                    Sql::Integer(k),
+                    Sql::Null,
+                ],
+            );
+        };
+        for d in ["CAP", "FULL"] {
+            for k in 0..25 {
+                card(&format!("{d}-r{k:02}"), d, "review", today - 1, k);
+            }
+            for k in 0..5 {
+                card(&format!("{d}-n{k:02}"), d, "new", today, 100 + k);
+            }
+        }
+        let study = |req: &Value| -> Value {
+            let got = core.study(P, req).unwrap();
+            assert_eq!(
+                got,
+                core.read_visible(|c| oracle::study(c, P, req)).unwrap(),
+                "{req}"
+            );
+            got
+        };
+        let req = json!({"now": now, "utcOff": day.utc_offset_min, "rollover": day.rollover_hour});
+        let got = study(&req);
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // CAP：25 张到期，今天最多复习 3 张 → 负荷 3 ≤ 预算 10，新卡照常 1 张。
+        assert_eq!(
+            got["counts"]["CAP"],
+            json!([1, 0, 3, 30, 1, 1, 10, null]),
+            "{got}"
+        );
+        // FULL：25 张到期都在上限 30 以内 → 负荷 25 > 2 × 10，暂停。
+        assert_eq!(
+            got["counts"]["FULL"],
+            json!([0, 0, 25, 30, 1, 0, 10, "paused"]),
+            "{got}"
+        );
+        // FULL 复习了 10 张（排到以后）：剩余到期 15，但已复习 10 张照算 → 负荷仍是 25，照旧暂停
+        // （以前只看剩余到期 15，暂停变成缩减，一天里自己解除）。
+        let mut logs = 0i64;
+        for k in 0..10 {
+            let id = format!("FULL-r{k:02}");
+            log(&core, &mut logs, &id, now - 60_000, "review", 3, "review");
+            card(&id, "FULL", "review", today + 5, k);
+        }
+        let got = study(&req);
+        assert_eq!(
+            got["counts"]["FULL"],
+            json!([0, 0, 15, 30, 1, 0, 10, "paused"]),
+            "{got}"
+        );
+        assert_eq!(got["counts"]["CAP"][7], Value::Null, "{got}");
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }

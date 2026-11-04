@@ -67,6 +67,7 @@ List<SubtitleDraftCue> splitSubtitleDraftCuesForDisplay(
           text: piece.cue.text,
           speaker: cue.speaker,
           tokenTiming: piece.tokenTiming,
+          origin: cue.origin,
         ),
       );
     }
