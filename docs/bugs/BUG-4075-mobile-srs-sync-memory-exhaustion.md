@@ -21,6 +21,8 @@
 - **[ ] ② 未加自动化测试**：根因确定之后再加。
 - **备注**：
   - `n1i0ET11Ea` 日志里另外发现的 IPv6 回拼 bug 已经单独由 BUG-4070 修复。那个 bug 会让每轮同步失败，但不是内存耗尽的原因。
+  - **2026-11-05 续报**（同一台 iPhone18,3 / iOS 27.2）：`n5OctGeoZv`、`203OplWhew`、`HGELrYwLzJ`、`-gRMoCHExn`、`qST-r751jz`，3.3.0-debug.23469 / 23480。签名同族：JavaScriptCore EXC_BREAKPOINT（`JavaScriptCore ← WebCore ← WebKit+15172248` 于 libdispatch 队列，即 WebKit 内容拦截规则编译）、`Runner+32094696` abort、liblangid / libswiftCore abort，Dart `Out of Memory` 于 `SrsCore._utf8 ← SrsCore.sync2`（media 阶段）与 `PlatformViewsService.initUiKitView` 编码创建参数；崩溃前面包屑 `srs_sync stage=downloading/uploading`、`srs_v1_migrate`，rss 0.7–2.0 GB（maxRss 2.17 GB）。**两个构建都早于 BUG-4013 修复**（PR #2834 合并点序号 23591），不能用来判 4013 是否覆盖本 bug，结论不变：等 ≥23591 的 iOS 报告。
+  - 证据缺口 ① 由 BUG-4102 补上：CI 按序号存 iOS dSYM（未签名 / TestFlight 各一份），崩溃摘要带镜像 UUID、崩溃线程 32 帧，调用树超限时不再整棵丢。
   - **与 BUG-4013 的关系**（同日、同机型 iPhone18,3 的 iOS 同步闪退，4013 定位为进程虚拟地址空间耗尽，PR #2834）：
     - 4013 的修复**可能覆盖**本 bug 的 iOS 三份报告：rss 只有 1.0–1.4 GB 却在 Rust 与 Dart 堆各处分配失败，符合「地址空间满、物理内存未满」的特征；4013 去掉了重载期词典映射翻倍、media.bin 映射、逐 WebView 编译拦截规则，并开扩展虚拟地址空间 entitlement。本 bug 的报告里没有 VM 摘要，无法直接对照，需含 4013 修复的构建上再收 iOS 崩溃报告确认。
     - 4013 **不覆盖**：Android `7oF6GvM4Ii`（Scudo OOM，pss 约 3.3 GB，64 位进程，是物理内存耗尽）；假设 (a) 在 64 位上不变（4013 只给 32 位进程的次要连接关 mmap）；假设 (b)、(c) 未触及。本 bug 保持未修复，根因定位所需证据不变。
