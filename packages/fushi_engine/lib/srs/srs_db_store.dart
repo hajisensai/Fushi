@@ -112,8 +112,6 @@ class SrsDeckSummary {
     this.parentId,
     this.rwkvPending = false,
     this.rwkvScheduled = false,
-    this.rwkvReviewsLast30,
-    this.fsrsDue,
   });
 
   final SrsDeckView deck;
@@ -132,23 +130,9 @@ class SrsDeckSummary {
   /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
   final bool rwkvPending;
 
-  /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看到期日，按**此刻**的回忆率
-  /// 实时挑（低于目标保留率的出），[reviewCount] 里它们那部分只是这一刻的快照、过一会儿就变，不是到期数。
-  /// 界面据此把到期一格拆成 FSRS 牌组的到期 [fsrsDue] 与 RWKV 牌组的 [rwkvDailyReviews]；[reviewCount] 本身照旧给出卡判断用。
+  /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看存下的到期日，按 RWKV 预测的
+  /// 今天结束时的回忆率挑（降到目标保留率以下的就是今天到期，[_instantInput]），已算进 [reviewCount]。
   final bool rwkvScheduled;
-
-  /// 子树里 **RWKV 牌组**最近 30 天（含今天）的复习数（`review_type = 'review'` 的作答；FSRS 牌组的复习不算）。
-  /// 内核只在排队请求带 RWKV 牌组时给，否则 null。
-  final int? rwkvReviewsLast30;
-
-  /// 子树里**非 RWKV 牌组**的到期数（同 [reviewCount] 一棵上限树截断，不含 RWKV 此刻合格的卡）。内核只在排队请求带
-  /// RWKV 牌组时给，否则 null（这时 [reviewCount] 就全是 FSRS 到期）。
-  final int? fsrsDue;
-
-  /// RWKV 牌组那部分显示的数：近 30 天日均复习数（四舍五入）。子树里没有 RWKV 牌组时为 null（照常显示到期数）。
-  int? get rwkvDailyReviews => rwkvScheduled && rwkvReviewsLast30 != null
-      ? (rwkvReviewsLast30! / 30).round()
-      : null;
 }
 
 /// 复习页一张卡的全部信息。
@@ -1213,6 +1197,14 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async {
+    if (request['op'] == 'dedup') {
+      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）：与冲突解决同一条路径，
+      // 投影变化接进缓存。
+      return SrsSync2Result(
+        await _sync2Write(request),
+        const <(String, Uint8List)>[],
+      );
+    }
     if (request['op'] == 'plan') {
       final SrsSync2Result r = await _sync2Raw(<String, Object?>{
         ...request,
@@ -1681,6 +1673,7 @@ class SrsDbStore implements SrsSync2Host {
     'purge',
     'checkpoint',
     'restore',
+    'dedup',
     'refresh_caches',
     'rebuild_caches',
     'backfill_dupe_norms',
@@ -3569,7 +3562,7 @@ class SrsDbStore implements SrsSync2Host {
     return d;
   }
 
-  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, RWKV 近 30 天复习数?, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
+  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
   SrsDeckSummary _summaryFrom(
     SrsDeckView d,
@@ -3604,8 +3597,6 @@ class SrsDbStore implements SrsSync2Host {
           tree.subtree(d.id).any(rwkvPendingDecks.contains),
       rwkvScheduled:
           rwkvDecks.isNotEmpty && tree.subtree(d.id).any(rwkvDecks.contains),
-      rwkvReviewsLast30: c.length > 8 ? c[8] as int? : null,
-      fsrsDue: c.length > 9 ? c[9] as int? : null,
     );
   }
 
@@ -3999,7 +3990,7 @@ class SrsDbStore implements SrsSync2Host {
       _instantTargets(tree, decks).isNotEmpty;
 
   /// RWKV-Instant 的排队输入（上游 kuma3 `rslib/src/scheduler/rwkv.rs` 与 `scheduler/queue/builder/gathering.rs`）：
-  /// [decks] 里算法是 RWKV 的牌组，其可出复习卡**不看到期日**，按此刻的回忆率 R（即时头）排。这里只取分数
+  /// [decks] 里算法是 RWKV 的牌组，其可出复习卡**不看到期日**，按今天结束时的回忆率 R（即时头）排。这里只取分数
   /// （RWKV 服务是另一个原生库，[SrsRwkvScheduling]），排队规则（目标保留率、同日间隔守卫、每天最少复习数、
   /// 按 R 升序、每日上限）在内核（store/study.rs `instant_eligible`）。
   ///
@@ -4043,17 +4034,21 @@ class SrsDbStore implements SrsSync2Host {
     if (!source.ready) {
       // 不读候选卡：没准备好时 [SrsRwkvScheduling.instantRetrievability] 只触发准备并返回 null。
       unawaited(
-        source.instantRetrievability(const <SrsRwkvCandidate>[], nowMs: nowMs),
+        source.instantRetrievability(const <SrsRwkvCandidate>[], atMs: nowMs),
       );
       return pending;
     }
+    final int today = day.dayIndexOf(nowMs);
     final List<_RwkvCandidate> rows = (await _rwkvCandidates(
-      day.dayIndexOf(nowMs),
+      today,
       targets.keys,
     )).values.toList();
+    // 今天结束那一刻（下一个翻日时刻前 1 ms）的 R：到那时会降到目标线以下的卡就是今天到期，与 FSRS 按天到期同一
+    // 粒度。计数是「今天还剩多少」，出卡与它同一口径（数字 > 0 就有卡出）；按此刻的 R 排的话合格的卡一天里不断冒
+    // 出来，计数只是一个快照。
     final List<double>? scores = await source.instantRetrievability(
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
-      nowMs: nowMs,
+      atMs: day.dayStartMs(today + 1) - 1,
     );
     if (scores == null) return pending;
     if (scores.length != rows.length) {
@@ -4194,7 +4189,7 @@ class SrsDbStore implements SrsSync2Host {
     if (cards.isEmpty) return const <String, double>{};
     final List<double>? scores = await source.instantRetrievability(
       cards,
-      nowMs: now().$1,
+      atMs: now().$1,
     );
     if (scores == null || scores.length != cards.length) return null;
     return <String, double>{
