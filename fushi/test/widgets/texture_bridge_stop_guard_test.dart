@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 String _read(List<String> candidates, String name) {
   final File? file = candidates
       .map(File.new)
@@ -387,5 +389,80 @@ void main() {
       reason:
           'member destruction order should destroy flutter_texture_ before texture_bridge_',
     );
+  });
+
+  test('BUG-4102: delivery coalescing flag is per generation, worker exits '
+      'loudly and drops COM refs before CoUninitialize', () {
+    final String src = maskComments(
+      _read(<String>[
+        'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+      ], 'texture_bridge.cc'),
+    );
+    final String header = maskComments(
+      _read(<String>[
+        'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
+        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
+      ], 'texture_bridge.h'),
+    );
+
+    // 1) 投递合并标记与 deliver_handler 一一对应（按代），不挂在桥共用的
+    //    mailbox 上：否则旧一代排队中的 handler 会吞掉新一代首帧的投递。
+    expect(
+      header.contains('post_pending'),
+      isFalse,
+      reason:
+          'the bridge-wide mailbox must not own the delivery-coalescing flag',
+    );
+    expect(src.contains('mailbox_->post_pending'), isFalse);
+    expect(src.contains('mailbox.post_pending'), isFalse);
+    final String sharedBody = _body(
+      src,
+      'struct WgcFrameWorkerShared {',
+      'struct WgcFramePoolLifetime {',
+    );
+    expect(
+      sharedBody.contains('std::shared_ptr<std::atomic<bool>> post_pending'),
+      isTrue,
+      reason: 'each generation owns its own coalescing flag',
+    );
+    expect(
+      src.contains('[pump_state, post_pending]()'),
+      isTrue,
+      reason:
+          'the handler clears the flag of its own generation, captured by '
+          'shared pointer so a queued handler outliving the worker is safe',
+    );
+    final String postBody = _body(
+      src,
+      'void TextureBridge::PostDeliveryLocked(',
+      'TextureBridge::StagedFrame TextureBridge::AcquireStagedFrame()',
+    );
+    expect(postBody.contains('lifetime->worker_shared->post_pending'), isTrue);
+    final String workerBody = _body(
+      src,
+      'void RunFrameWorker(',
+      'CoUninitialize();',
+    );
+    expect(workerBody.contains('shared->post_pending->exchange('), isTrue);
+
+    // 2) 取帧线程的 COM 引用在 CoUninitialize 之前放掉。
+    expect(
+      workerBody.contains('shared.reset();'),
+      isTrue,
+      reason:
+          'the worker must release its COM refs (frame pool, dispatcher '
+          'queue, handler, D3D device) while its apartment is still valid',
+    );
+
+    // 3) 退回定时器的等待失败不能静默退出取帧线程（WebView 冻结且日志无迹）。
+    final String clockBody = _body(
+      src,
+      'class FrameClock {',
+      'void RunFrameWorker(',
+    );
+    expect(clockBody.contains('LogWaitFailed("timer_wait_failed"'), isTrue);
+    expect(clockBody.contains('LogWaitFailed("sleep_wait_failed"'), isTrue);
+    expect(clockBody.contains('"worker-clock-exit"'), isTrue);
   });
 }

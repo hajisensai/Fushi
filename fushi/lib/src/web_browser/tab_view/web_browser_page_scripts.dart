@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
+import 'package:fushi/src/web_browser/web_browser_scroll_collapse.dart';
 
 /// 标签页 WebView 注入的页内脚本（全部幂等、只装在顶层框架）。
 ///

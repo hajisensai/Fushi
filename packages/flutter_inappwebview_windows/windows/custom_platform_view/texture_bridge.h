@@ -60,8 +60,6 @@ namespace flutter_inappwebview_plugin
     ABI::Windows::Graphics::SizeInt32 content = { 0, 0 };
     // 每拷好一帧 +1。平台线程据此判断「有没有没上报过的新帧」。
     uint64_t seq = 0;
-    // 已向平台线程投递、尚未被执行的上报任务（合并投递，不刷屏消息队列）。
-    std::atomic<bool> post_pending{ false };
     WgcPacingProbe probe;
 
     explicit WgcFrameMailbox(const void* owner) : probe(owner) {}

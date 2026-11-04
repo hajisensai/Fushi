@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
+import 'package:fushi/src/web_browser/web_browser_scroll_collapse.dart';
 
 /// 浏览页 chrome（地址栏 + 工具栏）摆在哪。
 enum WebBrowserChromeLayout {
@@ -80,10 +81,6 @@ bool webBrowserToolbarCollapsible({
 }) =>
     layout == WebBrowserShellLayout.bottomBar ||
     size.height < kWebBrowserCompactHeight;
-
-/// 滚动收起的累积阈值（逻辑像素，v3 原型同值）：同方向累计滚过它才翻转状态，
-/// 单次抖动不翻。
-const double kWebBrowserCollapseScrollThreshold = 24;
 
 /// 滚动收起状态机（纯函数）。[y] 是网页当前纵向滚动位置，[dy] 是这一次的增量
 /// （正 = 往下读）；[accumulated] 是上一次返回的累计量。滚回顶部恒展开。

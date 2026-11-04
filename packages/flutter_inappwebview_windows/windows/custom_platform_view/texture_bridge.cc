@@ -89,6 +89,13 @@ namespace flutter_inappwebview_plugin
       frame_pool;
     winrt::com_ptr<ABI::Windows::System::IDispatcherQueue> dispatcher_queue;
     Microsoft::WRL::ComPtr<WgcDeliverHandler> deliver_handler;
+    // 本代已向平台线程投递、尚未被执行的上报任务（合并投递，不刷屏消息队列）。
+    // 必须按代持有、和 deliver_handler 一一对应：若挂在桥共用的 mailbox 上，旧一代
+    // 排队中的 handler 会吞掉新一代的投递——新一代首帧 exchange 见 true 不投，旧
+    // handler 随后清标记再在失活闸上 no-op，新帧就再没人上报。handler 自己也捕获
+    // 一份（共享指针），排队中的 handler 活得比本结构久也安全。
+    std::shared_ptr<std::atomic<bool>> post_pending =
+      std::make_shared<std::atomic<bool>>(false);
     std::shared_ptr<WgcFrameMailbox> mailbox;
     winrt::com_ptr<ID3D11Device> device;
     winrt::com_ptr<ID3D11DeviceContext> device_context;
@@ -218,12 +225,24 @@ namespace flutter_inappwebview_plugin
         }
         if (!timer_) {
           // 连定时器都建不出来：只能按停止事件等一个刷新间隔。
-          return WaitForSingleObject(stop_event_,
-            static_cast<DWORD>(interval_100ns_ / 10000)) == WAIT_TIMEOUT;
+          const DWORD r = WaitForSingleObject(stop_event_,
+            static_cast<DWORD>(interval_100ns_ / 10000));
+          if (r == WAIT_TIMEOUT) {
+            return true;
+          }
+          if (r != WAIT_OBJECT_0) {
+            LogWaitFailed("sleep_wait_failed", r);
+          }
+          return false;
         }
         HANDLE handles[2] = { stop_event_, timer_ };
         const DWORD r = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
         if (r != WAIT_OBJECT_0 + 1) {
+          if (r != WAIT_OBJECT_0) {
+            // 不是停止事件却退出：取帧线程就此结束、WebView 冻结在最后一帧，
+            // 必须留一行日志说明原因。
+            LogWaitFailed("timer_wait_failed", r);
+          }
           return false;
         }
         ArmTimer();
@@ -231,6 +250,16 @@ namespace flutter_inappwebview_plugin
       }
 
     private:
+      static void LogWaitFailed(const char* reason, DWORD result)
+      {
+        const DWORD error = GetLastError();
+        char detail[96];
+        std::snprintf(detail, sizeof(detail), "reason=%s result=0x%08lX error=%lu",
+          reason, static_cast<unsigned long>(result),
+          static_cast<unsigned long>(error));
+        WgcLog::Write("worker-clock-exit", nullptr, detail);
+      }
+
       void StartTimerFallback()
       {
         interval_100ns_ = DwmFrameInterval100ns();
@@ -380,15 +409,19 @@ namespace flutter_inappwebview_plugin
         if (!staged) {
           continue;
         }
-        if (!mailbox.post_pending.exchange(true, std::memory_order_acq_rel)) {
+        if (!shared->post_pending->exchange(true, std::memory_order_acq_rel)) {
           boolean enqueued = false;
           if (FAILED(shared->dispatcher_queue->TryEnqueue(
             shared->deliver_handler.Get(), &enqueued)) || !enqueued) {
             // 平台线程的队列已关闭（进程退出）：不再上报，下一帧再试。
-            mailbox.post_pending.store(false, std::memory_order_release);
+            shared->post_pending->store(false, std::memory_order_release);
           }
         }
       }
+      // 本线程对 shared 里 COM 指针（frame_pool / dispatcher_queue / deliver_handler
+      // / D3D 设备）的引用要在 CoUninitialize 之前放掉：释放 COM 对象必须发生在本线程
+      // 的 COM 公寓仍然有效的时候。
+      shared.reset();
       if (SUCCEEDED(co_hr)) {
         CoUninitialize();
       }
@@ -872,15 +905,15 @@ namespace flutter_inappwebview_plugin
     // 执行，委托必须 agile（聚合 FtmBase，与旧定时器 Tick 委托同理：非 agile 委托
     // 跨线程投递会被拒）。委托只捕获失活闸与 mailbox，从不持有桥的强引用；桥退役后
     // 迟到的投递在失活闸上 no-op。
-    const auto mailbox = mailbox_;
+    const auto post_pending = shared->post_pending;
     shared->deliver_handler = Microsoft::WRL::Callback<
       Microsoft::WRL::Implements<
         Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
         WgcDeliverHandler, Microsoft::WRL::FtmBase>>(
-      [pump_state, mailbox]() -> HRESULT
+      [pump_state, post_pending]() -> HRESULT
       {
-        // 先清投递标记：上报期间取帧线程再拷好的帧会重新投递一次，不会被吞。
-        mailbox->post_pending.store(false, std::memory_order_release);
+        // 先清本代的投递标记：上报期间取帧线程再拷好的帧会重新投递一次，不会被吞。
+        post_pending->store(false, std::memory_order_release);
         TextureBridge* bridge = nullptr;
         std::shared_ptr<WgcFramePoolLifetime> lifetime;
         bool log_late_noop = false;
@@ -975,13 +1008,14 @@ namespace flutter_inappwebview_plugin
       !lifetime->worker_shared->deliver_handler || !lifetime->dispatcher_queue) {
       return;
     }
-    if (mailbox_->post_pending.exchange(true, std::memory_order_acq_rel)) {
+    const auto& post_pending = lifetime->worker_shared->post_pending;
+    if (post_pending->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
     boolean enqueued = false;
     if (FAILED(lifetime->dispatcher_queue->TryEnqueue(
       lifetime->worker_shared->deliver_handler.Get(), &enqueued)) || !enqueued) {
-      mailbox_->post_pending.store(false, std::memory_order_release);
+      post_pending->store(false, std::memory_order_release);
     }
   }
 

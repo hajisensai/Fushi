@@ -38,13 +38,13 @@ void main() {
       reason: 'deliver_handler assignment must exist',
     );
 
-    final int factoryEnd = src.indexOf('[pump_state, mailbox]', assignIdx);
+    final int factoryEnd = src.indexOf('[pump_state, post_pending]', assignIdx);
     expect(
       factoryEnd,
       greaterThan(assignIdx),
       reason:
-          'delivery handler must capture only the invalidation gate and the '
-          'mailbox, never the bridge itself',
+          'delivery handler must capture only the invalidation gate and its '
+          'per-generation coalescing flag, never the bridge itself',
     );
     final String factoryHead = src.substring(assignIdx, factoryEnd);
 
