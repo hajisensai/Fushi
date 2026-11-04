@@ -215,10 +215,10 @@ void main() {
     await settle();
     expect(rec.log, isEmpty);
 
-    // 加载完才落地。
+    // 加载完才落地。盖住后才加载完的文档里在播的都是盖住期间开播的：只按住、不记续播。
     await feature.onLoadStop(a, ca, a.url);
     await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
+    expect(rec.log, <String>['a:rehold', 'a:hide']);
   });
 
   test('快速盖住 / 露出：按顺序落地，最后停在看得见', () async {
@@ -252,10 +252,10 @@ void main() {
     await settle();
     rec.log.clear();
 
-    // 下一次同步（例如页面加载完）重做整套隐藏。
+    // 下一次同步（例如页面加载完）重做整套隐藏（新文档：只按住、不记续播）。
     await feature.onLoadStop(a, ca, a.url);
     await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
+    expect(rec.log, <String>['a:rehold', 'a:hide']);
   });
 
   test('WebView 被回收（标签页还在）：撒手死控制器，之后盖住 / 露出不再碰它', () async {
@@ -270,11 +270,11 @@ void main() {
     await settle();
     expect(rec.log, isEmpty);
 
-    // 重建后的新 WebView 加载完照常管。
+    // 重建后的新 WebView 加载完照常管（盖住期间才加载完：只按住、不记续播）。
     final _FakeController ca2 = _FakeController('a2');
     feature.onPlaybackCoverChanged(covered: true);
     await load(a, ca2);
-    expect(rec.log, <String>['a2:hold', 'a2:hide']);
+    expect(rec.log, <String>['a2:rehold', 'a2:hide']);
   });
 
   test('关闭标签页：撒手', () async {
