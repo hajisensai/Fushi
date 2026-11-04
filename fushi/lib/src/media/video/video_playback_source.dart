@@ -14,8 +14,14 @@ abstract interface class VideoPlaybackSource implements Listenable {
   /// 当前字幕 cue（null = 无）。
   AudioCue? get currentCue;
 
-  /// 当前播放位置（毫秒）；未 load 为 null。
+  /// 当前播放位置（毫秒，视频时间轴）；未 load 为 null。
   int? get positionMs;
+
+  /// 主字幕调轴（毫秒；正值 = 字幕延后显示）。[currentCue] 的起止时刻在**字幕
+  /// 时间轴**上，`positionMs - subtitleDelayMs` 才是同一根轴上的位置（与播放器求
+  /// 当前 cue 用的 `effectiveSubtitlePositionMs` 同一换算）。外挂字幕最常调轴，
+  /// 混用两根轴会让停留量恒为 0、字幕字数永远计不上（9rdFBLEnVg）。
+  int get subtitleDelayMs;
 
   /// 媒体总时长（毫秒）；未 load / 未解析媒体头时为 null 或 0。
   int? get durationMs;

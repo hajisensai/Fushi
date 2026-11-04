@@ -367,6 +367,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
+import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -748,6 +749,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     this.initialFullscreen = false,
+    this.initialImmersiveLocked = false,
     this.openBlurayMenu = false,
     this.discLaunchCover,
     this.discLaunchOrigin,
@@ -776,6 +778,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        remoteInfo = info,
        remoteClient = client,
        initialFullscreen = false,
+       initialImmersiveLocked = false,
        openBlurayMenu = false,
        discLaunchCover = null,
        discLaunchOrigin = null,
@@ -813,6 +816,13 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 保持连播全屏沉浸不被换集打断。仅本地 pushReplacement 换集在换集前处于全屏时置真
   /// （见 [_VideoEpisode._switchEpisode]）；首开 / 远端恒 false。
   final bool initialFullscreen;
+
+  /// 作为「从沉浸锁定态换集 / 连播而来」的新页打开：首帧起就处于沉浸锁定
+  /// （cehHSgF04K）。本地换集是 pushReplacement 新页，锁定态是页面局部状态
+  /// （[_VideoFushiPageState._immersiveLocked]），不交接就随旧页一起丢——自动连播
+  /// 每进一集都把用户踢出沉浸。仅本地换集（[_VideoEpisode._switchEpisode]）置真；
+  /// 远端 / 网页换集原地换流、页面不换，锁定态天然保留。
+  final bool initialImmersiveLocked;
 
   /// Open the disc-authored menu, without loading the representative title.
   final bool openBlurayMenu;
@@ -860,6 +870,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
+    bool initialImmersiveLocked = false,
     bool openBlurayMenu = false,
     ImageProvider? discLaunchCover,
     Rect? discLaunchOrigin,
@@ -878,6 +889,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialEpisodeIndex: initialEpisodeIndex,
       initialSubtitleListVisible: initialSubtitleListVisible,
       initialFullscreen: initialFullscreen,
+      initialImmersiveLocked: initialImmersiveLocked,
       openBlurayMenu: openBlurayMenu,
       discLaunchCover: discLaunchCover,
       discLaunchOrigin: discLaunchOrigin,
@@ -3662,6 +3674,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 上次没写完的「看完再制卡」列表：进页就把角标亮出来（best-effort）。
     unawaited(_refreshStagedMineCount());
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
+    // cehHSgF04K：换集 / 连播交接沉浸锁定态。必须在下面订阅 [_immersiveLocked] 之前
+    // 赋值——控制条可见性由订阅派生，首帧就按锁定态算（不弹控制条、不先闪一下）。
+    _immersiveLocked.value = widget.initialImmersiveLocked;
     // 小窗能力探测 + 系统画中画进出回程（见 mini_window.part.dart）。放 initState
     // 是因为入口按钮的显隐必须在首帧就定下来，不能在用户眼皮底下冒出来。
     _initMiniWindowSupport();
@@ -5042,8 +5057,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
   String get _speedPrefKey => 'video_speed_$_activeBookUid';
 
-  /// per-book 播放音量偏好 key（音量记忆，播放列表按整张 video book 共享）。
-  String get _volumePrefKey => 'video_volume_$_activeBookUid';
+  /// 播放音量偏好的写入 key（音量记忆）：作为播放列表合集某一集打开时写**系列级**
+  /// 键、全系列共享，单视频写本条目键（[videoVolumeWriteKey]，cehHSgF04K）。
+  String get _volumePrefKey => videoVolumeWriteKey(
+    bookUid: _activeBookUid,
+    collectionId: widget.playlistCollectionId,
+  );
 
   /// 读 per-book 持久化倍速（无则 1.0）。
   double _readPersistedSpeed() {
@@ -5053,12 +5072,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return v.clamp(0.25, 4.0);
   }
 
-  /// 读 per-book 持久化音量（无则 100）。
+  /// 读持久化音量（无则 100）：系列键优先、回退本条目键（[videoVolumeReadKeys]）。
   double _readPersistedVolume() {
-    final Object? raw = appModel.prefsRepo.getPref(
-      _volumePrefKey,
-      defaultValue: 100.0,
-    );
+    Object? raw;
+    for (final String key in videoVolumeReadKeys(
+      bookUid: _activeBookUid,
+      collectionId: widget.playlistCollectionId,
+    )) {
+      raw = appModel.prefsRepo.getPref(key);
+      if (raw != null) break;
+    }
     final double v = raw is num
         ? raw.toDouble()
         : double.tryParse(raw?.toString() ?? '') ?? 100.0;

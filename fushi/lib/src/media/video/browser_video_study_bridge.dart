@@ -115,6 +115,10 @@ class RemoteVideoPlaybackSource extends ChangeNotifier
   @override
   AudioCue? get currentCue => null;
 
+  /// 网页视频没有 app 侧字幕轨，也就没有调轴。
+  @override
+  int get subtitleDelayMs => 0;
+
   /// 播放中按「上条样本位置 + 经过墙钟 × 倍速」外推，与 app 内 controller 的活位置
   /// 同语义。没有这条时 tracker 每秒的定时采样读到的是静态快照：位置没变 → 该窗
   /// 不记，但墙钟基准已被挪到 tick 时刻；下一条扩展样本只剩 tick→样本那截墙钟，

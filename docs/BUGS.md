@@ -33,10 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3607 条。点号进各自文件。
+> 共 3612 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4008](bugs/BUG-4008-video-continue-watching-streaming-series-scattered.md) | ✅ | ✅ | 继续观看里 Netflix 等流媒体剧集按集散开、不归组 |
+| [BUG-4007](bugs/BUG-4007-video-mobile-hidden-subtitle-no-reveal.md) | ✅ | ✅ | 移动端隐藏字幕播放中无从唤出：点开进度条也不显示 |
+| [BUG-4006](bugs/BUG-4006-video-autoplay-drops-immersive-and-series-volume.md) | ✅ | ✅ | 自动连播（本地换集）退出沉浸锁定，音量不跟随系列 |
+| [BUG-4005](bugs/BUG-4005-video-immersive-long-press-speed.md) | ✅ | ✅ | 沉浸锁定时长按画面仍会临时加速，不跟随沉浸模式档位 |
+| [BUG-4004](bugs/BUG-4004-video-external-subtitle-chars-zero.md) | ✅ | ✅ | 视频外挂字幕（调轴后）字幕字数统计恒为 0 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |

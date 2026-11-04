@@ -27,6 +27,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 退回整条字幕带时，字幕带占视频帧高度的比例（自帧底向上）。
@@ -43,6 +44,7 @@ class VideoGraphicSubtitleObscureLayer extends StatefulWidget {
     required this.obscure,
     required this.revealOnInteraction,
     required this.lookupPopupVisible,
+    this.touchControlsVisible,
     this.regionRequest,
     this.regionInput,
     this.regionTrack,
@@ -59,6 +61,10 @@ class VideoGraphicSubtitleObscureLayer extends StatefulWidget {
 
   /// 查词浮层还开着也算「用户在看」（与文本字幕 BUG-2235 同一判据）。
   final bool lookupPopupVisible;
+
+  /// 移动端控制条（进度条）可见性：显示期间遮蔽让位（aJqIVUPxnd，与文本字幕
+  /// `VideoSubtitleOverlay.revealWhileControlsVisible` 同一判据）。桌面 / 无控制条传 null。
+  final ValueListenable<bool>? touchControlsVisible;
 
   /// 抽轨请求的覆盖值（测试用）。缺省按控制器当前的视频路径与图形轨推导
   /// （[graphicSubtitleRegionRequestFor]）；推导不出 = 只能糊整条字幕带。
@@ -82,7 +88,8 @@ class VideoGraphicSubtitleObscureLayer extends StatefulWidget {
 }
 
 /// 图形字幕此刻是否该遮蔽：与文本字幕 overlay 同一条门（`video_subtitle_overlay.dart`
-/// 的 `obscureActive`）——开了遮蔽、没被悬停显形、用户也没在看（暂停 / 查词浮层开着）。
+/// 的 `obscureActive`）——开了遮蔽、没被悬停显形、用户也没在看（暂停 / 查词浮层开着 /
+/// 移动端控制条显示，[videoSubtitleViewerIsLooking]）。
 bool graphicSubtitleObscureActive({
   required GraphicSubtitleObscure obscure,
   required bool graphicActive,
@@ -90,10 +97,15 @@ bool graphicSubtitleObscureActive({
   required bool revealOnInteraction,
   required bool isPlaying,
   required bool lookupPopupVisible,
+  bool touchControlsVisible = false,
 }) {
   if (obscure == GraphicSubtitleObscure.none || !graphicActive) return false;
-  final bool userIsReading =
-      revealOnInteraction && (!isPlaying || lookupPopupVisible);
+  final bool userIsReading = videoSubtitleViewerIsLooking(
+    revealOnInteraction: revealOnInteraction,
+    isPlaying: isPlaying,
+    lookupPopupVisible: lookupPopupVisible,
+    touchControlsVisible: touchControlsVisible,
+  );
   final bool revealed = revealOnInteraction && hoverRevealed;
   return !revealed && !userIsReading;
 }
@@ -136,6 +148,7 @@ class _VideoGraphicSubtitleObscureLayerState
     super.initState();
     widget.controller.addListener(_onControllerChanged);
     widget.regionTrack?.addListener(_onRegionTrackChanged);
+    widget.touchControlsVisible?.addListener(_onTouchControlsChanged);
     _syncVisibility();
     _syncRegions();
   }
@@ -152,6 +165,13 @@ class _VideoGraphicSubtitleObscureLayerState
       oldWidget.regionTrack?.removeListener(_onRegionTrackChanged);
       widget.regionTrack?.addListener(_onRegionTrackChanged);
     }
+    if (!identical(
+      oldWidget.touchControlsVisible,
+      widget.touchControlsVisible,
+    )) {
+      oldWidget.touchControlsVisible?.removeListener(_onTouchControlsChanged);
+      widget.touchControlsVisible?.addListener(_onTouchControlsChanged);
+    }
     _syncVisibility();
     _syncRegions();
   }
@@ -161,6 +181,7 @@ class _VideoGraphicSubtitleObscureLayerState
     _cancelRegionLoad();
     _ticker.dispose();
     widget.regionTrack?.removeListener(_onRegionTrackChanged);
+    widget.touchControlsVisible?.removeListener(_onTouchControlsChanged);
     widget.controller.removeListener(_onControllerChanged);
     // 离开（换页 / 关遮蔽层）时把图形字幕还原成可见，不把「隐藏」留在播放器上。
     unawaited(widget.controller.setGraphicSubtitleVisible(true));
@@ -174,7 +195,15 @@ class _VideoGraphicSubtitleObscureLayerState
     revealOnInteraction: widget.revealOnInteraction,
     isPlaying: widget.controller.isPlaying,
     lookupPopupVisible: widget.lookupPopupVisible,
+    touchControlsVisible: widget.touchControlsVisible?.value ?? false,
   );
+
+  /// 控制条显隐：重下发 libmpv 可见性（隐藏态）并重画模糊（模糊态）。
+  void _onTouchControlsChanged() {
+    if (!mounted) return;
+    _syncVisibility();
+    setState(() {});
+  }
 
   /// 控制器通知很频繁（播放位置每拍都通知）；只有影响本层的几个量变了才重建。
   Object? _lastControllerKey;
