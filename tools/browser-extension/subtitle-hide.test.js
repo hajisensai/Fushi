@@ -207,6 +207,20 @@ test('隐藏字幕：options 页改开关经 storage.onChanged 实时生效', ()
   assert.strictEqual(findById(head, STYLE_ID), null);
 });
 
+test('BUG-4053 隐藏状态只读查询：fushiSubtitleManuallyHidden 跟随 Shift+H / 存量 / onChanged', () => {
+  const { sandbox, changeListeners } = loadContent(false);
+  const hidden = sandbox.window.fushiSubtitleManuallyHidden;
+  assert.strictEqual(typeof hidden, 'function', 'video-shortcuts.js 判「字幕已关」要读它');
+  assert.strictEqual(hidden(), false);
+  sandbox.window.fushiToggleSubtitleHiding();
+  assert.strictEqual(hidden(), true);
+  sandbox.window.fushiToggleSubtitleHiding();
+  assert.strictEqual(hidden(), false);
+  for (const fn of changeListeners) fn({ subtitleHidden: { newValue: true } }, 'local');
+  assert.strictEqual(hidden(), true, 'options 页改开关也要反映');
+  assert.strictEqual(loadContent(true).sandbox.window.fushiSubtitleManuallyHidden(), true, '刷新后读存量');
+});
+
 test('Shift+H 真链：keydown 经 subtitle-panel 转发到 content 并持久化隐藏状态', () => {
   const h = loadContent(false);
   // 受 Fushi 控制的目标视频：视口内可见、在播、有声的正片（video-target.js controlledVideo 的判据）。

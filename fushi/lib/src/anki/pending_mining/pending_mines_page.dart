@@ -48,12 +48,7 @@ String _pendingFailureReason(MineOutcome outcome) {
   if (outcome.result == MineResult.notConfigured) {
     return t.card_export_not_configured;
   }
-  final String? localized = localizeAnkiMineError(outcome.errorCode);
-  if (localized != null) return localized;
-  final String? detail = outcome.errorDetail;
-  return detail != null && detail.isNotEmpty
-      ? t.card_export_failed_detail(reason: detail)
-      : t.card_export_failed;
+  return mineFailureMessage(outcome);
 }
 
 /// 订阅待发队列：表一变就重读一次（行数 / 行列表）。

@@ -433,6 +433,19 @@ class SrtBookRepository {
     return true;
   }
 
+  /// 把一条字幕书的文件列表模式音频清空（`audio_paths_json` 置 NULL），其余列不动。
+  ///
+  /// 这是 [patchByUid] 文档里说的「真要把某列清空」的专门入口：音频断链的书转成纯
+  /// 字幕书（反馈 IHgBrvHizT）。目录模式的 `audio_root` 不在这里碰——断链判定只看
+  /// 文件列表。行不存在返回 false。
+  Future<bool> clearAudioPaths(String uid) async {
+    final int affected = await _db.patchSrtBook(
+      uid,
+      const SrtBooksCompanion(audioPathsJson: Value<String?>(null)),
+    );
+    return affected > 0;
+  }
+
   /// Deletes the SRT book + its on-disk persist dir. [SrtBookDeleteResult
   /// .deleted] is the number of srt_books rows actually removed (0 when [uid]
   /// matched nothing) so callers can count only real deletions (BUG-439).
