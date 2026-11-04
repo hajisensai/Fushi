@@ -449,10 +449,18 @@ struct FushiHeatmapView: View {
             FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
           }
         }
+        // 右侧统计与网格同一口径：有 16 周热力图就用它的总时长 / 活跃天数，
+        // 旧快照（只有 35 天 `month`）才退回本月口径。
         VStack(alignment: .leading) {
-          stat(month.time, entry.label("thisMonth", "This month"))
-          Spacer()
-          stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
+          if let heatmap = snapshot.heatmap, !heatmap.levels.isEmpty {
+            stat(heatmap.time, entry.label("recentHeatmapDays", "Last 112 days"))
+            Spacer()
+            stat("\(heatmap.activeDays)", entry.label("activeDays", "Active days"))
+          } else {
+            stat(month.time, entry.label("thisMonth", "This month"))
+            Spacer()
+            stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
+          }
         }
         .frame(width: 76, alignment: .leading)
       }

@@ -48,4 +48,39 @@ void main() {
     expect(updates, 2);
     await sub.cancel();
   });
+
+  test('republishing the same content in a fresh list stays silent', () async {
+    final RemoteContinueFeed feed = RemoteContinueFeed();
+    int updates = 0;
+    final StreamSubscription<void> sub = feed.updates.listen((_) => updates++);
+    feed.publish(<RemoteContinueCandidate>[book], deviceName: 'Desk PC');
+    // 首页每轮取数都给一份新 List、新对象，但内容不变：不该再通知小组件重采集。
+    // 标题运行时拼出来，确保是另一个实例（const 会被规范化成同一对象）。
+    final String title = <String>['Host', 'book'].join(' ');
+    feed.publish(<RemoteContinueCandidate>[
+      RemoteContinueCandidate(
+        kind: MediaKind.epub,
+        id: 'k1',
+        title: title,
+        recentMs: 10,
+        percent: 40,
+      ),
+    ], deviceName: 'Desk PC');
+    await Future<void>.delayed(Duration.zero);
+    expect(updates, 1);
+    // 进度变了 / 设备名变了：照常通知。
+    feed.publish(<RemoteContinueCandidate>[
+      const RemoteContinueCandidate(
+        kind: MediaKind.epub,
+        id: 'k1',
+        title: 'Host book',
+        recentMs: 10,
+        percent: 41,
+      ),
+    ], deviceName: 'Desk PC');
+    feed.publish(feed.current, deviceName: 'Laptop');
+    await Future<void>.delayed(Duration.zero);
+    expect(updates, 3);
+    await sub.cancel();
+  });
 }

@@ -167,9 +167,14 @@ All user-visible strings are already localized and formatted in Dart.
 
 - `srs.timeline` (`buildWidgetSrsDueTimeline`): learning / relearning cards ripen at their exact
   `dueAt` (merged per minute, per hour past 40 points); at the SRS day boundary (store's
-  `dayIndexOf`, binary-searched to the minute) the reviews due on the next SRS day are added.
-  Horizon 24 h. Only points after `generatedAt` whose count differs are sent ("now" is
-  `srs.due`), so the publisher's signature dedup still works. Native: the count shown at time
+  `dayIndexOf`, binary-searched on the epoch-minute grid, i.e. the true boundary rounded up to
+  the whole minute and independent of the sample time) the reviews due on the next SRS day are
+  added. That increment is an approximation: it ignores the daily review limit (may
+  over-count) and the next day's new-card allowance / today's unfinished backlog (may
+  under-count); the next sample's `srs.due` is exact. Horizon 24 h. Only points after
+  `generatedAt` whose count differs are sent ("now" is `srs.due`), and every point is
+  minute-aligned, so snapshots sampled seconds apart sign the same and the publisher's
+  signature dedup still works. Native: the count shown at time
   *t* is the last point with `at <= t`, else `srs.due`.
 - `rollover`: the day-dependent blocks (`today`, `goals`, `week`, `month`, `streak`, `heatmap`)
   re-run by the same Dart builder for the next stat day — today zeroed, the streak kept when

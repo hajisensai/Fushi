@@ -38,10 +38,25 @@ class RemoteContinueFeed {
 
   /// 首页取完一轮互联清单后调用。
   void publish(List<RemoteContinueCandidate> candidates, {String? deviceName}) {
-    if (identical(candidates, _current) && deviceName == _deviceName) return;
+    // 按内容比：首页每轮都给一份新 List，按引用比永远「变了」，小组件会白白重采集。
+    if (deviceName == _deviceName && _sameCandidates(candidates, _current)) {
+      return;
+    }
     _current = List<RemoteContinueCandidate>.unmodifiable(candidates);
     _deviceName = deviceName;
     _updates.add(null);
+  }
+
+  static bool _sameCandidates(
+    List<RemoteContinueCandidate> a,
+    List<RemoteContinueCandidate> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   /// 互联被关掉 / 解除配对：远端补位全部撤下。

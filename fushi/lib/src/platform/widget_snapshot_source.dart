@@ -682,6 +682,9 @@ class WidgetSnapshotSource {
       final SrsStreak streak = data.streak();
       // 到期预排的原料：学习 / 重学卡的精确到期时刻；明天（SRS 日序号 +1）到期的复习卡。
       // 只算 Fushi 排程、没暂停、今天没搁置的卡（与 [SrsStatsData.futureDue] 同口径）。
+      // 换日点的增量是近似值：① 没套每日复习上限，明天到期卡多于上限时会多估；
+      // ② 没算次日重新放出的新卡额度，也没算今天没复习完、明天仍到期的积压，会少估。
+      // 用户打开 app 或下一次采集时由牌组汇总（含上限）给出准确的 `srs.due`。
       final List<int> learningDueAts = <int>[];
       int reviewsNextDay = 0;
       for (final SrsStatCard card in data.cards) {

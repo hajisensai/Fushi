@@ -314,22 +314,28 @@ List<WidgetSrsDueStep> buildWidgetSrsDueTimeline({
   return out;
 }
 
-/// (from, to] 里第一个 [dayIndexOf] 比 from 大的时刻（分钟精度）；区间内不换日为 null。
+/// (from, to] 之后第一个 [dayIndexOf] 比 from 大的**整分钟**时刻；区间内不换日为 null。
+///
+/// 只在整分钟网格（epoch 分钟）上二分，所以结果只取决于真实换日点本身——真实换日
+/// 点向上取整到分钟（与学习步的 roundUp 同一口径），不随 [from] 漂移。否则每次采集
+/// 的 nowMs 不同，`srs.timeline` 就会不同，快照签名去重随之失效。
 int? _nextSrsDayBoundary(int from, int to, int Function(int ms) dayIndexOf) {
   final int today = dayIndexOf(from);
   if (dayIndexOf(to) <= today) return null;
-  int lo = from;
-  int hi = to;
   const int minute = 60 * 1000;
-  while (hi - lo > minute) {
+  // 不变量：dayIndexOf(lo * minute) <= today < dayIndexOf(hi * minute)。
+  // lo * minute <= from（向下取整），hi * minute >= to（向上取整）。
+  int lo = from ~/ minute;
+  int hi = (to + minute - 1) ~/ minute;
+  while (hi - lo > 1) {
     final int mid = lo + (hi - lo) ~/ 2;
-    if (dayIndexOf(mid) > today) {
+    if (dayIndexOf(mid * minute) > today) {
       hi = mid;
     } else {
       lo = mid;
     }
   }
-  return hi;
+  return hi * minute;
 }
 
 /// 热力图一格的档位（0…4）：没学 0；学了但没计时（只有字数 / 页数）1；

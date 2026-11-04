@@ -1189,9 +1189,65 @@ void main() {
       );
       expect(steps.first, (at: now, due: 0));
       expect(steps[1].due, 20);
-      // 二分到分钟精度：落在真实边界之后一分钟内。
-      expect(steps[1].at - (now + 10 * hour), inInclusiveRange(0, minute));
+      // 整分钟的真实边界原样落出（不再晚几十秒）。
+      expect(steps[1].at, now + 10 * hour);
       expect(steps.last, (at: now + 11 * hour, due: 21));
+    });
+
+    test('the day boundary does not drift with the sample time', () {
+      // 回归：二分起点是 nowMs 时，now 差几秒换日点就晚 28~38 秒不等。
+      for (final int jitter in <int>[0, 3000, 10000, 47000, 300000, 59999]) {
+        final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+          nowMs: now + jitter,
+          dueNow: 0,
+          learningDueAts: const <int>[],
+          dayIndexOf: dayOf,
+          reviewsDueNextDay: 20,
+        );
+        expect(steps[1], (at: now + 10 * hour, due: 20), reason: '$jitter');
+      }
+    });
+
+    test('a boundary off the minute grid rounds up to the next minute', () {
+      const int edge = now + 10 * hour + 1500;
+      int offGrid(int ms) => ms >= edge ? 1 : 0;
+      for (final int jitter in <int>[0, 7000, 41000]) {
+        final List<WidgetSrsDueStep> steps = buildWidgetSrsDueTimeline(
+          nowMs: now + jitter,
+          dueNow: 0,
+          learningDueAts: const <int>[],
+          dayIndexOf: offGrid,
+          reviewsDueNextDay: 4,
+        );
+        expect(steps[1], (at: now + 10 * hour + minute, due: 4));
+      }
+    });
+
+    test('snapshots sampled seconds apart keep the same signature', () {
+      String signatureAt(int sampleAt) {
+        final List<WidgetSrsDueStep> timeline = buildWidgetSrsDueTimeline(
+          nowMs: sampleAt,
+          dueNow: 2,
+          learningDueAts: <int>[now + 5 * hour + 123],
+          dayIndexOf: dayOf,
+          reviewsDueNextDay: 20,
+        );
+        return widgetSnapshotSignature(
+          build(
+            generatedAt: sampleAt,
+            srs: WidgetSrsInput(
+              provider: WidgetSrsProvider.fushi,
+              reviewCount: 2,
+              timeline: timeline,
+            ),
+          ),
+        );
+      }
+
+      final String base = signatureAt(now);
+      for (final int jitter in <int>[3000, 10000, 47000, 300000]) {
+        expect(signatureAt(now + jitter), base, reason: '$jitter');
+      }
     });
 
     test('too many steps merge to the hour and keep the boundary', () {
