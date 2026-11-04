@@ -16,6 +16,11 @@
 #     would also walk local path dependencies (e.g. fushi_ios_umbrella ->
 #     fushi_fsrs) and format those crates a second time.
 #
+# Every crate runs from the repo root (--manifest-path), so rustup resolves ONE
+# toolchain for all of them: a crate-local rust-toolchain.toml (e.g.
+# native/fushi_anki_sync pins Anki's compiler, profile minimal, no rustfmt) is
+# not consulted, and local runs match the CI pin in rust-format.yml.
+#
 # Out of scope (never handed to rustfmt):
 #   native/fushidicts, native/fushi_torrent, native/galgame_hook, native/fushi_aacs
 #       C/C++ modules (no Rust today). Listed explicitly so a Cargo.toml ever
