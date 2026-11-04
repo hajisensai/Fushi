@@ -234,15 +234,47 @@ pub(crate) struct NoteInfo {
     deck: Option<String>,
     pub(crate) deleted_at: Option<i64>,
     pending: bool,
-    /// 出处（`SrsSourceRef`）：kind 与原样 title；没有出处（或不是带 kind 的对象）= 两个空串。
+    /// 出处（`SrsSourceRef`）：kind 与原样 title；没有出处（或不是带 kind 的对象）时按 Fushi 制卡标签认
+    /// （[source_from_tags]），也认不出 = 两个空串。
     source_kind: String,
     source_title: String,
+}
+
+/// 没有 `SrsSourceRef` 的笔记按 Fushi 自己的制卡标签认出处（反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡、
+/// 经 Anki 迁进来的卡没有出处记录，统计页「制卡来源」全归「无出处」）。
+///
+/// 标签契约见 packages/fushi_anki/lib/src/anki_note_composer.dart `buildNoteTags`：制卡标记 `fushi`（改名前是
+/// `hibiki`）+ 分类标签 `book` / `video`（更早是 `anime`）/ `game` / `music`，「作品名挂在分类下」开着时作品名是
+/// `<分类>::<作品名>`。只有带制卡标记的笔记才认（别的工具也可能打 `video` 之类的标签）；分类按标签顺序取第一个；
+/// 作品名只认层级形式（平级的作品名标签与用户自己的标签分不开，不猜），没有 = 空串（统计页显示「未命名」）。
+/// 标签比较不分 ASCII 大小写（Anki 标签不分大小写）。
+pub(crate) fn source_from_tags(tags: &[String]) -> Option<(&'static str, String)> {
+    fn category(tag: &str) -> Option<&'static str> {
+        const MAP: [(&str, &str); 5] = [("book", "book"), ("video", "video"), ("anime", "video"), ("game", "game"), ("music", "music")];
+        MAP.iter().find(|(t, _)| tag.eq_ignore_ascii_case(t)).map(|(_, k)| *k)
+    }
+    if !tags.iter().any(|t| t.eq_ignore_ascii_case("fushi") || t.eq_ignore_ascii_case("hibiki")) {
+        return None;
+    }
+    let mut flat: Option<&'static str> = None;
+    for t in tags {
+        if let Some((parent, title)) = t.split_once("::") {
+            if let Some(kind) = category(parent) {
+                if !title.is_empty() {
+                    return Some((kind, title.to_owned()));
+                }
+            }
+        } else if flat.is_none() {
+            flat = category(t);
+        }
+    }
+    flat.map(|k| (k, String::new()))
 }
 
 impl NoteInfo {
     fn of(id: &str, v: &Value) -> NoteInfo {
         let s = |v: &Value| v.as_str().unwrap_or("").to_owned();
-        NoteInfo {
+        let mut n = NoteInfo {
             id: id.to_owned(),
             note_type: s(&v["nt"]),
             guid: s(&v["g"]),
@@ -252,13 +284,25 @@ impl NoteInfo {
             deck: v["dk"].as_str().map(str::to_owned),
             deleted_at: v["da"].as_i64(),
             pending: v["pd"] == Value::Bool(true),
-            // Dart `SrsSourceRef.fromJson`：不是对象或 kind 不是字符串 = 没有出处；title 不是字符串 = 没有标题。
-            source_kind: v["s"]["kind"].as_str().map(str::to_owned).unwrap_or_default(),
-            source_title: match v["s"]["kind"].as_str() {
-                Some(_) => v["s"]["title"].as_str().map(str::to_owned).unwrap_or_default(),
-                None => String::new(),
-            },
+            source_kind: String::new(),
+            source_title: String::new(),
+        };
+        // Dart `SrsSourceRef.fromJson`：不是对象或 kind 不是字符串 = 没有出处；title 不是字符串 = 没有标题。
+        // 没有出处（含 kind 为空串：统计页同样算「无出处」）时按制卡标签认（[source_from_tags]）——与
+        // [backfill_tag_sources] 只补 `source_kind = ''` 的行同一判据。
+        match v["s"]["kind"].as_str().filter(|k| !k.is_empty()) {
+            Some(kind) => {
+                n.source_kind = kind.to_owned();
+                n.source_title = v["s"]["title"].as_str().map(str::to_owned).unwrap_or_default();
+            }
+            None => {
+                if let Some((kind, title)) = source_from_tags(&n.tags) {
+                    n.source_kind = kind.to_owned();
+                    n.source_title = title;
+                }
+            }
         }
+        n
     }
 
     /// Dart `SrsNoteView.field`：没有 = 空串。
@@ -374,6 +418,36 @@ pub(crate) fn backfill_dupe_norms(c: &Connection, profile: &str, cfg: &CacheConf
         }
     }
     Ok(ids.len())
+}
+
+/// 补算按制卡标签认得出的出处（Dart 缓存修订号 9 的升级步调用）：出处列为空的笔记缓存行按它自己的 `tags_json`
+/// 跑 [source_from_tags]，与写缓存行时的推导同一个函数。只改这两列，不重算整行与卡片。认不出的行原样留空；
+/// 幂等（再跑一遍只会重扫仍为空的行、什么也不改）。返回补了几行。
+pub(crate) fn backfill_tag_sources(c: &Connection, profile: &str) -> Result<usize, String> {
+    let rows: Vec<(String, String)> = {
+        let mut st = c
+            .prepare_cached(
+                "SELECT srs_idt(id), tags_json FROM srs_notes_cache \
+                 WHERE profile_uid = srs_id(?1) AND source_kind = '' AND tags_json IS NOT NULL AND tags_json != '[]'",
+            )
+            .map_err(sql)?;
+        let it = st
+            .query_map([profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(sql)?;
+        it.collect::<Result<_, _>>().map_err(sql)?
+    };
+    let mut up = c
+        .prepare_cached("UPDATE srs_notes_cache SET source_kind = ?1, source_title = ?2 WHERE id = srs_id(?3)")
+        .map_err(sql)?;
+    let mut filled = 0;
+    for (id, json) in rows {
+        let tags: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+        if let Some((kind, title)) = source_from_tags(&tags) {
+            up.execute(rusqlite::params![kind, title, id]).map_err(sql)?;
+            filled += 1;
+        }
+    }
+    Ok(filled)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1345,6 +1419,85 @@ mod tests {
     fn run(d: &Device, cfg: &CacheConfig, dirty: Dirty) {
         let w = d.core.writer().unwrap();
         in_savepoint(&w, |c| refresh(c, P, cfg, dirty)).unwrap();
+    }
+
+    const N4: &str = "0193a1b2-0000-7000-8000-000000000004";
+
+    fn tags(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|t| (*t).to_owned()).collect()
+    }
+
+    /// 反馈 AhIskigAq3：按 `buildNoteTags` 的制卡标签认出处。只认带制卡标记（`fushi` / 改名前 `hibiki`）的；
+    /// 层级 `<分类>::<作品名>` 给出作品名；平级分类只给 kind；`anime` 是旧的 video；不分 ASCII 大小写。
+    #[test]
+    fn source_from_tags_follows_the_mining_tag_contract() {
+        use super::source_from_tags as f;
+        assert_eq!(f(&tags(&["fushi", "video"])), Some(("video", String::new())));
+        assert_eq!(f(&tags(&["Hibiki", "Book"])), Some(("book", String::new())));
+        assert_eq!(f(&tags(&["hibiki", "anime"])), Some(("video", String::new())));
+        assert_eq!(f(&tags(&["fushi", "video", "video::ゆるキャン△"])), Some(("video", "ゆるキャン△".to_owned())));
+        assert_eq!(f(&tags(&["fushi", "game::Summer Pockets"])), Some(("game", "Summer Pockets".to_owned())));
+        assert_eq!(f(&tags(&["fushi", "music", "book"])), Some(("music", String::new())));
+        // 没有制卡标记：别的工具也会打 video 之类的标签，不认。
+        assert_eq!(f(&tags(&["video", "video::X"])), None);
+        // 有标记但没有分类、或层级父级不是分类 / 作品名为空：认不出。
+        assert_eq!(f(&tags(&["fushi"])), None);
+        assert_eq!(f(&tags(&["fushi", "jlpt::n3"])), None);
+        assert_eq!(f(&tags(&["fushi", "video::"])), None);
+        assert_eq!(f(&[]), None);
+    }
+
+    /// 没有 `SrsSourceRef` 的制卡笔记：写缓存行时按标签推出处，没有制卡标记的不认；清空两列后
+    /// `backfill_tag_sources` 补回与写缓存行时相同的值，再跑一遍什么也不改。
+    #[test]
+    fn tag_sources_are_derived_on_cache_write_and_backfilled() {
+        let d = Device::new("tag-sources");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
+                note(N1, "NT"),
+                edit("note", N1, "tags", json!(["fushi", "video", "video::ゆるキャン△"])),
+                note(N2, "NT"),
+                edit("note", N2, "tags", json!(["hibiki", "book"])),
+                note(N3, "NT"),
+                edit("note", N3, "tags", json!(["video", "mine"])),
+                note(N4, "NT"),
+                edit("note", N4, "tags", json!(["fushi", "video"])),
+                edit("note", N4, "source", json!({"kind": "book", "title": "本"})),
+            ],
+        );
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        run(&d, &cfg, Dirty { all_notes: true, ..Dirty::default() });
+        let sources = |d: &Device| -> Vec<Vec<String>> {
+            d.rows("SELECT srs_idt(id), source_kind, source_title FROM srs_notes_cache ORDER BY id").into_iter().skip(1).collect()
+        };
+        let expect = vec![
+            vec![N1.to_owned(), "video".to_owned(), "ゆるキャン△".to_owned()],
+            vec![N2.to_owned(), "book".to_owned(), String::new()],
+            vec![N3.to_owned(), String::new(), String::new()],
+            // 有出处记录的以记录为准，不看标签。
+            vec![N4.to_owned(), "book".to_owned(), "本".to_owned()],
+        ];
+        assert_eq!(sources(&d), expect);
+
+        let backfill = |d: &Device| {
+            let w = d.core.writer().unwrap();
+            in_savepoint(&w, |c| super::backfill_tag_sources(c, P)).unwrap()
+        };
+        // 修订号 9 之前写的行：按标签认的出处列为空（有出处记录的行本来就有值）。
+        d.core
+            .writer()
+            .unwrap()
+            .execute_batch(&format!(
+                "UPDATE srs_notes_cache SET source_kind = '', source_title = '' WHERE id != srs_id('{N4}')"
+            ))
+            .unwrap();
+        assert_eq!(backfill(&d), 2);
+        assert_eq!(sources(&d), expect);
+        assert_eq!(backfill(&d), 0);
     }
 
     /// 每条笔记的卡的 freq_rank（NULL 记成 "null"）。

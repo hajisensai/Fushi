@@ -776,6 +776,10 @@ const String kSrsCardShellScript = r'''
   window.onUpdateHook = [];
   window.onShownHook = [];
   function root(){ return document.getElementById('fushi-card-root'); }
+  // 卡片内容的直接父节点：Anki / AnkiDroid reviewer 的 `#qa`。导入的模板按这份 DOM 契约写
+  // 脚本（eggrolls 的 `#qa > .VocabAudio` 把单词音频挪进标题行），内容必须是它的直接子节点，
+  // `lang` 也挂在它上面而不是再包一层（反馈 uCPhpeCM35）。
+  function qa(){ return document.getElementById('qa') || root(); }
   function setClasses(classes){
     var c = classes ? 'card ' + classes : 'card';
     document.body.className = c;
@@ -925,10 +929,11 @@ const String kSrsCardShellScript = r'''
       if (styles[h].disabled !== off) styles[h].disabled = off;
     }
   }
-  window.__fushiSrsSetCard = function(refs, html, classes){
+  window.__fushiSrsSetCard = function(refs, html, classes, lang){
     var my = ++seq;
     faceToken = window.__fushiSrsFaceToken || '';
     var r = root();
+    var q = qa();
     window.onUpdateHook = [];
     window.onShownHook = [];
     stopMedia(r);
@@ -936,9 +941,10 @@ const String kSrsCardShellScript = r'''
     if (window.__fushiSrsStopAllMedia) window.__fushiSrsStopAllMedia();
     useStyles(refs);
     setClasses(classes);
-    r.innerHTML = html;
+    if (lang) q.setAttribute('lang', lang); else q.removeAttribute('lang');
+    q.innerHTML = html;
     window.scrollTo(0, 0);
-    var scripts = Array.prototype.slice.call(r.getElementsByTagName('script'));
+    var scripts = Array.prototype.slice.call(q.getElementsByTagName('script'));
     var result = replayFrom(scripts, 0, my);
     if (result && typeof result.then === 'function') {
       result.then(function(ok){ finish(my, ok); });
@@ -978,7 +984,7 @@ String srsCardShellHtml({
       '<script>$kSrsCardDictStyleScript</script>'
       '<script>$kSrsCardShellScript</script>'
       '</head><body class="$cls"><div id="fushi-card-root" class="$cls">'
-      '</div></body></html>';
+      '<div id="qa"></div></div></body></html>';
 }
 
 /// 把 Dart 字符串变成 JS 字符串字面量（JSON 子集；U+2028 / U+2029 也转义，
@@ -993,9 +999,10 @@ String srsCardSetCardScript({
   required List<String> styleRefs,
   required String bodyHtml,
   required String classes,
+  String lang = '',
 }) =>
     'window.__fushiSrsSetCard(${jsonEncode(styleRefs)},${_jsString(bodyHtml)},'
-    '${_jsString(classes)});';
+    '${_jsString(classes)},${_jsString(lang)});';
 
 /// 一次下发的整段调用：外壳不在返回 `false`；各步依次执行、各自兜住异常（换主题出错
 /// 不能把换卡也拦下，否则卡面停在外壳底色、什么都不报，BUG-3579），全部成功返回 `true`，
@@ -1159,13 +1166,14 @@ class SrsCardFaceDocument {
     required this.showingAnswer,
     required this.cardCss,
     required this.bodyHtml,
+    this.lang = '',
     this.bodyStyles = const <String>[],
     this.autoplayMedia = true,
     this.hostScript = '',
     this.bridgeScript = '',
   });
 
-  /// 由一面卡与主题算出（媒体引用改写、`lang` 包裹都在这里做）。
+  /// 由一面卡与主题算出（媒体引用改写在这里做；`lang` 挂到外壳的 `#qa` 上，不包裹正文）。
   factory SrsCardFaceDocument.of(
     SrsCardFace face, {
     required bool dark,
@@ -1213,7 +1221,8 @@ class SrsCardFaceDocument {
         '$mediaUrlPrefix\u0000${face.css}',
         () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
       ),
-      bodyHtml: wrapAnkiCardHtmlWithLang(prepared.body, face.languageCode),
+      bodyHtml: prepared.body,
+      lang: face.languageCode?.trim() ?? '',
       bodyStyles: prepared.styles,
       autoplayMedia: face.autoplayMedia,
     );
@@ -1227,8 +1236,12 @@ class SrsCardFaceDocument {
   /// 笔记类型 CSS（媒体引用已改写）。
   final String cardCss;
 
-  /// 正文 HTML（`<style>` 已抽走，见 [srsExtractCardStyles]）。
+  /// 正文 HTML（`<style>` 已抽走，见 [srsExtractCardStyles]）。原样作为外壳 `#qa` 的直接
+  /// 子节点（Anki reviewer 的 DOM 契约），不再包 `<div lang>`。
   final String bodyHtml;
+
+  /// 卡面 `lang`（挂在外壳的 `#qa` 上；空 = 不标）。
+  final String lang;
 
   /// 正文里抽出的样式块（文档顺序）。
   final List<String> bodyStyles;
@@ -1265,6 +1278,7 @@ class SrsCardFaceDocument {
         styleRefs: <String>[for (final SrsCardStyle st in all) st.hash],
         bodyHtml: bodyHtml,
         classes: classes,
+        lang: lang,
       ),
     ].join();
   }
@@ -1278,7 +1292,7 @@ class SrsCardFaceDocument {
   /// 片段按新设置自己播一次；刚关掉 → 重放时停掉正在播的媒体），与宿主侧
   /// `[sound:]` 的处理一致。
   String get _cardKey =>
-      '$cardId\u0000$showingAnswer\u0000$autoplayMedia\u0000'
+      '$cardId\u0000$showingAnswer\u0000$autoplayMedia\u0000$lang\u0000'
       '${styles.map((SrsCardStyle s) => s.hash).join(',')}\u0000$bodyHtml';
 
   String get shellHtml => srsCardShellHtml(
@@ -1371,6 +1385,7 @@ class SrsCardFaceSync {
           styleRefs: <String>[for (final SrsCardStyle st in styles) st.hash],
           bodyHtml: doc.bodyHtml,
           classes: doc.classes,
+          lang: doc.lang,
         ),
       );
     }

@@ -816,6 +816,12 @@ pub(crate) fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut V
     }
     // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
     // （内置笔记类型的代码默认值、默认牌组）只有 Dart 知道，随命令带来；缺了是调用方的 bug，不跳过刷新。
+    // 按制卡标签补出处列（Dart 缓存修订号 9；只改笔记缓存的两列，不算缓存写入，不要缓存配置）。
+    if op == "backfill_tag_sources" {
+        let w = c.writer()?;
+        let n = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::backfill_tag_sources(conn, profile))?;
+        return Ok(json!({"filled": n}));
+    }
     if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" || op == "backfill_dupe_norms" {
         let cfg = crate::store::caches::CacheConfig::parse(req.get("caches").ok_or("sync2: missing caches")?)?;
         let mut v = match op {
@@ -986,7 +992,7 @@ const CHANNEL_TRANSPARENT: [&str; 47] = [
 /// 通道没做完时要先做完它的命令（改投影、读完整投影、在投影上记账的）。分发器只看 [CHANNEL_TRANSPARENT]（不在那张表
 /// 里的一律先做完）；这张表只为登记完整（见上）。
 #[cfg_attr(not(test), allow(dead_code))]
-const CHANNEL_SETTLES: [&str; 21] = [
+const CHANNEL_SETTLES: [&str; 22] = [
     "apply",
     "migrate",
     "replay_all",
@@ -1008,6 +1014,7 @@ const CHANNEL_SETTLES: [&str; 21] = [
     "plan_restore",
     "restore",
     "backfill_dupe_norms",
+    "backfill_tag_sources",
 ];
 
 const PROJECTING_OPS: [&str; 11] =

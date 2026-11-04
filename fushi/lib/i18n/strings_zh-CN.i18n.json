@@ -8184,6 +8184,8 @@
   "srs_review_layout_volume": "音频音量",
   "srs_review_layout_volume_hint": "卡面音频的音量，点播和自动播放都按它",
   "srs_review_pending_decision": "待你决定",
+  "srs_review_rated": "已评：${rating}",
+  "srs_review_rated_interval": "已评：${rating} · ${interval}后到期",
   "srs_review_replay_audio": "重播音频",
   "srs_review_rwkv_pending": "RWKV 还没准备好。RWKV 牌组的复习卡等它就绪后再出。",
   "srs_review_show_answer": "显示答案",
