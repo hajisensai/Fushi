@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use aes::cipher::{block_padding, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit};
+use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, block_padding};
 use data_encoding::{BASE64, HEXLOWER_PERMISSIVE};
 use hmac::{Hmac, Mac};
 use md5::Md5;
@@ -15,7 +15,7 @@ use rquickjs::{Ctx, Function, Object, Result, TypedArray, Value};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
-use crate::plugin::runtime::{settle, throw, Gate, API_VERSION};
+use crate::plugin::runtime::{API_VERSION, Gate, settle, throw};
 
 fn bytes_of(ctx: &Ctx<'_>, v: &Value<'_>) -> Result<Vec<u8>> {
     if let Some(s) = v.as_string() {
@@ -23,7 +23,9 @@ fn bytes_of(ctx: &Ctx<'_>, v: &Value<'_>) -> Result<Vec<u8>> {
     }
     if let Some(arr) = v.as_object().and_then(|o| o.as_typed_array::<u8>()) {
         // SAFETY: 立即拷出，期间不执行任何 JS，缓冲区不会被分离或缩小。
-        return Ok(unsafe { arr.as_bytes() }.map(<[u8]>::to_vec).unwrap_or_default());
+        return Ok(unsafe { arr.as_bytes() }
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default());
     }
     Err(throw(ctx, "期望 Uint8Array 或字符串"))
 }
@@ -80,32 +82,43 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, gate: Arc<Gate>) -> Result<Object<'js
         let gate = gate.clone();
         n.set(
             "compile",
-            Function::new(ctx.clone(), move |ctx: Ctx<'js>, path: String| -> Result<Value<'js>> {
-                let Some(src) = gate.sources.get(&path) else {
-                    return Ok(Value::new_undefined(ctx.clone()));
-                };
-                // 包成函数再求值：模块作用域隔离，`module` / `exports` / `require` 是形参。
-                let wrapped = format!("(function (module, exports, require) {{\n{src}\n}})");
-                ctx.eval::<Value, _>(wrapped)
-            })?,
+            Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>, path: String| -> Result<Value<'js>> {
+                    let Some(src) = gate.sources.get(&path) else {
+                        return Ok(Value::new_undefined(ctx.clone()));
+                    };
+                    // 包成函数再求值：模块作用域隔离，`module` / `exports` / `require` 是形参。
+                    let wrapped = format!("(function (module, exports, require) {{\n{src}\n}})");
+                    ctx.eval::<Value, _>(wrapped)
+                },
+            )?,
         )?;
     }
 
     n.set(
         "utf8Encode",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: String| u8a(&ctx, s.into_bytes()))?,
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, s: String| {
+            u8a(&ctx, s.into_bytes())
+        })?,
     )?;
     n.set(
         "utf8Decode",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, v: Value<'js>| -> Result<String> {
-            Ok(String::from_utf8_lossy(&bytes_of(&ctx, &v)?).into_owned())
-        })?,
+        Function::new(
+            ctx.clone(),
+            |ctx: Ctx<'js>, v: Value<'js>| -> Result<String> {
+                Ok(String::from_utf8_lossy(&bytes_of(&ctx, &v)?).into_owned())
+            },
+        )?,
     )?;
     n.set(
         "b64Encode",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, v: Value<'js>| -> Result<String> {
-            Ok(BASE64.encode(&bytes_of(&ctx, &v)?))
-        })?,
+        Function::new(
+            ctx.clone(),
+            |ctx: Ctx<'js>, v: Value<'js>| -> Result<String> {
+                Ok(BASE64.encode(&bytes_of(&ctx, &v)?))
+            },
+        )?,
     )?;
     n.set(
         "b64Decode",
@@ -119,9 +132,12 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, gate: Arc<Gate>) -> Result<Object<'js
     )?;
     n.set(
         "hexEncode",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, v: Value<'js>| -> Result<String> {
-            Ok(data_encoding::HEXLOWER.encode(&bytes_of(&ctx, &v)?))
-        })?,
+        Function::new(
+            ctx.clone(),
+            |ctx: Ctx<'js>, v: Value<'js>| -> Result<String> {
+                Ok(data_encoding::HEXLOWER.encode(&bytes_of(&ctx, &v)?))
+            },
+        )?,
     )?;
     n.set(
         "hexDecode",
@@ -275,9 +291,15 @@ pub(crate) fn aes_op(
 }
 
 /// 无填充 RSA：`data^e mod n`，结果左补零到模长。
-pub(crate) fn rsa_raw(modulus_hex: &str, exponent_hex: &str, data: &[u8]) -> std::result::Result<Vec<u8>, String> {
-    let n = BigUint::parse_bytes(modulus_hex.trim().as_bytes(), 16).ok_or("modulus 不是十六进制")?;
-    let e = BigUint::parse_bytes(exponent_hex.trim().as_bytes(), 16).ok_or("exponent 不是十六进制")?;
+pub(crate) fn rsa_raw(
+    modulus_hex: &str,
+    exponent_hex: &str,
+    data: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    let n =
+        BigUint::parse_bytes(modulus_hex.trim().as_bytes(), 16).ok_or("modulus 不是十六进制")?;
+    let e =
+        BigUint::parse_bytes(exponent_hex.trim().as_bytes(), 16).ok_or("exponent 不是十六进制")?;
     if n.bits() < 64 || n.bits() > 8192 {
         return Err("modulus 长度不合理".into());
     }
@@ -304,15 +326,27 @@ mod tests {
     #[test]
     fn aes_cbc_known_vector() {
         // NIST SP 800-38A F.2.1 第一块。
-        let key = HEXLOWER_PERMISSIVE.decode(b"2b7e151628aed2a6abf7158809cf4f3c").unwrap();
-        let iv = HEXLOWER_PERMISSIVE.decode(b"000102030405060708090a0b0c0d0e0f").unwrap();
-        let pt = HEXLOWER_PERMISSIVE.decode(b"6bc1bee22e409f96e93d7e117393172a").unwrap();
+        let key = HEXLOWER_PERMISSIVE
+            .decode(b"2b7e151628aed2a6abf7158809cf4f3c")
+            .unwrap();
+        let iv = HEXLOWER_PERMISSIVE
+            .decode(b"000102030405060708090a0b0c0d0e0f")
+            .unwrap();
+        let pt = HEXLOWER_PERMISSIVE
+            .decode(b"6bc1bee22e409f96e93d7e117393172a")
+            .unwrap();
         let ct = aes_op("cbc", false, &key, &iv, &pt, false).unwrap();
-        assert_eq!(data_encoding::HEXLOWER.encode(&ct), "7649abac8119b246cee98e9b12e9197d");
+        assert_eq!(
+            data_encoding::HEXLOWER.encode(&ct),
+            "7649abac8119b246cee98e9b12e9197d"
+        );
         assert_eq!(aes_op("cbc", true, &key, &iv, &ct, false).unwrap(), pt);
         let padded = aes_op("ecb", false, &key, &[], b"hello", true).unwrap();
         assert_eq!(padded.len(), 16);
-        assert_eq!(aes_op("ecb", true, &key, &[], &padded, true).unwrap(), b"hello");
+        assert_eq!(
+            aes_op("ecb", true, &key, &[], &padded, true).unwrap(),
+            b"hello"
+        );
         assert!(aes_op("cbc", false, &key, &[1, 2], &pt, true).is_err());
     }
 

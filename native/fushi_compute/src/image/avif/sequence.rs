@@ -18,10 +18,10 @@
 //! 轨道级变换（`tkhd` 矩阵、样本描述里的 `clap`/`irot`）；`stz2`；编辑表里的空编辑 / 起点偏移。
 //! 本仓制卡（ffmpeg `libsvtav1`，`yuv420p`）不产生这些。
 
-use super::{children, Av1Decoder, BoxHeader, Cursor, R};
-use crate::image::{resize_into, View, INTERP_AVERAGE};
+use super::{Av1Decoder, BoxHeader, Cursor, R, children};
+use crate::image::{INTERP_AVERAGE, View, resize_into};
 use crate::status;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// 样本数上限：防恶意 `stsz` 让我们分配海量表项（动图卡片几十帧，正常编码器远低于此）。
 const MAX_SAMPLES: usize = 1 << 20;

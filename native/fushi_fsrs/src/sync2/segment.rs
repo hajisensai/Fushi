@@ -20,12 +20,12 @@
 
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::codec::{DResult, DecodeError, Reader, StreamError, Writer, ZstdWindow};
 use super::hlc::Hlc;
 use super::id::Id;
-use super::keys::{verify, CollectionKey, DeviceKey};
+use super::keys::{CollectionKey, DeviceKey, verify};
 use super::op::Op;
 use super::vv::{OpId, Vv};
 
@@ -148,7 +148,15 @@ impl SegmentHeader {
         }
         let prev_chain: Chain = r.raw(32)?.try_into().map_err(|_| DecodeError("chain"))?;
         let last_chain: Chain = r.raw(32)?.try_into().map_err(|_| DecodeError("chain"))?;
-        Ok(SegmentHeader { encrypted: flags & 1 != 0, collection, device, first, last, prev_chain, last_chain })
+        Ok(SegmentHeader {
+            encrypted: flags & 1 != 0,
+            collection,
+            device,
+            first,
+            last,
+            prev_chain,
+            last_chain,
+        })
     }
 
     /// 文件名（设计 §6.1）。seq 补零到 12 位，按名字排序即按 seq 排序；末尾带链尾的前 8 位十六进制：
@@ -171,7 +179,11 @@ pub fn segment_file_name(first: u64, last: u64, tag: &str) -> String {
 pub fn parse_segment_file_name(name: &str) -> Option<(u64, u64, String)> {
     let rest = name.strip_prefix("seg-")?.strip_suffix(".bin")?;
     let mut it = rest.splitn(3, '-');
-    let (a, b, t) = (it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?);
+    let (a, b, t) = (
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+        it.next()?,
+    );
     (a >= 1 && b >= a && t.len() == 8).then(|| (a, b, t.to_owned()))
 }
 
@@ -208,7 +220,14 @@ fn write_body(ops: &[Op]) -> Vec<u8> {
 }
 
 /// 解一条操作（段体里的第 [i] 条；前一条的 wall / deps 是 [prev_wall] / [prev_deps]）。
-fn read_op(r: &mut Reader<'_>, device: Id, seq: u64, i: u64, prev_wall: i64, prev_deps: &Arc<Vv>) -> DResult<Op> {
+fn read_op(
+    r: &mut Reader<'_>,
+    device: Id,
+    seq: u64,
+    i: u64,
+    prev_wall: i64,
+    prev_deps: &Arc<Vv>,
+) -> DResult<Op> {
     let wall = prev_wall.wrapping_add(r.iv()?);
     let logical = u32::try_from(r.uv()?).map_err(|_| DecodeError("hlc logical"))?;
     let deps = match r.u8()? {
@@ -227,7 +246,19 @@ fn read_op(r: &mut Reader<'_>, device: Id, seq: u64, i: u64, prev_wall: i64, pre
     let purged = r.bool()?;
     let payload: Arc<[u8]> = r.bytes()?.into();
     super::op::check_skeleton(purged, &payload)?;
-    Ok(Op { id: OpId { device, seq }, hlc: Hlc { wall, logical, device }, deps, kind, schema, payload, purged })
+    Ok(Op {
+        id: OpId { device, seq },
+        hlc: Hlc {
+            wall,
+            logical,
+            device,
+        },
+        deps,
+        kind,
+        schema,
+        payload,
+        purged,
+    })
 }
 
 impl From<StreamError> for SegmentError {
@@ -284,8 +315,16 @@ impl<'s> OpStream<'s> {
             }
             return Ok(None);
         }
-        let (device, seq, i, wall, deps) = (self.device, self.first + self.i, self.i, self.wall, self.deps.clone());
-        let op = self.window.parse(|r| read_op(r, device, seq, i, wall, &deps))?;
+        let (device, seq, i, wall, deps) = (
+            self.device,
+            self.first + self.i,
+            self.i,
+            self.wall,
+            self.deps.clone(),
+        );
+        let op = self
+            .window
+            .parse(|r| read_op(r, device, seq, i, wall, &deps))?;
         self.wall = op.hlc.wall;
         self.deps = op.deps.clone();
         self.i += 1;
@@ -394,7 +433,10 @@ fn relay_prefix(bytes: &[u8]) -> Result<(u8, &[u8], &[u8]), SegmentError> {
 }
 
 /// 转发件里的原段：`(原段完整字节, 原段体是密文时的明文压缩体)`。[key] = 转发件所在位置的密钥。
-pub fn relay_unwrap(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8>, Option<Vec<u8>>), SegmentError> {
+pub fn relay_unwrap(
+    bytes: &[u8],
+    key: Option<&CollectionKey>,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), SegmentError> {
     let (flags, aad, head) = relay_prefix(bytes)?;
     let mut r = Reader::new(&bytes[aad.len()..]);
     let inner_raw = r.bytes()?;
@@ -424,7 +466,10 @@ pub fn relay_unwrap(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8
 
 /// 一个收到的段（原段或转发件）里转发要用的部分：`(原段完整字节, 原段体是密文时的明文压缩体)`。[key] = 它所在
 /// 位置的密钥。调用方先验过签名与链。
-pub fn relay_parts(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8>, Option<Vec<u8>>), SegmentError> {
+pub fn relay_parts(
+    bytes: &[u8],
+    key: Option<&CollectionKey>,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), SegmentError> {
     if bytes.starts_with(RELAY_MAGIC) {
         return relay_unwrap(bytes, key);
     }
@@ -434,7 +479,10 @@ pub fn relay_parts(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8>
     let body = r.bytes()?;
     let plain = if header.encrypted {
         let k = key.ok_or(SegmentError::Undecryptable)?;
-        Some(k.open(body, &bytes[..head_len]).ok_or(SegmentError::Undecryptable)?)
+        Some(
+            k.open(body, &bytes[..head_len])
+                .ok_or(SegmentError::Undecryptable)?,
+        )
     } else {
         None
     };
@@ -442,7 +490,11 @@ pub fn relay_parts(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8>
 }
 
 /// 打包一个转发件（[orig] = 原段完整字节，[plain] = 原段体是密文时的明文压缩体；[key] = 目标位置的密钥）。
-pub fn relay_pack(orig: &[u8], plain: Option<&[u8]>, key: Option<&CollectionKey>) -> Result<Vec<u8>, String> {
+pub fn relay_pack(
+    orig: &[u8],
+    plain: Option<&[u8]>,
+    key: Option<&CollectionKey>,
+) -> Result<Vec<u8>, String> {
     let mut r = Reader::new(orig);
     let header = SegmentHeader::read(&mut r).map_err(|e| e.to_string())?;
     let head_len = r.pos;
@@ -555,7 +607,10 @@ pub fn open_verified<'a>(
         let header = SegmentHeader::read(&mut r)?;
         let head_len = r.pos;
         let body = r.bytes()?;
-        let sig: [u8; 64] = r.raw(64)?.try_into().map_err(|_| SegmentError::Corrupt("sig".into()))?;
+        let sig: [u8; 64] = r
+            .raw(64)?
+            .try_into()
+            .map_err(|_| SegmentError::Corrupt("sig".into()))?;
         let mut signed = blake3::Hasher::new();
         signed.update(&orig[..head_len]);
         signed.update(body);
@@ -563,17 +618,25 @@ pub fn open_verified<'a>(
             return Err(SegmentError::BadSignature);
         }
         let compressed = if header.encrypted {
-            plain.ok_or_else(|| SegmentError::Corrupt("relayed encrypted segment without its body".into()))?
+            plain.ok_or_else(|| {
+                SegmentError::Corrupt("relayed encrypted segment without its body".into())
+            })?
         } else {
             body.to_vec()
         };
-        return Ok(OpenSegment { header, compressed: std::borrow::Cow::Owned(compressed) });
+        return Ok(OpenSegment {
+            header,
+            compressed: std::borrow::Cow::Owned(compressed),
+        });
     }
     let mut r = Reader::new(bytes);
     let header = SegmentHeader::read(&mut r)?;
     let head_len = r.pos;
     let body = r.bytes()?;
-    let sig: [u8; 64] = r.raw(64)?.try_into().map_err(|_| SegmentError::Corrupt("sig".into()))?;
+    let sig: [u8; 64] = r
+        .raw(64)?
+        .try_into()
+        .map_err(|_| SegmentError::Corrupt("sig".into()))?;
     if !r.is_empty() {
         return Err(SegmentError::Corrupt("trailing bytes".into()));
     }
@@ -585,7 +648,10 @@ pub fn open_verified<'a>(
     }
     let compressed = if header.encrypted {
         let k = key.ok_or(SegmentError::Undecryptable)?;
-        std::borrow::Cow::Owned(k.open(body, &bytes[..head_len]).ok_or(SegmentError::Undecryptable)?)
+        std::borrow::Cow::Owned(
+            k.open(body, &bytes[..head_len])
+                .ok_or(SegmentError::Undecryptable)?,
+        )
     } else {
         std::borrow::Cow::Borrowed(body)
     };
@@ -594,10 +660,17 @@ pub fn open_verified<'a>(
 
 /// 校验并整段解开（签名 → 解密 → 解压 → 解码 → 重算链），操作全部放进内存。只给测试这类已知小段的场合；
 /// 收段走 [open_verified] + [OpenSegment::verify]，按块处理。
-pub fn open(bytes: &[u8], public: &[u8; 32], key: Option<&CollectionKey>) -> Result<Segment, SegmentError> {
+pub fn open(
+    bytes: &[u8],
+    public: &[u8; 32],
+    key: Option<&CollectionKey>,
+) -> Result<Segment, SegmentError> {
     let seg = open_verified(bytes, public, key)?;
     let ops = seg.verify()?.collect::<Result<Vec<Op>, SegmentError>>()?;
-    Ok(Segment { header: seg.header, ops })
+    Ok(Segment {
+        header: seg.header,
+        ops,
+    })
 }
 
 /// 一组操作打成段体后压缩出来的字节数（不含段头、签名、加密开销，那些是每段几十字节的常数）。
@@ -628,7 +701,9 @@ impl Splitter {
 
     pub fn push(&mut self, op: Op) {
         let raw = op.payload.len() + 24;
-        if !self.chunk.is_empty() && (self.chunk.len() >= CHUNK_OPS || self.chunk_raw + raw > CHUNK_RAW) {
+        if !self.chunk.is_empty()
+            && (self.chunk.len() >= CHUNK_OPS || self.chunk_raw + raw > CHUNK_RAW)
+        {
             self.flush_chunk();
         }
         self.chunk_raw += raw;
@@ -636,7 +711,9 @@ impl Splitter {
     }
 
     fn flush_chunk(&mut self) {
-        let (Some(head), Some(tail)) = (self.chunk.first(), self.chunk.last()) else { return };
+        let (Some(head), Some(tail)) = (self.chunk.first(), self.chunk.last()) else {
+            return;
+        };
         let (first, last, n) = (head.id.seq, tail.id.seq, self.chunk.len() as u64);
         let bytes = compressed_len(&self.chunk);
         let raw = self.chunk_raw as u64;
@@ -747,13 +824,20 @@ impl Head {
 
     /// head 引用的段文件名。
     pub fn segment_files(&self) -> Vec<String> {
-        self.segments.iter().map(|(a, b, t)| segment_file_name(*a, *b, t)).collect()
+        self.segments
+            .iter()
+            .map(|(a, b, t)| segment_file_name(*a, *b, t))
+            .collect()
     }
 
     /// 签名覆盖的规范 JSON（键序固定）。
     fn unsigned_json(&self) -> Value {
-        let ack: serde_json::Map<String, Value> =
-            self.ack.0.iter().map(|(d, s)| (d.text(), json!(s))).collect();
+        let ack: serde_json::Map<String, Value> = self
+            .ack
+            .0
+            .iter()
+            .map(|(d, s)| (d.text(), json!(s)))
+            .collect();
         json!({
             "gen": self.gen,
             "v": self.protocol,
@@ -811,18 +895,46 @@ impl Head {
     /// 解析并验签（用 head 自带的公钥；公钥是否可信由调用方对照设备表判定，设计 §9）。
     pub fn decode(bytes: &[u8]) -> Result<Head, String> {
         let v: Value = serde_json::from_slice(bytes).map_err(|e| format!("bad head: {e}"))?;
-        let s = |k: &str| v.get(k).and_then(Value::as_str).ok_or_else(|| format!("head: missing {k}"));
-        let u = |k: &str| v.get(k).and_then(Value::as_u64).ok_or_else(|| format!("head: missing {k}"));
-        let id = |k: &str| -> Result<Id, String> { Id::parse(s(k)?).ok_or_else(|| format!("head: bad {k}")) };
+        let s = |k: &str| {
+            v.get(k)
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("head: missing {k}"))
+        };
+        let u = |k: &str| {
+            v.get(k)
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("head: missing {k}"))
+        };
+        let id = |k: &str| -> Result<Id, String> {
+            Id::parse(s(k)?).ok_or_else(|| format!("head: bad {k}"))
+        };
         let mut segments = Vec::new();
-        for x in v.get("segments").and_then(Value::as_array).ok_or("head: missing segments")? {
-            let a = x.get(0).and_then(Value::as_u64).ok_or("head: bad segment")?;
-            let b = x.get(1).and_then(Value::as_u64).ok_or("head: bad segment")?;
-            let t = x.get(2).and_then(Value::as_str).filter(|t| t.len() == 8).ok_or("head: bad segment")?;
+        for x in v
+            .get("segments")
+            .and_then(Value::as_array)
+            .ok_or("head: missing segments")?
+        {
+            let a = x
+                .get(0)
+                .and_then(Value::as_u64)
+                .ok_or("head: bad segment")?;
+            let b = x
+                .get(1)
+                .and_then(Value::as_u64)
+                .ok_or("head: bad segment")?;
+            let t = x
+                .get(2)
+                .and_then(Value::as_str)
+                .filter(|t| t.len() == 8)
+                .ok_or("head: bad segment")?;
             segments.push((a, b, t.to_owned()));
         }
         let mut ack = Vv::new();
-        for (k, x) in v.get("ack").and_then(Value::as_object).ok_or("head: missing ack")? {
+        for (k, x) in v
+            .get("ack")
+            .and_then(Value::as_object)
+            .ok_or("head: missing ack")?
+        {
             let d = Id::parse(k).ok_or("head: bad ack device")?;
             ack.set(d, x.as_u64().ok_or("head: bad ack seq")?);
         }
@@ -838,7 +950,10 @@ impl Head {
             segments,
             ack,
             digest: s("digest")?.to_owned(),
-            at_ms: v.get("at").and_then(Value::as_i64).ok_or("head: missing at")?,
+            at_ms: v
+                .get("at")
+                .and_then(Value::as_i64)
+                .ok_or("head: missing at")?,
             name: s("name")?.to_owned(),
             ext: None,
         };
@@ -906,11 +1021,20 @@ pub(crate) mod tests {
         (1..=n)
             .map(|seq| Op {
                 id: OpId { device, seq },
-                hlc: Hlc { wall: 1_000 + seq as i64, logical: 0, device },
+                hlc: Hlc {
+                    wall: 1_000 + seq as i64,
+                    logical: 0,
+                    device,
+                },
                 deps: deps.clone(),
                 kind: crate::sync2::op::KIND_TAG_ADD,
                 schema: SCHEMA,
-                payload: Body::TagAdd { note: Key::of("n"), tag: format!("t{seq}") }.encode().into(),
+                payload: Body::TagAdd {
+                    note: Key::of("n"),
+                    tag: format!("t{seq}"),
+                }
+                .encode()
+                .into(),
                 purged: false,
             })
             .collect()
@@ -948,7 +1072,11 @@ pub(crate) mod tests {
         (1..=n)
             .map(|seq| Op {
                 id: OpId { device, seq },
-                hlc: Hlc { wall: seq as i64, logical: 0, device },
+                hlc: Hlc {
+                    wall: seq as i64,
+                    logical: 0,
+                    device,
+                },
                 deps: deps.clone(),
                 kind: 9999,
                 schema: crate::sync2::op::SCHEMA,
@@ -963,7 +1091,8 @@ pub(crate) mod tests {
         let mut hw = Writer::new();
         header.write(&mut hw);
         let head_bytes = hw.into_vec();
-        let body = ruzstd::encoding::compress_to_vec(plain, ruzstd::encoding::CompressionLevel::Fastest);
+        let body =
+            ruzstd::encoding::compress_to_vec(plain, ruzstd::encoding::CompressionLevel::Fastest);
         let mut signed = blake3::Hasher::new();
         signed.update(&head_bytes);
         signed.update(&body);
@@ -993,7 +1122,11 @@ pub(crate) mod tests {
             assert_eq!(op.unwrap(), ops[n]);
             n += 1;
             // 窗口只需装下一条（100 KB）：远小于整段明文。
-            assert!(stream.window.window_capacity() <= 512 * 1024, "window grew to {}", stream.window.window_capacity());
+            assert!(
+                stream.window.window_capacity() <= 512 * 1024,
+                "window grew to {}",
+                stream.window.window_capacity()
+            );
         }
         assert_eq!(n, ops.len());
         // 小段校验那一遍就整段留下。
@@ -1025,14 +1158,32 @@ pub(crate) mod tests {
         let mut plain = write_body(&ops);
         plain.push(0);
         let bytes = sign_raw(&header, &plain, &signer);
-        assert!(matches!(open(&bytes, &signer.public(), None), Err(SegmentError::Corrupt(_))));
+        assert!(matches!(
+            open(&bytes, &signer.public(), None),
+            Err(SegmentError::Corrupt(_))
+        ));
         let bytes = sign_raw(&header, &write_body(&ops[..399]), &signer);
-        assert!(matches!(open(&bytes, &signer.public(), None), Err(SegmentError::Corrupt(_))));
+        assert!(matches!(
+            open(&bytes, &signer.public(), None),
+            Err(SegmentError::Corrupt(_))
+        ));
         let mut cut = write_body(&ops);
         cut.truncate(cut.len() - 10);
         let bytes = sign_raw(&header, &cut, &signer);
-        assert!(matches!(open(&bytes, &signer.public(), None), Err(SegmentError::Corrupt(_))));
-        assert_eq!(open(&sign_raw(&header, &write_body(&ops), &signer), &signer.public(), None).unwrap().ops, ops);
+        assert!(matches!(
+            open(&bytes, &signer.public(), None),
+            Err(SegmentError::Corrupt(_))
+        ));
+        assert_eq!(
+            open(
+                &sign_raw(&header, &write_body(&ops), &signer),
+                &signer.public(),
+                None
+            )
+            .unwrap()
+            .ops,
+            ops
+        );
     }
 
     #[test]
@@ -1047,12 +1198,31 @@ pub(crate) mod tests {
         let mut flipped = bytes.clone();
         let mid = flipped.len() / 2;
         flipped[mid] ^= 1;
-        assert_eq!(open(&flipped, &signer.public(), None).unwrap_err(), SegmentError::BadSignature);
+        assert_eq!(
+            open(&flipped, &signer.public(), None).unwrap_err(),
+            SegmentError::BadSignature
+        );
         let other = DeviceKey::generate();
-        assert_eq!(open(&bytes, &other.public(), None).unwrap_err(), SegmentError::BadSignature);
-        let (_, enc) = pack(Id::ZERO, &ops, CHAIN_ZERO, &signer, Some(&CollectionKey([1; 32]))).unwrap();
-        assert_eq!(open(&enc, &signer.public(), None).unwrap_err(), SegmentError::Undecryptable);
-        assert_eq!(open(&enc, &signer.public(), Some(&CollectionKey([2; 32]))).unwrap_err(), SegmentError::Undecryptable);
+        assert_eq!(
+            open(&bytes, &other.public(), None).unwrap_err(),
+            SegmentError::BadSignature
+        );
+        let (_, enc) = pack(
+            Id::ZERO,
+            &ops,
+            CHAIN_ZERO,
+            &signer,
+            Some(&CollectionKey([1; 32])),
+        )
+        .unwrap();
+        assert_eq!(
+            open(&enc, &signer.public(), None).unwrap_err(),
+            SegmentError::Undecryptable
+        );
+        assert_eq!(
+            open(&enc, &signer.public(), Some(&CollectionKey([2; 32]))).unwrap_err(),
+            SegmentError::Undecryptable
+        );
     }
 
     #[test]
@@ -1079,7 +1249,9 @@ pub(crate) mod tests {
         let bytes = head.encode(&signer);
         assert_eq!(Head::decode(&bytes).unwrap(), head);
         assert!(!String::from_utf8(bytes.clone()).unwrap().contains("ext"));
-        let tampered = String::from_utf8(bytes).unwrap().replace("\"seq\":30", "\"seq\":31");
+        let tampered = String::from_utf8(bytes)
+            .unwrap()
+            .replace("\"seq\":30", "\"seq\":31");
         assert!(Head::decode(tampered.as_bytes()).is_err());
     }
 
@@ -1109,28 +1281,52 @@ pub(crate) mod tests {
         // 老读者的验签：只取固定字段重建原文（= 不认识 ext / extSig）。
         let v: Value = serde_json::from_slice(&bytes).unwrap();
         let sig = unhex::<64>(v["sig"].as_str().unwrap()).unwrap();
-        let old_view = Head { ext: None, ..head.clone() };
-        assert!(verify(&head.public, &old_view.signed_bytes(), &sig), "old readers must still accept the head");
+        let old_view = Head {
+            ext: None,
+            ..head.clone()
+        };
+        assert!(
+            verify(&head.public, &old_view.signed_bytes(), &sig),
+            "old readers must still accept the head"
+        );
         // 改扩展：扩展丢掉，head 照收。
-        let tampered = String::from_utf8(bytes.clone()).unwrap().replace("\"3.3\"", "\"9.9\"");
+        let tampered = String::from_utf8(bytes.clone())
+            .unwrap()
+            .replace("\"3.3\"", "\"9.9\"");
         let got = Head::decode(tampered.as_bytes()).unwrap();
         assert_eq!(got.ext, None);
         assert_eq!(got.name, "iPhone 17");
         // 扩展签名绑在这一代 head 上：换到另一代（主签名重签）的扩展签名不认。
-        let other = Head { gen: 3, ..head.clone() }.encode(&signer);
+        let other = Head {
+            gen: 3,
+            ..head.clone()
+        }
+        .encode(&signer);
         let mut ov: Value = serde_json::from_slice(&other).unwrap();
         ov["extSig"] = v["extSig"].clone();
-        assert_eq!(Head::decode(&serde_json::to_vec(&ov).unwrap()).unwrap().ext, None);
+        assert_eq!(
+            Head::decode(&serde_json::to_vec(&ov).unwrap()).unwrap().ext,
+            None
+        );
         // 内容签名随扩展变（改名 / 升版本要触发重写 head）。
-        let bumped = Head { ext: Some(json!({"model": "iPhone 17", "app": "3.4", "platform": "ios"})), ..head.clone() };
+        let bumped = Head {
+            ext: Some(json!({"model": "iPhone 17", "app": "3.4", "platform": "ios"})),
+            ..head.clone()
+        };
         assert_ne!(head.content_sig(), bumped.content_sig());
     }
 
     #[test]
     fn file_names_sort_by_seq() {
-        assert_eq!(parse_segment_file_name(&segment_file_name(3, 2000, "0a1b2c3d")), Some((3, 2000, "0a1b2c3d".into())));
+        assert_eq!(
+            parse_segment_file_name(&segment_file_name(3, 2000, "0a1b2c3d")),
+            Some((3, 2000, "0a1b2c3d".into()))
+        );
         assert!(segment_file_name(9, 9, "ffffffff") < segment_file_name(10, 10, "00000000"));
-        assert_eq!(parse_head_file_name(&head_file_name(42, "0a1b2c3d")), Some(42));
+        assert_eq!(
+            parse_head_file_name(&head_file_name(42, "0a1b2c3d")),
+            Some(42)
+        );
         assert_eq!(parse_segment_file_name("seg-1-0-00000000.bin"), None);
     }
 
@@ -1163,7 +1359,11 @@ pub(crate) mod tests {
                     .collect();
                 Op {
                     id: OpId { device: dev, seq },
-                    hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+                    hlc: Hlc {
+                        wall: seq as i64,
+                        logical: 0,
+                        device: dev,
+                    },
                     deps: deps.clone(),
                     kind: 9999,
                     schema: SCHEMA,
@@ -1178,8 +1378,19 @@ pub(crate) mod tests {
         for &(a, b, bytes) in &r {
             assert_eq!(a, next);
             assert!(bytes <= SEGMENT_TARGET_BYTES, "{bytes}");
-            let (_, packed) = pack(Id::ZERO, &ops[(a - 1) as usize..b as usize], CHAIN_ZERO, &DeviceKey::generate(), None).unwrap();
-            assert!((packed.len() as u64) < SEGMENT_TARGET_BYTES + 4096, "{}", packed.len());
+            let (_, packed) = pack(
+                Id::ZERO,
+                &ops[(a - 1) as usize..b as usize],
+                CHAIN_ZERO,
+                &DeviceKey::generate(),
+                None,
+            )
+            .unwrap();
+            assert!(
+                (packed.len() as u64) < SEGMENT_TARGET_BYTES + 4096,
+                "{}",
+                packed.len()
+            );
             next = b + 1;
         }
         assert_eq!(next, 201);
@@ -1193,7 +1404,11 @@ pub(crate) mod tests {
         let ops: Vec<Op> = (1..=400u64)
             .map(|seq| Op {
                 id: OpId { device: dev, seq },
-                hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+                hlc: Hlc {
+                    wall: seq as i64,
+                    logical: 0,
+                    device: dev,
+                },
                 deps: deps.clone(),
                 kind: 9999,
                 schema: SCHEMA,
@@ -1206,12 +1421,29 @@ pub(crate) mod tests {
         let mut next = 1;
         for &(a, b, bytes) in &r {
             assert_eq!(a, next);
-            let raw: u64 = ops[(a - 1) as usize..b as usize].iter().map(|o| o.payload.len() as u64 + 24).sum();
+            let raw: u64 = ops[(a - 1) as usize..b as usize]
+                .iter()
+                .map(|o| o.payload.len() as u64 + 24)
+                .sum();
             assert!(raw <= SEGMENT_MAX_RAW_BYTES, "{raw}");
-            let (_, packed) = pack(Id::ZERO, &ops[(a - 1) as usize..b as usize], CHAIN_ZERO, &DeviceKey::generate(), None).unwrap();
-            assert!((packed.len() as u64) < SEGMENT_TARGET_BYTES / 8, "压缩后确实很小：{}", packed.len());
+            let (_, packed) = pack(
+                Id::ZERO,
+                &ops[(a - 1) as usize..b as usize],
+                CHAIN_ZERO,
+                &DeviceKey::generate(),
+                None,
+            )
+            .unwrap();
+            assert!(
+                (packed.len() as u64) < SEGMENT_TARGET_BYTES / 8,
+                "压缩后确实很小：{}",
+                packed.len()
+            );
             if raw >= SEGMENT_MAX_RAW_BYTES / 2 {
-                assert!(bytes >= SEGMENT_TARGET_BYTES / 2, "解压后过半的段按满段记，分层合并不再挑它：{bytes}");
+                assert!(
+                    bytes >= SEGMENT_TARGET_BYTES / 2,
+                    "解压后过半的段按满段记，分层合并不再挑它：{bytes}"
+                );
             }
             next = b + 1;
         }
@@ -1223,13 +1455,15 @@ pub(crate) mod tests {
 mod size_tests {
     use super::*;
     use crate::sync2::id::Key;
-    use crate::sync2::op::{tests::sample_log, Body, KIND_LOG, SCHEMA};
+    use crate::sync2::op::{Body, KIND_LOG, SCHEMA, tests::sample_log};
 
     /// 设计 §3.3 / §7.1 的体积量级：一段 2000 条真实形状的复习，压缩后平均每条在 40 字节以内。
     /// [n] 条真实形状的复习（300 张卡轮转）。
     fn sample_reviews(dev: Id, n: u64) -> Vec<Op> {
         let deps = Arc::new(Vv::new());
-        let cards: Vec<Id> = (0..300).map(|i| Id::new_v7(1_600_000_000_000 + i)).collect();
+        let cards: Vec<Id> = (0..300)
+            .map(|i| Id::new_v7(1_600_000_000_000 + i))
+            .collect();
         (1..=n)
             .map(|seq| {
                 let at = 1_700_000_000_000 + seq as i64 * 9_000;
@@ -1243,7 +1477,11 @@ mod size_tests {
                 };
                 Op {
                     id: OpId { device: dev, seq },
-                    hlc: Hlc { wall: at, logical: 0, device: dev },
+                    hlc: Hlc {
+                        wall: at,
+                        logical: 0,
+                        device: dev,
+                    },
                     deps: deps.clone(),
                     kind: KIND_LOG,
                     schema: SCHEMA,
@@ -1268,9 +1506,16 @@ mod size_tests {
             assert_eq!(back.ops, ops);
         }
         let raw = write_body(&ops);
-        let fastest = ruzstd::encoding::compress_to_vec(&raw[..], ruzstd::encoding::CompressionLevel::Fastest).len();
+        let fastest = ruzstd::encoding::compress_to_vec(
+            &raw[..],
+            ruzstd::encoding::CompressionLevel::Fastest,
+        )
+        .len();
         let now = compressed_len(&ops) as usize;
-        assert!(now < fastest, "level {SEGMENT_ZSTD_LEVEL}: {now} bytes vs ruzstd fastest {fastest}");
+        assert!(
+            now < fastest,
+            "level {SEGMENT_ZSTD_LEVEL}: {now} bytes vs ruzstd fastest {fastest}"
+        );
         let mut plain = Vec::new();
         let frame = compress_body(&raw).unwrap();
         let mut d = ruzstd::decoding::StreamingDecoder::new(&frame[..]).unwrap();
@@ -1282,7 +1527,9 @@ mod size_tests {
     fn reviews_compress_to_tens_of_bytes_each() {
         let dev = Id::new_v7(1_700_000_000_000);
         let deps = Arc::new(Vv::new());
-        let cards: Vec<Id> = (0..300).map(|i| Id::new_v7(1_600_000_000_000 + i)).collect();
+        let cards: Vec<Id> = (0..300)
+            .map(|i| Id::new_v7(1_600_000_000_000 + i))
+            .collect();
         let ops: Vec<Op> = (1..=2000u64)
             .map(|seq| {
                 let at = 1_700_000_000_000 + seq as i64 * 9_000;
@@ -1296,7 +1543,11 @@ mod size_tests {
                 };
                 Op {
                     id: OpId { device: dev, seq },
-                    hlc: Hlc { wall: at, logical: 0, device: dev },
+                    hlc: Hlc {
+                        wall: at,
+                        logical: 0,
+                        device: dev,
+                    },
                     deps: deps.clone(),
                     kind: KIND_LOG,
                     schema: SCHEMA,
@@ -1310,7 +1561,11 @@ mod size_tests {
         assert!(per <= 40, "{per} bytes per review after compression");
         // 体积估计（小块各自压缩之和）是上界，且不离谱。
         let est = compressed_len(&ops);
-        assert!(est as usize + 512 >= bytes.len() && (est as usize) < bytes.len() * 2, "{est} vs {}", bytes.len());
+        assert!(
+            est as usize + 512 >= bytes.len() && (est as usize) < bytes.len() * 2,
+            "{est} vs {}",
+            bytes.len()
+        );
     }
 
     /// 首次提交的量级：20 万条复习切出来只有几段（旧上限 64 KB / 2000 条时是上百段），每段都在目标以内。
@@ -1318,7 +1573,9 @@ mod size_tests {
     fn a_large_first_commit_is_a_handful_of_segments() {
         let dev = Id::new_v7(1_700_000_000_000);
         let deps = Arc::new(Vv::new());
-        let cards: Vec<Id> = (0..5000).map(|i| Id::new_v7(1_600_000_000_000 + i)).collect();
+        let cards: Vec<Id> = (0..5000)
+            .map(|i| Id::new_v7(1_600_000_000_000 + i))
+            .collect();
         let mut s = Splitter::new();
         let n = 200_000u64;
         for seq in 1..=n {
@@ -1333,7 +1590,11 @@ mod size_tests {
             };
             s.push(Op {
                 id: OpId { device: dev, seq },
-                hlc: Hlc { wall: at, logical: 0, device: dev },
+                hlc: Hlc {
+                    wall: at,
+                    logical: 0,
+                    device: dev,
+                },
                 deps: deps.clone(),
                 kind: KIND_LOG,
                 schema: SCHEMA,

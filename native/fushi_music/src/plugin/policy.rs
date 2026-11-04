@@ -24,7 +24,9 @@ pub fn validate_domain_rule(rule: &str) -> Result<(), String> {
     if ok {
         Ok(())
     } else {
-        Err(format!("域名规则不合法：{rule:?}（小写主机名，或 *.主机名）"))
+        Err(format!(
+            "域名规则不合法：{rule:?}（小写主机名，或 *.主机名）"
+        ))
     }
 }
 
@@ -101,9 +103,11 @@ impl Policy {
 
 fn rule_matches(rule: &str, host: &str) -> bool {
     match rule.strip_prefix("*.") {
-        Some(suffix) => host.len() > suffix.len() + 1
-            && host.ends_with(suffix)
-            && host.as_bytes()[host.len() - suffix.len() - 1] == b'.',
+        Some(suffix) => {
+            host.len() > suffix.len() + 1
+                && host.ends_with(suffix)
+                && host.as_bytes()[host.len() - suffix.len() - 1] == b'.'
+        }
         None => rule == host,
     }
 }
@@ -116,7 +120,9 @@ fn rule_matches(rule: &str, host: &str) -> bool {
 /// 假地址池）；Dart 侧核对的是 DNS 解析结果，那一段在 fake-ip 下是所有公网域名的解析值，不拦。
 pub fn check_ip(ip: IpAddr) -> Result<(), String> {
     let private = match ip {
-        IpAddr::V4(v4) => is_private_v4(v4) || (v4.octets()[0] == 198 && (v4.octets()[1] & 0xfe) == 18),
+        IpAddr::V4(v4) => {
+            is_private_v4(v4) || (v4.octets()[0] == 198 && (v4.octets()[1] & 0xfe) == 18)
+        }
         IpAddr::V6(v6) => is_private_v6(v6),
     };
     if private {
@@ -128,7 +134,8 @@ pub fn check_ip(ip: IpAddr) -> Result<(), String> {
 
 fn is_private_v6(v6: Ipv6Addr) -> bool {
     let s = v6.segments();
-    let embedded = |hi: u16, lo: u16| is_private_v4(Ipv4Addr::from(((hi as u32) << 16) | lo as u32));
+    let embedded =
+        |hi: u16, lo: u16| is_private_v4(Ipv4Addr::from(((hi as u32) << 16) | lo as u32));
     if s[..6] == [0; 6] {
         // ::、::1、IPv4-compatible ::a.b.c.d
         return (s[6] == 0 && s[7] <= 1) || embedded(s[6], s[7]);
@@ -181,40 +188,94 @@ mod tests {
     #[test]
     fn matches_rules() {
         let p = policy(false);
-        assert!(p.check_url("https://api.example.com/x?y=1", Purpose::Request).is_ok());
-        assert!(p.check_url("https://API.example.com/x", Purpose::Request).is_ok());
-        assert!(p.check_url("https://a.b.cdn.example.com/x", Purpose::Media).is_ok());
-        assert!(p.check_url("https://cdn.example.com/x", Purpose::Media).is_err());
-        assert!(p.check_url("https://evilcdn.example.com/x", Purpose::Media).is_err());
-        assert!(p.check_url("https://api.example.com.evil.net/", Purpose::Request).is_err());
+        assert!(
+            p.check_url("https://api.example.com/x?y=1", Purpose::Request)
+                .is_ok()
+        );
+        assert!(
+            p.check_url("https://API.example.com/x", Purpose::Request)
+                .is_ok()
+        );
+        assert!(
+            p.check_url("https://a.b.cdn.example.com/x", Purpose::Media)
+                .is_ok()
+        );
+        assert!(
+            p.check_url("https://cdn.example.com/x", Purpose::Media)
+                .is_err()
+        );
+        assert!(
+            p.check_url("https://evilcdn.example.com/x", Purpose::Media)
+                .is_err()
+        );
+        assert!(
+            p.check_url("https://api.example.com.evil.net/", Purpose::Request)
+                .is_err()
+        );
         assert!(p.check_url("https://other.com/", Purpose::Request).is_err());
     }
 
     #[test]
     fn rejects_scheme_ip_userinfo() {
         let p = policy(false);
-        assert!(p.check_url("http://api.example.com/", Purpose::Request).is_err());
-        assert!(policy(true).check_url("http://api.example.com/", Purpose::Request).is_ok());
+        assert!(
+            p.check_url("http://api.example.com/", Purpose::Request)
+                .is_err()
+        );
+        assert!(
+            policy(true)
+                .check_url("http://api.example.com/", Purpose::Request)
+                .is_ok()
+        );
         assert!(p.check_url("file:///etc/passwd", Purpose::Request).is_err());
         assert!(p.check_url("https://127.0.0.1/", Purpose::Request).is_err());
         assert!(p.check_url("https://[::1]/", Purpose::Request).is_err());
-        assert!(p.check_url("https://u:p@api.example.com/", Purpose::Request).is_err());
+        assert!(
+            p.check_url("https://u:p@api.example.com/", Purpose::Request)
+                .is_err()
+        );
         assert!(p.check_method("DELETE").is_err());
         assert!(p.check_method("POST").is_ok());
     }
 
     #[test]
     fn private_ips() {
-        for ip in ["10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.1.1", "100.64.0.1", "::1", "fe80::1", "fd00::1", "::ffff:192.168.0.1"] {
-            assert!(check_ip(ip.parse().unwrap()).is_err(), "{ip}");
-        }
         for ip in [
-            "64:ff9b::a00:1", "64:ff9b:1::1", "2002:c0a8:101::1", "::a9fe:a9fe", "192.0.0.8",
-            "198.18.0.1", "198.19.255.255", "224.0.0.1", "255.255.255.255", "fec0::1", "ff02::1", "::",
+            "10.0.0.1",
+            "192.168.1.1",
+            "172.16.0.1",
+            "169.254.1.1",
+            "100.64.0.1",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            "::ffff:192.168.0.1",
         ] {
             assert!(check_ip(ip.parse().unwrap()).is_err(), "{ip}");
         }
-        for ip in ["1.1.1.1", "2606:4700::1111", "64:ff9b::808:808", "2002:808:808::1", "198.20.0.1"] {
+        for ip in [
+            "64:ff9b::a00:1",
+            "64:ff9b:1::1",
+            "2002:c0a8:101::1",
+            "::a9fe:a9fe",
+            "192.0.0.8",
+            "198.18.0.1",
+            "198.19.255.255",
+            "224.0.0.1",
+            "255.255.255.255",
+            "fec0::1",
+            "ff02::1",
+            "::",
+        ] {
+            assert!(check_ip(ip.parse().unwrap()).is_err(), "{ip}");
+        }
+        for ip in [
+            "1.1.1.1",
+            "2606:4700::1111",
+            "64:ff9b::808:808",
+            "2002:808:808::1",
+            "198.20.0.1",
+        ] {
             assert!(check_ip(ip.parse().unwrap()).is_ok(), "{ip}");
         }
     }
@@ -223,7 +284,14 @@ mod tests {
     fn domain_rule_validation() {
         assert!(validate_domain_rule("*.img.example-music.com").is_ok());
         assert!(validate_domain_rule("api.example-music.com").is_ok());
-        for bad in ["*", "*.com.", "Api.example-music.com", "localhost", "a..b", "*.*.x.com"] {
+        for bad in [
+            "*",
+            "*.com.",
+            "Api.example-music.com",
+            "localhost",
+            "a..b",
+            "*.*.x.com",
+        ] {
             assert!(validate_domain_rule(bad).is_err(), "{bad}");
         }
     }

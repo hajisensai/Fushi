@@ -21,8 +21,8 @@ use rwkv_oracle::rwkv::RwkvInference;
 use rwkv_oracle::rwkv::StatePrecision;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 type Row = [Option<i64>; 10];
 
@@ -45,7 +45,11 @@ fn review_input(row: &Row, is_query: bool) -> ReviewInput {
         deck_id: row[2],
         preset_id: row[3],
         is_query,
-        ease: if is_query { None } else { row[4].map(|e| e as u8) },
+        ease: if is_query {
+            None
+        } else {
+            row[4].map(|e| e as u8)
+        },
         duration_millis: if is_query { None } else { row[5] },
         card_type: row[6],
         day_offset: row[7],
@@ -71,13 +75,19 @@ fn run(model: &PathBuf, precision: StatePrecision, steps: &[Step]) -> Vec<Value>
                 let out = inference
                     .warm_up_reviews(inputs, *record_predictions)
                     .unwrap();
-                json!(out.into_iter().map(|(i, r)| json!([i, r])).collect::<Vec<_>>())
+                json!(
+                    out.into_iter()
+                        .map(|(i, r)| json!([i, r]))
+                        .collect::<Vec<_>>()
+                )
             }
             Step::Query { rows } => {
                 let inputs = rows.iter().map(|r| review_input(r, true)).collect();
-                json!(inference
-                    .predict_retrievability_many_from_warm_up(inputs)
-                    .unwrap())
+                json!(
+                    inference
+                        .predict_retrievability_many_from_warm_up(inputs)
+                        .unwrap()
+                )
             }
         })
         .collect()
@@ -210,8 +220,10 @@ fn simulate(
                 card_id,
                 note_id: (i % 17 != 16).then_some(1_500_000_000_000 + note_index),
                 deck_id: (i % 23 != 22).then_some(1_700_000_000_000 + deck_index),
-                preset_id: (deck_index != 4)
-                    .then_some([8_169_090_998_413_644_153_i64, 3_366_177_995_109_454_929, 1][deck_index as usize % 3]),
+                preset_id: (deck_index != 4).then_some(
+                    [8_169_090_998_413_644_153_i64, 3_366_177_995_109_454_929, 1]
+                        [deck_index as usize % 3],
+                ),
                 last_ts: None,
                 last_day: None,
                 interval: 0,
@@ -400,8 +412,7 @@ fn chunked_steps(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let model = PathBuf::from(&args[1]);
-    let py: PyGolden =
-        serde_json::from_str(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+    let py: PyGolden = serde_json::from_str(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
     let out_dir = PathBuf::from(&args[3]);
     std::fs::create_dir_all(&out_dir).unwrap();
 
@@ -456,39 +467,280 @@ fn main() {
 
     // 3. Hand-written edge cases.
     let d0 = 20_000;
-    let r = |c: i64, n: Option<i64>, d: Option<i64>, p: Option<i64>, e: Option<i64>, dur: Option<i64>, t: i64, day: i64, ed: i64, es: i64| -> Row {
-        [Some(c), n, d, p, e, dur, Some(t), Some(d0 + day), Some(ed), Some(es)]
+    let r = |c: i64,
+             n: Option<i64>,
+             d: Option<i64>,
+             p: Option<i64>,
+             e: Option<i64>,
+             dur: Option<i64>,
+             t: i64,
+             day: i64,
+             ed: i64,
+             es: i64|
+     -> Row {
+        [
+            Some(c),
+            n,
+            d,
+            p,
+            e,
+            dur,
+            Some(t),
+            Some(d0 + day),
+            Some(ed),
+            Some(es),
+        ]
     };
     let edge_warm_1 = vec![
-        r(1, Some(101), Some(11), Some(21), Some(1), Some(12_000), 0, 0, -1, -1),
-        r(1, Some(101), Some(11), Some(21), Some(3), Some(4_000), 1, 0, 0, 75),
-        r(2, Some(101), Some(11), Some(21), Some(3), Some(6_500), 0, 0, -1, -1), // sibling of card 1
-        r(3, None, Some(12), Some(21), Some(4), Some(2_000), 0, 0, -1, -1),       // no note
-        r(4, Some(104), None, None, Some(2), Some(30_000), 0, 0, -1, -1),          // no deck/preset
-        r(4, Some(104), None, None, Some(3), None, 1, 0, 0, 610),                 // no duration
-        r(5, Some(105), Some(13), Some(22), None, Some(1_000), 2, 0, 0, 30),      // rating-less: skipped
-        r(1, Some(101), Some(11), Some(21), Some(3), Some(3_100), 2, 1, 1, 86_000),
-        r(2, Some(101), Some(11), Some(21), Some(1), Some(9_000), 2, 1, 1, 86_410),
-        r(2, Some(101), Some(11), Some(21), Some(3), Some(5_000), 3, 1, 0, 420),  // relearn same day
-        r(3, None, Some(12), Some(21), Some(2), Some(7_000), 2, 4, 4, 4 * DAY + 999),
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(1),
+            Some(12_000),
+            0,
+            0,
+            -1,
+            -1,
+        ),
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(3),
+            Some(4_000),
+            1,
+            0,
+            0,
+            75,
+        ),
+        r(
+            2,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(3),
+            Some(6_500),
+            0,
+            0,
+            -1,
+            -1,
+        ), // sibling of card 1
+        r(
+            3,
+            None,
+            Some(12),
+            Some(21),
+            Some(4),
+            Some(2_000),
+            0,
+            0,
+            -1,
+            -1,
+        ), // no note
+        r(
+            4,
+            Some(104),
+            None,
+            None,
+            Some(2),
+            Some(30_000),
+            0,
+            0,
+            -1,
+            -1,
+        ), // no deck/preset
+        r(4, Some(104), None, None, Some(3), None, 1, 0, 0, 610), // no duration
+        r(
+            5,
+            Some(105),
+            Some(13),
+            Some(22),
+            None,
+            Some(1_000),
+            2,
+            0,
+            0,
+            30,
+        ), // rating-less: skipped
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(3),
+            Some(3_100),
+            2,
+            1,
+            1,
+            86_000,
+        ),
+        r(
+            2,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(1),
+            Some(9_000),
+            2,
+            1,
+            1,
+            86_410,
+        ),
+        r(
+            2,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(3),
+            Some(5_000),
+            3,
+            1,
+            0,
+            420,
+        ), // relearn same day
+        r(
+            3,
+            None,
+            Some(12),
+            Some(21),
+            Some(2),
+            Some(7_000),
+            2,
+            4,
+            4,
+            4 * DAY + 999,
+        ),
     ];
     let edge_query_1 = vec![
-        r(1, Some(101), Some(11), Some(21), None, None, 2, 5, 4, 4 * DAY + 3_600),
-        r(2, Some(101), Some(11), Some(21), None, None, 2, 5, 4, 4 * DAY + 1_234),
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            None,
+            None,
+            2,
+            5,
+            4,
+            4 * DAY + 3_600,
+        ),
+        r(
+            2,
+            Some(101),
+            Some(11),
+            Some(21),
+            None,
+            None,
+            2,
+            5,
+            4,
+            4 * DAY + 1_234,
+        ),
         r(3, None, Some(12), Some(21), None, None, 2, 5, 1, DAY + 77),
         r(4, Some(104), None, None, None, None, 2, 5, 5, 5 * DAY),
-        r(1, Some(101), Some(11), Some(21), None, None, 2, 400, 399, 399 * DAY), // same card, far future
-        r(9, Some(109), Some(11), Some(21), None, None, 0, 5, -1, -1),           // never reviewed
-        r(10, None, None, None, None, None, 0, 5, -1, -1),                        // never reviewed, no ids
-        [Some(1), Some(101), Some(11), Some(21), None, None, None, Some(d0 + 5), None, Some(4 * DAY)], // elapsed days from seconds
-        [Some(2), Some(101), Some(11), Some(21), None, None, None, Some(d0 + 5), Some(4), None],       // elapsed seconds from days
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            None,
+            None,
+            2,
+            400,
+            399,
+            399 * DAY,
+        ), // same card, far future
+        r(9, Some(109), Some(11), Some(21), None, None, 0, 5, -1, -1), // never reviewed
+        r(10, None, None, None, None, None, 0, 5, -1, -1),             // never reviewed, no ids
+        [
+            Some(1),
+            Some(101),
+            Some(11),
+            Some(21),
+            None,
+            None,
+            None,
+            Some(d0 + 5),
+            None,
+            Some(4 * DAY),
+        ], // elapsed days from seconds
+        [
+            Some(2),
+            Some(101),
+            Some(11),
+            Some(21),
+            None,
+            None,
+            None,
+            Some(d0 + 5),
+            Some(4),
+            None,
+        ], // elapsed seconds from days
     ];
     let edge_warm_2 = vec![
-        r(9, Some(109), Some(11), Some(21), Some(4), Some(1_800), 0, 5, -1, -1),
-        r(1, Some(101), Some(11), Some(21), Some(4), Some(2_200), 2, 5, 4, 4 * DAY + 3_700),
-        r(1, Some(101), Some(11), Some(21), Some(3), Some(2_000), 2, 5, 0, 300), // same-day re-review
-        r(4, Some(104), None, None, Some(1), Some(15_000), 2, 1100, 1095, 1095 * DAY + 5), // 3-year gap
-        r(4, Some(104), None, None, Some(3), Some(8_000), 3, 1100, 0, 900),
+        r(
+            9,
+            Some(109),
+            Some(11),
+            Some(21),
+            Some(4),
+            Some(1_800),
+            0,
+            5,
+            -1,
+            -1,
+        ),
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(4),
+            Some(2_200),
+            2,
+            5,
+            4,
+            4 * DAY + 3_700,
+        ),
+        r(
+            1,
+            Some(101),
+            Some(11),
+            Some(21),
+            Some(3),
+            Some(2_000),
+            2,
+            5,
+            0,
+            300,
+        ), // same-day re-review
+        r(
+            4,
+            Some(104),
+            None,
+            None,
+            Some(1),
+            Some(15_000),
+            2,
+            1100,
+            1095,
+            1095 * DAY + 5,
+        ), // 3-year gap
+        r(
+            4,
+            Some(104),
+            None,
+            None,
+            Some(3),
+            Some(8_000),
+            3,
+            1100,
+            0,
+            900,
+        ),
     ];
     let edge_query_2 = edge_query_1
         .iter()
@@ -504,9 +756,15 @@ fn main() {
         "Hand-written edge cases: siblings, missing note/deck/preset ids, missing duration, rating-less row, same-day relearn, long gaps, never-reviewed queries, elapsed derived from the other unit.",
         &model,
         vec![
-            Step::WarmUp { record_predictions: true, rows: edge_warm_1 },
+            Step::WarmUp {
+                record_predictions: true,
+                rows: edge_warm_1,
+            },
             Step::Query { rows: edge_query_1 },
-            Step::WarmUp { record_predictions: false, rows: edge_warm_2 },
+            Step::WarmUp {
+                record_predictions: false,
+                rows: edge_warm_2,
+            },
             Step::Query { rows: edge_query_2 },
         ],
         json!({}),

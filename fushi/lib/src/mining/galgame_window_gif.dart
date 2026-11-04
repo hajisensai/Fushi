@@ -116,28 +116,64 @@ Future<int> trimSurplusAnimationFrames({
   return budget;
 }
 
-Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
+/// 采样阶段的产物：已落盘、连号的 PNG 帧序列（`frame_000.png` 起）。
+///
+/// 制卡把「读窗口像素」与「ffmpeg 编码」拆成两段（反馈 U9k4hlYaNZ / EJhUrX_mHY）：
+/// 采样必须在这句台词仍在屏上时立刻做，编码（最长 60 s × 两种格式）与写卡则进后台
+/// 有序队列，不再挡住下一张卡的采样。目录归持有者所有，用完必须 [dispose]。
+class GalWindowAnimationFrames {
+  GalWindowAnimationFrames._({
+    required this.directory,
+    required this.count,
+    required this.fps,
+    required this.maxWidth,
+  });
+
+  final Directory directory;
+
+  /// 序列里的帧数（≥ 2；不足 2 帧时采样直接返回 null）。
+  final int count;
+  final int fps;
+  final int maxWidth;
+
+  /// 第一帧：采样时它就在 capture lease 之内抓取，是「这句台词当时的画面」。动图编码
+  /// 失败时拿它降级成静图，而不是到编码失败那一刻再去抓当前窗口——那时画面可能早已
+  /// 换成了别的台词。
+  File get firstFrame => File(p.join(directory.path, galAnimationFrameName(0)));
+
+  bool _disposed = false;
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      await directory.delete(recursive: true);
+    } catch (_) {}
+  }
+}
+
+/// 只做采样：连续对绑定窗口抓帧并落盘，lease 只包住采样循环。抓到 < 2 帧返回 null。
+///
+/// fail-open 语义与 [captureWindowGifBytes] 相同：除 [GalHookCaptureSuppressionException]
+/// （隐藏状态未知，必须 fail-closed）外，任何失败都返回 null，由调用方降级单帧。
+Future<GalWindowAnimationFrames?> sampleWindowAnimationFrames({
   required int hwnd,
   int frames = 10,
   int intervalMs = 120,
   int fps = 8,
   int maxWidth = 480,
-  // 动图编码格式。默认 [MiningAnimatedFormat.gif] = 旧行为逐字等价（未传的既有调用点
-  // 与测试不受影响）；真实调用点传用户偏好 `gal_mining_animated_format`。
-  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   GalHookCaptureLeaseFactory? captureLeaseFactory,
   // 本句语音时长（异步：制卡时音频与画面并行采集，资源音频立刻可知、引擎 PCM 要
   // 等整句播完）。给了就把动图抓到覆盖整句为止（上限 [kGalAnimatedMaxDuration]）；
   // null / 解析出 null 都退回 [frames] 帧的旧行为——**包括已经多抓的那些帧**，
-  // 它们在编码前被 [trimSurplusAnimationFrames] 裁掉。见 [galAnimatedFrameBudget]。
+  // 它们在返回前被 [trimSurplusAnimationFrames] 裁掉。见 [galAnimatedFrameBudget]。
   //
   // ⚠️ 已知代价：时长未定期间 capture lease 一直被持有，最坏 8 s 墙钟（旧行为固定
   // ~1.2 s）。lease 期间游戏内查词卡与高亮是隐藏的，用户会看到它消失更久。
   Future<Duration?>? targetDuration,
 }) async {
-  // 只在桌面有 CLI ffmpeg 时可用；移动端无 CLI ffmpeg，直接回退单帧（且外部窗口捕获
-  // 本就只有 Windows）。不做平台早退硬编码——ffmpeg 后端跑不起来时下面自然 fail-open。
   Directory? tempDir;
+  bool handedOff = false;
   try {
     tempDir = await Directory.systemTemp.createTemp('fushi_gal_gif_');
     // 连续抓帧：任一帧失败跳过该帧；帧间 sleep [intervalMs]（捕获本身还有 WGC 延迟）。
@@ -212,7 +248,7 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
         captured++;
       }
     } finally {
-      // 只包住上面的窗口采样区间。下面可能运行 60 秒的 ffmpeg 编码不应让游戏内
+      // 只包住上面的窗口采样区间。之后可能运行 60 秒的 ffmpeg 编码不应让游戏内
       // popup 一直消失；release 也必须覆盖捕获/写帧异常。
       if (captureLease != null) await captureLease.release();
     }
@@ -224,11 +260,40 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
       budget: frameBudget,
     );
     // 抓到 <2 帧：不成动图，交调用方回退单帧。
-    if (captured < 2) {
-      return null;
+    if (captured < 2) return null;
+    handedOff = true;
+    return GalWindowAnimationFrames._(
+      directory: tempDir,
+      count: captured,
+      fps: fps,
+      maxWidth: maxWidth,
+    );
+  } on GalHookCaptureSuppressionException {
+    rethrow;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('captureWindowGifBytes', e, stack);
+    return null;
+  } finally {
+    if (!handedOff && tempDir != null) {
+      try {
+        await tempDir.delete(recursive: true);
+      } catch (_) {}
     }
+  }
+}
 
-    final String inputPattern = p.join(tempDir.path, kGalAnimationFramePattern);
+/// 只做编码：把 [frames] 编成 [format] 动图（失败按 [MiningAnimatedFormat.encodeAttempts]
+/// 降级 GIF）。全部失败 / ffmpeg 不可用返回 null。**不删** [frames]——调用方可能还要拿
+/// 第一帧降级静图，由持有者 [GalWindowAnimationFrames.dispose]。
+Future<GalWindowAnimatedCapture?> encodeWindowAnimationFrames(
+  GalWindowAnimationFrames frames, {
+  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+}) async {
+  try {
+    final String inputPattern = p.join(
+      frames.directory.path,
+      kGalAnimationFramePattern,
+    );
 
     // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用
     // 的**参数不同**，第二次是能力降级：Linux 系统 ffmpeg / 用户指定的外部 ffmpeg 若没有
@@ -240,15 +305,15 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
 
     for (final MiningAnimatedFormat attempt in attempts) {
       final String outputPath = p.join(
-        tempDir.path,
+        frames.directory.path,
         'out.${attempt.fileExtension}',
       );
       final List<String> args = buildGalWindowAnimatedArgs(
         format: attempt,
         inputPattern: inputPattern,
         outputPath: outputPath,
-        fps: fps,
-        maxWidth: maxWidth,
+        fps: frames.fps,
+        maxWidth: frames.maxWidth,
         playOnce: miningAnimatedPlayOnceReader(),
       );
       final FfmpegRunResult result = await resolveFfmpegBackend().run(
@@ -281,8 +346,6 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
       }
     }
     return null;
-  } on GalHookCaptureSuppressionException {
-    rethrow;
   } on ProcessException catch (e, stack) {
     // ffmpeg 不可用（移动端无 CLI / 未捆绑 / 不在 PATH）：优雅回退单帧。
     ErrorLogService.instance.log('captureWindowGifBytes', e, stack);
@@ -290,13 +353,37 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   } catch (e, stack) {
     ErrorLogService.instance.log('captureWindowGifBytes', e, stack);
     return null;
+  }
+}
+
+/// 采样 + 编码一步完成（[sampleWindowAnimationFrames] 后接
+/// [encodeWindowAnimationFrames]，结束即清理帧目录）。参数语义见那两个函数。
+Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
+  required int hwnd,
+  int frames = 10,
+  int intervalMs = 120,
+  int fps = 8,
+  int maxWidth = 480,
+  // 动图编码格式。默认 [MiningAnimatedFormat.gif] = 旧行为逐字等价（未传的既有调用点
+  // 与测试不受影响）。
+  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  GalHookCaptureLeaseFactory? captureLeaseFactory,
+  Future<Duration?>? targetDuration,
+}) async {
+  final GalWindowAnimationFrames? sampled = await sampleWindowAnimationFrames(
+    hwnd: hwnd,
+    frames: frames,
+    intervalMs: intervalMs,
+    fps: fps,
+    maxWidth: maxWidth,
+    captureLeaseFactory: captureLeaseFactory,
+    targetDuration: targetDuration,
+  );
+  if (sampled == null) return null;
+  try {
+    return await encodeWindowAnimationFrames(sampled, format: format);
   } finally {
-    // 清理临时目录（含帧 PNG 与动图产物），best-effort。
-    if (tempDir != null) {
-      try {
-        await tempDir.delete(recursive: true);
-      } catch (_) {}
-    }
+    await sampled.dispose();
   }
 }
 

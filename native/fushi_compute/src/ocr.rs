@@ -133,11 +133,7 @@ pub unsafe extern "C" fn ffc_ocr_ctc_greedy(
             r[2] = end as f64;
             r[3] = first;
             r[4] = if detailed {
-                if n == 0 {
-                    0.0
-                } else {
-                    sum / n as f64
-                }
+                if n == 0 { 0.0 } else { sum / n as f64 }
             } else {
                 f64::NAN
             };
@@ -233,11 +229,7 @@ impl Transform {
             clamp_f64(self.inverse_x(r), 0.0, self.src_w),
             clamp_f64(self.inverse_y(b), 0.0, self.src_h),
         ];
-        if area(&rect) <= 0.0 {
-            None
-        } else {
-            Some(rect)
-        }
+        if area(&rect) <= 0.0 { None } else { Some(rect) }
     }
 }
 
@@ -257,11 +249,7 @@ fn ocr_iou(a: &[f64; 4], b: &[f64; 4]) -> f64 {
         return 0.0;
     }
     let union = area(a) + area(b) - inter;
-    if union <= 0.0 {
-        0.0
-    } else {
-        inter / union
-    }
+    if union <= 0.0 { 0.0 } else { inter / union }
 }
 
 #[inline]
@@ -392,11 +380,7 @@ pub unsafe extern "C" fn ffc_ocr_rtdetr_decode_processed(
 /// `nmsGroupOf`：气泡（0 类）一组，文字（其余）一组。
 #[inline]
 fn nms_group(class_id: i64) -> i32 {
-    if class_id == 0 {
-        0
-    } else {
-        1
-    }
+    if class_id == 0 { 0 } else { 1 }
 }
 
 /// `applyClassAwareNms`：按分数降序（Dart `List.sort`，并列去向同 Dart），同组 IoU ≥
@@ -520,11 +504,7 @@ impl Panel {
         let oh = max_f64(0.0, min_f64(self.b, o.b) - max_f64(self.t, o.t));
         let inter = ow * oh;
         let union = self.area() + o.area() - inter;
-        if union <= 0.0 {
-            0.0
-        } else {
-            inter / union
-        }
+        if union <= 0.0 { 0.0 } else { inter / union }
     }
 }
 

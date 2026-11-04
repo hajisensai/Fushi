@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tests::{deck_entity, edit, review, Bucket, Device, DAY, P};
+use super::tests::{Bucket, DAY, Device, P, deck_entity, edit, review};
 use crate::store::SrsCore;
 
 const T0: i64 = 1_700_000_000_000;
@@ -14,7 +14,9 @@ const T0: i64 = 1_700_000_000_000;
 #[test]
 #[ignore]
 fn footprint_upgrade_file() {
-    let Ok(path) = std::env::var("FUSHI_SRS_FOOTPRINT_DB") else { return };
+    let Ok(path) = std::env::var("FUSHI_SRS_FOOTPRINT_DB") else {
+        return;
+    };
     // 两张投影表的 `json` 升级前后逐字节相同（v18 起读的是生成列）。
     let digest = || {
         use sha2::{Digest, Sha256};
@@ -23,7 +25,9 @@ fn footprint_upgrade_file() {
         crate::store::slim::register(&c).unwrap();
         ["srs_review_logs", "srs_field_edits"].map(|t| {
             let mut h = Sha256::new();
-            let mut s = c.prepare(&format!("SELECT json FROM {t} ORDER BY rowid")).unwrap();
+            let mut s = c
+                .prepare(&format!("SELECT json FROM {t} ORDER BY rowid"))
+                .unwrap();
             let mut rows = s.query([]).unwrap();
             let mut n = 0;
             while let Some(r) = rows.next().unwrap() {
@@ -31,31 +35,51 @@ fn footprint_upgrade_file() {
                 h.update([0]);
                 n += 1;
             }
-            (n, h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
+            (
+                n,
+                h.finalize()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>(),
+            )
         })
     };
     let t = std::time::Instant::now();
     let before = digest();
-    println!("FOOTPRINT read all projection json before in {} ms", t.elapsed().as_millis());
+    println!(
+        "FOOTPRINT read all projection json before in {} ms",
+        t.elapsed().as_millis()
+    );
     let t = std::time::Instant::now();
     let core = SrsCore::open(Path::new(&path)).unwrap();
     drop(core);
-    println!("FOOTPRINT upgraded {path} in {} ms", t.elapsed().as_millis());
+    println!(
+        "FOOTPRINT upgraded {path} in {} ms",
+        t.elapsed().as_millis()
+    );
     let t = std::time::Instant::now();
     assert_eq!(digest(), before, "projection json changed by the upgrade");
-    println!("FOOTPRINT read all projection json after in {} ms", t.elapsed().as_millis());
+    println!(
+        "FOOTPRINT read all projection json after in {} ms",
+        t.elapsed().as_millis()
+    );
     // 拼回本身的开销：同样扫一遍、只读存储列。
     let c = rusqlite::Connection::open(&path).unwrap();
     let t = std::time::Instant::now();
     let mut n = 0usize;
     for table in ["srs_review_logs", "srs_field_edits"] {
-        let mut s = c.prepare(&format!("SELECT jslim FROM {table} ORDER BY rowid")).unwrap();
+        let mut s = c
+            .prepare(&format!("SELECT jslim FROM {table} ORDER BY rowid"))
+            .unwrap();
         let mut rows = s.query([]).unwrap();
         while let Some(r) = rows.next().unwrap() {
             n += r.get_ref(0).unwrap().as_str().unwrap().len();
         }
     }
-    println!("FOOTPRINT read all stored jslim in {} ms ({n} bytes)", t.elapsed().as_millis());
+    println!(
+        "FOOTPRINT read all stored jslim in {} ms ({n} bytes)",
+        t.elapsed().as_millis()
+    );
     println!("FOOTPRINT json digests {before:?}");
 }
 
@@ -71,21 +95,55 @@ fn config_snapshots_are_stored_once() {
     let a = Device::new("fp-a");
     let b = Device::new("fp-b");
     let mut bucket = Bucket::default();
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "retention", json!(0.8))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "retention", json!(0.8)),
+        ],
+    );
     for i in 0..40 {
-        a.apply(T0 + 10 + i * DAY, vec![review(&format!("r{i}"), &format!("C{}", i % 7), T0 + 10 + i * DAY, 3, "learn")]);
+        a.apply(
+            T0 + 10 + i * DAY,
+            vec![review(
+                &format!("r{i}"),
+                &format!("C{}", i % 7),
+                T0 + 10 + i * DAY,
+                3,
+                "learn",
+            )],
+        );
     }
-    a.apply(T0 + 50 * DAY, vec![edit("deck", &deck, "retention", json!(0.9))]);
-    a.apply(T0 + 51 * DAY, vec![review("late", "C0", T0 + 51 * DAY, 3, "review")]);
-    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_snapshots"), 2, "two distinct configs, stored once each");
-    println!("FOOTPRINT snapshot body bytes: {:?}", a.rows("SELECT length(body) FROM sync2_snapshots"));
+    a.apply(
+        T0 + 50 * DAY,
+        vec![edit("deck", &deck, "retention", json!(0.9))],
+    );
+    a.apply(
+        T0 + 51 * DAY,
+        vec![review("late", "C0", T0 + 51 * DAY, 3, "review")],
+    );
+    assert_eq!(
+        count(&a, "SELECT COUNT(*) FROM sync2_snapshots"),
+        2,
+        "two distinct configs, stored once each"
+    );
+    println!(
+        "FOOTPRINT snapshot body bytes: {:?}",
+        a.rows("SELECT length(body) FROM sync2_snapshots")
+    );
     // 投影是原文。
     let full = super::tests::log_json(&a, "r3");
     assert_eq!(full["sc"]["ret"], json!(0.8), "{full}");
     assert_eq!(super::tests::log_json(&a, "late")["sc"]["ret"], json!(0.9));
     // 操作日志里也只存编号（载荷去掉了快照原文）。
-    let inline = count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL");
-    assert_eq!(inline, 0, "every stamped log op stores its snapshot by reference");
+    let inline = count(
+        &a,
+        "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL",
+    );
+    assert_eq!(
+        inline, 0,
+        "every stamped log op stores its snapshot by reference"
+    );
     // 发出去的段里是原文：另一台设备收齐后投影逐行相同，摘要一致。
     a.sync(&mut bucket, "loc", T0 + 52 * DAY);
     b.sync(&mut bucket, "loc", T0 + 52 * DAY);
@@ -109,8 +167,15 @@ fn all_payloads(d: &Device) -> Vec<Vec<u8>> {
         .unwrap();
     ids.into_iter()
         .map(|(dv, s)| {
-            let id = crate::sync2::vv::OpId { device: crate::sync2::id::Id(dv.try_into().unwrap()), seq: s as u64 };
-            super::load_op(&w, P, &id).unwrap().unwrap().payload.to_vec()
+            let id = crate::sync2::vv::OpId {
+                device: crate::sync2::id::Id(dv.try_into().unwrap()),
+                seq: s as u64,
+            };
+            super::load_op(&w, P, &id)
+                .unwrap()
+                .unwrap()
+                .payload
+                .to_vec()
         })
         .collect()
 }
@@ -120,7 +185,16 @@ fn inline_snapshots(w: &rusqlite::Connection) {
     let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
         .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
         .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
@@ -138,7 +212,13 @@ fn inline_snapshots(w: &rusqlite::Connection) {
 fn v16_upgrade_reads_the_log_in_bounded_pages() {
     let deck = super::config::default_deck_id(P);
     let a = Device::new("fp-pages");
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "retention", json!(0.85))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "retention", json!(0.85)),
+        ],
+    );
     let n: i64 = 3000;
     for chunk in 0..(n / 500) {
         a.apply(
@@ -146,7 +226,13 @@ fn v16_upgrade_reads_the_log_in_bounded_pages() {
             (0..500)
                 .map(|i| {
                     let k = chunk * 500 + i;
-                    review(&format!("b{k}"), &format!("C{}", k % 97), T0 + 10 + chunk * DAY + i, 1 + (k % 4), "review")
+                    review(
+                        &format!("b{k}"),
+                        &format!("C{}", k % 97),
+                        T0 + 10 + chunk * DAY + i,
+                        1 + (k % 4),
+                        "review",
+                    )
                 })
                 .collect(),
         );
@@ -162,11 +248,24 @@ fn v16_upgrade_reads_the_log_in_bounded_pages() {
         let (pages, widest) = super::snapshots::migrate_paged(&tx, 64).unwrap();
         tx.commit().unwrap();
         assert!(widest <= 64, "a page held {widest} rows");
-        assert!(pages as i64 >= logs / 64, "{pages} pages for {logs} log ops");
+        assert!(
+            pages as i64 >= logs / 64,
+            "{pages} pages for {logs} log ops"
+        );
     }
-    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL"), 0);
+    assert_eq!(
+        count(
+            &a,
+            "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL"
+        ),
+        0
+    );
     assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_snapshots"), 1);
-    assert_eq!(all_payloads(&a), before, "op payloads read back byte for byte");
+    assert_eq!(
+        all_payloads(&a),
+        before,
+        "op payloads read back byte for byte"
+    );
     assert_eq!(a.digest(), digest);
 }
 
@@ -176,12 +275,29 @@ fn v16_upgrade_reads_the_log_in_bounded_pages() {
 fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable() {
     let deck = super::config::default_deck_id(P);
     let a = Device::new("fp-up");
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "retention", json!(0.85))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "retention", json!(0.85)),
+        ],
+    );
     for i in 0..12 {
-        a.apply(T0 + 10 + i * DAY, vec![review(&format!("u{i}"), &format!("C{}", i % 3), T0 + 10 + i * DAY, 1 + i % 4, "review")]);
+        a.apply(
+            T0 + 10 + i * DAY,
+            vec![review(
+                &format!("u{i}"),
+                &format!("C{}", i % 3),
+                T0 + 10 + i * DAY,
+                1 + i % 4,
+                "review",
+            )],
+        );
     }
     let digest = a.digest();
-    let full: Vec<Value> = (0..12).map(|i| super::tests::log_json(&a, &format!("u{i}"))).collect();
+    let full: Vec<Value> = (0..12)
+        .map(|i| super::tests::log_json(&a, &format!("u{i}")))
+        .collect();
     let payloads = |d: &Device| -> Vec<Vec<u8>> {
         let w = d.core.writer().unwrap();
         let ids: Vec<(Vec<u8>, i64)> = w
@@ -193,8 +309,15 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
             .unwrap();
         ids.into_iter()
             .map(|(dv, s)| {
-                let id = crate::sync2::vv::OpId { device: crate::sync2::id::Id(dv.try_into().unwrap()), seq: s as u64 };
-                super::load_op(&w, P, &id).unwrap().unwrap().payload.to_vec()
+                let id = crate::sync2::vv::OpId {
+                    device: crate::sync2::id::Id(dv.try_into().unwrap()),
+                    seq: s as u64,
+                };
+                super::load_op(&w, P, &id)
+                    .unwrap()
+                    .unwrap()
+                    .payload
+                    .to_vec()
             })
             .collect()
     };
@@ -205,7 +328,16 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
         let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
             .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            })
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
@@ -224,22 +356,58 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
         )
         .unwrap();
     }
-    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE sc IS NOT NULL"), 0);
+    assert_eq!(
+        count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE sc IS NOT NULL"),
+        0
+    );
     assert_eq!(a.digest(), digest, "the inline form hashes the same");
     let path = a._dir.0.join("srs.db");
     for round in 0..2 {
-        let b = Device { core: SrsCore::open(&path).unwrap(), _dir: super::tests::tempdir::new("fp-up-unused") };
-        assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_snapshots"), 1, "round {round}");
-        assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL"), 0, "round {round}");
-        assert_eq!(count(&b, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'idx_sync2_ent_ops_what'"), 0);
-        let got: Vec<Value> = (0..12).map(|i| super::tests::log_json(&b, &format!("u{i}"))).collect();
+        let b = Device {
+            core: SrsCore::open(&path).unwrap(),
+            _dir: super::tests::tempdir::new("fp-up-unused"),
+        };
+        assert_eq!(
+            count(&b, "SELECT COUNT(*) FROM sync2_snapshots"),
+            1,
+            "round {round}"
+        );
+        assert_eq!(
+            count(
+                &b,
+                "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL"
+            ),
+            0,
+            "round {round}"
+        );
+        assert_eq!(
+            count(
+                &b,
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'idx_sync2_ent_ops_what'"
+            ),
+            0
+        );
+        let got: Vec<Value> = (0..12)
+            .map(|i| super::tests::log_json(&b, &format!("u{i}")))
+            .collect();
         assert_eq!(got, full, "round {round}");
-        assert_eq!(payloads(&b), before, "op payloads read back byte for byte (round {round})");
+        assert_eq!(
+            payloads(&b),
+            before,
+            "op payloads read back byte for byte (round {round})"
+        );
         assert_eq!(b.digest(), digest, "round {round}");
-        assert_eq!(b.core.sync2_digest(P).unwrap()["digest"], a.core.sync2_digest(P).unwrap()["digest"]);
+        assert_eq!(
+            b.core.sync2_digest(P).unwrap()["digest"],
+            a.core.sync2_digest(P).unwrap()["digest"]
+        );
         drop(b);
         // 中途被杀 / 重放：标回 15 再开一次，结果相同。
-        a.core.writer().unwrap().execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';").unwrap();
+        a.core
+            .writer()
+            .unwrap()
+            .execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';")
+            .unwrap();
     }
 }
 
@@ -248,16 +416,33 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
 #[test]
 #[ignore]
 fn footprint_answered_reviews() {
-    let n: i64 = std::env::var("FUSHI_SRS_FOOTPRINT_REVIEWS").ok().and_then(|v| v.parse().ok()).unwrap_or(30_000);
+    let n: i64 = std::env::var("FUSHI_SRS_FOOTPRINT_REVIEWS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30_000);
     let deck = super::config::default_deck_id(P);
     let a = Device::new("fp-bench");
     let params: Vec<f64> = (0..34).map(|i| 0.1 + f64::from(i) * 0.731_234_5).collect();
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "fsrs7Params", json!({"params": params}))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "fsrs7Params", json!({"params": params})),
+        ],
+    );
     let t = std::time::Instant::now();
     let mut i = 0;
     while i < n {
         let batch: Vec<Value> = (i..(i + 500).min(n))
-            .map(|k| review(&format!("b{k}"), &format!("C{}", k % 3000), T0 + 10 + k * 60_000, 1 + k % 4, "review"))
+            .map(|k| {
+                review(
+                    &format!("b{k}"),
+                    &format!("C{}", k % 3000),
+                    T0 + 10 + k * 60_000,
+                    1 + k % 4,
+                    "review",
+                )
+            })
             .collect();
         a.apply(T0 + 10 + i * 60_000, batch);
         i += 500;
@@ -265,7 +450,11 @@ fn footprint_answered_reviews() {
     let body: Vec<Vec<String>> = a.rows("SELECT length(body) FROM sync2_snapshots");
     let size = |tag: &str| -> u64 {
         let out = a._dir.0.join(format!("{tag}.db"));
-        a.core.writer().unwrap().execute("VACUUM INTO ?1", [out.to_string_lossy()]).unwrap();
+        a.core
+            .writer()
+            .unwrap()
+            .execute("VACUUM INTO ?1", [out.to_string_lossy()])
+            .unwrap();
         std::fs::metadata(&out).unwrap().len()
     };
     let packed = size("packed");
@@ -275,7 +464,16 @@ fn footprint_answered_reviews() {
         let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>, i64)> = w
             .prepare("SELECT device, seq, payload, sc, sc_at, pz FROM sync2_ops")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            })
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
@@ -298,11 +496,32 @@ fn footprint_answered_reviews() {
 fn busy_device(tag: &str) -> Device {
     let deck = super::config::default_deck_id(P);
     let a = Device::new(tag);
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "retention", json!(0.85))]);
+    a.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            edit("deck", &deck, "retention", json!(0.85)),
+        ],
+    );
     for i in 0..10 {
         let at = T0 + 10 + i * DAY;
-        a.apply(at, vec![review(&format!("p{i}"), &format!("C{}", i % 2), at, 1 + i % 4, "review")]);
-        a.apply(at + 1, vec![edit("note", "N1", &format!("f/{i}"), json!(format!("v{i}"))), edit("note", "N1", "tags", json!([format!("t{i}")]))]);
+        a.apply(
+            at,
+            vec![review(
+                &format!("p{i}"),
+                &format!("C{}", i % 2),
+                at,
+                1 + i % 4,
+                "review",
+            )],
+        );
+        a.apply(
+            at + 1,
+            vec![
+                edit("note", "N1", &format!("f/{i}"), json!(format!("v{i}"))),
+                edit("note", "N1", "tags", json!([format!("t{i}")])),
+            ],
+        );
     }
     a
 }
@@ -319,10 +538,20 @@ fn upgrading_from_before_v16_adds_the_snapshot_columns_before_reading_ops() {
         .unwrap()
         .execute_batch("ALTER TABLE sync2_ops DROP COLUMN sc; ALTER TABLE sync2_ops DROP COLUMN sc_at; UPDATE srs_meta SET value = '9' WHERE key = 'schema';")
         .unwrap();
-    let b = Device { core: SrsCore::open(&path).unwrap(), _dir: super::tests::tempdir::new("fp-old-unused") };
+    let b = Device {
+        core: SrsCore::open(&path).unwrap(),
+        _dir: super::tests::tempdir::new("fp-old-unused"),
+    };
     assert_eq!(super::tests::projection(&b), before);
     assert_eq!(b.digest(), digest);
-    assert_eq!(count(&b, "SELECT COUNT(*) FROM srs_meta WHERE key = 'compact_pending'"), 0, "compacted on open");
+    assert_eq!(
+        count(
+            &b,
+            "SELECT COUNT(*) FROM srs_meta WHERE key = 'compact_pending'"
+        ),
+        0,
+        "compacted on open"
+    );
     assert_eq!(count(&b, "PRAGMA freelist_count"), 0);
 }
 
@@ -334,32 +563,53 @@ fn upgrade_refuses_to_start_without_disk_space() {
     let before = super::tests::projection(&a);
     let digest = a.digest();
     let path = a._dir.0.join("srs.db");
-    rusqlite::Connection::open(&path).unwrap().execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';").unwrap();
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';")
+        .unwrap();
     let bytes = std::fs::read(&path).unwrap();
     let err = match SrsCore::open_with_free_space(&path, |_| Some(1024)) {
         Err(e) => e,
         Ok(_) => panic!("upgrade started without disk space"),
     };
-    assert!(err.starts_with(crate::store::schema::UPGRADE_NO_SPACE), "{err}");
-    let detail: Value = serde_json::from_str(&err[crate::store::schema::UPGRADE_NO_SPACE.len()..]).unwrap();
+    assert!(
+        err.starts_with(crate::store::schema::UPGRADE_NO_SPACE),
+        "{err}"
+    );
+    let detail: Value =
+        serde_json::from_str(&err[crate::store::schema::UPGRADE_NO_SPACE.len()..]).unwrap();
     assert_eq!(detail["free"], json!(1024));
     assert!(detail["need"].as_u64().unwrap() > 1024);
     assert_eq!(detail["from"], json!(15));
     assert_eq!(std::fs::read(&path).unwrap(), bytes, "main file untouched");
-    assert_eq!(count(&a, "SELECT value FROM srs_meta WHERE key = 'schema'"), 15);
+    assert_eq!(
+        count(&a, "SELECT value FROM srs_meta WHERE key = 'schema'"),
+        15
+    );
     // 不用升级的库（已是当前版本）不受空间守卫影响。
     rusqlite::Connection::open(&path)
         .unwrap()
-        .execute_batch(&format!("UPDATE srs_meta SET value = '{}' WHERE key = 'schema';", crate::store::schema::SCHEMA_VERSION))
+        .execute_batch(&format!(
+            "UPDATE srs_meta SET value = '{}' WHERE key = 'schema';",
+            crate::store::schema::SCHEMA_VERSION
+        ))
         .unwrap();
     drop(SrsCore::open_with_free_space(&path, |_| Some(1024)).unwrap());
-    rusqlite::Connection::open(&path).unwrap().execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';").unwrap();
-    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: super::tests::tempdir::new("fp-nospace-unused") };
-    assert_eq!(count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"), crate::store::schema::SCHEMA_VERSION);
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';")
+        .unwrap();
+    let b = Device {
+        core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(),
+        _dir: super::tests::tempdir::new("fp-nospace-unused"),
+    };
+    assert_eq!(
+        count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"),
+        crate::store::schema::SCHEMA_VERSION
+    );
     assert_eq!(super::tests::projection(&b), before);
     assert_eq!(b.digest(), digest);
 }
-
 
 // ------------------------------------------------------------ 打开时的整理（store/compact.rs，BUG-4001）
 
@@ -383,7 +633,8 @@ fn raw(path: &Path) -> rusqlite::Connection {
 fn with_spare_pages(path: &Path, legacy: bool) {
     let c = raw(path);
     if legacy {
-        c.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;").unwrap();
+        c.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;")
+            .unwrap();
     }
     c.execute_batch(
         "CREATE TABLE junk (x); \
@@ -399,18 +650,24 @@ fn with_spare_pages(path: &Path, legacy: bool) {
 }
 
 fn pragma_of(path: &Path, name: &str) -> u64 {
-    raw(path).query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).unwrap() as u64
+    raw(path)
+        .query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0))
+        .unwrap() as u64
 }
 
 fn meta_of(path: &Path, key: &str) -> Option<String> {
-    raw(path).query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| r.get(0)).ok()
+    raw(path)
+        .query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
+            r.get(0)
+        })
+        .ok()
 }
 
 /// 老库（`auto_vacuum = NONE`）重写换文件：额外空间只要「一倍有效数据 + 余量」（少一个字节就不做，标记留着）；做完
 /// 投影 / 摘要不变、空闲页清零、文件变小、改成 INCREMENTAL，标记与计数在换上去的库里已经清掉，旁边不留半成品。
 #[test]
 fn compaction_rewrites_a_legacy_db_with_one_copy_of_live_data() {
-    use crate::store::compact::{staged_path, ATTEMPTS, MARGIN, PENDING};
+    use crate::store::compact::{ATTEMPTS, MARGIN, PENDING, staged_path};
     let a = busy_device("fp-rewrite");
     let before = super::tests::projection(&a);
     let digest = a.digest();
@@ -422,19 +679,36 @@ fn compaction_rewrites_a_legacy_db_with_one_copy_of_live_data() {
     let bytes_before = std::fs::metadata(&path).unwrap().len();
 
     drop(SrsCore::open_with_free_space(&path, |_| Some(live + MARGIN - 1)).unwrap());
-    assert!(meta_of(&path, PENDING).is_some(), "not enough room: marker kept");
-    assert!(meta_of(&path, "compact_last").unwrap().contains("\"reason\":\"disk\""));
+    assert!(
+        meta_of(&path, PENDING).is_some(),
+        "not enough room: marker kept"
+    );
+    assert!(
+        meta_of(&path, "compact_last")
+            .unwrap()
+            .contains("\"reason\":\"disk\"")
+    );
     assert_eq!(pragma_of(&path, "auto_vacuum"), 0);
 
-    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(live + MARGIN)).unwrap(), _dir: dir };
+    let b = Device {
+        core: SrsCore::open_with_free_space(&path, |_| Some(live + MARGIN)).unwrap(),
+        _dir: dir,
+    };
     assert_eq!(super::tests::projection(&b), before);
     assert_eq!(b.digest(), digest);
     let (path, _dir) = closed(b);
-    assert_eq!(pragma_of(&path, "auto_vacuum"), 2, "rewritten as INCREMENTAL");
+    assert_eq!(
+        pragma_of(&path, "auto_vacuum"),
+        2,
+        "rewritten as INCREMENTAL"
+    );
     assert_eq!(pragma_of(&path, "freelist_count"), 0);
     assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none());
     let last = meta_of(&path, "compact_last").unwrap();
-    assert!(last.contains("\"ok\":true") && last.contains("\"mode\":\"rewrite\""), "{last}");
+    assert!(
+        last.contains("\"ok\":true") && last.contains("\"mode\":\"rewrite\""),
+        "{last}"
+    );
     assert!(!staged_path(&path).exists());
     assert!(std::fs::metadata(&path).unwrap().len() < bytes_before);
 }
@@ -446,29 +720,44 @@ fn compaction_shrinks_an_incremental_db_in_place() {
     let a = busy_device("fp-in-place");
     let before = super::tests::projection(&a);
     let (path, dir) = closed(a);
-    assert_eq!(pragma_of(&path, "auto_vacuum"), 2, "new databases are INCREMENTAL");
+    assert_eq!(
+        pragma_of(&path, "auto_vacuum"),
+        2,
+        "new databases are INCREMENTAL"
+    );
     with_spare_pages(&path, false);
     assert!(pragma_of(&path, "freelist_count") > 1000);
-    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(CHUNK + MARGIN)).unwrap(), _dir: dir };
+    let b = Device {
+        core: SrsCore::open_with_free_space(&path, |_| Some(CHUNK + MARGIN)).unwrap(),
+        _dir: dir,
+    };
     assert_eq!(super::tests::projection(&b), before);
     let (path, _dir) = closed(b);
     assert_eq!(pragma_of(&path, "freelist_count"), 0);
     assert!(meta_of(&path, PENDING).is_none());
     let last = meta_of(&path, "compact_last").unwrap();
-    assert!(last.contains("\"ok\":true") && last.contains("\"mode\":\"in_place\""), "{last}");
+    assert!(
+        last.contains("\"ok\":true") && last.contains("\"mode\":\"in_place\""),
+        "{last}"
+    );
 }
 
 /// 还有别的连接开着这个库：不换文件（换了它会继续读写旧文件），标记留着、库照常打开，别的连接照常读。
 #[test]
 fn compaction_does_not_swap_files_under_another_connection() {
-    use crate::store::compact::{staged_path, ATTEMPTS, PENDING};
+    use crate::store::compact::{ATTEMPTS, PENDING, staged_path};
     let a = busy_device("fp-other-conn");
     let before = super::tests::projection(&a);
     let (path, dir) = closed(a);
     with_spare_pages(&path, true);
     let other = raw(&path);
-    other.query_row("SELECT COUNT(*) FROM srs_meta", [], |r| r.get::<_, i64>(0)).unwrap();
-    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: dir };
+    other
+        .query_row("SELECT COUNT(*) FROM srs_meta", [], |r| r.get::<_, i64>(0))
+        .unwrap();
+    let b = Device {
+        core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(),
+        _dir: dir,
+    };
     assert_eq!(super::tests::projection(&b), before);
     let (path, _dir) = closed(b);
     assert!(meta_of(&path, PENDING).is_some());
@@ -477,7 +766,13 @@ fn compaction_does_not_swap_files_under_another_connection() {
     assert!(!staged_path(&path).exists());
     assert_eq!(pragma_of(&path, "auto_vacuum"), 0);
     // 别的连接还在同一个文件上：看得见这次记下的结果。
-    let seen: String = other.query_row("SELECT value FROM srs_meta WHERE key = 'compact_last'", [], |r| r.get(0)).unwrap();
+    let seen: String = other
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = 'compact_last'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert!(seen.contains("busy"), "{seen}");
 }
 
@@ -486,37 +781,77 @@ fn compaction_does_not_swap_files_under_another_connection() {
 /// 碰，整理改版（[COMPACT_REV] 变了）或又升级过（[PENDING] 变了）就重新整理。没到上限的照常整理并清掉计数。
 #[test]
 fn compaction_gives_up_after_interrupted_attempts() {
-    use crate::store::compact::{staged_path, ATTEMPTS, COMPACT_REV, GAVE_UP, MAX_ATTEMPTS, PENDING};
+    use crate::store::compact::{
+        ATTEMPTS, COMPACT_REV, GAVE_UP, MAX_ATTEMPTS, PENDING, staged_path,
+    };
     let a = busy_device("fp-interrupted");
     let (path, dir) = closed(a);
     with_spare_pages(&path, true);
     // 上一次死在 VACUUM INTO 半路：计数已记、半成品留在旁边。
-    raw(&path).execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, (MAX_ATTEMPTS - 1).to_string()]).unwrap();
+    raw(&path)
+        .execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)",
+            rusqlite::params![ATTEMPTS, (MAX_ATTEMPTS - 1).to_string()],
+        )
+        .unwrap();
     std::fs::write(staged_path(&path), b"half-written").unwrap();
     drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
     assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none());
     assert!(!staged_path(&path).exists());
     // 已经连着死了 MAX_ATTEMPTS 次：停手，标记留着，记下停手的版本与原因。
     with_spare_pages(&path, true);
-    raw(&path).execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, MAX_ATTEMPTS.to_string()]).unwrap();
+    raw(&path)
+        .execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)",
+            rusqlite::params![ATTEMPTS, MAX_ATTEMPTS.to_string()],
+        )
+        .unwrap();
     let spare = pragma_of(&path, "freelist_count");
     drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
-    assert_eq!(meta_of(&path, PENDING).as_deref(), Some("18"), "marker kept");
+    assert_eq!(
+        meta_of(&path, PENDING).as_deref(),
+        Some("18"),
+        "marker kept"
+    );
     assert!(meta_of(&path, ATTEMPTS).is_none());
     assert_eq!(meta_of(&path, GAVE_UP), Some(format!("{COMPACT_REV}/18")));
-    assert!(meta_of(&path, "compact_last").unwrap().contains("\"reason\":\"interrupted\""));
+    assert!(
+        meta_of(&path, "compact_last")
+            .unwrap()
+            .contains("\"reason\":\"interrupted\"")
+    );
     assert_eq!(pragma_of(&path, "freelist_count"), spare, "left alone");
     // 同一版本同一升级：再打开也不碰。
     drop(SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap());
-    assert_eq!(pragma_of(&path, "freelist_count"), spare, "still left alone");
+    assert_eq!(
+        pragma_of(&path, "freelist_count"),
+        spare,
+        "still left alone"
+    );
     assert!(meta_of(&path, ATTEMPTS).is_none());
     // 停手发生在旧版整理上（版本号不同）：新版自动重试，整理完清掉全部标记。
-    raw(&path).execute("UPDATE srs_meta SET value = ?2 WHERE key = ?1", rusqlite::params![GAVE_UP, format!("{}/18", COMPACT_REV - 1)]).unwrap();
-    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: dir };
+    raw(&path)
+        .execute(
+            "UPDATE srs_meta SET value = ?2 WHERE key = ?1",
+            rusqlite::params![GAVE_UP, format!("{}/18", COMPACT_REV - 1)],
+        )
+        .unwrap();
+    let b = Device {
+        core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(),
+        _dir: dir,
+    };
     let (path, _dir) = closed(b);
-    assert!(meta_of(&path, PENDING).is_none() && meta_of(&path, ATTEMPTS).is_none() && meta_of(&path, GAVE_UP).is_none());
+    assert!(
+        meta_of(&path, PENDING).is_none()
+            && meta_of(&path, ATTEMPTS).is_none()
+            && meta_of(&path, GAVE_UP).is_none()
+    );
     assert_eq!(pragma_of(&path, "freelist_count"), 0);
-    assert!(meta_of(&path, "compact_last").unwrap().contains("\"ok\":true"));
+    assert!(
+        meta_of(&path, "compact_last")
+            .unwrap()
+            .contains("\"ok\":true")
+    );
 }
 
 /// 升级阶梯整表重建 / 建索引与剥设备本地表的备份的临时库必须能落文件：`SQLITE_TEMP_STORE=3` 的构建里临时库全进
@@ -540,7 +875,11 @@ fn v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged() {
     let before = super::tests::projection(&a);
     let digest = a.digest();
     let payloads = all_payloads(&a);
-    let restore = |d: &Device| d.core.sync2_plan_restore(P, &RestoreTarget::At(T0 + 5 * DAY), true, T0 + 20 * DAY).unwrap();
+    let restore = |d: &Device| {
+        d.core
+            .sync2_plan_restore(P, &RestoreTarget::At(T0 + 5 * DAY), true, T0 + 20 * DAY)
+            .unwrap()
+    };
     let history = |d: &Device| d.core.sync2_history(P, "note", "N1").unwrap();
     let preview = restore(&a);
     let hist = history(&a);
@@ -557,7 +896,11 @@ fn v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged() {
         for (dv, s, p) in zipped {
             let n = u32::from_le_bytes(p[..4].try_into().unwrap()) as usize;
             let raw = zstd::bulk::decompress(&p[4..], n).unwrap();
-            w.execute("UPDATE sync2_ops SET payload = ?3, pz = 0 WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, raw]).unwrap();
+            w.execute(
+                "UPDATE sync2_ops SET payload = ?3, pz = 0 WHERE device = ?1 AND seq = ?2",
+                rusqlite::params![dv, s, raw],
+            )
+            .unwrap();
         }
         w.execute_batch("ALTER TABLE sync2_ops DROP COLUMN pz; UPDATE srs_meta SET value = '20' WHERE key = 'schema';").unwrap();
     }
@@ -566,27 +909,78 @@ fn v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged() {
     drop(a.core);
     {
         let c = rusqlite::Connection::open(&path).unwrap();
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'", [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(n, 0, "the v20 form has no pz column");
     }
-    let b = Device { core: SrsCore::open(&path).unwrap(), _dir: dir };
-    assert_eq!(count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"), crate::store::schema::SCHEMA_VERSION);
-    assert_eq!(count(&b, "SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'"), 1, "pz column added");
-    assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz != 0"), 0, "existing rows stay raw (not rewritten)");
+    let b = Device {
+        core: SrsCore::open(&path).unwrap(),
+        _dir: dir,
+    };
+    assert_eq!(
+        count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"),
+        crate::store::schema::SCHEMA_VERSION
+    );
+    assert_eq!(
+        count(
+            &b,
+            "SELECT COUNT(*) FROM pragma_table_info('sync2_ops') WHERE name = 'pz'"
+        ),
+        1,
+        "pz column added"
+    );
+    assert_eq!(
+        count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz != 0"),
+        0,
+        "existing rows stay raw (not rewritten)"
+    );
     assert_eq!(super::tests::projection(&b), before);
     assert_eq!(b.digest(), digest);
-    assert_eq!(all_payloads(&b), payloads, "old raw rows read back byte for byte");
-    assert_eq!(restore(&b), preview, "timeline restore preview reads the old rows");
+    assert_eq!(
+        all_payloads(&b),
+        payloads,
+        "old raw rows read back byte for byte"
+    );
+    assert_eq!(
+        restore(&b),
+        preview,
+        "timeline restore preview reads the old rows"
+    );
     assert_eq!(history(&b), hist, "entity history reads the old rows");
 
     // 之后写的操作才压：日志里原样与压缩混存。
     let deck = super::config::default_deck_id(P);
     for i in 0..30 {
         let at = T0 + 30 * DAY + i * DAY;
-        b.apply(at, vec![review(&format!("n{i}"), &format!("C{}", i % 3), at, 1 + i % 4, "review")]);
-        b.apply(at + 1, vec![edit("note", "N1", &format!("f/n{i}"), json!(format!("field value {i} {}", "x".repeat(200))))]);
+        b.apply(
+            at,
+            vec![review(
+                &format!("n{i}"),
+                &format!("C{}", i % 3),
+                at,
+                1 + i % 4,
+                "review",
+            )],
+        );
+        b.apply(
+            at + 1,
+            vec![edit(
+                "note",
+                "N1",
+                &format!("f/n{i}"),
+                json!(format!("field value {i} {}", "x".repeat(200))),
+            )],
+        );
     }
-    b.apply(T0 + 70 * DAY, vec![edit("deck", &deck, "retention", json!(0.9))]);
+    b.apply(
+        T0 + 70 * DAY,
+        vec![edit("deck", &deck, "retention", json!(0.9))],
+    );
     let raw_rows = count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz = 0");
     let zipped_rows = count(&b, "SELECT COUNT(*) FROM sync2_ops WHERE pz = 1");
     assert!(raw_rows >= payloads.len() as i64, "{raw_rows} raw rows");
@@ -598,6 +992,10 @@ fn v21_upgrade_adds_pz_and_reads_the_old_raw_rows_unchanged() {
     c.sync(&mut bucket, "loc", T0 + 71 * DAY);
     assert_eq!(super::tests::projection(&c), super::tests::projection(&b));
     assert_eq!(c.digest(), b.digest());
-    assert_eq!(all_payloads(&c), all_payloads(&b), "every op (raw and compressed) reached the new device intact");
+    assert_eq!(
+        all_payloads(&c),
+        all_payloads(&b),
+        "every op (raw and compressed) reached the new device intact"
+    );
     assert_eq!(history(&c), history(&b));
 }

@@ -20,20 +20,14 @@ use crate::style_dedup::script_blocks;
 pub(crate) fn is_js_space(c: char) -> bool {
     matches!(
         c,
-        '\t' | '\n'
-            | '\u{0B}'
-            | '\u{0C}'
-            | '\r'
-            | ' '
-            | '\u{A0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200A}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202F}'
-            | '\u{205F}'
-            | '\u{3000}'
-            | '\u{FEFF}'
+        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
     )
 }
 
@@ -62,7 +56,8 @@ fn is_word(c: Option<char>) -> bool {
 /// `s[at..]` 是否以 ASCII 模式 [pat] 开头（只做 ASCII 大小写折叠）；是则返回终点。
 fn match_ascii_ci(s: &str, at: usize, pat: &str) -> Option<usize> {
     let b = s.as_bytes().get(at..at + pat.len())?;
-    b.eq_ignore_ascii_case(pat.as_bytes()).then_some(at + pat.len())
+    b.eq_ignore_ascii_case(pat.as_bytes())
+        .then_some(at + pat.len())
 }
 
 fn utf16_len(s: &str) -> usize {
@@ -168,7 +163,12 @@ fn strip_tags(html: &str) -> String {
 
 fn tag_end(html: &str, p: usize) -> Option<usize> {
     let bytes = html.as_bytes();
-    let gt = |from: usize| bytes[from..].iter().position(|&b| b == b'>').map(|i| from + i);
+    let gt = |from: usize| {
+        bytes[from..]
+            .iter()
+            .position(|&b| b == b'>')
+            .map(|i| from + i)
+    };
     let first_gt = gt(p + 1)?;
     if html[p..].starts_with("<!--") {
         if let Some(i) = html[p + 4..].find("-->") {
@@ -244,7 +244,9 @@ fn decode_entities(text: &str) -> String {
                 };
                 return match parsed {
                     Some(0xA0) => " ".to_owned(),
-                    Some(code) if code <= 0x10FFFF => char::from_u32(code as u32).unwrap_or('\u{FFFD}').to_string(),
+                    Some(code) if code <= 0x10FFFF => char::from_u32(code as u32)
+                        .unwrap_or('\u{FFFD}')
+                        .to_string(),
                     _ => whole.to_owned(),
                 };
             }
@@ -266,7 +268,9 @@ pub fn freq_rank(value: &str) -> Option<i64> {
     let stripped = decode_entities(&strip_tags(value));
     let start = stripped.find(|c: char| c.is_ascii_digit())?;
     let rest = &stripped[start..];
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end.min(9)].parse::<i64>().ok().filter(|r| *r > 0)
 }
 
@@ -394,7 +398,10 @@ pub fn cloze_ordinals(text: &str) -> Vec<u32> {
         match tok {
             ClozeTok::Open(ords) => {
                 if open.len() < 10 {
-                    open.push(Node { ords, kids: Vec::new() });
+                    open.push(Node {
+                        ords,
+                        kids: Vec::new(),
+                    });
                 }
             }
             ClozeTok::Text => {}
@@ -449,7 +456,15 @@ struct Tok<'t> {
 
 impl Tok<'_> {
     fn plain(kind: TokKind, raw: &str) -> Tok<'static> {
-        Tok { kind, raw: raw.to_owned(), inner: "", start_tag: "", end_tag: "", key_start: 0, key_end: 0 }
+        Tok {
+            kind,
+            raw: raw.to_owned(),
+            inner: "",
+            start_tag: "",
+            end_tag: "",
+            key_start: 0,
+            key_end: 0,
+        }
     }
 
     fn replacement_start(&self) -> usize {
@@ -457,7 +472,11 @@ impl Tok<'_> {
     }
 
     fn body(&self) -> &str {
-        let start = if self.kind == TokKind::Replacement { self.replacement_start() } else { self.key_start };
+        let start = if self.kind == TokKind::Replacement {
+            self.replacement_start()
+        } else {
+            self.key_start
+        };
         &self.inner[start..self.key_end]
     }
 }
@@ -481,7 +500,10 @@ fn tokenize(template: &str) -> Vec<Tok<'_>> {
         while let Some(r) = rest.strip_prefix(ALT_DIRECTIVE) {
             rest = r;
         }
-        out.push(Tok::plain(TokKind::Prelude, &template[..template.len() - rest.len()]));
+        out.push(Tok::plain(
+            TokKind::Prelude,
+            &template[..template.len() - rest.len()],
+        ));
         text = rest;
         start_tag = "<%";
         end_tag = "%>";
@@ -498,7 +520,11 @@ fn tokenize(template: &str) -> Vec<Tok<'_>> {
             if let Some(rel) = text[i + start_tag.len()..].find(end_tag) {
                 let close = i + start_tag.len() + rel;
                 flush(&mut out, text_start, i);
-                out.push(classify(&text[i + start_tag.len()..close], start_tag, end_tag));
+                out.push(classify(
+                    &text[i + start_tag.len()..close],
+                    start_tag,
+                    end_tag,
+                ));
                 i = close + end_tag.len();
                 text_start = i;
                 continue;
@@ -540,7 +566,15 @@ fn classify<'t>(inner: &'t str, start_tag: &'static str, end_tag: &'static str) 
             Some(colon) => start_offset + colon + 1,
             None => start_offset,
         };
-        Tok { kind: TokKind::Replacement, raw, inner, start_tag, end_tag, key_start, key_end: start_end }
+        Tok {
+            kind: TokKind::Replacement,
+            raw,
+            inner,
+            start_tag,
+            end_tag,
+            key_start,
+            key_end: start_end,
+        }
     };
     if utf16_len(start) < 2 {
         return replacement(raw);
@@ -552,7 +586,15 @@ fn classify<'t>(inner: &'t str, start_tag: &'static str, end_tag: &'static str) 
         _ => return replacement(raw),
     };
     let stripped = dart_trim_left(&start[1..]);
-    Tok { kind, raw, inner, start_tag, end_tag, key_start: start_end - stripped.len(), key_end: start_end }
+    Tok {
+        kind,
+        raw,
+        inner,
+        start_tag,
+        end_tag,
+        key_start: start_end - stripped.len(),
+        key_end: start_end,
+    }
 }
 
 /// `templateIdsToNames`：`{{…fld:<id>}}` / `{{#fld:<id>}}` 换成字段名；表里没有的 id 原样保留。
@@ -560,7 +602,10 @@ fn ids_to_names(template: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> 
     const PREFIX: &str = "fld:";
     let mut out = String::with_capacity(template.len());
     for tok in tokenize(template) {
-        if matches!(tok.kind, TokKind::Text | TokKind::Comment | TokKind::Prelude) {
+        if matches!(
+            tok.kind,
+            TokKind::Text | TokKind::Comment | TokKind::Prelude
+        ) {
             out.push_str(&tok.raw);
             continue;
         }
@@ -591,12 +636,20 @@ enum Node {
     /// 文本 / 注释：判空时跳过。
     Inert,
     Replacement(String),
-    Conditional { key: String, negated: bool, children: Vec<Node> },
+    Conditional {
+        key: String,
+        negated: bool,
+        children: Vec<Node>,
+    },
 }
 
 /// 严格解析（rslib `parse_inner`）：段不配对是语法错误。
 fn parse_strict(tokens: &[Tok<'_>]) -> Result<Vec<Node>, String> {
-    fn inner(tokens: &[Tok<'_>], index: &mut usize, open: Option<&str>) -> Result<Vec<Node>, String> {
+    fn inner(
+        tokens: &[Tok<'_>],
+        index: &mut usize,
+        open: Option<&str>,
+    ) -> Result<Vec<Node>, String> {
         let mut nodes = Vec::new();
         while *index < tokens.len() {
             let tok = &tokens[*index];
@@ -611,7 +664,11 @@ fn parse_strict(tokens: &[Tok<'_>]) -> Result<Vec<Node>, String> {
                 TokKind::Open | TokKind::OpenNegated => {
                     let key = tok.body().to_owned();
                     let children = inner(tokens, index, Some(&key))?;
-                    nodes.push(Node::Conditional { key, negated: tok.kind == TokKind::OpenNegated, children });
+                    nodes.push(Node::Conditional {
+                        key,
+                        negated: tok.kind == TokKind::OpenNegated,
+                        children,
+                    });
                 }
                 TokKind::Close => {
                     let key = tok.body();
@@ -676,7 +733,11 @@ fn template_is_empty(non_empty: &dyn Fn(&str) -> bool, nodes: &[Node]) -> bool {
                     return false;
                 }
             }
-            Node::Conditional { key, negated, children } => {
+            Node::Conditional {
+                key,
+                negated,
+                children,
+            } => {
                 let has = non_empty(key);
                 if has == *negated {
                     continue;
@@ -703,7 +764,11 @@ pub fn card_front_is_empty(
     let nodes = parse_strict(&tokenize(&question))?;
     let cn = format!("c{}", ord + 1);
     let value_of = |name: &str| -> Option<&str> {
-        fields.iter().rev().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+        fields
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
     };
     // 特殊字段（`ankiFieldMapWithSpecials`，缺省值）：笔记里没有同名字段时才补。
     let special = |name: &str| -> Option<&'static str> {
@@ -739,19 +804,26 @@ fn html_media_values(html: &str) -> Vec<&str> {
     while let Some(rel) = b[from..].iter().position(|&x| x == b'<') {
         let p = from + rel;
         from = p + 1;
-        let Some(q) = TAGS.iter().find_map(|t| match_ascii_ci(html, p + 1, t)) else { continue };
+        let Some(q) = TAGS.iter().find_map(|t| match_ascii_ci(html, p + 1, t)) else {
+            continue;
+        };
         if is_word(char_at(q)) {
             continue;
         }
         // `[^>]+` 的最远终点：q 之后第一个 `>`（或串尾）。
-        let r = b[q..].iter().position(|&x| x == b'>').map_or(b.len(), |i| q + i);
+        let r = b[q..]
+            .iter()
+            .position(|&x| x == b'>')
+            .map_or(b.len(), |i| q + i);
         // 从最远处往回试每个 `src` / `data` 起点 s（q < s ≤ r，且落在字符边界上）。
         let mut found: Option<(usize, usize, usize)> = None;
         let mut s = r;
         while s > q {
             if html.is_char_boundary(s) && !is_word(char_before(s)) {
                 for name in ["src", "data"] {
-                    let Some(ne) = match_ascii_ci(html, s, name) else { continue };
+                    let Some(ne) = match_ascii_ci(html, s, name) else {
+                        continue;
+                    };
                     if is_word(char_at(ne)) || b.get(ne) != Some(&b'=') {
                         continue;
                     }
@@ -777,7 +849,11 @@ fn html_media_values(html: &str) -> Vec<&str> {
 /// `=` 之后（[v]）的值：三种写法按顺序试，带 `(?=\s|>)` 前瞻。返回 (值起点, 值终点, 匹配终点)。
 fn media_value(html: &str, v: usize) -> Option<(usize, usize, usize)> {
     let b = html.as_bytes();
-    let lookahead = |i: usize| html.get(i..).and_then(|s| s.chars().next()).is_some_and(|c| is_js_space(c) || c == '>');
+    let lookahead = |i: usize| {
+        html.get(i..)
+            .and_then(|s| s.chars().next())
+            .is_some_and(|c| is_js_space(c) || c == '>')
+    };
     for quote in [b'"', b'\''] {
         if b.get(v) == Some(&quote) {
             if let Some(rel) = b[v + 1..].iter().position(|&x| x == quote) {
@@ -875,7 +951,10 @@ fn media_refs_in(html: &str, out: &mut Vec<String>) {
 
 fn style_link_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"<link rel="stylesheet" href="(_fushi_style_[0-9a-f]{40}\.css)">"#).expect("regex"))
+    RE.get_or_init(|| {
+        Regex::new(r#"<link rel="stylesheet" href="(_fushi_style_[0-9a-f]{40}\.css)">"#)
+            .expect("regex")
+    })
 }
 
 /// `srsStyleRefsIn`：`<script>` 之外引用的共享样式文件名。
@@ -917,9 +996,18 @@ mod tests {
 
     #[test]
     fn hand_cases() {
-        assert_eq!(normalize_term("<b>Ｈｅｌｌｏ</b> 漢字[かんじ]&nbsp;"), "hello漢字");
-        assert_eq!(sort_field("  <style>x</style><i>a&amp;b</i>&hellip; "), "a&b\u{2026}");
-        assert_eq!(cloze_ordinals("{{c2::a}} {{c1,3::b::h}} {{c0::z}}"), vec![2, 1, 3]);
+        assert_eq!(
+            normalize_term("<b>Ｈｅｌｌｏ</b> 漢字[かんじ]&nbsp;"),
+            "hello漢字"
+        );
+        assert_eq!(
+            sort_field("  <style>x</style><i>a&amp;b</i>&hellip; "),
+            "a&b\u{2026}"
+        );
+        assert_eq!(
+            cloze_ordinals("{{c2::a}} {{c1,3::b::h}} {{c0::z}}"),
+            vec![2, 1, 3]
+        );
         assert_eq!(cloze_ordinals("{{c1::open"), Vec::<u32>::new());
         let names = |id: &str| (id == "x").then(|| "Front".to_owned());
         let f = vec![("Front".to_owned(), "<br>".to_owned())];
@@ -927,7 +1015,9 @@ mod tests {
         assert_eq!(card_front_is_empty("{{Deck}}", &names, &f, 0), Ok(false));
         assert!(card_front_is_empty("{{#fld:x}}", &names, &f, 0).is_err());
         assert_eq!(
-            media_refs(["<img src=\"a%20b.png\"> <IMG SRC=c.jpg>[sound:d.mp3]<img src='http://x/y.png'>"]),
+            media_refs([
+                "<img src=\"a%20b.png\"> <IMG SRC=c.jpg>[sound:d.mp3]<img src='http://x/y.png'>"
+            ]),
             "a b.png\nc.jpg\nd.mp3"
         );
     }
@@ -935,14 +1025,27 @@ mod tests {
     /// 删除前的 Dart 实现生成的向量（packages/fushi_engine/test/srs/fixtures/gen_cache_vectors.dart.txt）。
     #[test]
     fn dart_vectors() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cache_text_vectors.json");
-        let root: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("vectors")).expect("json");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/cache_text_vectors.json"
+        );
+        let root: Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("vectors")).expect("json");
         let mut n = 0;
         for v in root["text"].as_array().expect("text") {
             let s = v["s"].as_str().expect("s");
-            assert_eq!(normalize_term(s), v["term"].as_str().unwrap(), "term of {s:?}");
+            assert_eq!(
+                normalize_term(s),
+                v["term"].as_str().unwrap(),
+                "term of {s:?}"
+            );
             assert_eq!(sort_field(s), v["sort"].as_str().unwrap(), "sort of {s:?}");
-            let want: Vec<u32> = v["cloze"].as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect();
+            let want: Vec<u32> = v["cloze"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_u64().unwrap() as u32)
+                .collect();
             assert_eq!(cloze_ordinals(s), want, "cloze of {s:?}");
             // null = Dart 解百分号编码得到非法 UTF-8 时抛异常（文件头的有意偏差）：只要求这里不 panic。
             match v["media"].as_str() {
@@ -965,7 +1068,11 @@ mod tests {
                 .map(|(k, x)| (k.clone(), x.as_str().unwrap().to_owned()))
                 .collect();
             let got = card_front_is_empty(front, &names, &fields, v["ord"].as_i64().unwrap()).ok();
-            assert_eq!(got, v["empty"].as_bool(), "template {front:?} fields {fields:?}");
+            assert_eq!(
+                got,
+                v["empty"].as_bool(),
+                "template {front:?} fields {fields:?}"
+            );
             m += 1;
         }
         assert!(n > 100 && m > 50, "vectors too small: {n} / {m}");
@@ -977,8 +1084,12 @@ mod tests {
         assert_eq!(freq_rank("<b>87</b>"), Some(87));
         assert_eq!(freq_rank("0000000000005"), None);
         assert_eq!(freq_rank("4294967296"), Some(429_496_729));
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/freq_rank_vectors.json");
-        let root: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("vectors")).expect("json");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/freq_rank_vectors.json"
+        );
+        let root: Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("vectors")).expect("json");
         let mut n = 0;
         for v in root["vectors"].as_array().expect("vectors") {
             let s = v[0].as_str().expect("input");

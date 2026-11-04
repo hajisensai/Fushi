@@ -63,7 +63,10 @@ pub fn decode(bytes: &[u8]) -> Result<(usize, Vec<Vec<Value>>), String> {
         rows.push(row);
     }
     if r.at != bytes.len() {
-        return Err(format!("trailing bytes in row page: {}", bytes.len() - r.at));
+        return Err(format!(
+            "trailing bytes in row page: {}",
+            bytes.len() - r.at
+        ));
     }
     Ok((n_cols, rows))
 }

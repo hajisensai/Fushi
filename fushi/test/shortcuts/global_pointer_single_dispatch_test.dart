@@ -347,7 +347,7 @@ void main() {
       result: DictionarySearchResult(searchTerm: ''),
       webViewKey: GlobalKey(),
       onDismiss: () {},
-      onTextSelected: (_, __, ___) {},
+      onTextSelected: (_, __, ___, ____) {},
       onLinkClick: (_, __) {},
       onMineEntry: (_) async => const MinePopupResult(),
       onDuplicateCheck: (_, __) async => false,

@@ -54,7 +54,11 @@ pub struct KdfParams {
 
 impl KdfParams {
     /// 默认：64 MiB、3 轮、单线程（低端机首次派生约 1 s；只在开加密时跑）。
-    pub const DEFAULT: KdfParams = KdfParams { m_kib: 64 * 1024, t: 3, p: 1 };
+    pub const DEFAULT: KdfParams = KdfParams {
+        m_kib: 64 * 1024,
+        t: 3,
+        p: 1,
+    };
 
     /// 参数上下限（P2-7）：参数来自位置上的 `meta.json`，是不可信输入。上限挡住「改 meta 让每台设备派生时
     /// 吃光内存 / 卡死几分钟」；下限挡住「改 meta 把派生降到几乎不花力气、方便离线猜口令」。Dart 侧
@@ -80,7 +84,11 @@ impl KdfParams {
         if !within(p, Self::MIN_P, Self::MAX_P) {
             return Err(format!("kdf parallelism {p} out of range"));
         }
-        Ok(KdfParams { m_kib: m_kib as u32, t: t as u32, p: p as u32 })
+        Ok(KdfParams {
+            m_kib: m_kib as u32,
+            t: t as u32,
+            p: p as u32,
+        })
     }
 }
 
@@ -92,12 +100,21 @@ pub const NONCE_LEN: usize = 24;
 pub const TAG_LEN: usize = 16;
 
 impl CollectionKey {
-    pub fn derive(passphrase: &[u8], salt: &[u8], params: KdfParams) -> Result<CollectionKey, String> {
-        let params = KdfParams::checked(i64::from(params.m_kib), i64::from(params.t), i64::from(params.p))?;
+    pub fn derive(
+        passphrase: &[u8],
+        salt: &[u8],
+        params: KdfParams,
+    ) -> Result<CollectionKey, String> {
+        let params = KdfParams::checked(
+            i64::from(params.m_kib),
+            i64::from(params.t),
+            i64::from(params.p),
+        )?;
         if !(KdfParams::MIN_SALT..=KdfParams::MAX_SALT).contains(&salt.len()) {
             return Err(format!("kdf salt of {} bytes out of range", salt.len()));
         }
-        let p = Params::new(params.m_kib, params.t, params.p, Some(32)).map_err(|e| e.to_string())?;
+        let p =
+            Params::new(params.m_kib, params.t, params.p, Some(32)).map_err(|e| e.to_string())?;
         let mut out = [0u8; 32];
         Argon2::new(Algorithm::Argon2id, Version::V0x13, p)
             .hash_password_into(passphrase, salt, &mut out)
@@ -111,7 +128,13 @@ impl CollectionKey {
         getrandom::fill(&mut nonce).expect("system random source");
         let cipher = XChaCha20Poly1305::new((&self.0).into());
         let ct = cipher
-            .encrypt(&XNonce::from(nonce), Payload { msg: plaintext, aad })
+            .encrypt(
+                &XNonce::from(nonce),
+                Payload {
+                    msg: plaintext,
+                    aad,
+                },
+            )
             .expect("xchacha20poly1305 encrypt");
         let mut out = Vec::with_capacity(NONCE_LEN + ct.len());
         out.extend_from_slice(&nonce);
@@ -125,7 +148,15 @@ impl CollectionKey {
         }
         let nonce: [u8; NONCE_LEN] = sealed[..NONCE_LEN].try_into().ok()?;
         let cipher = XChaCha20Poly1305::new((&self.0).into());
-        cipher.decrypt(&XNonce::from(nonce), Payload { msg: &sealed[NONCE_LEN..], aad }).ok()
+        cipher
+            .decrypt(
+                &XNonce::from(nonce),
+                Payload {
+                    msg: &sealed[NONCE_LEN..],
+                    aad,
+                },
+            )
+            .ok()
     }
 }
 
@@ -146,11 +177,29 @@ mod tests {
 
     #[test]
     fn aead_round_trip_binds_aad() {
-        let key = CollectionKey::derive(b"pw", b"0123456789abcdef", KdfParams { m_kib: 8 * 1024, t: 1, p: 1 }).unwrap();
+        let key = CollectionKey::derive(
+            b"pw",
+            b"0123456789abcdef",
+            KdfParams {
+                m_kib: 8 * 1024,
+                t: 1,
+                p: 1,
+            },
+        )
+        .unwrap();
         let sealed = key.seal(b"hello", b"hdr");
         assert_eq!(key.open(&sealed, b"hdr").as_deref(), Some(&b"hello"[..]));
         assert_eq!(key.open(&sealed, b"other"), None);
-        let wrong = CollectionKey::derive(b"pw2", b"0123456789abcdef", KdfParams { m_kib: 8 * 1024, t: 1, p: 1 }).unwrap();
+        let wrong = CollectionKey::derive(
+            b"pw2",
+            b"0123456789abcdef",
+            KdfParams {
+                m_kib: 8 * 1024,
+                t: 1,
+                p: 1,
+            },
+        )
+        .unwrap();
         assert_eq!(wrong.open(&sealed, b"hdr"), None);
     }
 
@@ -158,7 +207,9 @@ mod tests {
     #[test]
     fn kdf_params_from_meta_are_bounded() {
         let salt = b"0123456789abcdef";
-        let derive = |m: i64, t: i64, p: i64| KdfParams::checked(m, t, p).and_then(|k| CollectionKey::derive(b"pw", salt, k));
+        let derive = |m: i64, t: i64, p: i64| {
+            KdfParams::checked(m, t, p).and_then(|k| CollectionKey::derive(b"pw", salt, k))
+        };
         assert!(derive(8 * 1024, 1, 1).is_ok());
         for (m, t, p) in [
             (8 * 1024 - 1, 1, 1),
@@ -171,9 +222,34 @@ mod tests {
             (64 * 1024, 3, 0),
             (64 * 1024, 3, 5),
         ] {
-            assert!(derive(m, t, p).is_err(), "m={m} t={t} p={p} must be rejected");
+            assert!(
+                derive(m, t, p).is_err(),
+                "m={m} t={t} p={p} must be rejected"
+            );
         }
-        assert!(CollectionKey::derive(b"pw", b"short", KdfParams { m_kib: 8 * 1024, t: 1, p: 1 }).is_err());
-        assert!(CollectionKey::derive(b"pw", &[0u8; 65], KdfParams { m_kib: 8 * 1024, t: 1, p: 1 }).is_err());
+        assert!(
+            CollectionKey::derive(
+                b"pw",
+                b"short",
+                KdfParams {
+                    m_kib: 8 * 1024,
+                    t: 1,
+                    p: 1
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            CollectionKey::derive(
+                b"pw",
+                &[0u8; 65],
+                KdfParams {
+                    m_kib: 8 * 1024,
+                    t: 1,
+                    p: 1
+                }
+            )
+            .is_err()
+        );
     }
 }

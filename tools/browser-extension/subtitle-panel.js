@@ -1433,6 +1433,19 @@
     return false;
   };
 
+  // 按秒快退 / 快进（video-shortcuts.js 的 seek-back / seek-forward）：与字幕跳转共用 seekTo，
+  // Netflix 因此同样走官方 player.seek。与字幕轨无关——没有 Fushi 字幕也能用。
+  // 目标夹在 [0, 时长]（时长未知 / 直播只夹下界）。
+  window.fushiSubtitleSeekBy = function (deltaMs) {
+    var v = videoEl();
+    if (!v || typeof deltaMs !== 'number' || !isFinite(deltaMs)) return false;
+    var target = videoTimeMs() + deltaMs;
+    var d = Number(v.duration);
+    if (isFinite(d) && d > 0) target = Math.min(target, Math.floor(d * 1000));
+    seekTo(target);
+    return true;
+  };
+
   // 兼容旧 content.js 的批量录制钩子。原生 Side Panel 不属于标签页画面，不再需要改网页宽度。
   window.fushiSubtitlePanelSuspendPush = function () {};
   window.fushiSubtitlePanelResumePush = function () {};

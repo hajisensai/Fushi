@@ -21,6 +21,9 @@ const String kSrsMediaScheme = 'fushi-srs';
 /// 媒体路径前缀。
 const String kSrsMediaPath = '/media/';
 
+/// `[sound:]` 播放键的类名：Fushi 自己的样式类 + Anki reviewer 的 `replay-button soundLink`。
+const String kSrsSoundButtonClasses = 'fushi-srs-sound replay-button soundLink';
+
 /// 卡面 JS 桥：播放 `[sound:]` 的 handler 名。
 const String kSrsPlaySoundHandler = 'onSrsPlaySound';
 
@@ -68,9 +71,13 @@ String _mediaUrl(String prefix, String rawName) =>
     '$prefix${Uri.encodeComponent(_htmlUnescape(rawName.trim()))}';
 
 /// `[sound:x]` 渲染成的播放按钮（内联 SVG 三角，样式见 [kSrsCardMediaCss]）。
+///
+/// 同时带 Anki reviewer 给 `[sound:]` 的类名 `replay-button soundLink`：导入的模板按它找音频键
+/// （eggrolls 背面 `document.querySelector('.VocabAudio .replay-button').click()` 强制播单词音频，
+/// 模板 CSS 也按它画键；反馈 uCPhpeCM35）。点击仍由 [kSrsCardMediaScript] 按 `data-sound` 接管。
 String srsSoundButtonHtml(String name) {
   final String n = _attrEscape(_htmlUnescape(name.trim()));
-  return '<button type="button" class="fushi-srs-sound" data-sound="$n" '
+  return '<button type="button" class="$kSrsSoundButtonClasses" data-sound="$n" '
       'aria-label="$n">'
       '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
       '<path d="M8 5v14l11-7z" fill="currentColor"/></svg></button>';

@@ -119,7 +119,13 @@ impl ReadPool {
         Self::with_clock(path, cap, IDLE_TTL, open, Arc::new(Instant::now))
     }
 
-    pub(crate) fn with_clock(path: &Path, cap: usize, ttl: Duration, open: Opener, clock: Clock) -> Result<Self, String> {
+    pub(crate) fn with_clock(
+        path: &Path,
+        cap: usize,
+        ttl: Duration,
+        open: Opener,
+        clock: Clock,
+    ) -> Result<Self, String> {
         let first = open(path)?;
         let since = clock();
         Ok(Self {
@@ -128,7 +134,15 @@ impl ReadPool {
             ttl,
             open,
             clock,
-            state: Mutex::new(State { idle: vec![Idle { conn: first, since, pinned: true }], live: 1, closed: false }),
+            state: Mutex::new(State {
+                idle: vec![Idle {
+                    conn: first,
+                    since,
+                    pinned: true,
+                }],
+                live: 1,
+                closed: false,
+            }),
             returned: Condvar::new(),
         })
     }
@@ -155,7 +169,11 @@ impl ReadPool {
             if let Some(e) = st.idle.pop() {
                 drop(st);
                 drop(expired);
-                return Ok(Pooled { pool: self, conn: Some(e.conn), pinned: e.pinned });
+                return Ok(Pooled {
+                    pool: self,
+                    conn: Some(e.conn),
+                    pinned: e.pinned,
+                });
             }
             if st.live < self.cap {
                 st.live += 1;
@@ -163,7 +181,11 @@ impl ReadPool {
                 drop(expired);
                 // 开连接不持池锁：别的线程照常借还。
                 return match (self.open)(&self.path) {
-                    Ok(conn) => Ok(Pooled { pool: self, conn: Some(conn), pinned: false }),
+                    Ok(conn) => Ok(Pooled {
+                        pool: self,
+                        conn: Some(conn),
+                        pinned: false,
+                    }),
                     Err(e) => {
                         let mut st = self.state();
                         st.live -= 1;
@@ -202,7 +224,9 @@ impl Deref for Pooled<'_> {
     type Target = Connection;
 
     fn deref(&self) -> &Connection {
-        self.conn.as_ref().expect("pooled connection is held until drop")
+        self.conn
+            .as_ref()
+            .expect("pooled connection is held until drop")
     }
 }
 
@@ -218,7 +242,11 @@ impl Drop for Pooled<'_> {
         } else {
             let now = (self.pool.clock)();
             let expired = st.reap(now, self.pool.ttl);
-            st.idle.push(Idle { conn, since: now, pinned: self.pinned });
+            st.idle.push(Idle {
+                conn,
+                since: now,
+                pinned: self.pinned,
+            });
             drop(st);
             drop(expired);
         }
@@ -228,8 +256,8 @@ impl Drop for Pooled<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
     use std::sync::Arc;
+    use std::sync::mpsc;
     use std::time::Duration;
 
     use rusqlite::types::Value;
@@ -238,7 +266,7 @@ mod tests {
 
     use rusqlite::Connection;
 
-    use super::super::{rows, SrsCore, CLOSED, NOT_SNAPSHOT};
+    use super::super::{CLOSED, NOT_SNAPSHOT, SrsCore, rows};
 
     fn open(name: &str) -> SrsCore {
         let dir = std::env::temp_dir().join(format!("ffsrs_pool_{name}_{}", std::process::id()));
@@ -277,13 +305,22 @@ mod tests {
         let (tx, rx) = mpsc::channel::<Value>();
         let t = {
             let core = Arc::clone(&core);
-            std::thread::spawn(move || tx.send(scalar(&core.snapshot_select(COUNT, &[]).unwrap())).unwrap())
+            std::thread::spawn(move || {
+                tx.send(scalar(&core.snapshot_select(COUNT, &[]).unwrap()))
+                    .unwrap()
+            })
         };
-        let seen = rx.recv_timeout(Duration::from_secs(5)).expect("query waited for the other reader");
+        let seen = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("query waited for the other reader");
         assert_eq!(seen, Value::Integer(1));
         t.join().unwrap();
         drop(held);
-        assert_eq!(core.drift_readers.live(), 2, "the second reader stays open for reuse");
+        assert_eq!(
+            core.drift_readers.live(),
+            2,
+            "the second reader stays open for reuse"
+        );
     }
 
     /// 两条真跑着的查询在两条线程上重叠执行：长查询（递归 CTE 数几百万行）开始之后，短查询在它结束之前返回。
@@ -308,9 +345,15 @@ mod tests {
         started_rx.recv().unwrap();
         std::thread::sleep(Duration::from_millis(50));
         let t = std::time::Instant::now();
-        assert_eq!(scalar(&core.snapshot_select(COUNT, &[]).unwrap()), Value::Integer(1));
+        assert_eq!(
+            scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
+            Value::Integer(1)
+        );
         let short = t.elapsed();
-        assert!(!long.is_finished(), "long query finished before the short one (make it longer)");
+        assert!(
+            !long.is_finished(),
+            "long query finished before the short one (make it longer)"
+        );
         let long = long.join().unwrap();
         assert!(short < long / 4, "short {short:?} vs long {long:?}");
     }
@@ -323,15 +366,30 @@ mod tests {
         insert(&core, "a");
         core.exec("BEGIN TRANSACTION", &[], true).unwrap();
         insert(&core, "b");
-        assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(2), "read-your-writes in the transaction");
-        assert_eq!(scalar(&core.snapshot_select(COUNT, &[]).unwrap()), Value::Integer(1), "outside query read dirty data");
         assert_eq!(
-            scalar(&core.snapshot_select("SELECT last_insert_rowid()", &[]).unwrap()),
+            scalar(&core.select(COUNT, &[]).unwrap()),
+            Value::Integer(2),
+            "read-your-writes in the transaction"
+        );
+        assert_eq!(
+            scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
+            Value::Integer(1),
+            "outside query read dirty data"
+        );
+        assert_eq!(
+            scalar(
+                &core
+                    .snapshot_select("SELECT last_insert_rowid()", &[])
+                    .unwrap()
+            ),
             Value::Integer(0),
             "outside query ran on the writer"
         );
         core.exec("COMMIT TRANSACTION", &[], true).unwrap();
-        assert_eq!(scalar(&core.snapshot_select(COUNT, &[]).unwrap()), Value::Integer(2));
+        assert_eq!(
+            scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
+            Value::Integer(2)
+        );
     }
 
     /// 不是只读查询的语句不执行、报 [NOT_SNAPSHOT]（Dart 改发写连接那一路）。
@@ -344,7 +402,11 @@ mod tests {
             "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('r', 'p', '{}') RETURNING id",
             "WITH x AS (SELECT 1) INSERT INTO srs_unknown_events (id, profile_uid, json) SELECT 'w', 'p', '{}' FROM x",
         ] {
-            assert_eq!(core.snapshot_select(sql, &[]).err().as_deref(), Some(NOT_SNAPSHOT), "{sql}");
+            assert_eq!(
+                core.snapshot_select(sql, &[]).err().as_deref(),
+                Some(NOT_SNAPSHOT),
+                "{sql}"
+            );
         }
         assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(0));
         assert!(!core.in_transaction().unwrap());
@@ -355,7 +417,9 @@ mod tests {
     fn pool_is_capped_and_waits_for_a_returned_connection() {
         let core = Arc::new(open("cap"));
         let cap = core.read_concurrency();
-        let held: Vec<_> = (0..cap).map(|_| core.drift_readers.get().unwrap()).collect();
+        let held: Vec<_> = (0..cap)
+            .map(|_| core.drift_readers.get().unwrap())
+            .collect();
         assert_eq!(core.drift_readers.live(), cap);
         let (tx, rx) = mpsc::channel::<()>();
         let t = {
@@ -365,9 +429,13 @@ mod tests {
                 tx.send(()).unwrap();
             })
         };
-        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "opened a connection past the cap");
+        assert!(
+            rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "opened a connection past the cap"
+        );
         drop(held);
-        rx.recv_timeout(Duration::from_secs(5)).expect("waiter not woken by a returned connection");
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("waiter not woken by a returned connection");
         t.join().unwrap();
         assert_eq!(core.drift_readers.live(), cap);
     }
@@ -417,20 +485,28 @@ mod tests {
                 closed_tx.send(()).unwrap();
             })
         };
-        assert!(closed_rx.recv_timeout(Duration::from_millis(300)).is_err(), "close returned with a borrowed reader");
+        assert!(
+            closed_rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "close returned with a borrowed reader"
+        );
         drop(a);
         assert!(closed_rx.recv_timeout(Duration::from_millis(300)).is_err());
         drop(b);
-        closed_rx.recv_timeout(Duration::from_secs(5)).expect("close never returned");
+        closed_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("close never returned");
         closer.join().unwrap();
         assert_eq!(core.drift_readers.live(), 0);
-        assert_eq!(core.snapshot_select(COUNT, &[]).err().as_deref(), Some(CLOSED));
+        assert_eq!(
+            core.snapshot_select(COUNT, &[]).err().as_deref(),
+            Some(CLOSED)
+        );
         assert_eq!(core.select(COUNT, &[]).err().as_deref(), Some(CLOSED));
     }
 
     #[test]
     fn concurrency_is_half_the_cores_within_bounds() {
-        use super::{read_concurrency, read_concurrency_for, READERS_MAX, READERS_MIN};
+        use super::{READERS_MAX, READERS_MIN, read_concurrency, read_concurrency_for};
         assert_eq!(read_concurrency_for(0), READERS_MIN);
         assert_eq!(read_concurrency_for(1), READERS_MIN);
         assert_eq!(read_concurrency_for(2), READERS_MIN);
@@ -462,9 +538,18 @@ mod tests {
     fn pool_with_clock(name: &str) -> (SrsCore, super::ReadPool, Arc<std::sync::Mutex<Instant>>) {
         let core = open(name);
         insert(&core, "a");
-        let path = std::env::temp_dir().join(format!("ffsrs_pool_{name}_{}", std::process::id())).join("srs.db");
+        let path = std::env::temp_dir()
+            .join(format!("ffsrs_pool_{name}_{}", std::process::id()))
+            .join("srs.db");
         let (clock, now) = manual_clock();
-        let pool = super::ReadPool::with_clock(&path, 4, Duration::from_secs(60), super::super::open_drift_reader, clock).unwrap();
+        let pool = super::ReadPool::with_clock(
+            &path,
+            4,
+            Duration::from_secs(60),
+            super::super::open_drift_reader,
+            clock,
+        )
+        .unwrap();
         (core, pool, now)
     }
 
@@ -477,7 +562,11 @@ mod tests {
     fn idle_connections_past_the_ttl_are_closed_on_the_next_borrow_or_return() {
         let (_core, pool, now) = pool_with_clock("reap");
         {
-            let (a, b, c) = (pool.get().unwrap(), pool.get().unwrap(), pool.get().unwrap());
+            let (a, b, c) = (
+                pool.get().unwrap(),
+                pool.get().unwrap(),
+                pool.get().unwrap(),
+            );
             assert_eq!(pool.live(), 3);
             drop((a, b, c));
         }
@@ -494,7 +583,11 @@ mod tests {
         // 很久以后：只剩常驻那条。
         advance(&now, Duration::from_secs(3600));
         drop(pool.get().unwrap());
-        assert_eq!(pool.live(), 1, "the pinned connection opened with the store must stay");
+        assert_eq!(
+            pool.live(),
+            1,
+            "the pinned connection opened with the store must stay"
+        );
         advance(&now, Duration::from_secs(3600));
         drop(pool.get().unwrap());
         assert_eq!(pool.live(), 1);
@@ -504,7 +597,11 @@ mod tests {
     #[test]
     fn returning_a_connection_also_reaps_expired_idle_ones() {
         let (_core, pool, now) = pool_with_clock("reap_on_return");
-        let (a, b, c) = (pool.get().unwrap(), pool.get().unwrap(), pool.get().unwrap());
+        let (a, b, c) = (
+            pool.get().unwrap(),
+            pool.get().unwrap(),
+            pool.get().unwrap(),
+        );
         drop(a);
         drop(b);
         assert_eq!(pool.live(), 3);
@@ -519,7 +616,12 @@ mod tests {
     fn reaped_connections_are_reopened_on_demand_and_close_still_cleans_up() {
         let (_core, pool, now) = pool_with_clock("reopen");
         let pool = Arc::new(pool);
-        drop((pool.get().unwrap(), pool.get().unwrap(), pool.get().unwrap(), pool.get().unwrap()));
+        drop((
+            pool.get().unwrap(),
+            pool.get().unwrap(),
+            pool.get().unwrap(),
+            pool.get().unwrap(),
+        ));
         assert_eq!(pool.live(), 4);
         advance(&now, Duration::from_secs(61));
         drop(pool.get().unwrap());
@@ -537,9 +639,13 @@ mod tests {
                 tx.send(()).unwrap();
             })
         };
-        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "close returned with borrowed readers");
+        assert!(
+            rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "close returned with borrowed readers"
+        );
         drop(held);
-        rx.recv_timeout(Duration::from_secs(5)).expect("close never returned");
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("close never returned");
         closer.join().unwrap();
         assert_eq!(pool.live(), 0);
         assert_eq!(pool.get().err().as_deref(), Some(CLOSED));
@@ -552,7 +658,9 @@ mod tests {
     #[test]
     #[ignore]
     fn real_db_parallel_long_reads() {
-        let path = std::path::PathBuf::from(std::env::var("FUSHI_SRS_REAL_DB").expect("set FUSHI_SRS_REAL_DB"));
+        let path = std::path::PathBuf::from(
+            std::env::var("FUSHI_SRS_REAL_DB").expect("set FUSHI_SRS_REAL_DB"),
+        );
         let conflicts = "SELECT e.entity_kind AS k, e.entity_id AS i, e.field_key AS f, CAST(e.json AS BLOB) AS j, s.server_time AS st             FROM srs_field_edits e JOIN (SELECT entity_kind AS k, entity_id AS i, field_key AS f FROM srs_field_edits             WHERE profile_uid = (SELECT profile_uid FROM srs_entities WHERE kind = 'deck' LIMIT 1) AND             ((entity_kind = 'profile') OR (entity_kind = 'deck' AND field_key NOT IN ('collapsed', 'position', 'extendLimits'))             OR (entity_kind = 'notetype' AND field_key IN ('name', 'termField', 'freqField'))             OR (entity_kind = 'note' AND field_key IN ('deck', 'noteType')) OR (entity_kind = 'card' AND field_key NOT IN ('newPos')))             GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m             ON e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f             LEFT JOIN srs_event_local s ON s.event_id = e.id             WHERE e.profile_uid = (SELECT profile_uid FROM srs_entities WHERE kind = 'deck' LIMIT 1)";
         let notes_scan = "SELECT id, note_type_id, media_refs FROM srs_notes_cache";
         fn drain(c: &Connection, sql: &str) -> (usize, Duration) {
@@ -574,11 +682,19 @@ mod tests {
         let t = Instant::now();
         let probe = open();
         let card: i64 = probe
-            .query_row("SELECT rowid FROM srs_cards_cache LIMIT 1 OFFSET 500", [], |r| r.get(0))
+            .query_row(
+                "SELECT rowid FROM srs_cards_cache LIMIT 1 OFFSET 500",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or_default();
         let point = "SELECT * FROM srs_cards_cache WHERE rowid = ?1";
         let first = probe.query_row(point, [card], |_| Ok(())).ok();
-        eprintln!("BENCH open+first point read = {:?} (found={})", t.elapsed(), first.is_some());
+        eprintln!(
+            "BENCH open+first point read = {:?} (found={})",
+            t.elapsed(),
+            first.is_some()
+        );
         let t = Instant::now();
         let _ = open();
         eprintln!("BENCH open (warm) = {:?}", t.elapsed());
@@ -589,9 +705,18 @@ mod tests {
             let (mut used, mut high) = (0, 0);
             // SAFETY: 只读这条连接的一项统计。
             unsafe {
-                rusqlite::ffi::sqlite3_db_status(warm.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+                rusqlite::ffi::sqlite3_db_status(
+                    warm.handle(),
+                    rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED,
+                    &mut used,
+                    &mut high,
+                    0,
+                )
             };
-            eprintln!("BENCH {label} warmup rows={rows} {d:?} page_cache_used={}KiB", used / 1024);
+            eprintln!(
+                "BENCH {label} warmup rows={rows} {d:?} page_cache_used={}KiB",
+                used / 1024
+            );
             for round in 0..2 {
                 for n in [1usize, 2, 4, 8] {
                     let conns: Vec<Connection> = (0..n).map(|_| open()).collect();
@@ -620,7 +745,8 @@ mod tests {
                             std::thread::spawn(move || drain(&c, &sql).1)
                         })
                         .collect();
-                    let each: Vec<Duration> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+                    let each: Vec<Duration> =
+                        handles.into_iter().map(|h| h.join().unwrap()).collect();
                     let total = start.elapsed();
                     stop.store(true, std::sync::atomic::Ordering::SeqCst);
                     let (worst, samples) = prober.join().unwrap();

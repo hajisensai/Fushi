@@ -46,11 +46,17 @@ fn parse_pair(s: &str) -> Option<(i64, i64)> {
 pub fn sniff(text: &str) -> Option<Flavor> {
     for raw in text.lines().take(200) {
         let l = raw.trim();
-        let Some(r) = l.strip_prefix('[') else { continue };
+        let Some(r) = l.strip_prefix('[') else {
+            continue;
+        };
         let Some(end) = r.find(']') else { continue };
         let head = &r[..end];
         let body = &r[end + 1..];
-        if head.len() == 1 && head.as_bytes()[0].is_ascii_digit() && body.contains('(') && body.ends_with(')') {
+        if head.len() == 1
+            && head.as_bytes()[0].is_ascii_digit()
+            && body.contains('(')
+            && body.ends_with(')')
+        {
             return Some(Flavor::Lys);
         }
         if parse_pair(head).is_none() {
@@ -82,7 +88,9 @@ pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
     let mut krc_lang: Option<Json> = None;
     for raw in text.lines() {
         let l = raw.trim();
-        let Some(r) = l.strip_prefix('[') else { continue };
+        let Some(r) = l.strip_prefix('[') else {
+            continue;
+        };
         let Some(end) = r.find(']') else { continue };
         let head = &r[..end];
         let body = &r[end + 1..];
@@ -103,7 +111,9 @@ pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
         }
         let line = match flavor {
             Flavor::Lys => {
-                let Ok(prop) = head.trim().parse::<u32>() else { continue };
+                let Ok(prop) = head.trim().parse::<u32>() else {
+                    continue;
+                };
                 let mut line = Line::default();
                 line.syllables = text_then_time(body, 0);
                 if prop >= 3 && prop <= 5 {
@@ -117,8 +127,14 @@ pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
                 line
             }
             _ => {
-                let Some((ls, ld)) = parse_pair(head) else { continue };
-                let mut line = Line { start_ms: ls, end_ms: ls + ld, ..Line::default() };
+                let Some((ls, ld)) = parse_pair(head) else {
+                    continue;
+                };
+                let mut line = Line {
+                    start_ms: ls,
+                    end_ms: ls + ld,
+                    ..Line::default()
+                };
                 line.syllables = match flavor {
                     Flavor::Qrc => text_then_time(body, 0),
                     Flavor::Yrc => time_then_text(body, '(', ')', 0),
@@ -192,7 +208,10 @@ fn find_time_group(s: &str, open_c: char, close_c: char) -> Option<(usize, usize
     while let Some(o) = s[from..].find(open_c).map(|p| p + from) {
         if let Some(c) = s[o + 1..].find(close_c).map(|p| p + o + 1) {
             let inner = &s[o + 1..c];
-            if inner.chars().all(|ch| ch.is_ascii_digit() || ch == ',' || ch == '-' || ch == ' ') {
+            if inner
+                .chars()
+                .all(|ch| ch.is_ascii_digit() || ch == ',' || ch == '-' || ch == ' ')
+            {
                 if let Some((a, b)) = parse_pair(inner) {
                     return Some((o, c, a, b));
                 }
@@ -204,7 +223,9 @@ fn find_time_group(s: &str, open_c: char, close_c: char) -> Option<(usize, usize
 }
 
 fn apply_krc_language(t: &mut Timeline, lang: &Json) {
-    let main_idx: Vec<usize> = (0..t.lines.len()).filter(|&i| t.lines[i].role == Role::Main).collect();
+    let main_idx: Vec<usize> = (0..t.lines.len())
+        .filter(|&i| t.lines[i].role == Role::Main)
+        .collect();
     for item in lang.get("content").map(Json::as_arr).unwrap_or(&[]) {
         let ty = item.get("type").and_then(Json::as_f64).unwrap_or(-1.0) as i64;
         let rows = item.get("lyricContent").map(Json::as_arr).unwrap_or(&[]);
@@ -212,7 +233,12 @@ fn apply_krc_language(t: &mut Timeline, lang: &Json) {
             let parts: Vec<&str> = row.as_arr().iter().filter_map(Json::as_str).collect();
             match ty {
                 0 => {
-                    let r = parts.iter().map(|p| p.trim()).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ");
+                    let r = parts
+                        .iter()
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     if !r.is_empty() {
                         t.lines[li].romanization = Some(r);
                     }
@@ -228,7 +254,9 @@ fn apply_krc_language(t: &mut Timeline, lang: &Json) {
 }
 
 /// 酷狗 KRC 加密：`krc1` 头 + 16 字节密钥循环异或 + zlib。
-const KRC_KEY: [u8; 16] = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105];
+const KRC_KEY: [u8; 16] = [
+    64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105,
+];
 
 pub fn is_encrypted_krc(b: &[u8]) -> bool {
     b.starts_with(b"krc1")
@@ -236,9 +264,15 @@ pub fn is_encrypted_krc(b: &[u8]) -> bool {
 
 pub fn decrypt_krc(b: &[u8]) -> Option<Vec<u8>> {
     let body = b.strip_prefix(b"krc1")?;
-    let xored: Vec<u8> = body.iter().enumerate().map(|(i, &x)| x ^ KRC_KEY[i % 16]).collect();
+    let xored: Vec<u8> = body
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| x ^ KRC_KEY[i % 16])
+        .collect();
     let mut out = Vec::new();
-    flate2::read::ZlibDecoder::new(&xored[..]).read_to_end(&mut out).ok()?;
+    flate2::read::ZlibDecoder::new(&xored[..])
+        .read_to_end(&mut out)
+        .ok()?;
     Some(out)
 }
 

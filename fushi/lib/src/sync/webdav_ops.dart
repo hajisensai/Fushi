@@ -532,11 +532,10 @@ class WebDavOps {
       }
       return href;
     }
-    final isDefaultPort =
-        (baseUri.scheme == 'http' && baseUri.port == 80) ||
-        (baseUri.scheme == 'https' && baseUri.port == 443);
-    final portSuffix = isDefaultPort ? '' : ':${baseUri.port}';
-    return '${baseUri.scheme}://${baseUri.host}$portSuffix$href';
+    // Uri.origin 自带方括号包住的 IPv6 字面量并省略默认端口；手拼 `host` 会丢掉
+    // 方括号（`Uri.host` 返回裸地址），互联走 IPv6 地址时拼出
+    // `https://fd4d:…:38765/…`，下一次 Uri.parse 抛 Invalid port（崩溃分诊 n1i0ET11Ea）。
+    return '${baseUri.origin}$href';
   }
 
   // Metadata JSON files (progress/stats/audiobook) are tiny by spec; cap the

@@ -27,7 +27,7 @@
 
 use crate::status;
 use std::mem::ManuallyDrop;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 mod sequence;
 pub(crate) use sequence::AvifAnimation;
@@ -504,13 +504,7 @@ fn parse_iref(data: &[u8], b: &BoxHeader) -> R<Vec<Reference>> {
     let mut out = Vec::new();
     for r in children(data, b.body + 4, b.end)? {
         let mut c = Cursor::new(&data[r.body..r.end]);
-        let id = |c: &mut Cursor| -> R<u32> {
-            if v == 0 {
-                Ok(c.u16()? as u32)
-            } else {
-                c.u32()
-            }
-        };
+        let id = |c: &mut Cursor| -> R<u32> { if v == 0 { Ok(c.u16()? as u32) } else { c.u32() } };
         let from = id(&mut c)?;
         let n = c.u16()?;
         let mut to = Vec::with_capacity(n as usize);

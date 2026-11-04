@@ -1765,6 +1765,20 @@ html[data-theme="dark"] .glossary-group {
     font-size: 1em !important;
 }
 
+/* BUG-4040（反馈 Xr7RRZ3zjm / dyDC7zou8x：新明解 第八版 词头【鯉】【漁る】上的表外字 /
+   表外音訓标记「︿」「︽」压在汉字上）—— 上一条只把 <rt> 本身的字号归一，没管 rt 的
+   **后代**。jitenbot 转出的新明解把标记写成
+   `<ruby>鯉<rt><span style="font-size: 2em">︿</span></rt></ruby>`（作者按原生 ruby
+   假设 rt 0.5em × 2em = 基字 1em）。在本布局里 .ruby-rt 盒已是 0.6em，后代再乘 2 =
+   基字 1.2em，而 .ruby-unit 的预留带只有 0.66em（按一行注音字号定死），标记从带顶
+   向下长出 0.54em，正好盖住基字上半截（WebKit / Chromium 实测各压进基字 8.1px @15px）。
+   与 BUG-1897 同一原则：注音几何归弹窗所有，词典在 rt 内部声明的字号同样没有正确
+   语义，一并归一到注音字号（行内 style 也要压过，故 !important）。颜色 / 字重等非几何
+   声明不受影响。 */
+:where(.glossary-group, .glossary-content) .ruby-rt rt * {
+    font-size: 1em !important;
+}
+
 /* 用户反馈（应用内反馈 10-09）：明鏡这类带注音的释义，拖选复制会把振假名一起带出来
    （「折檻せっかん」）。Yomitan / Hoshi 都不让注音参与选区——与词头 `.expression rt`
    同一口径，释义里的注音盒（.ruby-rt 及其 <rt>、裸 <rt>/<rp> 回退）一律不可选，选区
