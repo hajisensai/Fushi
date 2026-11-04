@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart' show maskComments;
+
 /// BUG-3888 source-scan guard: on Windows, Flutter's raster thread must never
 /// wait for libmpv.
 ///
@@ -22,15 +24,9 @@ void main() {
   const String videoOutputPath =
       '../third_party/media_kit_video/windows/video_output.cc';
 
-  /// Drops `//` line comments so tokens that only survive in prose describing
-  /// the removed code cannot satisfy or trip an assertion.
-  String code(String path) => File(path)
-      .readAsLinesSync()
-      .map((String line) {
-        final int i = line.indexOf('//');
-        return i < 0 ? line : line.substring(0, i);
-      })
-      .join('\n');
+  /// Masks `//` and `/* */` comments so tokens that only survive in prose
+  /// describing the removed code cannot satisfy or trip an assertion.
+  String code(String path) => maskComments(File(path).readAsStringSync());
 
   /// Body of `ANGLESurfaceManager::<name>(...) { ... }` (brace-matched).
   String functionBody(String source, String name) {
