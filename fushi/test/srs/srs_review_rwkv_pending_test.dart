@@ -79,7 +79,15 @@ class _FakeRwkvService extends SrsRwkvService {
   Future<List<double>?> instantRetrievability(
     List<SrsRwkvCandidate> cards, {
     required int atMs,
-  }) async {
+  }) => _score(cards);
+
+  @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) => _score(cards);
+
+  Future<List<double>?> _score(List<SrsRwkvCandidate> cards) async {
     scoringCalls++;
     if (!ready) {
       if (readyWhenAsked) emit(const SrsRwkvStatus(SrsRwkvPhase.ready));
