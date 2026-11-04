@@ -37,8 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4083](bugs/BUG-4083-extension-mined-panel-transparent.md) | 🚧 | 🚧 | extension-mined-panel-transparent |
-| [BUG-4082](bugs/BUG-4082-manga-macos-context-menu-stack.md) | 🚧 | 🚧 | manga-macos-context-menu-stack |
+| [BUG-4083](bugs/BUG-4083-extension-mined-panel-transparent.md) | ✅ | ✅ | 浏览器扩展「卡片已在 Anki 中」面板底板透明，字叠字 |
+| [BUG-4082](bugs/BUG-4082-manga-macos-context-menu-stack.md) | ✅ | ✅ | macOS 漫画阅读器右键菜单不消失、重复叠加 |
 | [BUG-4081](bugs/BUG-4081-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |
 | [BUG-4080](bugs/BUG-4080-music-album-cover-under-top-bar.md) | ✅ | ✅ | MD3 专辑页 / 单曲详情页首项被悬浮顶栏盖住 |
 | [BUG-4079](bugs/BUG-4079-inline-notice-actions-mid-banner.md) | ✅ | ✅ | 横幅（FushiInlineNotice）同行动作按钮停在横幅中间 |
