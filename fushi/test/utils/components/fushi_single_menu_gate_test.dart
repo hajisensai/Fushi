@@ -119,13 +119,13 @@ void main() {
         zoomPercent: 100,
       );
       const String start = '  // 右键菜单在场时（Dart 置 window.__fushiMangaMenuOpen）';
-      const String end =
-          "  document.addEventListener('pointerdown',_cancelDoubleTapZoom";
+      // 以监听自己的收尾为界，不借相邻代码当结束标记（相邻代码挪动就切错段）。
+      const String end = '},{capture:true,passive:true});';
       final int from = document.indexOf(start);
       expect(from, isNonNegative, reason: '生成文档里找不到菜单关闭监听');
       final int to = document.indexOf(end, from);
       expect(to, isNonNegative);
-      final String snippet = document.substring(from, to);
+      final String snippet = document.substring(from, to + end.length);
       final String code =
           '''
 const assert=require('node:assert/strict');

@@ -1963,10 +1963,13 @@ class MineOutcome {
       stackTrace = null;
 
   /// 已存入待发制卡队列（见 [MineResult.queued]）。
-  const MineOutcome.queued()
+  ///
+  /// [deckName] 非空 = 卡进的是**本机后台写入队列**（挖词目标 = Fushi 复习时的
+  /// 「后台制卡」，入队即返回、随后依次写进这个牌组），不是等着发往 Anki 的待发卡片；
+  /// 提示文案据此区分。Anki 待发队列不知道补发时落进哪个牌组，恒为 null。
+  const MineOutcome.queued({this.deckName})
     : result = MineResult.queued,
       noteId = null,
-      deckName = null,
       audioWarning = null,
       errorDetail = null,
       errorCode = null,
@@ -2010,6 +2013,8 @@ class MineOutcome {
   /// 仅在 [result] == [MineResult.success] 时可能非空：后端实际落卡（或覆写目标
   /// 所属配置）的牌组名，成功 toast「已添加到『…』」的**唯一**来源（BUG-1549）。
   /// `null` 仅出现在旧主机互联转发未回传牌组名的降级路径。
+  /// [MineResult.queued] 时非空 = 进了本机后台写入队列、将落进的牌组（见
+  /// [MineOutcome.queued]）。
   final String? deckName;
 
   /// 仅在 [result] == [MineResult.success] 时可能非空：单词远程音频下载失败的
