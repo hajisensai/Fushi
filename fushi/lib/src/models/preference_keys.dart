@@ -693,6 +693,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
   'srs_lapis_migration_reminder',
+  // bool（默认 false）：挖词目标 = Fushi 复习时「后台制卡」——制卡把请求冻结进进程内的
+  // 后台写入队列、立即返回，卡片随后依次写进复习（SrsMiningAnkiRepository）。非凭据、跨设备。
+  'srs_mining_background',
   // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
   // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
   'srs_mining_deck_id',

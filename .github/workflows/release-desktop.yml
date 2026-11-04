@@ -2828,6 +2828,18 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_music/verify_abi.sh --no-plugin fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_corpus/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+      # BUG-4102 / BUG-4075：iOS 崩溃诊断只给 `Runner+偏移` 与镜像 UUID，没有这一次构建的
+      # dSYM 就无法符号化（Rust 静态库都链在 Runner 里）。按序号命名，取证时按报告里的构建号
+      # 与 `binary uuids` 对上。只是证据，不进 Release 资产（名字刻意不叫 desktop-artifacts-*）。
+      - name: Upload iOS release dSYMs (no codesign)
+        if: github.event.inputs.testflight_only != 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dsyms-unsigned-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/Release-iphoneos/*.dSYM
+          if-no-files-found: warn
+          retention-days: 90
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
@@ -2876,7 +2888,8 @@ jobs:
       # 上面的未签名 IPA 是 GitHub Release 资产，**保持不变**：老用户用自签工具
       # （AltStore / Sideloadly 等）侧载的就是它，换成 App Store 签名的包会直接
       # 打断他们。TestFlight 走的是下面这个额外的签名 IPA（手动 beta/formal、
-      # testflight_only 与每次 develop debug push 才产出），它不进 Release 资产。
+      # testflight_only 与每次 develop debug push 才产出；build_only 的手动 dispatch
+      # 也签一份但不传，用来在发版前先验签名链路），它不进 Release 资产。
       #
       # 每一项 Apple 凭据都是可选的：缺任何一项就整段跳过，未签名 IPA 照常发布，
       # fork 与无账号状态下发布链路不受影响（tool/check_release_policy.ps1 守卫
@@ -2965,10 +2978,21 @@ jobs:
             echo "::error title=TestFlight-only run cannot upload::testflight_only=true but the upload gate is closed (creds=$CREDS channel=$RELEASE_CHANNEL build_only=${INPUT_BUILD_ONLY:-} upload_testflight=${INPUT_UPLOAD_TESTFLIGHT:-true})."
             exit 1
           fi
+          # 签名 IPA 构建（signed）与 TestFlight 上传（testflight）分开判：要传就一定要签；
+          # build_only 的手动 dispatch 密钥齐全时也签一份但不传——它的语义是「整套产物都
+          # 出、什么都不外发」，签名链路（描述文件、扩展手动签名、ExportOptions）正是正式版
+          # 发布前最需要先跑一遍的那段；不签的话 build_only 根本验不到它，坏了要等到真发版
+          # 才红。签名包只作为 run 的 artifact 留 1 天，不上传 App Store Connect。
+          SIGNED="$TESTFLIGHT"
+          if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
+             && [ "${INPUT_BUILD_ONLY:-}" = true ]; then
+            SIGNED=true
+          fi
           echo "testflight=$TESTFLIGHT" >> "$GITHUB_OUTPUT"
-          echo "TestFlight upload: $TESTFLIGHT (channel=$RELEASE_CHANNEL event=$GITHUB_EVENT_NAME creds=$CREDS)"
+          echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"
+          echo "TestFlight upload: $TESTFLIGHT, signed IPA: $SIGNED (channel=$RELEASE_CHANNEL event=$GITHUB_EVENT_NAME creds=$CREDS)"
       - name: Import iOS distribution certificate
-        if: steps.signing.outputs.testflight == 'true'
+        if: steps.signing.outputs.signed == 'true'
         shell: bash
         env:
           IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
@@ -3010,7 +3034,7 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Apple Distribution identity: $IDENTITY"
       - name: Install provisioning profile and signing xcconfig
-        if: steps.signing.outputs.testflight == 'true'
+        if: steps.signing.outputs.signed == 'true'
         shell: bash
         env:
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
@@ -3172,7 +3196,7 @@ jobs:
           rm -f "$PROFILE_PATH" "$PROFILE_PLIST"
           echo "profile: $PROFILE_NAME ($PROFILE_UUID) bundle=$PROFILE_BUNDLE_ID expires=$PROFILE_EXPIRY"
       - name: Build signed iOS App Store IPA
-        if: steps.signing.outputs.testflight == 'true'
+        if: steps.signing.outputs.signed == 'true'
         working-directory: fushi
         run: >-
           flutter build ipa --release
@@ -3181,7 +3205,7 @@ jobs:
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Verify fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv + fushi_music + fushi_corpus symbols are linked into Runner (App Store archive)
-        if: steps.signing.outputs.testflight == 'true'
+        if: steps.signing.outputs.signed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -3193,12 +3217,25 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh "$runner" nm
           bash native/fushi_music/verify_abi.sh --no-plugin "$runner" nm
           bash native/fushi_corpus/verify_abi.sh "$runner" nm
+      # TestFlight 用户跑的是这份归档里的 Runner（与上面未签名包不是同一个二进制、UUID 不同），
+      # 它的 dSYM 单独存（BUG-4102 / BUG-4075）。
+      - name: Upload signed iOS archive dSYMs
+        if: steps.signing.outputs.testflight == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dsyms-testflight-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/archive/Runner.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 90
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
       # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫
       # desktop-artifacts-*：publish job 按那个前缀收 Release 资产，App Store 签名包
       # 绝不能混进 Release（侧载用户只吃未签名 IPA）。非审批 run 当天就传完，保留 1 天。
+      # build_only 的 run 也产出这份 artifact（signed=true、testflight=false），但下面
+      # `testflight` job 只认 testflight 输出，不会把它传出去。
       - name: Upload signed TestFlight IPA artifact
-        if: steps.signing.outputs.testflight == 'true'
+        if: steps.signing.outputs.signed == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ios-testflight-signed-ipa

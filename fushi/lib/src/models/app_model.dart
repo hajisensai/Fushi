@@ -10472,6 +10472,12 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
+  // 挖词目标 = Fushi 复习时的「后台制卡」（透传 prefsRepo）。可空读同上：装饰链每次制卡
+  // 现读它，prefs 未装配时按关（同步写入，现状）。
+  bool get srsMiningBackground => _prefsRepo?.srsMiningBackground ?? false;
+  Future<void> setSrsMiningBackground(bool value) =>
+      prefsRepo.setSrsMiningBackground(value: value);
+
   // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
   HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
       decodeHomeDashboardPanelModes(

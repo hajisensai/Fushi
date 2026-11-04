@@ -148,6 +148,16 @@ CtlBodyPage _overviewPage() => CtlBodyPage(
       // 复习模块（默认关）开着时才出现，与页面一致。
       visible: (SettingsContext c) => c.ref.read(srsModuleEnabledProvider),
     ),
+    // 反馈 Rl00Di264R：复习目标的「后台制卡」，与页面「Fushi 复习」分组同一个偏好。
+    SettingsSwitchItem(
+      id: _id('srs_mining_background'),
+      title: t.srs_mining_background_title,
+      subtitle: t.srs_mining_background_hint,
+      value: (SettingsContext c) => c.appModel.srsMiningBackground,
+      onChanged: (SettingsContext c, bool v) =>
+          c.appModel.setSrsMiningBackground(v),
+      visible: (SettingsContext c) => c.ref.read(srsModuleEnabledProvider),
+    ),
   ],
 );
 

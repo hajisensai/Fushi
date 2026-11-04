@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 
 import '../../helpers/source_guard.dart';
 
@@ -119,6 +120,56 @@ void main() {
         );
       }
     }
+  });
+
+  // BUG-4084 追加（用户 2026-11-05）：有声书播放页（歌词模式覆盖层）也是「播放页」，
+  // 盖住浏览器时浏览页要让网页停下；退回正文阅读（覆盖层撤掉）就不算了。
+  testWidgets('歌词模式覆盖层挂着时把所在路由登记成播放页，撤掉即撤登记', (WidgetTester tester) async {
+    final ValueNotifier<bool> lyricsMode = ValueNotifier<bool>(true);
+    addTearDown(lyricsMode.dispose);
+    late BuildContext pageContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            pageContext = context;
+            return Scaffold(
+              body: ValueListenableBuilder<bool>(
+                valueListenable: lyricsMode,
+                builder: (BuildContext context, bool on, Widget? _) => on
+                    ? ReaderLyricsPlayerOverlay(
+                        lyricsView: const SizedBox.expand(),
+                        data: LyricsPlayerData(
+                          title: '無職転生',
+                          cover: null,
+                          isPlaying: false,
+                          speed: 1,
+                          lyricsMasked: false,
+                          clock: _FakeClock(),
+                          controlsStyle: LyricsControlsStyle.classic,
+                        ),
+                        callbacks: callbacks(),
+                        onHtmlThemeChanged: (_) {},
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    final Route<dynamic> route = ModalRoute.of(pageContext)!;
+    expect(playbackRouteMarks.isPlayback(route), isTrue);
+
+    lyricsMode.value = false;
+    await tester.pump();
+    expect(
+      playbackRouteMarks.isPlayback(route),
+      isFalse,
+      reason: '退回正文阅读：阅读器页不再算播放页',
+    );
+    await tester.pumpWidget(const SizedBox());
   });
 
   for (final String design in <String>['md3']) {
