@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show pi;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
@@ -321,6 +322,87 @@ void main() {
     drag.end(const Offset(220, 400), 0.3);
     await settleAnimation(tester);
     expect(host.calls, contains('commit:f'));
+  });
+
+  group('spine constraint (Apple Books drag range)', () {
+    const Offset corner = Offset(400, 800);
+    final double radius = pageCurlRadiusFor(_size);
+    const List<Offset> spine = <Offset>[Offset.zero, Offset(0, 800)];
+
+    // 两个书脊角都在卷轴平铺一侧：|P − S|² ≤ |C − S|² − π·r·|C − P|。
+    void expectFeasible(Offset p, double r) {
+      final double len = (corner - p).distance;
+      for (final Offset s in spine) {
+        expect(
+          (p - s).distanceSquared,
+          lessThanOrEqualTo((corner - s).distanceSquared - pi * r * len + 1),
+          reason: 'spine corner $s crosses the roll at point $p, r $r',
+        );
+      }
+    }
+
+    test('a modest drag is left alone', () {
+      const Offset raw = Offset(300, 760);
+      final ({Offset point, double radius}) c = constrainPageCurl(
+        corner: corner,
+        point: raw,
+        size: _size,
+        radius: radius,
+        settling: false,
+      );
+      expect(c.point, raw);
+      expect(c.radius, closeTo((corner - raw).distance / pi, 1e-9));
+    });
+
+    test('an extreme drag past the spine is pulled back into range', () {
+      const Offset raw = Offset(-300, 300);
+      final ({Offset point, double radius}) c = constrainPageCurl(
+        corner: corner,
+        point: raw,
+        size: _size,
+        radius: radius,
+        settling: false,
+      );
+      expect(c.point, isNot(raw));
+      expect(c.radius, inInclusiveRange(0, radius));
+      expectFeasible(c.point, c.radius);
+    });
+
+    test('settling may roll further than a drag, down to a zero radius', () {
+      const Offset raw = Offset(-300, 300);
+      final ({Offset point, double radius}) drag = constrainPageCurl(
+        corner: corner,
+        point: raw,
+        size: _size,
+        radius: radius,
+        settling: false,
+      );
+      final ({Offset point, double radius}) settle = constrainPageCurl(
+        corner: corner,
+        point: raw,
+        size: _size,
+        radius: radius,
+        settling: true,
+      );
+      expect(
+        (corner - settle.point).distance,
+        greaterThanOrEqualTo((corner - drag.point).distance),
+      );
+      expectFeasible(settle.point, 0);
+    });
+
+    test('the fully turned page is reachable and lies flat', () {
+      final ({Offset point, double radius}) c = constrainPageCurl(
+        corner: corner,
+        point: pageCurlTurnedPoint(_size, 800),
+        size: _size,
+        radius: radius,
+        settling: true,
+      );
+      expect(c.point.dx, closeTo(-400, 0.5));
+      expect(c.point.dy, closeTo(800, 0.5));
+      expect(c.radius, closeTo(0, 1e-6));
+    });
   });
 
   group('paper rect (manga letterbox is not paper)', () {
