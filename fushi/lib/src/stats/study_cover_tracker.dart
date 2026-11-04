@@ -41,6 +41,14 @@ class StudyCoverTracker extends NavigatorObserver with ChangeNotifier {
     return false;
   }
 
+  /// 根栈里压在 [base] 之上的路由（自下而上）。[base] 不在根栈里 → 空。
+  List<Route<dynamic>> routesAbove(Route<dynamic>? base) {
+    if (base == null) return const <Route<dynamic>>[];
+    final int index = _stack.indexOf(base);
+    if (index < 0) return const <Route<dynamic>>[];
+    return List<Route<dynamic>>.unmodifiable(_stack.sublist(index + 1));
+  }
+
   @visibleForTesting
   List<Route<dynamic>> get debugStack =>
       List<Route<dynamic>>.unmodifiable(_stack);

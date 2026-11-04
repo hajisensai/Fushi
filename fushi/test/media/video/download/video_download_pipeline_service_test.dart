@@ -17,7 +17,7 @@ import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
-    show videoDownloadJobConfirmedLookup;
+    show videoDownloadJobConfirmedLookup, videoDownloadJobConfirmedLookups;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -2622,6 +2622,117 @@ void main() {
         'Show - S01E02',
         'Show - S01E03',
       });
+    },
+  );
+
+  test(
+    'a tv job holding a single standalone feature is reclassified to a movie '
+    'named after the file and drops the series identity (9Fpg5zXriP)',
+    () async {
+      // 用户原样：TV 版身份（tv · 2015，TMDB + MAL）配上单文件剧场版。修前整理
+      // 抛 `unable to determine episode number`，任务卡在 needsAttention。
+      const TorrentFileEntry feature = TorrentFileEntry(
+        name:
+            '[FFF-Kantai] Hibike! Euphonium - Chikai no Finale '
+            '[BD][1080p-FLAC].mkv',
+        size: 900,
+        progress: 1,
+        index: 0,
+      );
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        files: <TorrentFileEntry>[feature],
+      );
+      late _PipelineEnvironment environment;
+      late Directory downloadDirectory;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+          pathMappings: <VideoDownloadPathMapping>[
+            VideoDownloadPathMapping(
+              remoteRoot: '/downloads',
+              localRoot: downloadDirectory.path,
+            ),
+            VideoDownloadPathMapping(
+              remoteRoot: '/media',
+              localRoot: environment.root.path,
+            ),
+          ],
+        ),
+      );
+      addTearDown(environment.close);
+      downloadDirectory = Directory(p.join(environment.root.path, 'incoming'));
+      await downloadDirectory.create(recursive: true);
+      const String jobId = 'tv-identity-standalone-feature-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.organize,
+        observedSavePath: '/downloads',
+        subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+        identityJson: encodeVideoMediaReference(
+          VideoMediaReference(
+            providerId: 'tmdb',
+            mediaId: '62564',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'Show',
+            year: 2015,
+            season: 1,
+            tmdbId: 62564,
+            externalIds: const <String, String>{'mal': '27989'},
+          ),
+        ),
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(feature.index),
+          originalRelativePath: feature.name,
+          currentRelativePath: feature.name,
+          sizeBytes: Value<int?>(feature.size),
+          status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      environment.service.wake();
+      // 剧的 TMDB / MAL id 都描述 TV 版：改判后整份丢弃，任务 import 后直接完成
+      // （交给媒体库自动识别），而不是拿 TV 版身份去刮剧场版。
+      final VideoDownloadJobRow completed = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.completed,
+      );
+
+      expect(completed.mediaKind, VideoMetadataMediaKind.movie.name);
+      expect(completed.title, 'Hibike! Euphonium - Chikai no Finale');
+      expect(completed.year, isNull);
+      expect(completed.season, isNull);
+      expect(completed.collectionId, isNull);
+      // 身份整份清掉（不像 BUG-2760 只丢 TMDB）：MAL / AniList 的剧集 id 留着，
+      // 库内补刮照样会把剧场版绑回 TV 版。
+      expect(completed.identityJson, isNull);
+      expect(completed.metadataProvider, isNull);
+      expect(completed.externalId, isNull);
+      expect(videoDownloadJobConfirmedLookups(completed), isEmpty);
+      final VideoDownloadJobFileRow file =
+          (await environment.database.getVideoDownloadJobFiles(jobId)).single;
+      expect(file.kind, 'video');
+      expect(file.episode, isNull);
+      expect(
+        file.targetRelativePath,
+        'Hibike! Euphonium - Chikai no Finale/'
+        'Hibike! Euphonium - Chikai no Finale.mkv',
+      );
+      final List<VideoBookRow> books = await environment.database
+          .allVideoBooks();
+      expect(books.map((VideoBookRow book) => book.title), <String>[
+        'Hibike! Euphonium - Chikai no Finale',
+      ]);
     },
   );
 

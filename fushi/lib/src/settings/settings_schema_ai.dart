@@ -9,12 +9,21 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_history_page.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
-import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
+import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
+import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
+    show kDownloadExecutionHostSettingsItemId;
+import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart'
+    show SettingsDetailPage;
+import 'package:fushi/src/settings/settings_schema_downloads.dart'
+    show buildDownloadsDestination;
+import 'package:fushi/src/settings/settings_search.dart'
+    show SettingsSearchReveal;
 import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
@@ -97,6 +106,16 @@ SettingsDestination buildAiDestination() {
           ),
         ],
       ),
+      // 联网搜索：真正的搜索引擎（SearXNG / Brave），与上面固定资料站并列。
+      SettingsSection(
+        id: 'ai.web_search',
+        title: t.ai_web_search_section,
+        footer: t.ai_web_search_section_hint,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.web_search', c),
+        items: buildAiWebSearchItems(),
+      ),
       SettingsSection(
         id: 'ai.video_download',
         title: t.ai_video_download_section,
@@ -111,15 +130,19 @@ SettingsDestination buildAiDestination() {
         summaryBuilder: (SettingsContext c) =>
             _aiSectionModifiedSummary('ai.video_download', c),
         items: <SettingsItem>[
-          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据一直是
-          // 「下载执行设备」偏好，此前只挂在下载设置页，AI 页看不到这条路。这里是同一
-          // 偏好的第二处入口；未配对时给可见说明 + 去配对，而不是整行消失。
-          SettingsCustomItem.rows(
+          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据是
+          // 「下载执行设备」偏好。控件只在下载页渲染一份（反馈 sOLqsIv6R9 拍板），这里
+          // 只留一行链接：跳到下载页并定位、高亮那一行（未配对时那一行给说明 + 去配对）。
+          SettingsNavigationItem(
             id: 'ai.interconnect_host',
-            searchTitle: t.ai_interconnect_host_title,
-            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
-                ? <Widget>[AiInterconnectHostRow(appModel: c.appModel)]
-                : const <Widget>[],
+            title: t.ai_interconnect_host_title,
+            subtitle: t.ai_interconnect_host_link_hint,
+            icon: FushiIcons.devices,
+            visible: (SettingsContext c) => isSettingsDestinationVisible(
+              SettingsDestinationId.downloads,
+              c.appModel.moduleVisibility,
+            ),
+            onTap: openDownloadExecutionHostSetting,
           ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_quality',
@@ -348,7 +371,7 @@ SettingsDestination buildAiDestination() {
           SettingsSwitchItem(
             id: 'ai.library_organize_auto',
             title: t.library_organize_auto_setting,
-            subtitle: t.library_organize_auto_setting_summary,
+            subtitle: t.library_organize_auto_setting_notice,
             icon: FushiIcons.aiAssistant,
             value: (SettingsContext c) =>
                 c.appModel.prefsRepo.libraryOrganizeAuto,
@@ -401,4 +424,14 @@ String? _aiSectionModifiedSummary(String sectionId, SettingsContext context) {
       )
       .length;
   return count == 0 ? null : t.settings_section_modified_count(n: count);
+}
+
+/// 「AI › 交给互联电脑办」的跳转：登记一次性定位挂点，推出下载设置页，由那一行的
+/// `SettingsSearchTarget` 消费（滚入视口 + 闪烁高亮）。
+Future<void> openDownloadExecutionHostSetting(SettingsContext c) async {
+  SettingsSearchReveal.pendingItemId = kDownloadExecutionHostSettingsItemId;
+  await pushSettingsPage(
+    c,
+    (_) => SettingsDetailPage(destination: buildDownloadsDestination()),
+  );
 }

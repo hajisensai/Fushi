@@ -722,6 +722,7 @@ class AnkiMiningPayload {
     this.pitchCategories = '',
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
+    this.popupSelectionHtml = '',
     this.glossarySelectionHighlighted = false,
     this.allowDuplicate = false,
     this.audio = '',
@@ -811,6 +812,7 @@ class AnkiMiningPayload {
       pitchCategories: json['pitchCategories'] as String? ?? '',
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
+      popupSelectionHtml: json['popupSelectionHtml'] as String? ?? '',
       glossarySelectionHighlighted: _boolFromPayloadWire(
         json['glossarySelectionHighlighted'],
       ),
@@ -838,6 +840,13 @@ class AnkiMiningPayload {
   /// 想把音标单独映射到独立字段的用户（Yomitan 命名 `{phonetic-transcriptions}`）。
   final String phoneticTranscriptions;
   final String popupSelectionText;
+
+  /// `{popup-selection-html}`：同一次选区的 HTML 片段（popup.js
+  /// `snapshotSelectionHtml`，`Range.cloneContents()` 经 `sanitizeSelectionHtmlTree`
+  /// 净化，外包 `.yomitan-glossary` 并附所属词典的 scoped CSS），保留弹窗里的显示样式。
+  /// [popupSelectionText] 仍是 Yomitan 兼容的纯文本，两者描述同一个选区。旧 payload
+  /// 没有这个键 → 空串。
+  final String popupSelectionHtml;
 
   /// 本次制卡里，用户选中的那一段是否**真的**作为 `<mark>` 落进了导出的释义树
   /// （popup.js 的 applyGlossarySelectionHighlight 确实插入了标记）。
@@ -922,7 +931,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
-    this.charPositionTag,
+    this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
     this.sourceLink,
@@ -962,16 +971,19 @@ class AnkiMiningContext {
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
 
-  /// 「制卡位置标签」开关开启时，调用方（小说阅读器）算好的**制卡所在字符数标签**
-  /// （`chars_12345`，见 [BaseAnkiRepository.formatCharPositionTag]）：这张卡是在全书
-  /// 第几个学习字（`countStudyChars` 口径）处制的。开关关闭、非小说来源、或锚点取不到
-  /// （章字数未算完 / JS 拿不到 caret）时为 `null`，[BaseAnkiRepository.buildNoteTags]
-  /// 不追加——宁可不打标签，也不打一个 `chars_0` 冒充书首。
+  /// 「制卡位置写入 MiscInfo」开关（冻结偏好键 `auto_add_char_position_to_tags`）开启时，
+  /// 调用方（小说阅读器）按界面语言格式化好的**制卡位置文本**（如「制卡位置：第 12345 字」）：
+  /// 这张卡是在全书第几个学习字（`countStudyChars` 口径）处制的。开关关闭、非小说来源、
+  /// 或锚点取不到（章字数未算完 / JS 拿不到 caret）时为 `null`，什么都不写——宁可不写，
+  /// 也不写一个「第 0 字」冒充书首。
   ///
-  /// 与 [bookTitleTag] / [collectionTag] 同构：真值源（`countStudyChars` 口径的章内锚 +
-  /// 每章累计前缀）都在主 app 的阅读器 state 里，fushi_anki 是独立包拿不到，故由调用方
-  /// 算好字面量后注入，本包只负责按既有去重规则追加。
-  final String? charPositionTag;
+  /// 落点由 [AnkiNoteComposer.charPositionTargetField] 判定（Lapis = `MiscInfo`，其它笔记
+  /// 类型 = 映射里的 MiscInfo 等价字段，没有就不写），追加在该字段渲染值之后。不再进 Anki
+  /// 标签（反馈 MhQHXQI-sB：`chars_12345` 一卡一个，把标签列表撑爆）。
+  ///
+  /// 真值源（章内锚 + 每章累计前缀）与 i18n 都在主 app，fushi_anki 是独立包拿不到，故由
+  /// 调用方算好文本后注入。
+  final String? charPositionText;
 
   /// 本张卡截取的媒体片段起止（毫秒，媒体时间轴上的**偏移**，非 wall-clock 时刻，
   /// 故按术语表用 `Ms` 后缀）。渲染 `{clip-timestamp}` 用。
@@ -1010,7 +1022,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
-    charPositionTag: charPositionTag,
+    charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: value,
@@ -1041,7 +1053,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
-    charPositionTag: charPositionTag,
+    charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: sourceLink,
@@ -1135,6 +1147,10 @@ class AnkiHandlebarRenderer {
         // 由知道笔记类型和字段映射的那一层决定
         // （[BaseAnkiRepository.shouldYieldSelectionText]）。
         return yieldSelectionText ? '' : payload.popupSelectionText;
+      case '{popup-selection-html}':
+        // 同一个选区的带样式版本，让位判据与纯文本版相同：让位的理由（Lapis 卡背
+        // 轮播被一段选区占住默认页）与内容是纯文本还是 HTML 无关。
+        return yieldSelectionText ? '' : payload.popupSelectionHtml;
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -1327,6 +1343,7 @@ class AnkiHandlebarOptions {
     '{glossary-first-3}',
     '{selected-glossary}',
     '{popup-selection-text}',
+    '{popup-selection-html}',
     '{sentence}',
     '{cue-sentence}',
     '{frequencies}',
@@ -1806,6 +1823,13 @@ class AnkiErrorCode {
   /// 或关闭「制卡到已配对设备」改为本机制卡。
   static const String pairedDeviceUnreachable =
       'ANKI_PAIRED_DEVICE_UNREACHABLE';
+
+  /// 反馈 E52FUMdbR6：互联远端制卡**送到了**已配对设备，但那台设备上的 Anki 落卡失败
+  /// （它的 AnkiConnect 没开、牌组缺失……）。[MineOutcome.errorDetail] 是主机回传的
+  /// 原因；主 app 必须把它包成「已配对设备上的 Anki 制卡失败：…」——否则用户看到
+  /// 「连不上 AnkiConnect」会以为是本机的 Anki，根本想不到卡是发去了电脑。
+  /// 主机已经收到请求，所以它**不是**「确定没送到」，不进待发队列。
+  static const String pairedDeviceMineFailed = 'ANKI_PAIRED_DEVICE_MINE_FAILED';
 
   /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
   ///

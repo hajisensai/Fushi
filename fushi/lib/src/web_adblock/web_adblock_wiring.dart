@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
+import 'package:fushi/src/web_adblock/web_content_rule_list.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_web_core/fushi_web_core.dart';
@@ -36,8 +37,9 @@ abstract interface class WebAdblockPolicy {
     required String ids,
   });
 
-  /// 给不能逐请求拦截的平台的 WebKit 内容拦截规则（Rust 已筛选、截断）；没有就空。
-  List<Map<String, Object?>> get contentBlockingRules;
+  /// 给不能逐请求拦截的平台（iOS / macOS）的共享 WebKit 规则表 identifier（原生已启用、
+  /// 按规则内容寻址，见 `web_content_rule_list.dart`）；没有就 null。
+  String? get contentRuleListIdentifier;
 }
 
 /// 页面被拦截的子资源的应答。
@@ -338,9 +340,10 @@ class WebAdblockWiring {
 /// 把 adblock 拦截接到一份 [settings] 上（返回副本，不改原对象）。
 ///
 /// - 逐请求平台（Android / Windows）：打开 `useShouldInterceptRequest`，请求走引擎判定；
-/// - contentBlockers 平台（iOS / macOS）：把 [WebAdblockPolicy.contentBlockingRules]
-///   转成 `ContentBlocker` 追加到 `contentBlockers`（**WebView 创建时固化**：引擎晚到时这类
-///   平台要等下次创建 WebView 才有网络层拦截）；
+/// - contentBlockers 平台（iOS / macOS）：`contentBlockers` 只放**一条引用**
+///   [contentRuleListReference]，指向 [WebAdblockPolicy.contentRuleListIdentifier] 那份
+///   进程级共享、已编译的 WebKit 规则表（BUG-4013：不再每个 WebView 传 / 编 5 万条规则）。
+///   **WebView 创建时固化**：引擎晚到时这类平台要等下次创建 WebView 才有网络层拦截；
 /// - Linux 网络层不拦（见 `webAdblockNetworkModeFor` 的说明），只做 cosmetic；
 /// - 五端都加 cosmetic 引导 UserScript（记得把 [WebAdblockWiring.onWebViewCreated] 接上，
 ///   否则脚本拿不到选择器）。
@@ -359,10 +362,15 @@ WebAdblockWiring applyAdblockTo(
     case WebAdblockNetworkMode.perRequest:
       out.useShouldInterceptRequest = true;
     case WebAdblockNetworkMode.contentBlockers:
-      if (policy.isActive) {
+      final String? ruleList = policy.contentRuleListIdentifier;
+      if (policy.isActive && ruleList != null) {
+        // 原生只认「恰好一条引用」：contentBlockers 归 adblock 接线独占。
+        assert(
+          out.contentBlockers?.isEmpty ?? true,
+          'contentBlockers is owned by applyAdblockTo on content-blocker platforms',
+        );
         out.contentBlockers = <ContentBlocker>[
-          ...?out.contentBlockers,
-          ...contentBlockersFromRules(policy.contentBlockingRules),
+          contentRuleListReference(ruleList),
         ];
       }
     case WebAdblockNetworkMode.cosmeticOnly:
@@ -383,95 +391,6 @@ WebAdblockWiring applyAdblockTo(
     existing: shouldInterceptRequest,
   );
 }
-
-/// Rust 核心导出的 WebKit 规则 → InAppWebView 的 [ContentBlocker]（一条对一条）。
-///
-/// 筛选与截断（只留 `block` / `ignore-previous-rules`、丢插件不认识的 resource-type、
-/// `if-*` / `unless-*` 互斥、5 万条上限只截拦截规则）都已在 Rust
-/// `adblock::content_blocking::export` 做完；这里只做插件对象映射，映射不了的（理论上不会
-/// 出现）跳过。
-List<ContentBlocker> contentBlockersFromRules(
-  List<Map<String, Object?>> rules,
-) => <ContentBlocker>[
-  for (final Map<String, Object?> rule in rules)
-    if (_toContentBlocker(rule) case final ContentBlocker blocker) blocker,
-];
-
-ContentBlocker? _toContentBlocker(Map<String, Object?> rule) {
-  final Object? action = rule['action'];
-  final Object? trigger = rule['trigger'];
-  if (action is! Map || trigger is! Map) return null;
-  final Object? type = action['type'];
-  // 动作类型直接取静态常量，不走 `fromNativeValue`：插件的枚举按 defaultTargetPlatform
-  // 生成原生值，`values` 集合里只要有一个当前平台不支持的成员（Android 上的
-  // BLOCK_COOKIES 等）初始化就抛 TypeError，`fromNativeValue` 会把它吞成 null。
-  final ContentBlockerActionType actionType;
-  if (type == 'block') {
-    actionType = ContentBlockerActionType.BLOCK;
-  } else if (type == 'ignore-previous-rules') {
-    actionType = ContentBlockerActionType.IGNORE_PREVIOUS_RULES;
-  } else {
-    return null;
-  }
-  final Object? urlFilter = trigger['url-filter'];
-  if (urlFilter is! String || urlFilter.isEmpty) return null;
-
-  List<String> strings(Object? v) =>
-      v is List ? v.whereType<String>().toList() : const <String>[];
-
-  final List<ContentBlockerTriggerResourceType> resourceTypes =
-      <ContentBlockerTriggerResourceType>[];
-  final List<String> rawTypes = strings(trigger['resource-type']);
-  for (final String v in rawTypes) {
-    final ContentBlockerTriggerResourceType? rt = _resourceTypes[v];
-    if (rt != null) resourceTypes.add(rt);
-  }
-  if (rawTypes.isNotEmpty && resourceTypes.isEmpty) return null;
-
-  final List<ContentBlockerTriggerLoadType> loadTypes =
-      <ContentBlockerTriggerLoadType>[
-        for (final String v in strings(trigger['load-type']))
-          if (v == 'first-party')
-            ContentBlockerTriggerLoadType.FIRST_PARTY
-          else if (v == 'third-party')
-            ContentBlockerTriggerLoadType.THIRD_PARTY,
-      ];
-  final List<String> ifDomain = strings(trigger['if-domain']);
-  final List<String> unlessDomain = strings(trigger['unless-domain']);
-  final List<String> ifTopUrl = strings(trigger['if-top-url']);
-  final List<String> unlessTopUrl = strings(trigger['unless-top-url']);
-  // WebKit 规定 if-* / unless-* 互斥；导出端本不会同时给，防御一下免得触发插件断言。
-  if ((ifDomain.isNotEmpty && unlessDomain.isNotEmpty) ||
-      (ifTopUrl.isNotEmpty && unlessTopUrl.isNotEmpty)) {
-    return null;
-  }
-  return ContentBlocker(
-    trigger: ContentBlockerTrigger(
-      urlFilter: urlFilter,
-      urlFilterIsCaseSensitive: trigger['url-filter-is-case-sensitive'] == true,
-      resourceType: resourceTypes,
-      loadType: loadTypes,
-      ifDomain: ifDomain,
-      unlessDomain: unlessDomain,
-      ifTopUrl: ifTopUrl,
-      unlessTopUrl: unlessTopUrl,
-    ),
-    action: ContentBlockerAction(type: actionType),
-  );
-}
-
-/// WebKit `resource-type` 值 → 插件枚举（这些是平台无关的 const）。`popup` 等插件不认识的值不在表里。
-const Map<String, ContentBlockerTriggerResourceType> _resourceTypes =
-    <String, ContentBlockerTriggerResourceType>{
-      'document': ContentBlockerTriggerResourceType.DOCUMENT,
-      'image': ContentBlockerTriggerResourceType.IMAGE,
-      'style-sheet': ContentBlockerTriggerResourceType.STYLE_SHEET,
-      'script': ContentBlockerTriggerResourceType.SCRIPT,
-      'font': ContentBlockerTriggerResourceType.FONT,
-      'raw': ContentBlockerTriggerResourceType.RAW,
-      'svg-document': ContentBlockerTriggerResourceType.SVG_DOCUMENT,
-      'media': ContentBlockerTriggerResourceType.MEDIA,
-    };
 
 /// 从请求推断 adblock 资源类型：优先 `Sec-Fetch-Dest`（Chromium / WebView2 会带），
 /// 其次 `Accept`，最后看扩展名。推断不出就是 `other`（`$script` 之类带类型的规则不命中，

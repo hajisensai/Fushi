@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
+import 'package:fushi/src/web_adblock/web_content_rule_list.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
@@ -18,7 +17,9 @@ import 'package:fushi_web_core/fushi_web_core.dart';
 ///   Rust；慢的编译在后台 isolate；
 /// - 把 Rust 的状态快照（[snapshot]）转成 [ChangeNotifier] 通知给设置页——这是 Rust 快照的
 ///   最新一份，不是另存的镜像状态；
-/// - 实现 [WebAdblockPolicy]，把 WebView 的逐请求 / cosmetic 查询原样转给 Rust。
+/// - 实现 [WebAdblockPolicy]，把 WebView 的逐请求 / cosmetic 查询原样转给 Rust；
+/// - contentBlockers 平台（iOS / macOS）：每个**新**规则集只交原生一次（[ContentRuleListInstaller]，
+///   见 `web_content_rule_list.dart`），这里只记它的 identifier，不持有规则本身（BUG-4013）。
 ///
 /// 原生库是硬依赖：缺库时第一次用到就抛 `FushiWebCoreLibraryMissing`（打包错误），没有
 /// 「判不可用」的降级分支。
@@ -30,9 +31,12 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
     required Directory? Function() dataDir,
     required AdblockHttpFetcher fetcher,
     WebAdblockNetworkMode? mode,
+    ContentRuleListInstaller contentRuleLists =
+        const MethodChannelContentRuleListInstaller(),
   }) : _dataDir = dataDir,
        _fetcher = fetcher,
-       _mode = mode ?? currentWebAdblockNetworkMode;
+       _mode = mode ?? currentWebAdblockNetworkMode,
+       _contentRuleLists = contentRuleLists;
 
   /// 用 [AppModel] 的目录装配；列表下载走全应用代理（`createAppHttpClient`）。
   factory WebAdblockService.forApp(AppModel appModel) => WebAdblockService(
@@ -47,11 +51,14 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   final Directory? Function() _dataDir;
   final AdblockHttpFetcher _fetcher;
   final WebAdblockNetworkMode _mode;
+  final ContentRuleListInstaller _contentRuleLists;
 
   AdblockCore? _core;
   AdblockSnapshot? _snapshot;
   Future<void>? _inFlight;
-  List<Map<String, Object?>> _rules = const <Map<String, Object?>>[];
+
+  /// 原生当前已启用的共享规则表（只是一个 identifier，规则在原生 / WebKit store 里）。
+  String? _contentRuleListId;
   bool _disposed = false;
 
   AdblockCore? _tryOpen() {
@@ -161,28 +168,34 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
     } finally {
       // 无论如何都收尾，否则 Rust 侧一直处于同步中、后续同步都被拒。
       final AdblockSnapshot s = await core.finishSyncInBackground();
-      if (_mode == WebAdblockNetworkMode.contentBlockers && s.isActive) {
-        _rules = await _decodeRules(core.contentBlockersJson());
+      try {
+        if (_mode == WebAdblockNetworkMode.contentBlockers && s.isActive) {
+          await _installContentRuleList(core);
+        }
+      } finally {
+        _publish(s);
       }
-      _publish(s);
     }
   }
 
-  static Future<List<Map<String, Object?>>> _decodeRules(Uint8List? json) {
-    if (json == null) {
-      return Future<List<Map<String, Object?>>>.value(
-        const <Map<String, Object?>>[],
-      );
+  /// 把 Rust 当前导出的 WebKit 规则表交给原生——**同一规则集只交一次**：identifier 是规则
+  /// 内容的 SHA-256，与已启用的相同就什么都不发；不同时先 `activate`（原生内存 / 磁盘 store
+  /// 命中，跨启动复用），未命中才把原始 JSON 字节 `compile` 一次。编译失败抛出（调用方记日志），
+  /// 已启用的旧规则表保持不变（原生只在新表成功后才清旧表）。
+  Future<void> _installContentRuleList(AdblockCore core) async {
+    final Uint8List? json = core.contentBlockersJson();
+    final String? id = json == null || json.isEmpty
+        ? null
+        : await contentRuleListIdentifierFor(json);
+    if (id == null) {
+      _contentRuleListId = null;
+      return;
     }
-    // 5 万条规则的 JSON 解码放后台，不卡 UI。
-    return Isolate.run<List<Map<String, Object?>>>(() {
-      final Object? decoded = const Utf8Decoder()
-          .fuse(const JsonDecoder())
-          .convert(json);
-      return decoded is List
-          ? decoded.whereType<Map<String, Object?>>().toList(growable: false)
-          : const <Map<String, Object?>>[];
-    });
+    if (id == _contentRuleListId) return;
+    if (!await _contentRuleLists.activate(id)) {
+      await _contentRuleLists.compile(id, json!);
+    }
+    _contentRuleListId = id;
   }
 
   // ------------------------------------------------------------------ WebAdblockPolicy
@@ -223,7 +236,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   );
 
   @override
-  List<Map<String, Object?>> get contentBlockingRules => _rules;
+  String? get contentRuleListIdentifier => _contentRuleListId;
 
   @override
   void dispose() {

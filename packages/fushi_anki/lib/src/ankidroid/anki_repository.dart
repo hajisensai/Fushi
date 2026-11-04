@@ -347,9 +347,6 @@ class AnkiRepository extends BaseAnkiRepository {
       titleTag: context.bookTitleTag,
       // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
       collectionTag: context.collectionTag,
-      // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
-      // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
-      charPositionTag: context.charPositionTag,
     );
 
     try {
@@ -548,7 +545,6 @@ class AnkiRepository extends BaseAnkiRepository {
         nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
       try {

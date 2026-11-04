@@ -35,6 +35,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show videoMemberExists;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
 
@@ -178,6 +180,7 @@ class VideoLibraryScrapeSweep {
     VideoScrapeSweepLedger? ledger,
     String configFingerprint = '',
     String? Function()? aiCapabilityKey,
+    Future<bool> Function(String videoPath)? memberExists,
     this.refreshProbeInterval = const Duration(hours: 12),
     this.staleAfter = const Duration(days: 14),
     this.maxRefreshPerSweep = 20,
@@ -189,6 +192,7 @@ class VideoLibraryScrapeSweep {
        _ledger = ledger ?? VideoScrapeSweepLedger(),
        _configFingerprint = configFingerprint,
        _aiCapabilityKey = aiCapabilityKey,
+       _memberExists = memberExists ?? videoMemberExists,
        _now = now ?? DateTime.now {
     _controller.addListener(_onControllerChanged);
   }
@@ -232,6 +236,14 @@ class VideoLibraryScrapeSweep {
     final String? ai = _aiCapabilityKey?.call();
     return ai == null ? _configFingerprint : '$_configFingerprint|ai=$ai';
   }
+
+  /// 库条目「还在不在磁盘上」的判据（默认 [videoMemberExists]；测试注入）。
+  ///
+  /// BUG-4055：app 的来源重扫有意保留磁盘上暂缺的行（#792：拔掉的移动盘、
+  /// 离线的网络盘回来后观看进度与资料都得还在），所以「行在库里」≠「文件还在」。
+  /// 待确认队列 / 自动补刮 / 资料刷新只该处理此刻还在的作品——文件都不在了，
+  /// 哈希算不出、sidecar 写不了，拿去问资料源只会一轮轮挂成「资料源不可用」。
+  final Future<bool> Function(String videoPath) _memberExists;
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
@@ -403,6 +415,9 @@ class VideoLibraryScrapeSweep {
         _database,
       ).plan(source);
       for (final VideoSourceScrapeWork work in works) {
+        // 成员文件全都不在磁盘上的作品不进任何一份清单（BUG-4055）。行与进度
+        // 原样保留；文件回来（重新插盘 / 网络盘上线）下一次计划就自然回到队列。
+        if (!await _hasPresentMember(work)) continue;
         final VideoPendingScrapeWork entry = VideoPendingScrapeWork(
           source: source,
           work: work,
@@ -423,6 +438,15 @@ class VideoLibraryScrapeSweep {
       ignored: ignored,
       identified: identified,
     );
+  }
+
+  /// [work] 至少有一个成员文件此刻还在磁盘上。逐个判、命中即停：正常作品只
+  /// 碰一次文件系统，只有整部都不在的作品才会把成员判完。
+  Future<bool> _hasPresentMember(VideoSourceScrapeWork work) async {
+    for (final VideoBookRow member in work.members) {
+      if (await _memberExists(member.videoPath)) return true;
+    }
+    return false;
   }
 
   /// 需要刷新资料的已识别作品（见 [_tmdbChangedTvIds] 的说明）。

@@ -35,6 +35,10 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_clip_cl
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_display_split.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_fusion.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
@@ -50,6 +54,9 @@ enum VideoSubtitleStage {
   proofread,
   consistency,
   songCheck,
+
+  /// S4s 歌词补齐（有查歌词后端且开了 AI 才跑）。
+  lyrics,
   split,
   export,
 }
@@ -119,6 +126,9 @@ class VideoSubtitleEpisodeResult {
     this.removedOutputPaths = const <String>[],
     this.reason,
     this.cueCount = 0,
+    this.evidenceLabels = const <String>[],
+    this.gapFilledCount = 0,
+    this.lyricsCueCount = 0,
   });
 
   final String videoPath;
@@ -146,6 +156,15 @@ class VideoSubtitleEpisodeResult {
   /// 跳过的原因（英文短句，排查用；UI 按 [status] 出文案）。
   final String? reason;
   final int cueCount;
+
+  /// 这一集用上的证据轨（已有字幕 / OCR）的标签。
+  final List<String> evidenceLabels;
+
+  /// 缺口补齐从证据插回的行数。
+  final int gapFilledCount;
+
+  /// 换成了查到的正确歌词的行数。
+  final int lyricsCueCount;
 
   bool get exported =>
       status == VideoSubtitleEpisodeStatus.exported ||
@@ -226,6 +245,12 @@ abstract final class VideoSubtitleJobFiles {
   static const String finalCues = 'final.json';
   static const String state = 'state.json';
 
+  /// 证据轨缓存（按来源身份 + 识别器作废）。
+  static const String evidence = 'evidence.json';
+
+  /// 歌词补齐的逐段结果。
+  static const String lyrics = 'lyrics.json';
+
   /// 整个 [VideoSubtitlePipeline.jobsRoot] 共用的歌曲判定缓存（按任务 id）。
   static const String clipKinds = 'clip_kinds.json';
 }
@@ -255,6 +280,9 @@ Future<void> resetVideoSubtitleJobFrom(
   if (from <= VideoSubtitleStage.consistency.index) {
     await rm(VideoSubtitleJobFiles.consistency);
   }
+  if (from <= VideoSubtitleStage.lyrics.index) {
+    await rm(VideoSubtitleJobFiles.lyrics);
+  }
   if (from <= VideoSubtitleStage.split.index) {
     await rm(VideoSubtitleJobFiles.finalCues);
   }
@@ -262,6 +290,10 @@ Future<void> resetVideoSubtitleJobFrom(
 
 /// 管线写字幕时在 `state.json` 里记下的作者标记。
 const String kVideoSubtitlePipelineWriter = 'fushi-video-subtitle-pipeline';
+
+/// 证据收集规则的版本，进 `evidence.json` 的缓存键：收集规则改了（例如 v2 起时间轴没
+/// 对上的外挂轨不再收），旧缓存要作废重收。
+const int kSubtitleEvidenceCollectVersion = 2;
 
 /// 视频字幕管线。
 class VideoSubtitlePipeline {
@@ -273,6 +305,8 @@ class VideoSubtitlePipeline {
     this.subtitleSuffix = 'ja',
     this.exportDir,
     this.styleReference = loadSubtitleStyleReference,
+    this.evidence = const SubtitleEvidenceCollector(),
+    this.lyricsFinder,
     Future<int?> Function(String videoPath)? probeDurationMs,
     DateTime Function()? clock,
   }) : _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
@@ -297,6 +331,15 @@ class VideoSubtitlePipeline {
   /// [loadSubtitleStyleReference]，app 本机、host 任务、服务端 `subgen` 都走这一处；
   /// 显式传 null = 只出 SRT（测试用）。
   final SubtitleStyleReferenceLoader? styleReference;
+
+  /// 证据（同一视频已有的字幕 / 图形字幕 OCR）：同语言的补识别漏掉的行、给校对当
+  /// 优先写法，他言語给校对当判断依据（spec `2026-11-04-video-subtitle-multisource-
+  /// evidence`）。生产默认 [SubtitleEvidenceCollector]（不带 OCR；app 注入带 OCR 的）；
+  /// 显式传 null = 不用证据（测试用）。
+  final SubtitleEvidenceSource? evidence;
+
+  /// 查歌词的后端：给了且开了 AI 才做歌词补齐（S4s）；null = 不补歌词。
+  final SubtitleLyricsFinder? lyricsFinder;
   final Future<int?> Function(String videoPath) _probeDurationMs;
   final DateTime Function() _clock;
 
@@ -322,6 +365,17 @@ class VideoSubtitlePipeline {
 
   Directory jobDirFor(String videoPath) =>
       Directory(p.join(jobsRoot.path, videoSubtitleJobId(videoPath)));
+
+  /// [path] 是不是本管线的产物（不能当证据 / 样式参考读回来，否则上次的识别错误会被
+  /// 当成人工字幕自我强化）：
+  /// * 内容仍是本管线上次写进去的那份（[_JobState.wrote]，哈希对得上）——路径曾是导出、
+  ///   但已被用户改过 / 换成别的字幕的，是别人的文件，照常用；
+  /// * `.asr` 退路名（[asrSubtitlePathFor] / [asrStyledSubtitlePathFor]）只有本管线会写，
+  ///   任务目录被清掉、换了 jobsRoot 也一律认作产物。
+  bool _isOwnOutput(String videoPath, _JobState state, String path) =>
+      state.wrote(path) ||
+      p.equals(path, asrSubtitlePathFor(videoPath)) ||
+      p.equals(path, asrStyledSubtitlePathFor(videoPath));
 
   /// 跑 [videoPaths]（单集传一个；整季传全部并置 [wholeSeason]）。
   ///
@@ -446,6 +500,37 @@ class VideoSubtitlePipeline {
         ..recognizerId = recognizer.id
         ..durationMs = durationMs;
       await state.save(dir);
+
+      // 证据：收集（有缓存用缓存）→ 内容变了就从 S3 起作废（插行会让批起点错位）
+      // → 同语言证据补回识别漏掉的行。
+      report(
+        VideoSubtitleStage.recognize,
+        (i + 0.95) / videoPaths.length,
+        'collecting existing subtitles',
+        videoPath: video,
+        index: i,
+      );
+      final List<SubtitleEvidenceTrack> tracks = await _loadEvidence(
+        video: video,
+        dir: dir,
+        drafts: drafts,
+        state: state,
+        cancel: cancel,
+      );
+      final String fingerprint = subtitleEvidenceFingerprint(tracks);
+      if ((state.evidenceFingerprint ?? '') != fingerprint) {
+        await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
+        state.evidenceFingerprint = fingerprint;
+        await state.save(dir);
+      }
+      final SubtitleEvidenceIndex index = SubtitleEvidenceIndex(
+        tracks,
+        targetLanguage: _targetLanguage,
+      );
+      final List<SubtitleDraftCue> filled = fillSubtitleGapsFromEvidence(
+        drafts,
+        index,
+      );
       report(
         VideoSubtitleStage.recognize,
         (i + 1) / videoPaths.length,
@@ -458,8 +543,11 @@ class VideoSubtitlePipeline {
           index: i,
           video: video,
           dir: dir,
-          drafts: drafts,
+          drafts: filled,
           state: state,
+          evidence: tracks,
+          evidenceIndex: index,
+          gapFilledCount: filled.length - drafts.length,
         ),
       );
     }
@@ -476,6 +564,8 @@ class VideoSubtitlePipeline {
         e.finalFile,
         recognizerId: recognizer.id,
         proofread: aiConfig != null,
+        evidence: e.state.evidenceFingerprint ?? '',
+        lyrics: _lyricsEnabled,
       );
       if (done == null) {
         pending.add(e);
@@ -540,6 +630,7 @@ class VideoSubtitlePipeline {
             cacheDir: Directory(
               p.join(e.dir.path, VideoSubtitleJobFiles.proofreadDir),
             ),
+            evidence: e.evidenceIndex,
             cancel: cancel,
             onProgress: (int done, int total) => report(
               VideoSubtitleStage.proofread,
@@ -603,6 +694,38 @@ class VideoSubtitlePipeline {
       report(VideoSubtitleStage.songCheck, 1, 'classified');
     }
 
+    // 4b. S4s 歌词补齐（正片里的 OP / ED / 插曲；被判为纯歌曲的短片整段当歌）。
+    final SubtitleLyricsFinder? finder = lyricsFinder;
+    if (aiConfig != null && finder != null) {
+      final List<_Episode> todo = <_Episode>[
+        for (final _Episode e in episodes)
+          if (e.finalCues == null) e,
+      ];
+      for (int k = 0; k < todo.length; k++) {
+        throwIfSubtitleCancelled(cancel);
+        final _Episode e = todo[k];
+        report(
+          VideoSubtitleStage.lyrics,
+          k / todo.length,
+          'filling lyrics',
+          videoPath: e.video,
+          index: e.index,
+        );
+        final SubtitleLyricsPassResult lyrics =
+            await SubtitleLyricsPass(completer: completer!, finder: finder).run(
+              cues: e.workingCues ?? e.drafts,
+              workTitle: work.japaneseTitle,
+              cacheFile: File(p.join(e.dir.path, VideoSubtitleJobFiles.lyrics)),
+              evidence: e.evidence,
+              allSung: kinds[e.jobId] == SubtitleClipKind.song,
+              cancel: cancel,
+            );
+        e.usage.addTally(lyrics.usage);
+        e.workingCues = lyrics.cues;
+      }
+      report(VideoSubtitleStage.lyrics, 1, 'lyrics done');
+    }
+
     // 5. 拆分 → final.json → 导出。
     for (int k = 0; k < episodes.length; k++) {
       throwIfSubtitleCancelled(cancel);
@@ -628,6 +751,9 @@ class VideoSubtitlePipeline {
             // 再开 AI 跑同一集时，不能把不校对的结果当成已完成直接导出。
             'recognizer': recognizer.id,
             'proofread': aiConfig != null,
+            // 用了哪份证据、有没有补歌词：证据变了 / 后装上歌词后端，旧 final 不算完成。
+            'evidence': e.state.evidenceFingerprint ?? '',
+            'lyrics': _lyricsEnabled,
           }),
         );
         usage.addTally(e.usage);
@@ -639,7 +765,10 @@ class VideoSubtitlePipeline {
         videoPath: e.video,
         index: e.index,
       );
-      results[e.index] = kinds[e.jobId] == SubtitleClipKind.song
+      // 纯歌曲短片：补上了正确歌词就当歌词字幕导出，没补上照旧跳过。
+      results[e.index] =
+          kinds[e.jobId] == SubtitleClipKind.song &&
+              !e.finalCues!.any(isSubtitleLyricsCue)
           ? VideoSubtitleEpisodeResult(
               videoPath: e.video,
               status: VideoSubtitleEpisodeStatus.skippedSong,
@@ -670,8 +799,12 @@ class VideoSubtitlePipeline {
         (SubtitleDraftCue a, SubtitleDraftCue b) =>
             a.startMs.compareTo(b.startMs),
       );
+    // 换成了查到的正确歌词的行不算「只有 ♪ 的片段」：那是要导出的歌词字幕。
     final int lyrics = cues
-        .where((SubtitleDraftCue c) => c.text.startsWith('♪'))
+        .where(
+          (SubtitleDraftCue c) =>
+              c.text.startsWith('♪') && !isSubtitleLyricsCue(c),
+        )
         .length;
     if (cues.length < 3 || lyrics >= 0.6 * cues.length) {
       return VideoSubtitleEpisodeResult(
@@ -747,7 +880,77 @@ class VideoSubtitlePipeline {
       styledError: styledError,
       removedOutputPaths: removed,
       cueCount: cues.length,
+      evidenceLabels: <String>[
+        for (final SubtitleEvidenceTrack t in e.evidence) t.label,
+      ],
+      gapFilledCount: e.gapFilledCount,
+      lyricsCueCount: cues.where(isSubtitleLyricsCue).length,
     );
+  }
+
+  /// 目标语言：字幕后缀的第一段（`ja` / `ja.ai` → `ja`）。
+  String get _targetLanguage => subtitleSuffix.split('.').first;
+
+  bool get _lyricsEnabled => ai != null && lyricsFinder != null;
+
+  /// 本集证据：`evidence.json` 里来源身份与识别器都没变就复用，否则重收并落盘。
+  /// 收集失败（含宿主 OCR 抛错）只记日志、当没有证据——证据只能让字幕更好。
+  Future<List<SubtitleEvidenceTrack>> _loadEvidence({
+    required String video,
+    required Directory dir,
+    required List<SubtitleDraftCue> drafts,
+    required _JobState state,
+    required SubtitleCancelToken cancel,
+  }) async {
+    final SubtitleEvidenceSource? source = evidence;
+    if (source == null) return const <SubtitleEvidenceTrack>[];
+    bool own(String path) => _isOwnOutput(video, state, path);
+    final File cache = File(p.join(dir.path, VideoSubtitleJobFiles.evidence));
+    try {
+      final String key = sha1
+          .convert(
+            utf8.encode(
+              'v$kSubtitleEvidenceCollectVersion\n'
+              '${recognizer.id}\n$_targetLanguage\n'
+              '${await source.sourceKey(video, isOwnOutput: own)}',
+            ),
+          )
+          .toString();
+      if (cache.existsSync()) {
+        try {
+          final Object? decoded = jsonDecode(cache.readAsStringSync());
+          if (decoded is Map && decoded['key'] == key) {
+            return decodeSubtitleEvidenceTracks(decoded['tracks']);
+          }
+        } on FormatException {
+          // 半截文件：重收。
+        }
+      }
+      final List<SubtitleEvidenceTrack> tracks = await source.load(
+        SubtitleEvidenceLoadRequest(
+          videoPath: video,
+          drafts: drafts,
+          isOwnOutput: own,
+          targetLanguage: _targetLanguage,
+          cancel: cancel,
+        ),
+      );
+      await writeSubtitleJobFileAtomic(
+        cache,
+        jsonEncode(<String, Object?>{
+          'key': key,
+          'tracks': encodeSubtitleEvidenceTracks(tracks),
+        }),
+      );
+      return tracks;
+    } on SubtitlePipelineCancelled {
+      rethrow;
+    } catch (error, stack) {
+      fushiDebugPrint(
+        '[VideoSubtitlePipeline] $video: evidence failed: $error\n$stack',
+      );
+      return const <SubtitleEvidenceTrack>[];
+    }
   }
 
   /// 删掉本管线以前写过、这一轮不再导出的 ASS（[keep] 是本轮导出的那份，没出为
@@ -789,9 +992,8 @@ class VideoSubtitlePipeline {
     if (load == null) return null;
     final AssStyleReference? reference = await load(
       e.video,
-      // 只排除本管线写过的文件；用户自己放的 `.ja.ass` 照样能当参考。
-      isOwnOutput: (String path) =>
-          e.state.exports.keys.any((String own) => p.equals(own, path)),
+      // 只排除本管线的产物；用户自己放的（或改过本管线输出的）`.ja.ass` 照样能当参考。
+      isOwnOutput: (String path) => _isOwnOutput(e.video, e.state, path),
     );
     if (reference == null) return null;
     final String target = styledSubtitlePathFor(e.video);
@@ -834,13 +1036,18 @@ class VideoSubtitlePipeline {
     File f, {
     required String recognizerId,
     required bool proofread,
+    required String evidence,
+    required bool lyrics,
   }) {
     if (!f.existsSync()) return null;
     try {
       final Object? decoded = jsonDecode(f.readAsStringSync());
       if (decoded is! Map) return null;
+      // 改版前的 final 没记证据 / 歌词：按「无证据、无歌词」认，免得升级后整季重做。
       if (decoded['recognizer'] != recognizerId ||
-          decoded['proofread'] != proofread) {
+          decoded['proofread'] != proofread ||
+          (decoded['evidence'] ?? '') != evidence ||
+          (decoded['lyrics'] ?? false) != lyrics) {
         return null;
       }
       final Object? u = decoded['usage'];
@@ -871,13 +1078,23 @@ class _Episode {
     required this.dir,
     required this.drafts,
     required this.state,
+    this.evidence = const <SubtitleEvidenceTrack>[],
+    this.evidenceIndex,
+    this.gapFilledCount = 0,
   });
 
   final int index;
   final String video;
   final Directory dir;
+
+  /// 识别稿（已经过缺口补齐）。
   final List<SubtitleDraftCue> drafts;
   final _JobState state;
+
+  /// 本集证据轨与索引（没有证据时索引为空）。
+  final List<SubtitleEvidenceTrack> evidence;
+  final SubtitleEvidenceIndex? evidenceIndex;
+  final int gapFilledCount;
 
   /// S3/S4 之后、拆分之前。
   List<SubtitleDraftCue>? workingCues;
@@ -912,7 +1129,8 @@ class _JobState {
       s
         ..videoPath = decoded['videoPath'] as String?
         ..recognizerId = decoded['recognizer'] as String?
-        ..durationMs = (decoded['durationMs'] as num?)?.round();
+        ..durationMs = (decoded['durationMs'] as num?)?.round()
+        ..evidenceFingerprint = decoded['evidence'] as String?;
       final Object? exports = decoded['exports'];
       if (exports is Map) {
         exports.forEach((Object? k, Object? v) {
@@ -928,6 +1146,9 @@ class _JobState {
   String? videoPath;
   String? recognizerId;
   int? durationMs;
+
+  /// 上一次 S3 用的证据指纹（[subtitleEvidenceFingerprint]；空 = 无证据）。
+  String? evidenceFingerprint;
   final Map<String, String> exports = <String, String>{};
 
   /// [path] 现在的内容是不是本管线上次写进去的那份。
@@ -945,6 +1166,7 @@ class _JobState {
       'videoPath': videoPath,
       'recognizer': recognizerId,
       'durationMs': durationMs,
+      if (evidenceFingerprint != null) 'evidence': evidenceFingerprint,
       'exports': exports,
     }),
   );

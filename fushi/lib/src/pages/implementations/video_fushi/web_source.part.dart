@@ -1,9 +1,5 @@
 part of '../video_fushi_page.dart';
 
-/// 网页档没有站点视频时，顶部返回条的高度（站点页面让在它下面，返回钮不压在 WebView 上——
-/// 收输入的 WebView2 子窗口会先于 Flutter 吃掉落在它矩形里的点击）。
-const double _kVideoWebPageBarHeight = 52;
-
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
 /// 截图 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；识别画面文字只在站点画面能
 /// 截帧时画（[canCaptureFrame]，Netflix DRM 不行）；音轨只在站点上报了音轨时画
@@ -1084,6 +1080,10 @@ extension _VideoWebSource on _VideoFushiPageState {
     final WebVideoSession? session = _webSession;
     if (session == null) return video;
     final bool hasVideo = _webPlayerMode;
+    // 网页档没有站点视频时顶部返回条的总高度（含顶部让位，见 [webVideoReturnBarExtent]）：
+    // 站点页面让在它下面，返回钮不压在 WebView 上——收输入的 WebView2 子窗口会先于
+    // Flutter 吃掉落在它矩形里的点击。
+    final double barExtent = webVideoReturnBarExtent(context);
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -1091,7 +1091,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           left: 0,
           right: 0,
           bottom: 0,
-          top: hasVideo ? 0 : _kVideoWebPageBarHeight,
+          top: hasVideo ? 0 : barExtent,
           child: WebVideoSurface(key: _webSurfaceKey, session: session),
         ),
         if (hasVideo && _webAdShowing)
@@ -1112,7 +1112,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           left: 0,
           right: 0,
           top: 0,
-          height: _kVideoWebPageBarHeight,
+          height: barExtent,
           child: AnimatedSwitcher(
             duration: fushiMotionDuration(context, FushiMotion.short),
             child: hasVideo
@@ -1128,61 +1128,27 @@ extension _VideoWebSource on _VideoFushiPageState {
             left: 0,
             right: 0,
             bottom: 0,
-            top: _kVideoWebPageBarHeight,
+            top: barExtent,
             child: _buildOsdOverlay(),
           ),
       ],
     );
   }
 
-  /// 播放器层露出站点页面时（观看页还没有视频 / 站点弹层打断）顶部的细返回条：返回（关掉本层，
-  /// 与返回键同一条 [_handleBackOrExit]）、标题、「在浏览器中打开」（[_exitWebToBrowser]）。
-  /// 没有地址栏 / 前进 / 刷新 / 档位切换——浏览只在 app 内浏览器里，用户只看到一个浏览器
-  /// （`docs/specs/2026-11-01-one-browser.md`）。
+  /// 播放器层露出站点页面时的细返回条（[WebVideoReturnBar]）：返回（关掉本层，与返回键同一条
+  /// [_handleBackOrExit]）、标题、「在浏览器中打开」（[_exitWebToBrowser]）。
   Widget _buildWebReturnBar() {
-    final ThemeData theme = Theme.of(context);
     final WebVideoSession? session = _webSession;
-    return ColoredBox(
-      key: const ValueKey<String>('video-web-return-bar'),
-      color: theme.colorScheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          children: <Widget>[
-            FushiIconButtonControl(
-              key: const ValueKey<String>('video-web-return-back'),
-              tooltip: t.back,
-              icon: const FushiIcon(FushiIcons.back),
-              onPressed: () => unawaited(_handleBackOrExit()),
+    return WebVideoReturnBar(
+      title: _titleNotifier,
+      onBack: () => unawaited(_handleBackOrExit()),
+      onOpenInBrowser: session == null
+          ? null
+          : () => _exitWebToBrowser(
+              session.mainFrameUrl.value.isNotEmpty
+                  ? session.mainFrameUrl.value
+                  : session.pageUrl,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ValueListenableBuilder<String?>(
-                valueListenable: _titleNotifier,
-                builder: (BuildContext _, String? title, Widget? __) => Text(
-                  title ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-            FushiIconButtonControl(
-              key: const ValueKey<String>('video-web-open-in-browser'),
-              tooltip: t.web_video_open_in_browser,
-              icon: const FushiIcon(FushiIcons.globe),
-              onPressed: session == null
-                  ? null
-                  : () => _exitWebToBrowser(
-                      session.mainFrameUrl.value.isNotEmpty
-                          ? session.mainFrameUrl.value
-                          : session.pageUrl,
-                    ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

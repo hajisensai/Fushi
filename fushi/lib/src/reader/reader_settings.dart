@@ -6,6 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
@@ -141,7 +142,10 @@ class ReaderSettings {
   /// Reload all settings from the database, e.g. after a profile switch.
   Future<void> refreshFromDb() async {
     _cache.clear();
-    final Map<String, String> all = await _db.getAllPrefs();
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，阅读样式键取会话覆盖层。
+    final Map<String, String> all = WorkProfileScope.instance.effectivePrefs(
+      await _db.getAllPrefs(),
+    );
     await loadFromPrefsSnapshot(all);
   }
 
@@ -160,9 +164,9 @@ class ReaderSettings {
     _cache.remove('first_dimension_margin');
     _cache.remove('second_dimension_margin');
     _cache.remove('second_dimension_max');
-    await _db.deletePref('${_prefix}first_dimension_margin');
-    await _db.deletePref('${_prefix}second_dimension_margin');
-    await _db.deletePref('${_prefix}second_dimension_max');
+    await _delete('first_dimension_margin');
+    await _delete('second_dimension_margin');
+    await _delete('second_dimension_max');
   }
 
   Future<void> _ensureResponsiveMarginDefaults() async {
@@ -188,12 +192,28 @@ class ReaderSettings {
 
   Future<void> _set<T>(String key, T value) async {
     _cache[key] = value;
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, value.toString());
+      return;
+    }
     try {
-      await _db.setPref('$_prefix$key', value.toString());
+      await _db.setPref(dbKey, value.toString());
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderSettings.write', e, stack);
       debugPrint('[ReaderSettings] write error: $e');
     }
+  }
+
+  /// 删掉一个本源键：作品级配置会话期间作品级键删在会话覆盖层（绑定配置的快照），
+  /// 否则删全局偏好。
+  Future<void> _delete(String key) async {
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, null);
+      return;
+    }
+    await _db.deletePref(dbKey);
   }
 
   /// BUG-1116：读侧统一走 [PrefCodec.decodeUntyped]，兼容两种历史写入格式：
@@ -490,8 +510,8 @@ class ReaderSettings {
       );
       _set<String>('furigana_mode', merged);
       _cache.remove('hide_furigana');
-      _db.deletePref('${_prefix}hide_furigana');
-      _db.deletePref('${_prefix}furigana_style');
+      _delete('hide_furigana');
+      _delete('furigana_style');
       return merged;
     }
     return normalizeFuriganaMode(_get<String>('furigana_mode', 'off'));

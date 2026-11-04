@@ -20,9 +20,6 @@ import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/ops/op_routes.dart';
 
-/// 对话存档与操作记录保留多久（spec D3 / D5）。
-const Duration kAiAgentHistoryRetention = Duration(days: 30);
-
 /// 「AI 助手」当前可用的提供商；null = 未指派（不发任何请求，引导去设置）。
 AiProviderConfig? resolveAiAgentProvider(AiSettingsSource settings) => settings
     .aiFeatureAssignments
@@ -94,9 +91,11 @@ class AiAgentController extends ChangeNotifier
     required OpContext opContext,
     AgentLlm Function(AiProviderConfig provider)? llmFactory,
     DateTime Function()? clock,
+    AgentLiveSessions? live,
   }) : _opContext = opContext,
        _llmFactory = llmFactory,
-       _clock = clock ?? DateTime.now {
+       _clock = clock ?? DateTime.now,
+       _live = live ?? appAgentLiveSessions {
     // 待答卡片的变化也通知监听者（[AiAgentConversationController] 的约定）。
     host.pending.addListener(notifyListeners);
   }
@@ -130,12 +129,14 @@ class AiAgentController extends ChangeNotifier
     required AgentLlm Function(AiProviderConfig provider) llmFactory,
     OpInvoker? invoker,
     DateTime Function()? clock,
+    AgentLiveSessions? live,
   }) => AiAgentController._(
     database: database,
     settings: settings,
     opContext: opContext,
     llmFactory: llmFactory,
     clock: clock,
+    live: live ?? AgentLiveSessions(),
   ).._invoker = invoker;
 
   final FushiDatabase database;
@@ -144,6 +145,9 @@ class AiAgentController extends ChangeNotifier
   final AgentLlm Function(AiProviderConfig provider)? _llmFactory;
   final DateTime Function() _clock;
   final AiAgentUiHost host = AiAgentUiHost();
+
+  /// 进程里正打开着的会话（与互联 host 的远端会话共用）：别处开着的不续接。
+  final AgentLiveSessions _live;
 
   OpInvoker? _invoker;
   AiAgentToolbox? _toolbox;
@@ -207,6 +211,10 @@ class AiAgentController extends ChangeNotifier
 
   @override
   AiAgentSessionLibrary get sessionLibrary => this;
+
+  /// 本机存档。
+  @override
+  String? get storedOn => null;
 
   @override
   String? get currentSessionId => _session?.id;
@@ -311,6 +319,8 @@ class AiAgentController extends ChangeNotifier
   Future<bool> resume(String sessionId) async {
     final AgentSession? current = _session;
     if (current != null && current.id == sessionId) return true;
+    // 已配对设备正经互联开着它（或另一个控制器开着）：不开第二份。
+    if (_live.contains(sessionId)) return false;
     final AiProviderConfig? provider = resolveAiAgentProvider(settings);
     final AiAgentSessionRow? row = await database.getAiAgentSession(sessionId);
     if (provider == null || row == null) return false;
@@ -323,6 +333,8 @@ class AiAgentController extends ChangeNotifier
     if (json is! Map) return false;
     cancel();
     if (current != null) await _save(current);
+    // 读存档 / 存当前这场的间隙被别处抢先打开了。
+    if (_live.contains(sessionId)) return false;
     _detach();
     _scene = row.scene;
     _attach(
@@ -343,13 +355,29 @@ class AiAgentController extends ChangeNotifier
   @override
   Future<bool> switchToSession(String sessionId) => resume(sessionId);
 
+  /// 当前 Profile 的会话，含互联 host 替已配对设备跑的远端会话（BUG-4067：host 端
+  /// 也能看、能续接），远端会话补上发起设备的名字（[AiAgentSessionSummary.originDeviceName]）。
   @override
-  Future<List<AiAgentSessionSummary>> listSessions() async =>
-      database.listAiAgentSessionSummaries(
-        profileUid: await database.resolveActiveProfileUid(),
-        // 替已配对设备跑的远端会话属于对方，不进本机会话列表（操作记录页照列）。
-        excludeScenes: kAiAgentLocalLibraryExcludedScenes,
-      );
+  Future<List<AiAgentSessionSummary>> listSessions() async {
+    final List<AiAgentSessionSummary> sessions = await database
+        .listAiAgentSessionSummaries(
+          profileUid: await database.resolveActiveProfileUid(),
+        );
+    if (sessions.every((AiAgentSessionSummary s) => s.originPeerId.isEmpty)) {
+      return sessions;
+    }
+    final Map<String, String> names = <String, String>{
+      for (final FushiPairedPeerRow peer in await database.getPairedPeers())
+        if ((peer.deviceName ?? '').trim().isNotEmpty)
+          peer.peerId: peer.deviceName!.trim(),
+    };
+    return <AiAgentSessionSummary>[
+      for (final AiAgentSessionSummary s in sessions)
+        s.originPeerId.isEmpty
+            ? s
+            : s.withOriginDeviceName(names[s.originPeerId]),
+    ];
+  }
 
   @override
   Future<void> renameSession(String sessionId, String title) async {
@@ -360,7 +388,9 @@ class AiAgentController extends ChangeNotifier
   }
 
   @override
-  Future<void> deleteSession(String sessionId) async {
+  Future<bool> deleteSession(String sessionId) async {
+    // 已配对设备正经互联开着它：那边收尾时会把它写回来，不删。
+    if (_live.contains(sessionId) && _session?.id != sessionId) return false;
     _deletedSessionIds.add(sessionId);
     if (_session?.id == sessionId) {
       cancel();
@@ -369,6 +399,7 @@ class AiAgentController extends ChangeNotifier
     }
     await database.deleteAiAgentSession(sessionId);
     _sessionsRevision.value++;
+    return true;
   }
 
   /// 切过 Profile 之后再打开 AI 助手：手上这场属于别的 Profile（它不会出现在当前
@@ -413,6 +444,7 @@ class AiAgentController extends ChangeNotifier
   }
 
   void _attach(AgentSession session) {
+    _live.claim(session.id);
     _session = session;
     _changes = session.changes.listen((_) => notifyListeners());
   }
@@ -420,7 +452,9 @@ class AiAgentController extends ChangeNotifier
   void _detach() {
     unawaited(_changes?.cancel());
     _changes = null;
-    _session?.dispose();
+    final AgentSession? session = _session;
+    if (session != null) _live.release(session.id);
+    session?.dispose();
     _session = null;
     _sessionProfileUid = null;
   }
@@ -451,11 +485,7 @@ class AiAgentController extends ChangeNotifier
   Future<void> _pruneOnce() async {
     if (_pruned) return;
     _pruned = true;
-    await database.pruneAiAgentHistory(
-      before: _clock()
-          .subtract(kAiAgentHistoryRetention)
-          .millisecondsSinceEpoch,
-    );
+    await pruneAiAgentArchive(database, now: _clock());
   }
 
   String _newSessionId() {

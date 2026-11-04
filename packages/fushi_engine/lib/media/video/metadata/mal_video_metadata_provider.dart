@@ -81,6 +81,7 @@ class MalVideoMetadataProvider
     VideoMetadataHttpClient? transport,
     this.endpoint = 'https://api.jikan.moe/v4',
     this.language = kFallbackVideoMetadataLocale,
+    this.followOriginalLanguage = false,
     this.maxCharacterDetailFetches = kMalMaxCharacterDetailFetches,
     MalVideoMetadataRequestGate? requestGate,
   }) : assert(client == null || transport == null),
@@ -114,8 +115,14 @@ class MalVideoMetadataProvider
   /// [kMalMaxCharacterDetailFetches]。
   final int maxCharacterDetailFetches;
 
-  /// [language] 的主子标签（`zh-CN` → `zh`）。
-  String get _titleLanguage => VideoMetadataLanguages(language).primarySubtag;
+  /// true = 标题取作品原文（资料语言留空，BUG-4056）。Jikan 没有语言字段，
+  /// `title_japanese` 就是原文标题（中 / 韩动画也是原文字），所以按 `ja` 选。
+  final bool followOriginalLanguage;
+
+  /// [language] 的主子标签（`zh-CN` → `zh`）；跟随原语言时恒 `ja`（原文标题）。
+  String get _titleLanguage => followOriginalLanguage
+      ? 'ja'
+      : VideoMetadataLanguages(language).primarySubtag;
 
   @override
   VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.mal;

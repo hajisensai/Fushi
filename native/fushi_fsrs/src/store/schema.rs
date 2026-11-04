@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 24;
+pub const SCHEMA_VERSION: i64 = 25;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -361,6 +361,19 @@ const V15_NOTES: (&str, &str) = (
 );
 const V15_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_dupe ON srs_notes_cache (profile_uid, dupe_norm)      WHERE deleted_at IS NULL;";
 
+/// V25：按作品出卡（自定义学习 `source`，store/study.rs `CustomStudy`）直接查表，不为出卡把每条笔记的出处寄存器
+/// 从修改记录里读一遍。
+/// - `srs_notes_cache.source_key`：笔记出处寄存器的分组键（store/browse.rs `source_key`，与浏览页出处视图 / `src:"<键>"`
+///   同一个函数；不按制卡标签推，标签推的只进统计页的 `source_kind`），写缓存行时一并算（store/caches.rs）。只有 Rust
+///   读写（Drift 不声明）。空串 = 没有出处；NULL = 还没算：老行加列后都是 NULL，由 Dart 侧缓存修订号 10 的升级步让内核
+///   只补这一列（caches.rs [super::caches::backfill_source_keys]）。
+/// - 按 (profile, source_key) 建未删除笔记的部分索引。按「列在不在」判断，可重放。
+const V25_NOTES: (&str, &str) = (
+    "source_key",
+    "ALTER TABLE srs_notes_cache ADD COLUMN source_key TEXT NULL;",
+);
+const V25_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_source ON srs_notes_cache (profile_uid, source_key) WHERE deleted_at IS NULL;";
+
 /// V16：去掉两条整表复制级的冗余索引（2026-10-30 磁盘占用，10 万卡库合计约 120 MB）。
 /// - `idx_sync2_ent_ops_what (profile, kind, entity, what)`：表是 WITHOUT ROWID、主键 (profile, kind, entity, device, seq)，
 ///   这条索引的每一行就是整行换个序——体积与表本身相同。所有查询都带 (profile, kind, entity) 主键前缀，`what` 在
@@ -700,6 +713,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    if current < 25 {
+        if !has_column(&tx, "srs_notes_cache", V25_NOTES.0)? {
+            tx.execute_batch(V25_NOTES.1).map_err(|e| e.to_string())?;
+        }
+        tx.execute_batch(V25_INDEX).map_err(|e| e.to_string())?;
+    }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -777,6 +796,43 @@ mod tests {
             )
             .unwrap();
         assert_eq!(v, "x");
+        assert_eq!(version(&c), SCHEMA_VERSION.to_string());
+    }
+
+    /// v24 的库升到 v25：加 `source_key` 列（老行 NULL，等 Dart 缓存修订号 10 的升级步补）与按作品出卡的部分索引；
+    /// 中途崩溃重放（列与索引已在、版本号还是 24）不出错、不重复建、不动已补的值。
+    #[test]
+    fn v24_store_gains_the_source_key_column_idempotently() {
+        let mut c = rusqlite::Connection::open_in_memory().unwrap();
+        migrate(&mut c).unwrap();
+        c.execute_batch(
+            "DROP INDEX idx_srs_notes_cache_source; ALTER TABLE srs_notes_cache DROP COLUMN source_key; \
+             INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('n1', 'p', 'T', 'g', 1); \
+             UPDATE srs_meta SET value = '24' WHERE key = 'schema';",
+        )
+        .unwrap();
+        assert!(!has_column(&c, "srs_notes_cache", "source_key").unwrap());
+        migrate(&mut c).unwrap();
+        assert!(has_column(&c, "srs_notes_cache", "source_key").unwrap());
+        assert!(indexes(&c).contains(&"idx_srs_notes_cache_source".to_owned()));
+        let key = |c: &rusqlite::Connection| -> Option<String> {
+            c.query_row(
+                "SELECT source_key FROM srs_notes_cache WHERE id = 'n1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(key(&c), None, "old rows wait for the backfill");
+        assert_eq!(version(&c), SCHEMA_VERSION.to_string());
+        c.execute_batch(
+            "UPDATE srs_notes_cache SET source_key = 'book:b1'; UPDATE srs_meta SET value = '24' WHERE key = 'schema';",
+        )
+        .unwrap();
+        let before = indexes(&c);
+        migrate(&mut c).unwrap();
+        assert_eq!(indexes(&c), before);
+        assert_eq!(key(&c).as_deref(), Some("book:b1"));
         assert_eq!(version(&c), SCHEMA_VERSION.to_string());
     }
 
