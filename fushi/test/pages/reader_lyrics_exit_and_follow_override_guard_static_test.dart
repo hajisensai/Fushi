@@ -44,9 +44,9 @@ void main() {
         'exitAfterPersist(',
       );
       expect(
-        popScope.contains('source: ReaderBackSource.route'),
+        popScope.contains('resolveReaderBackStep('),
         isTrue,
-        reason: '系统返回必须按路由来源判阶梯（歌词模式直接退书，NJIIDAhIZL）',
+        reason: '系统返回必须走单点阶梯（歌词模式直接退书，NJIIDAhIZL）',
       );
       expect(
         popScope.contains('explicitExit: _exitBookRequested'),
@@ -60,16 +60,24 @@ void main() {
       );
     });
 
-    test('globalBack 快捷键走快捷键来源的阶梯（Esc 先退歌词）', () {
+    test('globalBack 快捷键走同一阶梯，歌词模式下直接退书（BUG-4005）', () {
       final String body = slice(
         read('lib/src/pages/implementations/reader_fushi/caret.part.dart'),
         'case ShortcutAction.globalBack:',
         'case ShortcutAction.readerToggleChrome:',
       );
-      expect(body.contains('source: ReaderBackSource.shortcut'), isTrue);
-      expect(body.contains('case ReaderBackStep.closeLyrics:'), isTrue);
-      expect(body.contains('_toggleLyricsMode()'), isTrue);
+      expect(body.contains('resolveReaderBackStep('), isTrue);
       expect(body.contains('_exitWindowFullscreenOrPopReader()'), isTrue);
+      expect(
+        body.contains('_toggleLyricsMode()'),
+        isFalse,
+        reason: 'Esc 不许先掀开歌词层回正文：歌词模式下一次就回书架',
+      );
+      expect(
+        RegExp(r'_lyricsMode\b').hasMatch(body),
+        isFalse,
+        reason: 'Esc 的退书判定不看歌词模式（退书也不关歌词层，BUG-785）',
+      );
     });
 
     test('_exitReaderBook 挂旗 → maybePop → finally 撤旗', () {
