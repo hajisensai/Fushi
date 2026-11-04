@@ -98,7 +98,8 @@ Widget _host({
                   keepWebViewWarm: true,
                   webViewKey: _webViewKey,
                   onDismiss: () {},
-                  onTextSelected: (String _, Rect __, List<Object?> ___) {},
+                  onTextSelected:
+                      (String _, Rect __, List<Object?> ___, String ____) {},
                   onLinkClick: (String _, Rect __) {},
                   onMineEntry: (Map<String, String> _) async =>
                       const MinePopupResult(),
