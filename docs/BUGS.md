@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4102](bugs/BUG-4102-webdav-href-raw-non-ascii.md) | ✅ | ✅ | WebDAV 同步根 PROPFIND href 含裸日文字符时 Uri.decodeFull 抛 Illegal percent encoding |
 | [BUG-4102](bugs/BUG-4102-srs-rated-chip-lingers.md) | ✅ | ✅ | srs-rated-chip-lingers |
 | [BUG-4102](bugs/BUG-4102-source-jump-target-no-highlight.md) | ✅ | ✅ | 卡片来源回跳落点不高亮且回看横幅下正文底部被挡 |
 | [BUG-4102](bugs/BUG-4102-ios-metrickit-oversized-crash-drops-stack.md) | ✅ | ✅ | iOS 崩溃诊断调用树超 256 KB 时丢掉崩溃线程与机型 / 构建号 |
