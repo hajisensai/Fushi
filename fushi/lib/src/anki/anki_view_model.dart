@@ -693,6 +693,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     return _withSrsMining(
       ref,
       _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      background: true,
     );
   }
   final AppModel appModel = ref.read(appProvider);
@@ -709,6 +710,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   return _withSrsMining(
     ref,
     _withPendingQueue(ref, _withAutoReposition(ref, remote)),
+    background: true,
   );
 });
 
@@ -733,17 +735,50 @@ final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
 /// = 按词频」，见 `SrsDbStore.nextCard`），刚挖的卡立刻就在对的位置，不需要事后改写新卡位置——
 /// 那样每挖一个词都会产生要同步的位置修改记录，而且各设备用各自的词典现查，排出来的顺序未必一致。
 /// 里层那份（绑 Anki）只看得到经待发队列补发给 Anki 的卡，复习制卡不经过它。
-BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
+///
+/// [background]：本机制卡链路（[ankiRepositoryProvider]）接上「后台制卡」开关（反馈
+/// Rl00Di264R，每次制卡现读 [AppModel.srsMiningBackground]）。替别的设备制卡的
+/// [hostMiningAnkiRepositoryProvider] 不接：对端要确定的结果，不能回「已入队」。
+BaseAnkiRepository _withSrsMining(
+  Ref ref,
+  BaseAnkiRepository repo, {
+  bool background = false,
+}) {
   if (!ref.watch(srsMiningToReviewProvider)) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
+  final AppModel appModel = ref.read(appProvider);
   return SrsMiningAnkiRepository(
     inner: repo,
     miner: () => _readSrsMiner(ref),
     onCardsAdded: () => revision.state++,
+    backgroundMining: background ? () => appModel.srsMiningBackground : null,
+    onBackgroundOutcome: background ? showSrsBackgroundMineOutcome : null,
     // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
     openNote: (String noteId) async =>
         await SrsAppHost.current?.openNote(noteId) ?? false,
+  );
+}
+
+/// 后台制卡（[SrsMiningAnkiRepository] 的后台队列）写完一张后的提示：入队时已经提示过
+/// 「已加入后台制卡」，成功且无音频警告时不再打扰；失败 / 重复 / 音频缺失必须让用户看见
+/// （失败原因经 [describeMineOutcome] 同时进错误日志）。
+void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
+  final described = describeMineOutcome(outcome);
+  if (outcome.result == MineResult.success &&
+      described.status != MineToastStatus.addedWithWarning) {
+    return;
+  }
+  FushiToast.showMine(
+    msg: described.success
+        ? described.message
+        : t.srs_mining_background_failed(
+            word: expression,
+            reason: described.message,
+          ),
+    status: described.success || outcome.result == MineResult.duplicate
+        ? described.status
+        : MineToastStatus.failed,
   );
 }
 

@@ -135,7 +135,6 @@ runner.build_configurations.each do |runner_config|
     'SWIFT_VERSION' => '5.0',
     'SWIFT_EMIT_LOC_STRINGS' => 'YES',
     'SKIP_INSTALL' => 'YES',
-    'CODE_SIGN_STYLE' => 'Automatic',
     'ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS' => 'NO',
     'SWIFT_OPTIMIZATION_LEVEL' => runner_config.name == 'Debug' ? '-Onone' : '-O',
     'DEBUG_INFORMATION_FORMAT' => runner_config.name == 'Debug' ? 'dwarf' : 'dwarf-with-dsym'
@@ -149,8 +148,15 @@ runner.build_configurations.each do |runner_config|
     )
     # entitlements 只在 FushiWidgets.xcconfig 里按 sdk 条件接入（模拟器）；真机签名由 CI
     # 按描述文件是否带 App Group 决定（ios/Runner.xcodeproj 不得出现 CODE_SIGN_ENTITLEMENTS）。
+    #
+    # iOS 扩展的 target 级**不写 CODE_SIGN_STYLE**（与 Runner 一样）：target 级设置优先于
+    # base configuration（FushiWidgets.xcconfig），写了 Automatic，CI 往 xcconfig 追加的
+    # `CODE_SIGN_STYLE = Manual` + PROVISIONING_PROFILE_SPECIFIER 就被盖掉，Xcode 报
+    # 「FushiWidgets is automatically signed, but provisioning profile … has been manually
+    # specified」。不写时本地走 Xcode 默认（自动签名），CI 的手动签名照常生效。
   else
     settings.merge!(
+      'CODE_SIGN_STYLE' => 'Automatic',
       'MACOSX_DEPLOYMENT_TARGET' => deployment,
       'SDKROOT' => 'macosx',
       'CODE_SIGN_ENTITLEMENTS' => "#{plist_dir}/FushiWidgets.entitlements",
