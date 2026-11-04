@@ -147,6 +147,9 @@ if ($Steps -contains 'patch') {
   # Applies on top of both: carries the HDR output onto the Impeller path
   # (Fushi renders with Impeller on every platform, no Skia fallback).
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-impeller-hdr.patch')
+  # Applies on top of all three: keyed-mutex synchronized external textures
+  # (ExternalTextureD3d copies under IDXGIKeyedMutex, BUG-3888).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-d3d-keyed-mutex.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 

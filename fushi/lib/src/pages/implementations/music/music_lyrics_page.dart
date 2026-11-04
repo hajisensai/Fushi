@@ -55,6 +55,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamResolver, resolveMusicPluginStream;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -324,8 +325,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
+    _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     _clock.dispose();
     super.dispose();
@@ -1367,7 +1378,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     clock: MusicEngineClock(_engine),
     clockListenable: _engine,
     isPlaying: _engine.isPlaying,
-    onSeek: (Duration d) => unawaited(_engine.seek(d)),
+    // 电台（MusicKit 管队列）没有时长时不能拖。
+    onSeek: _engine.canSeek ? (Duration d) => unawaited(_engine.seek(d)) : null,
     strokeWidth: 4,
     barHeight: 20,
     debugLabel: 'music-lyrics-seek',
@@ -1425,7 +1437,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiIconButtonControl(
             iconSize: icon,
             tooltip: t.shortcut_action_music_previous_track,
-            onPressed: () => unawaited(engine.skipPrevious()),
+            onPressed: engine.canSkipPrevious
+                ? () => unawaited(engine.skipPrevious())
+                : null,
             icon: const FushiIcon(FushiIcons.skipPrevious),
           ),
         ),

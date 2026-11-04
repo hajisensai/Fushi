@@ -46,6 +46,20 @@ class _FakeBridge implements AppleMusicBridge {
   }
 
   @override
+  Future<void> playStation(String stationId, {bool autoplay = true}) async {
+    calls.add('station:$stationId:$autoplay');
+    await stationGate?.future;
+    final Exception? e = playError;
+    if (e != null) throw e;
+    applied = stationId;
+  }
+
+  /// 卡住 playStation（模拟 setQueue 期间页面已发 nowPlaying）。
+  Completer<void>? stationGate;
+
+  @override
+  Future<void> skipToNext() async => calls.add('skip');
+  @override
   Future<void> pause() async => calls.add('pause');
   @override
   Future<void> resume() async => calls.add('resume');

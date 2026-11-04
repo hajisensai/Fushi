@@ -53,7 +53,9 @@ class GalAudioTracksPanel extends StatelessWidget {
             GalTrackEmptyHint.generic =>
               state.audioTracks.isEmpty ? null : t.game_tracks_pcm_only_hint,
           };
+    // 按内容收高：对话框内容区（FushiAlertDialog 的滚动外壳）给有界高度时也不撑满。
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (backendHint != null)

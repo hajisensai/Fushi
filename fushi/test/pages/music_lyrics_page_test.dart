@@ -19,6 +19,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
@@ -330,6 +331,18 @@ void main() {
     expect(row.offsetMs, 100);
 
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // BUG-4084 追加（用户 2026-11-05）：音乐播放页也是「播放页」，盖住浏览器时浏览页要让
+  // 网页停下。
+  testWidgets('音乐播放页把自己的路由登记成播放页，关掉即撤登记', (WidgetTester tester) async {
+    await pumpPage(tester);
+    final Route<dynamic> route = ModalRoute.of(
+      tester.element(find.byType(MusicLyricsPage)),
+    )!;
+    expect(playbackRouteMarks.isPlayback(route), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(playbackRouteMarks.isPlayback(route), isFalse);
   });
 
   testWidgets('宽屏歌词页有返回键（窄屏顶栏有关闭键，宽屏原本没有退出口）', (WidgetTester tester) async {

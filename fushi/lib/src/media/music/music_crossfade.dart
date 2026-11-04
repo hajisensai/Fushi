@@ -413,6 +413,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
           _emit(e);
         case MusicBackendPosition():
         case MusicBackendAdvanced():
+        case MusicBackendNowPlayingChanged():
         case MusicBackendOutputFallback():
         case MusicBackendFailed():
           _emit(e);

@@ -324,7 +324,16 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
             ),
         ],
       ),
-      content: SizedBox(width: 420, child: SingleChildScrollView(child: body)),
+      // 加载 / 空态是居中占位（Center 在有界高度下撑满）：放进 min 列里按自身高度
+      // 排，对话框不会在加载那一下拉到满高；超出视口由 FushiAlertDialog 的外壳滚。
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[body],
+        ),
+      ),
       actions: <Widget>[
         if (summary != null && summary.sessions.isNotEmpty)
           FushiTextButton(

@@ -2922,43 +2922,41 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
       title: Text(t.video_metadata_identifier_words),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              t.video_metadata_identifier_words_syntax,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            FushiTextFieldControl(
+              key: const ValueKey<String>(
+                'video.library.metadata_identifier_words.field',
+              ),
+              controller: _controller,
+              minLines: 6,
+              maxLines: 12,
+              autofocus: true,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (String _) => setState(() {}),
+            ),
+            if (parsed.errors.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
               Text(
-                t.video_metadata_identifier_words_syntax,
-                style: Theme.of(context).textTheme.bodySmall,
+                '${t.video_metadata_identifier_words_invalid}: '
+                '${parsed.errors.length}',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-              const SizedBox(height: 12),
-              FushiTextFieldControl(
-                key: const ValueKey<String>(
-                  'video.library.metadata_identifier_words.field',
-                ),
-                controller: _controller,
-                minLines: 6,
-                maxLines: 12,
-                autofocus: true,
-                keyboardType: TextInputType.multiline,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (String _) => setState(() {}),
-              ),
-              if (parsed.errors.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Text(
-                  '${t.video_metadata_identifier_words_invalid}: '
-                  '${parsed.errors.length}',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                for (final String error in parsed.errors)
-                  Text(error, style: Theme.of(context).textTheme.bodySmall),
-              ],
+              for (final String error in parsed.errors)
+                Text(error, style: Theme.of(context).textTheme.bodySmall),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[

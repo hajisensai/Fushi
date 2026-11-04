@@ -13,12 +13,14 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/misc/notice_dwell.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
 // 语义与调色板住在 toast_severity.dart（视频页 OSD 也用，见该文件头注释），
 // 这里再导出一次，让既有 `import fushi_toast.dart` 的调用点无需改 import。
 export 'package:fushi/src/utils/misc/toast_severity.dart';
+export 'package:fushi/src/utils/misc/notice_dwell.dart';
 export 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
     show MineNoticeAction, kMineNoticeActionVisibleFor;
 
@@ -62,7 +64,11 @@ abstract final class FushiToast {
   }) {
     final ({Color background, Color foreground, IconData icon})? palette =
         toastSeverityPalette(severity);
-    final int durationMs = toastLength == Toast.LENGTH_LONG ? 3500 : 2000;
+    final int durationMs =
+        (toastLength == Toast.LENGTH_LONG
+                ? FushiNoticeDwell.long
+                : FushiNoticeDwell.short)
+            .inMilliseconds;
     final OverlayState? overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay == null) {
       // 原生 toast 只做无 overlay 时的兜底：它不跟主题、画不了图标，只能用固定
@@ -185,8 +191,8 @@ abstract final class FushiToast {
     final int durationMs = action != null
         ? kMineNoticeActionVisibleFor.inMilliseconds
         : status == MineToastStatus.pending
-        ? 4000
-        : 2400;
+        ? FushiNoticeDwell.minePending.inMilliseconds
+        : FushiNoticeDwell.mineResult.inMilliseconds;
     final MineNoticeAction? tapAction = action == null
         ? null
         : MineNoticeAction(

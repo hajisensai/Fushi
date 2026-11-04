@@ -18,10 +18,38 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fushi_engine/media/music/apple_music/apple_music_items.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_library_client.dart'
+    show AppleMusicLibrarySong, parseAppleMusicLibrarySong;
 import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
+
+/// 能起电台的 catalog 资源种类（`<type>/<id>/station` 关系）。
+enum AppleMusicStationSeed {
+  song('songs'),
+  artist('artists'),
+  album('albums'),
+  playlist('playlists');
+
+  const AppleMusicStationSeed(this.wire);
+
+  final String wire;
+}
+
+/// catalog 搜索结果：通用契约那份 + 电台。
+class AppleMusicSearchResult {
+  const AppleMusicSearchResult({
+    this.result = const MusicServerSearchResult(),
+    this.stations = const <AppleMusicStation>[],
+  });
+
+  final MusicServerSearchResult result;
+  final List<AppleMusicStation> stations;
+
+  bool get isEmpty => result.isEmpty && stations.isEmpty;
+}
 
 /// Apple Music API 根。
 final Uri kAppleMusicApiBase = Uri.parse('https://api.music.apple.com');
@@ -368,6 +396,45 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
     return out;
   }
 
+  /// 把别处（个人推荐 / 最近播放回包）拿到的歌曲资源登记成本来源能放的曲目，回放得了的那些。
+  /// `songs` 照 catalog 规则（试听要有预览、整曲要可串流）；`library-songs` 按
+  /// `playParams.catalogId` 换成 catalog 曲目，只在 [fullTracks] 时可放（资料库歌曲没有预览）。
+  List<MusicServerTrack> adoptSongs(Iterable<Object?> raw) {
+    final List<MusicServerTrack> out = <MusicServerTrack>[];
+    for (final Object? r in raw) {
+      if (r is Map<String, Object?> && r['type'] == 'library-songs') {
+        if (!fullTracks) continue;
+        final AppleMusicLibrarySong? s = parseAppleMusicLibrarySong(r);
+        if (s == null) continue;
+        _streamable.add(s.catalogId);
+        out.add(appleMusicTrackWithId(s.track, s.catalogId));
+      } else {
+        out.addAll(_keepPlayable(<Object?>[r]));
+      }
+    }
+    return out;
+  }
+
+  /// 本来源能不能放这首（列出 / 登记过且按当前模式放得了）。
+  bool canStream(String trackId) => fullTracks
+      ? _streamable.contains(trackId)
+      : _previews.containsKey(trackId);
+
+  /// 跟着关系容器的 `next` 翻完（至多 [_kMaxRelationshipPages] 页），回全部 `data`。
+  Future<List<Object?>> _followRelationship(Object? container) async {
+    final List<Object?> raw = <Object?>[...appleMusicDataOf(container)];
+    Object? page = container;
+    for (int i = 0; i < _kMaxRelationshipPages; i++) {
+      final String? next = page is Map<String, Object?>
+          ? _str(page['next'])
+          : null;
+      if (next == null) break;
+      page = await _get(next);
+      raw.addAll(appleMusicDataOf(page));
+    }
+    return raw;
+  }
+
   // ---------------------------------------------------------------- 浏览
 
   /// 热门专辑榜（[sort] 无意义：榜单自有顺序）。
@@ -490,30 +557,270 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
     return sorted;
   }
 
+  /// 热门歌单榜（该 storefront 的 `charts?types=playlists`）。
   @override
-  Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {
-    final String q = query.trim();
-    if (q.isEmpty) return const MusicServerSearchResult();
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  }) async {
+    final int n = limit.clamp(1, _kChartPageLimit);
+    final Map<String, Object?> body = await _get('charts', <String, String>{
+      'types': 'playlists',
+      'limit': '$n',
+      'offset': '$offset',
+    });
+    final Object? results = body['results'];
+    final Object? charts = results is Map<String, Object?>
+        ? results['playlists']
+        : null;
+    if (charts is! List<Object?> || charts.isEmpty) {
+      return const MusicServerPage<MusicServerPlaylist>(
+        items: <MusicServerPlaylist>[],
+      );
+    }
+    final Object? chart = charts.first;
+    final List<Object?> data = _dataOf(chart);
+    final List<MusicServerPlaylist> items = <MusicServerPlaylist>[
+      for (final Object? r in data)
+        if (parseAppleMusicPlaylist(r) case final MusicServerPlaylist p) p,
+    ];
+    final bool more =
+        chart is Map<String, Object?> && _str(chart['next']) != null;
+    return MusicServerPage<MusicServerPlaylist>(
+      items: items,
+      nextOffset: more && data.isNotEmpty ? offset + data.length : null,
+    );
+  }
+
+  /// catalog 歌单（编辑歌单 / 榜单歌单 / 用户公开歌单）的曲目，歌单顺序。
+  @override
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId) async {
+    final Map<String, Object?> body = await _get(
+      'playlists/${Uri.encodeComponent(playlistId)}',
+      const <String, String>{'include': 'tracks'},
+    );
+    final List<Object?> data = _dataOf(body);
+    if (data.isEmpty) return const <MusicServerTrack>[];
+    final Object? playlist = data.first;
+    final Object? rel = playlist is Map<String, Object?>
+        ? playlist['relationships']
+        : null;
+    return _keepPlayable(
+      await _followRelationship(
+        rel is Map<String, Object?> ? rel['tracks'] : null,
+      ),
+    );
+  }
+
+  /// 一个 catalog 歌单本身（从别处只拿到 id 时补全标题 / 封面 / 简介）。
+  Future<MusicServerPlaylist?> playlist(String playlistId) async {
+    final Map<String, Object?> body = await _get(
+      'playlists/${Uri.encodeComponent(playlistId)}',
+    );
+    return _dataOf(body).map(parseAppleMusicPlaylist).nonNulls.firstOrNull;
+  }
+
+  /// 榜单：歌曲 / 专辑 / 歌单三类一次取（[genreId] 给了就是该流派的榜）。
+  Future<AppleMusicCharts> charts({String? genreId, int limit = 25}) async {
+    final Map<String, Object?> body = await _get('charts', <String, String>{
+      'types': 'songs,albums,playlists',
+      'limit': '${limit.clamp(1, _kChartPageLimit)}',
+      'genre': ?genreId,
+    });
+    final Object? results = body['results'];
+    final Map<String, Object?> r = results is Map<String, Object?>
+        ? results
+        : const <String, Object?>{};
+    Map<String, Object?>? first(String type) {
+      final Object? list = r[type];
+      if (list is! List<Object?> || list.isEmpty) return null;
+      final Object? c = list.first;
+      return c is Map<String, Object?> ? c : null;
+    }
+
+    final Map<String, Object?>? songs = first('songs');
+    final Map<String, Object?>? albums = first('albums');
+    final Map<String, Object?>? playlists = first('playlists');
+    return AppleMusicCharts(
+      songs: _keepPlayable(_dataOf(songs)),
+      albums: <MusicServerAlbum>[
+        for (final Object? x in _dataOf(albums))
+          if (parseAppleMusicAlbum(x) case final MusicServerAlbum a) a,
+      ],
+      playlists: <MusicServerPlaylist>[
+        for (final Object? x in _dataOf(playlists))
+          if (parseAppleMusicPlaylist(x) case final MusicServerPlaylist p) p,
+      ],
+      songsTitle: _str(songs?['name']),
+      albumsTitle: _str(albums?['name']),
+      playlistsTitle: _str(playlists?['name']),
+    );
+  }
+
+  /// 该 storefront 的顶级流派（「ミュージック」这个总根不列）。
+  Future<List<AppleMusicGenre>> genres() async {
+    final Map<String, Object?> body = await _get('genres');
+    final List<AppleMusicGenre> all = <AppleMusicGenre>[
+      for (final Object? x in _dataOf(body))
+        if (parseAppleMusicGenre(x) case final AppleMusicGenre g) g,
+    ];
+    // 根流派（id 34「Music」）的 parentId 为空；其余都挂在它下面。
+    return <AppleMusicGenre>[
+      for (final AppleMusicGenre g in all)
+        if (g.parentId != null) g,
+    ];
+  }
+
+  /// 艺人的某个视图（`top-songs` / `similar-artists` / `featured-playlists` / `latest-release`
+  /// / `full-albums` / `singles` / `appears-on-albums` …）的原始 `data`。
+  Future<List<Object?>> _artistView(String artistId, String view) async {
+    final Map<String, Object?> body = await _get(
+      'artists/${Uri.encodeComponent(artistId)}/view/$view',
+      const <String, String>{'limit': '$_kSearchLimit'},
+    );
+    return _dataOf(body);
+  }
+
+  /// 艺人热门歌曲。
+  Future<List<MusicServerTrack>> artistTopSongs(String artistId) async =>
+      _keepPlayable(await _artistView(artistId, 'top-songs'));
+
+  /// 相似艺人。
+  Future<List<MusicServerArtist>> similarArtists(String artistId) async =>
+      <MusicServerArtist>[
+        for (final Object? x in await _artistView(artistId, 'similar-artists'))
+          if (parseAppleMusicArtist(x) case final MusicServerArtist a) a,
+      ];
+
+  /// 艺人精选歌单（「〇〇 必听」「〇〇 深度挖掘」等编辑歌单）。
+  Future<List<MusicServerPlaylist>> artistPlaylists(
+    String artistId,
+  ) async => <MusicServerPlaylist>[
+    for (final Object? x in await _artistView(artistId, 'featured-playlists'))
+      if (parseAppleMusicPlaylist(x) case final MusicServerPlaylist p) p,
+  ];
+
+  /// 艺人本人（从资料库艺人 / 歌曲跳过来时只有名字，按名字在 catalog 里搜第一个同名艺人）。
+  Future<MusicServerArtist?> findArtist(String name) async {
+    final String q = name.trim();
+    if (q.isEmpty) return null;
     final Map<String, Object?> body = await _get('search', <String, String>{
       'term': q,
-      'types': 'songs,albums,artists',
+      'types': 'artists',
+      'limit': '5',
+    });
+    final Object? results = body['results'];
+    final List<MusicServerArtist> found = <MusicServerArtist>[
+      for (final Object? x in _dataOf(
+        results is Map<String, Object?> ? results['artists'] : null,
+      ))
+        if (parseAppleMusicArtist(x) case final MusicServerArtist a) a,
+    ];
+    final String lower = q.toLowerCase();
+    return found
+            .where((MusicServerArtist a) => a.name.toLowerCase() == lower)
+            .firstOrNull ??
+        found.firstOrNull;
+  }
+
+  /// 专辑本身（推荐里点开前补艺人 id 等）。
+  Future<MusicServerAlbum?> album(String albumId) async {
+    final Map<String, Object?> body = await _get(
+      'albums/${Uri.encodeComponent(albumId)}',
+    );
+    return _dataOf(body).map(parseAppleMusicAlbum).nonNulls.firstOrNull;
+  }
+
+  /// Apple Music 直播电台（Apple Music 1 / Hits / Country …）。
+  Future<List<AppleMusicStation>> liveStations() async {
+    final Map<String, Object?> body = await _get(
+      'stations',
+      const <String, String>{'filter[featured]': 'apple-music-live-radio'},
+    );
+    return <AppleMusicStation>[
+      for (final Object? x in _dataOf(body))
+        if (parseAppleMusicStation(x) case final AppleMusicStation s) s,
+    ];
+  }
+
+  /// 歌曲 / 艺人 / 专辑 / 歌单的电台（`<type>/<id>/station` 关系）。没有电台回 null。
+  Future<AppleMusicStation?> stationFor(
+    AppleMusicStationSeed seed,
+    String id,
+  ) async {
+    final Map<String, Object?> body;
+    try {
+      body = await _get('${seed.wire}/${Uri.encodeComponent(id)}/station');
+    } on AppleMusicApiException catch (e) {
+      if (e.httpStatus == 404) return null;
+      rethrow;
+    }
+    return _dataOf(body).map(parseAppleMusicStation).nonNulls.firstOrNull;
+  }
+
+  @override
+  Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {
+    final AppleMusicSearchResult r = await searchAll(query, limit: limit);
+    return r.result;
+  }
+
+  /// 搜索（含歌单与电台：电台不在通用契约里，单独带回）。
+  Future<AppleMusicSearchResult> searchAll(
+    String query, {
+    int limit = 30,
+  }) async {
+    final String q = query.trim();
+    if (q.isEmpty) return const AppleMusicSearchResult();
+    final Map<String, Object?> body = await _get('search', <String, String>{
+      'term': q,
+      'types': 'songs,albums,artists,playlists,stations',
       'limit': '${limit.clamp(1, _kSearchLimit)}',
     });
     final Object? results = body['results'];
     final Map<String, Object?> r = results is Map<String, Object?>
         ? results
         : const <String, Object?>{};
-    return MusicServerSearchResult(
-      albums: <MusicServerAlbum>[
-        for (final Object? x in _dataOf(r['albums']))
-          if (parseAppleMusicAlbum(x) case final MusicServerAlbum a) a,
+    return AppleMusicSearchResult(
+      result: MusicServerSearchResult(
+        albums: <MusicServerAlbum>[
+          for (final Object? x in _dataOf(r['albums']))
+            if (parseAppleMusicAlbum(x) case final MusicServerAlbum a) a,
+        ],
+        artists: <MusicServerArtist>[
+          for (final Object? x in _dataOf(r['artists']))
+            if (parseAppleMusicArtist(x) case final MusicServerArtist a) a,
+        ],
+        tracks: _keepPlayable(_dataOf(r['songs'])),
+        playlists: <MusicServerPlaylist>[
+          for (final Object? x in _dataOf(r['playlists']))
+            if (parseAppleMusicPlaylist(x) case final MusicServerPlaylist p) p,
+        ],
+      ),
+      stations: <AppleMusicStation>[
+        for (final Object? x in _dataOf(r['stations']))
+          if (parseAppleMusicStation(x) case final AppleMusicStation s) s,
       ],
-      artists: <MusicServerArtist>[
-        for (final Object? x in _dataOf(r['artists']))
-          if (parseAppleMusicArtist(x) case final MusicServerArtist a) a,
-      ],
-      tracks: _keepPlayable(_dataOf(r['songs'])),
     );
+  }
+
+  /// 搜索建议（输入中的补全词）。空白查询回空。
+  Future<List<String>> searchSuggestions(String query) async {
+    final String q = query.trim();
+    if (q.isEmpty) return const <String>[];
+    final Map<String, Object?> body = await _get(
+      'search/suggestions',
+      <String, String>{'term': q, 'kinds': 'terms', 'limit': '10'},
+    );
+    final Object? results = body['results'];
+    final Object? list = results is Map<String, Object?>
+        ? results['suggestions']
+        : null;
+    if (list is! List<Object?>) return const <String>[];
+    return <String>[
+      for (final Object? s in list)
+        if (s is Map<String, Object?>)
+          if (_str(s['searchTerm']) case final String term) term,
+    ];
   }
 
   // ---------------------------------------------------------------- 播放 / 封面

@@ -276,72 +276,66 @@ class _SrsCustomStudyDialogState extends State<SrsCustomStudyDialog> {
       title: Text('${t.srs_custom_study_title} · ${widget.deckName}'),
       content: SizedBox(
         width: SrsCustomStudyDialog.contentWidth,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: FushiAnimatedSize(
-              duration: fushiMotionDuration(context, FushiMotion.short),
-              curve: FushiMotion.standard,
-              child: Column(
-                key: const ValueKey<String>('srs-custom-study'),
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  stagger(
-                    AdaptiveSettingsSection(
-                      children: <Widget>[
-                        AdaptiveSettingsPickerRow<SrsCustomStudyOption>(
-                          key: const ValueKey<String>(
-                            'srs-custom-study-option',
-                          ),
-                          title: t.srs_custom_study_mode,
-                          controlBelow: true,
-                          options:
-                              <
+        child: FushiEntranceScope(
+          child: FushiAnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            child: Column(
+              key: const ValueKey<String>('srs-custom-study'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                stagger(
+                  AdaptiveSettingsSection(
+                    children: <Widget>[
+                      AdaptiveSettingsPickerRow<SrsCustomStudyOption>(
+                        key: const ValueKey<String>('srs-custom-study-option'),
+                        title: t.srs_custom_study_mode,
+                        controlBelow: true,
+                        options:
+                            <
+                              AdaptiveSettingsPickerOption<SrsCustomStudyOption>
+                            >[
+                              for (final SrsCustomStudyOption o
+                                  in SrsCustomStudyOption.values)
                                 AdaptiveSettingsPickerOption<
                                   SrsCustomStudyOption
-                                >
-                              >[
-                                for (final SrsCustomStudyOption o
-                                    in SrsCustomStudyOption.values)
-                                  AdaptiveSettingsPickerOption<
-                                    SrsCustomStudyOption
-                                  >(value: o, label: _optionLabel(o)),
-                              ],
-                          selected: _option,
-                          onChanged: (SrsCustomStudyOption o) =>
-                              setState(() => _option = o),
-                        ),
-                      ],
-                    ),
+                                >(value: o, label: _optionLabel(o)),
+                            ],
+                        selected: _option,
+                        onChanged: (SrsCustomStudyOption o) =>
+                            setState(() => _option = o),
+                      ),
+                    ],
                   ),
+                ),
+                SizedBox(height: tokens.spacing.gap),
+                stagger(
+                  AdaptiveSettingsSection(
+                    key: ValueKey<SrsCustomStudyOption>(_option),
+                    children: _optionRows(),
+                  ),
+                ),
+                if (_option == SrsCustomStudyOption.filter) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap),
                   stagger(
-                    AdaptiveSettingsSection(
-                      key: ValueKey<SrsCustomStudyOption>(_option),
-                      children: _optionRows(),
+                    AdaptiveSettingsTextField(
+                      key: const ValueKey<String>('srs-custom-study-tags'),
+                      controller: _tags,
+                      labelText: t.srs_custom_study_tags,
                     ),
                   ),
-                  if (_option == SrsCustomStudyOption.filter) ...<Widget>[
-                    SizedBox(height: tokens.spacing.gap),
-                    stagger(
-                      AdaptiveSettingsTextField(
-                        key: const ValueKey<String>('srs-custom-study-tags'),
-                        controller: _tags,
-                        labelText: t.srs_custom_study_tags,
-                      ),
-                    ),
-                  ],
-                  if (session) ...<Widget>[
-                    SizedBox(height: tokens.spacing.gap),
-                    stagger(
-                      FushiInlineNotice(
-                        key: const ValueKey<String>('srs-custom-study-hint'),
-                        message: t.srs_custom_study_hint,
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+                if (session) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  stagger(
+                    FushiInlineNotice(
+                      key: const ValueKey<String>('srs-custom-study-hint'),
+                      message: t.srs_custom_study_hint,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

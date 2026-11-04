@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 // Material 3 Expressive（2025-05）的进度与加载指示。
 //
-// material_ui 1.8 只带了 Expressive 的形状引擎（[MaterialShapes] /
+// material_ui 1.8～1.10 只带了 Expressive 的形状引擎（[MaterialShapes] /
 // [RoundedPolygon] / [MaterialShapeBorder]），没有 Expressive 进度组件（波浪
 // 进度条 / LoadingIndicator），所以这里按 M3 Expressive 规格自绘，只给 MD3
 // 设计系统用（Apple 设计系统走 iOS / macOS 形态，见 glass/fushi_glass_feedback）：

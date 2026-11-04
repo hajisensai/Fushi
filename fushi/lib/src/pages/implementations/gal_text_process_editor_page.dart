@@ -912,24 +912,22 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         title: Text(t.game_text_process_add_step),
         content: SizedBox(
           width: 420,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // 已在管线里且不允许重复的种类整条隐藏（只有「替换」允许多条）：
-                // 列出来再置灰只会让 17 行的列表更难扫。
-                for (final GalTextProcessKind kind in GalTextProcessKind.values)
-                  if (kind.allowsDuplicates || !used.contains(kind))
-                    FushiListItem(
-                      key: ValueKey<String>('gtp-add-${kind.storageKey}'),
-                      title: Text(_kindLabel(kind)),
-                      subtitle: Text(_kindDescription(kind)),
-                      titleMaxLines: 2,
-                      subtitleMaxLines: 3,
-                      onTap: () => Navigator.of(dialogContext).pop(kind),
-                    ),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // 已在管线里且不允许重复的种类整条隐藏（只有「替换」允许多条）：
+              // 列出来再置灰只会让 17 行的列表更难扫。
+              for (final GalTextProcessKind kind in GalTextProcessKind.values)
+                if (kind.allowsDuplicates || !used.contains(kind))
+                  FushiListItem(
+                    key: ValueKey<String>('gtp-add-${kind.storageKey}'),
+                    title: Text(_kindLabel(kind)),
+                    subtitle: Text(_kindDescription(kind)),
+                    titleMaxLines: 2,
+                    subtitleMaxLines: 3,
+                    onTap: () => Navigator.of(dialogContext).pop(kind),
+                  ),
+            ],
           ),
         ),
         actions: <Widget>[

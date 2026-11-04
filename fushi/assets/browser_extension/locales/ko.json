@@ -459,6 +459,8 @@
   "favorite_failed": "즐겨찾기에 추가하지 못했습니다. Fushi가 실행 중인지 확인하세요",
   "favorite_failed_old_app": "브라우저에서 즐겨찾기하려면 최신 Fushi가 필요합니다. Fushi를 업데이트하세요",
   "conn_no_response": "Fushi가 실행 중이지만 응답하지 않습니다. Fushi 창을 앞으로 가져온 뒤 다시 시도하세요",
+  "canvas_ocr_no_engine": "Fushi에 사용할 수 있는 OCR 엔진이 없습니다. Fushi의 만화 OCR 설정에서 준비하면 페이지 이미지의 단어를 찾을 수 있습니다",
+  "canvas_ocr_failed": "이 페이지 이미지에서 글자를 읽지 못했습니다",
   "conn_state_no_response_title": "Fushi가 응답하지 않음",
   "conn_state_no_response_detail": "포트에서 대기 중인 프로그램이 제때 응답하지 않았습니다. Fushi가 바쁘거나 시스템에 의해 일시 중지되었을 수 있습니다. 창을 앞으로 가져온 뒤 다시 확인하세요.",
   "opt_popupFontSize_title": "사전 글자 크기",
