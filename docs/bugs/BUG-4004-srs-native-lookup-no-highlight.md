@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug（高亮部分）。复习卡面有两条取词路径：
   - WebView 卡面 `srs_card_face.dart:2079` 给 `SrsCardLookupRequest` 传 `onMatched`，查到后 eval `highlightSelection(count)` 在卡面上高亮；
   - 原生卡面（Fushi 卡型的词条 / 例句，`SrsNativeLookupRegion`）在修前 `fushi/lib/src/pages/implementations/srs/srs_card_lookup.dart:1220`（`_lookupHit` 里的 `c.lookup(SrsCardLookupRequest(...))`）**不传 `onMatched`**，整个原生区也没有任何高亮绘制；`SrsCardLookupRequest.onMatched` 的文档（修前 `:94`）明写「WebView 表面据此在卡面上高亮被查词」——原生表面从设计上就缺这一腿。命中结构 `SrsNativeLookupHit` 也只带被点字所在的**最深**段落（注音段时是基字的子段落），没有承载整段文字的外层段落和取词标记，就算想高亮也换算不出被查词的范围。
-- **[x] ① 已修复** — `srs_card_lookup.dart`：
+- **[x] ① 已修复**（b4d9d63b9e）— `srs_card_lookup.dart`：
   - `SrsNativeLookupHit` 增加 `outerParagraph`（命中路径上标记之前最后经过的段落）与 `data`；
   - `SrsLookupTextData.outerRangesFor`（`:994`）：整段偏移区间 → 外层段落区间（`mapOuterOffset` 的反向，注音段整段占位符）；
   - `srsNativeLookupHighlightRects`（`:1081`）：从查询起点起命中的 `matchedChars` 个字 → 区域坐标系矩形；
