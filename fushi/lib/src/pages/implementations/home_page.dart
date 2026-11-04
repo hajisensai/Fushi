@@ -3275,13 +3275,22 @@ class _HomePageState extends BasePageState<HomePage>
     ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
-  /// 外部（小组件深链）要求切浏览页签：取走请求并走与应用内跳转同一条 [_openBrowseTab]。
+  /// 外部（小组件深链）要求切浏览页签：取走请求并走与应用内端口同一个出口
+  /// [_popToBrowseTab]，而不是裸 [_openBrowseTab]。
+  ///
+  /// [externalBrowseRequest] 是全局 notifier，任何非页面代码都能写；可达性门控与
+  /// 「先回到 home 这一层路由」必须在落地点（这里）判，不能指望每个写入方各自做过。
+  /// 浏览模块关着（「功能模块」隐藏 / iOS 商店合规下 [ModuleId.browse] 不存在）时
+  /// 裸 [_openBrowseTab] 会被 [_selectTab] 静默吞掉；有 pushed route 盖着时只在
+  /// 底下换 tab，用户看不见。小组件那条路径 `runWidgetLink` 已先判模块、退回根路由
+  /// 才写请求，所以这里的门是纵深防御、popUntil 对它是 no-op；去不了就丢弃，与
+  /// `runWidgetLink`「目标模块已关：什么都不做」同口径。
   void _onExternalBrowseRequest() {
     final BrowseNavigationRequest? request = externalBrowseRequest.value;
     if (request == null) return;
     externalBrowseRequest.value = null;
     if (!mounted) return;
-    _openBrowseTab(
+    _popToBrowseTab(
       request.tab,
       downloadsSection: request.downloadsSection,
       downloadsWorkFocus: request.downloadsWorkFocus,
