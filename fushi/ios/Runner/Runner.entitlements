@@ -7,7 +7,9 @@
 		CODE_SIGN_ENTITLEMENTS。描述文件没授予的任何一项签进去 codesign 都直接失败，所以
 		.github/workflows/release-desktop.yml 在 TestFlight 构建时逐项对照描述文件：授予了才
 		保留，没授予就在 runner 上把那一项从本文件删掉；至少剩一项才往 Release.xcconfig 追加
-		CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements。
+		CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements。模拟器构建例外：Debug.xcconfig /
+		Release.xcconfig 的 `CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]` 无条件接入（模拟器不校验
+		描述文件，App Group 才能在模拟器上让小组件读到快照）。
 
 		aps-environment：APNs 远程推送（「开发者回复了你的反馈」，lib/src/feedback/feedback_push.dart）。
 		值 FUSHI_APS_ENVIRONMENT 取描述文件里的（App Store / TestFlight = production）。
@@ -25,5 +27,17 @@
 	<string>$(FUSHI_APS_ENVIRONMENT)</string>
 	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
 	<true/>
+	<!--
+		主屏小组件 / Live Activity 的 App Group（与 FushiWidgets 扩展共用快照目录）。
+
+		与上面各项同一套规矩：真机签名时 CI 逐项核对描述文件，描述文件里没有的 key 先从本文件
+		删掉再签（`PlistBuddy -c "Delete :…"`，只改 runner 上的副本）；两份描述文件
+		（app.fushi.reader / app.fushi.reader.widgets）都带这个 group 时才保留，否则连扩展一起摘掉
+		（tool/apple/widgets_target.rb strip ios）。
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(FUSHI_APP_GROUP)</string>
+	</array>
 </dict>
 </plist>

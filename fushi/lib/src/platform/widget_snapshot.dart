@@ -29,7 +29,8 @@ const int kWidgetVocabLimit = 12;
 /// 词汇释义纯文本的最大长度（码点）。
 const int kWidgetDefinitionMaxChars = 200;
 
-/// 快照 `labels` 的**全部**键（稳定契约，改名要和原生侧 `WidgetSnapshot.kt` 同步）。
+/// 快照 `labels` 的**全部**键（稳定契约，改名要和原生侧 `WidgetSnapshot.kt`、
+/// `fushi/apple/HomeWidgets/Shared/FushiWidgetSnapshot.swift` 同步）。
 ///
 /// 值已按 app 内语言本地化；`updatedAgo` / `agoMinutes` /
 /// `agoHours` / `agoDays` 是**模板**（`{n}` / `{age}` 由原生侧在显示时刻替换，
@@ -121,6 +122,12 @@ const List<String> kWidgetLabelKeys = <String>[
   'onDeckNoServers',
   'onDeckEmpty',
   'onDeckOff',
+  // Apple 小组件（WidgetKit）额外用到的文案；Android 不读，原生侧缺键有英文兜底。
+  'continueEmpty',
+  'streakDays',
+  'lookupHint',
+  'lookupCamera',
+  'lookupClipboard',
 ];
 
 /// 小组件上所有文案（已按 app 内语言本地化）。键集合见 [kWidgetLabelKeys]；
@@ -851,6 +858,10 @@ List<T> _fitTo<T>(List<T> values, int length, T filler) {
   return <T>[for (int i = values.length; i < length; i++) filler, ...values];
 }
 
+/// 有桌面小组件原生侧的平台：Android（Glance）、iOS / macOS（WidgetKit 扩展）。
+bool widgetSnapshotPlatformSupported() =>
+    !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+
 /// 去重签名：不含 `generatedAt`，也不含 `nowPlaying` 的进度 / 取样时刻（播放中它们
 /// 每次采集都变，原生侧靠它们外推，不该因此重发）。曲目、播放 / 暂停、封面等变了仍
 /// 会改变签名。
@@ -868,8 +879,13 @@ String widgetSnapshotSignature(Map<String, Object?> snapshot) {
   });
 }
 
-/// 把快照 JSON 发给原生侧（Android 桌面小组件）。只在 Android 上生效，其余平台
-/// no-op；原生侧存下来并重绘小组件。
+/// 把快照 JSON 发给原生侧（Android Glance 小组件 / iOS·macOS WidgetKit 小组件）。
+/// 只在这三个平台生效，其余平台 no-op；原生侧存下来并重绘小组件。
+///
+/// 两端吃**同一份** JSON、同一个 `updateSnapshot` 方法：Android 见
+/// `widgets/WidgetChannel.kt`；Apple 见 `fushi/apple/HomeWidgets/FushiHomeWidgets.swift`
+/// （主 app 进程里把 JSON 与 `cover` 指向的本机封面缩略后写进 App Group，扩展进程读不到
+/// app 沙盒）。
 ///
 /// 调用方可以随便高频调，本类按 JSON 签名去重（签名**不含** `generatedAt`，否则
 /// 每次采集都不同），数据没变就不过通道；但距上次真正发送超过 [refreshInterval]
@@ -885,10 +901,10 @@ class WidgetSnapshotPublisher {
        _now = now ?? DateTime.now;
 
   static final WidgetSnapshotPublisher instance = WidgetSnapshotPublisher(
-    platformSupported: !kIsWeb && Platform.isAndroid,
+    platformSupported: widgetSnapshotPlatformSupported(),
   );
 
-  /// 只有 Android 有原生侧；其余平台发了也是 MissingPluginException。
+  /// 只有 Android / iOS / macOS 有原生侧；其余平台发了也是 MissingPluginException。
   final bool platformSupported;
 
   final Duration refreshInterval;

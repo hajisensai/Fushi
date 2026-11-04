@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		与主 app 共用的 App Group：小组件从 <group>/home_widgets/snapshot.json 读 Dart 写的快照。
+
+		真机签名只在 CI 确认两份描述文件（app.fushi.reader 与 app.fushi.reader.widgets）都带了
+		这个 group 时才接入；否则 CI 会把扩展整个从签名包里拿掉（tool/apple/widgets_target.rb strip），
+		TestFlight 不会因为后台还没配 App Group 而断。模拟器构建无条件接入（FushiWidgets.xcconfig）。
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(FUSHI_APP_GROUP)</string>
+	</array>
+</dict>
+</plist>

@@ -31,6 +31,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_launch_presence/fushi_launch_presence.dart';
 
 /// 日志 source 标签（不是 i18n key）。
 const String kPreviousExitUncleanSource = 'Process.previousExitUnclean';
@@ -173,9 +174,13 @@ class PreviousSession {
     this.exitReason,
     this.exitStage,
     this.terminatedBy,
+    this.launchDetail,
   });
 
   final int pid;
+
+  /// 启动时原生给的界面取证（[LaunchPresence.detail]）；平台没回答为 null。
+  final String? launchDetail;
 
   /// 上次进程在退出链第一步写下的退出意图（`windowClose` / `updateHandoff` /
   /// `restart`…，[SessionMarker.recordExitRequested]）；没发起过退出为 null。
@@ -204,6 +209,9 @@ class PreviousSession {
   final int memoryPressureCount;
 
   /// 最后停在前台（resumed / inactive / 还在启动）时没了——比后台被回收可疑得多。
+  ///
+  /// [kSessionLifecycleHeadless]（原生说这次启动没有界面、之后也从没上过屏）不算前台：
+  /// 用户根本没看见它，进程在后台被回收不是闪退（BUG-4072）。
   bool get diedInForeground =>
       lifecycle == 'resumed' ||
       lifecycle == 'inactive' ||
@@ -232,12 +240,18 @@ class PreviousSession {
         exitReason: asString(decoded['exitReason']),
         exitStage: asString(decoded['exitStage']),
         terminatedBy: asString(decoded['terminatedBy']),
+        launchDetail: asString(decoded['launchDetail']),
       );
     } on FormatException {
       return null;
     }
   }
 }
+
+/// 会话标记的生命周期初值：原生说这次引擎**没有界面**（Android 无 Activity 附着——
+/// audio_service 被系统媒体续播 / 媒体键 / 车机拉起；iOS 后台拉起）。收到第一个真实
+/// 生命周期（界面接上来）就被覆盖。见 [PreviousSession.diedInForeground]、BUG-4072。
+const String kSessionLifecycleHeadless = 'headless';
 
 /// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
 class SessionMarker {
@@ -258,9 +272,13 @@ class SessionMarker {
   String? _exitReason;
   String? _exitStage;
   String? _terminatedBy;
+  String? _launchDetail;
 
   /// 读出上次会话（没有 / 损坏返回 null），然后写入本次会话的初始标记。
-  PreviousSession? start({required int nowMs}) {
+  ///
+  /// [launch]：原生对本次启动有没有界面的回答；`hasUi == false` 时初值记
+  /// [kSessionLifecycleHeadless]，否则（含不知道）记 `launching`。
+  PreviousSession? start({required int nowMs, LaunchPresence? launch}) {
     PreviousSession? previous;
     try {
       if (file.existsSync()) {
@@ -270,7 +288,13 @@ class SessionMarker {
       previous = null;
     }
     _startedAt = nowMs;
+    _lifecycle = launch?.hasUi == false
+        ? kSessionLifecycleHeadless
+        : 'launching';
     _lifecycleAt = nowMs;
+    _launchDetail = launch == null || launch.detail.isEmpty
+        ? null
+        : launch.detail;
     _write();
     return previous;
   }
@@ -346,6 +370,7 @@ class SessionMarker {
           'exitReason': _exitReason,
           'exitStage': _exitStage,
           'terminatedBy': _terminatedBy,
+          'launchDetail': _launchDetail,
         }),
         flush: true,
       );
@@ -380,6 +405,8 @@ ExitReportEntry? describeUncleanPreviousSession(
   if (androidImportanceAtDeath != null) {
     b.write(' androidImportanceAtDeath=$androidImportanceAtDeath');
   }
+  final String? launchDetail = previous.launchDetail;
+  if (launchDetail != null) b.write(' launch={$launchDetail}');
   if (previous.memoryPressureAt != null) {
     b.write(
       ' memoryPressure=${previous.memoryPressureCount}x '
@@ -421,7 +448,13 @@ ExitReportEntry? describeUncleanPreviousSession(
       atMs: previous.lifecycleAt,
     );
   }
-  b.write(diedInForeground ? '（停在前台时没了，疑似闪退）' : '（停在后台时没了，多半是系统回收）');
+  b.write(
+    diedInForeground
+        ? '（停在前台时没了，疑似闪退）'
+        : previous.lifecycle == kSessionLifecycleHeadless
+        ? '（无界面启动、从没上过屏时没了，多半是系统回收）'
+        : '（停在后台时没了，多半是系统回收）',
+  );
   return ExitReportEntry(
     kPreviousExitUncleanSource,
     b.toString(),
@@ -1177,6 +1210,7 @@ abstract final class PreviousExitLog {
     bool? isMacOS,
     bool? isIOS,
     MethodChannel? androidChannel,
+    MethodChannel? launchChannel,
     String? localAppData,
     Directory? macReportsDir,
     String? macProcessName,
@@ -1194,7 +1228,16 @@ abstract final class PreviousExitLog {
       pid: pid,
       version: version,
     );
-    final PreviousSession? previous = marker.start(nowMs: now);
+    // 先问原生这次启动有没有界面（BUG-4072）：无界面会话的标记记 headless，之后在后台
+    // 被回收不算「启动即闪退」。只有移动端有这种启动；桌面 / 没注册通道 → null（不知道）。
+    final bool mobile =
+        (isAndroid ?? Platform.isAndroid) || (isIOS ?? Platform.isIOS);
+    final LaunchPresence? launch = mobile
+        ? await queryLaunchPresence(
+            channel: launchChannel ?? launchPresenceChannel,
+          )
+        : null;
+    final PreviousSession? previous = marker.start(nowMs: now, launch: launch);
     _previous = previous;
     _marker = marker;
 

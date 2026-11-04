@@ -110,7 +110,9 @@ enum WidgetServerSource {
   }
 }
 
-/// Android 桌面小组件点按产生的深链（`fushi://widget/...`）。
+/// 桌面小组件（Android Glance / iOS·macOS WidgetKit / 控制中心控件）点按产生的深链
+/// （`fushi://widget/...`）。两端共用这一套语法，Swift 侧的构造见
+/// `fushi/apple/HomeWidgets/Extension/FushiHomeWidgetViews.swift` 的 `FushiLinks`。
 ///
 /// 与长按图标的 [AppShortcut] 刻意分开：那个枚举会被发布成启动器快捷方式，
 /// 小组件的点按目标不该混进去。入口是同一个：原生侧把链接当 ACTION_VIEW intent
@@ -126,6 +128,8 @@ enum WidgetServerSource {
 /// - `fushi://widget/vocab`：打开收藏夹（收藏词 / 制卡历史）。
 /// - `fushi://widget/music/now`：音乐播放页（「正在播放」小组件的音乐入口；有声书走 `continue`）。
 /// - `fushi://widget/downloads`：打开下载中心（浏览 › 下载 › 任务）。
+/// - `fushi://widget/camera_lookup`：拍照查词（与悬浮球「拍照查词」同一入口）。
+/// - `fushi://widget/clipboard_lookup`：读剪贴板查词（iOS 只能在前台读剪贴板）。
 /// - `fushi://widget/server?source=<mediaServer|audiobookshelf>&server=<id>&item=<id>`：
 ///   打开首页「继续」里的那条服务器条目（与首页点卡同一落地）。
 sealed class WidgetLink {
@@ -197,6 +201,10 @@ sealed class WidgetLink {
             : null;
       case 'downloads':
         return const WidgetDownloadsLink();
+      case 'camera_lookup':
+        return const WidgetCameraLookupLink();
+      case 'clipboard_lookup':
+        return const WidgetClipboardLookupLink();
       case 'server':
         final WidgetServerSource? source = WidgetServerSource.tryParse(
           uri.queryParameters['source'],
@@ -314,6 +322,16 @@ final class WidgetDownloadsLink extends WidgetLink {
   const WidgetDownloadsLink();
 }
 
+/// 拍照查词（相机 OCR）；词典模块关着时不落地。
+final class WidgetCameraLookupLink extends WidgetLink {
+  const WidgetCameraLookupLink();
+}
+
+/// 剪贴板查词；词典模块关着时不落地。
+final class WidgetClipboardLookupLink extends WidgetLink {
+  const WidgetClipboardLookupLink();
+}
+
 final class WidgetServerLink extends WidgetLink {
   const WidgetServerLink({
     required this.source,
@@ -422,6 +440,8 @@ class WidgetLinkQueue {
 ///   - 音乐播放页：[openMusicPlayer]。
 ///   - 下载中心：浏览模块开着才落地（切到浏览 tab）；之后 [openDownloads] 切到
 ///     「下载 › 任务」页签。
+///   - 拍照 / 剪贴板查词：切到词典 tab 后 [openCameraLookup] / [openClipboardLookup]；
+///     词典模块关着时不落地。
 ///   - 服务器条目：落到首页（让首页「继续」的取数起来），[openServerItem] 返回 false
 ///     （条目已不在进行中）时留在首页。
 Future<void> runWidgetLink(
@@ -441,6 +461,8 @@ Future<void> runWidgetLink(
   ExternalMediaNavigation? media,
   Future<void> Function()? openDownloads,
   Future<bool> Function(WidgetServerLink link)? openServerItem,
+  void Function()? openCameraLookup,
+  void Function()? openClipboardLookup,
 }) async {
   if (link is WidgetOpenLink) return;
   if (link is WidgetContinueLink && (isContinueItemOpen?.call(link) ?? false)) {
@@ -469,6 +491,8 @@ Future<void> runWidgetLink(
       visibility.isEnabled(ModuleId.browse) ? HomeTab.browse : null,
     WidgetServerLink(:final WidgetServerSource source) =>
       visibility.isEnabled(source.module) ? HomeTab.home : null,
+    WidgetCameraLookupLink() || WidgetClipboardLookupLink() =>
+      visibility.isEnabled(ModuleId.lookup) ? HomeTab.dictionaries : null,
   };
   if (tab == null) return;
   if (!onboardingCompleted) {
@@ -512,5 +536,9 @@ Future<void> runWidgetLink(
       await openDownloads?.call();
     case WidgetServerLink():
       await openServerItem?.call(link);
+    case WidgetCameraLookupLink():
+      openCameraLookup?.call();
+    case WidgetClipboardLookupLink():
+      openClipboardLookup?.call();
   }
 }
