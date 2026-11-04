@@ -7,7 +7,7 @@
   - **根因 2（误导）**：读回时在途条目被收成无错误码的 `failed` / `declined`，界面显示空白的「失败：」和用户从没点过的「已拒绝」，用户与模型都不知道是中断。
   - **根因 3（丢事件）**：那时排队的任务结果（`_pendingTaskEvents`）不进存档，读回后模型永远不知道第一个生成任务已经成功。
   - 「工具失败作为结果交还模型继续」这条本身是对的：活的 loop 里工具出错一直是以 `isError` 的 tool_result 交回模型继续（`agent_session.dart` `_runTurn` / `_runTool`；截图里技能内部 fetch 失败后照常继续 search / generate 就是证据），委托方怀疑的「失败就终止」不是这次的原因。
-- **[x] ① 已修复** — 本分支提交（见 git log「fix(ai-agent): restored mid-turn sessions…」）：
+- **[x] ① 已修复** — 提交 f0f83e07f3：
   - `AgentEntry.fromJson(json, {settleInterrupted = true})`：读回时在途条目照旧收尾，但记 `AgentStopCode.interrupted`；远端会话的活快照传 `false` 原样还原（`RemoteAiAgentSession._liveEntry` 不再先收尾再改回）。
   - `repairInterruptedAgentHistory`：`AgentSession.fromJson` 读历史时给每个缺结果的工具调用补一条 `interrupted` 错误结果（告诉模型这一步可能生效也可能没有、先查状态），结尾不是 assistant 时补一句 assistant（与 `_stop` 同一个交替约定）；完整结束的历史原样不动。
   - `_pendingTaskEvents` 随 `toJson` 落盘（`pendingTaskEvents`），读回后随下一句用户话一起交给模型（活的会话在跑一轮时不接受新话，这一支只在读回后走到）。
