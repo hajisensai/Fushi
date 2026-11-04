@@ -105,14 +105,15 @@ String formatLyricsPlayerTime(Duration d) {
   return '$m:$ss';
 }
 
-/// MD3 歌词模式播放控件的布局（偏好 `lyrics_controls_style`，默认新版）。
+/// 歌词模式播放控件的布局（偏好 `lyrics_controls_style`，默认新版）。
 ///
 /// * [modern]：新版（2026-10-31 用户拍板）。窄屏 = 可收起的迷你条（64dp）/ 展开卡
 ///   （约 160dp）；宽屏 = 底部三浮岛（书名 · 播放胶囊 · 全部次要动作与关闭），
 ///   进度条是浮岛上方的整宽直线，正文横向占满。
 /// * [classic]：经典布局原样保留（窄屏现卡、宽屏左栏 + 右上角按钮）。
 ///
-/// 只作用于 MD3；Apple 设计系统不读它（设置面板在 Apple 下隐藏这一项）。
+/// MD3 与 Apple 两套设计系统都读它：两边的新版布局与交互一致（几何 / 测宽 / 读数
+/// 共用 `lyrics_player_modern_shared.dart`），只是视觉各用各的件。
 enum LyricsControlsStyle {
   modern('modern'),
   classic('classic');
@@ -179,7 +180,7 @@ class LyricsPlayerData {
   /// 播放卡在右。只换位置，两栏各自的宽度不变。窄屏不受影响。
   final bool sidesMirrored;
 
-  /// MD3 播放控件布局（新版 / 经典，偏好 `lyrics_controls_style`）。
+  /// 播放控件布局（新版 / 经典，偏好 `lyrics_controls_style`；MD3 / Apple 都读）。
   final LyricsControlsStyle controlsStyle;
 
   /// 新版窄屏播放卡是否展开（偏好 `lyrics_controls_expanded`，默认收起）。

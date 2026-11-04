@@ -24,6 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,6 +36,7 @@ import 'package:path/path.dart' as p;
 import 'helpers/generate_test_image.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
+import 'helpers/page_curl_probe.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
@@ -132,7 +134,11 @@ Future<Map<String, Object?>> _visible(WidgetTester tester) async {
       });
     })();
   ''');
-  return (jsonDecode(raw! as String) as Map).cast<String, Object?>();
+  if (raw == null) {
+    // 刚打开阅读器时 WebView 的 JS 环境可能还没就绪（Windows 偶发回 null）。
+    return <String, Object?>{'page': null, 'jsNotReady': true};
+  }
+  return (jsonDecode(raw as String) as Map).cast<String, Object?>();
 }
 
 /// 等控制器空闲后读可见页。
@@ -143,7 +149,11 @@ Future<Map<String, Object?>> _settled(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 20));
   }
   await _pumpFor(tester, const Duration(milliseconds: 600));
-  final Map<String, Object?> v = await _visible(tester);
+  Map<String, Object?> v = await _visible(tester);
+  for (int i = 0; i < 40 && v['jsNotReady'] == true; i++) {
+    await _pumpFor(tester, const Duration(milliseconds: 250));
+    v = await _visible(tester);
+  }
   final PageCurlController? c = _curl();
   v['ctlActive'] = c?.active;
   v['ctlVisible'] = c?.visible;
@@ -191,27 +201,37 @@ Future<Map<String, Object?>> _drag(
   required double x0,
   required double y,
   required double dx,
+  double dy = 0,
   required int steps,
   required int stepMs,
   required int holdMs,
+  String? probe,
+  Uint8List? baseline,
+  bool returnBeforeUp = false,
 }) async {
-  String ev(String type, double x) =>
-      '''
+  String ev(String type, double x, [double? atY]) {
+    final double yy = atY ?? y;
+    return '''
     (function () {
-      var t = document.elementFromPoint($x, $y) || document.body;
+      var t = document.elementFromPoint($x, $yy) || document.body;
       t.dispatchEvent(new PointerEvent('$type', {
         bubbles: true, cancelable: true, composed: true, pointerId: 7,
         pointerType: 'touch', isPrimary: true, button: 0,
-        buttons: ${type == 'pointerup' ? 0 : 1}, clientX: $x, clientY: $y
+        buttons: ${type == 'pointerup' ? 0 : 1}, clientX: $x, clientY: $yy
       }));
       return 'ok';
     })();
   ''';
+  }
+
   await _evalRaw(tester, ev('pointerdown', x0));
   await _pumpFor(tester, Duration(milliseconds: stepMs));
   bool sawVisible = false;
   for (int i = 1; i <= steps; i++) {
-    await _evalRaw(tester, ev('pointermove', x0 + dx * i / steps));
+    await _evalRaw(
+      tester,
+      ev('pointermove', x0 + dx * i / steps, y + dy * i / steps),
+    );
     await _pumpFor(tester, Duration(milliseconds: stepMs));
     final PageCurlController? c = _curl();
     if (c != null && c.visible) sawVisible = true;
@@ -223,8 +243,23 @@ Future<Map<String, Object?>> _drag(
     'pointX': c?.geometry.point.dx.round(),
     'mirror': c?.geometry.mirror,
   };
-  await _evalRaw(tester, ev('pointerup', x0 + dx));
-  return <String, Object?>{'sawVisible': sawVisible, 'held': held};
+  Map<String, Object?>? shading;
+  if (probe != null && c != null && c.visible) {
+    shading = await probePageCurlShading(tester, c, probe, baseline: baseline);
+  }
+  if (returnBeforeUp) {
+    // 手指拖回起点再松手：回卷，页不变。
+    await _evalRaw(tester, ev('pointermove', x0, y));
+    await _pumpFor(tester, Duration(milliseconds: stepMs));
+    await _evalRaw(tester, ev('pointerup', x0, y));
+  } else {
+    await _evalRaw(tester, ev('pointerup', x0 + dx, y + dy));
+  }
+  return <String, Object?>{
+    'sawVisible': sawVisible,
+    'held': held,
+    'shading': ?shading,
+  };
 }
 
 Future<void> _runDirection(
@@ -237,48 +272,87 @@ Future<void> _runDirection(
       'manga-curl-$direction-${DateTime.now().microsecondsSinceEpoch}';
   final String bookDir = await MangaStorage.bookPath(bookKey);
   await Directory(bookDir).create(recursive: true);
-  await File(
-    p.join(bookDir, MangaStorage.kMangaJsonFileName),
-  ).writeAsString('{"pages":[]}');
-  await _writeChapter(
-    bookDir,
-    _chapter1.key,
-    width: 800,
-    height: 1200,
-    seed: 1,
-  );
-  await _writeChapter(
-    bookDir,
-    _chapter2.key,
-    width: 600,
-    height: 1000,
-    seed: 101,
-  );
-  const OnlineMangaLibraryEntry entry = OnlineMangaLibraryEntry(
-    runtime: OnlineMangaRuntimeKind.mihon,
-    extensionPackage: 'org.example.mangacurl',
-    sourceId: '1',
-    series: OnlineMangaSeries(
-      key: '/series/manga-curl',
-      title: 'Manga curl fixture',
-      raw: <String, Object?>{'url': '/series/manga-curl'},
-    ),
-    chapters: <OnlineMangaChapter>[_chapter2, _chapter1],
-    currentChapterIndex: 1,
-  );
-  await appModel.database.insertEpubBook(
-    EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: 'Manga curl fixture $direction',
-      epubPath: MangaStorage.kMangaJsonFileName,
-      extractDir: bookDir,
-      chapterCount: entry.chapters.length,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-      format: const Value<String>('manga'),
-      sourceMetadata: Value<String?>(entry.encode()),
-    ),
-  );
+  // iOS 按商店合规不提供在线漫画源宿主（[StoreRestrictedCapability.onlineMangaSource]），
+  // 在线源夹具在那里打不开阅读器：改用本地导入卷（同一批页图），只跳过跨章段。
+  final bool online = StoreRestrictedCapability.onlineMangaSource.isAvailable;
+  if (online) {
+    await File(
+      p.join(bookDir, MangaStorage.kMangaJsonFileName),
+    ).writeAsString('{"pages":[]}');
+    await _writeChapter(
+      bookDir,
+      _chapter1.key,
+      width: 800,
+      height: 1200,
+      seed: 1,
+    );
+    await _writeChapter(
+      bookDir,
+      _chapter2.key,
+      width: 600,
+      height: 1000,
+      seed: 101,
+    );
+    const OnlineMangaLibraryEntry entry = OnlineMangaLibraryEntry(
+      runtime: OnlineMangaRuntimeKind.mihon,
+      extensionPackage: 'org.example.mangacurl',
+      sourceId: '1',
+      series: OnlineMangaSeries(
+        key: '/series/manga-curl',
+        title: 'Manga curl fixture',
+        raw: <String, Object?>{'url': '/series/manga-curl'},
+      ),
+      chapters: <OnlineMangaChapter>[_chapter2, _chapter1],
+      currentChapterIndex: 1,
+    );
+    await appModel.database.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Manga curl fixture $direction',
+        epubPath: MangaStorage.kMangaJsonFileName,
+        extractDir: bookDir,
+        chapterCount: entry.chapters.length,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+        sourceMetadata: Value<String?>(entry.encode()),
+      ),
+    );
+  } else {
+    final Directory images = Directory(
+      p.join(bookDir, MangaStorage.kImagesDirName),
+    );
+    await images.create(recursive: true);
+    const TestImageGenerator generator = TestImageGenerator();
+    final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
+    for (int index = 0; index < _kPages; index++) {
+      final String name = 'p${index.toString().padLeft(3, '0')}.png';
+      await File(p.join(images.path, name)).writeAsBytes(
+        generator.pngBytes(width: 800, height: 1200, seed: 1 + index),
+      );
+      pages.add(<String, Object?>{
+        'url': name,
+        'width': 800,
+        'height': 1200,
+        'blocks': <Object?>[],
+      });
+    }
+    await File(
+      p.join(bookDir, MangaStorage.kMangaJsonFileName),
+    ).writeAsString(jsonEncode(<String, Object?>{'pages': pages}));
+    await appModel.database.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Manga curl fixture $direction',
+        epubPath: MangaStorage.kMangaJsonFileName,
+        extractDir: bookDir,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ),
+    );
+  }
   final EpubBookRow book = (await appModel.database.getEpubBook(bookKey))!;
   await appModel.database.setMangaReaderOverride(book.uid, <String, Object?>{
     'ocrTrigger': 'manual',
@@ -376,6 +450,68 @@ Future<void> _runDirection(
     final double fwd = direction == 'rtl' ? 1 : -1;
     final double fwdStart = direction == 'rtl' ? w * 0.1 : w * 0.9;
     final double backStart = direction == 'rtl' ? w * 0.9 : w * 0.1;
+
+    // 3a. 斜拖停在半途：纸面只有页图（黑边不卷），纸背透出镜像正文。拖回起点
+    // 松手回卷。先进到第二个跨页：宽窗口下第一个跨页是单张封面、下一个是双页，
+    // 卷起露出的双页本来就比封面宽，「纸面外不变亮」只在前后跨页同宽时成立。
+    await tester.sendKeyEvent(next);
+    await _pumpFor(tester, const Duration(milliseconds: 60));
+    final Map<String, Object?> vProbe = await _settled(tester);
+    r.check(
+      _page(vProbe) == _page(v1),
+      '$direction: probe starts on the second spread ($vProbe)',
+    );
+    final Uint8List? before = await capturePageCurlBaseline(tester);
+    final Map<String, Object?> diag = await _drag(
+      tester,
+      x0: fwdStart,
+      // 起点在页图内（竖屏信箱时页图只占中间），拖得够长让翻起的纸背有面积可量。
+      y: h * 0.6,
+      // 横向为主（JS 手势按首段位移定轴，竖屏上纵向分量大了会判成纵向滑动）。
+      dx: fwd * w * 0.75,
+      dy: -h * 0.12,
+      steps: 12,
+      stepMs: 32,
+      holdMs: 200,
+      probe: 'manga-curl-shading-$direction',
+      baseline: before,
+      returnBeforeUp: true,
+    );
+    final Map<String, Object?> vDiag = await _settled(tester);
+    r.evidence['$direction/shading'] = diag['shading'];
+    final Map<String, Object?> shading =
+        (diag['shading'] as Map<String, Object?>?) ?? <String, Object?>{};
+    final List<Object?> paperBox =
+        (shading['paper'] as List<Object?>?) ?? <Object?>[];
+    final List<Object?> overlayBox =
+        (shading['overlay'] as List<Object?>?) ?? <Object?>[];
+    r.check(
+      paperBox.length == 4 &&
+          overlayBox.length == 4 &&
+          ((paperBox[2]! as num) < (overlayBox[2]! as num) - 4 ||
+              (paperBox[3]! as num) < (overlayBox[3]! as num) - 4),
+      '$direction: paper narrowed to the page image ($shading)',
+    );
+    r.check(
+      pageCurlBackShowsMirroredText(shading),
+      '$direction: page back shows the mirrored page text ($shading)',
+    );
+    r.check(
+      ((shading['outsideSamples'] as int?) ?? 0) >= 30 &&
+          shading['outsideLight'] == 0,
+      '$direction: nothing paper-coloured outside the page image ($shading)',
+    );
+    r.check(
+      _page(vDiag) == _page(vProbe) && _clean(vDiag),
+      '$direction: probe drag curled back ($vProbe -> $vDiag)',
+    );
+    await tester.sendKeyEvent(prev);
+    await _pumpFor(tester, const Duration(milliseconds: 60));
+    final Map<String, Object?> vBack = await _settled(tester);
+    r.check(
+      _page(vBack) == _page(v4),
+      '$direction: back on the first spread after the probe ($vBack)',
+    );
     final Map<String, Object?> long = await _drag(
       tester,
       x0: fwdStart,
@@ -432,7 +568,22 @@ Future<void> _runDirection(
     );
     r.check(_clean(v7), '$direction: no residue after back drag ($v7)');
 
-    // 4. 跨章。
+    // 4. 跨章（只有在线源夹具有第二章）。
+    if (!online) {
+      r.evidence[direction] = <String, Object?>{
+        'v0': v0,
+        'k1': k1,
+        'v1': v1,
+        'v3': v3,
+        'long': long,
+        'v5': v5,
+        'short': short,
+        'v6': v6,
+        'back': back,
+        'v7': v7,
+      };
+      return;
+    }
     int presses = 0;
     while (presses < 12 && await chapterIndex() != 0) {
       await tester.sendKeyEvent(next);

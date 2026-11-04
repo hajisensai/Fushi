@@ -31,6 +31,12 @@ class _FakeHost implements PageCurlHost {
     return captureFails ? null : image.clone();
   }
 
+  /// 宿主报告的纸面矩形（null = 整个视口）。不进 [calls]：生命周期断言不关心它。
+  Rect? paper;
+
+  @override
+  Future<Rect?> paperRect() async => paper;
+
   @override
   Future<bool> previewNeighbour({required bool forward}) async {
     calls.add('preview:${forward ? 'f' : 'b'}');
@@ -263,6 +269,94 @@ void main() {
     drag.end(const Offset(220, 400), 0.3);
     await settleAnimation(tester);
     expect(host.calls, contains('commit:f'));
+  });
+
+  group('paper rect (manga letterbox is not paper)', () {
+    testWidgets('a forward drag curls only the reported page rect', (
+      WidgetTester tester,
+    ) async {
+      // 页图上下留黑边：纸面只有中间 400×500。
+      final _FakeHost host = _FakeHost(image)
+        ..paper = const Rect.fromLTWH(0, 150, 400, 500);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      await settlePrepare(tester);
+      expect(curl.geometry.paper, const Rect.fromLTWH(0, 150, 400, 500));
+      // 拎起的角在纸面右缘、按下点的高度（纸面局部坐标）。
+      expect(curl.geometry.corner, const Offset(400, 250));
+      drag.update(const Offset(200, 420));
+      expect(curl.geometry.point.dx, closeTo(220, 0.5));
+      expect(curl.geometry.point.dy, closeTo(270, 0.5));
+      drag.end(const Offset(200, 420), -0.1);
+      await settleAnimation(tester);
+      expect(host.calls, contains('commit:f'));
+    });
+
+    testWidgets('a pillarboxed mirrored page keeps its spine on its own edge', (
+      WidgetTester tester,
+    ) async {
+      // 右开、页图左右留黑边：纸面 [50, 350]，书脊在纸面右缘 x = 350。
+      final _FakeHost host = _FakeHost(image)
+        ..paper = const Rect.fromLTWH(50, 0, 300, 800);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(60, 400),
+        size: _size,
+        forward: true,
+        mirror: true,
+      );
+      await settlePrepare(tester);
+      expect(curl.geometry.corner, const Offset(300, 400));
+      // 按下点离纸面左缘（镜像后的角）10px；往右拖 100 → 角点在局部 x = 200。
+      drag.update(const Offset(160, 400));
+      expect(curl.geometry.point.dx, closeTo(200, 0.5));
+      drag.cancel();
+      await settleAnimation(tester);
+    });
+
+    testWidgets('a tap turn lifts the low corner of the page rect', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)
+        ..paper = const Rect.fromLTWH(0, 200, 400, 400);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      unawaited(curl.turn(size: _size, forward: true, mirror: false));
+      await settlePrepare(tester);
+      expect(curl.geometry.corner, const Offset(400, 400 * 0.88));
+      await settleAnimation(tester);
+      expect(host.calls, contains('commit:f'));
+    });
+
+    testWidgets('a degenerate rect falls back to the whole viewport', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)
+        ..paper = const Rect.fromLTWH(500, 0, 10, 10);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      final PageCurlDrag drag = curl.dragStart(
+        position: const Offset(380, 400),
+        size: _size,
+        forward: true,
+        mirror: false,
+      );
+      await settlePrepare(tester);
+      expect(curl.geometry.paper, Offset.zero & _size);
+      drag.cancel();
+      await settleAnimation(tester);
+    });
   });
 
   testWidgets('tap turn resolves once committed; a second turn fast-forwards', (

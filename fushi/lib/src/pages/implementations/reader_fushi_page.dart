@@ -2348,15 +2348,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
   /// 页面据此重建，设置一改图标与刻度立刻跟上。
-  late final JumpHistoryPrefsListenable _jumpPrefs =
-      JumpHistoryPrefsListenable.fromRepository(appModelNoUpdate.prefsRepo)
-        ..addListener(_onJumpChromeInputsChanged);
+  ///
+  /// 首次用到才建；[dispose] 只释放建过的那份。用 `late final` 时，没走到顶栏就
+  /// 退出的页面（如加载失败的错误态）会在 dispose 里**首次**求值，在已停用的
+  /// element 上读 AppModel（同 video_fushi_page 的修法）。
+  JumpHistoryPrefsListenable get _jumpPrefs =>
+      _jumpPrefsOrNull ??= JumpHistoryPrefsListenable.fromRepository(
+        appModelNoUpdate.prefsRepo,
+      )..addListener(_onJumpChromeInputsChanged);
+  JumpHistoryPrefsListenable? _jumpPrefsOrNull;
 
   /// 顶栏返回 / 前进图标的自动隐藏计时（设置「自动隐藏」，默认不隐藏）：只管
-  /// 图标，记录 / 面板 / 刻度不受它影响。
-  late final JumpHistoryAutoHide _jumpAutoHide = JumpHistoryAutoHide(
-    prefs: _jumpPrefs,
-  )..addListener(_onJumpChromeInputsChanged);
+  /// 图标，记录 / 面板 / 刻度不受它影响。同样首次用到才建。
+  JumpHistoryAutoHide get _jumpAutoHide =>
+      _jumpAutoHideOrNull ??= JumpHistoryAutoHide(prefs: _jumpPrefs)
+        ..addListener(_onJumpChromeInputsChanged);
+  JumpHistoryAutoHide? _jumpAutoHideOrNull;
 
   // TODO-1289：图片防剧透遮罩「点击揭开」的本次阅读会话真相源。揭开只删 WebView 内
   // DOM class，章节 (重)载 / 布局设置切换会重跑分页脚本重新遮罩；把已揭开图片的稳定
@@ -3750,8 +3757,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _observedThemeNotifier = null;
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
-    _jumpAutoHide.dispose();
-    _jumpPrefs.dispose();
+    _jumpAutoHideOrNull?.dispose();
+    _jumpPrefsOrNull?.dispose();
     _revealProgressRefreshTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();

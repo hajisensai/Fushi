@@ -3935,7 +3935,7 @@ async function testAdvancedMiningButtonOpensHostDialog() {
   assert.equal(typeof opened[0][1], 'object', 'payload is an object, never a JSON string');
   assert.deepEqual(
     JSON.parse(JSON.stringify(opened[0][1])),
-    { entryIndex: 1, matched: '事典', expression: '事典' });
+    { entryIndex: 1, matched: '事典', expression: '事典', reading: '事典' });
   assert.equal(calls.some(([name]) => name === 'openSentenceContextModal'), false,
     'the in-app surface has a single entry point');
 }

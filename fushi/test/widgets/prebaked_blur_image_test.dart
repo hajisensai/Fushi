@@ -183,19 +183,35 @@ void main() {
     // 高斯卷积（Impeller 无 raster cache，Skia 滚动中缓存失效）。游戏首页大卡
     // 2026-10 M3E 重做后改成饱和 primaryContainer 色块 + 清晰大封面，不再有
     // 模糊垫底，故不在此列（它若重新引入模糊，仍须走 PrebakedBlurImage）。
-    const List<String> files = <String>[
-      'lib/src/pages/implementations/games_library_page.dart',
+    //
+    // 2026-11 封面取色并列卡（PR #2811）：游戏库「继续游戏」卡不再画模糊 key art
+    // 垫底，改用各库页共用的 [FushiContinueCardRow]（封面种子色出卡面色），所以
+    // 游戏库页与并列卡组件已没有模糊、不再要求 PrebakedBlurImage；但它们仍是每卡
+    // 一份的滚动列表，谁把模糊加回来都不得用渲染期 ImageFiltered。
+    const List<String> blurred = <String>[
       'lib/src/media/video/cover_ui/portrait_cover_image.dart',
       'lib/src/media/video/cover_ui/landscape_cover_image.dart',
     ];
-    for (final String path in files) {
+    const List<String> blurFree = <String>[
+      'lib/src/pages/implementations/games_library_page.dart',
+      'lib/src/utils/components/fushi_continue_card_row.dart',
+    ];
+    for (final String path in <String>[...blurred, ...blurFree]) {
       final String source = File(path).readAsStringSync();
+      // 原写法 raw 字符串里混进了一个字面退格符（本意是 \b），正则要求
+      // ImageFiltered 前有个退格字符，永远匹配不上，这条检查形同虚设。
       expect(
-        RegExp(r'ImageFiltered\(').hasMatch(source),
+        RegExp(r'\bImageFiltered\(').hasMatch(source),
         isFalse,
         reason: '$path 又出现了渲染期 ImageFiltered，改用 PrebakedBlurImage',
       );
-      expect(source, contains('PrebakedBlurImage('), reason: path);
+    }
+    for (final String path in blurred) {
+      expect(
+        File(path).readAsStringSync(),
+        contains('PrebakedBlurImage('),
+        reason: path,
+      );
     }
   });
 }

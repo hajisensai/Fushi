@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -196,6 +197,53 @@ void main() {
     expect(find.text('meta line 0').hitTestable(), findsOneWidget);
     expect(find.text('meta line 7').hitTestable(), findsNothing);
   });
+
+  for (final (String name, double? fit, double bleed)
+      in <(String, double?, double)>[
+        ('fill + fitHeight（视频首页大卡旁，多行）', 420, 0),
+        ('fill 单行（窄屏挂在大卡下）', null, 16),
+      ]) {
+    testWidgets('$name：悬停放大后的卡整张留在视口内，不被裁', (WidgetTester tester) async {
+      await pump(
+        tester,
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: SizedBox(
+                  width: 700,
+                  child: FushiContinueCardRow.fill(
+                    entries: <FushiContinueEntry>[entry('a'), entry('b')],
+                    gap: 12,
+                    fitHeight: fit,
+                    bleed: bleed,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final Finder card = find.byKey(const ValueKey<String>('card-a'));
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(card));
+      await tester.pumpAndSettle();
+      final Rect lifted = tester.getRect(card);
+      final Rect viewport = tester.getRect(find.byType(Scrollable).first);
+      // 确实放大了（否则下面的包含关系不说明问题）。
+      expect(lifted.width, greaterThan(tester.getSize(card).width));
+      expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
+      expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
+      expect(lifted.top, greaterThanOrEqualTo(viewport.top - 0.01));
+      expect(lifted.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+    });
+  }
 
   group('FushiContinueCardRow.spanFor', () {
     test('至少两格；放不下最小卡宽就扩到整行（三列也不例外）', () {

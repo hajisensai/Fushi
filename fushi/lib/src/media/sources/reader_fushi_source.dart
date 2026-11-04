@@ -2104,7 +2104,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(key: 'lyrics_panel_mirrored', value: v));
   }
 
-  /// MD3 歌词模式播放控件布局（`lyrics_controls_style`，默认新版）。只影响 Flutter
+  /// 歌词模式播放控件布局（`lyrics_controls_style`，默认新版；MD3 / Apple 都读）。只影响 Flutter
   /// 覆盖层，写完经 [onChromeReloadLive] 重建一次。
   LyricsControlsStyle get lyricsControlsStyle => LyricsControlsStyle.fromWire(
     readerSettings?.lyricsControlsStyle ??
@@ -2260,6 +2260,16 @@ class ReaderFushiSource extends ReaderMediaSource {
         key: '${p}_animate',
         defaultValue: d.animate,
       ),
+      underlineForm: HighlightUnderlineForm.fromWire(
+        getPreference<String>(
+          key: '${p}_underline_form',
+          defaultValue: d.underlineForm.wireName,
+        ),
+      ),
+      underlineOffset: getPreference<double>(
+        key: '${p}_underline_offset',
+        defaultValue: d.underlineOffset,
+      ),
     );
   }
 
@@ -2303,6 +2313,18 @@ class ReaderFushiSource extends ReaderMediaSource {
       }
       if (next.animate != prev.animate) {
         await setPreference<bool>(key: '${p}_animate', value: next.animate);
+      }
+      if (next.underlineForm != prev.underlineForm) {
+        await setPreference<String>(
+          key: '${p}_underline_form',
+          value: next.underlineForm.wireName,
+        );
+      }
+      if (next.underlineOffset != prev.underlineOffset) {
+        await setPreference<double>(
+          key: '${p}_underline_offset',
+          value: next.underlineOffset,
+        );
       }
     }
     onSettingsChangedLive?.call();

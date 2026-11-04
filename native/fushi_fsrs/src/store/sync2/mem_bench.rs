@@ -64,11 +64,11 @@ const MIB: f64 = 1024.0 * 1024.0;
 
 /// 一步的测量：Rust / SQLite 堆峰值比步前多出的最高值、步后仍比步前多占的（常驻），耗时。
 pub(crate) struct Mem {
-    pub(crate) rust_peak: f64,
-    pub(crate) sqlite_peak: f64,
-    pub(crate) rust_kept: f64,
-    pub(crate) sqlite_kept: f64,
-    pub(crate) ms: u128,
+    pub rust_peak: f64,
+    pub sqlite_peak: f64,
+    pub rust_kept: f64,
+    pub sqlite_kept: f64,
+    pub ms: u128,
 }
 
 pub(crate) fn measure<T>(f: impl FnOnce() -> T) -> (T, Mem) {

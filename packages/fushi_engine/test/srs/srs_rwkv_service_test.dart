@@ -1403,8 +1403,9 @@ void main() {
       expect(await f.reviewCount(), 0);
       expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
       // 只有一张合格时只出它：别的卡按到期日早就该复习、FSRS 的 R 还更低，也不出。
-      // （替身后端直接改 R，没有作答：分数表到定时全量刷新（30 分钟）才重查。）
-      f.advance(31 * 60000);
+      // （替身后端直接改 R，没有作答：分数表到换日才整表重查。排队按今天结束的时刻取分，查询行一天里不随时间
+      // 走，「满 30 分钟」那条只对按此刻取分的统计有用。）
+      f.advance(kDay);
       backend.setR(cards[3], 0.7);
       expect(await f.reviewCount(), 1);
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[3]);
