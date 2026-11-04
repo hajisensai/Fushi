@@ -184,7 +184,7 @@ void main() {
       expect((await connect())['available'], isFalse);
     });
 
-    test('sessionTabId 跟着会话走：登记时是那一页，注销后回到 null（BUG-4015）', () async {
+    test('sessionTabId 跟着会话走：登记时是那一页，注销后回到 null（BUG-4084）', () async {
       final List<String?> seen = <String?>[];
       remote.sessionTabId.addListener(
         () => seen.add(remote.sessionTabId.value),

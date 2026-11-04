@@ -1,4 +1,4 @@
-## BUG-4015 · 浏览页被视频页盖住时网页预告片仍自动播放
+## BUG-4084 · 浏览页被视频页盖住时网页预告片仍自动播放
 - **报告**：2026-11-04（用户：内置浏览器开着 Netflix 首页，从别处打开本地视频后，后面的网飞首页预告片开始自动播放；正常浏览器是同一个网页直接跳转，不会这样）
 - **真实性**：✅ 真 bug。浏览页被整页路由盖住时只转告各功能（`fushi/lib/src/pages/implementations/fushi_web_browser_page.dart` `_setCovered`），没有任何功能让 WebView 知道自己看不见了；页面媒体只在「用 Fushi 播放」交接时才按住（`fushi/lib/src/web_browser/features/play_in_fushi/play_in_fushi_feature.dart` `kWebBrowserHoldMediaScript`，仅 `_holdPage` 调用）。WebView2 仍是 `IsVisible=true`，页面 `visibilityState` 一直是 `visible`，Netflix 首页预告片照常自动播。
 - **范围（用户拍板）**：① 只是切走的后台标签页不暂停、不挂起，照常播放（与 Chrome 一致）；② 有手机遥控会话（`WebBrowserVideoRemote`）的那一页不暂停、不挂起；③ 只在视频页 / 播放页盖住浏览页时触发，别的整页路由（设置页、标签网格等）不算。

@@ -47,7 +47,7 @@ abstract class WebBrowserFeature {
   void onPageCoveredChanged({required bool covered}) {}
 
   /// 浏览页被**播放页**（视频页 / 播放页，见 `PlaybackRouteMarks`）盖住 / 露出。比
-  /// [onPageCoveredChanged] 窄：盖上设置页、标签网格之类的整页路由不算（BUG-4015）。
+  /// [onPageCoveredChanged] 窄：盖上设置页、标签网格之类的整页路由不算（BUG-4084）。
   void onPlaybackCoverChanged({required bool covered}) {}
 
   /// 学习计时口径的「被盖住」：浏览页之上压着任何未豁免的模态路由（整页、对话框、

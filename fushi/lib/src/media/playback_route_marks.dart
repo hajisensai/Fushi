@@ -9,7 +9,7 @@ import 'package:fushi/src/stats/study_cover_tracker.dart';
 /// 由页面自己登记而不是在推路由处打标记：打开播放页的入口有几十处，各入口记得打标记
 /// 迟早漏一个；页面 `didChangeDependencies` 里登记只写一次。
 ///
-/// 起因 BUG-4015：浏览器开着 Netflix 首页时从别处打开视频，浏览页被视频页盖住，首页
+/// 起因 BUG-4084：浏览器开着 Netflix 首页时从别处打开视频，浏览页被视频页盖住，首页
 /// 预告片照样自动播。浏览页只在被播放页盖住时让网页停下（盖上设置页、标签网格等不停）。
 class PlaybackRouteMarks extends ChangeNotifier {
   final Set<Route<dynamic>> _routes = <Route<dynamic>>{};

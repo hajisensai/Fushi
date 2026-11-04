@@ -182,7 +182,7 @@ class WebBrowserVideoRemote extends ChangeNotifier {
   final ValueNotifier<String?> _sessionTabId = ValueNotifier<String?>(null);
 
   /// 当前有手机遥控会话的标签页 id（null = 没有）。页面可见性据此不暂停 / 不挂起这一页：
-  /// 遥控要靠页面回话，挂起了手机就控不动（BUG-4015）。
+  /// 遥控要靠页面回话，挂起了手机就控不动（BUG-4084）。
   ValueListenable<String?> get sessionTabId => _sessionTabId;
 
   // ── 浏览页生命周期 ───────────────────────────────────────────────────

@@ -839,7 +839,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   );
 
   /// 浏览页被播放页（视频页 / 播放页）盖住 / 露出：转告各功能（页面可见性据此让下面的
-  /// 网页别跟着播，BUG-4015）。回调可能在 build 期间同步触发，只转告、不 setState。
+  /// 网页别跟着播，BUG-4084）。回调可能在 build 期间同步触发，只转告、不 setState。
   late final PlaybackCoverWatch _playbackCoverWatch = PlaybackCoverWatch(
     onChanged: () {
       if (!mounted) return;

@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 
-/// 播放页登记自己的路由：被它盖住的页面才算「被播放页盖住」（BUG-4015）。
+/// 播放页登记自己的路由：被它盖住的页面才算「被播放页盖住」（BUG-4084）。
 class _FakePlayer extends StatefulWidget {
   const _FakePlayer({required this.marks});
   final PlaybackRouteMarks marks;

@@ -6767,7 +6767,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     action();
   }
 
-  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4015）。
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
   final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
 
   @override
