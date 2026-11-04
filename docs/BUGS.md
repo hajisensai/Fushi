@@ -33,10 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3607 条。点号进各自文件。
+> 共 3612 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4008](bugs/BUG-4008-anki-reposition-editor-open.md) | — | — | Anki 卡组按词频重排失败（AnkiConnect 拒绝全部写入：有编辑器开着） |
+| [BUG-4007](bugs/BUG-4007-srs-legacy-mining-tags-no-source.md) | ✅ | ✅ | 旧 fushi / hibiki 制的卡统计页「制卡来源」认不出出处 |
+| [BUG-4006](bugs/BUG-4006-srs-anki-template-audio-dom-contract.md) | ✅ | ✅ | eggrolls 卡组复习时不播单词音频（卡面外壳不满足 Anki reviewer 的 DOM 契约） |
+| [BUG-4005](bugs/BUG-4005-srs-review-no-rating-feedback.md) | ✅ | ✅ | SRS 评分后没有任何结果提示 |
+| [BUG-4004](bugs/BUG-4004-srs-review-undo-lost-on-reentry.md) | ✅ | ✅ | SRS 退出再进复习页后无法撤销上一次评分 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
