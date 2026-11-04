@@ -251,5 +251,9 @@ void main() {
     await tester.longPress(find.byKey(_cardKey));
     await tester.pumpAndSettle();
     expect(find.byType(ImageActionsSheet), findsNothing);
+    // 两张卡都没进停留：到展示时长自动收起（BUG-4065），计时不留到测试结束。
+    await tester.pump(kLyricsIllustrationCardAutoClose);
+    expect(c.cardVisible, isFalse);
+    expect(noFile.cardVisible, isFalse);
   });
 }

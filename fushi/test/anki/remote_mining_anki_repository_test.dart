@@ -321,6 +321,36 @@ void main() {
       expect(await run(null), MineResult.error); // 无可达主机
     });
 
+    test('主机侧 Anki 落卡失败（反馈 E52FUMdbR6）：分类成「已配对设备制卡失败」，主机原因与分类码不丢', () async {
+      const String hostReason =
+          'Could not connect to Anki: connection refused.';
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(<String, dynamic>{
+          'result': 'error',
+          'message': hostReason,
+          'detail': 'SocketException: Connection refused',
+          'errorCode': AnkiErrorCode.connectionRefused,
+        }),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceMineFailed);
+      expect(outcome.errorDetail, hostReason);
+      expect(
+        outcome.error.toString(),
+        contains(AnkiErrorCode.connectionRefused),
+      );
+      expect(outcome.error.toString(), contains('Connection refused'));
+    });
+
     test('不可达提示说明失败结果和恢复路径，不暴露内部术语', () async {
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),

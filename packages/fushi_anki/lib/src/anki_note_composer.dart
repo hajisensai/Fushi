@@ -1008,6 +1008,7 @@ mixin AnkiNoteComposer {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      popupSelectionHtml: payload.popupSelectionHtml,
       glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
