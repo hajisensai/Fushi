@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4102](bugs/BUG-4102-player-cover-resume-tabs.md) | ✅ | ✅ | 播放页退出后浏览器标签页不续播；有声书 / 音乐播放页盖住浏览器不按住网页 |
 | [BUG-4102](bugs/BUG-4102-epub-utf8-mojibake-windows.md) | ✅ | ✅ | Windows 中文系统上 EPUB 正文 UTF-8 弯引号显示成「鈥檛」：WebView2 拦截响应丢了 charset |
 | [BUG-4102](bugs/BUG-4102-srs-mining-no-background-queue.md) | ✅ | ✅ | 挖词目标 = Fushi 复习时没有后台制卡队列：每张卡都同步写完才返回 |
 | [BUG-4102](bugs/BUG-4102-popup-header-meta-resize-observer-loop.md) | ✅ | ✅ | 查词弹窗词头元数据列 ResizeObserver 同步写布局：每次弹窗变宽都报 loop 错误灌满错误日志，且逐词条强制回流 |
