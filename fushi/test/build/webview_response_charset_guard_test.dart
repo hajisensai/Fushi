@@ -7,7 +7,7 @@ import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4102 守卫：拦截响应的 `contentEncoding` 是**字符集**，必须落进 Content-Type 的
+/// BUG-4108 守卫：拦截响应的 `contentEncoding` 是**字符集**，必须落进 Content-Type 的
 /// `charset=` 参数，不能当 HTTP `Content-Encoding` 头发出去。
 ///
 /// 反馈 ktWIKsgWIz（zh-CN Windows）：英文 EPUB 正文里的 `’`（UTF-8 `E2 80 99`）显示成
@@ -37,7 +37,7 @@ void main() {
         expect(
           code.contains('L"Content-Encoding"'),
           isFalse,
-          reason: 'contentEncoding 是字符集，发成 Content-Encoding 头就是 BUG-4102',
+          reason: 'contentEncoding 是字符集，发成 Content-Encoding 头就是 BUG-4108',
         );
         expect(
           RegExp(

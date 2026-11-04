@@ -26,7 +26,7 @@ String _body(String src, String signature, String nextMarker) {
 }
 
 void main() {
-  test('BUG-4102: WGC pulls frames on a joined worker, not FrameArrived', () {
+  test('BUG-4114: WGC pulls frames on a joined worker, not FrameArrived', () {
     final String src = _read(<String>[
       'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
@@ -72,7 +72,7 @@ void main() {
       reason: 'old FrameArrived delegate lifetime must not remain',
     );
 
-    // BUG-4102：旧的 UI 线程 DispatcherQueueTimer 泵（BUG-3352 64 Hz 取整、Dart 一忙
+    // BUG-4114：旧的 UI 线程 DispatcherQueueTimer 泵（BUG-3352 64 Hz 取整、Dart 一忙
     // 就晚）整体移除；取帧在每个帧池自己的线程上按合成器时钟拉。
     for (final String banned in <String>[
       'DispatcherQueueTimer',
@@ -124,8 +124,8 @@ void main() {
     );
 
     // BUG-163 第四修的 free-threaded 帧池 + FrameArrived 曾让 Release 下 WebView 不出字。
-    // BUG-4102 的 free-threaded 帧池不订阅任何事件：帧在取帧线程拷进私有纹理、上报
-    // 回平台线程，Release 整包实测出字（见 BUG-4102 记录）。
+    // BUG-4114 的 free-threaded 帧池不订阅任何事件：帧在取帧线程拷进私有纹理、上报
+    // 回平台线程，Release 整包实测出字（见 BUG-4114 记录）。
     expect(
       src.contains('graphics_context_->CreateFreeThreadedCaptureFramePool('),
       isTrue,
@@ -391,7 +391,7 @@ void main() {
     );
   });
 
-  test('BUG-4102: delivery coalescing flag is per generation, worker exits '
+  test('BUG-4114: delivery coalescing flag is per generation, worker exits '
       'loudly and drops COM refs before CoUninitialize', () {
     final String src = maskComments(
       _read(<String>[

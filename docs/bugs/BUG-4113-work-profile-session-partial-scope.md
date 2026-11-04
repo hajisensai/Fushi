@@ -1,4 +1,4 @@
-## BUG-4102 · 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置
+## BUG-4113 · 作品级配置会话只覆盖阅读样式 / 悬浮字幕 / 查词：进书不换 Anki 牌组、复习制卡目标、主题、视频字幕样式与字体，Android 弹窗 / 悬浮词典仍按全局配置
 - **报告**：2026-11-05（用户：反馈 kEFPY4cuKZ 的后续，PR #2866 合入后按推荐补齐）
 - **真实性**：✅ 真 bug。#2866 把作品级配置改成会话覆盖层后，覆盖层只接了阅读样式 / 悬浮字幕样式 / 查词：
   - 键范围只认阅读器命名空间与 `floating_lyric_*`，并把字体目录 / 各用途字体表排除在外——`fushi/lib/src/profile/work_profile_scope.dart:84`（`_readerGlobalKeys`）、`:100`（`isWorkScopedPrefKey`）。主题键、`video_subtitle_style`、`srs_mining_*` 都不在内。

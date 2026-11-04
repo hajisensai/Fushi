@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4102（feedback i9n2zSMKgT「跳转回去没高亮」）：卡片来源回跳 / 收藏页 / 制卡历史
+/// BUG-4103（feedback i9n2zSMKgT「跳转回去没高亮」）：卡片来源回跳 / 收藏页 / 制卡历史
 /// 的句子跳转只把视口滚到句首，落点句没有任何标记。
 ///
 /// ① 真 Chrome 跑 [kReaderLocatedRangeJs]：分页 / 连续（整章走查）与 VN（屏克隆 +

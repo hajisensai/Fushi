@@ -1,4 +1,4 @@
-## BUG-4102 · Windows 中文系统上 EPUB 正文 UTF-8 弯引号显示成「鈥檛」：WebView2 拦截响应丢了 charset
+## BUG-4108 · Windows 中文系统上 EPUB 正文 UTF-8 弯引号显示成「鈥檛」：WebView2 拦截响应丢了 charset
 
 - **报告**：2026-11-04（应用内反馈 ktWIKsgWIz，Windows 10 IoT LTSC 2024，zh-CN，3.3.0-debug.23080）
 - **真实性**：✅ 真 bug。截图是英文 EPUB，`didn’t` 显示成「didn鈥檛」、`“` / `”` 显示成「鈥」+「�」：`’t` 的 UTF-8 字节 `E2 80 99 74` 按 GBK 解就是「鈥」「檛」，即 **UTF-8 字节被按 GBK 解码**，不是字体也不是解压问题（Dart 侧 `decodeEpubText` 一律按 UTF-8 解、sanitize 后再以 UTF-8 重编码，下发字节正确）。

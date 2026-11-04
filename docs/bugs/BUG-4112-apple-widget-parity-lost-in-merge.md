@@ -1,4 +1,4 @@
-## BUG-4102 · apple-widget-parity-lost-in-merge
+## BUG-4112 · apple-widget-parity-lost-in-merge
 - **报告**：2026-11-05（用户：#2833 合并后 Apple 小组件比 PR 原版少了 SRS 逐小时到期预排、16 周热力图、零点切换、游戏 / 远程条目的「继续」，拍板补齐）
 - **真实性**：✅ 真 bug（合并回归）。#2833 切到 #2819 的共享快照（方案 A）时，原版自带的几块没进共享 schema：
   - `fushi/apple/HomeWidgets/Extension/FushiWidgetTimeline.swift:36`（origin/develop）：timeline 只有「现在」一个 entry、6 小时后重取，没有复习预排点也没有零点节点——不开 app 时待复习数不涨、零点不换日。

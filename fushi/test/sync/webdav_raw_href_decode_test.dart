@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
-/// BUG-4102（反馈 N9pbmAMEHZ）：有的 WebDAV 服务端把 PROPFIND href 里的日文 / 中文原样
+/// BUG-4105（反馈 N9pbmAMEHZ）：有的 WebDAV 服务端把 PROPFIND href 里的日文 / 中文原样
 /// 吐出来（未百分号编码）。旧实现 `Uri.decodeFull` 一见裸非 ASCII 字符就整串抛
 /// `ArgumentError: Illegal percent encoding in URI`，列同步根时只要有一本这种书，整个回包
 /// 解析失败——「prune root spill (list root)」与对比差异全挂；删掉那本日文书才恢复。

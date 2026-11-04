@@ -145,7 +145,7 @@ assert.ok(!/needsScroll/.test(headerFn),
 assert.ok(/const expressionScroll = el\('div', \{ className: 'expression-scroll' \}\);\s*expressionScroll\.appendChild\(expressionSpan\);\s*headerMain\.appendChild\(expressionScroll\);/
   .test(headerFn), '词头必须无条件套进 .expression-scroll 再挂进左簇');
 
-// BUG-4102（反馈 3op205DyWN）①：一批 header 先全部量完再统一写类。旧实现逐个
+// BUG-4106（反馈 3op205DyWN）①：一批 header 先全部量完再统一写类。旧实现逐个
 // 「读宽 → 写类」交替，后一个 header 的读会把前一个的写强制同步回流（N 个词条 N 次回流）。
 // 这里给假元素的读 / 写打点，断言整批里没有任何一次读落在写之后。
 {
@@ -172,7 +172,7 @@ assert.ok(/const expressionScroll = el\('div', \{ className: 'expression-scroll'
   assert.ok(!log.includes('write'), `状态没变不应再写，实得 ${log}`);
 }
 
-// BUG-4102 ②：ResizeObserver 回调里**不得**同步写类——会改被观察的 .entry-header 自身
+// BUG-4106 ②：ResizeObserver 回调里**不得**同步写类——会改被观察的 .entry-header 自身
 // 尺寸，浏览器每次都抛「ResizeObserver loop completed with undelivered notifications」，
 // 经 window.onerror 桥灌满错误日志。回调只登记，写挪到下一帧 rAF。
 {

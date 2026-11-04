@@ -15,7 +15,7 @@
 
 namespace flutter_inappwebview_plugin
 {
-  // WebView 纹理桥的帧节奏诊断（BUG-4102）。环境变量 FUSHI_WGC_PACING_PROBE=1 时
+  // WebView 纹理桥的帧节奏诊断（BUG-4114）。环境变量 FUSHI_WGC_PACING_PROBE=1 时
   // 才采样；关闭时每个埋点只是一次读静态 bool（零分配、零锁）。每个桥每秒向
   // wgc_capture.log 写一行 evt=pacing：
   //   wake   取帧线程被唤醒的间隔（旧实现是 UI 线程定时器 tick）

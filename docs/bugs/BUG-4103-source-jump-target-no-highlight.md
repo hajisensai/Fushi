@@ -1,4 +1,4 @@
-## BUG-4102 · 卡片来源回跳落点不高亮且回看横幅下正文底部被挡
+## BUG-4103 · 卡片来源回跳落点不高亮且回看横幅下正文底部被挡
 - **报告**：2026-11-05（用户：开发者本人，应用内反馈 i9n2zSMKgT「跳转回去没高亮 / 而且底下文字看不见」，Android OnePlus CPH2747，截图为小说阅读器竖排分页的「正在回看卡片来源」页）
 - **真实性**：✅ 真 bug，两处根因：
   1. 落点不高亮：句子跳转（卡片来源 `fushi://source`、收藏页 / 制卡历史，`Bookmark.charAnchor + charAnchorLength`）在 `fushi/lib/src/pages/implementations/reader_fushi_page.dart` 开书书签分支（`_setOpenResumePoint(... source: 'bookmark preserveSavedPosition=...')`，修前约 :3341）只把句首 / 句尾偏移交给 `restoreToCharOffset` 滚动定位，整条链路上没有任何东西给目标句画标记；回看时用户只能在满屏文字里自己找那一句。

@@ -1,4 +1,4 @@
-## BUG-4102 · 播放页退出后浏览器标签页不续播；有声书 / 音乐播放页盖住浏览器不按住网页
+## BUG-4109 · 播放页退出后浏览器标签页不续播；有声书 / 音乐播放页盖住浏览器不按住网页
 - **报告**：2026-11-05（用户审 BUG-4084 / #2837 后拍板「改」：播放页盖住浏览器时把已加载标签页都按住，① 按住前在播的标签页，播放页退出后要恢复播放——只恢复原本在播的，不是一律续播；② 有声书播放页与音乐播放页也要算「播放页」）
 - **真实性**：✅ 真缺口，沿 #2837 合入后的代码确认：
   - ① 露出时只跑 `kWebBrowserReleaseMediaScript`（`fushi/lib/src/web_browser/features/page_visibility/web_browser_page_visibility_feature.dart:217`，develop `df8bddcd16`），它只摘 `play` 拦截监听，不记也不恢复按住前的播放态；按住脚本 `kWebBrowserHoldMediaScript`（`fushi/lib/src/web_browser/features/play_in_fushi/play_in_fushi_feature.dart:33`）暂停后没留下「谁原本在播」。播放页退出后原本在播的网页视频 / 音频一直停着。

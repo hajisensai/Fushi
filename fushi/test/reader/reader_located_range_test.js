@@ -1,4 +1,4 @@
-// BUG-4102：跳转落点标记 window.__fushiMarkLocatedRange 在真实 DOM Range / CSS Highlight 上的行为。
+// BUG-4103：跳转落点标记 window.__fushiMarkLocatedRange 在真实 DOM Range / CSS Highlight 上的行为。
 // 由 reader_located_range_test.dart 拼进真 Chrome 页面执行，结果写进 <pre id="results">。
 (() => {
   const failures = [];

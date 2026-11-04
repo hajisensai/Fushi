@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/node_runtime.dart';
 
-/// BUG-4102（反馈 3op205DyWN「阅读时卡住」，错误日志 200 条全是同一句）：查词弹窗
+/// BUG-4106（反馈 3op205DyWN「阅读时卡住」，错误日志 200 条全是同一句）：查词弹窗
 /// 词头元数据列的 ResizeObserver 回调里同步挂 / 摘 `.meta-stacked`，改了被观察的
 /// `.entry-header` 自身尺寸，Chrome 每次弹窗宽度变化都抛
 /// 「ResizeObserver loop completed with undelivered notifications」，经 window.onerror

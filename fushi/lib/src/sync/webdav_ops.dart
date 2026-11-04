@@ -517,7 +517,7 @@ class WebDavOps {
   /// 解码是**逐个合法 `%XX` 转义**做的，不走 [Uri.decodeFull]：后者遇到任何裸非 ASCII 字符
   /// 或不成对的 `%` 就整串抛 `ArgumentError: Illegal percent encoding in URI`。有的 WebDAV
   /// 服务端把 href 里的日文 / 中文原样吐出来（未百分号编码），列同步根时只要有一本这种书，
-  /// 整个 PROPFIND 回包解析失败、根目录清理与对比差异全挂（BUG-4102，反馈 N9pbmAMEHZ）。
+  /// 整个 PROPFIND 回包解析失败、根目录清理与对比差异全挂（BUG-4105，反馈 N9pbmAMEHZ）。
   /// 这里裸字符原样保留（[buildRequest] 的 [Uri.parse] 会把它编码回去），不成对的 `%` 当字面
   /// `%`（转成 `%25`），解出来不是合法 UTF-8 的转义串保持原转义不动——都保证 href 原样当
   /// URL 用时仍指向服务端那条资源。
