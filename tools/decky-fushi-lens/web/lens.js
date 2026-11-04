@@ -67,6 +67,8 @@
     if (reason === 'unreachable') return 'Cannot reach your Fushi app.';
     if (reason === 'no_screen_ocr') return 'Your Fushi app is too old for screen OCR.';
     if (reason === 'ocr_unavailable') return 'Download the OCR models in Fushi first.';
+    if (reason === 'lens_consent') return 'Allow Google Lens in Fushi on your PC, then try again.';
+    if (reason === 'engine_failed') return "Google Lens failed. Check your PC's internet connection.";
     if (reason === 'tls') return 'Fushi\'s certificate changed. Pair again.';
     return 'Something went wrong' + (res && res.status ? ` (${res.status})` : '') + '.';
   }

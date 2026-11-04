@@ -234,8 +234,11 @@ class HostClient:
         path = "/api/ocr/screen" + (f"?region={region}" if region else "")
         res = self.request("POST", path, image, {"Content-Type": content_type})
         if res.status != 200:
+            # 403 / 502 carry {"reason"}: lens_consent (approve Google Lens on the host),
+            # engine_failed (Google Lens itself failed).
+            fallback = {401: "unauthorized", 404: "no_screen_ocr", 503: "ocr_unavailable"}.get(res.status, "error")
             raise HostError(
-                {401: "unauthorized", 404: "no_screen_ocr", 503: "ocr_unavailable"}.get(res.status, "error"),
+                _reason_of(res, fallback) if res.status in (403, 502) else fallback,
                 res.body.decode("utf-8", "replace")[:200],
             )
         return res.json()

@@ -10,6 +10,10 @@
 /// 中位 0.5 s、逐字准确，漫画整页管线反而漏掉淡色字。会话常驻复用（建会话约 0.7 s），
 /// 空闲 [idleTimeout] 后关掉释放 ORT 内存，下次请求再建。
 ///
+/// 外部引擎（[ScreenOcrExternalEngine]，app 注入）：host 用户在 OCR 设置里选了 Google
+/// Lens 时，每帧交给它识别，不走本机模型（也就不要求本机下载模型）。按请求现选，
+/// 用户改完设置立刻生效。
+///
 /// 独立文件而非写进 `fushi_sync_server.dart`：server 是共享热点，只留路由分发与
 /// capabilities 两处接线。
 library;
@@ -23,6 +27,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:shelf/shelf.dart' as shelf;
 
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
@@ -146,6 +151,64 @@ List<ScreenOcrLine> screenOcrLines(
   return out;
 }
 
+/// 外部识别结果（Mokuro 形状：Google Lens 的逐页识别产出它）→ 逐行。
+///
+/// 一个块 = 一行：Lens 的一段（paragraph）可能跨多行显示，但字级框 [MokuroBlock.regions]
+/// 逐字给出，对端按字定位不受影响。区间按块内各行无分隔拼接记，正是这一行的 text。
+List<ScreenOcrLine> screenOcrLinesFromMokuro(
+  MokuroImage page, {
+  double dx = 0,
+  double dy = 0,
+}) {
+  OcrRect rect(MokuroRect r) => OcrRect(
+    left: r.left + dx,
+    top: r.top + dy,
+    right: r.right + dx,
+    bottom: r.bottom + dy,
+  );
+  final List<ScreenOcrLine> out = <ScreenOcrLine>[];
+  for (final MokuroBlock block in page.blocks) {
+    final String text = block.lines.join();
+    if (text.trim().isEmpty) continue;
+    final List<OcrGlyphBox> glyphs = <OcrGlyphBox>[
+      for (final MangaOcrTextRegion region
+          in block.regions ?? const <MangaOcrTextRegion>[])
+        if (region.utf16Start >= 0 &&
+            region.utf16End > region.utf16Start &&
+            region.utf16End <= text.length)
+          OcrGlyphBox(
+            start: region.utf16Start,
+            end: region.utf16End,
+            rect: rect(region.rectangle),
+          ),
+    ];
+    out.add(
+      ScreenOcrLine(
+        text: text,
+        box: rect(block.rectangle),
+        glyphs: glyphs.isEmpty ? null : glyphs,
+      ),
+    );
+  }
+  return out;
+}
+
+/// 不用本机模型、整帧交出去识别的引擎（Google Lens 等，app 注入）。
+abstract interface class ScreenOcrExternalEngine {
+  /// 引擎名（响应的 `engine` 字段，便于对端显示 / 排障）。
+  String get id;
+
+  /// 现在能否识别：null = 能；否则是拒绝原因（wire 冻结，例如 `lens_consent` =
+  /// host 用户还没同意把截屏发给 Google Lens）。
+  Future<String?> blockedReason();
+
+  /// 识别一张编码好的图（整帧原字节，或区域裁图的 PNG），坐标按这张图的像素。
+  Future<MokuroImage> recognize(Uint8List image);
+}
+
+/// 每次请求现选外部引擎：null = 用本机模型。
+typedef ScreenOcrEngineSelector = ScreenOcrExternalEngine? Function();
+
 /// 解码好的 RGBA 帧（在后台 isolate 里解，避免占住 server 的事件循环）。
 class _DecodedFrame {
   const _DecodedFrame(
@@ -154,6 +217,7 @@ class _DecodedFrame {
     this.height, {
     required this.imageWidth,
     required this.imageHeight,
+    this.encodedCrop,
   });
 
   /// 识别用的像素（有区域时是区域裁图）。
@@ -164,10 +228,17 @@ class _DecodedFrame {
   /// 整张截图的尺寸。
   final int imageWidth;
   final int imageHeight;
+
+  /// 有区域且要交给外部引擎时：区域裁图编码成的 PNG。
+  final Uint8List? encodedCrop;
 }
 
 /// 解码失败 / 过大（返回 null 时调用方报 400）。
-_DecodedFrame? _decodeFrame(Uint8List bytes, ScreenOcrRegion? region) {
+_DecodedFrame? _decodeFrame(
+  Uint8List bytes,
+  ScreenOcrRegion? region, {
+  bool encodeCrop = false,
+}) {
   final img.Decoder? decoder = img.findDecoderForData(bytes);
   if (decoder == null) return null;
   final img.DecodeInfo? info = decoder.startDecode(bytes);
@@ -188,6 +259,17 @@ _DecodedFrame? _decodeFrame(Uint8List bytes, ScreenOcrRegion? region) {
       height: region.height,
     );
   }
+  if (encodeCrop) {
+    // 外部引擎吃编码图、不吃 RGBA：不做无用的像素转换。
+    return _DecodedFrame(
+      Uint8List(0),
+      image.width,
+      image.height,
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
+      encodedCrop: region == null ? null : img.encodePng(image),
+    );
+  }
   final img.Image rgba = image.convert(numChannels: 4);
   return _DecodedFrame(
     rgba.getBytes(order: img.ChannelOrder.rgba),
@@ -204,10 +286,15 @@ class ScreenOcrHost {
     required MangaOcrService service,
     required Directory workDir,
     this.idleTimeout = const Duration(minutes: 5),
+    ScreenOcrEngineSelector? externalEngine,
   }) : _service = service,
-       _workDir = workDir;
+       _workDir = workDir,
+       _externalEngine = externalEngine;
 
   final MangaOcrService _service;
+
+  /// host 选了外部引擎（Google Lens）时返回它；null 选择器 / 返回 null = 本机模型。
+  final ScreenOcrEngineSelector? _externalEngine;
 
   /// 会话要一个图片目录参数（文字图会话不读写它），给 host 自己的工作目录。
   final Directory _workDir;
@@ -219,8 +306,13 @@ class ScreenOcrHost {
   Timer? _idleTimer;
   bool _disposed = false;
 
-  /// capabilities 用：本平台能跑、模型已下载、服务支持文字图会话。
+  /// capabilities 用：选了外部引擎，或本平台能跑、模型已下载、服务支持文字图会话。
   Future<bool> isAvailable() async {
+    if (_externalEngine?.call() != null) return true;
+    return _localAvailable();
+  }
+
+  Future<bool> _localAvailable() async {
     final MangaOcrService service = _service;
     if (service is! MangaOcrPageService) return false;
     if (!service.isSupportedPlatform) return false;
@@ -277,17 +369,38 @@ class ScreenOcrHost {
   }
 
   /// 识别一帧（区域可选）。图解不开 / 区域越界抛 [FormatException]。
+  ///
+  /// [engine] 非 null 时整帧（或区域裁图）交给它，不走本机模型。
   Future<Map<String, Object?>> recognize(
     Uint8List bytes, {
     ScreenOcrRegion? region,
+    ScreenOcrExternalEngine? engine,
   }) async {
     final Stopwatch watch = Stopwatch()..start();
+    final bool external = engine != null;
     final _DecodedFrame? frame = await Isolate.run(
-      () => _decodeFrame(bytes, region),
+      () => _decodeFrame(bytes, region, encodeCrop: external),
     );
     if (frame == null) {
       throw const FormatException(
         'image could not be decoded, is too large, or region is outside it',
+      );
+    }
+    final double dx = (region?.x ?? 0).toDouble();
+    final double dy = (region?.y ?? 0).toDouble();
+    if (engine != null) {
+      final MokuroImage page = await engine.recognize(
+        frame.encodedCrop ?? bytes,
+      );
+      return _response(
+        frame,
+        region,
+        watch,
+        engine: engine.id,
+        vertical:
+            page.blocks.isNotEmpty &&
+            page.blocks.every((MokuroBlock b) => b.isVertical),
+        lines: screenOcrLinesFromMokuro(page, dx: dx, dy: dy),
       );
     }
     final MangaOcrTextImageSession session = await _textSession();
@@ -301,8 +414,6 @@ class ScreenOcrHost {
     } finally {
       _armIdleTimer();
     }
-    final double dx = (region?.x ?? 0).toDouble();
-    final double dy = (region?.y ?? 0).toDouble();
     final List<ScreenOcrLine> lines = screenOcrLines(
       result,
       fallbackBox: OcrRect(
@@ -314,6 +425,24 @@ class ScreenOcrHost {
       dx: dx,
       dy: dy,
     );
+    return _response(
+      frame,
+      region,
+      watch,
+      engine: 'local',
+      vertical: result.vertical,
+      lines: lines,
+    );
+  }
+
+  Map<String, Object?> _response(
+    _DecodedFrame frame,
+    ScreenOcrRegion? region,
+    Stopwatch watch, {
+    required String engine,
+    required bool vertical,
+    required List<ScreenOcrLine> lines,
+  }) {
     return <String, Object?>{
       'width': frame.imageWidth,
       'height': frame.imageHeight,
@@ -325,7 +454,8 @@ class ScreenOcrHost {
           'height': region.height,
         },
       'ms': watch.elapsedMilliseconds,
-      'vertical': result.vertical,
+      'engine': engine,
+      'vertical': vertical,
       'lines': <Map<String, Object?>>[
         for (final ScreenOcrLine line in lines) line.toJson(),
       ],
@@ -336,7 +466,13 @@ class ScreenOcrHost {
   Future<shelf.Response> handle(shelf.Request request) async {
     if (request.method != 'POST') return shelf.Response(405);
     if (_disposed) return shelf.Response(503, body: 'Screen OCR stopped');
-    if (!await isAvailable()) {
+    final ScreenOcrExternalEngine? engine = _externalEngine?.call();
+    if (engine != null) {
+      final String? blocked = await engine.blockedReason();
+      if (blocked != null) {
+        return _jsonError(403, <String, String>{'reason': blocked});
+      }
+    } else if (!await _localAvailable()) {
       return shelf.Response(503, body: 'OCR models are not ready on this host');
     }
     ScreenOcrRegion? region;
@@ -361,6 +497,7 @@ class ScreenOcrHost {
       final Map<String, Object?> result = await recognize(
         body.takeBytes(),
         region: region,
+        engine: engine,
       );
       return shelf.Response.ok(
         jsonEncode(result),
@@ -368,6 +505,20 @@ class ScreenOcrHost {
       );
     } on FormatException catch (e) {
       return shelf.Response(400, body: e.message);
+    } on Object catch (e) {
+      // 外部引擎（网络 / 对方服务）失败：502 让对端说清是引擎失败。本机模型的异常照旧上抛。
+      if (engine == null) rethrow;
+      return _jsonError(502, <String, String>{
+        'reason': 'engine_failed',
+        'detail': '$e',
+      });
     }
   }
+
+  static shelf.Response _jsonError(int status, Map<String, String> body) =>
+      shelf.Response(
+        status,
+        body: jsonEncode(body),
+        headers: <String, String>{'content-type': 'application/json'},
+      );
 }

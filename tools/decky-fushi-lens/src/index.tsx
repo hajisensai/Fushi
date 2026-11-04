@@ -51,6 +51,8 @@ const ERRORS: Record<string, string> = {
   unavailable: "Pairing is turned off in Fushi.",
   tls: "Certificate check failed. Pair again.",
   capture: "Screen capture failed.",
+  lens_consent: "Allow Google Lens in Fushi on your PC, then try again.",
+  engine_failed: "Google Lens failed. Check your PC's internet connection.",
   address: "That address doesn't look right.",
 };
 const errorText = (r: Result) => ERRORS[r.error ?? ""] ?? `Error: ${r.error}${r.detail ? ` (${r.detail})` : ""}`;

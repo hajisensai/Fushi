@@ -3367,6 +3367,8 @@
   "game_filter_with_audio": "有音频",
   "game_focus_continue": "继续游戏",
   "game_follow_live": "跟随实时",
+  "game_google_lens_disclosure_body": "当 Steam Deck 上的 Fushi Lens 等互联设备读取屏幕时，截到的游戏画面会发送给 Google。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。",
+  "game_google_lens_disclosure_title": "将游戏截图发送到 Google Lens？",
   "game_health": "健康状态",
   "game_health_anki": "Anki 出卡",
   "game_health_audio": "音频来源",

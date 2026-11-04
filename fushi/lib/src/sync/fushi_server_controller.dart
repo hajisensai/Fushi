@@ -11,6 +11,10 @@ import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/screen_ocr_lens_engine.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/sync/game_stream_host.dart';
@@ -908,6 +912,43 @@ class FushiSyncServerController extends ChangeNotifier {
       workDir: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}screen_ocr',
       ),
+      externalEngine: _selectScreenOcrEngine,
+    );
+  }
+
+  /// 截屏识字跟随本机 OCR 引擎偏好（每次请求现读）：选了 Google Lens 就交给 Lens。
+  ScreenOcrExternalEngine? _selectScreenOcrEngine() {
+    final PrefStore? prefs = _prefsStore?.call();
+    if (prefs is! PreferencesRepository) return null;
+    return selectScreenOcrEngine(
+      enginePreferenceKey: prefs.mangaOcrEnginePreference,
+      lens: () => GoogleLensScreenOcrEngine(
+        runner: _screenOcrLens,
+        language: prefs.mangaOcrLensLanguage,
+        hasConsent: () => hasGoogleLensDisclosure(
+          scene: GoogleLensDisclosureScene.gameScreens,
+        ),
+        requestConsent: _promptScreenOcrLensConsent,
+      ),
+    );
+  }
+
+  /// 一个常驻 Lens 客户端（复用 HTTP 连接）。
+  late final GoogleLensMangaOcrService _screenOcrLens =
+      GoogleLensMangaOcrService();
+  bool _screenOcrConsentOpen = false;
+
+  /// 对端截屏被同意门挡下时在本机弹一次同意框；框开着时不叠第二个。
+  void _promptScreenOcrLensConsent() {
+    if (_screenOcrConsentOpen) return;
+    final BuildContext? ctx = _navigatorKey.currentContext;
+    if (ctx == null) return;
+    _screenOcrConsentOpen = true;
+    unawaited(
+      ensureGoogleLensDisclosure(
+        ctx,
+        scene: GoogleLensDisclosureScene.gameScreens,
+      ).whenComplete(() => _screenOcrConsentOpen = false),
     );
   }
 

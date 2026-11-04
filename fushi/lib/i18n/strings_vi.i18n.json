@@ -3367,6 +3367,8 @@
   "game_filter_with_audio": "Có âm thanh",
   "game_focus_continue": "Tiếp tục",
   "game_follow_live": "Theo dõi trực tiếp",
+  "game_google_lens_disclosure_body": "When a paired device such as Fushi Lens on Steam Deck reads the screen, the captured game frame is sent to Google. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
+  "game_google_lens_disclosure_title": "Send game screenshots to Google Lens?",
   "game_health": "Trạng thái hệ thống",
   "game_health_anki": "Đầu ra Anki",
   "game_health_audio": "Nguồn âm thanh",

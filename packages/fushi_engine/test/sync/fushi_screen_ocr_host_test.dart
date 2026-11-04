@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
@@ -84,6 +85,69 @@ class _FakeService implements MangaOcrService, MangaOcrPageService {
     int startPage = 0,
   }) => throw UnimplementedError();
 }
+
+/// 外部引擎替身：记下收到的图，按 [blocked] / [error] 拒绝或失败，否则回 [page]。
+class _FakeEngine implements ScreenOcrExternalEngine {
+  _FakeEngine(this.page);
+
+  final MokuroImage page;
+  String? blocked;
+  Exception? error;
+  final List<Uint8List> images = <Uint8List>[];
+
+  @override
+  String get id => 'googleLens';
+
+  @override
+  Future<String?> blockedReason() async => blocked;
+
+  @override
+  Future<MokuroImage> recognize(Uint8List image) async {
+    images.add(image);
+    if (error != null) throw error!;
+    return page;
+  }
+}
+
+/// Lens 形状：一段 = 一块，逐字区间按块内文字记。
+final MokuroImage _lensPage = MokuroImage(
+  url: 'screen',
+  size: const MokuroSize(40, 20),
+  blocks: <MokuroBlock>[
+    MokuroBlock(
+      rectangle: const MokuroRect.fromLTRB(2, 4, 22, 14),
+      isVertical: false,
+      fontSize: 10,
+      zIndex: 0,
+      lines: const <String>['誰も'],
+      regions: const <MangaOcrTextRegion>[
+        MangaOcrTextRegion(
+          rectangle: MokuroRect.fromLTRB(2, 4, 12, 14),
+          utf16Start: 0,
+          utf16End: 1,
+        ),
+        MangaOcrTextRegion(
+          rectangle: MokuroRect.fromLTRB(12, 4, 22, 14),
+          utf16Start: 1,
+          utf16End: 2,
+        ),
+        // 越界区间（坏数据）要丢掉，不能让对端切出错位的字。
+        MangaOcrTextRegion(
+          rectangle: MokuroRect.fromLTRB(0, 0, 1, 1),
+          utf16Start: 1,
+          utf16End: 9,
+        ),
+      ],
+    ),
+    MokuroBlock(
+      rectangle: const MokuroRect.fromLTRB(0, 0, 1, 1),
+      isVertical: false,
+      fontSize: 1,
+      zIndex: 1,
+      lines: const <String>[' '],
+    ),
+  ],
+);
 
 OcrRect _rect(double l, double t, double r, double b) =>
     OcrRect(left: l, top: t, right: r, bottom: b);
@@ -185,6 +249,134 @@ void main() {
         ),
         isEmpty,
       );
+    });
+  });
+
+  group('screenOcrLinesFromMokuro', () {
+    test('one line per block with shifted glyph boxes; blanks dropped', () {
+      final List<ScreenOcrLine> lines = screenOcrLinesFromMokuro(
+        _lensPage,
+        dx: 100,
+        dy: 50,
+      );
+      expect(lines.map((ScreenOcrLine l) => l.text), <String>['誰も']);
+      expect((lines.single.box.left, lines.single.box.top), (102.0, 54.0));
+      expect(
+        lines.single.glyphs!.map((OcrGlyphBox g) => (g.start, g.end)),
+        <(int, int)>[(0, 1), (1, 2)],
+      );
+      expect(lines.single.glyphs!.last.rect.left, 112);
+    });
+  });
+
+  group('ScreenOcrHost with an external engine', () {
+    test('uses the engine without local models and reports it', () async {
+      final _FakeService local = _FakeService(_twoLines, ready: false);
+      final _FakeEngine engine = _FakeEngine(_lensPage);
+      final ScreenOcrHost host = ScreenOcrHost(
+        service: local,
+        workDir: work,
+        externalEngine: () => engine,
+      );
+      addTearDown(host.dispose);
+
+      expect(await host.isAvailable(), isTrue);
+      final Uint8List frame = _png(64, 32);
+      final shelf.Response res = await host.handle(_post(frame));
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.readAsString()) as Map<String, dynamic>;
+      expect(json['engine'], 'googleLens');
+      expect((json['width'], json['height']), (64, 32));
+      expect(
+        (json['lines'] as List<dynamic>).map(
+          (dynamic l) => (l as Map<String, dynamic>)['text'],
+        ),
+        <String>['誰も'],
+      );
+      // Whole frame goes out as sent; the local models are never touched.
+      expect(engine.images.single, frame);
+      expect(local.sessions, isEmpty);
+    });
+
+    test('region sends a cropped PNG and shifts boxes back', () async {
+      final _FakeEngine engine = _FakeEngine(_lensPage);
+      final ScreenOcrHost host = ScreenOcrHost(
+        service: _FakeService(_twoLines),
+        workDir: work,
+        externalEngine: () => engine,
+      );
+      addTearDown(host.dispose);
+
+      final shelf.Response res = await host.handle(
+        _post(_png(200, 100), query: '?region=50,60,40,30'),
+      );
+      expect(res.statusCode, 200);
+      final img.Image? sent = img.decodePng(engine.images.single);
+      expect((sent!.width, sent.height), (40, 30));
+      final Map<String, dynamic> box =
+          ((jsonDecode(await res.readAsString())
+                          as Map<String, dynamic>)['lines']
+                      as List<dynamic>)
+                  .first['box']
+              as Map<String, dynamic>;
+      expect((box['left'], box['top']), (52.0, 64.0));
+    });
+
+    test('blocked engine answers 403 with the reason', () async {
+      final _FakeEngine engine = _FakeEngine(_lensPage)
+        ..blocked = 'lens_consent';
+      final ScreenOcrHost host = ScreenOcrHost(
+        service: _FakeService(_twoLines),
+        workDir: work,
+        externalEngine: () => engine,
+      );
+      addTearDown(host.dispose);
+
+      final shelf.Response res = await host.handle(_post(_png(8, 8)));
+      expect(res.statusCode, 403);
+      expect(jsonDecode(await res.readAsString()), <String, dynamic>{
+        'reason': 'lens_consent',
+      });
+      expect(engine.images, isEmpty);
+    });
+
+    test('engine failure answers 502 engine_failed', () async {
+      final _FakeEngine engine = _FakeEngine(_lensPage)
+        ..error = const SocketException('offline');
+      final ScreenOcrHost host = ScreenOcrHost(
+        service: _FakeService(_twoLines),
+        workDir: work,
+        externalEngine: () => engine,
+      );
+      addTearDown(host.dispose);
+
+      final shelf.Response res = await host.handle(_post(_png(8, 8)));
+      expect(res.statusCode, 502);
+      expect(
+        (jsonDecode(await res.readAsString())
+            as Map<String, dynamic>)['reason'],
+        'engine_failed',
+      );
+    });
+
+    test('selector returning null falls back to local models', () async {
+      final _FakeService local = _FakeService(_twoLines);
+      final ScreenOcrHost host = ScreenOcrHost(
+        service: local,
+        workDir: work,
+        externalEngine: () => null,
+      );
+      addTearDown(host.dispose);
+
+      final shelf.Response res = await host.handle(_post(_png(8, 8)));
+      expect(res.statusCode, 200);
+      expect(
+        (jsonDecode(await res.readAsString())
+            as Map<String, dynamic>)['engine'],
+        'local',
+      );
+      expect(local.sessions, hasLength(1));
     });
   });
 

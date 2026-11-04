@@ -105,6 +105,15 @@ class PairingTest(unittest.TestCase):
             with self.assertRaises(host.HostError) as err:
                 client.screen_ocr(b"img", "image/jpeg")
             self.assertEqual(err.exception.reason, reason)
+        for status, body, reason in (
+            (403, {"reason": "lens_consent"}, "lens_consent"),
+            (502, {"reason": "engine_failed", "detail": "offline"}, "engine_failed"),
+            (403, b"not json", "error"),
+        ):
+            client = FakeHost({"/api/ocr/screen": (status, body)})
+            with self.assertRaises(host.HostError) as err:
+                client.screen_ocr(b"img", "image/jpeg")
+            self.assertEqual(err.exception.reason, reason)
         ok = FakeHost({"/api/ocr/screen": (200, {"lines": []})})
         self.assertEqual(ok.screen_ocr(b"img", "image/jpeg", "1,2,3,4"), {"lines": []})
         self.assertEqual(ok.calls[0][1], "/api/ocr/screen?region=1,2,3,4")
