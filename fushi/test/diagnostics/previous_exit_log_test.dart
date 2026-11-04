@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_launch_presence/fushi_launch_presence.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -286,6 +287,226 @@ void main() {
       );
       expect(v!.kind, PreviousExitKind.nativeCrash);
       expect(v.worthReporting, isTrue);
+    });
+  });
+
+  // BUG-4072：无界面拉起的引擎（Android audio_service 被系统媒体续播 / 媒体键拉起、
+  // iOS 后台拉起）跑完整 main()，却收不到任何前台生命周期。标记若停在 `launching`
+  // （算前台），进程之后在后台被回收就成了「启动即闪退」（0B-NDKFxfS / SGge0zu1FY /
+  // ajMNnjGlhY / bZbeHh8l36 / RgaeV2JF62 / d3SS3FJIOH / vHHHx7AvCY）。原生如实回答
+  // 「这次有没有界面」，标记记 headless，判定不算前台。
+  group('无界面启动：会话标记记 headless，不算前台闪退（BUG-4072）', () {
+    const MethodChannel launch = MethodChannel('test/launch_presence');
+    const MethodChannel exits = MethodChannel('test/process_exit_headless');
+
+    void answerLaunch({required bool hasUi}) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(launch, (MethodCall call) async {
+            expect(call.method, kLaunchPresenceQueryMethod);
+            return <String, Object?>{
+              kLaunchPresenceHasUiKey: hasUi,
+              kLaunchPresenceDetailKey: hasUi
+                  ? 'activity=MainActivity importance=100'
+                  : 'activity=none importance=125',
+            };
+          });
+    }
+
+    /// Android 退出记录通道：null = 这个引擎上没注册（无界面引擎的真实情况）。
+    void answerExits(List<Map<String, Object?>>? reasons) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            exits,
+            reasons == null
+                ? null
+                : (MethodCall call) async => <String, Object?>{
+                    'sdk': 34,
+                    'reasons': reasons,
+                  },
+          );
+    }
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        ..setMockMethodCallHandler(launch, null)
+        ..setMockMethodCallHandler(exits, null);
+    });
+
+    Future<List<ExitReportEntry>> launchProcess({
+      required int nowMs,
+      bool android = true,
+    }) => PreviousExitLog.collect(
+      appDir: tmp,
+      version: '3.3.0-debug.23025',
+      isAndroid: android,
+      isWindows: false,
+      isMacOS: false,
+      isIOS: !android,
+      androidChannel: exits,
+      launchChannel: launch,
+      nowMs: nowMs,
+    );
+
+    PreviousSession readMarker() => PreviousSession.tryParse(
+      File('${tmp.path}/session_marker.json').readAsStringSync(),
+    )!;
+
+    test('标记状态机：hasUi=false 记 headless；不知道 / 有界面记 launching', () {
+      final File f = File('${tmp.path}/session_marker.json');
+      SessionMarker(f, pid: 1, version: 'v').start(
+        nowMs: 1,
+        launch: const LaunchPresence(hasUi: false, detail: 'activity=none'),
+      );
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+      expect(readMarker().launchDetail, 'activity=none');
+      expect(readMarker().diedInForeground, isFalse);
+
+      SessionMarker(f, pid: 2, version: 'v').start(nowMs: 2);
+      expect(readMarker().lifecycle, 'launching');
+      expect(readMarker().diedInForeground, isTrue);
+
+      SessionMarker(
+        f,
+        pid: 3,
+        version: 'v',
+      ).start(nowMs: 3, launch: const LaunchPresence(hasUi: true, detail: ''));
+      expect(readMarker().lifecycle, 'launching');
+      expect(readMarker().launchDetail, isNull);
+    });
+
+    test('Android 无界面会话没退出记录、后台没了 → 后台回收，不弹闪退报告', () async {
+      answerLaunch(hasUi: false);
+      answerExits(null);
+      await launchProcess(nowMs: 1000);
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+
+      // 下一次进程（用户点开 app，有界面）判定上一个无界面会话。
+      answerLaunch(hasUi: true);
+      final PreviousExitVerdict? v = classifyPreviousExit(
+        await launchProcess(nowMs: 9000),
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+      expect(v, isNotNull);
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.foreground, isFalse);
+      expect(v.worthReporting, isFalse);
+      expect(v.duringStartup, isTrue, reason: '无界面会话从没走到首页，事实照记');
+      expect(v.summary, contains('lastLifecycle=headless'));
+      expect(v.summary, contains('launch={activity=none importance=125}'));
+      expect(v.summary, contains('无界面启动、从没上过屏时没了'));
+      expect(readMarker().lifecycle, 'launching');
+    });
+
+    test('无界面启动后界面接上来（收到 resumed）→ 升级为前台，照常判疑似闪退', () async {
+      answerExits(null);
+      final SessionMarker marker =
+          SessionMarker(
+            File('${tmp.path}/session_marker.json'),
+            pid: 4242,
+            version: '3.3.0-debug.23025',
+          )..start(
+            nowMs: 1000,
+            launch: const LaunchPresence(hasUi: false, detail: 'activity=none'),
+          );
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+      // audio_service 的缓存引擎被 MainActivity 接管：生命周期开始到达。
+      marker.recordLifecycle('resumed', nowMs: 2000);
+      expect(readMarker().lifecycle, 'resumed');
+      marker.recordInitialised();
+
+      answerLaunch(hasUi: true);
+      final PreviousExitVerdict? v = classifyPreviousExit(
+        await launchProcess(nowMs: 9000),
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('UeCVNnw7Jx：无界面会话本身降级，但同机前台服务期间的真实 LMK kill 照样上报', () async {
+      File('${tmp.path}/session_marker.json').writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pid': 31262,
+          'startedAt': 1000,
+          'version': '3.3.0-debug.23025',
+          'lifecycle': kSessionLifecycleHeadless,
+          'lifecycleAt': 1000,
+          'clean': false,
+          'initialised': false,
+        }),
+      );
+      answerLaunch(hasUi: true);
+      answerExits(<Map<String, Object?>>[
+        <String, Object?>{
+          'reason': 'LOW_MEMORY',
+          'status': 0,
+          'importance': 400,
+          'timestamp': 5000,
+          'processName': 'app.fushi.reader',
+          'pid': 31262,
+        },
+        <String, Object?>{
+          'reason': 'LOW_MEMORY',
+          'status': 0,
+          'importance': 125,
+          'timestamp': 6000,
+          'processName': 'app.fushi.reader',
+          'pid': 26422,
+        },
+      ]);
+      final PreviousExitVerdict? v = classifyPreviousExit(
+        await launchProcess(nowMs: 9000),
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+      expect(v!.kind, PreviousExitKind.memoryKill);
+      expect(v.foreground, isTrue, reason: 'pid 26422 importance=125 是前台服务');
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('iOS 后台拉起同样记 headless，后台没了不算闪退', () async {
+      answerLaunch(hasUi: false);
+      await launchProcess(nowMs: 1000, android: false);
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+
+      answerLaunch(hasUi: true);
+      final PreviousExitVerdict? v = classifyPreviousExit(
+        await launchProcess(nowMs: 9000, android: false),
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.worthReporting, isFalse);
+    });
+
+    test('桌面不问原生（没有无界面启动），通道不存在时按旧逻辑记 launching', () async {
+      int asked = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(launch, (MethodCall call) async {
+            asked++;
+            return <String, Object?>{kLaunchPresenceHasUiKey: false};
+          });
+      await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+        launchChannel: launch,
+        nowMs: 1,
+      );
+      expect(asked, 0);
+      expect(readMarker().lifecycle, 'launching');
+
+      // 移动端但这个引擎上没注册通道（MissingPluginException）→ 不知道 → launching。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(launch, null);
+      answerExits(null);
+      await launchProcess(nowMs: 2);
+      expect(readMarker().lifecycle, 'launching');
     });
   });
 

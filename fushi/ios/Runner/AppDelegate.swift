@@ -229,6 +229,9 @@ final class FushiRemotePush {
   }
 
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
+    // BUG-4072：本次引擎有没有界面（后台拉起跑 main() 的会话不算前台闪退）。放第一个：
+    // Dart 在 main() 最早期就问。Android 半边是 packages/fushi_launch_presence 插件。
+    FushiLaunchPresence.register(binaryMessenger: binaryMessenger)
     // 系统自带 OCR（Vision）。Dart 侧与 Android 侧早就在了，这半边一直空着——
     // 没注册时 Dart 收到 MissingPluginException，isAvailable() 返回 false，引擎
     // 选项就静默不出现（system_ocr_channel.dart 的注释把这条定为「当前事实」）。
@@ -741,5 +744,46 @@ final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
     for url in sorted.prefix(sorted.count - FushiCrashDiagnostics.maxFiles) {
       try? FileManager.default.removeItem(at: url)
     }
+  }
+}
+
+/// BUG-4072：告诉 Dart 本次跑 `main()` 的引擎有没有界面。系统后台拉起（BGTask
+/// `app.fushi.feedback-reply-check`、后台刷新、推送、音频）时引擎照样跑 `main()`，但收不到
+/// 前台生命周期；会话标记据此记 `headless`，进程之后在后台被回收不再判成「启动即闪退」。
+/// 判据偏向「有界面」：app 不在后台，或已有前台（含 foregroundInactive）场景，都算有界面——
+/// 宁可把无界面误记成有界面（退回旧行为），也不把真正的启动闪退记成无界面。
+/// 通道契约：packages/fushi_launch_presence/lib/fushi_launch_presence.dart。
+enum FushiLaunchPresence {
+  static let channelName = "app.fushi.reader/launch_presence"
+
+  static func register(binaryMessenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: channelName, binaryMessenger: binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "query" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result(query())
+    }
+  }
+
+  static func query() -> [String: Any] {
+    let app = UIApplication.shared
+    let state: String
+    switch app.applicationState {
+    case .active: state = "active"
+    case .inactive: state = "inactive"
+    case .background: state = "background"
+    @unknown default: state = "unknown"
+    }
+    let foregroundScene = app.connectedScenes.contains {
+      $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive
+    }
+    let hasUi = app.applicationState != .background || foregroundScene
+    return [
+      "hasUi": hasUi,
+      "detail":
+        "applicationState=\(state) scenes=\(app.connectedScenes.count) foregroundScene=\(foregroundScene)",
+    ]
   }
 }
