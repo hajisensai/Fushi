@@ -298,9 +298,11 @@ strip ios`）再签，TestFlight 照常上传、只是没有小组件，job 打�
 **CI 怎么判**（`release-desktop.yml`「Install provisioning profile and signing xcconfig」）：
 `Runner.entitlements` 里的每一项都只在描述文件本身带它时才签进去，和 `aps-environment` 同一套
 规矩——描述文件没有的项先从 runner 上的副本里 `PlistBuddy Delete` 掉，剩下至少一项才接入
-`CODE_SIGN_ENTITLEMENTS`（守卫 `feedback_push_wiring_guard_test.dart`）。两份描述文件都带
-App Group 时，往 `ios/Flutter/FushiWidgets.xcconfig` 追加扩展自己的手动签名，并在
-ExportOptions 里登记扩展的描述文件。
+`CODE_SIGN_ENTITLEMENTS`（守卫 `ios_entitlements_profile_gating_guard_test.dart`、
+`feedback_push_wiring_guard_test.dart`）。扩展的 `FushiWidgets.entitlements` 同一规则，对照的是扩展
+自己那份描述文件。两份描述文件都带 App Group 时才保留这项，往 `ios/Flutter/FushiWidgets.xcconfig`
+追加扩展自己的手动签名，并在 ExportOptions 里登记扩展的描述文件；缺任何一份就删掉这项并把扩展
+target 整个摘掉（`tool/apple/widgets_target.rb strip ios`）。
 
 **未签名侧载 IPA** 里带着扩展。侧载工具重签时会给扩展另起一个 App ID；免费账号每周只能建
 10 个，扩展会多占一个。没有 App Group 时，小组件只显示「打开 Fushi 一次」，不影响主 app。
@@ -331,10 +333,14 @@ Xcode 变量）。运行时 app 和扩展各自读**自己签进去的** applica
 2. **重新生成 App Store 描述文件**（勾了 capability 之后旧描述文件里没有 `aps-environment`）：
    Profiles → 原来那份 `IOS_APP_STORE` 描述文件 → Edit → Save → 下载，然后照「仓库 Secrets
    清单」重写 `IOS_PROVISIONING_PROFILE_BASE64`（`tool/apple_signing_secrets.sh`）。
-   `release-desktop.yml` 解出描述文件时发现它带 `aps-environment`，才往 `Release.xcconfig` 追加
-   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（值取描述文件里的，App Store 描述文件
-   是 `production`）；不带就照旧不接入——**描述文件没开 Push 却签进 aps-environment，codesign
-   会直接失败**，所以这一步不能写死在工程里。
+   `release-desktop.yml` 解出描述文件后对 `Runner.entitlements` 里的**每一项**逐个对照：
+   描述文件授予了才保留（`aps-environment` 的值取描述文件里的，App Store 描述文件是
+   `production`），没授予就在 runner 上把那一项删掉；至少剩一项才往 `Release.xcconfig` 追加
+   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`——**描述文件没授予的 entitlement 签进去，
+   codesign 会直接失败**，所以这一步不能写死在工程里。同一机制也管
+   `com.apple.developer.kernel.extended-virtual-addressing`（BUG-4013，App ID 勾
+   「Extended Virtual Addressing」后同样要重新生成描述文件；缺失时 CI 打 warning）。守卫：
+   `fushi/test/build/ios_entitlements_profile_gating_guard_test.dart`。
 3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
    （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key
    对团队下所有 App、sandbox 与 production 都有效，不像旧的 .p12 推送证书一年一换。

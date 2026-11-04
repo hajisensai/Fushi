@@ -15,6 +15,10 @@ import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+/// 这些用例的视频路径都是虚构的（`D:/A/...`）：存在性判据一律当「在」，
+/// BUG-4055 的「文件都不在就不进清单」由专门的用例注入真判据来测。
+Future<bool> _allMembersPresent(String _) async => true;
+
 /// BUG-2000：库内自动补刮只认「从未刮出规范身份」这一条判据，批次 scope 记
 /// 'sweep'；BUG-2001：集号标签型标题进待确认队列但不做自动尝试。
 class _RecordingRunner implements VideoSourceScrapeRunner {
@@ -206,6 +210,7 @@ void main() {
     String? Function()? aiCapabilityKey,
   }) => VideoLibraryScrapeSweep(
     database: db,
+    memberExists: _allMembersPresent,
     controller: controller,
     isEnabled: isEnabled,
     isHashReady: isHashReady,
@@ -233,6 +238,77 @@ void main() {
     expect(runner.sourceIds, <int>[sourceId]);
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
     expect(runner.runScopes.single, 'sweep');
+  });
+
+  // BUG-4055：库外删掉的视频行仍在库里（#792 有意保留暂缺文件的进度与资料），
+  // 但文件都不在的作品不得进待确认队列、不得被自动补刮 / 刷新；文件回来后自然
+  // 回到队列。用真实磁盘与默认判据，不注入存在性。
+  test('成员文件都不在磁盘上的作品不进待确认队列、不自动补刮，文件回来后复现', () async {
+    final Directory root = Directory.systemTemp.createTempSync('bug4055_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final String present = '${root.path}/Present Movie (2020).mkv';
+    final String deleted = '${root.path}/Deleted Movie (2021).mkv';
+    File(present).writeAsBytesSync(<int>[0]);
+    final int sourceId = await addSource(root.path);
+    await addVideo('movie-a', present, sourceId, title: 'Present Movie');
+    await addVideo('movie-b', deleted, sourceId, title: 'Deleted Movie');
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: controller,
+    );
+
+    expect(
+      (await service.pendingWorks()).map(
+        (VideoPendingScrapeWork e) => e.work.title,
+      ),
+      <String>['Present Movie'],
+      reason: '已删除文件的作品不得留在待确认队列',
+    );
+    expect(
+      await db.getVideoBookByBookUid('movie-b'),
+      isNotNull,
+      reason: '行与进度原样保留（#792 语义不变）',
+    );
+
+    await service.sweepOnce();
+    expect(runner.plannedTitles.single, <String>['Present Movie']);
+
+    File(deleted).writeAsBytesSync(<int>[0]);
+    expect(
+      (await service.pendingWorks()).map(
+        (VideoPendingScrapeWork e) => e.work.title,
+      ),
+      unorderedEquals(<String>['Present Movie', 'Deleted Movie']),
+      reason: '文件回来（重新插盘 / 网络盘上线）后作品回到队列',
+    );
+  });
+
+  test('合集只要还有一个成员文件在就照常进队列；全不在才跳过', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('e1', 'D:/A/Show/Show S01E01.mkv', sourceId, title: 'E1');
+    await addVideo('e2', 'D:/A/Show/Show S01E02.mkv', sourceId, title: 'E2');
+    final int collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(collectionId, MediaKind.video, 'e1');
+    await db.addToCollection(collectionId, MediaKind.video, 'e2');
+    Set<String> onDisk = <String>{'D:/A/Show/Show S01E02.mkv'};
+    VideoLibraryScrapeSweep service() => VideoLibraryScrapeSweep(
+      database: db,
+      controller: controller,
+      memberExists: (String path) async => onDisk.contains(path),
+    );
+
+    expect(
+      (await service().pendingWorks()).map(
+        (VideoPendingScrapeWork e) => e.work.title,
+      ),
+      <String>['Show'],
+      reason: '只删了 E01：作品还在，照常待确认',
+    );
+    onDisk = <String>{};
+    expect(await service().pendingWorks(), isEmpty, reason: '整部都删了才跳过');
   });
 
   // BUG-2828：待确认清单要能说出「为什么还没认出来」——取最近一次运行记录里
@@ -715,6 +791,7 @@ void main() {
 
     final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       now: () => current,
       ledger: ledger,
@@ -758,6 +835,7 @@ void main() {
 
     VideoLibraryScrapeSweep relaunch(DateTime now) => VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       now: () => now,
       ledger: VideoScrapeSweepLedger(file: file),
@@ -801,6 +879,7 @@ void main() {
     addTearDown(busyController.dispose);
     final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: busyController,
     );
     addTearDown(service.dispose);
@@ -846,6 +925,7 @@ void main() {
     addTearDown(busyController.dispose);
     final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: busyController,
     );
     addTearDown(service.dispose);
@@ -877,6 +957,7 @@ void main() {
     addTearDown(busyController.dispose);
     final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: busyController,
     );
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
@@ -952,6 +1033,7 @@ void main() {
 
       final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
         database: db,
+        memberExists: _allMembersPresent,
         controller: controller,
         now: () => current,
         ledger: ledger,
@@ -1081,6 +1163,7 @@ void main() {
       TmdbChangedTvIdsProbe? probe,
     }) => VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       now: () => now,
       ledger: VideoScrapeSweepLedger(file: ledgerFile),
@@ -1238,6 +1321,7 @@ void main() {
     addTearDown(busyController.dispose);
     final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: busyController,
       isEnabled: () => false,
     );
@@ -1290,6 +1374,7 @@ void main() {
       final List<DateTime> probed = <DateTime>[];
       final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
         database: db,
+        memberExists: _allMembersPresent,
         controller: controller,
         now: () => now,
         tmdbChangedTvIds: ({required DateTime since}) async {
@@ -1330,6 +1415,7 @@ void main() {
       int probes = 0;
       final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
         database: db,
+        memberExists: _allMembersPresent,
         controller: controller,
         now: () => now,
         maxRefreshPerSweep: 2,
@@ -1358,12 +1444,14 @@ void main() {
       );
       await VideoLibraryScrapeSweep(
         database: db,
+        memberExists: _allMembersPresent,
         controller: controller,
         now: () => now,
       ).sweepOnce();
       expect(runner.sourceIds, isEmpty);
       await VideoLibraryScrapeSweep(
         database: db,
+        memberExists: _allMembersPresent,
         controller: controller,
         now: () => now,
         tmdbChangedTvIds: ({required DateTime since}) async =>

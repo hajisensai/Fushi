@@ -3054,16 +3054,41 @@ jobs:
             echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
             echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
           } >> fushi/ios/Flutter/Release.xcconfig
-          # Runner.entitlements 里的每一项都只在描述文件本身带它时才签进去——描述文件没有这项
-          # 却签进去，codesign 直接失败（TestFlight 整条断）。描述文件没有的项先从 runner 上的
-          # 副本里删掉，剩下至少一项才接入 CODE_SIGN_ENTITLEMENTS。
-          #
-          # APNs 推送（反馈回复）：描述文件带 aps-environment（App ID 已勾 Push Notifications
-          # 并重新生成描述文件）。值取描述文件里的（App Store 描述文件 = production）。
+          # fushi/ios/Runner/Runner.entitlements 列出 app 要的全部 entitlement，但描述文件
+          # 没授予的任何一项签进去 codesign 都直接失败（App ID 勾了能力还要重新生成描述
+          # 文件并更新 IOS_PROVISIONING_PROFILE_BASE64）。所以逐项对照描述文件：授予了才
+          # 保留，没授予就从 runner 上这份 Runner.entitlements 删掉（不入库）；至少剩一项
+          # 才接入 CODE_SIGN_ENTITLEMENTS。FushiWidgets 扩展的 entitlements 同一规则，对照的
+          # 是扩展自己那份描述文件（app.fushi.reader.widgets）。
+          ENTITLEMENTS_FILE="fushi/ios/Runner/Runner.entitlements"
+          WIDGETS_ENTITLEMENTS_FILE="fushi/ios/FushiWidgets/FushiWidgets.entitlements"
+          WIRE_ENTITLEMENTS=0
+          # APNs 推送（反馈回复）：值取描述文件里的（App Store 描述文件 = production），
+          # 不在仓库里写死。
           APS_ENV="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST" 2>/dev/null || true)"
-          # 主屏小组件 / Live Activity（FushiWidgets 扩展）：两份描述文件（主 app 与
-          # app.fushi.reader.widgets）都带 App Group 才签扩展；缺任何一样就把扩展 target
-          # 从工程里摘掉（tool/apple/widgets_target.rb strip），主 app 照常上传，小组件不出现。
+          if [ -n "$APS_ENV" ]; then
+            echo "FUSHI_APS_ENVIRONMENT = $APS_ENV" >> fushi/ios/Flutter/Release.xcconfig
+            WIRE_ENTITLEMENTS=1
+            echo "APNs push entitlement enabled (aps-environment=$APS_ENV)"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :aps-environment' "$ENTITLEMENTS_FILE"
+            echo "Provisioning profile has no aps-environment: building without push (feedback replies fall back to background checks)"
+          fi
+          # BUG-4013：扩展虚拟地址空间。iOS 进程默认的地址空间被词典映射 / WebKit / Dart
+          # 堆吃满后任何分配都 abort；这项 entitlement 让系统给更大的地址空间。
+          EXTENDED_VA="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.kernel.extended-virtual-addressing' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ "$EXTENDED_VA" = "true" ]; then
+            WIRE_ENTITLEMENTS=1
+            echo "Extended virtual addressing entitlement enabled"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.extended-virtual-addressing' "$ENTITLEMENTS_FILE"
+            echo "::warning title=Extended virtual addressing missing::The provisioning profile does not grant com.apple.developer.kernel.extended-virtual-addressing. Enable it on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4013)."
+          fi
+          # 主屏小组件 / Live Activity（FushiWidgets 扩展）的 App Group：主 app 描述文件带
+          # group 才保留这项；扩展那份描述文件（app.fushi.reader.widgets）也逐项对照它的
+          # entitlement（App Group 是扩展唯一的 entitlement，也是扩展能读快照的前提）。缺任何
+          # 一样就把这项从 Runner.entitlements 删掉，并把扩展 target 从工程里摘掉
+          # （tool/apple/widgets_target.rb strip），主 app 照常上传，小组件不出现。
           APP_GROUP=group.app.fushi.reader
           WIDGETS_BUNDLE_ID="${PROFILE_BUNDLE_ID}.widgets"
           WIDGETS=false
@@ -3091,25 +3116,22 @@ jobs:
           else
             WIDGETS_NOTE="main profile has no App Group $APP_GROUP"
           fi
-          if [ -z "$APS_ENV" ]; then
-            /usr/libexec/PlistBuddy -c 'Delete :aps-environment' fushi/ios/Runner/Runner.entitlements
-            echo "Provisioning profile has no aps-environment: building without push (feedback replies fall back to background checks)"
-          fi
-          if [ "$WIDGETS" != true ]; then
-            /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' fushi/ios/Runner/Runner.entitlements
+          if [ "$WIDGETS" = true ]; then
+            WIRE_ENTITLEMENTS=1
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' "$ENTITLEMENTS_FILE"
             GEM_HOME="$(gem env gemdir)" ruby fushi/tool/apple/widgets_target.rb strip ios
             echo "::notice title=Home screen widgets not signed::$WIDGETS_NOTE. The TestFlight build ships without the widget extension (docs/agent/apple-signing.md「主屏小组件」)."
           fi
-          if [ -n "$APS_ENV" ] || [ "$WIDGETS" = true ]; then
+          if [ "$WIRE_ENTITLEMENTS" = 1 ]; then
             echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements" >> fushi/ios/Flutter/Release.xcconfig
-          fi
-          if [ -n "$APS_ENV" ]; then
-            echo "FUSHI_APS_ENVIRONMENT = $APS_ENV" >> fushi/ios/Flutter/Release.xcconfig
-            echo "APNs push entitlement enabled (aps-environment=$APS_ENV)"
+            plutil -lint "$ENTITLEMENTS_FILE"
           fi
           WIDGETS_EXPORT=""
           if [ "$WIDGETS" = true ]; then
             # 扩展 target 的 base configuration；与 Runner 同一张证书，各自一份描述文件。
+            # 扩展 entitlements 里剩下的项（App Group）上面已对照扩展描述文件确认过。
+            plutil -lint "$WIDGETS_ENTITLEMENTS_FILE"
             {
               echo ""
               echo "// Injected by .github/workflows/release-desktop.yml for the TestFlight build."

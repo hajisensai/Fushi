@@ -91,7 +91,7 @@ Future<T> withMaterializedMiningContext<T>(
       sourceUrl: payload.sourceUrl,
       bookTitleTag: payload.bookTitleTag,
       collectionTag: payload.collectionTag,
-      charPositionTag: payload.charPositionTag,
+      charPositionText: payload.charPositionText,
       // 片段时间窗原样透传，有效性由 formatClipTimestamp 单点判定——非视频来源
       // 两端为 null，渲染成空串。
       clipStartMs: payload.clipStartMs,

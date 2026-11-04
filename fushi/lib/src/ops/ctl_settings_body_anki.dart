@@ -372,6 +372,19 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateCompactGlossaries(v),
     ),
+    // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB）：卡片内容，跟「紧凑释义」放一起。id 沿用
+    // 旧名 `tag_char_position`（操作目录 / 设置搜索锚点），toggle 语义同书名标签。
+    SettingsSwitchItem(
+      id: _id('tag_char_position'),
+      title: t.anki_char_position_misc_info,
+      subtitle: t.anki_char_position_misc_info_hint,
+      value: (SettingsContext c) => c.appModel.autoAddCharPositionToTags,
+      onChanged: (SettingsContext c, bool v) {
+        if (c.appModel.autoAddCharPositionToTags != v) {
+          c.appModel.toggleAutoAddCharPositionToTags();
+        }
+      },
+    ),
     SettingsSwitchItem(
       id: _id('notice_success'),
       title: t.card_creation_notice_success,
@@ -441,7 +454,7 @@ CtlBodyPage _tagsPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateTagNestTitleUnderCategory(v),
     ),
-    // 页面里这两项是 toggle 语义：只在目标值与当前值不同时翻转。
+    // 页面里这一项是 toggle 语义：只在目标值与当前值不同时翻转。
     SettingsSwitchItem(
       id: _id('tag_book_name'),
       title: t.auto_add_book_name_to_tags,
@@ -449,17 +462,6 @@ CtlBodyPage _tagsPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) {
         if (c.appModel.autoAddBookNameToTags != v) {
           c.appModel.toggleAutoAddBookNameToTags();
-        }
-      },
-    ),
-    SettingsSwitchItem(
-      id: _id('tag_char_position'),
-      title: t.auto_add_char_position_to_tags,
-      subtitle: t.auto_add_char_position_to_tags_hint,
-      value: (SettingsContext c) => c.appModel.autoAddCharPositionToTags,
-      onChanged: (SettingsContext c, bool v) {
-        if (c.appModel.autoAddCharPositionToTags != v) {
-          c.appModel.toggleAutoAddCharPositionToTags();
         }
       },
     ),

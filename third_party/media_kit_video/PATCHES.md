@@ -974,3 +974,13 @@ D3D11 device. `MarkTextureFrameAvailable` still fires after the copy, so Flutter
 never samples a frame older than the last finished one.
 
 Source-guard test: `fushi/test/third_party/media_kit_video_raster_never_waits_guard_test.dart`.
+
+Cross-device synchronisation is still the implicit one of a legacy
+`D3D11_RESOURCE_MISC_SHARED` texture: media_kit's device writes it
+(`CopyResource` + `Flush`), Flutter's ANGLE device samples it, and there is no
+keyed mutex. Adding one only here would not help: Flutter's
+`ExternalTextureD3d` binds the share handle once (`eglBindTexImage`) and never
+calls `AcquireSync`, and ANGLE only exposes the mutex through
+`eglQuerySurfacePointerANGLE(EGL_DXGI_KEYED_MUTEX_ANGLE)` without acquiring it.
+A keyed mutex needs an engine patch that acquires it on the raster side first
+(see BUG-3888, 2026-11-04 (二)); the source guard refuses a producer-only one.

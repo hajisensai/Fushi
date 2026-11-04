@@ -87,6 +87,9 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
   /// 正在切过去的那一场（行转圈、防连点）。
   String? _switching;
 
+  /// 最近一次读列表失败（远端执行设备连不上）。
+  bool _loadFailed = false;
+
   AiAgentSessionLibrary get _library => widget.library;
 
   @override
@@ -130,11 +133,20 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
 
   Future<void> _reload() async {
     final int seq = ++_loadSeq;
-    final List<AiAgentSessionSummary> sessions = await _library.listSessions();
+    final List<AiAgentSessionSummary> sessions;
+    try {
+      sessions = await _library.listSessions();
+    } on Object catch (error, stack) {
+      // 远端会话库连不上执行设备：说明原因，列表保留上一次读到的。
+      ErrorLogService.instance.log('AiAgentSessionList.reload', error, stack);
+      if (mounted && seq == _loadSeq) setState(() => _loadFailed = true);
+      return;
+    }
     if (!mounted || seq != _loadSeq) return;
     setState(() {
       if (_sessions == null) _generation++;
       _sessions = sessions;
+      _loadFailed = false;
     });
   }
 
@@ -187,7 +199,18 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
       destructive: true,
     );
     if (!confirmed) return;
-    await _library.deleteSession(session.id);
+    if (!await _library.deleteSession(session.id)) {
+      FushiToast.show(msg: t.ai_agent_session_in_use);
+    }
+  }
+
+  /// 互联 host 替已配对设备跑的会话：标「来自 X」（BUG-4067）。
+  static String? _originOf(AiAgentSessionSummary session) {
+    if (session.originPeerId.isEmpty) return null;
+    final String? name = session.originDeviceName;
+    return name == null || name.isEmpty
+        ? t.ai_agent_session_from_paired_device
+        : t.ai_agent_session_from_device(device: name);
   }
 
   static String _titleOf(AiAgentSessionSummary session) =>
@@ -253,7 +276,9 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
   }
 
   Widget _body(BuildContext context, FushiDesignTokens tokens) {
-    final List<AiAgentSessionSummary>? sessions = _sessions;
+    // 第一次就读失败（远端执行设备连不上）：按空列表画，底部说明原因。
+    final List<AiAgentSessionSummary>? sessions =
+        _sessions ?? (_loadFailed ? const <AiAgentSessionSummary>[] : null);
     if (sessions == null) {
       return const Center(child: FushiCircularProgressIndicator());
     }
@@ -315,7 +340,17 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
               tokens.spacing.page,
               0,
             ),
-            child: Text(t.ai_agent_sessions_retention_hint, style: hintStyle),
+            child: Text(
+              _loadFailed
+                  ? t.ai_agent_remote_unreachable(
+                      device: _library.storedOn ?? '',
+                    )
+                  : _library.storedOn == null
+                  ? t.ai_agent_sessions_retention_hint
+                  : t.ai_agent_sessions_remote_hint(device: _library.storedOn!),
+              key: const ValueKey<String>('ai-agent-sessions-hint'),
+              style: hintStyle,
+            ),
           ),
         ],
       ),
@@ -335,6 +370,7 @@ class _AiAgentSessionListState extends State<AiAgentSessionList> {
         subtitle: Text(
           <String>[
             _timeOf(context, session.updatedAt),
+            ?_originOf(session),
             if (current) t.ai_agent_session_current,
           ].join(' · '),
         ),

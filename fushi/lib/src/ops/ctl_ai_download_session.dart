@@ -451,8 +451,11 @@ class _CtlAiDownloadProvider implements HostAssistantProvider {
   };
 
   @override
-  Future<HostAssistantSession> open(String feature, {required String locale}) =>
-      _open(CtlAiDownloadFeature.parse(feature));
+  Future<HostAssistantSession> open(
+    String feature, {
+    required String locale,
+    HostAssistantCaller caller = HostAssistantCaller.anonymous,
+  }) => _open(CtlAiDownloadFeature.parse(feature));
 }
 
 /// CLI 的 AI 下载会话表：引擎会话表 + 种类登记（列表 / 分派用）。

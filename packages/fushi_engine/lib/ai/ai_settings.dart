@@ -8,6 +8,7 @@ library;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 
 abstract interface class AiSettingsSource {
   /// 用户配置的提供商（含未启用 / 没配全的；可用性由 [AiFeatureAssignments.resolve] 判）。
@@ -18,4 +19,7 @@ abstract interface class AiSettingsSource {
 
   /// 实际要查的联网资料站；空 = 不联网查资料。
   List<WebKnowledgeSite> get aiWebKnowledgeSites;
+
+  /// 通用联网搜索后端；null 或 `!isUsable` = 不联网搜索。
+  WebSearchConfig? get aiWebSearch;
 }

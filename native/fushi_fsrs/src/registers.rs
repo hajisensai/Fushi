@@ -1286,8 +1286,17 @@ pub(crate) fn registers_report(edits: &[StoredEdit<'_>]) -> Result<Value, String
 pub(crate) fn note_browse_values(
     edits: &[StoredEdit<'_>],
 ) -> Result<(Vec<(String, String)>, Option<i64>), String> {
+    note_browse_detail(edits).map(|(values, modified, _)| (values, modified))
+}
+
+/// [note_browse_values] 再加出处寄存器（`source`，`SrsSourceRef.toJson()`；没有 = null，与笔记物化 `note_view` 的
+/// `s` 同值）。[edits] 不含 `source` 键的记录时出处恒为 null。
+pub(crate) fn note_browse_detail(
+    edits: &[StoredEdit<'_>],
+) -> Result<(Vec<(String, String)>, Option<i64>, Value), String> {
     let parsed = parse_stored(edits)?;
     let ent = Entity::build(&parsed);
+    let source = ent.value("source").clone();
     let mut values = Vec::new();
     let mut modified: Option<i64> = None;
     for r in &ent.regs {
@@ -1304,7 +1313,7 @@ pub(crate) fn note_browse_values(
             values.push((id.to_owned(), v.to_owned()));
         }
     }
-    Ok((values, modified))
+    Ok((values, modified, source))
 }
 
 /// 一组卡的血统与标志（store/caches.rs 的血统查询、缓存刷新用）：[cards] 是 (卡 ID, 它的修改记录)，

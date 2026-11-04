@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart'
     show ensureDvdTitleInLibrary;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
@@ -213,6 +214,7 @@ import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
 import 'package:fushi/src/media/video/web_video_browser_return.dart';
+import 'package:fushi/src/media/video/web_video_return_bar.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;
@@ -376,6 +378,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -2803,6 +2806,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _providerContainer = ProviderScope.containerOf(context, listen: false);
+    _playbackRouteMark.attach(ModalRoute.of(context));
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;
@@ -3871,7 +3875,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // `_bookRow` 此刻还没赋值，所以这里自己读一次（主键查询）。远端视频没有本地
     // 行 → language 为 null → 语言级整级跳过，落到 'video' 媒体类型绑定。
     //
-    // 查询失败必须与 autoApplyBinding 一样非致命：这条链绝不能打断视频加载。
+    // 查询失败必须与 enterWorkSession 一样非致命：这条链绝不能打断视频加载。
     String? languageTag;
     try {
       languageTag = (await widget.repo.getByBookUid(_activeBookUid))?.language;
@@ -3880,11 +3884,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     await ref
         .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(
+        .enterWorkSession(
+          owner: this,
           bookUid: _activeBookUid,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.video,
-          restoreFallback: true,
         );
   }
 
@@ -6765,11 +6769,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     action();
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
   @override
   void dispose() {
+    // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
+    WorkProfileScope.instance.leave(this);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    _playbackRouteMark.dispose();
     _themeSongTracker.dispose();
     _themeSongChapters.dispose();
     sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);

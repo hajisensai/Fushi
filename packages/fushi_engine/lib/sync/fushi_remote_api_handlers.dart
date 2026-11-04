@@ -355,6 +355,7 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
     if (r.deckName != null) 'deckName': r.deckName,
     // EMI05fe8RJ：失败分型（扩展据此把永久失败移出待生成队列；旧扩展忽略）。
     if (r.errorKind != null) 'errorKind': r.errorKind!.name,
+    if (r.errorCode != null) 'errorCode': r.errorCode,
   };
 }
 
@@ -414,6 +415,8 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
     // BUG-1549：成功时回传主机实际落卡的牌组名，供客户端成功 toast 显示。
     if (r.deckName != null) 'deckName': r.deckName,
     if (r.errorKind != null) 'errorKind': r.errorKind!.name,
+    // 反馈 E52FUMdbR6：主机侧失败分类码，客户端写进诊断日志。
+    if (r.errorCode != null) 'errorCode': r.errorCode,
   };
 }
 

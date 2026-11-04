@@ -1090,7 +1090,12 @@ class _ModernActionIslandState extends State<_ModernActionIsland> {
             ),
       _modernTile(
         context,
-        _MoreButton(onMore: callbacks.onMore, collapsedItems: collapsed),
+        // 中岛的主控恒带 ±10 秒（只要页面给了回调）。
+        _MoreButton(
+          onMore: callbacks.onMore,
+          collapsedItems: collapsed,
+          relativeSeekOnScreen: callbacks.onSeekRelative != null,
+        ),
       ),
       _modernTile(
         context,

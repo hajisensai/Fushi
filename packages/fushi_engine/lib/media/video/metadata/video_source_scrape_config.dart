@@ -104,6 +104,7 @@ class VideoSourceScrapeGlobalConfig {
     this.anidbUsername = '',
     this.anidbPassword = '',
     this.locale = kFallbackVideoMetadataLocale,
+    this.followsWorkOriginalLanguage = false,
     this.primaryProvider = kDefaultVideoMetadataPrimaryProvider,
     this.identifierWords = ScrapeIdentifierWords.empty,
     this.maxCovers = kVideoMetadataDefaultMaxImages,
@@ -183,6 +184,7 @@ class VideoSourceScrapeGlobalConfig {
     anidbUsername,
     anidbPassword,
     locale,
+    followsWorkOriginalLanguage,
     primaryProvider.name,
     identifierWords.source,
     maxCovers,
@@ -202,12 +204,25 @@ class VideoSourceScrapeGlobalConfig {
   /// 什么都没改。
   final String locale;
 
+  /// 用户没显式设过资料语言（[kVideoMetadataLocalePref] 留空）→ 每部作品按它
+  /// **自己的原语言**刮（BUG-4056：日本动画拿日文标题 / 简介 / 海报，不因界面是
+  /// 中文就变中文资料）。此时 [locale] 只是「原语言未知」时的兜底与非刮削用途
+  /// （发现页、AI 提示语）的语言，不是刮削语言。
+  ///
+  /// 来源级 `metadata_locale` 显式覆盖时不跟随原语言（见协调器
+  /// `_EffectiveSourceSettings`）。各 provider 怎么取原语言见
+  /// `VideoMetadataProviderRegistry.production` 的 `followOriginalLanguage`。
+  final bool followsWorkOriginalLanguage;
+
   /// 标题候选的用户预处理词表（屏蔽 / 替换 / 集偏移）。解析失败的行已在
   /// 构造时丢弃，只有可用的规则会进到这里。
   final ScrapeIdentifierWords identifierWords;
 
   /// [uiLocaleTag] 是**界面语言**（app 侧 `AppModel.appLocale.toLanguageTag()`）；
-  /// 用户没显式设过资料语言时就用它。此前这里回落到写死的 `zh-CN`，等于让每个
+  /// 用户没显式设过资料语言时，刮削按作品原语言走（[followsWorkOriginalLanguage]，
+  /// BUG-4056），界面语言只作原语言未知时的兜底。[emptyLocaleFollowsWorkOriginal]
+  /// = false 时（无头服务端：`uiLocaleTag` 是管理员显式配的 `metadata_locale`）
+  /// 留空就直接用 [uiLocaleTag]，不跟随原语言。此前这里回落到写死的 `zh-CN`，等于让每个
   /// 德语、韩语、阿拉伯语用户默认拉中文简介和中文海报——app 出 17 种语言，没有
   /// 哪种语言配当隐含默认值。
   ///
@@ -219,6 +234,7 @@ class VideoSourceScrapeGlobalConfig {
     PrefStore preferences, {
     required String resolvedTmdbApiKey,
     required String uiLocaleTag,
+    bool emptyLocaleFollowsWorkOriginal = true,
     AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
     AniDbAppClientIdentity bundledAniDbHttpClient = kBundledAniDbHttpClient,
   }) {
@@ -238,7 +254,7 @@ class VideoSourceScrapeGlobalConfig {
     final String uiLocale = uiLocaleTag.trim().isEmpty
         ? kFallbackVideoMetadataLocale
         : uiLocaleTag.trim();
-    final String locale = read(kVideoMetadataLocalePref, uiLocale);
+    final String locale = read(kVideoMetadataLocalePref);
     final AniDbAppClients clients = resolveAniDbAppClients(
       customName: read(kVideoMetadataAniDbClientNamePref),
       customVersion: parseAniDbClientVersion(
@@ -262,6 +278,8 @@ class VideoSourceScrapeGlobalConfig {
           preferences.getPref(kVideoAniDbPasswordPref, defaultValue: '')
               as String,
       locale: locale.isEmpty ? uiLocale : locale,
+      followsWorkOriginalLanguage:
+          locale.isEmpty && emptyLocaleFollowsWorkOriginal,
       primaryProvider:
           parseSelectableVideoMetadataProvider(
             read(kVideoMetadataPrimaryProviderPref),

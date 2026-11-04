@@ -345,6 +345,39 @@ class ProfileRepository {
   Future<void> removeBookProfile(String bookUid) =>
       _db.deleteBookProfile(bookUid);
 
+  /// 反馈 kEFPY4cuKZ：作品级配置会话期间对作品级键（[key]，`preferences` 表键）的写入落到
+  /// [profileId] 自己的设置上（[raw] 为 null = 删除）。
+  ///
+  /// [profileId] 此刻就是激活配置（会话期间用户手动切到了它）时写 live 偏好——激活配置的
+  /// 真值在 live 表里，切走时才快照；写快照会在下次切走时被 live 值覆盖掉。否则写它的
+  /// `profile_settings` 快照，下次切到它 / 再打开这部作品时生效。全局偏好绝不碰。
+  Future<void> writeWorkScopedPref(
+    int profileId,
+    String key,
+    String? raw,
+  ) async {
+    if (profileId == await getActiveProfileId()) {
+      if (raw == null) {
+        await _db.deletePref(key);
+      } else {
+        await _db.setPref(key, raw);
+      }
+      return;
+    }
+    if (raw == null) {
+      await _db.deleteProfileSetting(profileId, ProfileKeys.categoryPref, key);
+    } else {
+      await _db.upsertProfileSetting(
+        ProfileSettingsCompanion.insert(
+          profileId: profileId,
+          category: ProfileKeys.categoryPref,
+          key: key,
+          value: raw,
+        ),
+      );
+    }
+  }
+
   /// 解析该打开哪个 Profile：**book > language > mediaType > active**。
   ///
   /// 语言排在 book 之下、mediaType 之上：book 级是用户对单个条目的明确指令，压过

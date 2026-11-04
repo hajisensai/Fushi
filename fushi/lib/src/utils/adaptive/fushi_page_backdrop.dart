@@ -1,6 +1,7 @@
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -21,7 +22,13 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 /// 页面里拿 `scaffoldBackgroundColor` 当「不透明页底」用的地方（渐隐遮罩、加载罩）
 /// 改用 [fushiOpaquePageColor]；整页底色（Scaffold / 整页 Material）一律用
 /// [fushiPageBackgroundColor]，否则实色页底会把形状整片盖成白底。
-class FushiPageBackdrop extends StatelessWidget {
+///
+/// 按模块取背景（反馈 DYI1IOZxSM）：每页属于一个模块（[HomeTab]），画的是
+/// [pageBackdropSettingsFor] 给这个模块解析出的设置（模块没单独设就是全局）。
+/// 主导航外壳那一页（HomePage 经 [setFushiPageRouteModuleShell] 登记）跟着当前
+/// 选中的 tab 走；其它页属于**打开它时**主导航所在的模块（从书架打开的页用书架的
+/// 背景），之后切 tab 不变。
+class FushiPageBackdrop extends StatefulWidget {
   const FushiPageBackdrop({required this.child, super.key});
 
   final Widget child;
@@ -36,37 +43,101 @@ class FushiPageBackdrop extends StatelessWidget {
       false;
 
   @override
+  State<FushiPageBackdrop> createState() => _FushiPageBackdropState();
+}
+
+class _FushiPageBackdropState extends State<FushiPageBackdrop> {
+  /// 首次挂载时主导航所在的模块：非外壳页的归属。
+  final HomeTab _openedFrom = homeShellTabNotifier.value;
+
+  /// 背景预设切换（纯色 ↔ 形状 ↔ 图片）会改变「这页底色要不要换成透明」，
+  /// 与整页让开、外壳登记、主导航切 tab 一起监听。
+  late final Listenable _inputs = Listenable.merge(<Listenable>[
+    _transparentPageRoutes,
+    _moduleShellRoutes,
+    pageBackdropSettings,
+    pageBackdropModuleOverrides,
+    homeShellTabNotifier,
+  ]);
+
+  Route<Object?>? _route;
+
+  /// 上一次构建用的输入；输入没变就不重建（切 tab 时非外壳页、设置没变的外壳页
+  /// 都不该重建整棵页面子树——`theme.copyWith` 每次都是新 ThemeData）。
+  ({bool seeThrough, PageBackdropSettings settings})? _built;
+
+  @override
+  void initState() {
+    super.initState();
+    _inputs.addListener(_onInputsChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+  }
+
+  @override
+  void dispose() {
+    _inputs.removeListener(_onInputsChanged);
+    super.dispose();
+  }
+
+  /// 这一页当前属于哪个模块。
+  HomeTab _module() {
+    final Route<Object?>? route = _route;
+    if (route != null && _moduleShellRoutes.value.contains(route)) {
+      return homeShellTabNotifier.value;
+    }
+    return _openedFrom;
+  }
+
+  ({bool seeThrough, PageBackdropSettings settings}) _resolve() {
+    final Route<Object?>? route = _route;
+    return (
+      seeThrough: route != null && _transparentPageRoutes.value.contains(route),
+      settings: pageBackdropSettingsFor(_module()),
+    );
+  }
+
+  void _onInputsChanged() {
+    if (!mounted || _resolve() == _built) return;
+    // HomePage.initState 在构建期改写主导航 tab：树正锁着，不能标脏祖先，
+    // 等这一帧画完再重建（与 [setFushiPageRouteTransparent] 同一做法）。
+    final SchedulerBinding binding = SchedulerBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      binding.addPostFrameCallback((Duration _) => _onInputsChanged());
+      return;
+    }
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final Route<Object?>? route = ModalRoute.of(context);
-    // 背景预设切换（纯色 ↔ 形状 ↔ 图片）会改变「这页底色要不要换成透明」，
-    // 与整页让开一起监听。
-    return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable>[
-        _transparentPageRoutes,
-        pageBackdropSettings,
-      ]),
-      builder: (BuildContext context, _) {
-        final Set<Route<Object?>> transparent = _transparentPageRoutes.value;
-        final ThemeData theme = Theme.of(context);
-        final bool seeThrough = route != null && transparent.contains(route);
-        final bool enabled =
-            !seeThrough && LibraryShapeBackdrop.enabledOf(context);
-        return ColoredBox(
-          color: enabled ? theme.scaffoldBackgroundColor : Colors.transparent,
-          child: LibraryShapeBackdrop(
-            show: !seeThrough,
-            child: Theme(
-              data: enabled || seeThrough
-                  ? theme.copyWith(scaffoldBackgroundColor: Colors.transparent)
-                  : theme,
-              child: _FushiPageBackdropScope(
-                active: enabled || seeThrough,
-                child: child,
-              ),
-            ),
+    final ({bool seeThrough, PageBackdropSettings settings}) resolved =
+        _resolve();
+    _built = resolved;
+    final ThemeData theme = Theme.of(context);
+    final bool seeThrough = resolved.seeThrough;
+    final bool enabled =
+        !seeThrough &&
+        LibraryShapeBackdrop.enabledFor(context, resolved.settings);
+    return ColoredBox(
+      color: enabled ? theme.scaffoldBackgroundColor : Colors.transparent,
+      child: LibraryShapeBackdrop(
+        show: !seeThrough,
+        settings: resolved.settings,
+        child: Theme(
+          data: enabled || seeThrough
+              ? theme.copyWith(scaffoldBackgroundColor: Colors.transparent)
+              : theme,
+          child: _FushiPageBackdropScope(
+            active: enabled || seeThrough,
+            child: widget.child,
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -119,6 +190,35 @@ void _applyPageRouteTransparent(Route<Object?> route, bool transparent) {
     for (final Route<Object?> r in current)
       if (r != route) r,
     if (transparent) route,
+  };
+}
+
+/// 主导航外壳路由（跟着当前选中 tab 换模块背景的那一页）。
+final ValueNotifier<Set<Route<Object?>>> _moduleShellRoutes =
+    ValueNotifier<Set<Route<Object?>>>(<Route<Object?>>{});
+
+/// 登记 / 注销主导航外壳页（HomePage）：登记了的路由，其 [FushiPageBackdrop] 按
+/// [homeShellTabNotifier] 当前的 tab 取模块背景，而不是固定在打开时的模块。
+///
+/// 外壳在 didChangeDependencies / dispose 里调，树是锁着的，通知等这一帧画完。
+void setFushiPageRouteModuleShell(Route<Object?> route, bool shell) {
+  final SchedulerBinding binding = SchedulerBinding.instance;
+  if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    binding.addPostFrameCallback(
+      (Duration _) => _applyModuleShell(route, shell),
+    );
+    return;
+  }
+  _applyModuleShell(route, shell);
+}
+
+void _applyModuleShell(Route<Object?> route, bool shell) {
+  final Set<Route<Object?>> current = _moduleShellRoutes.value;
+  if (current.contains(route) == shell) return;
+  _moduleShellRoutes.value = <Route<Object?>>{
+    for (final Route<Object?> r in current)
+      if (r != route) r,
+    if (shell) route,
   };
 }
 

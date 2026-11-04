@@ -8,18 +8,24 @@
 /// - 记账与撤销：服务端自己的 Drift 库（同一张 `ai_agent_actions` 表，设备本地、不
 ///   同步）。可撤销写直接执行并记撤销载荷；不可逆操作由 agent loop 先出确认卡片，
 ///   用户点了才注入表态参数——模型填不出来。
+/// - 会话存档（BUG-4067）：与 app 当 host 同一张 `ai_agent_sessions`、同一份实现
+///   （[DatabaseAgentSessionHistory]），按发起设备存——手机能列 / 续接自己在服务端上
+///   的会话，管理页「AI 助手」能看全部。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
@@ -237,6 +243,51 @@ class ServerAgentToolbox implements AgentToolbox {
   }
 }
 
+/// 服务端多久清一次过期的 AI 助手存档。
+const Duration kServerAgentHistoryPruneEvery = Duration(hours: 6);
+
+/// 服务端的 AI 助手存档保留期（[kAiAgentHistoryRetention]，与 app 同一个值）：
+/// 无头服务端常驻几个月不重启，[start] 时清一次、之后每 [every] 清一次；
+/// [stop] 停掉。app 那边由 `AiAgentController` 在本机会话里清，服务端没有它，
+/// 不在这里清 `ai_agent_sessions` / `ai_agent_actions` 就会无限长（管理页与手机上
+/// 写的「保留 30 天」也就不成立）。
+class ServerAgentHistoryPruner {
+  ServerAgentHistoryPruner(
+    this._db, {
+    DateTime Function()? clock,
+    this.every = kServerAgentHistoryPruneEvery,
+  }) : _clock = clock ?? DateTime.now;
+
+  final FushiDatabase _db;
+  final DateTime Function() _clock;
+  final Duration every;
+  Timer? _timer;
+
+  /// 先清一次再挂定时器；重复调用无副作用。
+  Future<void> start() async {
+    if (_timer != null) return;
+    _timer = Timer.periodic(every, (Timer _) => unawaited(_pruneLogged()));
+    await _pruneLogged();
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// 现在清一次，返回删掉的行数合计。
+  Future<int> pruneNow() => pruneAiAgentArchive(_db, now: _clock());
+
+  // 后台定时任务没有调用方能接异常：记日志，下一轮照常再清。
+  Future<void> _pruneLogged() async {
+    try {
+      await pruneNow();
+    } on Object catch (error, stack) {
+      engineLog.log('ServerAgentHistoryPruner', error, stack);
+    }
+  }
+}
+
 /// 服务端那一家 AI 是否指派给了 AI 助手（null = 没配 / 没配全）。
 AiProviderConfig? resolveServerAgentProvider(ServerAiSettings settings) =>
     settings.aiFeatureAssignments.resolve(
@@ -279,6 +330,7 @@ AgentAssistantHost createServerAgentAssistantHost({
     blocker: blocker,
     source: 'server',
     clock: clock,
+    history: DatabaseAgentSessionHistory(db, clock: clock),
     toolCount: () => invoker()?.catalog.available().length ?? 0,
     open: (String locale) async {
       final AiProviderConfig? provider = resolveServerAgentProvider(settings);
