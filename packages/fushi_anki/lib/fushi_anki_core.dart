@@ -19,6 +19,7 @@ export 'src/anki_note_type_definition.dart';
 export 'src/anki_remote_media_http.dart';
 export 'src/anki_synchronized_clip_template.dart';
 export 'src/anki_template_render.dart';
+export 'src/anki_type_answer.dart';
 export 'src/card_source_link.dart';
 export 'src/fushi_card_blocks.dart';
 export 'src/fushi_card_fields.dart';

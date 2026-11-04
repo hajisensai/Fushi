@@ -22,7 +22,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show CardSourceLink, wrapAnkiCardHtmlWithLang;
+    show
+        CardSourceLink,
+        ankiFillTypeAnswer,
+        ankiHasTypeAnswerSlot,
+        kAnkiTypeAnswerInputId,
+        wrapAnkiCardHtmlWithLang;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
@@ -186,32 +191,42 @@ class SrsCardFace {
 
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
-      SrsCardFace(
-        cardId: cardId,
-        showingAnswer: showingAnswer,
-        bodyHtml: bodyHtml,
-        css: css,
-        languageCode: languageCode,
-        onBridgeKey: onBridgeKey,
-        bridgeKeys: bridgeKeys,
-        layout: layout,
-        pageZoom: pageZoom,
-        fushiCard: fushiCard,
-        onContentHeight: onContentHeight,
-        onWheel: onWheel,
-        onZoomWheel: onZoomWheel,
-        hostCss: hostCss,
-        hostScript: hostScript,
-        onSourceLink: onSourceLink,
-        autoplayMedia: autoplayMedia,
-        onPlayAudio: onPlayAudio,
-        onCardGesture: onCardGesture,
-        gestureArming: gestureArming,
-        onImageTap: onImageTap,
-        onEditSelection: onEditSelection,
-        onVisibleSounds: onVisibleSounds,
-        pageWindow: pageWindow,
-      );
+      _rebuilt(layout: layout, pageZoom: pageZoom, bodyHtml: bodyHtml);
+
+  /// 同一面卡，换正文（打字答案的比对结果填进答案面占位，见 [ankiFillTypeAnswer]）。
+  SrsCardFace withBody(String body) =>
+      _rebuilt(layout: layout, pageZoom: pageZoom, bodyHtml: body);
+
+  SrsCardFace _rebuilt({
+    required SrsCardLayout layout,
+    required double? pageZoom,
+    required String bodyHtml,
+  }) => SrsCardFace(
+    cardId: cardId,
+    showingAnswer: showingAnswer,
+    bodyHtml: bodyHtml,
+    css: css,
+    languageCode: languageCode,
+    onBridgeKey: onBridgeKey,
+    bridgeKeys: bridgeKeys,
+    layout: layout,
+    pageZoom: pageZoom,
+    fushiCard: fushiCard,
+    onContentHeight: onContentHeight,
+    onWheel: onWheel,
+    onZoomWheel: onZoomWheel,
+    hostCss: hostCss,
+    hostScript: hostScript,
+    onSourceLink: onSourceLink,
+    autoplayMedia: autoplayMedia,
+    onPlayAudio: onPlayAudio,
+    onCardGesture: onCardGesture,
+    gestureArming: gestureArming,
+    onImageTap: onImageTap,
+    onEditSelection: onEditSelection,
+    onVisibleSounds: onVisibleSounds,
+    pageWindow: pageWindow,
+  );
 }
 
 /// 宿主 → 卡面页面的「窗口」通道（BUG-4007）。
@@ -1017,6 +1032,61 @@ const String kSrsCardShellScript = r'''
 })();
 ''';
 
+/// 打字答案（`{{type:Field}}`，DAgSPc8ixN）的页内 JS 回调名：参数 `[已打的字, 是否按了回车]`。
+const String kSrsTypeAnswerHandler = 'onSrsTypeAnswer';
+
+/// 打字答案的输入框（[kAnkiTypeAnswerInputId]）：每次输入把当前文字交给宿主（宿主据此在答案面
+/// 填比对结果）；回车（非组字中）= 交卷，宿主按「显示答案」键处理（与 Anki 复习器一致）。
+/// 委托在 document 捕获阶段监听：输入框随换卡原地换掉，不必逐张绑定。
+const String kSrsTypeAnswerScript =
+    '''
+(function(){
+  if (window.__fushiTypeAnswer) return;
+  window.__fushiTypeAnswer = true;
+  function post(t, submit){
+    try {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('$kSrsTypeAnswerHandler', t.value || '', submit);
+      }
+    } catch (_) {}
+  }
+  function isInput(t){ return !!(t && t.id === '$kAnkiTypeAnswerInputId' && t.tagName === 'INPUT'); }
+  document.addEventListener('input', function(e){
+    if (isInput(e.target)) post(e.target, false);
+  }, true);
+  document.addEventListener('keydown', function(e){
+    if (!isInput(e.target) || e.isComposing || e.keyCode === 229) return;
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    post(e.target, true);
+  }, true);
+})();
+''';
+
+/// 答案面的打字答案占位填上比对结果：[typed] 只有属于这张卡（[SrsCardFace.cardId]）才用，
+/// 否则按没打字处理（只显示期望答案，与 Anki 一致）。问题面 / 没有占位的卡原样返回。
+SrsCardFace srsFaceWithTypedAnswer(
+  SrsCardFace face,
+  ({String cardId, String text})? typed,
+) {
+  if (!face.showingAnswer || !ankiHasTypeAnswerSlot(face.bodyHtml)) {
+    return face;
+  }
+  final String text = typed != null && typed.cardId == face.cardId
+      ? typed.text
+      : '';
+  return face.withBody(ankiFillTypeAnswer(face.bodyHtml, text));
+}
+
+/// 打字答案的出厂样式（与 Anki 相同的类名与配色；卡片 CSS 在后面，可以覆盖）。
+const String kSrsTypeAnswerCss =
+    '#$kAnkiTypeAnswerInputId.fushi-typeans-input{width:100%;box-sizing:border-box;'
+    'font:inherit;padding:6px 8px;}'
+    'code#$kAnkiTypeAnswerInputId{font-family:inherit;white-space:pre-wrap;}'
+    '.typeGood{background:#afa;color:black;}'
+    '.typeBad{background:#faa;color:black;}'
+    '.typeMissed{background:#ccc;color:black;}';
+
 /// 卡面外壳页：只在 WebView 创建（以及 renderer 死亡重建）时加载一次，内容随后由
 /// [srsCardSetCardScript] / [srsCardSetThemeScript] 原地换。
 @visibleForTesting
@@ -1040,6 +1110,8 @@ String srsCardShellHtml({
       '<script>$kSrsCardVisibleSoundsScript</script>'
       // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）。
       '<script>$kSrsCardAutoplayGateScript</script>'
+      '<style>$kSrsTypeAnswerCss</style>'
+      '<script>$kSrsTypeAnswerScript</script>'
       // 样式注册表的两个锚点：模板 / 笔记类型 CSS 在前，卡片正文里抽出的样式在后
       // （与它们原本在文档里的先后一致）。
       '<style id="fushi-css-tpl"></style><style id="fushi-css-body"></style>'
@@ -1875,9 +1947,29 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   /// 不再每次重拼主题样式、外壳 HTML 与几十 KB 的卡片键。
   SrsCardFaceDocumentCache? _docCache;
 
+  /// 用户在这张卡问题面的打字框里打的字（[kSrsTypeAnswerScript] 上报）。只属于 [cardId]
+  /// 那张卡：换卡、或同一张卡回到问题面时清掉。
+  ({String cardId, String text})? _typed;
+
+  /// 实际渲染的这一面：答案面有打字答案占位时，填进本卡打的字与期望答案的比对结果。
+  SrsCardFace _effectiveFace() => srsFaceWithTypedAnswer(widget.face, _typed);
+
+  void _onTypeAnswer(List<dynamic> arguments) {
+    if (!mounted) return;
+    final Object? text = arguments.isEmpty ? null : arguments.first;
+    if (text is! String) return;
+    final SrsCardFace face = widget.face;
+    _typed = (cardId: face.cardId, text: text);
+    final bool submit = arguments.length > 1 && arguments[1] == true;
+    // 回车交卷 = 按「显示答案」键；只在这面卡的桥接键里有回车时（复习页）才转。
+    if (submit && !face.showingAnswer && face.bridgeKeys.contains('Enter')) {
+      face.onBridgeKey('Enter');
+    }
+  }
+
   SrsCardFaceDocument _document(BuildContext context) {
     final SrsCardFaceDocumentInputs inputs = SrsCardFaceDocumentInputs(
-      face: widget.face,
+      face: _effectiveFace(),
       theme: Theme.of(context),
       appearance: ref.read(srsCardAppearanceProvider),
       labels: srsCardLabels(),
@@ -2260,6 +2352,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
       _detachPageWindow(oldWidget.face.pageWindow);
       _attachPageWindow(widget.face.pageWindow);
     }
+    final ({String cardId, String text})? typed = _typed;
+    if (typed != null &&
+        (typed.cardId != widget.face.cardId ||
+            (oldWidget.face.showingAnswer && !widget.face.showingAnswer))) {
+      _typed = null;
+    }
     _sync.update(_document(context));
     _syncGestureGate();
   }
@@ -2412,6 +2510,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             callback: (List<dynamic> arguments) {
               final Object? token = arguments.isEmpty ? null : arguments.first;
               if (token is String && mounted) widget.face.onBridgeKey(token);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsTypeAnswerHandler,
+            callback: (List<dynamic> arguments) {
+              _onTypeAnswer(arguments);
               return null;
             },
           );

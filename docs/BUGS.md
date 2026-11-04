@@ -117,6 +117,11 @@
 | [BUG-4006](bugs/BUG-4006-android-online-anime-black-video.md) | 🚧 | 🚧 | Android 在线动画源视频全部黑屏（只有播放器界面） |
 | [BUG-4005](bugs/BUG-4005-scrape-locale-empty-follows-ui-not-original.md) | 🚧 | 🚧 | 刮削资料语言留空时跟随界面语言而非作品原语言 |
 | [BUG-4004](bugs/BUG-4004-app-video-scan-never-prunes-deleted-files.md) | 🚧 | 🚧 | app 本地视频来源重扫从不回收已删除文件，删掉的视频留在待确认刮削队列 |
+| [BUG-4008](bugs/BUG-4008-srs-type-answer-unsupported.md) | ✅ | ✅ | 迁移后打字输入卡变成基础卡 |
+| [BUG-4007](bugs/BUG-4007-srs-first-review-rating-guide.md) | ✅ | ✅ | 首次复习不说明四个评分按钮 |
+| [BUG-4006](bugs/BUG-4006-srs-home-review-today-stats.md) | ✅ | ✅ | 首页复习面板缺少今日复习统计 |
+| [BUG-4005](bugs/BUG-4005-srs-browse-preview-webview-vs-native.md) | ✅ | ✅ | 浏览预览与复习实际卡面不一致 |
+| [BUG-4004](bugs/BUG-4004-srs-front-sentence-no-target-highlight.md) | ✅ | ✅ | 复习卡正面例句不高亮目标词 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
