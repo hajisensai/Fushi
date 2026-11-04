@@ -1319,6 +1319,7 @@
   "audiobook_tts_local_variant_nvidia50": "RTX 50 系专用版",
   "audiobook_tts_local_variant_standard": "标准版",
   "audiobook_tts_local_voice_name": "GPT-SoVITS（本机）",
+  "audiobook_tts_ms_translator_notice": "非官方接口（借用微软翻译 App 的朗读通道）：微软可能随时变更或封禁，随时可能失效。",
   "audiobook_tts_no_voice": "请先设置朗读声音",
   "audiobook_tts_online_notice": "在线服务：朗读的正文会发送给服务提供方。",
   "audiobook_tts_param_api_key": "API 密钥",

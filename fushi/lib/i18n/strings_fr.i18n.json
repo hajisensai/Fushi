@@ -1319,6 +1319,7 @@
   "audiobook_tts_local_variant_nvidia50": "RTX 50 series",
   "audiobook_tts_local_variant_standard": "Standard",
   "audiobook_tts_local_voice_name": "GPT-SoVITS (this computer)",
+  "audiobook_tts_ms_translator_notice": "Unofficial interface (borrowed from the Microsoft Translator app): Microsoft may change or block it at any time, and it may stop working without notice.",
   "audiobook_tts_no_voice": "Set up a read-aloud voice first",
   "audiobook_tts_online_notice": "Online service: the text being read is sent to the provider.",
   "audiobook_tts_param_api_key": "API key",
