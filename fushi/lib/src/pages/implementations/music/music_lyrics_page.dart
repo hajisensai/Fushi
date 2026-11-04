@@ -866,7 +866,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       body: FushiAppUiScaleNeutralizer(
         child: Stack(
           children: <Widget>[
-            // 空白背景按住拖动 = 拖动整个窗口（BUG-4102）；上面的封面 / 按钮 /
+            // 空白背景按住拖动 = 拖动整个窗口（BUG-4115）；上面的封面 / 按钮 /
             // 歌词列表照常先命中。
             Positioned.fill(child: FushiWindowDragArea(child: background)),
             Positioned.fill(
@@ -2186,7 +2186,7 @@ class _TitleBarScope extends StatelessWidget {
     colors: fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface),
     // 顶栏（返回 / 动作组）常驻，版面经 SafeArea 把标题行那一条让给背景：标题行
     // 是隐形拖动条——始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入
-    // （BUG-4102；不表态时只能靠窗口最顶边 8px 停留浮出，那 8px 在 Windows
+    // （BUG-4115；不表态时只能靠窗口最顶边 8px 停留浮出，那 8px 在 Windows
     // 窗口化时压着 resize 把手）。
     child: FushiTitleBarDragBandScope(child: child),
   );

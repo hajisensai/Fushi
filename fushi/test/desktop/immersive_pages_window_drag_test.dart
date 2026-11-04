@@ -14,7 +14,7 @@ import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4102：音乐歌词页、有声书歌词模式、小说阅读器（及漫画、游戏串流）里拖不动
+/// BUG-4115：音乐歌词页、有声书歌词模式、小说阅读器（及漫画、游戏串流）里拖不动
 /// 整个窗口。
 ///
 /// 这些页都上报了 [FushiTitleBarColorScope]（沉浸页），自绘标题行（拖动区 + 窗口
@@ -353,7 +353,7 @@ void main() {
     expect(FushiDesktopTitleBar.captionDragBand.value, isFalse);
   });
 
-  group('沉浸页都要表态（BUG-3929 / BUG-4102）', () {
+  group('沉浸页都要表态（BUG-3929 / BUG-4115）', () {
     String code(String path) =>
         compactCode(maskComments(File(path).readAsStringSync()));
 

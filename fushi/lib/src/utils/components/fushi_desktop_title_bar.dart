@@ -257,7 +257,7 @@ class FushiDesktopTitleBar extends StatefulWidget {
   /// 始终可命中（按住拖动整个窗口、双击最大化，与普通页同一份 `DragToMoveArea`），
   /// 窗口按钮仍隐去，指针进入这一条短暂停留后才淡入、离开淡出——不再靠窗口
   /// 最顶边 8px + 400ms 停留（那 8px 在 Windows 窗口化时压着顶边 resize 把手，
-  /// BUG-4102）。用户 2026-11-04 否决了「按钮常显」。页面一般用
+  /// BUG-4115）。用户 2026-11-04 否决了「按钮常显」。页面一般用
   /// [FushiTitleBarDragBandScope]。
   static final Set<Object> _captionDragBandOwners = <Object>{};
   static final ValueNotifier<bool> _captionDragBand = ValueNotifier<bool>(
@@ -1851,7 +1851,7 @@ class _FushiTitleBarPassthroughScopeState
 /// 同一套撤回语义、同样在 build 里上报）。普通页的标题行本就常显，登记无副作用；
 /// 未挂自绘顶栏时无人消费。
 ///
-/// 每个沉浸页都要表态（BUG-3929 视频页、BUG-4102 阅读器 / 漫画），否则标题行隐去
+/// 每个沉浸页都要表态（BUG-3929 视频页、BUG-4115 阅读器 / 漫画），否则标题行隐去
 /// 时只剩「窗口最顶边 8px 停留」一个入口，而 Windows 窗口化时那 8px 正压着顶边
 /// resize 把手，等于拖不动窗口。chrome 会自动收起的页传 chrome 的真实可见态；
 /// 顶栏常驻、标题行那一条下面只有背景的页改用 [FushiTitleBarDragBandScope]。

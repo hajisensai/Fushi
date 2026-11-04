@@ -6703,7 +6703,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       child: FushiTitleBarColorScope(
         colors: _desktopTitleBarColors(context),
         // 顶栏（固定 / 悬浮唤出）画着时沉浸标题行跟着浮出：唤出工具栏即可拖窗口 /
-        // 点窗口按钮（BUG-4102，与视频页控制条、EPUB 阅读器同一套）；栏收起时
+        // 点窗口按钮（BUG-4115，与视频页控制条、EPUB 阅读器同一套）；栏收起时
         // 标题行照旧隐去，页图顶端照常点。判据与顶栏的 [MangaChromeReveal] 同源。
         child: FushiTitleBarRevealScope(
           revealed: mangaChromeBarPainted(
