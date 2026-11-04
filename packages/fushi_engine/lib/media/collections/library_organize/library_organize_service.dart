@@ -19,9 +19,6 @@ enum LibraryOrganizeStatus {
   /// 没指派提供商 / AI 模块关闭：没发请求，只做了规则那一步。
   noProvider,
 
-  /// 自动整理今天的请求额度用完了：没发请求，只做了规则那一步。
-  overBudget,
-
   /// 用户取消：已完成的批次保留。
   cancelled,
 
@@ -51,12 +48,14 @@ class LibraryOrganizeResult {
   final Set<int> touchedCollectionIds;
 }
 
-/// 自动整理每个域每天最多发几次请求（spec §10.2）。
-const int kLibraryOrganizeDailyAutoRequests = 5;
-
 /// 编排一次整理（spec §4）：规则成组 → 分块问 AI → 逐块裁决落盘 → 收敛。
 ///
 /// 每块落盘一次：中途失败 / 取消时已完成的块保留（每处都在整理记录里、可撤销）。
+///
+/// 自动整理不设本地请求次数上限（2026-11 用户拍板删掉「每库每天 5 次」）：请求
+/// 频率由 [AiChatClient] 里按提供商排队的限速兜底（`requestsPerMinute`、429 /
+/// `Retry-After` 退避）；限速重试仍失败的那一块以 [LibraryOrganizeStatus.failed]
+/// 收场，水位不推进，下一轮接着整理。
 class LibraryOrganizeService {
   LibraryOrganizeService({
     required this.db,
@@ -143,11 +142,6 @@ class LibraryOrganizeService {
       if (useProvider == null) {
         status = LibraryOrganizeStatus.noProvider;
         error = 'provider_not_configured';
-      } else if (trigger == OrganizeTrigger.auto &&
-          await autoRequestsToday(domain) >=
-              kLibraryOrganizeDailyAutoRequests) {
-        status = LibraryOrganizeStatus.overBudget;
-        error = 'daily_budget';
       } else {
         facts = await _facts(domain, onlyEntryKeys);
         final List<List<String>> plan = chunkOrganizeEntries(facts.entries);
@@ -156,14 +150,6 @@ class LibraryOrganizeService {
           for (int i = 0; i < plan.length; i++) {
             if (isCancelled?.call() == true) {
               status = LibraryOrganizeStatus.cancelled;
-              break;
-            }
-            if (trigger == OrganizeTrigger.auto &&
-                requests +
-                        await autoRequestsToday(domain, excludeRunId: runId) >=
-                    kLibraryOrganizeDailyAutoRequests) {
-              status = LibraryOrganizeStatus.overBudget;
-              error = 'daily_budget';
               break;
             }
             onProgress?.call(i, plan.length);
@@ -250,13 +236,12 @@ class LibraryOrganizeService {
       LibraryOrganizeRunsCompanion(
         finishedAt: Value<int?>(_clock().millisecondsSinceEpoch),
         // 只有每一块都处理完才是 done——自动整理的水位只认 done（见
-        // [lastCompletedAutoRunStartedAt]），中途被额度 / 失败 / 取消截断的那批新条目
+        // [lastCompletedAutoRunStartedAt]），中途被失败 / 取消截断的那批新条目
         // 下一轮还会再看。
         status: Value<String>(switch (status) {
           LibraryOrganizeStatus.done => 'done',
           LibraryOrganizeStatus.cancelled => 'cancelled',
           LibraryOrganizeStatus.failed => 'failed',
-          LibraryOrganizeStatus.overBudget => 'partial',
           LibraryOrganizeStatus.noProvider => 'skipped',
         }),
         requestCount: Value<int>(requests),
@@ -276,7 +261,7 @@ class LibraryOrganizeService {
   }
 
   /// [domain] 上最近一次**跑完**（status = done，每一块都处理了）的自动整理的开始
-  /// 时刻；没有返回 null。自动整理只看此后新入库的条目——被额度 / 失败 / 取消截断的
+  /// 时刻；没有返回 null。自动整理只看此后新入库的条目——被失败 / 取消截断的
   /// 那次不推进水位，没处理到的条目下一轮还在。
   Future<int?> lastCompletedAutoRunStartedAt(
     CollectionShelfDomain domain,
@@ -295,32 +280,6 @@ class LibraryOrganizeService {
               ..limit(1))
             .getSingleOrNull();
     return row?.startedAt;
-  }
-
-  /// 今天（本地日）自动整理在 [domain] 上已发的请求数。
-  Future<int> autoRequestsToday(
-    CollectionShelfDomain domain, {
-    int? excludeRunId,
-  }) async {
-    final DateTime now = _clock();
-    final int dayStart = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).millisecondsSinceEpoch;
-    int total = 0;
-    for (final LibraryOrganizeRunRow r
-        in await (db.select(db.libraryOrganizeRuns)..where(
-              (t) =>
-                  t.domain.equals(domain.name) &
-                  t.trigger.equals(OrganizeTrigger.auto.name) &
-                  t.startedAt.isBiggerOrEqualValue(dayStart),
-            ))
-            .get()) {
-      if (r.id == excludeRunId) continue;
-      total += r.requestCount;
-    }
-    return total;
   }
 }
 

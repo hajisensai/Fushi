@@ -298,7 +298,13 @@ List<OpDescription> _describeDiscoveryOps(
     pattern: '$_video/discovery/works/:id/resources',
     summary:
         'Search downloadable resources (torrents) for a discovered work. '
-        'Returns short ids (vr1…) for video.discovery.acquire.',
+        'Returns short ids (vr1…) for video.discovery.acquire. Each resource '
+        'carries burnedInSubtitles (subtitles hard-coded into the picture, '
+        'e.g. 内嵌 / 硬字幕 / HardSub) and dubOnly (dubbed audio without the '
+        'original track); those are listed last. For language learning, do '
+        'not recommend them: prefer original-language releases with soft '
+        '(embedded track / external) subtitles, and only offer a flagged '
+        'one when nothing else exists, saying why.',
     availability: downloads,
     params: const <OpParam>[
       OpParam.string(

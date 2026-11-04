@@ -91,5 +91,18 @@ void main() {
     await mouse.moveTo(const Offset(790, 390));
     await tester.pumpAndSettle();
     expect(tiltSinY(tester), closeTo(0, 1e-9));
+    // 静止后必须回到**纯单位矩阵**：残留的透视项（entry(3,2)）让整摞封面在
+    // 非仿射矩阵下栅格化，网格里每卡每帧都付（滚动卡顿根因之一）。
+    final Matrix4 rest = tester
+        .widget<Transform>(
+          find
+              .descendant(
+                of: find.byType(FushiTilt),
+                matching: find.byType(Transform),
+              )
+              .first,
+        )
+        .transform;
+    expect(rest.isIdentity(), isTrue, reason: '静止倾斜层应为单位矩阵，实为 $rest');
   });
 }

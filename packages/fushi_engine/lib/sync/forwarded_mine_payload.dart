@@ -32,7 +32,7 @@ class ForwardedMinePayload {
     this.sourceUrl,
     this.bookTitleTag,
     this.collectionTag,
-    this.charPositionTag,
+    this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
     this.coverBytes,
@@ -62,10 +62,14 @@ class ForwardedMinePayload {
   final String? bookTitleTag;
   final String? collectionTag;
 
-  /// `AnkiMiningContext.charPositionTag`：制卡所在字符数标签（`chars_12345`）。可空 =
-  /// 非小说来源、开关关闭、锚点取不到，或对端是尚未带这个键的旧版本——服务端解析成
-  /// null，`buildNoteTags` 不追加，卡照建。
-  final String? charPositionTag;
+  /// `AnkiMiningContext.charPositionText`：发送端按其界面语言格式化好的制卡位置文本，
+  /// 服务端写进 MiscInfo（等价）字段。可空 = 非小说来源、开关关闭、锚点取不到，或对端是
+  /// 尚未带这个键的旧版本——服务端解析成 null，不写，卡照建。
+  ///
+  /// wire 键是新的 `charPositionText`，不复用旧 `charPositionTag`：旧版接收端会把
+  /// `charPositionTag` 的值当标签打，送一句带空格的位置文本过去会变成垃圾标签。旧版发送端
+  /// 的 `charPositionTag`（`chars_12345` 标签字面量）不再读：位置不进标签了。
+  final String? charPositionText;
 
   /// `AnkiMiningContext.clipStartMs|clipEndMs`：本卡截取的媒体片段起止（毫秒偏移），
   /// 服务端渲染 `{clip-timestamp}` 用。可空 = 无时间轴来源（书 / galgame），或对端是
@@ -98,7 +102,7 @@ class ForwardedMinePayload {
     if (sourceUrl != null) 'sourceUrl': sourceUrl,
     if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
     if (collectionTag != null) 'collectionTag': collectionTag,
-    if (charPositionTag != null) 'charPositionTag': charPositionTag,
+    if (charPositionText != null) 'charPositionText': charPositionText,
     if (clipStartMs != null) 'clipStartMs': clipStartMs,
     if (clipEndMs != null) 'clipEndMs': clipEndMs,
     if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
@@ -148,7 +152,7 @@ class ForwardedMinePayload {
       sourceUrl: json['sourceUrl'] as String?,
       bookTitleTag: json['bookTitleTag'] as String?,
       collectionTag: json['collectionTag'] as String?,
-      charPositionTag: json['charPositionTag'] as String?,
+      charPositionText: json['charPositionText'] as String?,
       clipStartMs: (json['clipStartMs'] as num?)?.toInt(),
       clipEndMs: (json['clipEndMs'] as num?)?.toInt(),
       coverBytes: tryDecodeBase64(json['coverBase64']),

@@ -44,6 +44,8 @@ SettingsDestination buildCardCreationDestination() {
           AnkiSectionRow.allowDuplicates,
           AnkiSectionRow.overwriteScope,
           AnkiSectionRow.compactGlossaries,
+          // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB），是卡片内容，不再属于「默认标签」。
+          AnkiSectionRow.tagCharPosition,
         ],
       ),
       _rowsSection(
@@ -64,7 +66,6 @@ SettingsDestination buildCardCreationDestination() {
           AnkiSectionRow.tagIncludeCategory,
           AnkiSectionRow.tagBookName,
           AnkiSectionRow.tagNestTitleUnderCategory,
-          AnkiSectionRow.tagCharPosition,
         ],
       ),
       // 两种目标都生效：截图 / 动图 / 音频片段参数（SRS 制卡走同一条采集链路）。
@@ -290,11 +291,12 @@ SettingsDestination buildCardCreationDestination() {
         title: t.auto_add_book_name_to_tags,
         subtitle: t.anki_tag_default_section,
       ),
+      // id 沿用旧名（reveal / 操作目录锚点），行已搬进「卡片内容」分组。
       SettingsBodySearchEntry(
         id: 'card_creation.anki.tag_char_position',
         hasRevealTarget: true,
-        title: t.auto_add_char_position_to_tags,
-        subtitle: t.anki_tag_default_section,
+        title: t.anki_char_position_misc_info,
+        subtitle: t.card_creation_section_content,
       ),
     ],
   );
