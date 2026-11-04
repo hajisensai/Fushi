@@ -66,6 +66,28 @@
   `FUSHI_HDR_PROBE_LOG=<文件>` 同时追加到文件（`flutter test -d windows` 不收引擎日志）。
   取证脚本：`fushi/integration_test/video_compositor_hdr_probe_itest.dart`。
 
+### `engine-d3d-keyed-mutex.patch`（flutter 仓库根目录，叠在前三份之上；BUG-3888）
+
+外部视频纹理改成 keyed mutex 同步。原版 `ExternalTextureD3d` 对 share handle 只做一次
+`eglCreatePbufferFromClientBuffer` + `eglBindTexImage`，之后一直直接采样那块跨设备共享纹理；
+legacy `D3D11_RESOURCE_MISC_SHARED` 资源只靠 OS 隐式串行化，生产端（media_kit 的设备）随时可能
+覆写正在被采样的纹理，ANGLE 自己也从不 `AcquireSync`。补丁：
+
+- `ExternalTextureD3d`：share handle 先在 ANGLE 设备上 `OpenSharedResource` 看 `MiscFlags`。带
+  `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` 时**不绑共享纹理**，另建一块引擎自有的同尺寸同格式纹理，
+  GL 只绑它（`EGL_D3D_TEXTURE_ANGLE`）。每次 resolve（即生产端每 mark 一帧）在 raster 线程上
+  `AcquireSync(0, 0)` → `CopyResource(引擎副本, 共享纹理)` → 立刻 `ReleaseSync(0)`；取不到（生产端正在写，
+  `WAIT_TIMEOUT`）就沿用上一份副本，生产端放锁后再 mark 会重新 resolve。锁从不跨 ANGLE 的 draw 持有
+  （ANGLE 注释：keyed mutex 释放会把资源从管线上解绑，打乱它的状态缓存），raster 线程从不等锁。
+  不带 keyed mutex 的纹理走原版路径不变。
+- `egl::Manager`：构造时解析 ANGLE 的 D3D11 设备并 `ID3D10Multithread::SetMultithreadProtected(TRUE)`——
+  上面的 D3D11 调用发生在 ANGLE 的共享上下文锁之外，而 IO 线程的 resource context 可能同时在 ANGLE
+  里用同一个 immediate context；必须在任何别的线程用设备之前打开（中途切换会和在途调用竞争）。
+  设备没被保护时，带 keyed mutex 的纹理不显示（报错日志），绝不无锁采样。
+- 新导出 `FlutterDesktopGpuSurfaceSupportsKeyedMutex()`：插件用 `GetProcAddress` 查到它才给纹理加 keyed
+  mutex；原版引擎没有这个导出，插件留在 legacy 共享纹理，「补丁引擎与原版引擎都能跑同一份 app」不变。
+- 代价：每个新视频帧在 Flutter 设备上多一次整帧 GPU 拷贝。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
