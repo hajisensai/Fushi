@@ -50,13 +50,11 @@ AnkiConnectService _service(
 class _DualFake {
   _DualFake({
     this.nativeReposition = true,
-    this.legacy,
     this.rpcError = const <String, String>{},
     this.describeStatus = 200,
   });
 
   final bool? nativeReposition;
-  final Object? Function(Map<String, dynamic> body)? legacy;
   final Map<String, String> rpcError;
   final int describeStatus;
 
@@ -116,10 +114,7 @@ class _DualFake {
         );
       }
       return http.Response(
-        jsonEncode(<String, Object?>{
-          'result': legacy?.call(body),
-          'error': null,
-        }),
+        jsonEncode(<String, Object?>{'result': null, 'error': null}),
         200,
         headers: <String, String>{'content-type': 'application/json'},
       );

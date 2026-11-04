@@ -256,7 +256,7 @@ class FakeAnkiConnect {
       return;
     }
     final Object? decoded = jsonDecode(body);
-    final Object? reply = decoded is List
+    final Object reply = decoded is List
         ? <Object?>[for (final Object? item in decoded) _rpcReply(item)]
         : _rpcReply(decoded);
     request.response
