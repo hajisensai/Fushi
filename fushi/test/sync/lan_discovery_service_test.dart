@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
+import 'package:fushi/src/sync/mdns_fallback.dart';
 
 /// Builds a *resolved* [BonsoirService] for the mapper tests. Uses
 /// [BonsoirService.ignoreNorms] so the supplied name/attributes are preserved
@@ -57,10 +60,42 @@ void main() {
             made.add(d);
             return d;
           },
+          // 默认值是 Platform.isLinux：不钉死的话 Linux CI 会走 BUG-4081 回退、
+          // 不抛错还去绑真实 UDP 5353。回退路径见下一条。
+          mdnsFallbackEnabled: false,
         );
         await expectLater(service.startDiscovery(), throwsA(isA<StateError>()));
         expect(service.hasActiveBrowser, isFalse);
         await service.stopDiscovery();
+        await service.dispose();
+        expect(made.single.stopCalls, 0, reason: '未初始化的 browser 不能 stop');
+      },
+    );
+
+    // BUG-4081 回退路径：initialize 失败改走内置 mDNS 客户端（注入假 transport，
+    // 不碰真实 socket），未初始化的 Avahi browser 依旧不能被 stop。
+    test(
+      'initialize failure with the mDNS fallback browses without stopping it',
+      () async {
+        final List<_FakeDiscovery> made = <_FakeDiscovery>[];
+        final _SilentMdnsTransport transport = _SilentMdnsTransport();
+        final LanDiscoveryService service = LanDiscoveryService(
+          deviceId: 'self',
+          discoveryFactory: (String type) {
+            final _FakeDiscovery d = _FakeDiscovery(type, failInitialize: true);
+            made.add(d);
+            return d;
+          },
+          mdnsTransportFactory: () async => transport,
+          mdnsFallbackEnabled: true,
+        );
+        await service.startDiscovery(); // 回退成功：不抛
+        expect(service.usingMdnsFallback, isTrue);
+        expect(service.hasActiveBrowser, isTrue);
+        expect(transport.queries, greaterThan(0), reason: '回退应发出 mDNS 查询');
+        await service.stopDiscovery();
+        expect(service.usingMdnsFallback, isFalse);
+        expect(transport.closed, isTrue);
         await service.dispose();
         expect(made.single.stopCalls, 0, reason: '未初始化的 browser 不能 stop');
       },
@@ -412,4 +447,30 @@ class _FakeDiscovery implements BonsoirDiscovery {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 不连任何网络的 [MdnsTransport]：只记账，收不到应答。
+class _SilentMdnsTransport implements MdnsTransport {
+  final StreamController<MdnsDatagram> _in =
+      StreamController<MdnsDatagram>.broadcast();
+  int queries = 0;
+  bool closed = false;
+
+  @override
+  Stream<MdnsDatagram> get datagrams => _in.stream;
+
+  @override
+  void sendMulticast(Uint8List data) => queries++;
+
+  @override
+  void sendTo(Uint8List data, InternetAddress address, int port) {}
+
+  @override
+  Future<List<InternetAddress>> localAddresses() async => <InternetAddress>[];
+
+  @override
+  void close() {
+    closed = true;
+    unawaited(_in.close());
+  }
 }

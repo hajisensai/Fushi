@@ -19,10 +19,16 @@ import '../helpers/test_platform_services.dart';
 
 /// 健康卡 Anki 行接真实配置状态（BUG-1007）后，页面 watch AnkiViewModel →
 /// ankiRepositoryProvider → platformServicesProvider，测试需注入 fake 平台服务。
+///
+/// 这里的用例讲的都是 Windows 的 hook 捕获工作台：hook 控件受
+/// `GamesModuleForm.supportsHookCapture` 门控，不钉平台就会随宿主机变
+/// （Linux CI 上隐藏、Windows 开发机上显示）。非 Windows 形态用 [_wrapPageOn]。
 Widget _wrapPage(Widget home) {
   return ProviderScope(
     overrides: <Override>[
-      platformServicesProvider.overrideWithValue(testPlatformServices()),
+      platformServicesProvider.overrideWithValue(
+        testPlatformServices(isWindows: true),
+      ),
     ],
     child: MaterialApp(home: home),
   );
