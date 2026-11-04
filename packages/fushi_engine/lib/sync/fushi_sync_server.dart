@@ -43,6 +43,7 @@ import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant_routes.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
@@ -319,6 +320,7 @@ class FushiSyncServer {
     FushiRemoteHistoryService? historyService,
     FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
+    ScreenOcrHost? screenOcr,
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
@@ -347,6 +349,7 @@ class FushiSyncServer {
        _historyService = historyService,
        _libraryService = libraryService,
        _mangaOcrJobs = mangaOcrJobs,
+       _screenOcr = screenOcr,
        _hostJobs = hostJobs,
        _downloads = downloads,
        _assistant = assistant == null ? null : HostAssistantSessions(assistant),
@@ -383,6 +386,9 @@ class FushiSyncServer {
   /// `mangaOcr` 字段）。null = 未接线（headless/单测/host 未启用），端点 404、
   /// capabilities 不带该字段——老 client / 老 host 双向兼容。
   final MangaOcrHostJobManager? _mangaOcrJobs;
+
+  /// 截屏识字（`/api/ocr/screen` + capabilities `screenOcrV1`）。null = host 不提供，端点 404。
+  final ScreenOcrHost? _screenOcr;
 
   /// 通用任务（ASR 等，设计 §3.4）。null = host 不提供，`/api/jobs` 404、能力位无 `jobs`。
   final HostJobManager? _hostJobs;
@@ -813,6 +819,7 @@ class FushiSyncServer {
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
+    await _screenOcr?.dispose();
     await _hostJobs?.disposeAll();
     await _assistant?.dispose();
   }
@@ -950,9 +957,11 @@ class FushiSyncServer {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
       final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
+      final bool screenOcr = await _screenOcr?.isAvailable() ?? false;
       if (_videoRemoteService == null &&
           !_leaderboardLinkAvailable &&
-          !srsRemoteStore) {
+          !srsRemoteStore &&
+          !screenOcr) {
         return response;
       }
       final Map<String, dynamic> capabilities =
@@ -964,6 +973,7 @@ class FushiSyncServer {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
       if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
+      if (screenOcr) capabilities[kScreenOcrCapability] = true;
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {
@@ -975,6 +985,12 @@ class FushiSyncServer {
     }
     // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
     // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。
+    // 截屏识字（Steam Deck 游戏内识字等）：处理逻辑在 fushi_screen_ocr_host.dart。
+    if (reqPath == kScreenOcrPath) {
+      final ScreenOcrHost? screenOcr = _screenOcr;
+      if (screenOcr == null) return shelf.Response.notFound('Screen OCR off');
+      return screenOcr.handle(request);
+    }
     if (reqPath == '/api/ocr/job' || reqPath.startsWith('/api/ocr/job/')) {
       final MangaOcrHostJobManager? mangaOcr = _mangaOcrJobs;
       if (mangaOcr == null) return shelf.Response.notFound('Manga OCR off');

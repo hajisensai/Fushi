@@ -10,6 +10,7 @@ import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/sync/game_stream_host.dart';
@@ -794,6 +795,8 @@ class FushiSyncServerController extends ChangeNotifier {
             // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
             // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
             mangaOcrJobs: _buildMangaOcrJobManager(),
+            // 截屏识字（Steam Deck 游戏内识字插件把截图交给这台 host）：同一个 OCR 服务。
+            screenOcr: _buildScreenOcrHost(),
             // 通用任务 / 代下载 / 订阅：与无头 fushi_server 同一份引擎路由，只是实现
             // 挂在 app 自己的管线上（见 app_download_host.dart）。
             hostJobs: hostJobs,
@@ -892,6 +895,18 @@ class FushiSyncServerController extends ChangeNotifier {
           const <String, MangaOcrService>{},
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
+      ),
+    );
+  }
+
+  /// 截屏识字 host：与远程漫画 OCR 同一个 OCR 服务工厂；未注入返回 null（端点 404）。
+  ScreenOcrHost? _buildScreenOcrHost() {
+    final MangaOcrService Function()? factory = _mangaOcrServiceFactory;
+    if (factory == null) return null;
+    return ScreenOcrHost(
+      service: factory(),
+      workDir: Directory(
+        '${_syncDataDir()}${Platform.pathSeparator}screen_ocr',
       ),
     );
   }

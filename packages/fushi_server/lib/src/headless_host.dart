@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -336,6 +337,11 @@ class HeadlessHost {
             allowLan: !_loopbackOnly,
             libraryService: buildLibraryService(),
             mangaOcrJobs: ocrJobs,
+            // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
+            screenOcr: ScreenOcrHost(
+              service: ocrService,
+              workDir: Directory(p.join(paths.temp.path, 'screen_ocr')),
+            ),
             hostJobs: jobs,
             downloads: downloads,
             subscriptions: downloads.subscriptions,
