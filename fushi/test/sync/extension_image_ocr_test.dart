@@ -151,23 +151,25 @@ void main() {
 
     test('识别本身失败（会话途中被关 / 拿不到 context / 识别器报错）回 200 + {error:failed}，'
         '不是 500——否则扩展会误报「连不上 Fushi」', () async {
-      for (final Object thrown in <Object>[
-        StateError('extension OCR session closed'),
-        StateError('No navigator context to assemble OCR engines'),
-        Exception('recognizer crashed'),
-      ]) {
+      for (final (String label, Never Function() fail)
+          in <(String, Never Function())>[
+            ('session closed', () => throw StateError('session closed')),
+            ('no context', () => throw StateError('No navigator context')),
+            ('recognizer', () => throw Exception('recognizer crashed')),
+          ]) {
+        final String thrown = label;
         final FushiExtensionApiCore core = FushiExtensionApiCore(
-          imageOcr: (Uint8List _) async => throw thrown,
+          imageOcr: (Uint8List _) async => fail(),
         );
         final FushiExtensionApiResponse r = await core.handle(
           FushiExtensionApiCore.ocrImagePath,
           <String, dynamic>{'image': base64Encode(_png)},
         );
-        expect(r.status, 200, reason: '$thrown');
+        expect(r.status, 200, reason: thrown);
         expect(r.json, <String, dynamic>{
           'error': kExtensionOcrRecognizeFailed,
           'blocks': <Object?>[],
-        }, reason: '$thrown');
+        }, reason: thrown);
       }
     });
 
