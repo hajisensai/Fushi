@@ -195,6 +195,46 @@ void main() {
       );
     });
 
+    testWidgets('$ds：长度无上限的内容（高过判型上限）由内层滚动视口滚，不溢出', (
+      WidgetTester tester,
+    ) async {
+      // 600 高窗口的判型上限是 2400；这段内容约 300×20=6000 高。
+      await _pumpDialog(
+        tester,
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            key: const ValueKey<String>('inner-scroll'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int i = 0; i < 300; i++)
+                  SizedBox(height: 20, child: Text('Line $i')),
+              ],
+            ),
+          ),
+        ),
+        size: const Size(420, 600),
+        glass: glass,
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        tester
+            .state<ScrollableState>(_contentScrollable())
+            .position
+            .maxScrollExtent,
+        0,
+        reason: '超过上限按吃满型给视口高度，外壳不再滚，避免两级滚动',
+      );
+      final ScrollableState inner = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('inner-scroll')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(inner.position.maxScrollExtent, greaterThan(0));
+    });
+
     testWidgets('$ds：横屏并排两组设置（Row → Expanded → 设置分组）在矮窗口里按内容高滚', (
       WidgetTester tester,
     ) async {

@@ -13,6 +13,16 @@ const Map<String, (int, String)> _allowed = <String, (int, String)>{
   'lib/src/media/audiobook/tts/gpt_sovits_local_page.dart': (1, '定高日志窗'),
   'lib/src/media/audiobook/tts/irodori_local_page.dart': (1, '定高日志窗'),
   'lib/src/media/audiobook/tts/voicevox_local_page.dart': (1, '定高日志窗'),
+  // 长度无上限的内容（全量字段值 / 错误日志）：可能高过外壳判型用的放大上限
+  // （整窗 4 倍），超过后外壳会把它当吃满型给视口高度，所以由内层滚动视口自己滚。
+  // 内层 SCSV 在外壳里不会形成两级滚动：装得进上限时外层滚、内层全展开；装不进
+  // 时外层不滚、内层滚。
+  'lib/src/anki/anki_mined_card_action_sheet.dart': (1, '全量字段值，长度无上限'),
+  'lib/src/utils/misc/error_details_dialog.dart': (1, '错误详情日志，长度无上限'),
+  'lib/src/pages/implementations/video_download_jobs_panel.dart': (
+    1,
+    '下载错误原文，长度无上限',
+  ),
   // 刮削运行详情：ConstrainedBox(maxHeight) 显式限高的滚动区。
   'lib/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart': (
     2,

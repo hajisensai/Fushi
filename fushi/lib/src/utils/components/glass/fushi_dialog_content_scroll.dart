@@ -17,6 +17,12 @@ import 'package:material_ui/material_ui.dart';
 ///   聚焦的输入框经 [RenderObject.showOnScreen] 自动滚进可见区；
 /// - **吃满型**（上限放大它就跟着放大）：照旧给视口高度，与不套外壳时逐像素一致。
 ///
+/// 放大上限有限（整窗高的 [_kProbeWindowFactor] 倍），比它还高的固定内容会被当成
+/// 吃满型。长度无上限的内容（错误日志、全量字段值）因此由调用点自己包滚动视口：
+/// 内层视口在这里不会形成两级滚动——装得进上限时它全展开、外壳滚；装不进时外壳
+/// 不滚、它自己滚。其余调用点只定宽，不手包滚动（守卫
+/// `fushi_dialog_manual_scroll_guard_test.dart`）。
+///
 /// 视口高度由外层 [_DialogViewportProbe] 在布局时记下，内层
 /// [_RenderDialogFitOrGrow] 隔着 [SingleChildScrollView]（它给子节点无界高度）读取；
 /// 视口高度变了由外层在 layout callback 里把内层标脏。整条链只用
