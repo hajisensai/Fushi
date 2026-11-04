@@ -52,12 +52,15 @@ import 'package:fushi_server/src/native_libs.dart' show onnxRuntimeLibraryName;
 import 'package:fushi_server/src/ocr_session_factory.dart'
     show serverOrtLibraryPath;
 import 'package:fushi_server/src/server_runtime.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 const String kOcrUsage = '''
 ocr manga <bookKey> [--pages 1-20,25] [--model k] [--redo] [--ai-refine [--ai-mode low_confidence|all]]
                                                      对已入库漫画跑本地 OCR，结果写回书的 manga.json
 ocr models [ls|pull|rm] [--model k]                   本地 OCR 模型（manga_ctc）
+ocr screen <image…> [--mode text|page|both] [--repeat n] [--model k]
+                                                     截屏识字测速：整帧当文字图 / 走漫画整页管线，打印耗时与识别行
 manga panels <image…> [--ltr]                         分镜检测（默认日漫右→左阅读序）
 manga panel-model [status|pull]                       分镜模型
 （以上都支持 --json；--ai-refine 用配置文件 ai: 段的那一家提供商）''';
@@ -194,6 +197,19 @@ class OcrCommands extends CliModule {
     addJsonFlag(
       ocr.addCommand('models'),
     ).addOption('model', help: '模型 key（pull 缺省 manga_ctc；rm 必填）');
+    addJsonFlag(ocr.addCommand('screen'))
+      ..addOption(
+        'mode',
+        allowed: <String>['text', 'page', 'both'],
+        defaultsTo: 'both',
+        help: 'text = 整帧当一块文字图（PP 行检测 + 逐行识别）；page = 漫画整页管线',
+      )
+      ..addOption('repeat', defaultsTo: '3', help: '每张图每种模式识别几次（首次含预热）')
+      ..addOption(
+        'model',
+        help: '本地模型 key（manga_ctc）',
+        defaultsTo: kDefaultMangaOcrLocalModel.key,
+      );
     final ArgParser manga = parser.addCommand('manga');
     addJsonFlag(
       manga.addCommand('panels'),
@@ -220,6 +236,8 @@ class OcrCommands extends CliModule {
         return _ocrManga(leaf, ctx);
       case 'ocr models':
         return _models(leaf, ctx);
+      case 'ocr screen':
+        return _screen(leaf, ctx);
       case 'manga panels':
         return _panels(leaf, ctx);
       default:
@@ -335,6 +353,193 @@ class OcrCommands extends CliModule {
     }
     return kExitOk;
   }
+
+  // ── ocr screen ──────────────────────────────────────────────────────
+
+  /// 截屏识字测速（Steam Deck 游戏内识字的可行性测量）：每张截图按 [mode] 跑
+  /// 「整帧文字图」和 / 或「漫画整页」两条现成管线各 `--repeat` 次，报会话建立耗时、
+  /// 逐次耗时与识别出的行。整页模式每次前删掉该页的逐页缓存，保证每次都真跑推理。
+  Future<int> _screen(ArgResults leaf, CliContext ctx) async {
+    const String usageLine =
+        'ocr screen <image…> [--mode text|page|both] [--repeat n] [--model k] [--json]';
+    if (leaf.rest.isEmpty) return _io.usage('至少给一张截图', usageLine);
+    final int? repeat = int.tryParse(leaf['repeat'] as String);
+    if (repeat == null || repeat < 1) {
+      return _io.usage('--repeat 要正整数', usageLine);
+    }
+    final List<File> images = <File>[
+      for (final String path in leaf.rest) File(path),
+    ];
+    for (final File image in images) {
+      if (!image.existsSync()) {
+        _io.err.writeln('找不到截图: ${image.path}');
+        return kExitNoInput;
+      }
+    }
+    final String mode = leaf['mode'] as String;
+    final bool json = wantsJson(leaf);
+    return ctx.withRuntime((ServerRuntime rt) async {
+      final String key = leaf['model'] as String;
+      final Map<String, MangaOcrServiceImpl> services =
+          serverOcrModelServices();
+      final MangaOcrServiceImpl? service = services[key];
+      if (service == null) return _unknownModel(key, services);
+      final String? ortProblem = serverOrtProblem();
+      if (ortProblem != null) {
+        _io.err.writeln(ortProblem);
+        return kExitUnavailable;
+      }
+      if (!(await service.modelStatus()).allReady) {
+        _io.err.writeln(
+          '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
+        );
+        return kExitUnavailable;
+      }
+      final List<Map<String, Object?>> reports = <Map<String, Object?>>[];
+      try {
+        if (mode != 'page') {
+          reports.addAll(await _screenTextMode(service, images, repeat));
+        }
+        if (mode != 'text') {
+          reports.addAll(await _screenPageMode(service, images, repeat));
+        }
+      } on Object catch (e, stack) {
+        // 任务边界：OCR 管线 / ORT 的任何失败都如实报出并记日志，退出码 1。
+        rt.log.log('cli.ocr.screen', e, stack);
+        _io.err.writeln('OCR 失败: $e');
+        return kExitFailure;
+      }
+      if (json) {
+        _io.json(<String, Object?>{'model': key, 'results': reports});
+        return kExitOk;
+      }
+      for (final Map<String, Object?> report in reports) {
+        _io.out.writeln(
+          '[${report['mode']}] ${p.basename('${report['image']}')} '
+          '${report['width']}x${report['height']}  '
+          'session ${report['sessionMs']} ms  runs ${report['runsMs']} ms',
+        );
+        for (final Object? line in report['lines']! as List<Object?>) {
+          _io.out.writeln('    $line');
+        }
+      }
+      return kExitOk;
+    });
+  }
+
+  /// 整帧当一块文字图：`textImagesOnly` 会话（不建漫画检测器）+ `recognizeTextImage`。
+  Future<List<Map<String, Object?>>> _screenTextMode(
+    MangaOcrServiceImpl service,
+    List<File> images,
+    int repeat,
+  ) async {
+    final Stopwatch open = Stopwatch()..start();
+    final MangaOcrPageSession session = await service.openPageSession(
+      imageDirPath: images.first.parent.path,
+      textImagesOnly: true,
+    );
+    final int sessionMs = open.elapsedMilliseconds;
+    final List<Map<String, Object?>> reports = <Map<String, Object?>>[];
+    try {
+      final MangaOcrTextImageSession textSession =
+          session as MangaOcrTextImageSession;
+      for (final File image in images) {
+        final img.Image? decoded = img.decodeImage(await image.readAsBytes());
+        if (decoded == null) throw FormatException('解不开截图: ${image.path}');
+        final img.Image rgbaImage = decoded.convert(numChannels: 4);
+        final Uint8List rgba = rgbaImage.getBytes(order: img.ChannelOrder.rgba);
+        final List<int> runsMs = <int>[];
+        OcrRecognition? last;
+        for (int i = 0; i < repeat; i++) {
+          final Stopwatch run = Stopwatch()..start();
+          last = await textSession.recognizeTextImage(
+            rgba,
+            width: rgbaImage.width,
+            height: rgbaImage.height,
+          );
+          runsMs.add(run.elapsedMilliseconds);
+        }
+        final OcrRecognition result = last!;
+        final List<String> lines = result.lines ?? <String>[result.text];
+        final List<OcrRect>? boxes = result.lineBoxes;
+        reports.add(<String, Object?>{
+          'mode': 'text',
+          'image': image.path,
+          'width': rgbaImage.width,
+          'height': rgbaImage.height,
+          'sessionMs': sessionMs,
+          'runsMs': runsMs,
+          'vertical': result.vertical,
+          'confidence': result.confidence,
+          'glyphBoxes': result.glyphBoxes?.length,
+          'lines': <String>[
+            for (int i = 0; i < lines.length; i++)
+              boxes == null ? lines[i] : '${_rectLabel(boxes[i])} ${lines[i]}',
+          ],
+        });
+      }
+    } finally {
+      await session.close();
+    }
+    return reports;
+  }
+
+  /// 漫画整页管线：普通页会话 + `ocrPage`（检测器 + 补检 + 逐块识别），结果从逐页缓存读回。
+  Future<List<Map<String, Object?>>> _screenPageMode(
+    MangaOcrServiceImpl service,
+    List<File> images,
+    int repeat,
+  ) async {
+    final List<Map<String, Object?>> reports = <Map<String, Object?>>[];
+    for (final File image in images) {
+      final String dir = image.parent.path;
+      final String name = p.basename(image.path);
+      final String cacheDir = await service.resolvePageCacheDirPath(
+        imageDirPath: dir,
+      );
+      final File cached = File(p.join(cacheDir, ocrPageCacheFileName(name)));
+      final Stopwatch open = Stopwatch()..start();
+      final MangaOcrPageSession session = await service.openPageSession(
+        imageDirPath: dir,
+      );
+      final int sessionMs = open.elapsedMilliseconds;
+      final List<int> runsMs = <int>[];
+      try {
+        for (int i = 0; i < repeat; i++) {
+          if (await cached.exists()) await cached.delete();
+          final Stopwatch run = Stopwatch()..start();
+          await session.ocrPage(name);
+          runsMs.add(run.elapsedMilliseconds);
+        }
+      } finally {
+        await session.close();
+      }
+      final OcrPageResult? result = await MangaOcrFilePageCache(
+        cacheDir: Directory(cacheDir),
+        pageNames: <String>[name],
+        pageFiles: <File>[image],
+      ).read('manga_ocr', 0);
+      if (result == null) throw StateError('$name 识别后没有逐页缓存');
+      reports.add(<String, Object?>{
+        'mode': 'page',
+        'image': image.path,
+        'width': result.imageWidth,
+        'height': result.imageHeight,
+        'sessionMs': sessionMs,
+        'runsMs': runsMs,
+        'blocks': result.blocks.length,
+        'lines': <String>[
+          for (final OcrBlock block in result.blocks)
+            '${_rectLabel(block.box)}${block.vertical ? ' (v)' : ''} '
+                '${block.lines.join(' / ')}',
+        ],
+      });
+    }
+    return reports;
+  }
+
+  static String _rectLabel(OcrRect r) =>
+      '[${r.left.round()},${r.top.round()} ${r.width.round()}x${r.height.round()}]';
 
   // ── ocr manga ───────────────────────────────────────────────────────
 
