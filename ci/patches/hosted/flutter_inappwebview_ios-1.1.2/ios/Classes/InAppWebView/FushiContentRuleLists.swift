@@ -57,6 +57,19 @@ public final class FushiContentRuleLists: NSObject {
         return identifier.hasPrefix(IDENTIFIER_PREFIX) ? identifier : nil
     }
 
+    /// `WKContentRuleListStore.default()` is imported as an implicitly
+    /// unwrapped optional: WebKit returns nil when the persistent store cannot
+    /// be opened. Every caller goes through here and degrades to "no shared
+    /// list" (the WebView then loads without content blockers) instead of
+    /// trapping on a nil force-unwrap.
+    private static func defaultStore() -> WKContentRuleListStore? {
+        guard let store = WKContentRuleListStore.default() else {
+            print("Fushi content rule list store is unavailable: WebKit returned no default store")
+            return nil
+        }
+        return store
+    }
+
     /// Memory cache first, then the persistent store. Completion runs on the
     /// main thread (synchronously on a memory hit).
     public func resolve(_ identifier: String, completion: @escaping (WKContentRuleList?) -> Void) {
@@ -64,7 +77,11 @@ public final class FushiContentRuleLists: NSObject {
             completion(list)
             return
         }
-        WKContentRuleListStore.default().lookUpContentRuleList(forIdentifier: identifier) { [weak self] list, _ in
+        guard let store = FushiContentRuleLists.defaultStore() else {
+            completion(nil)
+            return
+        }
+        store.lookUpContentRuleList(forIdentifier: identifier) { [weak self] list, _ in
             DispatchQueue.main.async {
                 if let list = list {
                     self?.lists = [identifier: list]
@@ -93,7 +110,11 @@ public final class FushiContentRuleLists: NSObject {
                 return
             }
             DispatchQueue.main.async {
-                WKContentRuleListStore.default().compileContentRuleList(
+                guard let store = FushiContentRuleLists.defaultStore() else {
+                    result(FlutterError(code: "store_unavailable", message: "WebKit returned no default content rule list store", details: nil))
+                    return
+                }
+                store.compileContentRuleList(
                     forIdentifier: identifier,
                     encodedContentRuleList: encoded) { [weak self] list, error in
                         DispatchQueue.main.async {
@@ -113,7 +134,7 @@ public final class FushiContentRuleLists: NSObject {
     /// Removes every other Fushi list (and upstream's fixed-identifier list)
     /// so the store does not grow with each rule-set update.
     private func purgeStore(keeping identifier: String) {
-        let store = WKContentRuleListStore.default()
+        guard let store = FushiContentRuleLists.defaultStore() else { return }
         store.getAvailableContentRuleListIdentifiers { identifiers in
             for stale in identifiers ?? [] where stale != identifier &&
                 (stale.hasPrefix(FushiContentRuleLists.IDENTIFIER_PREFIX) || stale == FushiContentRuleLists.LEGACY_IDENTIFIER) {

@@ -88,6 +88,35 @@ void main() {
         );
       });
 
+      // `WKContentRuleListStore.default()` 在 Swift 里是隐式解包可选值（IUO）：
+      // `let store = ...default()` 推成 `WKContentRuleListStore?`，再点成员编译失败
+      // （PR #2834 的 ios / macos job 真红）；直接 `.default().xxx` 能编过但 nil 时
+      // 强解包崩溃。代码行里每次取 store 都必须是 `guard let`。
+      test('default store is always unwrapped with guard let', () {
+        final String helper = read(
+          '$classes/InAppWebView/FushiContentRuleLists.swift',
+        );
+        final List<String> uses = helper
+            .split('\n')
+            .where((String line) => !line.trimLeft().startsWith('//'))
+            .where(
+              (String line) =>
+                  line.contains('WKContentRuleListStore.default()'),
+            )
+            .toList();
+        expect(uses, isNotEmpty);
+        final RegExp guarded = RegExp(
+          r'^\s*guard let \w+ = WKContentRuleListStore\.default\(\) else \{',
+        );
+        for (final String line in uses) {
+          expect(
+            guarded.hasMatch(line),
+            isTrue,
+            reason: 'default() 必须 guard let 解包：$line',
+          );
+        }
+      });
+
       test('plugin registers the channel', () {
         final String plugin = read(
           platform == 'ios'
