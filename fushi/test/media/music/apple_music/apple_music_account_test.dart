@@ -57,6 +57,10 @@ class _AccountBridge implements AppleMusicBridge {
     bool autoplay = true,
   }) async {}
   @override
+  Future<void> playStation(String stationId, {bool autoplay = true}) async {}
+  @override
+  Future<void> skipToNext() async {}
+  @override
   Future<void> pause() async {}
   @override
   Future<void> resume() async {}

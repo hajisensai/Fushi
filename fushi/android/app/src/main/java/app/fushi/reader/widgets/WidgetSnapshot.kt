@@ -14,8 +14,10 @@ import java.io.File
 /**
  * One media entry shown by the Continue and Shelf widgets.
  *
- * [kind] is `book`, `manga` or `video`; [id] is the Dart-side stable id the
- * `fushi://widget/continue` deep link carries back.
+ * [kind] is `book`, `manga`, `video` or `game`; [id] is the Dart-side stable id. [link] is the
+ * deep link Dart built for the card (`continue` for local items, `server` for media-server items,
+ * a `tab/...` link for interconnect remote items); empty in pre-link snapshots, where
+ * [mediaUrl] rebuilds the `continue` link from [kind] / [id].
  */
 data class WidgetMedia(
     val kind: String,
@@ -30,6 +32,7 @@ data class WidgetMedia(
     val lastActive: String = "",
     /** Pre-formatted time to finish ("≈2h 10m left"), empty when it cannot be estimated. */
     val remaining: String = "",
+    val link: String = "",
 )
 
 /** One task row of the Downloads widget. [state] is active | queued | paused | failed. */
@@ -210,13 +213,44 @@ object WidgetStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, json).apply()
     }
 
-    fun load(context: Context): WidgetSnapshot? {
+    fun load(context: Context, now: Long = System.currentTimeMillis()): WidgetSnapshot? {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null) ?: return null
         return try {
-            parse(JSONObject(raw))
+            parse(resolveRollover(JSONObject(raw), now), now)
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Once the next stat-day boundary (`rollover.at`) has passed, swap in the day-dependent blocks
+     * Dart pre-computed for that day (today zeroed, streak kept or broken, week / month shifted).
+     * Same rule as the Apple widgets' `resolved(at:)`; nothing is computed here.
+     */
+    internal fun resolveRollover(o: JSONObject, now: Long): JSONObject {
+        val r = o.optJSONObject("rollover") ?: return o
+        if (now < r.optLong("at", Long.MAX_VALUE)) return o
+        val out = JSONObject(o.toString())
+        for (key in arrayOf("day", "today", "goals", "week", "month", "streak", "heatmap")) {
+            if (r.has(key)) out.put(key, r.get(key))
+        }
+        out.remove("rollover")
+        return out
+    }
+
+    /** Due count at [now] from `srs.timeline` (last step with `at <= now`); no timeline -> `srs.due`. */
+    internal fun srsDueAt(srs: JSONObject?, now: Long): Int {
+        val fallback = srs?.optInt("due", 0) ?: 0
+        val steps = srs?.optJSONArray("timeline") ?: return fallback
+        var due = fallback
+        var found = false
+        for (i in 0 until steps.length()) {
+            val step = steps.optJSONObject(i) ?: continue
+            if (step.optLong("at", Long.MAX_VALUE) > now) break
+            due = step.optInt("due", due)
+            found = true
+        }
+        return if (found) due.coerceAtLeast(0) else fallback
     }
 
     /**
@@ -241,7 +275,7 @@ object WidgetStore {
 
     private fun JSONObject.intOrNull(key: String): Int? = if (has(key) && !isNull(key)) optInt(key) else null
 
-    private fun parse(o: JSONObject): WidgetSnapshot {
+    private fun parse(o: JSONObject, now: Long): WidgetSnapshot {
         val labels = HashMap<String, String>()
         o.optJSONObject("labels")?.let { l -> l.keys().forEach { k -> labels[k] = l.optString(k) } }
         val modules = o.optJSONObject("modules")
@@ -369,7 +403,8 @@ object WidgetStore {
             weekMinutes = week?.ints("minutes").orEmpty(),
             weekDays = days,
             srsEnabled = srsEnabled,
-            srsDue = srs?.optInt("due", 0) ?: 0,
+            // Reviews keep ripening without the app: pick the pre-computed step for now.
+            srsDue = srsDueAt(srs, now),
             generatedAt = o.optLong("generatedAt", 0L),
             moduleSrs = modules?.optBoolean("srs", true) ?: true,
             moduleMusic = modules?.optBoolean("music", true) ?: true,
@@ -441,6 +476,7 @@ object WidgetStore {
         position = o.optString("position"),
         lastActive = o.optString("lastActive"),
         remaining = o.optString("remaining"),
+        link = o.optString("link"),
     )
 }
 

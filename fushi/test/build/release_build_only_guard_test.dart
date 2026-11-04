@@ -154,6 +154,44 @@ void main() {
     );
   });
 
+  test('build_only 签 iOS 包但不传：签名门与上传门分开', () {
+    // build_only 是发版前的演练：签名链路（描述文件、小组件扩展的手动签名、ExportOptions）
+    // 必须在这里跑到，否则它坏了要到真发版才红（2026-11 FushiWidgets 签名冲突就是这样漏的）。
+    final String desktop = _desktopYaml().readAsStringSync();
+    final int at = desktop.indexOf(r'SIGNED="$TESTFLIGHT"');
+    expect(at, greaterThan(-1), reason: 'signing 步骤没有单独的签名门');
+    final String block = desktop.substring(at, desktop.indexOf('fi\n', at));
+    expect(block, contains(r'[ "$CREDS" = true ]'));
+    expect(block, contains(r'[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]'));
+    expect(block, contains(r'[ "${INPUT_BUILD_ONLY:-}" = true ]'));
+    expect(desktop, contains(r'echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"'));
+
+    for (final String step in const <String>[
+      'Import iOS distribution certificate',
+      'Install provisioning profile and signing xcconfig',
+      'Build signed iOS App Store IPA',
+      'Upload signed TestFlight IPA artifact',
+    ]) {
+      expect(
+        RegExp(
+          '- name: ${RegExp.escape(step)}\\n\\s+'
+          "if: steps\\.signing\\.outputs\\.signed == 'true'",
+        ).hasMatch(desktop),
+        isTrue,
+        reason: '「$step」必须挂签名门（signed），build_only 才会真跑签名链路',
+      );
+    }
+    // 上传 TestFlight 的 job 只认上传门；挂成 signed 就是 build_only 顺手外发。
+    final int job = desktop.indexOf('\n  testflight:\n');
+    expect(job, greaterThan(-1));
+    final String jobHead = desktop.substring(
+      job,
+      desktop.indexOf('steps:', job),
+    );
+    expect(jobHead, contains("needs.ios.outputs.testflight == 'true'"));
+    expect(desktop.contains('outputs.signed', job), isFalse);
+  });
+
   test('build_only 不影响两条上传本体资产的路径本身存在', () {
     // 2026-09-08：正式版桥包硬门已按用户决定移除（老 Hibiki v1.2.0 用户已迁完），
     // 所以这里不再断言那道门。改为守住一件仍然要紧的事：build_only 只该摁掉

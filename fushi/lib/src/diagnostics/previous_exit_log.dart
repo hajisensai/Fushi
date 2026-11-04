@@ -838,9 +838,17 @@ List<File> listMacCrashReports(
 
 // ───────────────────────── iOS ─────────────────────────
 
+/// 崩溃线程最多摘这么多帧。内存耗尽的 abort 头三帧总是 libsystem_kernel / pthread / c，
+/// 真正有用的 Runner（静态链接的 Rust）/ Flutter 帧在后面，12 帧经常截在 FFI 入口之前（BUG-4102）。
+const int kMetricKitMaxFrames = 32;
+
 /// 把 `MXCrashDiagnostic.jsonRepresentation()` 摘成一段：元数据 + 归属线程的调用链
-/// 前若干帧（binaryName + 偏移）。解析不了返回 null。
-String? summarizeMetricKitCrash(String json, {int maxFrames = 12}) {
+/// 前若干帧（binaryName + 偏移）+ 这些帧所在镜像的 UUID（拿构建的 dSYM 符号化时按 UUID
+/// 对上是哪一次构建，`atos -o <dSYM> -l 0x100000000 <0x100000000+偏移>`）。解析不了返回 null。
+String? summarizeMetricKitCrash(
+  String json, {
+  int maxFrames = kMetricKitMaxFrames,
+}) {
   final Object? decoded;
   try {
     decoded = jsonDecode(json);
@@ -860,7 +868,11 @@ String? summarizeMetricKitCrash(String json, {int maxFrames = 12}) {
     final Object? reason = meta['terminationReason'];
     if (reason != null) out.write('\ntermination: $reason');
     final Object? vm = meta['virtualMemoryRegionInfo'];
-    if (vm != null) out.write('\nvm region: $vm');
+    if (vm is String && vm.isNotEmpty) out.write('\nvm region: $vm');
+    // 原生侧调用树超限、连崩溃线程都放不下时只剩元数据（AppDelegate.swift
+    // FushiCrashDiagnostics）：明说栈被丢了，不让读报告的人以为系统没给。
+    final Object? dropped = meta['callStackTreeDropped'];
+    if (dropped != null) out.write('\ncall stack tree dropped: $dropped bytes');
   }
   final Object? tree = decoded['callStackTree'];
   if (tree is Map && tree['callStacks'] is List) {
@@ -871,13 +883,29 @@ String? summarizeMetricKitCrash(String json, {int maxFrames = 12}) {
         .firstOrNull;
     Object? frames = attributed?['callStackRootFrames'];
     int n = 0;
+    final Map<String, String> uuids = <String, String>{};
     if (frames is List && frames.isNotEmpty) out.write('\ncrashed thread:');
     while (frames is List && frames.isNotEmpty && n < maxFrames) {
       final Object? f = frames.first;
       if (f is! Map) break;
-      out.write('\n  ${f['binaryName']}+${f['offsetIntoBinaryTextSegment']}');
+      final Object? name = f['binaryName'];
+      out.write('\n  $name+${f['offsetIntoBinaryTextSegment']}');
+      final Object? uuid = f['binaryUUID'];
+      if (name is String && uuid is String && uuid.isNotEmpty) {
+        uuids.putIfAbsent(name, () => uuid);
+      }
       n++;
       frames = f['subFrames'];
+    }
+    if (uuids.isNotEmpty) {
+      out.write('\nbinary uuids:');
+      for (final MapEntry<String, String> e in uuids.entries) {
+        out.write('\n  ${e.key}=${e.value}');
+      }
+    }
+    final Object? others = tree['callStacksDropped'];
+    if (others is int && others > 0) {
+      out.write('\nother threads dropped: $others');
     }
   }
   if (out.isEmpty) return null;

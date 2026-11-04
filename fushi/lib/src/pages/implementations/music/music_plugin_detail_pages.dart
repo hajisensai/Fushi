@@ -334,6 +334,17 @@ class _MusicPluginCollectionPageState
     );
   }
 
+  /// 收藏状态：用户在本页收藏 / 取消后以它为准（插件给的是打开时的状态）。
+  bool? _collectedOverride;
+
+  /// 加歌 / 移除后重拉曲目（保留旧列表，不闪加载态）。
+  void _reloadTracks() {
+    if (!mounted) return;
+    setState(() {
+      _data = _load();
+    });
+  }
+
   /// 曲目行（多碟专辑按碟分组，组内序号与圆角按组算）。
   List<Widget> _trackRows(
     _Collection c,
@@ -367,6 +378,14 @@ class _MusicPluginCollectionPageState
               ref,
               widget.manifest,
               tracks[group.value[j]],
+            ),
+            menu: musicPluginTrackMenuButton(
+              context,
+              ref,
+              widget.manifest,
+              tracks[group.value[j]],
+              inPlaylist: c.playlist,
+              onChanged: _reloadTracks,
             ),
             onTap: () => play(start: group.value[j]),
           ),
@@ -463,6 +482,20 @@ class _MusicPluginCollectionPageState
                           label: Text(t.music_shuffle_play),
                         ),
                       ),
+                      ..._pluginCollectionActions(
+                        context,
+                        ref,
+                        widget.manifest,
+                        album: album,
+                        playlist: playlist,
+                        collected:
+                            _collectedOverride ??
+                            album?.collected ??
+                            playlist?.collected,
+                        onCollected: (bool on) {
+                          if (mounted) setState(() => _collectedOverride = on);
+                        },
+                      ),
                     ],
                   ),
                 ],
@@ -549,7 +582,7 @@ class _MusicPluginCollectionPageState
 }
 
 /// 艺人页的页签（插件没给对应数据 / 能力时不出现）。
-enum _ArtistTab { popular, albums, mvs, details }
+enum _ArtistTab { popular, albums, mvs, similar, details }
 
 /// 一个分页列表（艺人专辑 / MV）的加载状态。
 class _PagedFeed<T> {
@@ -621,6 +654,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
       _tabs = _tabsFor(d);
       final _ArtistTab? first = _tab ?? _tabs.firstOrNull;
       if (first != null) _ensureLoaded(first);
+      unawaited(_loadSimilar(d));
     }
     return d;
   }
@@ -630,8 +664,33 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
     if (_can(MusicPluginCapability.artistAlbums) || d.albums.isNotEmpty)
       _ArtistTab.albums,
     if (_can(MusicPluginCapability.artistMvs)) _ArtistTab.mvs,
+    // 相似艺人取到才出页签（网易云要登录，取不到不报错、不占位）。
+    if (_similar case final List<MusicPluginArtist> s when s.isNotEmpty)
+      _ArtistTab.similar,
     if (d.artist.hasDetails) _ArtistTab.details,
   ];
+
+  /// 相似艺人（`artistSimilar`）；null = 没取到 / 没有该能力。
+  List<MusicPluginArtist>? _similar;
+
+  /// 关注状态：用户在本页关注 / 取消后以它为准。
+  bool? _followedOverride;
+
+  Future<void> _loadSimilar(_ArtistData d) async {
+    if (!_can(MusicPluginCapability.artistSimilar)) return;
+    try {
+      final List<MusicPluginArtist> s = await _src.similarArtists(
+        widget.artist.id,
+      );
+      if (!mounted || s.isEmpty) return;
+      setState(() {
+        _similar = s;
+        _tabs = _tabsFor(d);
+      });
+    } on Object catch (e) {
+      debugPrint('music plugin similarArtists failed: $e');
+    }
+  }
 
   _PagedFeed<Object>? _feedOf(_ArtistTab? tab) => switch (tab) {
     _ArtistTab.albums when _can(MusicPluginCapability.artistAlbums) => _albums,
@@ -706,6 +765,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
     _ArtistTab.popular => t.music_plugin_popular,
     _ArtistTab.albums => t.music_section_albums,
     _ArtistTab.mvs => t.music_mv_section,
+    _ArtistTab.similar => t.music_artist_similar,
     _ArtistTab.details => t.music_plugin_artist_tab_details,
   };
 
@@ -800,14 +860,45 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
                           label: Text(t.music_shuffle_play),
                         ),
                       ),
+                      ..._followAction(context, a),
                     ],
                   ),
                 ),
+              if (d.tracks.isEmpty) ..._followAction(context, a),
             ],
           ),
         ),
       ],
     );
+  }
+
+  /// 关注 / 取消关注（`collect`）的「更多」按钮；插件不支持时为空。
+  List<Widget> _followAction(BuildContext context, MusicPluginArtist a) {
+    List<MusicMenuAction> actions() => _collectActions(
+      ref,
+      widget.manifest,
+      MusicPluginCollectType.artist,
+      widget.artist.id,
+      collected: _followedOverride ?? a.collected,
+      onCollected: (bool on) {
+        if (mounted) setState(() => _followedOverride = on);
+      },
+    );
+    if (actions().isEmpty) return const <Widget>[];
+    return <Widget>[
+      musicMoreButton(
+        key: const ValueKey<String>('music-plugin-artist-more'),
+        onTap: () => unawaited(
+          showMusicActionMenu(
+            context,
+            title: a.name,
+            icon: FushiIcons.person,
+            actions: actions(),
+            errorText: (Object e) => _pluginActionError(widget.manifest, e),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// 分页列表尾部：加载中 / 出错重试 / 空。
@@ -902,6 +993,12 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
                     widget.manifest,
                     d.tracks[i],
                   ),
+                  menu: musicPluginTrackMenuButton(
+                    context,
+                    ref,
+                    widget.manifest,
+                    d.tracks[i],
+                  ),
                   onTap: () =>
                       _playTracks(ref, widget.manifest.id, d.tracks, start: i),
                 ),
@@ -959,6 +1056,25 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
             ),
           ),
           SliverToBoxAdapter(child: _feedFooter(tab, _mvs)),
+        ];
+      case _ArtistTab.similar:
+        final List<MusicPluginArtist> similar =
+            _similar ?? const <MusicPluginArtist>[];
+        return <Widget>[
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              fushiStaggeredItemBuilder(
+                (BuildContext context, int i) => musicPluginItemTile(
+                  context,
+                  ref,
+                  widget.manifest,
+                  similar,
+                  i,
+                ),
+              ),
+              childCount: similar.length,
+            ),
+          ),
         ];
       case _ArtistTab.details:
         final List<Widget> children = _detailChildren(d.artist);

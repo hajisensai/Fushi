@@ -83,6 +83,10 @@ struct FushiWidgetSnapshot: Decodable {
   var srs: Srs?
   var vocab: [Vocab]
   var nowPlaying: NowPlaying?
+  /// 近 16 周（112 天）热力图；旧快照没有时为 nil（视图退回 35 天的 `month`）。
+  var heatmap: Heatmap?
+  /// 下一个统计日的样子与切换时刻；timeline 在 `rollover.at` 换上（见 [resolved(at:)]）。
+  var rollover: Rollover?
 
   struct Privacy: Decodable {
     var hideTitles: Bool
@@ -101,7 +105,7 @@ struct FushiWidgetSnapshot: Decodable {
   }
 
   struct Media: Decodable, Hashable {
-    /// `book` / `manga` / `video`（Dart `WidgetMediaKind.wire`）。
+    /// `book` / `manga` / `video` / `game`（Dart `WidgetMediaKind.wire`）。
     var kind: String
     var id: String
     var title: String
@@ -114,10 +118,13 @@ struct FushiWidgetSnapshot: Decodable {
     var position: String
     /// 「还需 2 小时」之类；估不出来为空串。
     var remaining: String
+    /// 点卡片打开的深链，Dart 给好（本机条目 `continue`、服务器条目 `server`、互联远端
+    /// 条目对应 tab）；旧快照没有时按 `kind` / `id` 拼 `continue`。
+    var link: String
 
     init(
       kind: String, id: String, title: String, subtitle: String = "", progress: Double = 0,
-      cover: String = "", position: String = "", remaining: String = ""
+      cover: String = "", position: String = "", remaining: String = "", link: String = ""
     ) {
       self.kind = kind
       self.id = id
@@ -127,6 +134,7 @@ struct FushiWidgetSnapshot: Decodable {
       self.cover = cover
       self.position = position
       self.remaining = remaining
+      self.link = link.isEmpty ? FushiLinks.continueItem(kind: kind, id: id) : link
     }
 
     init(from decoder: Decoder) throws {
@@ -139,10 +147,9 @@ struct FushiWidgetSnapshot: Decodable {
       cover = c.string("cover")
       position = c.string("position")
       remaining = c.string("remaining")
+      let decoded = c.string("link")
+      link = decoded.isEmpty ? FushiLinks.continueItem(kind: kind, id: id) : decoded
     }
-
-    /// 点卡片打开的深链（与 Dart `WidgetContinueLink.toUri()` 同形）。
-    var link: String { FushiLinks.continueItem(kind: kind, id: id) }
   }
 
   struct Today: Decodable {
@@ -217,12 +224,15 @@ struct FushiWidgetSnapshot: Decodable {
     var learn: Int
     var review: Int
     var reviewedToday: Int
+    /// 待复习数的预排（Dart `buildWidgetSrsDueTimeline`）：只有晚于生成时刻的变化点
+    /// （学习步到期 / SRS 换日）；「现在」就是 `due`。只有 `fushi` 时有。
+    var timeline: [DueStep]
 
     var enabled: Bool { provider == "fushi" }
 
     init(
       provider: String, due: Int = 0, newCount: Int = 0, learn: Int = 0, review: Int = 0,
-      reviewedToday: Int = 0
+      reviewedToday: Int = 0, timeline: [DueStep] = []
     ) {
       self.provider = provider
       self.due = due
@@ -230,6 +240,7 @@ struct FushiWidgetSnapshot: Decodable {
       self.learn = learn
       self.review = review
       self.reviewedToday = reviewedToday
+      self.timeline = timeline
     }
 
     init(from decoder: Decoder) throws {
@@ -240,6 +251,88 @@ struct FushiWidgetSnapshot: Decodable {
       learn = c.int("learn")
       review = c.int("review")
       reviewedToday = c.int("reviewedToday")
+      timeline = (try? c.decode([DueStep].self, forKey: AnyKey("timeline"))) ?? []
+    }
+
+    /// `date` 时刻该显示的待复习数：`at <= date` 的最后一点；一点都没过就是 `due`。
+    func dueCount(at date: Date) -> Int {
+      let ms = date.timeIntervalSince1970 * 1000
+      return timeline.last(where: { $0.at <= ms })?.due ?? due
+    }
+  }
+
+  struct DueStep: Decodable {
+    /// epoch 毫秒。
+    var at: Double
+    var due: Int
+
+    init(at: Double, due: Int) {
+      self.at = at
+      self.due = due
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      at = c.double("at")
+      due = c.int("due")
+    }
+  }
+
+  struct Heatmap: Decodable {
+    /// 每天 0…4 档（Dart `widgetHeatLevel`，固定阈值），最旧 → 今天。
+    var levels: [Int]
+    /// `levels[0]` 那天的 ISO 星期（周一 = 1）。
+    var firstWeekday: Int
+    var time: String
+    var activeDays: Int
+
+    init(levels: [Int], firstWeekday: Int, time: String = "", activeDays: Int = 0) {
+      self.levels = levels
+      self.firstWeekday = firstWeekday
+      self.time = time
+      self.activeDays = activeDays
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      levels = ((try? c.decode([Int].self, forKey: AnyKey("levels"))) ?? []).map { max(0, min(4, $0)) }
+      firstWeekday = max(1, min(7, c.int("firstWeekday", default: 1)))
+      time = c.string("time")
+      activeDays = c.int("activeDays")
+    }
+  }
+
+  /// 零点切换：Dart 按**下一个统计日**把只依赖日期的块再算一遍（今日清零、连续天数按
+  /// 规则延续或中断、周 / 月 / 热力图左移一格）。扩展不做任何日期推算，到点整块换上。
+  struct Rollover: Decodable {
+    /// 下一个统计日边界（epoch 毫秒，含用户设的翻日时刻）。
+    var at: Double
+    var day: String
+    var today: Today?
+    var month: Month?
+    var streak: Streak?
+    var heatmap: Heatmap?
+
+    init(
+      at: Double, day: String, today: Today? = nil, month: Month? = nil, streak: Streak? = nil,
+      heatmap: Heatmap? = nil
+    ) {
+      self.at = at
+      self.day = day
+      self.today = today
+      self.month = month
+      self.streak = streak
+      self.heatmap = heatmap
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: AnyKey.self)
+      at = c.double("at")
+      day = c.string("day")
+      today = try? c.decode(Today.self, forKey: AnyKey("today"))
+      month = try? c.decode(Month.self, forKey: AnyKey("month"))
+      streak = try? c.decode(Streak.self, forKey: AnyKey("streak"))
+      heatmap = try? c.decode(Heatmap.self, forKey: AnyKey("heatmap"))
     }
   }
 
@@ -316,7 +409,8 @@ struct FushiWidgetSnapshot: Decodable {
   init(
     day: String, generatedAt: Double, labels: [String: String] = [:], privacy: Privacy = Privacy(),
     modules: [String: Bool] = [:], shelf: [Media] = [], today: Today? = nil, month: Month? = nil,
-    streak: Streak? = nil, srs: Srs? = nil, vocab: [Vocab] = [], nowPlaying: NowPlaying? = nil
+    streak: Streak? = nil, srs: Srs? = nil, vocab: [Vocab] = [], nowPlaying: NowPlaying? = nil,
+    heatmap: Heatmap? = nil, rollover: Rollover? = nil
   ) {
     v = Self.currentVersion
     self.day = day
@@ -331,6 +425,8 @@ struct FushiWidgetSnapshot: Decodable {
     self.srs = srs
     self.vocab = vocab
     self.nowPlaying = nowPlaying
+    self.heatmap = heatmap
+    self.rollover = rollover
   }
 
   init(from decoder: Decoder) throws {
@@ -348,6 +444,42 @@ struct FushiWidgetSnapshot: Decodable {
     srs = try? c.decode(Srs.self, forKey: AnyKey("srs"))
     vocab = (try? c.decode([Vocab].self, forKey: AnyKey("vocab"))) ?? []
     nowPlaying = try? c.decode(NowPlaying.self, forKey: AnyKey("nowPlaying"))
+    heatmap = try? c.decode(Heatmap.self, forKey: AnyKey("heatmap"))
+    rollover = try? c.decode(Rollover.self, forKey: AnyKey("rollover"))
+  }
+
+  /// `date` 时刻小组件该显示的快照：过了 `rollover.at` 就换上下一个统计日的块（`day`
+  /// 一起换，「今日一词」随之轮换）；复习数取预排里该时刻的那一项。只换 Dart 给好的值，
+  /// 不推算。
+  func resolved(at date: Date) -> FushiWidgetSnapshot {
+    var out = self
+    if let next = rollover, date.timeIntervalSince1970 * 1000 >= next.at {
+      out.day = next.day
+      if let value = next.today { out.today = value }
+      if let value = next.month { out.month = value }
+      if let value = next.streak { out.streak = value }
+      if let value = next.heatmap { out.heatmap = value }
+      out.rollover = nil
+    }
+    if var srs = out.srs, srs.enabled {
+      srs.due = srs.dueCount(at: date)
+      out.srs = srs
+    }
+    return out
+  }
+
+  /// timeline 需要换画面的时刻：(`now`, `horizon`] 里的复习预排点与零点切换点。
+  func changeDates(after now: Date, until horizon: Date) -> [Date] {
+    var dates: Set<Date> = []
+    for step in srs?.timeline ?? [] {
+      let date = Date(timeIntervalSince1970: step.at / 1000)
+      if date > now && date <= horizon { dates.insert(date) }
+    }
+    if let at = rollover?.at {
+      let date = Date(timeIntervalSince1970: at / 1000)
+      if date > now && date <= horizon { dates.insert(date) }
+    }
+    return dates.sorted()
   }
 
   func label(_ key: String, _ fallback: String) -> String {
