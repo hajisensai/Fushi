@@ -1443,7 +1443,6 @@ class AnotherPopupPart {
       },
       'lib/src/media/video/video_volume_overlays.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest',
         'fontSize:',
       },
       'lib/src/models/app_model.dart': <String>{
