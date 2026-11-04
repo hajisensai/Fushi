@@ -1,4 +1,4 @@
-## BUG-4013 · ios-virtual-address-exhaustion
+## BUG-4013 · iOS 同步 / 播歌 / 浏览器搜索时闪退（进程虚拟地址空间耗尽）
 - **报告**：2026-11-04（用户：iPhone 17 上同步、播歌、浏览器搜索时闪退）
 - **真实性**：✅ 真 bug。19 份 .ips 全是 SIGABRT 于分配失败（Swift / UIKit 触摸事件 / WebKit 规则编译 / Rust / Dart VM 各处），内存摘要 mapped file 常驻 4.6–5.3 GB、物理写入很少：**进程虚拟地址空间耗尽**，不是物理内存不够，也不是同步 / 播放 / 浏览器各自的逻辑错。地址占用来源：
   - 词典整份映射：`native/fushidicts/fushidicts_src/query.cpp` `add_dict`（hash.table / bloom.filter / blobs.bin / media.bin / media.idx 每个引擎各映射一份，39 本约 3.8 GB）。
