@@ -1099,7 +1099,7 @@ class SrsSyncScheduler {
       }
       if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
-    // 首次同步确认之后的第一轮：旧库先并成操作再上传（BUG-4005）。在一轮里只从这一条位置收（不再拿通道锁）。
+    // 首次同步确认之后的第一轮：旧库先并成操作再上传（BUG-4011）。在一轮里只从这一条位置收（不再拿通道锁）。
     _step('migrate');
     await ensureMigrated(store, within: backend);
     if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
@@ -1239,7 +1239,7 @@ class SrsSyncScheduler {
       _linkDecided.clear();
       _onDataChanged();
     });
-    // 候选在某条通道上：在那条通道的锁里并入（并入之前要从它收目标 uid 的数据，BUG-4005；通道锁不可重入，先锁后
+    // 候选在某条通道上：在那条通道的锁里并入（并入之前要从它收目标 uid 的数据，BUG-4011；通道锁不可重入，先锁后
     // [_serially] 与常规轮次同一顺序）。[_channels] 把每条通道的错误收进 errors，这里原样抛出。
     Object? failure;
     StackTrace? failureStack;
@@ -1429,7 +1429,7 @@ class SrsSyncScheduler {
     }
   }
 
-  /// 推迟的旧库迁移（BUG-4005；app 打开 store 时 `deferMigration`，srs_providers.dart）：**首次同步确认之前不迁移、
+  /// 推迟的旧库迁移（BUG-4011；app 打开 store 时 `deferMigration`，srs_providers.dart）：**首次同步确认之前不迁移、
   /// 也不拉**（用户拍板：弹框没回答前什么都不做，选「稍后」同样不做）；确认之后、第一轮上传之前，先从已配置的同步
   /// 位置只拉不发收一轮（[pullInto]，最多等 [_migratePullBudget]），再迁移——迁移只包还没有任何设备的操作代表的
   /// 旧行，第二台设备就只补差，不再把同一份旧库整个再包一遍。已迁移时立即返回（每个 profile 一生一次）。
@@ -1479,7 +1479,7 @@ class SrsSyncScheduler {
     return f;
   }
 
-  /// 只拉不发（BUG-4005，sync2/srs_sync2_pull_first.dart）：把已配置的同步位置（云盘 / 互联通道、本机目录、
+  /// 只拉不发（BUG-4011，sync2/srs_sync2_pull_first.dart）：把已配置的同步位置（云盘 / 互联通道、本机目录、
   /// 文件夹位置）上 [store] 这个 profile 已有的操作收进 [store]，最多等 [budget]。两个用处：
   /// - 本机旧库迁移之前（[ensureMigrated]）：迁移只包还没有任何设备的操作代表的旧行，先收到别的设备迁出的那份，
   ///   第二台设备就只补差；

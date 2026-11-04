@@ -1278,7 +1278,7 @@ const MIGRATING_KEY: &str = "sync2_migrating/";
 /// 返回排进的条数。
 ///
 /// 「已被代表」逐条判（以前整库判：本库里只要有别的设备的操作就整个不迁，自己独有的旧行永远不进操作日志；本库里
-/// 还没有别的设备的操作就整个包一遍，两台设备各迁一遍同一份旧库 = 两条重复的操作流，见 BUG-4005）：
+/// 还没有别的设备的操作就整个包一遍，两台设备各迁一遍同一份旧库 = 两条重复的操作流，见 BUG-4011）：
 /// - 修改记录：`sync2_edit_ops` 里有这个 ID（迁移出的修改记录投影 ID 由旧 dot 派生，[edit_row_id]，同一条旧记录
 ///   在哪台设备迁出都是同一个 ID）；合成写入者 `sync2:` 的行是操作投影出来的，从不包；
 /// - 日志：`sync2_log_meta` 里有这个 ID；
@@ -1705,7 +1705,7 @@ impl SrsCore {
     /// 本 profile 操作日志里每条带旧 dot 的修改记录（迁移来的、备份 / 档案合并并入的）的 dot 与 HLC 物理时刻、计数：
     /// `{"writers": {写入者: [seq, wall, logical, seq, wall, logical, ...]}}`。读操作日志而不是投影：被支配、已不在
     /// 投影里的记录也在。档案合并（Dart `srs_profile_merge.dart` `_Writers.alias`）据此判断目标里是否已有同一批记录
-    /// （BUG-4005）。已清除内容的操作不算（载荷已剥掉）。
+    /// （BUG-4011）。已清除内容的操作不算（载荷已剥掉）。
     pub fn sync2_legacy_dots(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut out: Map<String, Value> = Map::new();

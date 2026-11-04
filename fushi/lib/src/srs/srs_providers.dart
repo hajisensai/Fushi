@@ -300,7 +300,7 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       profileUid: profileUid,
       deviceId: deviceId,
       engine: engine,
-      // 旧库迁移推迟到首次同步确认之后、第一轮上传之前，先从同步位置收一轮再迁移（BUG-4005，
+      // 旧库迁移推迟到首次同步确认之后、第一轮上传之前，先从同步位置收一轮再迁移（BUG-4011，
       // SrsSyncScheduler.ensureMigrated）。确认弹框没回答前不迁移也不拉。
       deferMigration: true,
       // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里

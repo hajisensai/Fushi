@@ -167,7 +167,7 @@ Future<List<SrsPendingProfileMerge>> srsPendingProfileMerges(
 ///
 /// [pullTarget]：第一遍并入之前，先把同步位置上 [newUid] 已有的数据收进目标 store（调用方给有界的只拉不发，
 /// sync2/srs_sync2_pull_first.dart）。目标里已有同一批修改记录时并入沿用目标的写入者（[_Writers.alias]），不再
-/// 改名成 `merged-…` 造出第二份（BUG-4005）。拉取失败 / 到点没拉完照常并入（可能仍有几份改了名，之后靠收敛合并）。
+/// 改名成 `merged-…` 造出第二份（BUG-4011）。拉取失败 / 到点没拉完照常并入（可能仍有几份改了名，之后靠收敛合并）。
 /// 只在旧 uid 还是本机 profile 时拉（profile 已切到 [newUid] 的重跑只做收尾）；拉到一半被杀：已收的批次都已提交，
 /// 并入标记还在，下次启动 [srsPendingProfileMerges] 照同样参数重跑，再拉一次（只拉缺的）再并入。
 Future<SrsProfileMergeResult> srsMergeProfileUid(
@@ -752,7 +752,7 @@ class _Registers {
 /// 例外（[alias]）：目标 uid 下已经有同一批修改记录（某个写入者与它同 seq、同 HLC 物理时刻与计数）时沿用目标里那个
 /// 写入者的名字，而不是改成 `merged-…`。（沿用的只能是别的名字：同名同 seq 的记录 ID 相同，`srs_field_edits.id` 是全局
 /// 主键，新旧两个 uid 在本机不可能同时有。）否则同一条修改记录在目标集合里就成了两条：dot 不同 → ID 不同，
-/// 投影里每个寄存器各一份，操作日志里也各一份（BUG-4005：宿主把旧 profile 并入后，`merged-f18df189…` 的 31 万条与
+/// 投影里每个寄存器各一份，操作日志里也各一份（BUG-4011：宿主把旧 profile 并入后，`merged-f18df189…` 的 31 万条与
 /// 01a173ca 迁移出的 `2RIr94…#1` 逐条同 seq 同 HLC）。沿用后 dot 相同 → 修改记录 ID 相同，[_applyMissing] 按 ID
 /// 认出已在、不再并。
 class _Writers {

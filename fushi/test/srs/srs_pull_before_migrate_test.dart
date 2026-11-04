@@ -1,4 +1,4 @@
-// 推迟的旧库迁移（BUG-4005）：app 打开 store 时 `deferMigration`（srs_providers.dart），首次同步确认弹框没回答前
+// 推迟的旧库迁移（BUG-4011）：app 打开 store 时 `deferMigration`（srs_providers.dart），首次同步确认弹框没回答前
 // 不迁移、也不拉；确认之后、第一轮上传之前，调度器 [SrsSyncScheduler.ensureMigrated] 先从同步位置只拉不发收一轮再
 // 迁移。第二台设备、位置上已有第一台迁出的同一份旧库：只包本机独有的旧行，且拉取这一步不往位置写任何东西；位置
 // 卡住时最多等预算这么久，照常迁移；一轮里（拿着通道锁）只从那条通道收、不重入通道锁；档案合并（冲突弹窗选定）在
