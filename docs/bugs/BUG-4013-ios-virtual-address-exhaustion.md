@@ -5,17 +5,26 @@
   - **重载期翻倍**：`packages/fushi_dictionary/lib/src/engine/fushidicts.dart` `loadPendingAsync` 先建 shadow 引擎装完全部词典再释放旧引擎，后台 isolate 借用的句柄也延后释放 → 重载期间两份以上完整映射同时在世。
   - media.bin（约 1.6 GB）只在弹窗显示图片 / 播音频时用，却常驻映射。
   - 浏览器：iOS 每个 WebView 把 ~5 万条拦截规则经 method channel 传给原生并在进程内重新编译（`flutter_inappwebview_ios` 1.1.2 `InAppWebView.swift` 固定 identifier、不缓存，`setSettings` 再编一次）。
-  - `Runner.entitlements` 缺 `com.apple.developer.kernel.extended-virtual-addressing`（用户稍后在开发者后台开，不在本修复内）。
+  - `Runner.entitlements` 缺 `com.apple.developer.kernel.extended-virtual-addressing`。
 - **[x] ① 已修复** —
   - 词典映射进程内按文件身份（设备 + inode / 卷 + 文件索引 + 大小 + mtime）共享、弱引用计数：`memory::map_rd_shared`（`native/fushidicts/fushidicts_src/memory/memory.cpp`），shadow 引擎 / 借用句柄 / 一次性扫描（`probe_dict_content`、redirect 扫描）复用同一份映射，重载不再翻倍；查询热路径不变。
   - media.bin 不再映射：`get_media_file` 按请求打开、`file_reader::read_at` 定位读（不常驻文件句柄），大小不符视为文件已替换 → 未命中；删掉零拷贝的 `get_media_file_view`（测试外无调用方）。
   - iOS / macOS 拦截规则：规则 JSON 内容哈希做 identifier，`lookUpContentRuleList` 命中即用，未命中才编一次并持久化，所有 WebView 共享同一个 `WKContentRuleList`；Dart 只传一条引用（`fushi/lib/src/web_adblock/web_content_rule_list.dart`），补丁 `ci/patches/hosted/flutter_inappwebview_{ios,macos}-1.1.2/`。
+  - 扩展虚拟地址空间：`fushi/ios/Runner/Runner.entitlements` 加 `com.apple.developer.kernel.extended-virtual-addressing`；`.github/workflows/release-desktop.yml` 对 entitlements 里每一项逐个对照描述文件，授予才签、没授予就在 runner 上删掉该项（缺扩展地址时打 warning），至少剩一项才接入 `CODE_SIGN_ENTITLEMENTS`。App ID 已开该能力；App Store 描述文件要重新生成并更新 `IOS_PROVISIONING_PROFILE_BASE64` 才会真正签进去。
+  - 窗口模式堆读封顶 `blob_file::kMaxHeapViewBytes`（64 MB）：堆读长度来自磁盘，坏长度不再申请「文件剩余全部」；`read_offset_list` 在 32 位上拒绝超过 `SIZE_MAX` 的表长。
+  - 上游补丁两条回退编译路径（`InAppWebView.swift` setSettings、`FlutterWebViewController.swift` 初始加载）同样经 `FushiContentRuleLists.defaultStore()` 取 store、可选绑定编译结果，不再强解包。
   - srs.db：SQLite 每条连接各映射一份主库（6–7 条 × 256 MB）。64 位（含 iOS）不动——那只是地址、物理页共享，关掉反而多拷贝 + 多占私有页缓存；只有 32 位进程（Android armeabi-v7a，约 3 GB 地址空间）次要连接不映射（`native/fushi_fsrs/src/store/mod.rs` `mmap_size_for`）。
 - **[x] ② 已加自动化测试** —
   - `native/fushidicts/tests/shared_mapping_test.cpp`：两个引擎同一本词典映射数不增；一个销毁另一个照常查词 / 读媒体；引擎在用时 media.bin 可删（Windows 上证明未映射）、替换 / 缺失降级为未命中；最后一个引擎销毁后映射全部释放。`media_import_query_test.cpp` 改走定位读。
   - `native/fushi_fsrs/src/store/mod.rs` `only_primary_connections_reserve_mmap_address_space_on_32_bit`。
+  - `native/fushidicts/tests/blob_heap_view_cap_test.cpp`（窗口模式超上限的堆读 / 偏移表返回空，整份映射不受影响；去掉上限的变异实测 3 条红）。
+  - `fushi/test/build/ios_entitlements_profile_gating_guard_test.dart`（Runner.entitlements 每个 key 都在 workflow 里对照描述文件、未授予即删除，接入受门控）。
   - `fushi/test/build/inappwebview_content_rule_list_patch_guard_test.dart`（补丁版本锁、apply-patches 覆盖、通道名 / 前缀与 Dart 一致、lookUp → compile → 清理旧规则）；`fushi/test/web_adblock/web_adblock_service_test.dart`（同一规则集只编一次、重启命中缓存只 activate、逐请求平台不调原生）。
 - **备注**：
+  - **与 BUG-4075 的关系**（同日、同机型 iPhone18,3、同为 SIGABRT 的 iOS 同步闪退）：
+    - 本修复**覆盖**的是 4075 里 iOS 那部分症状的地址空间机制——4075 的 iOS 报告 rss 只有 1.0–1.4 GB 却在 Rust（`Runner+偏移`）与 Dart（`StringBuffer.toString` Out of Memory）各处分配失败，与本 bug「mapped file 4.6–5.3 GB、物理写入很少、任何分配点都可能 abort」一致：词典映射不再在重载期翻倍、media.bin 不映射、WebKit 规则只编一次、开扩展虚拟地址空间，都减少同步期间的地址占用。
+    - 本修复**不覆盖**：4075 的 Android 报告（Scudo OOM，pss 约 3.3 GB，64 位进程地址空间充足，是物理内存问题；本修复对 Android 只动 32 位 armeabi-v7a）；4075 的三条待证伪假设——64 位上 srs.db 每连接 64 MB page cache + 256 MB mmap 未改、档案切换时新旧 SRS core 同时驻留、`_readBodyBounded` 先拼 String 的双倍内存。
+    - 4075 iOS 部分是否就是本机制，要等含本修复的构建再收崩溃报告确认（4075 的报告里没有 VM 摘要 / mapped file 数字可直接对照）。
   - Swift 补丁本机（Windows）未编译，靠 PR 的 iOS / macOS 构建确认；adblock-rust 导出 JSON 直接交 WebKit 编译未在真机验证。
   - 待真机复测：开 entitlement 后用 Instruments VM Tracker 复测同步、长时间播歌、浏览器搜索三个原始场景。
   - 未做：符号化 23315 构建 Rust 那几次 abort（需 dSYM）。
