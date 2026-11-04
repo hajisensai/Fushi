@@ -17,6 +17,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rating_guide.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
+    show SrsRatingTone;
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';

@@ -127,8 +127,9 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 尚未解析显「自动」占位。
   String? get _qualityCurrentLabel {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
-    if (server != null)
+    if (server != null) {
       return _mediaServerQualityLabel(server, server.qualityPresetIndex);
+    }
     final List<RemoteVideoStreamVariant> variants = _streamVariants;
     if (variants.isNotEmpty) {
       final int index = _streamVariantsClient!.streamVariantIndex;

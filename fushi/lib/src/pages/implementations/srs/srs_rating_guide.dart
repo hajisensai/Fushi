@@ -12,7 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart'
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
     show SrsRatingTone, srsRatingColors;
 import 'package:fushi/src/srs/srs_providers.dart' show srsRunLogged;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -118,7 +118,8 @@ class _ToneChip extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
     decoration: BoxDecoration(
       color: colors.background,
-      borderRadius: BorderRadius.circular(8),
+      // M3E 小件档（标签底），走共享形状 token，不在页面里另定半径。
+      borderRadius: FushiM3eShape.smallRadius,
     ),
     child: Text(
       label,

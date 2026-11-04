@@ -2816,46 +2816,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   }
 }
 
-/// 评分按钮的语义色调。
-enum SrsRatingTone { again, hard, good, easy }
-
-/// 评分按钮配色：MD3 = M3E 色调按钮（重来 errorContainer、困难 surfaceContainerHighest、
-/// 良好 primary 实心、简单 tertiaryContainer）；Apple = 系统实色胶囊（良好 = 强调色底，
-/// 其余 = 语义色 16% 底 + 语义色字，同 iOS `.bordered` 着色）。
-@visibleForTesting
-({Color background, Color foreground}) srsRatingColors(
-  SrsRatingTone tone,
-  ColorScheme cs, {
-  required bool apple,
-}) {
-  if (apple) {
-    final Color accent = switch (tone) {
-      SrsRatingTone.again => cs.error,
-      SrsRatingTone.hard => cs.onSurfaceVariant,
-      SrsRatingTone.good => cs.primary,
-      SrsRatingTone.easy => cs.tertiary,
-    };
-    return tone == SrsRatingTone.good
-        ? (background: cs.primary, foreground: cs.onPrimary)
-        : (background: accent.withValues(alpha: 0.16), foreground: accent);
-  }
-  return switch (tone) {
-    SrsRatingTone.again => (
-      background: cs.errorContainer,
-      foreground: cs.onErrorContainer,
-    ),
-    SrsRatingTone.hard => (
-      background: cs.surfaceContainerHighest,
-      foreground: cs.onSurface,
-    ),
-    SrsRatingTone.good => (background: cs.primary, foreground: cs.onPrimary),
-    SrsRatingTone.easy => (
-      background: cs.tertiaryContainer,
-      foreground: cs.onTertiaryContainer,
-    ),
-  };
-}
-
 /// 一颗评分按钮：上行间隔预览、下行评分名。MD3 = M3E 中号色调按钮（56 高，按压变形）；
 /// Apple = 实色胶囊（[FushiPlainButton] 底，按下变淡）。两套都包 [FushiPressScale]，
 /// 命中区 ≥ 48dp，内容随系统字号增高不截断。
