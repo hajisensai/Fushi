@@ -839,36 +839,19 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     await _jumpToGlobalCharOffset(globalOffset, source: source);
   }
 
-  /// 章 [section] 里离章内字符偏移 [offset] 最近的句子 cue：覆盖它的那句；落在两句
-  /// 之间（标题 / 插图等没对齐的字）取其后第一句，章尾之后取最后一句。只认带章内
-  /// 字符区间的 `fushi-cue://` 家族（[SubtitleRematchCodec]），其余家族返回 null。
-  AudioCue? _audioCueNearCharOffset(int section, int offset) {
+  /// 章 [section] 里离章内**学习单位**偏移 [studyOffset]（阅读进度字数口径）最近的
+  /// 句子 cue。cue 片段是音频 matchable 坐标，逐句经 [_studyRangeForAudioFragment]
+  /// 换成学习区间再比（单点在 [audioCueNearStudyOffset]）。只认带章内字符区间的
+  /// `fushi-cue://` 家族（[SubtitleRematchCodec]），其余家族返回 null。
+  AudioCue? _audioCueNearCharOffset(int section, int studyOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
-    AudioCue? after;
-    int afterStart = 0;
-    AudioCue? before;
-    int beforeEnd = 0;
-    for (final AudioCue cue in ctrl.sentenceAudioCuesForSection(section)) {
-      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-        cue.textFragmentId,
-      );
-      if (frag == null) continue;
-      if (frag.normCharStart <= offset && frag.normCharEnd > offset) {
-        return cue;
-      }
-      if (frag.normCharStart > offset &&
-          (after == null || frag.normCharStart < afterStart)) {
-        after = cue;
-        afterStart = frag.normCharStart;
-      }
-      if (frag.normCharEnd <= offset &&
-          (before == null || frag.normCharEnd > beforeEnd)) {
-        before = cue;
-        beforeEnd = frag.normCharEnd;
-      }
-    }
-    return after ?? before;
+    return audioCueNearStudyOffset(
+      ctrl.sentenceAudioCuesForSection(section),
+      section: section,
+      studyOffset: studyOffset,
+      studyRangeOf: _studyRangeForAudioFragment,
+    );
   }
 
   /// 某章在全书 cue 里的首句；该章没有 cue → null。三种 cue 家族各走各的精确

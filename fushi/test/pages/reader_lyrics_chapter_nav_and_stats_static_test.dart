@@ -136,6 +136,20 @@ void main() {
       final int leave = lyrics.indexOf('_toggleLyricsMode(');
       expect(seek, greaterThan(0));
       expect(leave, greaterThan(seek), reason: '有 cue 就定位；整章没 cue 才退回正文');
+      final String near = methodBody(
+        src,
+        '  AudioCue? _audioCueNearCharOffset(',
+      );
+      expect(
+        near.contains('studyRangeOf: _studyRangeForAudioFragment'),
+        isTrue,
+        reason: '目标是学习单位偏移，cue 片段是音频 matchable 坐标，必须逐句换算再比',
+      );
+      expect(
+        near.contains('normCharStart'),
+        isFalse,
+        reason: '不许拿学习偏移直接比 normCharStart/End（两套坐标越往章尾偏得越多）',
+      );
     });
 
     test('歌词覆盖层接「进度跳转」与「跳转记录」，⋯ 不重复追加跳转记录', () {
