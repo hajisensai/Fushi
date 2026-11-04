@@ -165,7 +165,7 @@ void main() {
     ).readAsStringSync();
     expect(page, contains('_buildDeckRepositionRow(vm)'));
     // 门控 = 后端类型支持 且 探测没有明确说不能（新版 AnkiConnect 缺原生
-    // scheduling.repositionNewCards 时置灰并给版本提示，BUG-4102）。
+    // scheduling.repositionNewCards 时置灰并给版本提示，BUG-4111）。
     expect(page, contains('vm.canRepositionDeck'));
     expect(page, contains('probeDeckReposition()'));
     expect(page, contains('t.anki_reposition_ankiconnect_unsupported'));

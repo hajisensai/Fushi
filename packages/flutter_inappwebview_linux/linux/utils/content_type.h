@@ -7,7 +7,7 @@
 
 namespace flutter_inappwebview_plugin
 {
-  // Fushi patch (BUG-4102, mirrors flutter_inappwebview_windows
+  // Fushi patch (BUG-4108, mirrors flutter_inappwebview_windows
   // windows/utils/content_type.h).
   //
   // `CustomSchemeResponse.contentEncoding` is the response *charset* in the

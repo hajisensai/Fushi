@@ -416,7 +416,7 @@ namespace flutter_inappwebview_plugin
         SurfaceSizesDetail(surface_size_, { width, height }));
     }
 
-    // BUG-4102：源是取帧线程已经拷好的私有纹理（mailbox），不再是 WGC 帧缓冲本身；
+    // BUG-4114：源是取帧线程已经拷好的私有纹理（mailbox），不再是 WGC 帧缓冲本身；
     // 持 mailbox 锁拷完，取帧线程这期间不会覆写它。
     {
       StagedFrame staged = AcquireStagedFrame();

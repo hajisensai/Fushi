@@ -1975,7 +1975,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // BUG-461: 收藏句跳转的句尾绝对字符偏移（_initialCharOffset + 句长）。-1 = 无（单点
   // 句首锚，旧行为）。仅连续模式横排用它把整句对齐进可见区，句尾不被底栏切。
   int _initialCharOffsetEnd = -1;
-  // BUG-4102：带句子区间的开书跳转（卡片来源回跳 / 收藏页 / 制卡历史）的落点句，
+  // BUG-4103：带句子区间的开书跳转（卡片来源回跳 / 收藏页 / 制卡历史）的落点句，
   // 章内学习单位区间 [start, end)。每次该章恢复落定都重画标记，导航离开该章作废。
   ({int chapter, int start, int end})? _jumpTargetSpan;
   // _refreshProgress 算得的最新精确字符偏移，供退出 flush 与 debounce 保存共用。
@@ -2955,7 +2955,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 正文位置（[FushiDesktopTitleBar.immersiveCaptionInset]），正文铺到窗口顶端
   /// 多出这一条；悬浮顶栏 / 弹窗仍按完整的 [_stableTopInset] 排在窗口按钮下面。
   ///
-  /// BUG-4102：卡片来源回看横幅在场时它从窗口顶端画起（含状态栏 / 桌面顶栏那一条），
+  /// BUG-4103：卡片来源回看横幅在场时它从窗口顶端画起（含状态栏 / 桌面顶栏那一条），
   /// 正文必须从横幅下沿开始——沉浸页「铺到窗口顶端」不适用。
   double get _contentTopInset => _sourceReviewSession != null
       ? _topChromeInset
@@ -2967,7 +2967,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 卡片来源回看横幅的内容高（不含系统顶 inset，横幅自己的 SafeArea 让出那一条）。
   static const double _kSourceReviewBannerHeight = 100;
 
-  /// BUG-4102：顶部 chrome（顶栏 / 悬浮顶栏 / 进度 pill / 弹窗）排布的起点 = 系统顶
+  /// BUG-4103：顶部 chrome（顶栏 / 悬浮顶栏 / 进度 pill / 弹窗）排布的起点 = 系统顶
   /// inset + 回看横幅。横幅改成正文 Stack 上的浮层后，阅读器的几何（MediaQuery 全窗
   /// 尺寸 → dartPageWidth/Height、setChromeInsets）与 WebView 实际所占的窗口重新一致；
   /// 旧做法把横幅挂成 Scaffold.appBar，WebView 被压矮一个横幅，JS 却仍按全窗高度排版，
@@ -3382,7 +3382,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             : -1,
         source: 'bookmark preserveSavedPosition=$_suppressPositionPersist',
       );
-      // BUG-4102：句子跳转（有句长）要标出落点句，否则用户回到原文还得自己找那一句。
+      // BUG-4103：句子跳转（有句长）要标出落点句，否则用户回到原文还得自己找那一句。
       // 普通书签（charAnchor == null，只有页首偏移）不是「某一句」，不标。
       _jumpTargetSpan =
           charAnchor != null && charAnchor >= 0 && len != null && len > 0
@@ -4357,7 +4357,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                     child: Scaffold(
                       backgroundColor: bgColor,
                       resizeToAvoidBottomInset: false,
-                      // BUG-4102：回看横幅不再是 Scaffold.appBar（那会把正文 WebView 压矮，
+                      // BUG-4103：回看横幅不再是 Scaffold.appBar（那会把正文 WebView 压矮，
                       // 而分页几何仍按全窗 MediaQuery 排，页底落到 WebView 之外）。它是 Stack
                       // 顶层浮层，高度经 [_topChromeInset] 计入正文顶部预留。
                       body: Stack(
@@ -4473,7 +4473,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           // 歌词覆盖层（盖住正文与顶栏 / 状态行；查词弹层仍在它之上）。
                           // 正文 WebView 不卸载，照常跟随音频、照常记统计。
                           _buildLyricsOverlay(),
-                          // BUG-4102：卡片来源回看横幅（含它自己的状态栏那一条），高度与
+                          // BUG-4103：卡片来源回看横幅（含它自己的状态栏那一条），高度与
                           // [_topChromeInset] 同源，正文 / 顶栏 / 弹窗都排在它下沿之下。
                           if (_sourceReviewSession
                               case final SourceReviewSession session)
@@ -4903,7 +4903,7 @@ $liveConfigJs
     }
   }
 
-  /// BUG-4102：把跳转落点句（[_jumpTargetSpan]）画成 `fushi-search` 标记。
+  /// BUG-4103：把跳转落点句（[_jumpTargetSpan]）画成 `fushi-search` 标记。
   /// 不在目标章 / 无落点 / 歌词模式时什么都不做；画不出（旧内核无 CSS Highlight、
   /// 偏移落在正文外）由 JS 返回 false，只记诊断。
   Future<void> _applyJumpTargetMark() async {

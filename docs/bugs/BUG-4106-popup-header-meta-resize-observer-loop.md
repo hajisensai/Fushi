@@ -1,4 +1,4 @@
-## BUG-4102 · 查词弹窗词头元数据列 ResizeObserver 同步写布局：每次弹窗变宽都报 loop 错误灌满错误日志，且逐词条强制回流
+## BUG-4106 · 查词弹窗词头元数据列 ResizeObserver 同步写布局：每次弹窗变宽都报 loop 错误灌满错误日志，且逐词条强制回流
 - **报告**：2026-11-05（应用内反馈 `3op205DyWN`「阅读时卡住」：Android 16 Xiaomi 23116PN5BC，3.3.0-debug.23469。点词后卡住，再点一次屏幕弹窗才出来，关掉弹窗后又卡住，退出小说恢复；「检查发现出现了 200 条错误报告」）。
 - **真实性**：✅ 真 bug（错误日志那一半）；「卡住」本身的根因**未从日志定位**。
   - 日志本次运行段正好 200 条（`ErrorLogService._maxEntries`，`fushi/lib/src/utils/misc/error_log_service.dart:41`），**全部**是 `PopupJs.window.onerror: ResizeObserver loop completed with undelivered notifications.`（`popup.html:0:0`）；整份日志里同一句共 1489 条，按查词节奏一秒 3–4 条地来。

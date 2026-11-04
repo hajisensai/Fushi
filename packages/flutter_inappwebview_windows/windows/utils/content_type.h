@@ -7,7 +7,7 @@
 
 namespace flutter_inappwebview_plugin
 {
-  // Fushi patch (BUG-4102, see PATCHES.md "contentEncoding is the charset").
+  // Fushi patch (BUG-4108, see PATCHES.md "contentEncoding is the charset").
   //
   // `WebResourceResponse.contentEncoding` / `CustomSchemeResponse.contentEncoding`
   // is the response *charset* in the platform interface (Android passes it as

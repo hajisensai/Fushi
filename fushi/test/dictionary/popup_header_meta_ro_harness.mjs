@@ -1,4 +1,4 @@
-// 反馈 3op205DyWN（BUG-4102）：查词弹窗词头元数据列的 ResizeObserver 不得再触发
+// 反馈 3op205DyWN（BUG-4106）：查词弹窗词头元数据列的 ResizeObserver 不得再触发
 // 「ResizeObserver loop completed with undelivered notifications」。
 //
 // 真 Chrome 里加载生产 popup.css + popup.js 里词头元数据列那一段（observer + 判据），

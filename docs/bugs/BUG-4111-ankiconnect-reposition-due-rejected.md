@@ -1,4 +1,4 @@
-## BUG-4102 · AnkiConnect 下「按词频重排新卡」被拒——新版 AnkiConnect 禁写 due
+## BUG-4111 · AnkiConnect 下「按词频重排新卡」被拒——新版 AnkiConnect 禁写 due
 - **报告**：2026-11-05（用户拍板⑱：AnkiConnect 下按词频重排新卡被拒，按推荐方案做）
 - **真实性**：✅ 真 bug（根因 `packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart:992`（修复前 `setCardsDueMany`）：重排逐卡发旧协议 `setSpecificValueOfCard {keys:['due']}`；上游 AnkiConnect 自 tag 26.10.11.0 起重写 `plugin/legacy.py`，`expert_card` 对不在映射表里的键（含 `due`）一律 `raise ApiError('compatibilityError', 'Use native scheduling commands for protected state.')`，整批必然失败）
 - **[x] ① 已修复** — 重排改走原生 `scheduling.repositionNewCards`（`/api/v1` JSON-RPC）；先 `api.describe` 探测能力，没有就禁用入口并提示版本，绝不再写 `due`（分支 claude/ankiconnect-native-reposition）
