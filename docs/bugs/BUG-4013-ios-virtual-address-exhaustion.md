@@ -1,0 +1,22 @@
+## BUG-4013 · ios-virtual-address-exhaustion
+- **报告**：2026-11-04（用户：iPhone 17 上同步、播歌、浏览器搜索时闪退）
+- **真实性**：✅ 真 bug。19 份 .ips 全是 SIGABRT 于分配失败（Swift / UIKit 触摸事件 / WebKit 规则编译 / Rust / Dart VM 各处），内存摘要 mapped file 常驻 4.6–5.3 GB、物理写入很少：**进程虚拟地址空间耗尽**，不是物理内存不够，也不是同步 / 播放 / 浏览器各自的逻辑错。地址占用来源：
+  - 词典整份映射：`native/fushidicts/fushidicts_src/query.cpp` `add_dict`（hash.table / bloom.filter / blobs.bin / media.bin / media.idx 每个引擎各映射一份，39 本约 3.8 GB）。
+  - **重载期翻倍**：`packages/fushi_dictionary/lib/src/engine/fushidicts.dart` `loadPendingAsync` 先建 shadow 引擎装完全部词典再释放旧引擎，后台 isolate 借用的句柄也延后释放 → 重载期间两份以上完整映射同时在世。
+  - media.bin（约 1.6 GB）只在弹窗显示图片 / 播音频时用，却常驻映射。
+  - 浏览器：iOS 每个 WebView 把 ~5 万条拦截规则经 method channel 传给原生并在进程内重新编译（`flutter_inappwebview_ios` 1.1.2 `InAppWebView.swift` 固定 identifier、不缓存，`setSettings` 再编一次）。
+  - `Runner.entitlements` 缺 `com.apple.developer.kernel.extended-virtual-addressing`（用户稍后在开发者后台开，不在本修复内）。
+- **[x] ① 已修复** —
+  - 词典映射进程内按文件身份（设备 + inode / 卷 + 文件索引 + 大小 + mtime）共享、弱引用计数：`memory::map_rd_shared`（`native/fushidicts/fushidicts_src/memory/memory.cpp`），shadow 引擎 / 借用句柄 / 一次性扫描（`probe_dict_content`、redirect 扫描）复用同一份映射，重载不再翻倍；查询热路径不变。
+  - media.bin 不再映射：`get_media_file` 按请求打开、`file_reader::read_at` 定位读（不常驻文件句柄），大小不符视为文件已替换 → 未命中；删掉零拷贝的 `get_media_file_view`（测试外无调用方）。
+  - iOS / macOS 拦截规则：规则 JSON 内容哈希做 identifier，`lookUpContentRuleList` 命中即用，未命中才编一次并持久化，所有 WebView 共享同一个 `WKContentRuleList`；Dart 只传一条引用（`fushi/lib/src/web_adblock/web_content_rule_list.dart`），补丁 `ci/patches/hosted/flutter_inappwebview_{ios,macos}-1.1.2/`。
+  - srs.db：SQLite 每条连接各映射一份主库（6–7 条 × 256 MB）。64 位（含 iOS）不动——那只是地址、物理页共享，关掉反而多拷贝 + 多占私有页缓存；只有 32 位进程（Android armeabi-v7a，约 3 GB 地址空间）次要连接不映射（`native/fushi_fsrs/src/store/mod.rs` `mmap_size_for`）。
+- **[x] ② 已加自动化测试** —
+  - `native/fushidicts/tests/shared_mapping_test.cpp`：两个引擎同一本词典映射数不增；一个销毁另一个照常查词 / 读媒体；引擎在用时 media.bin 可删（Windows 上证明未映射）、替换 / 缺失降级为未命中；最后一个引擎销毁后映射全部释放。`media_import_query_test.cpp` 改走定位读。
+  - `native/fushi_fsrs/src/store/mod.rs` `only_primary_connections_reserve_mmap_address_space_on_32_bit`。
+  - `fushi/test/build/inappwebview_content_rule_list_patch_guard_test.dart`（补丁版本锁、apply-patches 覆盖、通道名 / 前缀与 Dart 一致、lookUp → compile → 清理旧规则）；`fushi/test/web_adblock/web_adblock_service_test.dart`（同一规则集只编一次、重启命中缓存只 activate、逐请求平台不调原生）。
+- **备注**：
+  - Swift 补丁本机（Windows）未编译，靠 PR 的 iOS / macOS 构建确认；adblock-rust 导出 JSON 直接交 WebKit 编译未在真机验证。
+  - 待真机复测：开 entitlement 后用 Instruments VM Tracker 复测同步、长时间播歌、浏览器搜索三个原始场景。
+  - 未做：符号化 23315 构建 Rust 那几次 abort（需 dSYM）。
+  - 已知同类遗留：32 位 Android 上单本 blobs.bin 过大时映射失败、该词典静默不装载（整套 3.8 GB 本就放不进 3 GB 地址空间），需要非映射的 blob 读取路径，另案处理。

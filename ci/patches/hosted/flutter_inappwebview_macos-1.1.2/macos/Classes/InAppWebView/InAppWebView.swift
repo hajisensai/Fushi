@@ -24,6 +24,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
     var inAppBrowserDelegate: InAppBrowserDelegate?
     var channelDelegate: WebViewChannelDelegate?
     var settings: InAppWebViewSettings?
+    /// Fushi patch (BUG-4013): identifier of the shared content rule list
+    /// attached to this WebView (see FushiContentRuleLists.swift).
+    var fushiContentRuleListIdentifier: String?
     var findInteractionController: FindInteractionController?
     var webMessageChannels: [String:WebMessageChannel] = [:]
     var webMessageListeners: [WebMessageListener] = []
@@ -718,7 +721,10 @@ public class InAppWebView: WKWebView, WKUIDelegate,
             }
         }
         
-        if #available(macOS 10.13, *), newSettingsMap["contentBlockers"] != nil {
+        // Fushi patch (BUG-4013): a reference to the shared rule list is only
+        // (re)attached when it changed; no re-parse / re-compile per setSettings.
+        if #available(macOS 10.13, *), newSettingsMap["contentBlockers"] != nil,
+           !applyFushiContentRuleList(newSettings.contentBlockers, completion: {}) {
             configuration.userContentController.removeAllContentRuleLists()
             let contentBlockers = newSettings.contentBlockers
             if contentBlockers.count > 0 {

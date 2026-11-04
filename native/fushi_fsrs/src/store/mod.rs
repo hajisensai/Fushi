@@ -268,10 +268,12 @@ fn open_drift_reader(path: &Path) -> Result<Connection, String> {
 }
 
 /// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 读连接
-/// + 读连接池（至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条 256 MB，iOS 上合计 1.5 GB 以上
-/// 的虚拟地址，与词典映射一起把 iOS 默认的进程地址空间吃满（真机崩溃报告：mapped file 常驻 4.6–5.3 GB，各处分配
-/// 失败 SIGABRT）。只有常驻的写连接与读连接（Rust 命令的长读：缓存刷新 / 历史）用 mmap；其余连接在 iOS 上走页缓存 +
-/// pread，桌面 / Android 地址空间充裕，照旧映射。
+/// + 读连接池（至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条至多 256 MB 的**虚拟地址**（物理
+/// 页是系统文件缓存，各连接共享、干净可回收，不是每条连接真占 256 MB 内存）。
+///
+/// 64 位进程（含 iOS，配合 extended-virtual-addressing）地址空间远大于此，全部连接照旧映射：关掉 mmap 反而让每条
+/// 连接把页拷进私有页缓存（cache_size 64 MB/条，真占内存）并多一次拷贝，是负优化。只有 32 位进程（Android
+/// armeabi-v7a，整个进程约 3 GB 地址空间）6–7 × 256 MB 放不下：那里次要连接不映射，只保留写连接与常驻读连接。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum MmapRole {
     /// 写连接、常驻读连接。
@@ -287,7 +289,7 @@ pub(crate) const MMAP_BYTES: i64 = 268_435_456;
 pub(crate) fn mmap_size_for(role: MmapRole) -> i64 {
     match role {
         MmapRole::Primary => MMAP_BYTES,
-        MmapRole::Secondary if cfg!(target_os = "ios") => 0,
+        MmapRole::Secondary if cfg!(target_pointer_width = "32") => 0,
         MmapRole::Secondary => MMAP_BYTES,
     }
 }
@@ -1458,14 +1460,14 @@ mod read_routing_tests {
     }
 
     /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有常驻写连接 / 读连接按 [MMAP_BYTES] 映射；读连接池、写那一路
-    /// 的只读连接等次要连接在 iOS 上不映射（合计地址占用从 6–7 × 256 MB 收到 2 × 256 MB），其它平台照旧。
+    /// 的只读连接等次要连接只在 32 位进程上不映射（合计地址占用从 6–7 × 256 MB 收到 2 × 256 MB），64 位（含 iOS）照旧。
     #[test]
-    fn only_primary_connections_reserve_mmap_address_space_on_ios() {
+    fn only_primary_connections_reserve_mmap_address_space_on_32_bit() {
         let core = open("mmap_roles");
         let mmap = |c: &Connection| -> i64 { c.query_row("PRAGMA mmap_size", [], |r| r.get(0)).unwrap() };
         assert_eq!(mmap(&core.writer().unwrap()), MMAP_BYTES);
         assert_eq!(mmap(&core.reader().unwrap()), MMAP_BYTES);
-        let expected_secondary = if cfg!(target_os = "ios") { 0 } else { MMAP_BYTES };
+        let expected_secondary = if cfg!(target_pointer_width = "32") { 0 } else { MMAP_BYTES };
         assert_eq!(mmap_size_for(MmapRole::Secondary), expected_secondary);
         assert_eq!(mmap(&open_drift_reader(&core.path).unwrap()), expected_secondary);
         let guard = core.drift_write_reader.lock().unwrap();
