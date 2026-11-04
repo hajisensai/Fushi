@@ -104,6 +104,7 @@ Map<String, Object?> _nodeJson(SrsSearchNode node) => switch (node) {
         SrsSearchProperty.lapses => 'lapses',
         SrsSearchProperty.stability => 's',
         SrsSearchProperty.difficulty => 'd',
+        SrsSearchProperty.retrievability => 'r',
       },
       'op': compare.name,
       'v': value.toDouble(),
@@ -116,6 +117,21 @@ Map<String, Object?> _nodeJson(SrsSearchNode node) => switch (node) {
   SrsSearchCardIds(:final Set<int> ids) => <String, Object?>{
     't': 'cid',
     'v': ids.toList(),
+  },
+  SrsSearchRated(:final int days, :final int? rating) => <String, Object?>{
+    't': 'rated',
+    'd': days,
+    'e': ?rating,
+  },
+  SrsSearchEmptyField() => <String, Object?>{'t': 'emptyfield'},
+  SrsSearchDuplicate() => <String, Object?>{'t': 'dupe'},
+  SrsSearchHasMedia(:final SrsSearchMedia media) => <String, Object?>{
+    't': 'has',
+    'v': media.name,
+  },
+  SrsSearchSource(:final String value) => <String, Object?>{
+    't': 'src',
+    'v': value,
   },
 };
 

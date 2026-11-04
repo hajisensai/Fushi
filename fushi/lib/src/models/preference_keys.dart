@@ -654,6 +654,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
+  // String（JSON 数组 [{name, query}]，SrsBrowseSavedView）：复习卡片浏览器里用户存的视图
+  // （名字 + Anki 搜索语法）。缺省 '' = 没有。非凭据、跨设备（随 Profile / 备份；不进复习同步）。
+  'srs_browse_saved_views',
   // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
   // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
   // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：

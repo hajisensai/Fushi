@@ -41,9 +41,11 @@ pub const INT_COLUMNS: usize = 12;
 pub enum FloatColumn {
     Stability = 0,
     Difficulty = 1,
+    /// 此刻的 FSRS 可提取度（0..1；浏览会话按牌组的排程配置现算，store/browse.rs）。
+    Retrievability = 2,
 }
 
-pub const FLOAT_COLUMNS: usize = 2;
+pub const FLOAT_COLUMNS: usize = 3;
 
 pub const DUE_NONE: i64 = i64::MIN;
 
@@ -849,6 +851,14 @@ impl Corpus {
                     .filter(|&i| ids.contains(&col[i as usize]))
                     .collect()
             }
+            Compiled::HasMedia(audio) => self.by_note(cand, |n| {
+                let text = self.joined(n);
+                if *audio {
+                    text.contains("[sound:")
+                } else {
+                    has_img_tag(text)
+                }
+            }),
         })
     }
 
@@ -888,7 +898,7 @@ fn collect_needs<'c>(node: &'c Compiled, names: &mut Vec<&'c Regex>) -> bool {
             all
         }
         Compiled::Not(c) => collect_needs(c, names),
-        Compiled::Text(_) | Compiled::Regex(_) => true,
+        Compiled::Text(_) | Compiled::Regex(_) | Compiled::HasMedia(_) => true,
         Compiled::Field { name, .. } | Compiled::FieldRegex { name, .. } => {
             names.push(name);
             false
@@ -1002,6 +1012,24 @@ pub enum Node {
     Cid {
         v: Vec<i64>,
     },
+    /// `rated:N[:E]`：要复习记录，只在浏览会话里求值（store/browse.rs 先换成 `cid`）。
+    Rated {
+        d: i64,
+        #[serde(default)]
+        e: Option<i64>,
+    },
+    /// `is:emptyfield`：同上（浏览会话换成 `nid`）。
+    Emptyfield,
+    /// `is:dupe`：同上。
+    Dupe,
+    /// `src:…`：同上。
+    Src {
+        v: String,
+    },
+    /// `has:audio` / `has:image`：任一字段原文含 `[sound:` / `<img`。
+    Has {
+        v: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1073,6 +1101,8 @@ enum Compiled {
     IntProp(IntColumn, Cmp, i64),
     FloatProp(FloatColumn, Cmp, f64),
     IdIn(IntColumn, HashSet<i64>),
+    /// true = `[sound:`，false = `<img`。
+    HasMedia(bool),
 }
 
 fn glob_re(source: &str) -> Result<Regex, SearchError> {
@@ -1183,11 +1213,20 @@ fn compile(node: &Node) -> Result<Compiled, SearchError> {
                 }
                 (None, "s") => Compiled::FloatProp(FloatColumn::Stability, cmp, *v),
                 (None, "d") => Compiled::FloatProp(FloatColumn::Difficulty, cmp, *v),
+                (None, "r") => Compiled::FloatProp(FloatColumn::Retrievability, cmp, *v),
                 _ => return Err(SearchError::internal(format!("bad prop {p}"))),
             }
         }
         Node::Nid { v } => Compiled::IdIn(IntColumn::NoteId, v.iter().copied().collect()),
         Node::Cid { v } => Compiled::IdIn(IntColumn::CardId, v.iter().copied().collect()),
+        Node::Has { v } => Compiled::HasMedia(match v.as_str() {
+            "audio" => true,
+            "image" => false,
+            _ => return Err(SearchError::internal(format!("bad has:{v}"))),
+        }),
+        Node::Rated { .. } | Node::Emptyfield | Node::Dupe | Node::Src { .. } => {
+            return Err(SearchError::internal("rated: / is:emptyfield / is:dupe / src: need the browse session"))
+        }
     })
 }
 
@@ -1309,6 +1348,19 @@ fn match_ci(html: &str, at: usize, pat: &str) -> Option<usize> {
         end += c.len_utf8();
     }
     Some(at + end)
+}
+
+/// 有没有 `<img` 标签（不区分大小写；`img` 后面是空白、`>` 或 `/`）。
+pub(crate) fn has_img_tag(html: &str) -> bool {
+    let mut from = 0;
+    while let Some(e) = find_ci(html, from, "img") {
+        match html[e..].chars().next() {
+            Some(c) if c.is_whitespace() || c == '>' || c == '/' => return true,
+            None => return false,
+            _ => from = e,
+        }
+    }
+    false
 }
 
 /// `html[from..]` 里第一个 `<` + 不区分大小写的 `pat` 的终点。
@@ -1667,6 +1719,32 @@ mod tests {
             .unwrap_err();
         assert_eq!((err.kind, err.at.as_str()), ("syntax", "re:(?=a)"));
         assert!(c.set_ints(0, &[1]).is_err());
+    }
+
+    /// `prop:r`（可提取度列，没有 = NaN 不命中）、`has:audio` / `has:image`（要全部字段原文）；只有浏览会话求得了
+    /// 的叶子在语料里明确报错。
+    #[test]
+    fn retrievability_and_media_terms() {
+        use serde_json::json;
+        let mut c = corpus(
+            &[
+                ("B", &[("F", "x [sound:a.mp3]")], &[]),
+                ("B", &[("F", "<IMG src=p.png>")], &[]),
+                ("B", &[("F", "<imgx> [sound:")], &[]),
+            ],
+            &[(0, "D", "T"), (1, "D", "T"), (2, "D", "T")],
+        );
+        c.set_floats(FloatColumn::Retrievability as usize, &[0.5, f64::NAN, 0.95]).unwrap();
+        assert_eq!(hits(&c, json!({"t":"prop","p":"r","op":"lt","v":0.9})), [1, 0, 0]);
+        assert_eq!(hits(&c, json!({"t":"prop","p":"r","op":"ge","v":0.5})), [1, 0, 1]);
+        assert_eq!(hits(&c, json!({"t":"has","v":"audio"})), [1, 0, 1]);
+        assert_eq!(hits(&c, json!({"t":"has","v":"image"})), [0, 1, 0]);
+        assert_eq!(Corpus::columns_used(&json!({"t":"prop","p":"r","op":"lt","v":0.9}).to_string()).unwrap(), (0, 4));
+        assert_eq!(c.needs(&json!({"t":"has","v":"audio"}).to_string()).unwrap(), Needs::All);
+        for q in [json!({"t":"rated","d":1}), json!({"t":"emptyfield"}), json!({"t":"dupe"}), json!({"t":"src","v":"none"})] {
+            let mut out = vec![0u8; 3];
+            assert_eq!(c.search(&q.to_string(), &mut out).unwrap_err().kind, "internal", "{q}");
+        }
     }
 
     #[test]

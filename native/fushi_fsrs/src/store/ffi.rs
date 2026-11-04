@@ -931,7 +931,7 @@ const CACHE_PENDING_CHUNK: usize = 5;
 ///
 /// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
 /// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
-const CHANNEL_TRANSPARENT: [&str; 50] = [
+const CHANNEL_TRANSPARENT: [&str; 52] = [
     "identity",
     "device_info",
     "device_hint",
@@ -966,6 +966,8 @@ const CHANNEL_TRANSPARENT: [&str; 50] = [
     "anki_dupes",
     "anki_tags",
     "browse_stats",
+    "browse_counts",
+    "browse_sources",
     "outbox",
     "outbox_ack",
     "head",
@@ -1076,7 +1078,7 @@ fn sync2_command(
         "anki_notes_info" => c.read_visible(|conn| crate::store::bulk::anki_notes_info(conn, profile, req))?,
         // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭；AnkiConnect 的
         // 搜索 / 查重 / 标签走同一个会话。
-        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" => {
+        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" | "browse_counts" | "browse_sources" => {
             c.browse(op, profile, req, files)?
         }
         // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。

@@ -225,6 +225,125 @@ void main() {
       );
     });
 
+    test('新列 / 新搜索词 / counts / sources 的解码（spec 2026-11-04 §2）', () async {
+      final SrsDbStore s = await device('a');
+      Future<String> addAt(
+        String expr,
+        String definition,
+        SrsSourceRef? source,
+      ) async {
+        final String id = await s.createNote(
+          noteTypeId: s.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kProfile, 'Expression'): expr,
+            srsLapisFieldId(kProfile, 'MainDefinition'): definition,
+          },
+          source: source,
+        );
+        t += 1000;
+        return id;
+      }
+
+      final String a = await addAt(
+        '食べる',
+        '<b>to eat</b> [sound:taberu.mp3]<img src="taberu.png">',
+        SrsSourceRef.book(bookKey: 'bk', sectionIndex: 2, charStart: 9),
+      );
+      await addAt(
+        '飲む',
+        'to drink',
+        SrsSourceRef.book(
+          bookKey: 'bk',
+          sectionIndex: 5,
+          charStart: 0,
+          title: '本',
+        ),
+      );
+      await addAt('走る', '', null);
+      await addAt('<i>食べる</i>', 'dup', null);
+      await s.answer(await cardOf(s, a), 4);
+      t += 86400000 * 2;
+
+      final SrsBrowseSession b = SrsBrowseSession(s);
+      addTearDown(b.close);
+      final SrsBrowseResult res = await b.query(
+        sort: const SrsBrowseSort(
+          column: SrsBrowseSortColumn.created,
+          ascending: true,
+        ),
+      );
+      final List<SrsBrowseRow> rows = await res.all();
+      expect(exprs(rows), <String>['食べる', '飲む', '走る', '食べる']);
+      final SrsBrowseRow ra = rows[0];
+      expect(ra.fieldPreview, contains('to eat'));
+      expect(ra.imageRef, 'taberu.png');
+      expect(ra.audioRef, 'taberu.mp3');
+      expect(ra.sourceKey, 'book:bk');
+      expect(ra.sourceKind, SrsSourceKind.book);
+      expect(ra.source?.data['section'], 2);
+      expect(ra.intervalDays, isNotNull);
+      expect(ra.difficulty, isNotNull);
+      expect(ra.retention, isNotNull);
+      expect(ra.retention!, inInclusiveRange(0.0, 1.0));
+      expect(ra.lastReviewAt, isNotNull);
+      expect(ra.modifiedAt, greaterThanOrEqualTo(ra.addedAt));
+      final SrsBrowseRow rb = rows[1];
+      expect(rb.sourceKey, 'book:bk', reason: '章节不进键');
+      expect(rb.source?.title, '本');
+      expect(rb.intervalDays, isNull);
+      expect(rb.retention, isNull);
+      expect(rb.lastReviewAt, isNull);
+      expect(rb.imageRef, isNull);
+      expect(rows[2].sourceKey, isNull);
+      expect(rows[2].sourceData, isNull);
+      expect(rows[2].fieldPreview, isNot(contains('')));
+
+      expect(
+        await b.counts(<String>[
+          '',
+          'src:book',
+          srsSourceQuery('book:bk'),
+          srsSourceQuery(null),
+          'has:audio',
+          'has:image',
+          'rated:1',
+          'rated:7:4',
+          'rated:7:1',
+          'prop:r>0',
+          'is:dupe',
+          'prop:ease>2',
+          '(',
+          '"re:("',
+        ]),
+        <int>[4, 2, 2, 2, 1, 1, 0, 1, 0, 1, 2, -1, -1, -1],
+      );
+      expect(
+        await b.counts(<String>['src:book'], mode: SrsBrowseMode.notes),
+        <int>[2],
+      );
+      expect(exprs(await rowsOf(b, query: 'src:none')), <String>['食べる', '走る']);
+
+      final List<SrsBrowseRow> byR = await rowsOf(
+        b,
+        sort: const SrsBrowseSort(column: SrsBrowseSortColumn.retention),
+      );
+      expect(byR.first.cardId, ra.cardId, reason: '没有保持率的排最后');
+
+      final List<SrsBrowseSourceGroup> groups = await res.sources();
+      expect(
+        <String?>[for (final SrsBrowseSourceGroup g in groups) g.key],
+        <String?>['book:bk', null],
+      );
+      expect(groups[0].count, 2);
+      expect(groups[0].kind, SrsSourceKind.book);
+      expect(groups[0].preview, <int>[0, 1]);
+      expect(groups[0].source?.title, '本', reason: '代表出处取最近添加的那条');
+      expect(groups[0].latestAddedAt, rb.addedAt);
+      expect(groups[1].count, 2);
+      expect(groups[1].preview, <int>[2, 3]);
+      expect(groups[1].data, isNull);
+    });
+
     test('排序：排序字段 / 指定字段 / 到期 / 复习次数 / 修改时间，升降序', () async {
       final SrsDbStore s = await device('a');
       final String a = await add(s, 'b', definition: 'z');

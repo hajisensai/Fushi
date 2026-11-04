@@ -18,10 +18,12 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
-import 'package:fushi_engine/srs/srs_browse_ops.dart' show srsBatchMoveCards;
+import 'package:fushi_engine/srs/srs_browse_ops.dart'
+    show srsBatchMoveCards, srsBatchSetSuspended;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_srs/fushi_srs.dart' show FushiFsrs, kFushiFsrsLibEnv;
+import 'package:fushi_srs/fushi_srs.dart'
+    show FushiFsrs, SrsNoteView, kFushiFsrsLibEnv;
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
@@ -529,6 +531,141 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('srs_browse_batch')));
     await _settle(tester, rounds: 4);
     expect(find.text(t.srs_browse_change_note_type), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('积木：回车把草稿拆成积木，草稿空时退格删掉最后一块', (WidgetTester tester) async {
+    _expectNativeSearch();
+    final SrsDbStore store = await _openStore(tester);
+    await _add(tester, store, '食べる', 'to eat');
+    await _add(tester, store, '飲む', 'to drink');
+    await _pump(tester, store: store);
+
+    await _search(tester, 'MainDefinition:*eat*');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester, rounds: 4);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-chip-0')),
+      findsOneWidget,
+    );
+    final EditableText editor = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-browse-search')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(editor.controller.text, isEmpty);
+    expect(_row('食べる'), findsOneWidget);
+    expect(_row('飲む'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await _settle(tester, rounds: 4);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-chip-0')),
+      findsNothing,
+    );
+    expect(_row('飲む'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('快捷视图：带计数，点一下套用、再点撤掉', (WidgetTester tester) async {
+    _expectNativeSearch();
+    final SrsDbStore store = await _openStore(tester);
+    await _add(tester, store, '食べる', 'to eat');
+    await _add(tester, store, '飲む', 'to drink');
+    final String suspended = (await _cards(
+      tester,
+      store,
+    )).firstWhere((SrsCardCacheRow c) => true).id;
+    await tester.runAsync(
+      () => srsBatchSetSuspended(store, <String>[suspended], suspended: true),
+    );
+    await _pump(tester, store: store);
+    final Finder chip = find.byKey(
+      const ValueKey<String>('srs-browse-view-suspended'),
+    );
+    expect(
+      find.descendant(
+        of: chip,
+        matching: find.text('${t.srs_browse_quick_suspended} · 1'),
+      ),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(chip);
+    await tester.pump();
+    await tester.tap(chip);
+    await _settle(tester, rounds: 6);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-chip-0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value == 'srs-browse-row-$suspended',
+      ),
+      findsOneWidget,
+    );
+    expect(_row('食べる').evaluate().length + _row('飲む').evaluate().length, 1);
+    await tester.ensureVisible(chip);
+    await tester.pump();
+    await tester.tap(chip);
+    await _settle(tester, rounds: 6);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-chip-0')),
+      findsNothing,
+    );
+    expect(_row('食べる'), findsOneWidget);
+    expect(_row('飲む'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('宽屏检查器：编辑页签停笔自动保存（可撤销），历史页签', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    final String noteId = await _add(tester, store, '食べる', 'to eat');
+    await _pump(tester, store: store, size: const Size(1300, 900));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-browse-tab-history')),
+    );
+    await _settle(tester, rounds: 6);
+    expect(
+      find.byKey(const ValueKey<String>('srs-browse-history')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('srs-browse-tab-edit')));
+    await _settle(tester, rounds: 6);
+    final Finder field = find.descendant(
+      of: find.byKey(const ValueKey<String>('srs-browse-field-MainDefinition')),
+      matching: find.byType(EditableText),
+    );
+    expect(field, findsOneWidget);
+    // 字段编辑器是富文本：存进去的是 HTML（空格会变 &nbsp;），这里用不带空格的值。
+    await tester.enterText(field, 'consume');
+    await tester.pump(const Duration(milliseconds: 900));
+    await _settle(tester);
+    final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
+      () => store.note(noteId),
+    );
+    expect(
+      saved!.field(srsLapisFieldId(kSrsTestProfile, 'MainDefinition')),
+      'consume',
+    );
+
+    // 编辑框持焦时 Ctrl+Z 归文本框：点撤销按钮。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+    );
+    await _settle(tester);
+    final SrsNoteView? undone = await tester.runAsync<SrsNoteView?>(
+      () => store.note(noteId),
+    );
+    expect(
+      undone!.field(srsLapisFieldId(kSrsTestProfile, 'MainDefinition')),
+      'to eat',
+    );
     await _unmount(tester);
   });
 }

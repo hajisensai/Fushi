@@ -1324,6 +1324,8 @@ class SrsDbStore implements SrsSync2Host {
     'browse_targets',
     'browse_close',
     'browse_stats',
+    'browse_counts',
+    'browse_sources',
     'anki_find',
     'anki_tags',
     'anki_dupes',
