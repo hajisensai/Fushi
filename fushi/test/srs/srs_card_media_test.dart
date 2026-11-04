@@ -77,7 +77,8 @@ void main() {
         urlPrefix: prefix,
       );
       expect(out, isNot(contains('[sound:')));
-      expect(out, contains('class="fushi-srs-sound"'));
+      // 带 Anki reviewer 的 replay-button soundLink：导入模板按它找音频键。
+      expect(out, contains('class="fushi-srs-sound replay-button soundLink"'));
       expect(out, contains('data-sound="word.mp3"'));
     });
 

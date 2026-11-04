@@ -62,6 +62,10 @@ const settingDefaults = Object.freeze({
   videoShortcutFavoriteCue: true,
   videoShortcutRateDown: true,
   videoShortcutRateUp: true,
+  videoShortcutSeekBack: true,
+  videoShortcutSeekForward: true,
+  // 裸键 E：默认关（video-shortcuts.js DEFAULT_OFF），旧总开关 videoShortcutsEnabled 不把它带开。
+  videoShortcutHoldSpeed: false,
 });
 const toggleIds = Object.freeze({
   shiftHoverLookup: 'shiftHoverLookup',
@@ -97,6 +101,9 @@ const toggleIds = Object.freeze({
   videoShortcutFavoriteCue: 'videoShortcutFavoriteCue',
   videoShortcutRateDown: 'videoShortcutRateDown',
   videoShortcutRateUp: 'videoShortcutRateUp',
+  videoShortcutSeekBack: 'videoShortcutSeekBack',
+  videoShortcutSeekForward: 'videoShortcutSeekForward',
+  videoShortcutHoldSpeed: 'videoShortcutHoldSpeed',
 });
 const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.startsWith('videoShortcut')));
 // 下拉型设置：控件 id → 存储键 → 默认值。主题（theme.js 读）与语言（i18n.js 读）。
@@ -109,6 +116,9 @@ const selectSettings = Object.freeze({
   // fushiSubtitle = 正在用 Fushi / 外挂字幕（默认）；anySubtitle = 这个视频有字幕轨即可；
   // always = 旧行为，任何正片都计。
   studyTrackVideoCondition: { key: 'studyTrackVideoCondition', fallback: 'fushiSubtitle' },
+  // 快退 / 快进秒数与按住临时倍速（video-shortcuts.js SEEK_SECONDS_* / HOLD_RATE_*，取值表在那里）。
+  videoSeekSeconds: { key: 'videoSeekSeconds', fallback: '5' },
+  videoHoldSpeedRate: { key: 'videoHoldSpeedRate', fallback: '2' },
 });
 
 let toastTimer = null;
@@ -228,7 +238,7 @@ async function loadSettings() {
     if (typeof value !== 'boolean' && key === 'subtitlePauseOnLookup') {
       value = saved.subtitleHoverPause;
     }
-    if (typeof value !== 'boolean' && shortcutKeys.includes(key)) {
+    if (typeof value !== 'boolean' && shortcutKeys.includes(key) && settingDefaults[key] !== false) {
       value = saved.videoShortcutsEnabled;
     }
     // 纯黑没写过：旧「纯黑」预设用户缺省开（与 theme.js pureBlackFrom 同律，显示与生效一致）。

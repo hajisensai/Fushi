@@ -265,7 +265,8 @@ CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_kind_time ON srs_review_l
 "#;
 
 /// V13：统计页与 AnkiConnect 直接由内核读缓存表（store/bulk.rs）要的两组列，只有 Rust 读写（Drift 不声明）。
-/// - `srs_notes_cache.source_kind` / `source_title`：笔记出处（`SrsSourceRef` 的 kind 与原样 title，没有 = 空串）。
+/// - `srs_notes_cache.source_kind` / `source_title`：笔记出处（`SrsSourceRef` 的 kind 与原样 title；没有出处时按
+///   Fushi 制卡标签认，[super::caches::source_from_tags]，缓存修订号 9 起；都没有 = 空串）。
 ///   统计页的「制卡来源」以前为了这两个值把整库笔记连同全部修改记录物化一遍（`allNoteViews`）。老库加列留空，
 ///   由 Dart 侧缓存修订号 7 的升级步让内核重算全部笔记缓存填满。
 /// - `anki_id`（笔记缓存与卡片缓存）：AnkiConnect 的 53 位数字 id（`SrsIds.ankiNumericId` = `hash53("anki-id/" +

@@ -13,6 +13,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -584,6 +585,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.obscureRevealOnInteraction = true,
     this.secondaryObscureRevealOnInteraction = true,
     this.lookupPopupVisible = false,
+    this.revealWhileControlsVisible = false,
     this.fontSize = 36,
     this.textColor,
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
@@ -732,6 +734,15 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 查词会话期间字幕恒定让位，关栈下一帧自动遮回去。
   /// false（有声书 / 测试 / 无查词浮层的宿主）= 只由播放状态决定，行为与历史一致。
   final bool lookupPopupVisible;
+
+  /// 控制条（进度条）显示期间遮蔽也让位（aJqIVUPxnd，移动端）。
+  ///
+  /// 触屏没有悬停；隐藏态字幕不绘制，点击热区也就无从找起——用户点开进度条想看一眼
+  /// 这句，字幕仍然不在。为 true 时 [controlsVisible] 为真即算「用户在看」，与暂停 /
+  /// 查词浮层同一条门（[videoSubtitleViewerIsLooking]，同样受该层显形开关管），控制条
+  /// 自动收起即遮回去。桌面传 false：鼠标一动控制条就出来，那等于遮蔽失效（桌面另有
+  /// 悬停显形）。[controlsVisible] 为 null 时本开关无效。
+  final bool revealWhileControlsVisible;
 
   /// 字幕字号（外观设置）。
   final double fontSize;
@@ -1284,6 +1295,35 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
   }
 
+  /// 本层重建的触发源：controller（cue / 播放态）+ 需要时并入控制条可见性
+  /// （[VideoSubtitleOverlay.revealWhileControlsVisible]）。按输入身份缓存，父级重建
+  /// 不换 Listenable 实例（AnimatedBuilder 换实例就会退订重订）。
+  Listenable? _rebuildTriggerCache;
+  VideoPlayerController? _rebuildTriggerController;
+  ValueListenable<bool>? _rebuildTriggerControls;
+
+  Listenable get _rebuildTrigger {
+    final ValueListenable<bool>? controls = widget.revealWhileControlsVisible
+        ? widget.controlsVisible
+        : null;
+    final Listenable? cached = _rebuildTriggerCache;
+    if (cached != null &&
+        identical(_rebuildTriggerController, widget.controller) &&
+        identical(_rebuildTriggerControls, controls)) {
+      return cached;
+    }
+    _rebuildTriggerController = widget.controller;
+    _rebuildTriggerControls = controls;
+    return _rebuildTriggerCache = controls == null
+        ? widget.controller
+        : Listenable.merge(<Listenable>[widget.controller, controls]);
+  }
+
+  /// 触屏控制条此刻是否显示且允许它让位遮蔽（见 [revealWhileControlsVisible]）。
+  bool get _touchControlsVisible =>
+      widget.revealWhileControlsVisible &&
+      (widget.controlsVisible?.value ?? false);
+
   @override
   void didUpdateWidget(VideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1364,7 +1404,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.controller,
+      animation: _rebuildTrigger,
       builder: (BuildContext context, _) {
         // 每帧重置字符登记表并（重新）绑定命中句柄——空句也要绑定，使浮层打开但当前无字幕
         // 时 hitTest 返回 null（barrier 走 dismiss）。TODO-1312：登记表二维（主 + 副字幕）。
@@ -1520,9 +1560,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // [secondaryObscureRevealOnInteraction]）。关掉后该层遮蔽恒定
     // 生效：暂停、查词浮层、悬停、点击都不再揭开——用户关它就是要「遮蔽始终保持」，
     // 只堵住悬停 / 点击而漏掉暂停等于开关半失效（用户报：隐藏了字幕，一暂停就冒出来）。
-    final bool userIsReading =
-        _revealOnInteractionFor(isSecondary: isSecondary) &&
-        (!widget.controller.isPlaying || widget.lookupPopupVisible);
+    //
+    // aJqIVUPxnd：移动端点开控制条（进度条）同样算「在看」（[revealWhileControlsVisible]）。
+    final bool userIsReading = videoSubtitleViewerIsLooking(
+      revealOnInteraction: _revealOnInteractionFor(isSecondary: isSecondary),
+      isPlaying: widget.controller.isPlaying,
+      lookupPopupVisible: widget.lookupPopupVisible,
+      touchControlsVisible: _touchControlsVisible,
+    );
     final bool obscureActive = !revealed && !userIsReading;
     final bool blurred = obscureBlurEnabled && obscureActive;
     // 隐藏态（该层开着「隐藏」且该遮蔽）。与 [blurred] 互斥（两者来自互斥的

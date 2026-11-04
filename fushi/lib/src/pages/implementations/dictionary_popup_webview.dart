@@ -372,6 +372,22 @@ typedef OpenAdvancedMiningCallback =
       String reading,
     );
 
+/// 查词弹窗 / 结果区 WebView 里「选中了一段文本要查」的回调。
+///
+/// [rubySpans]：被点文本上来源自带的振假名（释义里的 ruby，`textSelected` 第 3 参），
+/// 以 [text] 为坐标系；右键菜单「查词」等没有 ruby 的路径传空表。
+///
+/// [contextSentence]：被点处所在的那一句（selection.js `getSentence`，`textSelected`
+/// 第 4 参，反馈 TnKWBi4C-9）；右键「查词」等不是点在某处的路径传空串。宿主自行决定
+/// 用不用它当制卡例句。
+typedef DictionaryTextSelected =
+    void Function(
+      String text,
+      Rect localRect,
+      List<FushiRubySpan> rubySpans,
+      String contextSentence,
+    );
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -456,14 +472,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 二者均不受影响（零回归）。
   final bool transparentDocumentBackground;
 
-  /// [rubySpans]：被点文本上来源自带的振假名（释义里的 ruby，`textSelected` 第 3 参），
-  /// 以 [text] 为坐标系；右键菜单「查词」等没有 ruby 的路径传空表。
-  final void Function(
-    String text,
-    Rect localRect,
-    List<FushiRubySpan> rubySpans,
-  )?
-  onTextSelected;
+  /// [DictionaryTextSelected]：在释义正文里点词 / 右键「查词」。
+  final DictionaryTextSelected? onTextSelected;
   final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
   final Future<MinePopupResult> Function(Map<String, String> fields)?
@@ -796,44 +806,33 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     });
   }
 
+  /// 文档竖向滚动条占掉的宽度（视口 px）：`innerWidth` 含滚动条、根元素 `clientWidth`
+  /// 不含，两者都按视口 px 报（WebKit / Blink 的 CSS zoom 都不折算这两个值，探针实测）。
+  /// overlay 滚动条为 0；BUG-1812 的 `innerWidth == 0` 态两边取不到值也按 0。
+  static const String kPopupScrollbarGutterJsExpr =
+      '(function(){var iw=window.innerWidth||0,'
+      'cw=document.documentElement.clientWidth||0;'
+      'return (iw>0&&cw>0)?Math.max(0,iw-cw):0;})()';
+
   /// BUG-1812：iOS WKWebView 的 popup 文档可出现 `window.innerWidth == 0`，
   /// 即使 Flutter platform view 已有真实非零布局。把 Flutter 约束发布给弹窗 JS，
   /// 并按当前 document zoom 折回 layout px 后约束 `#entries-container`；不能直接写
   /// html/body width，否则 zoom != 1 时实占宽度会再次越过真实视口。
+  ///
+  /// BUG-4042（反馈 SwFjAzjBqq，macOS 查词弹窗最右的「高级制卡」按钮与第三列词典被
+  /// 右缘裁掉）：Flutter 给的是平台视图**整宽**，而文档出现占位式竖向滚动条（macOS
+  /// 「始终显示滚动条」/ 接鼠标时的 legacy 滚动条）时可排版宽度要再减掉 gutter。
+  /// 旧算法把容器钉在整宽，内容比可见区宽出 `gutter − body 右内边距`，被视口裁掉。
+  /// 减去 [kPopupScrollbarGutterJsExpr]，并在 gutter 变化（内容变长后滚动条才出现）时
+  /// 经 ResizeObserver 重算。
   Future<void> _applyPopupViewportSize() async {
     final InAppWebViewController? controller = _controller;
     final double? width = _layoutWidth;
     final double? height = _layoutHeight;
     if (controller == null || width == null || width <= 0) return;
-    final String heightValue = height == null ? '0' : '$height';
     try {
       await controller.evaluateJavascript(
-        source:
-            '''(function(){
-  var w = $width, h = $heightValue;
-  document.documentElement.style.setProperty('--fushi-popup-viewport-width', w + 'px');
-  if (h > 0) {
-    document.documentElement.style.setProperty('--fushi-popup-viewport-height', h + 'px');
-  }
-  window.__fushiPopupViewportWidth = w;
-  window.__fushiPopupViewportHeight = h;
-  window.__fushiApplyPopupViewport = function(){
-    var width = Number(window.__fushiPopupViewportWidth) || 0;
-    var z = parseFloat(document.documentElement.style.zoom);
-    if (!(z > 0) || !isFinite(z)) z = 1;
-    var container = document.getElementById('entries-container');
-    if (container && width > 0) {
-      var bodyStyle = getComputedStyle(document.body);
-      var leftInset = parseFloat(bodyStyle.paddingLeft) || 0;
-      var rightInset = parseFloat(bodyStyle.paddingRight) || 0;
-      var layoutWidth = Math.max(0, width / z - leftInset - rightInset);
-      container.style.width = layoutWidth + 'px';
-      container.style.maxWidth = layoutWidth + 'px';
-    }
-    window.__fushiRelayoutPopupColumns && window.__fushiRelayoutPopupColumns();
-  };
-  window.__fushiApplyPopupViewport();
-})();''',
+        source: popupViewportScript(width, height),
       );
     } catch (e, stack) {
       // macOS WKWebView may tear down its platform controller after this
@@ -847,6 +846,48 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
         stack,
       );
     }
+  }
+
+  /// [_applyPopupViewportSize] 注入的脚本（宽高为 Flutter 平台视图的逻辑 px）。
+  @visibleForTesting
+  static String popupViewportScript(double width, double? height) {
+    final String heightValue = height == null ? '0' : '$height';
+    return '''(function(){
+  var w = $width, h = $heightValue;
+  document.documentElement.style.setProperty('--fushi-popup-viewport-width', w + 'px');
+  if (h > 0) {
+    document.documentElement.style.setProperty('--fushi-popup-viewport-height', h + 'px');
+  }
+  window.__fushiPopupViewportWidth = w;
+  window.__fushiPopupViewportHeight = h;
+  window.__fushiApplyPopupViewport = function(){
+    var width = Number(window.__fushiPopupViewportWidth) || 0;
+    var z = parseFloat(document.documentElement.style.zoom);
+    if (!(z > 0) || !isFinite(z)) z = 1;
+    var container = document.getElementById('entries-container');
+    var gutter = $kPopupScrollbarGutterJsExpr;
+    window.__fushiPopupScrollbarGutter = gutter;
+    if (container && width > 0) {
+      var bodyStyle = getComputedStyle(document.body);
+      var leftInset = parseFloat(bodyStyle.paddingLeft) || 0;
+      var rightInset = parseFloat(bodyStyle.paddingRight) || 0;
+      var layoutWidth = Math.max(0, (width - gutter) / z - leftInset - rightInset);
+      container.style.width = layoutWidth + 'px';
+      container.style.maxWidth = layoutWidth + 'px';
+    }
+    window.__fushiRelayoutPopupColumns && window.__fushiRelayoutPopupColumns();
+  };
+  // 竖向滚动条是内容变长后才出现的（换词 / 展开词典），宽度约束要跟着 gutter 重算。
+  if (!window.__fushiPopupGutterObserver && window.ResizeObserver) {
+    window.__fushiPopupGutterObserver = new window.ResizeObserver(function(){
+      if ($kPopupScrollbarGutterJsExpr !== window.__fushiPopupScrollbarGutter) {
+        window.__fushiApplyPopupViewport();
+      }
+    });
+    window.__fushiPopupGutterObserver.observe(document.documentElement);
+  }
+  window.__fushiApplyPopupViewport();
+})();''';
   }
 
   /// 冷建 / 换文档后的首轮引导。
@@ -2659,6 +2700,7 @@ JSON.stringify((function(){
                   text,
                   Rect.zero,
                   const <FushiRubySpan>[],
+                  '',
                 );
               }
             },
@@ -3713,6 +3755,10 @@ JSON.stringify((function(){
                       FushiRubySpan.listFromWire(
                         args.length > 2 ? args[2] : null,
                       ),
+                      // 反馈 TnKWBi4C-9：被点处所在的那一句（旧 selection.js 不带）。
+                      args.length > 3 && args[3] is String
+                          ? args[3] as String
+                          : '',
                     );
                   }
                 }
@@ -4148,7 +4194,12 @@ JSON.stringify((function(){
     }
     switch (action) {
       case _PopupContextMenuAction.search:
-        widget.onTextSelected?.call(text, Rect.zero, const <FushiRubySpan>[]);
+        widget.onTextSelected?.call(
+          text,
+          Rect.zero,
+          const <FushiRubySpan>[],
+          '',
+        );
       case _PopupContextMenuAction.copy:
         // BUG-402 范式：桌面 WebView2 合成模式下原生复制键转发受限，自己把选区文本写
         // 系统剪贴板。

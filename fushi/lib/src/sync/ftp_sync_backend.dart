@@ -357,11 +357,7 @@ class FtpSyncBackend extends SyncBackend
               .map((e) => SyncFileRef(id: '$folderId/${e.name}', name: e.name))
               .toList();
 
-          return SyncFileTrio(
-            progress: findSyncFileByPrefix(files, 'progress_'),
-            statistics: findSyncFileByPrefix(files, 'statistics_'),
-            audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-          );
+          return syncFileTrioFromFiles(files);
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();

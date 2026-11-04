@@ -1285,33 +1285,7 @@ const MIGRATING_KEY: &str = "sync2_migrating/";
 /// - 日志：`sync2_log_meta` 里有这个 ID；
 /// - 身份记录 / 不认识的事件：没有按 ID 的操作索引，扫一遍操作日志里这两种操作（每个实体 / 事件一条，量小）。
 fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<i64, String> {
-    c.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS sync2_migrate_known (phase INTEGER NOT NULL, id BLOB NOT NULL, PRIMARY KEY (phase, id)) WITHOUT ROWID; \
-         DELETE FROM temp.sync2_migrate_known;",
-    )
-    .map_err(sql)?;
-    {
-        let mut stmt = c
-            .prepare("SELECT kind, payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind IN (?2, ?3) AND purged = 0")
-            .map_err(sql)?;
-        let mut known = c.prepare("INSERT OR IGNORE INTO temp.sync2_migrate_known (phase, id) VALUES (?1, srs_id(?2))").map_err(sql)?;
-        let mut q = stmt
-            .query(params![profile, i64::from(op::KIND_ENTITY), i64::from(op::KIND_LEGACY_UNKNOWN)])
-            .map_err(sql)?;
-        while let Some(r) = q.next().map_err(sql)? {
-            let kind: i64 = r.get(0).map_err(sql)?;
-            let payload = snapshots::unpack_payload(c, r.get(1).map_err(sql)?, None, None, r.get(2).map_err(sql)?)?;
-            let (phase, id) = match Body::decode(kind as u16, &payload) {
-                Ok(Body::Entity { id, .. }) => (0, id.text()),
-                Ok(Body::LegacyUnknown { json }) => {
-                    let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
-                    (3, v["x"]["id"].as_str().map(str::to_owned).unwrap_or(json))
-                }
-                _ => continue,
-            };
-            known.execute(params![phase, id]).map_err(sql)?;
-        }
-    }
+    load_known(c, profile)?;
     let phases: [(i64, &str, &str, &str); 4] = [
         // 按 ID 文本排（store/ids.rs：非 UUID 的文本与 BLOB 混排时 SQLite 的顺序不同），包装顺序与旧版本逐条相同。
         (
@@ -1357,7 +1331,52 @@ fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<i64, String> {
     Ok(base)
 }
 
-/// 一条排队的旧行 → 操作载荷；行已经不在了（不会发生：迁移期间独占写）返回 `None`。
+/// 把本 profile 操作日志里已有的身份记录 / 不认识的事件按 `(phase, id)` 记进 `temp.sync2_migrate_known`（先清空）：
+/// 这两种旧行没有按 ID 的操作索引，「已被代表」靠它判（[enqueue_legacy_rows] 排队时、[represented] 每批包装前）。
+fn load_known(c: &Connection, profile: &str) -> Result<(), String> {
+    c.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS sync2_migrate_known (phase INTEGER NOT NULL, id BLOB NOT NULL, PRIMARY KEY (phase, id)) WITHOUT ROWID; \
+         DELETE FROM temp.sync2_migrate_known;",
+    )
+    .map_err(sql)?;
+    let mut stmt = c
+        .prepare("SELECT kind, payload, pz FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind IN (?2, ?3) AND purged = 0")
+        .map_err(sql)?;
+    let mut known = c.prepare("INSERT OR IGNORE INTO temp.sync2_migrate_known (phase, id) VALUES (?1, srs_id(?2))").map_err(sql)?;
+    let mut q = stmt
+        .query(params![profile, i64::from(op::KIND_ENTITY), i64::from(op::KIND_LEGACY_UNKNOWN)])
+        .map_err(sql)?;
+    while let Some(r) = q.next().map_err(sql)? {
+        let kind: i64 = r.get(0).map_err(sql)?;
+        let payload = snapshots::unpack_payload(c, r.get(1).map_err(sql)?, None, None, r.get(2).map_err(sql)?)?;
+        let (phase, id) = match Body::decode(kind as u16, &payload) {
+            Ok(Body::Entity { id, .. }) => (0, id.text()),
+            Ok(Body::LegacyUnknown { json }) => {
+                let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
+                (3, v["x"]["id"].as_str().map(str::to_owned).unwrap_or(json))
+            }
+            _ => continue,
+        };
+        known.execute(params![phase, id]).map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// 排着的一条旧行此刻是否已被某台设备的操作代表（判据同 [enqueue_legacy_rows]）。迁移分批进出独占区（Dart
+/// `SrsDbStore.migrateLegacy`），批与批之间可能插进收到的操作——别的设备迁出的同一条旧行先到了，这一批就不再包它，
+/// 否则又是第二条重复的操作流（BUG-4011）。身份记录 / 不认识的事件查 `temp.sync2_migrate_known`（调用方本批先
+/// [load_known]）。
+fn represented(c: &Connection, phase: i64, src: &str) -> Result<bool, String> {
+    let q = match phase {
+        0 => "SELECT 1 FROM temp.sync2_migrate_known WHERE phase = 0 AND id = srs_id(?1)",
+        1 => "SELECT 1 FROM sync2_edit_ops WHERE edit_id = srs_id(?1)",
+        2 => "SELECT 1 FROM sync2_log_meta WHERE log_id = srs_id(?1)",
+        _ => "SELECT 1 FROM temp.sync2_migrate_known WHERE phase = 3 AND id = srs_id(?1)",
+    };
+    c.prepare_cached(q).map_err(sql)?.exists([src]).map_err(sql)
+}
+
+/// 一条排队的旧行 → 操作载荷；行已经不在了（批与批之间本机删掉 / 撤销了它）返回 `None`。
 fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, String> {
     Ok(match phase {
         0 => {
@@ -1638,6 +1657,9 @@ impl SrsCore {
     /// `sync2_migrate_queue`（只排这一刻已有的行，之后的本机写入本来就是操作），每批在自己的 savepoint 里包一段、
     /// 从队列里删掉、提交；进程被杀 / 关库只丢正在做的那一批，下次打开从队列剩下的接着做。备份快照里带着队列与
     /// 进行中标记：从迁移到一半的快照恢复出来的新身份也接着做完，而不是被「已经有操作了」误判为迁移完成。
+    /// 批与批之间写连接是放开的（Dart 每批单独进出独占区，本机评分 / 撤销 / 编辑与收到的操作都可能插进来）：续做的
+    /// 批次包装前逐条再判「已被代表」（[represented]），中途收到的别的设备迁出的同一条旧行不再包第二份；中途被本机
+    /// 删掉的旧行（[legacy_body] 返回 `None`）跳过。
     /// 返回 `{"done": bool, "ops": 这一批包的条数, "remaining": 队列剩余}`。
     pub fn sync2_migrate(&self, profile: &str, now: i64, limit: Option<u64>) -> Result<Value, String> {
         let w = self.writer()?;
@@ -1675,7 +1697,16 @@ impl SrsCore {
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
+            // 续做的批次（这一次调用没有刚排队）：上一批之后独占区放开过，可能插进了收到的操作，包装前逐条再判一次
+            // 「已被代表」（[represented]）。刚排队的这一批与排队在同一个 savepoint 里，不用再判。
+            let recheck = started;
+            if recheck && batch.iter().any(|(_, phase, _)| *phase == 0 || *phase == 3) {
+                load_known(c, profile)?;
+            }
             for (_, phase, src) in &batch {
+                if recheck && represented(c, *phase, src)? {
+                    continue;
+                }
                 let Some(body) = legacy_body(c, *phase, src)? else { continue };
                 let op = append_local(c, &mut local, &mut applied, &body, now)?;
                 if !matches!(body, Body::LegacyUnknown { .. }) {

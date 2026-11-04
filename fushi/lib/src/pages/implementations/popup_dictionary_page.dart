@@ -11,6 +11,8 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultWidth;
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/lookup/source_line_sentence.dart';
+import 'package:fushi/src/lookup/source_lookup_sentence.dart'
+    show withFallbackMiningSentence;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -310,6 +312,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     SourceLookupScan? scan,
     // 释义里点词带来的来源振假名，以 [query] 为坐标系（下面随句首空白平移）。
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    // 释义里点词时被点处那一句（反馈 TnKWBi4C-9），嵌套层制卡的例句。
+    String contextSentence = '',
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -346,6 +350,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         leadingStrip: query.length - query.trimLeft().length,
         length: trimmed.length,
       ),
+      contextSentence: contextSentence,
     );
     if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
     setState(() {
@@ -876,18 +881,33 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onScrolledToBottom: entry.allLoaded
           ? null
           : () => loadMoreForEntry(entry: entry, controller: _popup),
-      onTextSelected: (text, localRect, rubySpans) {
+      onTextSelected: (text, localRect, rubySpans, contextSentence) {
         if (_popup.entries.length > index + 1) {
           setState(() => _popup.truncateTo(index + 1));
         }
-        _pushSearch(text, localRect, rubySpans: rubySpans);
+        _pushSearch(
+          text,
+          localRect,
+          rubySpans: rubySpans,
+          contextSentence: contextSentence,
+        );
       },
       // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
       // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
       // 来回）。释义正文点词（onTextSelected）仍叠子层。
       onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
-      onMineEntry: isBase ? _mineBaseEntry : onMineEntry,
-      onUpdateEntry: isBase ? _updateBaseEntry : onUpdateEntry,
+      // 嵌套层的词从释义正文点出来：例句是被点处那一句（反馈 TnKWBi4C-9）。
+      onMineEntry: isBase
+          ? _mineBaseEntry
+          : (Map<String, String> fields) => onMineEntry(
+              withFallbackMiningSentence(fields, entry.contextSentence),
+            ),
+      onUpdateEntry: isBase
+          ? _updateBaseEntry
+          : (int noteId, Map<String, String> fields) => onUpdateEntry(
+              noteId,
+              withFallbackMiningSentence(fields, entry.contextSentence),
+            ),
       // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
       isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,

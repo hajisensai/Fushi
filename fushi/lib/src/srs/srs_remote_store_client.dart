@@ -341,6 +341,10 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   }
 
   @override
+  Future<SrsTodayReviewSummary> todayReviewSummary() async =>
+      SrsRemoteWire.todayReviewsFrom(await _read('todayReviewSummary'));
+
+  @override
   Future<SrsDeckSummary?> deckSummary(String deckId) async {
     final Object? json = await _read('deckSummary', <String, Object?>{
       'deck': deckId,

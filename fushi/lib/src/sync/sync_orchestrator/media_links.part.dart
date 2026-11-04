@@ -49,11 +49,21 @@ extension _SyncOrchestratorMediaLinks on SyncOrchestrator {
       final List<MediaLinkManifest> peers = <MediaLinkManifest>[];
       String? ownCanonical;
       bool ownExists = false;
-      for (final AssetEntry e in await _backend.listChildren(ns)) {
-        if (e.isFolder || !isMediaLinksManifestName(e.name)) continue;
+      final List<AssetEntry> manifests = <AssetEntry>[
+        for (final AssetEntry e in await _backend.listChildren(ns))
+          if (!e.isFolder && isMediaLinksManifestName(e.name)) e,
+      ];
+      await _retainManifestMirror(
+        SyncOrchestrator._kMediaLinksMirror,
+        manifests,
+      );
+      for (final AssetEntry e in manifests) {
         final bool isOwn = e.name == ownName;
         try {
-          final Object? json = await _backend.getJsonAsset(e.id);
+          final Object? json = await _readManifestJson(
+            SyncOrchestrator._kMediaLinksMirror,
+            e,
+          );
           if (json == null) {
             throw const FormatException('unreadable (null decode)');
           }

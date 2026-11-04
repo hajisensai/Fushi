@@ -81,6 +81,49 @@ fn a_second_device_migrating_the_same_legacy_library_wraps_only_what_is_missing(
     assert_eq!(projection(&c), projection(&a));
 }
 
+/// 迁移分批、批与批之间独占区放开（Dart `migrateLegacy`）：B 已经排好队、包了第一批（本机独有的一条笔记）之后才收到
+/// A 迁出的那份，续做的批次不再把 A 已经代表的旧行包成第二份，只包剩下的本机独有的两条。
+#[test]
+fn ops_received_between_migration_batches_are_not_wrapped_again() {
+    let a = Device::new("between-a");
+    let b = Device::new("between-b");
+    legacy_library(&a);
+    legacy_library(&b);
+    legacy_extra(&b);
+    // 本机独有的笔记排在队首（身份记录按创建时刻排），第一批（一条）只包它。
+    b.core
+        .writer()
+        .unwrap()
+        .execute("UPDATE srs_entities SET created_at = 0 WHERE id = srs_id('N9')", [])
+        .unwrap();
+    let mut bucket = Bucket::default();
+    let now = T0 + 10 * DAY;
+    assert_eq!(a.core.sync2_migrate(P, now, None).unwrap()["ops"], json!(10));
+    a.sync(&mut bucket, "loc", now);
+
+    let first = b.core.sync2_migrate(P, now + 1, Some(1)).unwrap();
+    assert_eq!(first, json!({"done": false, "ops": 1, "remaining": 12}));
+    // 两批之间收到 A 的操作（A 已代表 B 队列里的 10 条）。
+    b.sync(&mut bucket, "loc", now + 2);
+    let mut wrapped = 1;
+    loop {
+        let m = b.core.sync2_migrate(P, now + 3, Some(2)).unwrap();
+        wrapped += m["ops"].as_i64().unwrap();
+        if m["done"] == json!(true) {
+            break;
+        }
+    }
+    assert_eq!(wrapped, 3, "only B's own three legacy rows, never A's ten again");
+
+    for k in 0..2 {
+        b.sync(&mut bucket, "loc", now + 10 + k);
+        a.sync(&mut bucket, "loc", now + 20 + k);
+    }
+    assert_eq!(ops(&a), 13, "every legacy row is one op, not one per migrating device");
+    assert_eq!(ops(&b), 13);
+    assert_eq!(projection(&a), projection(&b));
+}
+
 /// 旧库里的行全都已经被操作代表（A 自己的旧库与 A 迁出的完全相同）：B 收过之后迁移一条都不包，只补标记。
 #[test]
 fn migrating_a_library_fully_covered_by_received_ops_wraps_nothing() {

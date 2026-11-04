@@ -2115,6 +2115,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                             String text,
                             Rect rect,
                             List<FushiRubySpan> rubySpans,
+                            String _,
                           ) => pushNestedPopup(
                             query: text,
                             selectionRect: rect,

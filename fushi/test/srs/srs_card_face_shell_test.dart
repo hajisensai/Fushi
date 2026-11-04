@@ -259,6 +259,8 @@ void main() {
         ),
       );
       expect(shell, contains('id="fushi-card-root"'));
+      // 卡片内容的直接父节点是 Anki reviewer 的 #qa（导入模板按它写脚本）。
+      expect(shell, contains('<div id="qa"></div></div></body>'));
       expect(shell, contains('class="card nightMode night_mode"'));
       expect(shell, contains(kSrsPlaySoundHandler));
       expect(shell, contains('__fushiSrsSetCard'));
@@ -285,12 +287,14 @@ void main() {
       expect(identical(srsExtractCardStyles(plain).body, plain), isTrue);
     });
 
-    test('卡面内容做媒体改写与 lang 包裹', () {
+    test('卡面内容做媒体改写；lang 挂到 #qa 上、不包裹正文（Anki DOM 契约）', () {
       final SrsCardFaceDocument d = doc(
         body: '<img src="a.png">[sound:b.mp3]',
         css: '.card{background:url(bg.jpg)}',
       );
-      expect(d.bodyHtml, startsWith('<div lang="ja">'));
+      expect(d.bodyHtml, startsWith('<img '));
+      expect(d.lang, 'ja');
+      expect(d.fullCardScript, contains(',"ja");'));
       expect(d.bodyHtml, contains('src="${prefix}a.png"'));
       expect(d.bodyHtml, contains('data-sound="b.mp3"'));
       expect(d.cardCss, contains('url("${prefix}bg.jpg")'));

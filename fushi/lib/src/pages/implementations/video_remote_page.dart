@@ -1705,13 +1705,14 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         screen: screen,
         controller: _popup,
         // 嵌套查词共用同一个电脑端上下文：只压子层，不再 lookupBegin。
-        onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
-            pushNestedPopup(
-              query: text,
-              selectionRect: rect,
-              controller: _popup,
-              rubySpans: rubySpans,
-            ),
+        onPush:
+            (String text, Rect rect, List<FushiRubySpan> rubySpans, String _) =>
+                pushNestedPopup(
+                  query: text,
+                  selectionRect: rect,
+                  controller: _popup,
+                  rubySpans: rubySpans,
+                ),
         onPop: _popAt,
         autoReadOnNavigate: true,
       );

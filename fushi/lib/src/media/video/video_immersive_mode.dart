@@ -23,6 +23,17 @@ enum VideoImmersiveMode {
   }
 }
 
+/// 长按画面临时倍速（触摸 / 鼠标长按，TODO-338 / TODO-1154）此刻是否放行。
+///
+/// 长按是**指针**发起的播放控制，与触摸双击 seek、控制条按钮、滚轮同一档：沉浸锁定态
+/// 只有 [VideoImmersiveMode.full] 放行，其余三档（快捷键 + 查词 / 仅查词 / 仅解锁）一律
+/// 挡掉——用户锁住画面就是不想被误触改变播放（LVLfqlFLVA：沉浸时长按仍在加速）。
+/// 键盘 / 手柄的按住倍速是显式快捷键，另走快捷键门控，不经本判据。
+bool videoImmersiveAllowsLongPressSpeed({
+  required bool immersiveLocked,
+  required VideoImmersiveMode mode,
+}) => !immersiveLocked || mode == VideoImmersiveMode.full;
+
 /// 沉浸锁定态下「点画面任意处 = 显示 / 遮回当前主字幕」是否生效（设计案
 /// `docs/specs/2026-10-25-video-immersive-one-hand.md` §3.1）。
 ///

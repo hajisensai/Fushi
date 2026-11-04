@@ -2629,6 +2629,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 点击与 Shift+悬浮（hit.hover）走同一条查词链：同一字簇的重复悬浮已在
     // runner 去重。attached 表面打开的桌面弹窗必须带游戏 HWND——点卡外关闭
     // 的 down/up 成对吞掉，不得穿透推进台词。
+    //
+    // 制卡**不带** capture lease（反馈 U9k4hlYaNZ）：attached 的两个表面——1/255
+    // alpha 字形捕获窗与桌面查词卡——都是独立的顶层 HWND，不在游戏渲染树里；游戏
+    // 截图只走按窗口的捕获（`window_capture.cpp`：WGC `CreateForWindow` / PrintWindow /
+    // Magpie 呈现窗），拍不到别的顶层窗（BUG-2922 探针实测）。以前这里把两者在整个
+    // 采样窗口（动图最坏 8 s）里藏起来：查词卡消失、字形表面挂起不接点击、新台词
+    // 延到 release 才同步——用户看到的就是「制卡没完不能点别的词、hook 文本卡住」。
+    // 与台词浮窗点词那条路径（同一张桌面查词卡，从不藏）同一判据。
     await _onLookupText(
       latest.id,
       hit.sourceText,
@@ -2640,7 +2648,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
               anchorScreenRect: hit.physicalWordRect!,
               destinationViewportScreenRect: hit.destinationViewportScreen,
             ),
-      captureLeaseFactory: _acquireAttachedMiningCaptureLease,
       consumeOutsideClicksOwnerHwnd: hit.target.targetHwnd,
     );
   }
@@ -2650,6 +2657,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// the visible global dictionary card. The two exact generation tokens are
   /// kept together so a late release cannot revive either an old sentence or
   /// an old card route.
+  ///
+  /// Only the calibration sample capture uses this fence; attached mining no
+  /// longer does (see [_onAttachedLookupText]).
   Future<GalHookCaptureLease> _acquireAttachedMiningCaptureLease({
     bool requireCard = true,
     bool allowBackgroundCalibrationCapture = false,

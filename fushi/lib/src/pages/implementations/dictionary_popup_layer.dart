@@ -775,7 +775,12 @@ Widget parkedRealmPopupLayer({
       overrideFillColor: overrideFillColor,
       onDismiss: () {},
       onTextSelected:
-          (String text, Rect localRect, List<FushiRubySpan> rubySpans) {},
+          (
+            String text,
+            Rect localRect,
+            List<FushiRubySpan> rubySpans,
+            String contextSentence,
+          ) {},
       onLinkClick: (String query, Rect localRect) {},
       onMineEntry: (Map<String, String> fields) async =>
           const MinePopupResult(),
@@ -1380,12 +1385,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   final bool hasChildPopup;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey;
   final VoidCallback onDismiss;
-  final void Function(
-    String text,
-    Rect localRect,
-    List<FushiRubySpan> rubySpans,
-  )
-  onTextSelected;
+  final DictionaryTextSelected onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
 
   /// 制卡（「+」按钮）回调。**可空**：宿主没有制卡能力（或「制卡」功能模块被关掉）

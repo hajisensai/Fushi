@@ -117,8 +117,22 @@ void main() {
       final int e = src.indexOf('Future<void> _onLyricsDocumentReady(', s);
       expect(e, greaterThan(s));
       final String sync = src.substring(s, e);
-      final int guard = sync.indexOf('if (sourceIdx < 0) return;');
+      // BUG-4007 R2 起该早退分支先下发播放态再 return（播放态与当前行解耦），
+      // 但「保位不跳、绝不重载」不变：分支里不重载、不给当前行也不摘高亮。
+      final int guard = sync.indexOf('if (sourceIdx < 0) {');
       expect(guard, greaterThanOrEqualTo(0));
+      final int branchEnd = sync.indexOf('return;', guard);
+      expect(branchEnd, greaterThan(guard));
+      final String branch = sync.substring(guard, branchEnd);
+      expect(branch, isNot(contains('_loadLyricsPage')));
+      expect(branch, isNot(contains('__lyricsSetCue')));
+      // 只带播放态的同步脚本：无 cue（不换当前行）、无 clearCue（保留原高亮）。
+      expect(
+        branch,
+        contains('LyricsModeHtml.overlaySyncScript(playing: playing)'),
+      );
+      expect(branch, isNot(contains('cue:')));
+      expect(branch, isNot(contains('clearCue')));
       // 守卫之后只剩「cue 移出已载窗口」这一处重载（守卫之前那处是无整书 cue 的书
       // 跨章换了章 cue 列表，与 sourceIdx 无关）。
       expect('_loadLyricsPage()'.allMatches(sync.substring(guard)).length, 1);
