@@ -150,7 +150,7 @@ void main() {
 
   group('路由层按模块画背景', () {
     ThemeData theme() => ThemeData(
-      extensions: <ThemeExtension<dynamic>>[
+      extensions: const <ThemeExtension<dynamic>>[
         FushiGlassTheme(FushiGlassMaterial.off, glassDesign: false),
         FushiEinkTheme(false),
       ],
