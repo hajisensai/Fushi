@@ -459,13 +459,13 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
                 colors: (background: topEdge, foreground: topEdgeForeground),
                 // 覆盖层顶栏常驻（自动隐藏只收底栏），歌词矩形与顶栏都排在
                 // padding.top 之下、标题行那一条只有背景：标题行是隐形拖动条，
-                // 始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入（BUG-4078）。
+                // 始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入（BUG-4102）。
                 child: FushiTitleBarDragBandScope(
                   child: Stack(
                     fit: StackFit.expand,
                     children: <Widget>[
                       // 空白背景：单击照旧（onTapBackground），鼠标按住拖动越过
-                      // 拖动阈值才算拖窗口（BUG-4078）。歌词 WebView 在它上面，
+                      // 拖动阈值才算拖窗口（BUG-4102）。歌词 WebView 在它上面，
                       // 不被覆盖。
                       Positioned.fill(
                         child: FushiWindowDragArea(

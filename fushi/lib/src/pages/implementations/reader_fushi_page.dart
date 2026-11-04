@@ -4311,7 +4311,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           ).colorScheme.onSecondaryContainer,
                         ),
                   // 顶栏（贴边 / 悬浮两种样式同一判据）画着时沉浸标题行跟着浮出：
-                  // 唤出工具栏即可拖窗口 / 点窗口按钮（BUG-4078，与视频页控制条同一
+                  // 唤出工具栏即可拖窗口 / 点窗口按钮（BUG-4102，与视频页控制条同一
                   // 机制）。栏收起时标题行照旧隐去，顶部几行正文照常点词。
                   child: FushiTitleBarRevealScope(
                     revealed: _bottomBarShouldPaint,

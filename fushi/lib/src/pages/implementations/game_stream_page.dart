@@ -1875,7 +1875,7 @@ class _GameStreamPageState extends State<GameStreamPage>
       colors: fushiTitleBarColorsOn(Colors.black),
       // 返回 / 动作工具栏常驻，画面经 SafeArea 排在标题行之下、那一条只是黑底：
       // 标题行是隐形拖动条——始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入
-      // （BUG-4078）。不用「按钮常显」：用户 2026-11-04 否决。
+      // （BUG-4102）。不用「按钮常显」：用户 2026-11-04 否决。
       child: FushiTitleBarDragBandScope(
         child: Scaffold(
           backgroundColor: Colors.black,
