@@ -210,6 +210,54 @@ void main() {
     });
   });
 
+  group('fieldNames：映射键不是字段名（SRS 的 fieldId）', () {
+    test('Lapis：按名字找到 MiscInfo 的键；找不到就不写（不拿字段名冒充键）', () {
+      expect(
+        AnkiNoteComposer.charPositionTargetField(
+          mappedFields: const <String>['id-expr', 'id-misc'],
+          noteTypeName: LapisNoteType.modelName,
+          fieldNames: const <String, String>{
+            'id-expr': 'Expression',
+            'id-misc': 'MiscInfo',
+          },
+        ),
+        'id-misc',
+      );
+      expect(
+        AnkiNoteComposer.charPositionTargetField(
+          mappedFields: const <String>['id-expr'],
+          noteTypeName: LapisNoteType.modelName,
+          fieldNames: const <String, String>{'id-expr': 'Expression'},
+        ),
+        isNull,
+      );
+    });
+
+    test('其它类型：名字是 Source / MiscInfo 的键', () {
+      expect(
+        AnkiNoteComposer.charPositionTargetField(
+          mappedFields: const <String>['f1', 'f2'],
+          noteTypeName: 'Fushi',
+          fieldNames: const <String, String>{'f1': 'Term', 'f2': 'Source'},
+        ),
+        'f2',
+      );
+    });
+
+    test('appendCharPosition 写进键而非字段名', () {
+      final Map<String, String> fields = <String, String>{'f2': 'Kokoro'};
+      AnkiNoteComposer.appendCharPosition(
+        fields: fields,
+        charPositionText: _position,
+        mappedFields: const <String>['f1', 'f2'],
+        noteTypeName: 'Fushi',
+        manualFields: const <String, String>{},
+        fieldNames: const <String, String>{'f1': 'Term', 'f2': 'Source'},
+      );
+      expect(fields, <String, String>{'f2': 'Kokoro<br>$_position'});
+    });
+  });
+
   group('appendCharPosition', () {
     test('位置文本 HTML 转义（互联转发端送来的是外部输入）', () {
       final Map<String, String> fields = <String, String>{'MiscInfo': 'a'};

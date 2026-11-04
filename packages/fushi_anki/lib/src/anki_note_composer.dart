@@ -486,20 +486,34 @@ mixin AnkiNoteComposer {
   ///   MiscInfo，见 [FushiCardFields.source]，也是用户自建类型里放出处的惯用名）。
   ///   只认映射里有的：用户没映射的字段我们不知道它是不是真在笔记类型里。
   /// - 都没有：不写。不猜一个别的字段塞进去——写进 Sentence / Glossary 会污染卡面。
+  ///
+  /// [mappedFields] 是映射的**键**，返回值也是其中一个键（调用方按键写 `fields`）。
+  /// [fieldNames] 把键换成真实字段名：Anki 后端的键就是字段名，传 `null`；Fushi 复习
+  /// （SRS）的键是 fieldId（`SrsIds.field`），由它传 fieldId → 字段名（内置类型给字段键
+  /// `MiscInfo` / `Source`，自建类型给字段名），否则按名字永远匹配不上、位置被静默丢掉。
   static String? charPositionTargetField({
     required Iterable<String> mappedFields,
     required String? noteTypeName,
+    Map<String, String>? fieldNames,
   }) {
     final String miscInfo = FushiCardFields.legacyNameOf(
       FushiCardFields.source,
     );
-    if (noteTypeName == LapisNoteType.modelName) return miscInfo;
+    String nameOf(String key) => fieldNames?[key] ?? key;
+    if (noteTypeName == LapisNoteType.modelName) {
+      for (final String key in mappedFields) {
+        if (nameOf(key) == miscInfo) return key;
+      }
+      // 键即字段名（Anki）：Lapis 一定有 MiscInfo，映射里没列也照写。键是 fieldId 时
+      // 不能拿字段名冒充键——那个键不在映射里，写进去也会被调用方按映射过滤掉。
+      return fieldNames == null ? miscInfo : null;
+    }
     final Set<String> equivalents = <String>{
       miscInfo.toLowerCase(),
       FushiCardFields.source.toLowerCase(),
     };
-    for (final String name in mappedFields) {
-      if (equivalents.contains(name.toLowerCase())) return name;
+    for (final String key in mappedFields) {
+      if (equivalents.contains(nameOf(key).toLowerCase())) return key;
     }
     return null;
   }
@@ -517,12 +531,14 @@ mixin AnkiNoteComposer {
     required Iterable<String> mappedFields,
     required String? noteTypeName,
     required Map<String, String> manualFields,
+    Map<String, String>? fieldNames,
   }) {
     final String position = charPositionText?.trim() ?? '';
     if (position.isEmpty) return;
     final String? target = charPositionTargetField(
       mappedFields: mappedFields,
       noteTypeName: noteTypeName,
+      fieldNames: fieldNames,
     );
     if (target == null) return;
     if ((manualFields[target] ?? '').trim().isNotEmpty) return;
@@ -635,6 +651,7 @@ mixin AnkiNoteComposer {
     String? noteTypeName,
     bool keepEmpty = false,
     bool keepDictionaryMediaPlaceholders = false,
+    Map<String, String>? fieldNames,
   }) {
     final bool yieldSelectionText = shouldYieldSelectionText(
       payload: payload,
@@ -683,6 +700,7 @@ mixin AnkiNoteComposer {
       mappedFields: fieldMappings.keys,
       noteTypeName: noteTypeName,
       manualFields: edited,
+      fieldNames: fieldNames,
     );
     return fields;
   }
@@ -878,6 +896,9 @@ mixin AnkiNoteComposer {
   ///
   /// [coverRef] / [sasayakiRef] / [processedAudio] 均须是**已格式化**的最终
   /// 引用（`<img src>` / `[sound:]`；无则 null / 空串）。
+  ///
+  /// [fieldNames]：映射键不是字段名时（SRS 的键是 fieldId）的键 → 字段名，见
+  /// [charPositionTargetField]；Anki 后端传 `null`。
   @protected
   RenderedMinedFields renderMediaPayload({
     required AnkiSettings settings,
@@ -890,6 +911,7 @@ mixin AnkiNoteComposer {
     String? audioWarning,
     bool keepEmpty = false,
     bool keepDictionaryMediaPlaceholders = false,
+    Map<String, String>? fieldNames,
   }) {
     // A muxed video owns sentence playback. Keep only one native sound tag:
     // Lapis renders Picture three times, but SentenceAudio is interpolated once
@@ -1003,6 +1025,7 @@ mixin AnkiNoteComposer {
         noteTypeName: settings.selectedNoteTypeName,
         keepEmpty: keepEmpty,
         keepDictionaryMediaPlaceholders: keepDictionaryMediaPlaceholders,
+        fieldNames: fieldNames,
       ),
       audioWarning: audioWarning,
     );

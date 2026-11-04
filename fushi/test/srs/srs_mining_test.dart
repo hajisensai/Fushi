@@ -461,6 +461,134 @@ void main() {
     expect(resolved.deckId, store.defaultDeckId);
   });
 
+  // 反馈 MhQHXQI-sB 审查：制卡位置写进 MiscInfo 等价字段。SRS 的映射键是 fieldId，
+  // 共享渲染按字段名判落点，必须由 SrsMiner 把 fieldId 换回名字——否则位置被静默丢掉。
+  group('制卡位置（charPositionText）落 SRS 的 MiscInfo 等价字段', () {
+    const String position = '制卡位置：第 48210 字';
+
+    AnkiMiningContext withPosition() => const AnkiMiningContext(
+      sentence: '雪が降る。',
+      documentTitle: 'Snow Country',
+      source: AnkiMiningSource.book,
+      charPositionText: position,
+    );
+
+    test('Fushi 卡片（默认）：写进 Source 字段', () async {
+      final MineOutcome out = await repoWith(
+        const SrsMiningDestination(),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: withPosition());
+      expect(out.result, MineResult.success);
+      final SrsNoteView note = await noteOf('雪', 'ゆき');
+      expect(note.noteTypeId, store.fushiCardNoteTypeId);
+      expect(note.field(fid('Source')), endsWith(position));
+      expect(note.field(fid('Sentence')), isNot(contains(position)));
+      expect(note.tags.where((String t) => t.startsWith('chars_')), isEmpty);
+    });
+
+    test('Lapis：写进 MiscInfo 字段', () async {
+      final MineOutcome out = await repoWith(
+        SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: withPosition());
+      expect(out.result, MineResult.success);
+      final SrsNoteView note = await noteOf('雪', 'ゆき');
+      expect(note.noteTypeId, store.lapisNoteTypeId);
+      expect(note.field(lapisFid('MiscInfo')), endsWith(position));
+    });
+
+    test('自建类型：写进名为 Source 的字段；没有等价字段就不写', () async {
+      final String type = await createVocabType();
+      final MineOutcome plain = await repoWith(
+        SrsMiningDestination(noteTypeId: type),
+      ).mineEntry(rawPayloadJson: _payload('雨', 'あめ'), context: withPosition());
+      expect(plain.result, MineResult.success);
+      final SrsNoteView rain = await noteOf('雨', 'あめ');
+      for (final String id in <String>['fw', 'fm', 'fs']) {
+        expect(rain.field(id), isNot(contains(position)));
+      }
+
+      await store.editFields(SrsEntityKind.noteType, type, <String, Object?>{
+        SrsFieldKeys.fieldDef('fsrc'): const SrsFieldDef(
+          id: 'fsrc',
+          name: 'Source',
+          ord: 3,
+        ).toValue(),
+      });
+      final MineOutcome out = await repoWith(
+        SrsMiningDestination(
+          noteTypeId: type,
+          fieldMappingsByType: <String, Map<String, String>>{
+            type: <String, String>{'fsrc': '{document-title}'},
+          },
+        ),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: withPosition());
+      expect(out.result, MineResult.success);
+      final SrsNoteView note = await noteOf('雪', 'ゆき');
+      expect(note.field('fsrc'), 'Snow Country<br>$position');
+    });
+
+    test('覆写与「回到出处改卡」预填同样带上位置（Lapis + Fushi 卡片）', () async {
+      final SrsMiner lapisMiner = SrsMiner(
+        store: store,
+        media: media,
+        destination: SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+      );
+      final SrsMiner cardMiner = SrsMiner(store: store, media: media);
+      const AnkiSettings settings = AnkiSettings();
+      await repoWith(
+        SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+      await repoWith(
+        const SrsMiningDestination(),
+      ).mineEntry(rawPayloadJson: _payload('雨', 'あめ'), context: bookContext());
+      final SrsNoteView lapisNote = await noteOf('雪', 'ゆき');
+      final SrsNoteView cardNote = await noteOf('雨', 'あめ');
+      expect(lapisNote.field(lapisFid('MiscInfo')), isNot(contains(position)));
+      expect(cardNote.field(fid('Source')), isNot(contains(position)));
+
+      final Map<String, String> lapisPrep = await lapisMiner.prepareFieldsFor(
+        noteId: lapisNote.id,
+        settings: settings,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: withPosition(),
+      );
+      expect(lapisPrep['MiscInfo'], endsWith(position));
+      final Map<String, String> cardPrep = await cardMiner.prepareFieldsFor(
+        noteId: cardNote.id,
+        settings: settings,
+        rawPayloadJson: _payload('雨', 'あめ'),
+        context: withPosition(),
+      );
+      expect(cardPrep['Source'], endsWith(position));
+
+      expect(
+        (await lapisMiner.overwrite(
+          noteId: lapisNote.id,
+          settings: settings,
+          rawPayloadJson: _payload('雪', 'ゆき'),
+          context: withPosition(),
+        )).result,
+        MineResult.success,
+      );
+      expect(
+        (await cardMiner.overwrite(
+          noteId: cardNote.id,
+          settings: settings,
+          rawPayloadJson: _payload('雨', 'あめ'),
+          context: withPosition(),
+        )).result,
+        MineResult.success,
+      );
+      expect(
+        (await noteOf('雪', 'ゆき')).field(lapisFid('MiscInfo')),
+        endsWith(position),
+      );
+      expect(
+        (await noteOf('雨', 'あめ')).field(fid('Source')),
+        endsWith(position),
+      );
+    });
+  });
+
   group('复习模式下的其余制卡操作走 SRS（不碰 Anki）', () {
     late _FakeAnki inner;
     late List<String> opened;
