@@ -48,6 +48,7 @@ import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
@@ -452,7 +453,9 @@ class SrsSyncScheduler {
     onEncryptionEnabled,
     Future<bool> Function()? autoSyncEnabled,
     bool Function(String locationId)? locationDisabled,
+    Duration migratePullBudget = kSrsPullBeforeMigrateBudget,
   }) : _profileLinker = profileLinker,
+       _migratePullBudget = migratePullBudget,
        _locationDisabled = locationDisabled,
        _autoSyncEnabled = autoSyncEnabled,
        _locationKey = locationKey,
@@ -678,6 +681,14 @@ class SrsSyncScheduler {
 
   /// 首次 v2 同步是否已确认（没确认前一轮也不跑，见 [kSrsSyncAwaitingConfirm]）。
   final bool Function() _firstSyncConfirmed;
+
+  /// 旧库迁移之前那轮只拉不发最多等多久（[ensureMigrated]）。
+  final Duration _migratePullBudget;
+
+  /// 正在做的 [ensureMigrated]（按 store）：几条入口同时撞上只拉、只迁移一次。
+  final Expando<Future<void>> _migrations = Expando<Future<void>>(
+    'srsMigrations',
+  );
 
   /// 本机目录（本机作为互联 host 时）的一轮传上了新段：app 据此唤醒已配对设备的长轮询。
   final void Function()? _onLocalDirectoryPublished;
@@ -1088,6 +1099,10 @@ class SrsSyncScheduler {
       }
       if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
+    // 首次同步确认之后的第一轮：旧库先并成操作再上传（BUG-4005）。在一轮里只从这一条位置收（不再拿通道锁）。
+    _step('migrate');
+    await ensureMigrated(store, within: backend);
+    if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     // 引擎在一轮开头写探针取服务器时间，整轮（上传 / 拉取 / 快照，大库能跑几十分钟）跑完才回来：
     final SrsLocationKey? locKey = _locationKey?.call(key);
     final SrsDbStore roundStore = store;
@@ -1208,7 +1223,9 @@ class SrsSyncScheduler {
   ) async {
     final SrsProfileLinker? linker = _profileLinker;
     if (linker == null) return const SrsSyncNowResult(ran: 0);
-    await _serially(() async {
+    bool done = false;
+    Future<void> adopt(SyncAssetStore? within) => _serially(() async {
+      done = true;
       final SrsDbStore? store = await _readStore();
       if (store == null || _halted) return;
       if (store.profileUid != conflict.localUid) {
@@ -1217,11 +1234,30 @@ class SrsSyncScheduler {
           '(${conflict.localUid} -> ${store.profileUid})',
         );
       }
-      await linker.adopt(store, uid);
+      await linker.adopt(store, uid, within: within);
       if (identical(profileConflict, conflict)) profileConflict = null;
       _linkDecided.clear();
       _onDataChanged();
     });
+    // 候选在某条通道上：在那条通道的锁里并入（并入之前要从它收目标 uid 的数据，BUG-4005；通道锁不可重入，先锁后
+    // [_serially] 与常规轮次同一顺序）。[_channels] 把每条通道的错误收进 errors，这里原样抛出。
+    Object? failure;
+    StackTrace? failureStack;
+    await _channels((SyncAssetStore backend) async {
+      if (done || await _directoryKeyOf(backend) != conflict.directoryKey) {
+        return;
+      }
+      try {
+        await adopt(backend);
+      } catch (e, stack) {
+        failure = e;
+        failureStack = stack;
+      }
+    });
+    final Object? error = failure;
+    if (error != null) Error.throwWithStackTrace(error, failureStack!);
+    // 候选在本机目录 / 文件夹位置上（或那条通道此刻不可用）：不拿通道锁并入。
+    if (!done) await adopt(null);
     return syncNow();
   }
 
@@ -1239,6 +1275,12 @@ class SrsSyncScheduler {
   /// 页的节流同步也清空对账时刻，每次进页都把几万个媒体整套对一遍）。
   Future<SrsSyncNowResult> _syncAll({required bool fullMediaReconcile}) async {
     if (_halted) return const SrsSyncNowResult(ran: 0);
+    // 首次同步确认之后（复习页弹框「开始同步」接着就是这一轮）：旧库在任何一轮上传之前并成操作，迁移前从全部
+    // 位置先收一轮（这里还没拿通道锁、也不在 [_serially] 里，可以走 [_channels]；见 [ensureMigrated]）。
+    if (_firstSyncConfirmed()) {
+      final SrsDbStore? store = await _readStore();
+      if (store != null && !_halted) await ensureMigrated(store);
+    }
     if (fullMediaReconcile) _mediaReconciledAt.clear();
     _linkDecided.removeWhere(
       (String _, ({DateTime at, SrsProfileConflict? conflict}) d) =>
@@ -1304,6 +1346,9 @@ class SrsSyncScheduler {
     }
     final SrsDbStore? store = await _readStore();
     if (store == null || _halted) return const SrsSyncNowResult(ran: 0);
+    // 旧库先并成操作再同步（[ensureMigrated]；这里在 [_serially] 里，不拿通道锁）。
+    await ensureMigrated(store, channels: false);
+    if (_halted) return const SrsSyncNowResult(ran: 0);
     final Directory? mediaRoot = await _readMediaRoot?.call();
     int ran = 0;
     bool changed = false;
@@ -1381,6 +1426,169 @@ class SrsSyncScheduler {
       await syncFolderLocations();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsSyncScheduler.publishV1', e, stack);
+    }
+  }
+
+  /// 推迟的旧库迁移（BUG-4005；app 打开 store 时 `deferMigration`，srs_providers.dart）：**首次同步确认之前不迁移、
+  /// 也不拉**（用户拍板：弹框没回答前什么都不做，选「稍后」同样不做）；确认之后、第一轮上传之前，先从已配置的同步
+  /// 位置只拉不发收一轮（[pullInto]，最多等 [_migratePullBudget]），再迁移——迁移只包还没有任何设备的操作代表的
+  /// 旧行，第二台设备就只补差，不再把同一份旧库整个再包一遍。已迁移时立即返回（每个 profile 一生一次）。
+  ///
+  /// 拉取出错 / 到点只记日志、照常迁移（之后靠收敛合并）；迁移本身出错原样抛给这一轮（这一轮不上传）。
+  ///
+  /// [within]：调用方正在跑这条位置的一轮（[_syncWithBackend]，在 [_serially] 里、可能还拿着通道锁）：只从它和
+  /// 本机目录 / 文件夹位置收，不走 [_channels]（通道锁不可重入，[_serially] 也会和锁里排队的轮次互等）。
+  /// [channels] 为假：同样不走 [_channels]（文件夹位置那一轮）。只有 [_syncAll] 开头（锁外、队列外）收全部通道。
+  Future<void> ensureMigrated(
+    SrsDbStore store, {
+    SyncAssetStore? within,
+    bool channels = true,
+  }) {
+    if (store.sync2Migrated || _halted || !_firstSyncConfirmed()) {
+      return Future<void>.value();
+    }
+    final Future<void>? running = _migrations[store];
+    if (running != null) return running;
+    final Future<void> f = () async {
+      try {
+        await store.migrateLegacy(
+          beforeMigrate: (SrsDbStore s) async {
+            try {
+              await pullInto(
+                s,
+                budget: _migratePullBudget,
+                purpose: 'migrate',
+                within: within,
+                channels: channels,
+              );
+            } catch (e, stack) {
+              // 拉取出错不挡迁移（照常迁移，靠收敛合并），但必须留日志。
+              ErrorLogService.instance.log(
+                'SrsSyncScheduler.ensureMigrated.pull',
+                e,
+                stack,
+              );
+            }
+          },
+        );
+      } finally {
+        _migrations[store] = null;
+      }
+    }();
+    _migrations[store] = f;
+    return f;
+  }
+
+  /// 只拉不发（BUG-4005，sync2/srs_sync2_pull_first.dart）：把已配置的同步位置（云盘 / 互联通道、本机目录、
+  /// 文件夹位置）上 [store] 这个 profile 已有的操作收进 [store]，最多等 [budget]。两个用处：
+  /// - 本机旧库迁移之前（[ensureMigrated]）：迁移只包还没有任何设备的操作代表的旧行，先收到别的设备迁出的那份，
+  ///   第二台设备就只补差；
+  /// - 档案合并之前（[SrsDbProfileLinker.pullBeforeMerge]，在那条位置的一轮里，[within] 给出它）：目标 uid 的数据
+  ///   先在本机，合并沿用目标的写入者。
+  ///
+  /// 通道：[within] 非 null = 只收这一条（调用方正在它的一轮里）；否则 [channels] 为真才经 [_channels] 收全部
+  /// （通道锁不可重入：只能在锁外、[_serially] 外这样调）。不写位置、不做 profile 关联、不对账媒体。首次同步没确认 /
+  /// 库关着时不拉（与常规同步同一道门）；关掉的位置跳过。每个位置失败都记日志、接着拉下一个；到点没拉完记一条
+  /// 诊断，已收的照用。
+  Future<void> pullInto(
+    SrsDbStore store, {
+    required Duration budget,
+    required String purpose,
+    SyncAssetStore? within,
+    bool channels = true,
+  }) async {
+    if (_halted || !_firstSyncConfirmed()) return;
+    void log(Object e, StackTrace stack) => ErrorLogService.instance.log(
+      'SrsSyncScheduler.pullInto.$purpose',
+      e,
+      stack,
+    );
+    final Stopwatch watch = Stopwatch()..start();
+    int pulled = 0;
+    final bool done = await srsSync2PullWithin(
+      store,
+      (SrsSync2Host host) async {
+        final Set<String> seen = <String>{};
+        Future<void> one(
+          String locationId,
+          SrsLocationStore Function() location,
+        ) async {
+          if (!seen.add(locationId) || _locationStopped(locationId)) return;
+          try {
+            final SrsSync2Report r = await srsSync2PullOnly(
+              host: host,
+              location: location(),
+              locationId: locationId,
+              nowMs: () => store.now().$1,
+              key: _locationKey?.call(locationId),
+              shouldStop: () => _locationStopped(locationId),
+            );
+            pulled += r.applied;
+            if (r.needsUpgrade || r.error != null) {
+              ErrorLogService.instance.logDiagnostic(
+                'SrsSyncScheduler.pullInto.$purpose',
+                'location $locationId not pulled: '
+                    '${r.needsUpgrade ? kSrsSyncNeedsUpgrade : r.error}',
+              );
+            }
+          } on SrsSync2PullClosed {
+            rethrow;
+          } catch (e, stack) {
+            log(e, stack);
+          }
+        }
+
+        final SyncAssetStore? current = within;
+        if (current != null) {
+          final String? key = await _directoryKeyOf(current);
+          if (key != null) {
+            await one(key, () => srsAssetLocation(current, store.profileUid));
+          }
+        } else if (channels) {
+          final ({int ran, List<Object> errors}) all = await _channels((
+            SyncAssetStore backend,
+          ) async {
+            final String? key = await _directoryKeyOf(backend);
+            if (key == null) return;
+            await one(key, () => srsAssetLocation(backend, store.profileUid));
+          });
+          for (final Object e in all.errors) {
+            if (e is! SrsSync2PullClosed) log(e, StackTrace.current);
+          }
+        }
+        final Future<List<SrsLocalDirectory>> Function()? local =
+            _localDirectories;
+        if (local != null) {
+          for (final SrsLocalDirectory d in await local()) {
+            await one(
+              d.directoryKey,
+              () => srsAssetLocation(d.store, store.profileUid),
+            );
+          }
+        }
+        final Future<List<SrsFolderLocation>> Function()? folders =
+            _folderLocations;
+        if (folders != null) {
+          for (final SrsFolderLocation l in await folders()) {
+            if (!l.sync || !Directory(l.path).existsSync()) continue;
+            await one(
+              l.locationId,
+              () => SrsDirectoryLocationStore(
+                srsFolderCollectionRoot(l, store.profileUid),
+              ),
+            );
+          }
+        }
+      },
+      budget: budget,
+      onError: log,
+    );
+    if (!done) {
+      ErrorLogService.instance.logDiagnostic(
+        'SrsSyncScheduler.pullInto.$purpose',
+        'budget ${budget.inSeconds}s over after ${watch.elapsedMilliseconds} ms '
+            '(applied $pulled); continuing with what was pulled',
+      );
     }
   }
 

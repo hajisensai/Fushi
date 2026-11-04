@@ -37,6 +37,16 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4005](bugs/BUG-4005-srs-sync2-duplicate-migration-streams.md) | ✅ | ✅ | 复习同步里同一份旧库被两台设备各包一遍，操作日志与修改记录成双 |
+| [BUG-4004](bugs/BUG-4004-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
+| [BUG-4004](bugs/BUG-4004-page-curl-back-bleed-and-manga-letterbox.md) | ✅ | ✅ | page-curl-back-bleed-and-manga-letterbox |
+| [BUG-4004](bugs/BUG-4004-srs-store-same-uid-retired.md) | ✅ | ✅ | srs-store-same-uid-retired |
+> 共 3609 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4005](bugs/BUG-4005-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
+| [BUG-4004](bugs/BUG-4004-lyrics-window-blank-tail.md) | ✅ | ✅ | 歌词模式自动播放一段后后面的文字空白、拨过去整页刷新 |
 | [BUG-4010](bugs/BUG-4010-lyrics-collapse-chrome-jump.md) | ✅ | ✅ | 歌词模式宽屏底栏收起时字幕跳走、看不到当前句 |
 | [BUG-4009](bugs/BUG-4009-apple-music-web-login-unauthorized.md) | ✅ | ✅ | apple-music-web-login-unauthorized |
 | [BUG-4008](bugs/BUG-4008-page-curl-back-bleed-and-manga-letterbox.md) | ✅ | ✅ | page-curl-back-bleed-and-manga-letterbox |

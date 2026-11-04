@@ -1518,7 +1518,7 @@ fn deck_config_change_does_not_rewrite_past_reviews() {
 }
 
 /// 旧库：一张卡两条旧日志，作者结果故意与「按当前配置重放」会算出的不同；牌组配置也改过。
-fn legacy_library(d: &Device) {
+pub(crate) fn legacy_library(d: &Device) {
     let deck = super::config::default_deck_id(P);
     let w = d.core.writer().unwrap();
     let log = |id: &str, at: i64, due: i64| {
