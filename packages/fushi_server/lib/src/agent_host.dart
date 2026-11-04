@@ -8,6 +8,9 @@
 /// - 记账与撤销：服务端自己的 Drift 库（同一张 `ai_agent_actions` 表，设备本地、不
 ///   同步）。可撤销写直接执行并记撤销载荷；不可逆操作由 agent loop 先出确认卡片，
 ///   用户点了才注入表态参数——模型填不出来。
+/// - 会话存档（BUG-4067）：与 app 当 host 同一张 `ai_agent_sessions`、同一份实现
+///   （[DatabaseAgentSessionHistory]），按发起设备存——手机能列 / 续接自己在服务端上
+///   的会话，管理页「AI 助手」能看全部。
 library;
 
 import 'dart:convert';
@@ -16,6 +19,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -279,6 +283,7 @@ AgentAssistantHost createServerAgentAssistantHost({
     blocker: blocker,
     source: 'server',
     clock: clock,
+    history: DatabaseAgentSessionHistory(db, clock: clock),
     toolCount: () => invoker()?.catalog.available().length ?? 0,
     open: (String locale) async {
       final AiProviderConfig? provider = resolveServerAgentProvider(settings);

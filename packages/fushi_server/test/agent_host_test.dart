@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -667,6 +668,81 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }
       expect(admin.settings['subtitleLanguage'], 'ja');
+      await sessions.dispose();
+    });
+
+    test('BUG-4067：会话按发起设备存进服务端库，那台设备能列出、续接；共享口令看不到', () async {
+      await db.upsertPairedPeer(
+        FushiPairedPeersCompanion.insert(
+          peerId: 'phone-1',
+          deviceName: const Value<String?>('Pixel'),
+          token: 'tok-phone',
+          pairedAtMs: 1,
+        ),
+      );
+      final AgentAssistantHost host = createServerAgentAssistantHost(
+        config: () => config(ai),
+        db: db,
+        dispatch: () => admin.handle,
+        llmFactory: (AiProviderConfig _) => _StubLlm(<AiChatTurn>[
+          const AiChatTurn(text: '好', toolCalls: <AiChatToolCall>[]),
+          const AiChatTurn(text: '还在', toolCalls: <AiChatToolCall>[]),
+        ]),
+      );
+      expect(
+        (await host.capability())[kHostAssistantAgentHistoryKey],
+        kHostAssistantAgentHistoryVersion,
+      );
+      const HostAssistantCaller phone = HostAssistantCaller(
+        peerToken: 'tok-phone',
+      );
+      final HostAssistantSessions sessions = HostAssistantSessions(host);
+      final Map<String, Object?> first = await sessions.open(
+        kHostAssistantFeatureAgent,
+        locale: 'zh',
+        caller: phone,
+      );
+      final String tableId = first['id']! as String;
+      final String agentId = (first['view']! as Map)['id']! as String;
+      await sessions.act(tableId, <String, Object?>{
+        'type': 'text',
+        'text': '你好',
+      });
+      for (int i = 0; i < 200; i++) {
+        if (await db.getAiAgentSession(agentId) != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await sessions.close(tableId);
+      final AiAgentSessionRow row = (await db.getAiAgentSession(agentId))!;
+      expect(row.originPeerId, 'phone-1');
+      expect(row.scene, 'remote');
+      expect(row.title, '你好');
+
+      expect(
+        (await sessions.listHistory(
+          kHostAssistantFeatureAgent,
+          phone,
+        )).map((Map<String, Object?> s) => s['id']),
+        <String>[agentId],
+      );
+      await expectLater(
+        sessions.listHistory(
+          kHostAssistantFeatureAgent,
+          HostAssistantCaller.anonymous,
+        ),
+        throwsA(isA<HostAssistantPeerRequired>()),
+      );
+      final Map<String, Object?> resumed = await sessions.open(
+        kHostAssistantFeatureAgent,
+        locale: 'zh',
+        caller: phone,
+        resume: agentId,
+      );
+      expect(
+        ((resumed['view']! as Map)['entries']! as List).length,
+        2,
+        reason: '续接读回整场对话',
+      );
       await sessions.dispose();
     });
   });

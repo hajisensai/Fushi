@@ -122,6 +122,12 @@ class AdminApi {
         return _status();
       case ('GET', '/api/admin/logs'):
         return _json(<String, Object?>{'lines': ctx.log.recent});
+      case ('GET', '/api/admin/ai/sessions'):
+        return _aiSessions();
+      case ('GET', _) when path.startsWith('/api/admin/ai/sessions/'):
+        return _aiSession(
+          Uri.decodeComponent(path.substring('/api/admin/ai/sessions/'.length)),
+        );
       case ('GET', '/api/admin/pairing'):
         return _pairing();
       case ('DELETE', _) when path.startsWith('/api/admin/pairing/peers/'):
@@ -430,6 +436,78 @@ class AdminApi {
       'uploadUsedBytes': await uploads.used(),
       'uploadQuotaBytes': ctx.config.uploadQuotaBytes,
       'p2p': ctx.host.p2pStatus(),
+    });
+  }
+
+  // ── AI 助手会话（BUG-4067）────────────────────────────────────────────
+  //
+  // 已配对设备经互联让服务端跑的 AI 助手会话（按发起设备存档）。管理页只读：看
+  // 谁在什么时候让 AI 做了什么；撤销 / 续接在发起的那台设备上做。
+
+  Future<Map<String, String>> _peerNames() async => <String, String>{
+    for (final FushiPairedPeerRow peer in await ctx.db.getPairedPeers())
+      peer.peerId: peer.deviceName ?? '',
+  };
+
+  Map<String, Object?> _aiSessionJson(
+    AiAgentSessionSummary s,
+    Map<String, String> names,
+  ) => <String, Object?>{
+    'id': s.id,
+    'title': s.title,
+    'scene': s.scene,
+    'originPeerId': s.originPeerId,
+    'originDeviceName': s.originPeerId.isEmpty ? null : names[s.originPeerId],
+    'createdAt': s.createdAt,
+    'updatedAt': s.updatedAt,
+    'tokens': s.totalTokens,
+  };
+
+  Future<shelf.Response> _aiSessions() async {
+    final Map<String, String> names = await _peerNames();
+    return _json(<String, Object?>{
+      'sessions': <Object?>[
+        for (final AiAgentSessionSummary s
+            in await ctx.db.listAiAgentSessionSummaries())
+          _aiSessionJson(s, names),
+      ],
+    });
+  }
+
+  /// 一场会话的条目（只给展示要的字段，不回模型历史 / 工具参数原文）。
+  Future<shelf.Response> _aiSession(String id) async {
+    final AiAgentSessionRow? row = await ctx.db.getAiAgentSession(id);
+    if (row == null) return _err(404, 'no such session');
+    final Object? payload = jsonDecode(row.payloadJson);
+    final Object? entries = payload is Map ? payload['entries'] : null;
+    final Map<String, String> names = await _peerNames();
+    return _json(<String, Object?>{
+      ..._aiSessionJson(
+        AiAgentSessionSummary(
+          id: row.id,
+          title: row.title,
+          scene: row.scene,
+          profileUid: row.profileUid,
+          totalTokens: row.totalTokens,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          originPeerId: row.originPeerId,
+        ),
+        names,
+      ),
+      'entries': <Object?>[
+        if (entries is List)
+          for (final Object? e in entries)
+            if (e is Map)
+              <String, Object?>{
+                'kind': e['kind'],
+                'text': e['text'],
+                'toolName': e['toolName'],
+                'status': e['status'],
+                'errorCode': e['errorCode'],
+                'createdAt': e['createdAt'],
+              },
+      ],
     });
   }
 
