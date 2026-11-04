@@ -4,7 +4,7 @@ import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart'
 import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
 import 'package:fushi/src/reader/reader_settings.dart'
     show FontTarget, isFontTargetAvailableOnPlatform;
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';

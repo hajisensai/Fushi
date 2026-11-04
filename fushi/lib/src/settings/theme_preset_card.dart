@@ -1,7 +1,7 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';

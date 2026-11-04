@@ -10,7 +10,7 @@ import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;

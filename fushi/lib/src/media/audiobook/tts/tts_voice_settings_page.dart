@@ -45,7 +45,7 @@ import 'package:fushi/src/media/audiobook/tts/tts_voice_list_layout.dart';
 import 'package:fushi/src/media/audiobook/tts/voicevox_local_page.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';

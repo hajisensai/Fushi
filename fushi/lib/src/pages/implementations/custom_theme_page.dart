@@ -10,7 +10,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiRichTooltip;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'

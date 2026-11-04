@@ -39,7 +39,8 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
     show AdaptiveSettingsRow;
 import 'package:fushi/src/settings/settings_destination.dart'
     show debugSettingsForceExpandAllSections;
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsModifiedRow;
 import 'package:fushi/i18n/strings.g.dart';
 
 import '../helpers/test_platform_services.dart';

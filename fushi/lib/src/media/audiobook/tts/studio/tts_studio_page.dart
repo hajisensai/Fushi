@@ -35,7 +35,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';

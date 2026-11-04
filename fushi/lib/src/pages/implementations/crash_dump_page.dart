@@ -13,7 +13,7 @@ import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 
 /// TODO-607 P0-3：「诊断区 → 崩溃转储」页（Windows-only）。
 ///

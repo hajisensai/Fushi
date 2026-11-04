@@ -13,7 +13,8 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsCountBadge;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsCountBadge;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';

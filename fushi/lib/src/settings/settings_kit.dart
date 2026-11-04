@@ -18,8 +18,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 import 'package:fushi/src/settings/settings_kit_core.dart';
 
-export 'package:fushi/src/settings/settings_kit_core.dart';
-
 // settings kit 中绑定设置 schema（SettingsDestination / SettingsContext）的部分；
 // 与 schema 无关的壳、行、动效积木在 settings_kit_core.dart（底层组件只依赖那里）。
 

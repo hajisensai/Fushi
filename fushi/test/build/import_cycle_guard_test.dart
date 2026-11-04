@@ -14,14 +14,41 @@ import 'package:flutter_test/flutter_test.dart';
 ///    在仓库根跑 `tool/barrel_imports/bin/expand_barrel_imports.dart`（用法见文件头）
 ///    机械换掉；
 /// 2. 最大强连通分量（互相可达的文件集合）不超过 [kMaxCycleFiles]，只许往下调；
-/// 3. [kLeafEntries] 这些底层入口的闭包里不许出现 `app_model.dart`。
+/// 3. [kAppModelFreeDirs] 目录下**每个**文件（含传递依赖）的闭包里不许出现
+///    `app_model.dart`。
+///
+/// 换掉 barrel 之后大环几乎没缩（2426 个文件里仍有 1355 个），根子是 AppModel 上帝
+/// 对象：底层的 models / utils / storage 里有文件直接或间接 import 了它
+/// （`preferences_repository → error_log_service → fushi_toast → … →
+/// fushi_header_search → app_model` 之类），于是整个底层都被拖进环。2026-11-05
+/// 把底层用到的符号挪到更底层的文件、读 AppModel 的件挪到上层或改成参数注入后，
+/// 这三个目录（278 个文件）的闭包全部碰不到 app_model，最大环降到 2435 个文件里
+/// 的 716 个。剩下的环由 AppModel 直接 import 页面 / 媒体源 / 制卡字段撑着，要再缩
+/// 得拆 AppModel 本身。
 ///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
-/// 更底层的文件，或改用参数 / 回调注入，不要调大上限。
-const int kMaxCycleFiles = 1355;
+/// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
+const int kMaxCycleFiles = 716;
 
-/// 底层入口：它们（含传递依赖）不应碰到 AppModel。
-const List<String> kLeafEntries = <String>[];
+const String kAppModel = 'lib/src/models/app_model.dart';
+
+/// 这些目录下的所有文件（除 [kAppModel] 本身）都不许经 import 链连到 AppModel。
+const List<String> kAppModelFreeDirs = <String>[
+  'lib/src/models/',
+  'lib/src/utils/',
+  'lib/src/storage/',
+];
+
+/// 代表性的底层入口（目录级断言之外再钉一遍存在性，路径改了要跟着改）。
+const List<String> kLeafEntries = <String>[
+  'lib/src/models/preferences_repository.dart',
+  'lib/src/models/theme_notifier.dart',
+  'lib/src/storage/app_paths.dart',
+  'lib/src/utils/misc/error_log_service.dart',
+  'lib/src/utils/misc/platform_utils.dart',
+  'lib/src/utils/components/fushi_material_components.dart',
+  'lib/src/utils/adaptive/adaptive_widgets.dart',
+];
 
 const List<String> kBarrels = <String>[
   'utils.dart',
@@ -139,6 +166,43 @@ Set<String> _closure(Map<String, List<String>> graph, String entry) {
   return seen;
 }
 
+/// [from] 到 [to] 的一条最短 import 链（BFS）；不可达返回 null。
+List<String>? _shortestChain(
+  Map<String, List<String>> graph,
+  String from,
+  String to,
+) {
+  final Map<String, String?> prev = <String, String?>{from: null};
+  final List<String> queue = <String>[from];
+  for (int i = 0; i < queue.length; i++) {
+    final String v = queue[i];
+    if (v == to) break;
+    for (final String w in graph[v] ?? const <String>[]) {
+      if (!prev.containsKey(w)) {
+        prev[w] = v;
+        queue.add(w);
+      }
+    }
+  }
+  if (!prev.containsKey(to)) return null;
+  final List<String> chain = <String>[];
+  for (String? v = to; v != null; v = prev[v]) {
+    chain.add(v);
+  }
+  return chain.reversed.toList();
+}
+
+/// 能经 import 链到达 [target] 的全部文件（反向图上的闭包，含 [target]）。
+Set<String> _reaching(Map<String, List<String>> graph, String target) {
+  final Map<String, List<String>> reverse = <String, List<String>>{};
+  for (final MapEntry<String, List<String>> e in graph.entries) {
+    for (final String to in e.value) {
+      (reverse[to] ??= <String>[]).add(e.key);
+    }
+  }
+  return _closure(reverse, target);
+}
+
 void main() {
   final Map<String, List<String>> graph = _libGraph();
 
@@ -190,9 +254,28 @@ void main() {
       expect(graph.containsKey(entry), isTrue, reason: '$entry 不存在');
       expect(
         _closure(graph, entry),
-        isNot(contains('lib/src/models/app_model.dart')),
+        isNot(contains(kAppModel)),
         reason: '$entry 经 import 链连到了 app_model.dart',
       );
     }
+  });
+
+  test('models / utils / storage 目录下所有文件的闭包都不碰 AppModel', () {
+    expect(graph.containsKey(kAppModel), isTrue, reason: '$kAppModel 不存在');
+    final Set<String> reaching = _reaching(graph, kAppModel);
+    final List<String> offenders = <String>[
+      for (final String file in graph.keys.toList()..sort())
+        if (file != kAppModel &&
+            kAppModelFreeDirs.any(file.startsWith) &&
+            reaching.contains(file))
+          '$file：${_shortestChain(graph, file, kAppModel)!.join(' -> ')}',
+    ];
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '底层文件经 import 链连到了 app_model.dart（每行给一条最短链）。'
+          '把链上真正用到的符号挪到更底层，或改成参数 / 回调注入',
+    );
   });
 }

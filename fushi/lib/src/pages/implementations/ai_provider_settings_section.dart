@@ -54,7 +54,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 
 // 历史上 aiFailureText 住在这里，五处调用方按 `show aiFailureText` 从本文件引；
 // 搬到 lib/src/ai/ 后保留这条再导出，不逐个改调用方。

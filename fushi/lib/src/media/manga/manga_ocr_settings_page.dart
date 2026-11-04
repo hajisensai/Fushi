@@ -7,7 +7,7 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';

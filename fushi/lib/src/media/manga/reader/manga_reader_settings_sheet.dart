@@ -15,7 +15,8 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
         showReaderSideSheet;
 import 'package:fushi/src/reader/reader_panel_kit.dart'
     show ReaderPanelTab, ReaderPanelTabs;
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsModifiedRow;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiFloatingPill, fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
