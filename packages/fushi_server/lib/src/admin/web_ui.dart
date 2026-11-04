@@ -63,7 +63,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <nav>
 <button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
 <button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
-<button data-s="subscriptions">订阅</button><button data-s="anki">Anki</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
+<button data-s="subscriptions">订阅</button><button data-s="ai">AI 助手</button><button data-s="anki">Anki</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
 <form method="post" action="/logout" style="margin:0"><button class="b sec" type="submit">退出</button></form>
 </header>
@@ -171,6 +171,13 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <p class="small" id="rr-state"></p>
 <div class="row"><button class="b" id="btn-rr-save">保存</button><span class="small muted">这三项保存即生效，无需重启。</span></div>
 </div>
+</section>
+
+<section id="s-ai">
+<div class="card"><h2>AI 助手会话</h2>
+<p class="small muted">已配对设备经互联让本服务端跑的 AI 助手会话（保留 30 天）。这里只读；撤销与续接在发起的那台设备上做。</p>
+<table><thead><tr><th>标题</th><th>发起设备</th><th>更新</th><th>tokens</th></tr></thead><tbody id="ai-sessions"></tbody></table></div>
+<div class="card" id="ai-detail" style="display:none"><h2 id="ai-detail-title"></h2><p class="small muted" id="ai-detail-meta"></p><div id="ai-entries"></div></div>
 </section>
 
 <section id="s-logs">
@@ -594,12 +601,30 @@ $('#btn-rr-save').onclick = guard(async()=>{
   } finally { $('#btn-rr-save').disabled=false; }
 });
 
+// ── AI 助手会话 ──
+const AI_KIND = {user:'用户', assistant:'AI', toolCall:'操作', confirm:'确认', choice:'候选', notice:'提示'};
+const aiDevice = (s) => s.originPeerId ? (s.originDeviceName || s.originPeerId) : '本机';
+let aiOpen = null;
+async function loadAi(){
+  const r = await api('ai/sessions');
+  $('#ai-sessions').innerHTML = r.sessions.map(s=>`<tr data-ai="${esc(s.id)}" style="cursor:pointer"><td>${esc(s.title||'新对话')}</td><td>${esc(aiDevice(s))}</td><td class="small">${fmtTime(s.updatedAt)}</td><td class="small">${esc(s.tokens)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">无</td></tr>';
+  $('#ai-sessions').querySelectorAll('[data-ai]').forEach(tr=>tr.onclick=guard(async()=>{ aiOpen=tr.dataset.ai; await loadAiDetail(); }));
+  if (aiOpen) await loadAiDetail();
+}
+async function loadAiDetail(){
+  const s = await api('ai/sessions/'+encodeURIComponent(aiOpen));
+  $('#ai-detail').style.display='block';
+  $('#ai-detail-title').textContent = s.title || '新对话';
+  $('#ai-detail-meta').textContent = `${aiDevice(s)} · ${fmtTime(s.createdAt)} → ${fmtTime(s.updatedAt)} · ${s.tokens} tokens`;
+  $('#ai-entries').innerHTML = s.entries.map(e=>`<div class="row" style="align-items:flex-start"><span class="tag">${esc(AI_KIND[e.kind]||e.kind)}</span><div style="flex:1;white-space:pre-wrap">${esc(e.toolName?e.toolName+(e.text?' — '+e.text:''):(e.text||''))} ${e.status&&e.kind!=='user'&&e.kind!=='assistant'?stTag(e.status):''} ${e.errorCode?`<span class="small" style="color:var(--err)">${esc(e.errorCode)}</span>`:''}</div></div>`).join('') || '<p class="muted">无</p>';
+}
+
 // ── 日志 ──
 async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10; pre.textContent = r.lines.join('\n'); if(atBottom) pre.scrollTop=pre.scrollHeight; }
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

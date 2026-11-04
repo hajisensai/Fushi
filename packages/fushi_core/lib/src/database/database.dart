@@ -918,7 +918,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 143;
+  int get schemaVersion => 144;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2878,6 +2878,23 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(videoSubtitleTextOverrides);
         }
       }
+      if (from < 144) {
+        // v144：ai_agent_sessions 加 origin_peer_id（远端会话由哪台已配对设备发起，
+        // BUG-4067：手机经互联列 / 续接自己在 host 上的会话，host 端标「来自 X」）。
+        // 存量会话一律空串 = 认不出发起设备：老版本存远端会话时没记身份，宁可不给任何
+        // 设备列出来，也不能猜着把别人的对话交给某台设备。幂等：早期步骤按当前定义建表
+        // 时已带这一列，跳过。
+        if (await _tableExists('ai_agent_sessions') &&
+            !await _columnExists(
+              'ai_agent_sessions',
+              aiAgentSessions.originPeerId.name,
+            )) {
+          await m.addColumn(aiAgentSessions, aiAgentSessions.originPeerId);
+        }
+        if (await _tableExists('ai_agent_sessions')) {
+          await _ensureAiAgentSessionOriginIndex();
+        }
+      }
     },
     onCreate: (m) async {
       await m.createAll();
@@ -2898,6 +2915,7 @@ class FushiDatabase extends _$FushiDatabase
       await _ensureMusicIndexes();
       await _ensureAiAgentIndexes();
       await _ensureAiAgentSessionProfileIndex();
+      await _ensureAiAgentSessionOriginIndex();
     },
     beforeOpen: (details) async {
       // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen

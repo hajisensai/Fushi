@@ -62,13 +62,14 @@ abstract interface class AiAgentConversationController implements Listenable {
   /// 在哪台设备上执行（远端会话 = 那台设备的名字；本机 = null）。
   String? get executorLabel;
 
-  /// 多会话管理（新建 / 切换 / 浏览历史 / 重命名 / 删除）。本机会话才有；远端
-  /// 会话为 null——整场对话存在执行设备上，这台设备没有它的存档可列。
+  /// 多会话管理（新建 / 切换 / 浏览历史 / 重命名 / 删除）。本机会话是本机存档；
+  /// 远端会话是执行设备上「这台设备发起的」那些（互联 `/api/assistant/history`，
+  /// BUG-4067）。执行设备是老版本、没宣告会话历史时为 null。
   AiAgentSessionLibrary? get sessionLibrary;
 }
 
-/// AI 助手的会话库：本机对话存档（`ai_agent_sessions`，按当前 Profile 过滤）加上
-/// 「正在说的是哪一场」。会话列表界面只依赖这一面。
+/// AI 助手的会话库：对话存档（本机 `ai_agent_sessions` 按当前 Profile 过滤；远端是
+/// 执行设备上这台设备发起的会话）加上「正在说的是哪一场」。会话列表界面只依赖这一面。
 ///
 /// 监听约定同 [AiAgentConversationController]：当前会话 / 运行状态变了通知监听者；
 /// 存档列表的变化另走 [sessionsRevision]。
@@ -88,6 +89,10 @@ abstract interface class AiAgentSessionLibrary implements Listenable {
   /// 当前 Profile 的会话（最近更新的在前），含归属不明的旧存档。
   Future<List<AiAgentSessionSummary>> listSessions();
 
+  /// 会话存在哪台设备上：null = 本机；远端会话库 = 执行设备的名字（列表的说明文字
+  /// 据此说「保存在那台设备上」）。
+  String? get storedOn;
+
   /// 切到一场存档会话（先把当前这场存好）。存档不在 / 读不出 / 没指派提供商时
   /// 返回 false，当前会话不动。
   Future<bool> switchToSession(String sessionId);
@@ -99,6 +104,7 @@ abstract interface class AiAgentSessionLibrary implements Listenable {
   Future<void> renameSession(String sessionId, String title);
 
   /// 删除一场会话的存档（操作记录保留，仍可在「AI 操作记录」里撤销）。删的是
-  /// 当前这场时，先停下正在跑的一轮，再换成一场新对话。
-  Future<void> deleteSession(String sessionId);
+  /// 当前这场时，先停下正在跑的一轮，再换成一场新对话。这场此刻正在别处打开着
+  /// （已配对设备经互联续接着 / host 本机开着）→ 不删，返回 false。
+  Future<bool> deleteSession(String sessionId);
 }

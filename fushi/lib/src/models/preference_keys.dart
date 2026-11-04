@@ -59,6 +59,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 字符串数组，缺键 = 从没选过）：「高级制卡」卡片字段分区里显示（可编辑）
   // 的 Anki 字段名（反馈 -K86qlwBg6）。缺键时对话框按映射挑释义类字段作默认。
   'advanced_mining_visible_fields',
+  // String（默认 '' = 自动）：AI 助手在哪执行（BUG-4067「本地 AI / 远端 AI」切换）。
+  // 'local' = 本机指派的提供商；'remote' = 「下载执行设备」那台已配对设备；'' = 本机
+  // 配了 AI 就本机、否则远端（升级前的行为）。设备本地：远端指向的是这台设备的配对。
+  'ai_agent_executor',
   // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。

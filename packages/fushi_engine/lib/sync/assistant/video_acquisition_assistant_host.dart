@@ -52,6 +52,7 @@ class VideoAcquisitionAssistantHost implements HostAssistantProvider {
   Future<HostAssistantSession> open(
     String feature, {
     required String locale,
+    HostAssistantCaller caller = HostAssistantCaller.anonymous,
   }) async {
     if (feature != kHostAssistantFeatureVideoAcquire) {
       throw ArgumentError.value(

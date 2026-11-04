@@ -171,6 +171,10 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
   }
 }
 
+/// [PreferencesRepository.aiAgentExecutor] 的取值：本机执行 / 远端（下载执行设备）执行。
+const String kAiAgentExecutorLocal = 'local';
+const String kAiAgentExecutorRemote = 'remote';
+
 /// 「新下载任务交给哪台互联 host 执行」的偏好键（空 = 本机）。
 /// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）。
 const String kDownloadExecutionHostPrefKey = 'download_execution_host';
@@ -6334,6 +6338,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiAgentForPeers(bool value) =>
       setPref('ai_agent_for_peers', value);
+
+  /// AI 助手在哪执行（AI 助手界面上的「本地 AI / 远端 AI」切换，BUG-4067）：
+  /// [kAiAgentExecutorLocal] / [kAiAgentExecutorRemote]；空串 = 自动（本机配了 AI 就
+  /// 本机，否则「下载执行设备」）。
+  String get aiAgentExecutor =>
+      getPref('ai_agent_executor', defaultValue: '') as String;
+
+  Future<void> setAiAgentExecutor(String value) =>
+      setPref('ai_agent_executor', value);
 
   /// 外部 AI 访问（MCP，`fushi_cli mcp` / 控制通道 `/mcp`）。默认关：打开后本机的
   /// MCP 客户端凭配对令牌能调操作目录，只能由用户在设置页亲手打开（设备本地）。
