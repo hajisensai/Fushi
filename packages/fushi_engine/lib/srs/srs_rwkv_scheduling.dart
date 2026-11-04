@@ -1,4 +1,4 @@
-/// [SrsDbStore] 排队时从 RWKV 取「此刻回忆率」的接口（实现：`SrsRwkvService`；store 不依赖实现，
+/// [SrsDbStore] 排队时从 RWKV 取回忆率的接口（实现：`SrsRwkvService`；store 不依赖实现，
 /// 测试可替换）。
 library;
 
@@ -26,11 +26,12 @@ abstract interface class SrsRwkvScheduling {
   /// 复习页等它就绪（`SrsStudyState.rwkvPending`）；调用本 getter 不启动服务。
   bool get ready;
 
-  /// RWKV-Instant：[cards] 这些复习卡**此刻**的回忆率（即时头，按当前状态查询），与 [cards] 同序；
-  /// 某张卡没法打分时是 NaN。没准备好 / 状态落后需要重建时返回 null（并在后台开始准备）。
+  /// RWKV-Instant：[cards] 这些复习卡在时刻 [atMs] 的回忆率（即时头，按当前状态查询），与 [cards] 同序；
+  /// 某张卡没法打分时是 NaN。排队给今天结束的时刻（「今天内会降到目标线下」= 今天到期），统计给此刻。
+  /// 没准备好 / 状态落后需要重建时返回 null（并在后台开始准备）。
   Future<List<double>?> instantRetrievability(
     List<SrsRwkvCandidate> cards, {
-    required int nowMs,
+    required int atMs,
   });
 
   /// 本机评分已落库（[log] 是这张卡新的最后一条有效日志）。

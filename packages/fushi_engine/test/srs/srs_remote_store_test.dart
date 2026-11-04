@@ -93,7 +93,7 @@ Future<Object?> _call(
 }
 
 void main() {
-  test('牌组行线格式往返保留 RWKV 状态与拆开的到期两项（rp / rs / r30 / fd）', () async {
+  test('牌组行线格式往返保留 RWKV 状态（rp / rs）', () async {
     final SrsDbStore store = await openTestStore(
       profileUid: _uid,
       deviceId: 'wire',
@@ -101,33 +101,27 @@ void main() {
     );
     final SrsDeckTree tree = await store.deckTree();
     final SrsDeckView deck = tree[store.defaultDeckId]!;
-    SrsDeckSummary row({
-      required bool pending,
-      required bool scheduled,
-      int? r30,
-      int? fsrsDue,
-    }) => SrsDeckSummary(
-      deck: deck,
-      fullName: 'Default',
-      depth: 0,
-      newCount: 1,
-      learnCount: 2,
-      reviewCount: 7,
-      newBudget: const SrsNewCardBudget(
-        limit: 20,
-        allowed: 20,
-        reviewBudget: 100,
-        reason: null,
-      ),
-      totalCards: 30,
-      rwkvPending: pending,
-      rwkvScheduled: scheduled,
-      rwkvReviewsLast30: r30,
-      fsrsDue: fsrsDue,
-    );
+    SrsDeckSummary row({required bool pending, required bool scheduled}) =>
+        SrsDeckSummary(
+          deck: deck,
+          fullName: 'Default',
+          depth: 0,
+          newCount: 1,
+          learnCount: 2,
+          reviewCount: 7,
+          newBudget: const SrsNewCardBudget(
+            limit: 20,
+            allowed: 20,
+            reviewBudget: 100,
+            reason: null,
+          ),
+          totalCards: 30,
+          rwkvPending: pending,
+          rwkvScheduled: scheduled,
+        );
     for (final SrsDeckSummary s in <SrsDeckSummary>[
-      row(pending: true, scheduled: true, r30: 46, fsrsDue: 3),
-      row(pending: false, scheduled: true, r30: 0, fsrsDue: 0),
+      row(pending: true, scheduled: true),
+      row(pending: false, scheduled: true),
       row(pending: false, scheduled: false),
     ]) {
       final SrsDeckSummary back = SrsRemoteWire.summaryFrom(
@@ -136,16 +130,8 @@ void main() {
       )!;
       expect(back.rwkvPending, s.rwkvPending);
       expect(back.rwkvScheduled, s.rwkvScheduled);
-      expect(back.rwkvReviewsLast30, s.rwkvReviewsLast30);
-      expect(back.fsrsDue, s.fsrsDue);
-      expect(back.rwkvDailyReviews, s.rwkvDailyReviews);
       expect(back.reviewCount, s.reviewCount);
     }
-    expect(
-      row(pending: true, scheduled: true, r30: 46, fsrsDue: 3).rwkvDailyReviews,
-      2,
-      reason: '46 / 30 四舍五入',
-    );
   });
 
   test('握手回包带主机的修订号、牌组树标签、时钟与排程能力', () async {

@@ -461,6 +461,8 @@ class HighlightStrokePreviewPainter extends CustomPainter {
     switch (config.style) {
       case HighlightStrokeStyle.classic:
         return;
+      case HighlightStrokeStyle.underline:
+        _paintUnderline(canvas, l, r);
       case HighlightStrokeStyle.marker:
         final ({double top, double bot}) b = _band(l, _natural, r);
         final double h = b.bot - b.top;
@@ -650,6 +652,105 @@ class HighlightStrokePreviewPainter extends CustomPainter {
           );
         }
         canvas.restore();
+    }
+  }
+
+  /// 下划线：与 JS `MARKERS.underline` 同一套几何（字框块末端外 offset em，粗细 0.12em × 倍数）。
+  void _paintUnderline(Canvas canvas, HighlightPreviewLine l, _Rng r) {
+    final double em = l.em;
+    final double w = em * _natural * config.thickness;
+    final double v0 = l.vc + em * 0.5 + em * config.underlineOffset;
+    final double a = l.u0;
+    final double z = l.u1;
+    final double amp = em * 0.03 * config.roughness;
+    Paint stroke(double width, {StrokeCap cap = StrokeCap.butt}) => Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width
+      ..strokeCap = cap
+      ..strokeJoin = StrokeJoin.round
+      ..color = color.withValues(
+        alpha: math.min(1, config.opacity * 2).toDouble(),
+      );
+    List<Offset> line(double v) => <Offset>[
+      _p(a, v),
+      for (final List<double> q in _wobble(a, z, v, amp, em * 1.2, r))
+        _p(q[0], q[1]),
+      _p(z, v),
+    ];
+    Path pathOf(List<Offset> pts) {
+      final Path p = Path()..moveTo(pts.first.dx, pts.first.dy);
+      for (final Offset o in pts.skip(1)) {
+        p.lineTo(o.dx, o.dy);
+      }
+      return p;
+    }
+
+    switch (config.underlineForm) {
+      case HighlightUnderlineForm.doubleLine:
+        final double lw = w * 0.7;
+        canvas.drawPath(pathOf(line(v0 + lw / 2)), stroke(lw));
+        canvas.drawPath(pathOf(line(v0 + lw / 2 + w * 1.4)), stroke(lw));
+      case HighlightUnderlineForm.wavy:
+        final double half = math.max(w * 1.1, em * 0.06);
+        final double vc = v0 + half + w / 2;
+        final int n = math.max(1, ((z - a) / (em * 0.25)).round());
+        final double step = (z - a) / n;
+        final Offset s = _p(a, vc);
+        final Path p = Path()..moveTo(s.dx, s.dy);
+        for (int k = 0; k < n; k++) {
+          final double u = a + step * k;
+          final Offset c = _p(u + step / 2, vc + (k.isOdd ? half : -half) * 2);
+          final Offset e = _p(u + step, vc);
+          p.quadraticBezierTo(c.dx, c.dy, e.dx, e.dy);
+        }
+        canvas.drawPath(p, stroke(w * 0.8, cap: StrokeCap.round));
+      case HighlightUnderlineForm.dashed:
+        _dash(canvas, line(v0 + w / 2), em * 0.45, em * 0.25, stroke(w));
+      case HighlightUnderlineForm.dotted:
+        final Paint dot = stroke(w)..style = PaintingStyle.fill;
+        for (final Offset o in _along(line(v0 + w / 2), w * 2.4)) {
+          canvas.drawCircle(o, w / 2, dot);
+        }
+      case HighlightUnderlineForm.solid:
+        canvas.drawPath(pathOf(line(v0 + w / 2)), stroke(w));
+    }
+  }
+
+  /// 沿折线每隔 [step] 取一个点（含起点）。
+  List<Offset> _along(List<Offset> pts, double step) {
+    final List<Offset> out = <Offset>[];
+    double carry = 0;
+    for (int i = 1; i < pts.length; i++) {
+      final Offset a = pts[i - 1];
+      final Offset d = pts[i] - a;
+      final double len = d.distance;
+      double t = carry;
+      while (t <= len) {
+        out.add(a + d * (len == 0 ? 0 : t / len));
+        t += step;
+      }
+      carry = t - len;
+    }
+    return out;
+  }
+
+  /// 沿折线画虚线（[on] 实、[off] 空）。
+  void _dash(
+    Canvas canvas,
+    List<Offset> pts,
+    double on,
+    double off,
+    Paint paint,
+  ) {
+    final Path p = Path()..moveTo(pts.first.dx, pts.first.dy);
+    for (final Offset o in pts.skip(1)) {
+      p.lineTo(o.dx, o.dy);
+    }
+    for (final ui.PathMetric m in p.computeMetrics()) {
+      for (double d = 0; d < m.length; d += on + off) {
+        canvas.drawPath(m.extractPath(d, math.min(d + on, m.length)), paint);
+      }
     }
   }
 

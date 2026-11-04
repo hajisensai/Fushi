@@ -1216,7 +1216,9 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     var kindOf = function(name) {
       return KIND_OF[name] || (/^fushi-hl-[a-z]+$/.test(name) ? 'favorite' : null);
     };
-    var MARK_STYLES = ['marker', 'fluo', 'rough', 'under', 'crayon', 'tape'];
+    var MARK_STYLES = ['underline', 'marker', 'fluo', 'rough', 'under', 'crayon', 'tape'];
+    // 下划线样式的线型（与 Dart 的 HighlightUnderlineForm 逐字对应，测试钉住）；未知值当实线。
+    var UNDERLINE_FORMS = ['solid', 'double', 'dashed', 'dotted', 'wavy'];
     var clampNum = function(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
     var cssNum = function(cs, name, fallback) {
       var v = parseFloat(cs.getPropertyValue(name));
@@ -1242,6 +1244,9 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         var p = '--fushi-mark-' + kind + '-';
         var style = (cs.getPropertyValue(p + 'style') || '').trim();
         if (MARK_STYLES.indexOf(style) < 0) return;
+        var form = (cs.getPropertyValue(p + 'form') || '').trim();
+        // 墨水屏：线色写死成正文色，不读这一组的底色（墨水屏的底色全是透明），按不透明的线画。
+        var ink = (cs.getPropertyValue(p + 'ink') || '').trim();
         out[kind] = {
           kind: kind,
           style: style,
@@ -1250,6 +1255,9 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
           cover: cssNum(cs, p + 'cover-ruby', 0) > 0,
           rough: clampNum(cssNum(cs, p + 'roughness', 0.5), 0, 1),
           animate: !!sweep && cssNum(cs, p + 'animate', 0) > 0,
+          form: UNDERLINE_FORMS.indexOf(form) < 0 ? 'solid' : form,
+          offset: clampNum(cssNum(cs, p + 'offset', 0.15), 0, 0.5),
+          ink: ink || null,
           sweep: sweep,
           paper: paper
         };
@@ -1307,7 +1315,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 擦到甚至盖到振假名（用户 2026-10-16「使用了这种自定义样式应该可付出一点代价可以超过字高，
     // 主要是要更美观」），默认取参考图那种几乎填满行距的粗细。与 Dart 的 kHighlightStrokeNaturalEm
     // 逐项相同（测试钉住）。半截荧光只涂下半截，不在表里。
-    var MARK_NATURAL_EM = { marker: 1.35, fluo: 1.3, rough: 1.25, crayon: 1.38, tape: 1.45 };
+    var MARK_NATURAL_EM = { underline: 0.12, marker: 1.35, fluo: 1.3, rough: 1.25, crayon: 1.38, tape: 1.45 };
     // 笔划的跨行上下沿：自然粗细 × 用户粗细倍数，居中于墨迹中线；
     // 盖住振假名时 over 侧多加一个注音高（约 0.6em）。
     var markBand = function(line, k, cfg, rnd) {
@@ -1317,6 +1325,49 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     };
     var pathTag = function(d, attrs) { return '<path d="' + d + '" ' + attrs + '/>'; };
     var MARKERS = {
+      // 下划线：一条线画在 1em 字框的块末端外侧（横排在行下、竖排在列左），离字 offset em，从不压字、
+      // 不碰振假名（振假名在 over 侧）。粗细 = 自然 0.12em × 倍数；线型实线 / 双线 / 虚线 / 点线 / 波浪；
+      // 抖动只让直线微微起伏（波浪线不抖）。墨水屏的线式标记就是它（cfg.ink = 正文色，不透明）。
+      underline: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em;
+        var w = em * MARK_NATURAL_EM.underline * cfg.thickness;
+        var v0 = l.vc + em * 0.5 + em * cfg.offset;
+        var a = l.u0, z = l.u1;
+        var op = cfg.ink ? 1 : Math.min(1, cfg.opacity * 2);
+        var stroke = function(d, width, extra) {
+          return pathTag(d, 'fill="none" stroke="' + c.fill + '" stroke-opacity="' + fx(op) + '" stroke-width="' + fx(width) +
+            '" ' + (extra || 'stroke-linecap="butt"'));
+        };
+        var amp = em * 0.03 * cfg.rough;
+        var line = function(v) {
+          var pts = [[a, v]].concat(wobble(a, z, v, amp, em * 1.2, r), [[z, v]]);
+          var d = '';
+          for (var i = 0; i < pts.length; i++) d += (i ? 'L' : 'M') + c.P(pts[i][0], pts[i][1]);
+          return d;
+        };
+        if (cfg.form === 'double') {
+          var lw = w * 0.7;
+          return stroke(line(v0 + lw / 2), lw) + stroke(line(v0 + lw / 2 + w * 1.4), lw);
+        }
+        if (cfg.form === 'wavy') {
+          var half = Math.max(w * 1.1, em * 0.06), wl = em * 0.5, vc = v0 + half + w / 2;
+          var n = Math.max(1, Math.round((z - a) / (wl / 2)));
+          var step = (z - a) / n, d = 'M' + c.P(a, vc);
+          for (var k = 0; k < n; k++) {
+            var u = a + step * k;
+            d += 'Q' + c.P(u + step / 2, vc + (k % 2 ? half : -half) * 2) + ' ' + c.P(u + step, vc);
+          }
+          return stroke(d, w * 0.8, 'stroke-linecap="round" stroke-linejoin="round"');
+        }
+        var mid = v0 + w / 2;
+        if (cfg.form === 'dashed') {
+          return stroke(line(mid), w, 'stroke-linecap="butt" stroke-dasharray="' + fx(em * 0.45) + ' ' + fx(em * 0.25) + '"');
+        }
+        if (cfg.form === 'dotted') {
+          return stroke(line(mid), w, 'stroke-linecap="round" stroke-dasharray="0.01 ' + fx(w * 2.4) + '"');
+        }
+        return stroke(line(mid), w);
+      },
       // 斜切马克笔：逐行一条，两端平行斜切，收笔端微毛并略积墨。
       marker: function(l, c) {
         var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.marker, cfg, r), h = b.bot - b.top;
@@ -1524,8 +1575,9 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var empty = { ink: '', still: '' };
       if (!list.length) return empty;
       var geom = list.map(function(l) { return lineGeom(l, origin); });
-      var fill = groupColor(name);
+      var fill = cfg.ink || groupColor(name);
       if (!fill) return empty;
+
       var base = 'fushi-mark-' + name.replace(/^fushi-/, '') + '-' + tag + '-';
       var shared = markDefs(base, cfg);
       var ink = '';
