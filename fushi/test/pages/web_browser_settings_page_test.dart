@@ -286,6 +286,37 @@ void main() {
           in kWebBrowserVideoShortcuts) {
         expect(shortcuts, contains("'$action': '$combo'"), reason: action);
       }
+      // 反馈 dQjjzl7XWj：快退秒数 / 按住倍速的键名、取值表、缺省与扩展同一份。
+      String jsList(List<String> values) =>
+          '[${values.map((String v) => "'$v'").join(', ')}]';
+      expect(
+        shortcuts,
+        contains("SEEK_SECONDS_SETTING = '$kWebBrowserSeekSecondsSetting'"),
+      );
+      expect(
+        shortcuts,
+        contains(
+          'SEEK_SECONDS_OPTIONS = ${jsList(kWebBrowserSeekSecondsOptions)}',
+        ),
+      );
+      expect(
+        shortcuts,
+        contains("SEEK_SECONDS_DEFAULT = '$kWebBrowserSeekSecondsDefault'"),
+      );
+      expect(
+        shortcuts,
+        contains("HOLD_RATE_SETTING = '$kWebBrowserHoldSpeedRateSetting'"),
+      );
+      expect(
+        shortcuts,
+        contains(
+          'HOLD_RATE_OPTIONS = ${jsList(kWebBrowserHoldSpeedRateOptions)}',
+        ),
+      );
+      expect(
+        shortcuts,
+        contains("HOLD_RATE_DEFAULT = '$kWebBrowserHoldSpeedRateDefault'"),
+      );
       final String palette = File('$root/theme-palette.js').readAsStringSync();
       for (final (String key, String label)
           in kWebBrowserExtensionPalettePresets) {

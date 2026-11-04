@@ -22,19 +22,36 @@ const shortcutSettingIds = [
   'videoShortcutCopyCue',
   'videoShortcutRateDown',
   'videoShortcutRateUp',
+  'videoShortcutSeekBack',
+  'videoShortcutSeekForward',
+  'videoShortcutHoldSpeed',
 ];
 
 function ev(over) {
   return Object.assign({ key: '', code: '', ctrl: false, shift: false, alt: false, editable: false }, over);
 }
 
-function createRuntime(initialSettings = {}, { hasTrack = true } = {}) {
+function createRuntime(initialSettings = {}, { hasTrack = true, seekBy = true } = {}) {
   const source = fs.readFileSync(require.resolve('./video-shortcuts.js'), 'utf8');
   let keydown;
+  let keyup;
+  let blur;
+  let visibility;
   let storageChanged;
   let requestedKeys;
   const actions = [];
-  const video = { playbackRate: 1 };
+  const seeks = [];
+  const toasts = [];
+  const video = { playbackRate: 1, currentTime: 100, duration: 600 };
+  const doc = {
+    visibilityState: 'visible',
+    querySelector(selector) {
+      return selector === 'video' ? video : null;
+    },
+    addEventListener(type, handler) {
+      if (type === 'visibilitychange') visibility = handler;
+    },
+  };
   const fakeWindow = {
     fushiEpisodeCues: hasTrack ? { 'episode|ja': [{ start: 0, end: 1, text: '字幕' }] } : {},
     fushiVideoKey: () => 'episode',
@@ -42,18 +59,20 @@ function createRuntime(initialSettings = {}, { hasTrack = true } = {}) {
       actions.push(action);
       return true;
     },
+    fushiToast(text) { toasts.push(text); },
     addEventListener(type, handler) {
       if (type === 'keydown') keydown = handler;
+      if (type === 'keyup') keyup = handler;
+      if (type === 'blur') blur = handler;
     },
   };
+  if (seekBy) {
+    fakeWindow.fushiSubtitleSeekBy = (ms) => { seeks.push(ms); return true; };
+  }
   const context = {
     self: fakeWindow,
     window: fakeWindow,
-    document: {
-      querySelector(selector) {
-        return selector === 'video' ? video : null;
-      },
-    },
+    document: doc,
     chrome: {
       storage: {
         local: {
@@ -74,9 +93,33 @@ function createRuntime(initialSettings = {}, { hasTrack = true } = {}) {
   assert.strictEqual(typeof keydown, 'function');
   assert.strictEqual(typeof storageChanged, 'function');
 
+  function fire(handler, overrides) {
+    let prevented = false;
+    let stopped = false;
+    handler(Object.assign({
+      key: '',
+      code: '',
+      repeat: false,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      target: null,
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; },
+    }, overrides));
+    return { prevented, stopped };
+  }
+
   return {
     actions,
+    seeks,
+    toasts,
+    video,
     requestedKeys,
+    keyUp(overrides) { return fire(keyup, overrides); },
+    blur() { blur(); },
+    hide() { doc.visibilityState = 'hidden'; visibility(); },
     key(overrides) {
       let prevented = false;
       let stopped = false;
@@ -523,4 +566,122 @@ test('options：每个快捷键行的键帽都是可点的改键按钮，覆盖�
   assert.ok(/<script src="video-shortcuts\.js"><\/script>[\s\S]*<script src="options\.js"><\/script>/.test(optionsHtml),
     '设置页要先装 video-shortcuts.js 才能复用规范化 / 显示');
   assert.ok(/loadShortcutKeys\(\)/.test(optionsJs));
+});
+
+// ── 反馈 dQjjzl7XWj：按秒快退 / 快进与按住临时倍速（App 视频页有、扩展此前没有）──
+test('Shift+←/→：按秒快退 / 快进，不需要字幕轨；与 ←/→（上一句 / 下一句）各自独立', () => {
+  const noTrack = { enabled: true, hasVideo: true, hasTrack: false };
+  assert.deepStrictEqual(decide(ev({ shift: true, key: 'ArrowLeft', code: 'ArrowLeft' }), noTrack), { action: 'seek-back' });
+  assert.deepStrictEqual(decide(ev({ shift: true, key: 'ArrowRight', code: 'ArrowRight' }), noTrack), { action: 'seek-forward' });
+  assert.deepStrictEqual(decide(ev({ key: 'ArrowLeft', code: 'ArrowLeft' }), CTX), { action: 'prev-cue' });
+  assert.deepStrictEqual(decide(ev({ code: 'KeyE' }), noTrack), { action: 'hold-speed' });
+  assert.strictEqual(decide(ev({ code: 'KeyE', editable: true }), noTrack), null, '输入框里打 e 照旧放行');
+  assert.strictEqual(
+    decide(ev({ shift: true, code: 'ArrowLeft' }), { ...noTrack, bindings: { 'seek-back': false } }), null);
+});
+
+test('seekSeconds / holdRate 只认取值表；seekTarget 夹在 [0, 时长]', () => {
+  assert.strictEqual(VS.seekSeconds(undefined), 5);
+  assert.strictEqual(VS.seekSeconds('10'), 10);
+  assert.strictEqual(VS.seekSeconds(10), 10);
+  assert.strictEqual(VS.seekSeconds('7'), 5, '表外值回落默认');
+  assert.strictEqual(VS.holdRate(undefined), 2);
+  assert.strictEqual(VS.holdRate('2.5'), 2.5);
+  assert.strictEqual(VS.holdRate('99'), 2);
+  assert.strictEqual(VS.seekTarget(3, -5, 600), 0);
+  assert.strictEqual(VS.seekTarget(598, 5, 600), 600);
+  assert.strictEqual(VS.seekTarget(100, 5, NaN), 105, '直播 / 未知时长不夹上界');
+  assert.ok(VS.SEEK_SECONDS_OPTIONS.includes(VS.SEEK_SECONDS_DEFAULT));
+  assert.ok(VS.HOLD_RATE_OPTIONS.includes(VS.HOLD_RATE_DEFAULT));
+});
+
+test('runtime：快退 / 快进经 subtitle-panel 的 fushiSubtitleSeekBy（Netflix 走官方 seek），秒数跟设置热更新', () => {
+  const rt = createRuntime({}, { hasTrack: false });
+  assert.ok(rt.requestedKeys.includes('videoSeekSeconds'));
+  assert.ok(rt.requestedKeys.includes('videoHoldSpeedRate'));
+  assert.deepStrictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft', shiftKey: true }), { prevented: true, stopped: true });
+  assert.deepStrictEqual(rt.key({ key: 'ArrowRight', code: 'ArrowRight', shiftKey: true }), { prevented: true, stopped: true });
+  assert.deepStrictEqual(rt.seeks, [-5000, 5000]);
+  rt.change('videoSeekSeconds', '10');
+  rt.key({ key: 'ArrowRight', code: 'ArrowRight', shiftKey: true });
+  assert.deepStrictEqual(rt.seeks, [-5000, 5000, 10000]);
+  // 无字幕轨时裸 ←/→ 仍放行给站点（站点自己的 5s 快进）。
+  assert.deepStrictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }), { prevented: false, stopped: false });
+});
+
+test('runtime：执行端缺席时直接改 <video>.currentTime，夹在 [0, 时长]', () => {
+  const rt = createRuntime({ videoSeekSeconds: '30' }, { seekBy: false });
+  rt.video.currentTime = 10;
+  rt.key({ key: 'ArrowLeft', code: 'ArrowLeft', shiftKey: true });
+  assert.strictEqual(rt.video.currentTime, 0);
+  rt.video.currentTime = 590;
+  rt.key({ key: 'ArrowRight', code: 'ArrowRight', shiftKey: true });
+  assert.strictEqual(rt.video.currentTime, 600);
+});
+
+test('runtime：按住 E 临时倍速，自动重复被吞，松开同一个键恢复原速', () => {
+  const rt = createRuntime({ videoHoldSpeedRate: '3' }, { hasTrack: false });
+  rt.video.playbackRate = 1.25;
+  assert.deepStrictEqual(rt.key({ key: 'e', code: 'KeyE' }), { prevented: true, stopped: true });
+  assert.strictEqual(rt.video.playbackRate, 3);
+  assert.deepStrictEqual(rt.key({ key: 'e', code: 'KeyE', repeat: true }), { prevented: true, stopped: true },
+    '按住期间的自动重复不漏给站点');
+  assert.strictEqual(rt.video.playbackRate, 3);
+  assert.deepStrictEqual(rt.keyUp({ key: 'x', code: 'KeyX' }), { prevented: false, stopped: false }, '别的键松开不相干');
+  assert.strictEqual(rt.video.playbackRate, 3);
+  assert.deepStrictEqual(rt.keyUp({ key: 'e', code: 'KeyE' }), { prevented: true, stopped: true });
+  assert.strictEqual(rt.video.playbackRate, 1.25, '恢复按下前的原速，不是 1x');
+  assert.deepStrictEqual(rt.keyUp({ key: 'e', code: 'KeyE' }), { prevented: false, stopped: false }, '没在按住态时放行');
+});
+
+test('runtime：按住临时倍速时失焦 / 切走标签页（收不到 keyup）也恢复原速', () => {
+  const rt = createRuntime({}, { hasTrack: false });
+  rt.key({ key: 'e', code: 'KeyE' });
+  assert.strictEqual(rt.video.playbackRate, 2);
+  rt.blur();
+  assert.strictEqual(rt.video.playbackRate, 1);
+  rt.key({ key: 'e', code: 'KeyE' });
+  assert.strictEqual(rt.video.playbackRate, 2);
+  rt.hide();
+  assert.strictEqual(rt.video.playbackRate, 1);
+  // 关掉独立开关后 E 放行给站点。
+  rt.change('videoShortcutHoldSpeed', false);
+  assert.deepStrictEqual(rt.key({ key: 'e', code: 'KeyE' }), { prevented: false, stopped: false });
+  assert.strictEqual(rt.video.playbackRate, 1);
+});
+
+test('options：快退秒数 / 按住倍速下拉的取值与 video-shortcuts.js 取值表一致', () => {
+  for (const [id, opts, dflt] of [
+    ['videoSeekSeconds', VS.SEEK_SECONDS_OPTIONS, VS.SEEK_SECONDS_DEFAULT],
+    ['videoHoldSpeedRate', VS.HOLD_RATE_OPTIONS, VS.HOLD_RATE_DEFAULT],
+  ]) {
+    const m = new RegExp('<select[^>]*id="' + id + '"[^>]*>([\\s\\S]*?)</select>').exec(optionsHtml);
+    assert.ok(m, 'options.html 缺 ' + id);
+    const values = [...m[1].matchAll(/value="([^"]+)"/g)].map((x) => x[1]);
+    assert.deepStrictEqual(values, opts);
+    assert.ok(optionsJs.includes(`${id}: { key: '${id}', fallback: '${dflt}' }`), 'options.js selectSettings 缺 ' + id);
+  }
+});
+
+// 反馈 dQjjzl7XWj：快捷键可自定义之后，设置页说明里不能再写死某个键（改了键说明就错）。
+test('设置页说明不再写死可改的快捷键（Shift+S / Shift+H）', () => {
+  const path = require('node:path');
+  const stale = /Shift\+S|Shift\+H|<kbd>/;
+  const keys = ['opt_nfSubList_desc', 'opt_subtitleHidden_desc'];
+  const enSrc = fs.readFileSync(require.resolve('./locales/en.js'), 'utf8');
+  for (const key of keys) {
+    const m = new RegExp('\\n  ' + key + ": '([^\\n]*)',\\n").exec(enSrc);
+    assert.ok(m, key);
+    assert.ok(!stale.test(m[1]), 'en ' + key + ' 仍写死了键：' + m[1]);
+  }
+  const dir = path.join(__dirname, 'locales');
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+    const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    for (const key of keys) assert.ok(!stale.test(d[key]), f + ' ' + key + '：' + d[key]);
+  }
+  for (const key of keys) {
+    const m = new RegExp('<small[^>]*="' + key + '"[^>]*>([\\s\\S]*?)</small>').exec(optionsHtml);
+    assert.ok(m, 'options.html 缺 ' + key);
+    assert.ok(!stale.test(m[1]), 'options.html 回退文案：' + m[1]);
+  }
 });

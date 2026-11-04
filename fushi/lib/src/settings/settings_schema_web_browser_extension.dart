@@ -958,7 +958,49 @@ const List<(String, String, String, String)> kWebBrowserVideoShortcuts =
         'opt_videoShortcutRateUp',
         'Ctrl+Shift+BracketRight',
       ),
+      (
+        'seek-back',
+        'videoShortcutSeekBack',
+        'opt_videoShortcutSeekBack',
+        'Shift+ArrowLeft',
+      ),
+      (
+        'seek-forward',
+        'videoShortcutSeekForward',
+        'opt_videoShortcutSeekForward',
+        'Shift+ArrowRight',
+      ),
+      (
+        'hold-speed',
+        'videoShortcutHoldSpeed',
+        'opt_videoShortcutHoldSpeed',
+        'KeyE',
+      ),
     ];
+
+/// 快退 / 快进秒数（`video-shortcuts.js` SEEK_SECONDS_SETTING / _OPTIONS / _DEFAULT）：存字符串。
+const String kWebBrowserSeekSecondsSetting = 'videoSeekSeconds';
+const List<String> kWebBrowserSeekSecondsOptions = <String>[
+  '1',
+  '2',
+  '3',
+  '5',
+  '10',
+  '15',
+  '30',
+];
+const String kWebBrowserSeekSecondsDefault = '5';
+
+/// 按住临时倍速的倍率（`video-shortcuts.js` HOLD_RATE_SETTING / _OPTIONS / _DEFAULT）：存字符串。
+const String kWebBrowserHoldSpeedRateSetting = 'videoHoldSpeedRate';
+const List<String> kWebBrowserHoldSpeedRateOptions = <String>[
+  '1.5',
+  '2',
+  '2.5',
+  '3',
+  '4',
+];
+const String kWebBrowserHoldSpeedRateDefault = '2';
 
 final RegExp _kShortcutTokenRe = RegExp(
   r'^(Key[A-Z]|Digit[0-9]|Numpad[A-Za-z0-9]+|F([1-9]|1[0-9]|2[0-4])|'
@@ -1351,6 +1393,31 @@ SettingsDestination _shortcutDestination() => SettingsDestination(
         for (final (String action, String key, String label, String _)
             in kWebBrowserVideoShortcuts)
           _shortcutRow(action, key, label),
+      ],
+    ),
+    _section(
+      id: 'shortcut_values',
+      items: <SettingsItem>[
+        _choice(
+          kWebBrowserSeekSecondsSetting,
+          fallback: kWebBrowserSeekSecondsDefault,
+          label: 'opt_videoSeekSeconds',
+          icon: FushiIcons.timer,
+          options: <SettingsSegmentOption<String>>[
+            for (final String s in kWebBrowserSeekSecondsOptions)
+              SettingsSegmentOption<String>(value: s, label: '${s}s'),
+          ],
+        ),
+        _choice(
+          kWebBrowserHoldSpeedRateSetting,
+          fallback: kWebBrowserHoldSpeedRateDefault,
+          label: 'opt_videoHoldSpeedRate',
+          icon: FushiIcons.speed,
+          options: <SettingsSegmentOption<String>>[
+            for (final String r in kWebBrowserHoldSpeedRateOptions)
+              SettingsSegmentOption<String>(value: r, label: '$r×'),
+          ],
+        ),
       ],
     ),
   ],
