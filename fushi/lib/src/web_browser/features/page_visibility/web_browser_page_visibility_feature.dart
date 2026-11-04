@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
+    show TargetPlatform, ValueListenable, defaultTargetPlatform;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -47,12 +47,30 @@ Future<void> webBrowserSetPageHidden(
 Future<void> _evaluate(InAppWebViewController controller, String source) =>
     controller.evaluateJavascript(source: source);
 
-/// 浏览器标签页「看不见就别播」：标签页**看得见** = 浏览页没被整页路由盖住
-/// （[onPageCoveredChanged]）且它是前台标签页（[onTabActiveChanged]）。
+/// 落到页面上的状态。
+enum _PageState {
+  /// 看得见（WebView 建好时的默认）。
+  visible,
+
+  /// 已按住媒体并隐藏。
+  hidden,
+
+  /// 上次落地有一步失败，页面实际处于哪种状态说不准：下次同步无论目标是什么都重做。
+  unknown,
+}
+
+/// 浏览页被**播放页**盖住时，下面的网页别跟着播（BUG-4015）。
 ///
 /// 起因（用户 2026-11-04）：开着 Netflix 首页时从别处打开本地视频，浏览页被视频页盖住，
-/// 但 WebView 还以为自己在前台，首页预告片照样自动播、和上层播放器同时出声。浏览器内部
-/// 切到别的标签页（`IndexedStack` 藏起来的后台页）同理。
+/// 但 WebView 还以为自己在前台，首页预告片照样自动播、和上层播放器同时出声。正常浏览器
+/// 是同一个网页直接跳转，不会有「底下那页还在播」的情况。
+///
+/// 范围（用户拍板）：
+/// - 只在被视频页 / 播放页盖住时（[onPlaybackCoverChanged]，`PlaybackRouteMarks`）触发；
+///   盖上设置页、标签网格等别的整页路由不算。
+/// - 浏览器里只是切走的后台标签页**不**暂停、不挂起，照常播放（与 Chrome 一致）。
+/// - 有手机遥控会话的那一页（[remoteSessionTabId]）不暂停、不挂起：遥控要靠页面回话。
+///   会话在盖住期间结束（换视频 / 没视频了），那一页随即按规则隐藏。
 ///
 /// 变成看不见时两步，顺序固定：
 /// 1. 先跑 [kWebBrowserHoldMediaScript]：暂停在播的 `<video>` / `<audio>`，之后谁再开播
@@ -64,40 +82,50 @@ Future<void> _evaluate(InAppWebViewController controller, String source) =>
 /// 重新看得见时倒过来：先恢复可见，再解除按住。与「用 Fushi 播放」交接时的按住
 /// （`PlayInFushiFeature`）共用同一对脚本；那边的按住只在浏览页回到最上面时解除，
 /// 此时本功能也认为页面看得见，两边解除不冲突（脚本幂等）。
+///
+/// 只管加载完过一次的页面（[onLoadStop] 起登记）：刚建好的 WebView 还在初始化，不在那时
+/// 挂起它。WebView 被回收（[onWebViewDisposed]）时连控制器一起撒手。
 class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
   WebBrowserPageVisibilityFeature({
+    this.remoteSessionTabId,
     WebBrowserPageHiddenSetter? setHidden,
     WebBrowserPageScriptRunner? runScript,
   }) : _setHidden = setHidden ?? webBrowserSetPageHidden,
-       _runScript = runScript ?? _evaluate;
+       _runScript = runScript ?? _evaluate {
+    _remoteTabId = remoteSessionTabId?.value;
+    remoteSessionTabId?.addListener(_onRemoteSessionChanged);
+  }
+
+  /// 有手机遥控会话的标签页 id（`WebBrowserVideoRemote.sessionTabId`）；null = 没装遥控。
+  final ValueListenable<String?>? remoteSessionTabId;
 
   final WebBrowserPageHiddenSetter _setHidden;
   final WebBrowserPageScriptRunner _runScript;
 
+  /// 加载完过、WebView 还活着的标签页的控制器。
   final Map<String, InAppWebViewController> _controllers =
       <String, InAppWebViewController>{};
 
-  /// 已经落到页面上的状态（true = 看不见）；没有记录 = 还没动过（页面默认看得见）。
-  final Map<String, bool> _applied = <String, bool>{};
+  /// 已经落到页面上的状态；没有记录 = [_PageState.visible]。
+  final Map<String, _PageState> _applied = <String, _PageState>{};
 
-  /// 每个标签页一条串行链：盖住 / 露出、切标签页来得再快，也按顺序落地。
+  /// 每个标签页一条串行链：盖住 / 露出来得再快，也按顺序落地。
   final Map<String, Future<void>> _chains = <String, Future<void>>{};
 
-  String? _activeId;
-  bool _covered = false;
+  bool _playbackCovered = false;
+  String? _remoteTabId;
 
   @override
   String get id => 'page_visibility';
 
   /// [tabId] 现在该不该看不见。
   @visibleForTesting
-  bool shouldHide(String tabId) => _covered || tabId != _activeId;
+  bool shouldHide(String tabId) => _playbackCovered && tabId != _remoteTabId;
 
   @override
   void onWebViewCreated(WebBrowserTab tab, InAppWebViewController controller) {
-    _controllers[tab.id] = controller;
-    _applied.remove(tab.id);
-    _sync(tab.id);
+    // 新 WebView（含回收后重建）：旧控制器、旧状态全作废，等它加载完再登记。
+    _forget(tab.id);
   }
 
   @override
@@ -107,47 +135,53 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
     Uri? url,
   ) {
     _controllers[tab.id] = controller;
-    // 看不见期间整页换了文档：新文档没有按住脚本，重新走一遍。
-    if (!shouldHide(tab.id)) return Future<void>.value();
-    _applied.remove(tab.id);
+    // 看不见期间整页换了文档：新文档没有按住脚本，重新走一遍。看得见时照常同步
+    // （上次落地失败留下的「说不准」在这里补正）。
+    if (shouldHide(tab.id)) _applied[tab.id] = _PageState.unknown;
     return _sync(tab.id);
   }
 
   @override
-  void onTabActiveChanged(WebBrowserTab tab, {required bool active}) {
-    final String? previous = _activeId;
-    if (active) {
-      _activeId = tab.id;
-    } else if (_activeId == tab.id) {
-      _activeId = null;
-    }
-    if (previous != null && previous != _activeId) _sync(previous);
-    _sync(tab.id);
-  }
-
-  @override
-  void onPageCoveredChanged({required bool covered}) {
-    if (covered == _covered) return;
-    _covered = covered;
+  void onPlaybackCoverChanged({required bool covered}) {
+    if (covered == _playbackCovered) return;
+    _playbackCovered = covered;
     for (final String id in List<String>.of(_controllers.keys)) {
       _sync(id);
     }
   }
 
-  @override
-  void onTabClosed(WebBrowserTab tab) {
-    _controllers.remove(tab.id);
-    _applied.remove(tab.id);
-    _chains.remove(tab.id);
-    if (_activeId == tab.id) _activeId = null;
+  void _onRemoteSessionChanged() {
+    final String? previous = _remoteTabId;
+    final String? next = remoteSessionTabId?.value;
+    if (previous == next) return;
+    _remoteTabId = next;
+    if (previous != null) _sync(previous);
+    if (next != null) _sync(next);
   }
 
   @override
+  void onWebViewDisposed(WebBrowserTab tab) => _forget(tab.id);
+
+  @override
+  void onTabClosed(WebBrowserTab tab) => _forget(tab.id);
+
+  @override
   void dispose() {
+    remoteSessionTabId?.removeListener(_onRemoteSessionChanged);
     _controllers.clear();
     _applied.clear();
     _chains.clear();
   }
+
+  void _forget(String tabId) {
+    _controllers.remove(tabId);
+    _applied.remove(tabId);
+    _chains.remove(tabId);
+  }
+
+  /// 测试用：[tabId] 是否还登记着控制器。
+  @visibleForTesting
+  bool tracks(String tabId) => _controllers.containsKey(tabId);
 
   /// 把 [tabId] 排到它那条链的末尾去落地「当时」的目标状态。
   Future<void> _sync(String tabId) {
@@ -163,25 +197,40 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
     final InAppWebViewController? controller = _controllers[tabId];
     if (controller == null) return;
     final bool hide = shouldHide(tabId);
-    final bool? applied = _applied[tabId];
-    // 从没动过的页面本来就看得见：露出不用做事。
-    if (applied == hide || (applied == null && !hide)) return;
-    _applied[tabId] = hide;
+    final _PageState target = hide ? _PageState.hidden : _PageState.visible;
+    if ((_applied[tabId] ?? _PageState.visible) == target) return;
+    final bool ok;
     if (hide) {
-      await _step(() => _runScript(controller, kWebBrowserHoldMediaScript));
-      await _step(() => _setHidden(controller, hidden: true));
+      final bool held = await _step(
+        () => _runScript(controller, kWebBrowserHoldMediaScript),
+      );
+      final bool hidden = await _step(
+        () => _setHidden(controller, hidden: true),
+      );
+      ok = held && hidden;
     } else {
-      await _step(() => _setHidden(controller, hidden: false));
-      await _step(() => _runScript(controller, kWebBrowserReleaseMediaScript));
+      final bool shown = await _step(
+        () => _setHidden(controller, hidden: false),
+      );
+      final bool released = await _step(
+        () => _runScript(controller, kWebBrowserReleaseMediaScript),
+      );
+      ok = shown && released;
     }
+    // 落地期间 WebView 被回收 / 标签页关了：记录已清，别再写回去。
+    if (!identical(_controllers[tabId], controller)) return;
+    // 只有每一步都成功才记成目标状态；有一步失败就记「说不准」，下次同步重做。
+    _applied[tabId] = ok ? target : _PageState.unknown;
   }
 
-  /// 单步失败（页面正在导航、WebView 刚被回收、平台没实现）不挡后面的步骤。
-  Future<void> _step(Future<void> Function() body) async {
+  /// 单步失败（页面正在导航、平台没实现）不挡后面的步骤；返回这一步成没成功。
+  Future<bool> _step(Future<void> Function() body) async {
     try {
       await body();
+      return true;
     } on Object catch (e) {
       debugPrint('[web-browser] page visibility step failed: $e');
+      return false;
     }
   }
 }

@@ -184,6 +184,24 @@ void main() {
       expect((await connect())['available'], isFalse);
     });
 
+    test('sessionTabId 跟着会话走：登记时是那一页，注销后回到 null（BUG-4015）', () async {
+      final List<String?> seen = <String?>[];
+      remote.sessionTabId.addListener(
+        () => seen.add(remote.sessionTabId.value),
+      );
+      expect(remote.sessionTabId.value, isNull);
+      await activate(tabA);
+      expect(remote.sessionTabId.value, 'a');
+      remote.tabDeactivated(tabA);
+      expect(remote.sessionTabId.value, isNull);
+      await activate(tabB);
+      expect(remote.sessionTabId.value, 'b');
+      pages['b']!.hasVideo = false;
+      await remote.poll();
+      expect(remote.sessionTabId.value, isNull);
+      expect(seen, <String?>['a', null, 'b', null]);
+    });
+
     test('同一标签页换到别的视频（videoKey 变）= 新会话', () async {
       await activate(tabA);
       final String first = (await connect())['sessionId']! as String;

@@ -37,11 +37,45 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
   final WebBrowserVideoActivity videoActivity = WebBrowserVideoActivity();
   // 「用 Fushi 播放 / 阅读」三个入口共用的页面内容探针：谁上工具栏由它定。
   final WebPageContentFeature pageContent = WebPageContentFeature();
+  final WebBrowserExtensionHostFeature extensionHost =
+      WebBrowserExtensionHostFeature(
+        // 与「浏览器设置」里的扩展分组共用同一个实例（见 provider 说明）。
+        storage: ref.read(webBrowserExtensionStorageProvider),
+        api: (String path, Map<String, dynamic> body) =>
+            app.extensionApiCore.handle(path, body),
+        lookup: lookup,
+        videoActivity: videoActivity,
+        openSettings: openExtensionSettings,
+        // 手机视频遥控：前台标签页的网页正片登记进同一个遥控宿主（原生播放器页也登记在那）。
+        videoRemote: (WebBrowserExtensionHostFeature host) =>
+            WebBrowserVideoRemote(
+              ports: WebBrowserVideoRemotePorts(
+                request:
+                    (
+                      WebBrowserTab tab,
+                      Map<String, Object?> message,
+                      Duration timeout,
+                    ) => host.request(tab, message, timeout: timeout),
+                runtime: host.runtimeMessage,
+                register: app.videoRemoteHost.register,
+                unregister: app.videoRemoteHost.unregister,
+                mineImmersion: (ImmersionMinePayload payload) =>
+                    app.createRemoteMiningService().mineImmersion(payload),
+                miningPads: () => (
+                  headPadMs: app.miningAudioHeadPadMs,
+                  tailPadMs: app.miningAudioTailPadMs,
+                ),
+                closeTab: closeTab,
+              ),
+            ),
+      );
   return <WebBrowserFeature>[
     // 各功能实现在这里登记。
     pageContent,
-    // 看不见的标签页（浏览页被盖住 / 后台标签页）按住媒体并告诉 WebView 它已隐藏。
-    WebBrowserPageVisibilityFeature(),
+    // 浏览页被播放页盖住时按住媒体并告诉 WebView 它已隐藏（有手机遥控会话的那页除外）。
+    WebBrowserPageVisibilityFeature(
+      remoteSessionTabId: extensionHost.videoRemote?.sessionTabId,
+    ),
     WebComicFeature(ref: ref, pageContent: pageContent),
     WebNovelFeature(ref: ref, pageContent: pageContent),
     PlayInFushiFeature(
@@ -53,37 +87,7 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
         url,
       ),
     ),
-    WebBrowserExtensionHostFeature(
-      // 与「浏览器设置」里的扩展分组共用同一个实例（见 provider 说明）。
-      storage: ref.read(webBrowserExtensionStorageProvider),
-      api: (String path, Map<String, dynamic> body) =>
-          app.extensionApiCore.handle(path, body),
-      lookup: lookup,
-      videoActivity: videoActivity,
-      openSettings: openExtensionSettings,
-      // 手机视频遥控：前台标签页的网页正片登记进同一个遥控宿主（原生播放器页也登记在那）。
-      videoRemote: (WebBrowserExtensionHostFeature host) =>
-          WebBrowserVideoRemote(
-            ports: WebBrowserVideoRemotePorts(
-              request:
-                  (
-                    WebBrowserTab tab,
-                    Map<String, Object?> message,
-                    Duration timeout,
-                  ) => host.request(tab, message, timeout: timeout),
-              runtime: host.runtimeMessage,
-              register: app.videoRemoteHost.register,
-              unregister: app.videoRemoteHost.unregister,
-              mineImmersion: (ImmersionMinePayload payload) =>
-                  app.createRemoteMiningService().mineImmersion(payload),
-              miningPads: () => (
-                headPadMs: app.miningAudioHeadPadMs,
-                tailPadMs: app.miningAudioTailPadMs,
-              ),
-              closeTab: closeTab,
-            ),
-          ),
-    ),
+    extensionHost,
     WebBrowserReaderModeFeature(ref: ref),
     WebBrowserLoginImportFeature(),
     WebBrowserStudyFeature(

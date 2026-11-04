@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_browser/features/page_visibility/web_browser_page_visibility_feature.dart';
@@ -13,11 +14,22 @@ class _FakeController extends Fake implements InAppWebViewController {
 class _Recorder {
   final List<String> log = <String>[];
 
+  /// 设了就让对应步骤抛一次（模拟页面正在导航）。
+  String? failOnce;
+
+  void _record(String entry) {
+    log.add(entry);
+    if (failOnce == entry) {
+      failOnce = null;
+      throw StateError('step failed: $entry');
+    }
+  }
+
   Future<void> setHidden(
     InAppWebViewController c, {
     required bool hidden,
   }) async {
-    log.add('${(c as _FakeController).name}:${hidden ? 'hide' : 'show'}');
+    _record('${(c as _FakeController).name}:${hidden ? 'hide' : 'show'}');
   }
 
   Future<void> runScript(InAppWebViewController c, String source) async {
@@ -26,12 +38,13 @@ class _Recorder {
         : source == kWebBrowserReleaseMediaScript
         ? 'release'
         : 'other';
-    log.add('${(c as _FakeController).name}:$step');
+    _record('${(c as _FakeController).name}:$step');
   }
 }
 
 void main() {
   late _Recorder rec;
+  late ValueNotifier<String?> remote;
   late WebBrowserPageVisibilityFeature feature;
   final WebBrowserTab a = WebBrowserTab(
     id: 'a',
@@ -46,123 +59,178 @@ void main() {
 
   setUp(() {
     rec = _Recorder();
+    remote = ValueNotifier<String?>(null);
     feature = WebBrowserPageVisibilityFeature(
+      remoteSessionTabId: remote,
       setHidden: rec.setHidden,
       runScript: rec.runScript,
     );
   });
 
+  tearDown(() {
+    feature.dispose();
+    remote.dispose();
+  });
+
   Future<void> settle() => pumpEventQueue();
 
-  test('前台标签页建好时什么都不做（页面本来就看得见）', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
+  Future<void> load(WebBrowserTab tab, _FakeController c) async {
+    feature.onWebViewCreated(tab, c);
+    await feature.onLoadStop(tab, c, tab.url);
     await settle();
+  }
+
+  test('页面加载完、没被盖住：什么都不做', () async {
+    await load(a, ca);
     expect(rec.log, isEmpty);
   });
 
-  test('浏览页被整页路由盖住：先按住媒体再隐藏；露出时先恢复再解除', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
-    await settle();
+  test('被播放页盖住：先按住媒体再隐藏；露出时先恢复再解除', () async {
+    await load(a, ca);
 
-    feature.onPageCoveredChanged(covered: true);
+    feature.onPlaybackCoverChanged(covered: true);
     await settle();
     expect(rec.log, <String>['a:hold', 'a:hide']);
 
     rec.log.clear();
-    feature.onPageCoveredChanged(covered: false);
+    feature.onPlaybackCoverChanged(covered: false);
     await settle();
     expect(rec.log, <String>['a:show', 'a:release']);
   });
 
-  test('盖住时后台标签页也保持隐藏，露出后只有前台页恢复', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
-    // b 是会话恢复出来的后台标签页：一建好就隐藏。
-    feature.onWebViewCreated(b, cb);
-    await settle();
-    expect(rec.log, <String>['b:hold', 'b:hide']);
-
-    rec.log.clear();
-    feature.onPageCoveredChanged(covered: true);
-    await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
-
-    rec.log.clear();
-    feature.onPageCoveredChanged(covered: false);
-    await settle();
-    expect(rec.log, <String>['a:show', 'a:release']);
-  });
-
-  test('切换前台标签页：旧前台页隐藏，新前台页恢复', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
-    feature.onWebViewCreated(b, cb);
-    await settle();
-    rec.log.clear();
-
+  test('只是切走的后台标签页不暂停、不挂起（与 Chrome 一致）', () async {
+    await load(a, ca);
+    await load(b, cb);
     feature.onTabActiveChanged(a, active: false);
     feature.onTabActiveChanged(b, active: true);
     await settle();
-    expect(rec.log, containsAllInOrder(<String>['a:hold', 'a:hide']));
-    expect(rec.log, containsAllInOrder(<String>['b:show', 'b:release']));
-    expect(rec.log, hasLength(4));
-    expect(feature.shouldHide('a'), isTrue);
-    expect(feature.shouldHide('b'), isFalse);
-  });
-
-  test('看不见期间整页换了文档：新文档重新按住；看得见时加载完不动', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
-    feature.onPageCoveredChanged(covered: true);
-    await settle();
-    rec.log.clear();
-
-    await feature.onLoadStop(a, ca, a.url);
-    await settle();
-    expect(rec.log, <String>['a:hold', 'a:hide']);
-
-    feature.onPageCoveredChanged(covered: false);
-    await settle();
-    rec.log.clear();
-    await feature.onLoadStop(a, ca, a.url);
-    await settle();
-    expect(rec.log, isEmpty);
-  });
-
-  test('盖住又马上露出：按顺序落地，最终看得见', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
-    feature.onPageCoveredChanged(covered: true);
-    feature.onPageCoveredChanged(covered: false);
-    await settle();
-    // 两次变化都在第一步落地前到达：落地时目标已经是「看得见」，什么都不用做。
     expect(rec.log, isEmpty);
     expect(feature.shouldHide('a'), isFalse);
   });
 
-  test('单步失败不挡后续步骤', () async {
-    final List<String> log = <String>[];
-    final WebBrowserPageVisibilityFeature f = WebBrowserPageVisibilityFeature(
-      runScript: (InAppWebViewController c, String s) async =>
-          throw StateError('navigating'),
-      setHidden: (InAppWebViewController c, {required bool hidden}) async =>
-          log.add(hidden ? 'hide' : 'show'),
-    );
-    f.onTabActiveChanged(a, active: true);
-    f.onWebViewCreated(a, ca);
-    f.onPageCoveredChanged(covered: true);
-    await settle();
-    expect(log, <String>['hide']);
-  });
-
-  test('关掉的标签页不再收到任何步骤', () async {
-    feature.onTabActiveChanged(a, active: true);
-    feature.onWebViewCreated(a, ca);
-    feature.onTabClosed(a);
+  test('别的整页路由盖住（onPageCoveredChanged）不触发', () async {
+    await load(a, ca);
     feature.onPageCoveredChanged(covered: true);
     await settle();
     expect(rec.log, isEmpty);
+  });
+
+  test('有手机遥控会话的标签页被播放页盖住也不暂停', () async {
+    await load(a, ca);
+    await load(b, cb);
+    remote.value = 'a';
+
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    expect(rec.log, <String>['b:hold', 'b:hide']);
+
+    // 盖住期间遥控会话结束（换视频 / 没视频了）：那一页随即隐藏。
+    rec.log.clear();
+    remote.value = null;
+    await settle();
+    expect(rec.log, <String>['a:hold', 'a:hide']);
+  });
+
+  test('已隐藏的页开始遥控会话：恢复它', () async {
+    await load(a, ca);
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    rec.log.clear();
+
+    remote.value = 'a';
+    await settle();
+    expect(rec.log, <String>['a:show', 'a:release']);
+  });
+
+  test('盖住期间整页换了文档：新文档重新按住', () async {
+    await load(a, ca);
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    rec.log.clear();
+
+    await feature.onLoadStop(
+      a,
+      ca,
+      Uri.parse('https://www.netflix.com/title/1'),
+    );
+    await settle();
+    expect(rec.log, <String>['a:hold', 'a:hide']);
+  });
+
+  test('WebView 建好但还没加载完：盖住时不去挂起它', () async {
+    feature.onWebViewCreated(a, ca);
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    expect(rec.log, isEmpty);
+
+    // 加载完才落地。
+    await feature.onLoadStop(a, ca, a.url);
+    await settle();
+    expect(rec.log, <String>['a:hold', 'a:hide']);
+  });
+
+  test('快速盖住 / 露出：按顺序落地，最后停在看得见', () async {
+    await load(a, ca);
+    feature.onPlaybackCoverChanged(covered: true);
+    feature.onPlaybackCoverChanged(covered: false);
+    await settle();
+    // 第一步落地时目标已经回到看得见：什么都不用做。
+    expect(rec.log, isEmpty);
+  });
+
+  test('隐藏有一步失败：状态记为说不准，露出时照样恢复', () async {
+    await load(a, ca);
+    rec.failOnce = 'a:hide';
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    // 失败不挡后一步之前的已完成步骤。
+    expect(rec.log, <String>['a:hold', 'a:hide']);
+
+    rec.log.clear();
+    feature.onPlaybackCoverChanged(covered: false);
+    await settle();
+    // 没把失败的隐藏记成「已隐藏」也没记成「看得见」：露出必须真的恢复并解除按住。
+    expect(rec.log, <String>['a:show', 'a:release']);
+  });
+
+  test('隐藏失败后再次同步会重试（不当成已隐藏）', () async {
+    await load(a, ca);
+    rec.failOnce = 'a:hold';
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    rec.log.clear();
+
+    // 下一次同步（例如页面加载完）重做整套隐藏。
+    await feature.onLoadStop(a, ca, a.url);
+    await settle();
+    expect(rec.log, <String>['a:hold', 'a:hide']);
+  });
+
+  test('WebView 被回收（标签页还在）：撒手死控制器，之后盖住 / 露出不再碰它', () async {
+    await load(a, ca);
+    expect(feature.tracks('a'), isTrue);
+
+    feature.onWebViewDisposed(a);
+    expect(feature.tracks('a'), isFalse);
+
+    feature.onPlaybackCoverChanged(covered: true);
+    feature.onPlaybackCoverChanged(covered: false);
+    await settle();
+    expect(rec.log, isEmpty);
+
+    // 重建后的新 WebView 加载完照常管。
+    final _FakeController ca2 = _FakeController('a2');
+    feature.onPlaybackCoverChanged(covered: true);
+    await load(a, ca2);
+    expect(rec.log, <String>['a2:hold', 'a2:hide']);
+  });
+
+  test('关闭标签页：撒手', () async {
+    await load(a, ca);
+    feature.onTabClosed(a);
+    feature.onPlaybackCoverChanged(covered: true);
+    await settle();
+    expect(rec.log, isEmpty);
+    expect(feature.tracks('a'), isFalse);
   });
 }

@@ -179,6 +179,12 @@ class WebBrowserVideoRemote extends ChangeNotifier {
   @visibleForTesting
   VideoRemotePlaybackBinding? get binding => _session?.binding;
 
+  final ValueNotifier<String?> _sessionTabId = ValueNotifier<String?>(null);
+
+  /// 当前有手机遥控会话的标签页 id（null = 没有）。页面可见性据此不暂停 / 不挂起这一页：
+  /// 遥控要靠页面回话，挂起了手机就控不动（BUG-4015）。
+  ValueListenable<String?> get sessionTabId => _sessionTabId;
+
   // ── 浏览页生命周期 ───────────────────────────────────────────────────
 
   /// 前台标签页变了（null = 没有前台页）。
@@ -233,6 +239,7 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     final _WebVideoRemoteSession? session = _session;
     if (session == null) return;
     _session = null;
+    _sessionTabId.value = null;
     session.searchHandles.clear();
     ports.unregister(session.binding);
   }
@@ -242,6 +249,7 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     _disposed = true;
     _timer?.cancel();
     _endSession();
+    _sessionTabId.dispose();
     super.dispose();
   }
 
@@ -336,6 +344,7 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       session.update(state);
       _session = session;
       ports.register(session.binding);
+      _sessionTabId.value = tab.id;
       return;
     }
     session.update(state);
