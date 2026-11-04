@@ -2,8 +2,12 @@ import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 
-/// 「播放页」路由登记：视频 / 播放页（`VideoFushiPage`、`WebVideoFushiPage`）把自己所在
-/// 的路由登记进来，别的页面据此判断自己是不是被**播放页**盖住了（不是任意整页路由）。
+/// 「播放页」路由登记：播放页把自己所在的路由登记进来，别的页面据此判断自己是不是被
+/// **播放页**盖住了（不是任意整页路由）。登记者（新增播放页照此加一个 [PlaybackRouteMark]）：
+/// - 视频：`VideoFushiPage`、`WebVideoFushiPage`；
+/// - 有声书播放页：`ReaderLyricsPlayerOverlay`（歌词模式覆盖层，登记它所在的阅读器路由，
+///   只在歌词模式挂着时算）；
+/// - 音乐播放页：`MusicLyricsPage`，以及 MV / 卡拉 OK 舞台 `MusicKaraokeStagePage`。
 ///
 /// 由页面自己登记而不是在推路由处打标记：打开播放页的入口有几十处，各入口记得打标记
 /// 迟早漏一个；页面 `didChangeDependencies` 里登记只写一次。

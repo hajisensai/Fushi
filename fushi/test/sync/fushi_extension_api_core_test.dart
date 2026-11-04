@@ -224,19 +224,20 @@ void main() {
     },
   );
 
-  test('未知路径 → 404 Unknown endpoint；paths 含全部 10 条', () async {
+  test('未知路径 → 404 Unknown endpoint；paths 含全部 11 条', () async {
     final FushiExtensionApiResponse res = await FushiExtensionApiCore().handle(
       '/api/nope',
       <String, dynamic>{},
     );
     expect(res.status, 404);
     expect(res.text, 'Unknown endpoint');
-    expect(FushiExtensionApiCore.paths, hasLength(10));
+    expect(FushiExtensionApiCore.paths, hasLength(11));
     expect(
       FushiExtensionApiCore.paths,
       containsAll(<String>[
         '/api/subtitle/jimaku/search',
         '/api/subtitle/jimaku/fetch',
+        '/api/ocr/image',
       ]),
     );
   });

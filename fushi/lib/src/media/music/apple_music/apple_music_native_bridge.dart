@@ -3,6 +3,8 @@
 ///
 /// - 授权：`MusicAuthorization.request()` 弹系统框；订阅：`MusicSubscription.current`。
 /// - 播放：`ApplicationMusicPlayer`，队列只放一首；进度由原生 ~250 ms 轮询 `playbackTime` 推送。
+///   电台（`playStation`）例外：队列是整个电台，由 MusicKit 自己换歌；同一轮询里发现
+///   `queue.currentEntry` 换了就推 `nowPlaying`，`skipToNext` 走 `skipToNextEntry()`。
 /// - 资料库 token：`DefaultMusicTokenProvider` 给系统按 App ID 生成的 developer token 与配套的
 ///   Music-User-Token（不用 Worker 代签的那枚：用户 token 跟签发它的 developer token 绑定）。
 /// - 「断开」：系统授权只能在设置里撤，这里只让 app 停止使用（由 [AppleMusicAccount] 记偏好）。
@@ -49,6 +51,8 @@ AppleMusicPlayerEvent? parseAppleMusicNativeEvent(Object? raw) {
         m is String && m.isNotEmpty ? m : 'unknown',
         songId: songId,
       );
+    case 'nowPlaying':
+      return AppleMusicNowPlaying.fromMap(raw);
     case 'account':
       return AppleMusicAccountChanged(AppleMusicAccountState.fromMap(raw));
   }
@@ -160,6 +164,16 @@ class AppleMusicNativeBridge implements AppleMusicBridge {
         'startMs': startMs,
         'autoplay': autoplay,
       });
+
+  @override
+  Future<void> playStation(String stationId, {bool autoplay = true}) =>
+      _invoke<void>('playStation', <String, Object?>{
+        'stationId': stationId,
+        'autoplay': autoplay,
+      });
+
+  @override
+  Future<void> skipToNext() => _invoke<void>('skipToNext');
 
   @override
   Future<void> pause() => _invoke<void>('pause');

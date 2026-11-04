@@ -24,6 +24,10 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     "like",
     "lyricsSearch",
     "lyricsFetch",
+    "playlistEdit",
+    "radio",
+    "artistSimilar",
+    "collect",
 ];
 
 /// 已知权限名。
@@ -151,6 +155,21 @@ impl Manifest {
         }
         if has_cap("like") && !has_cap("account") {
             return Err("like 能力需要同时声明 login / account（喜欢的音乐属于登录账号）".into());
+        }
+        if has_cap("playlistEdit") && !(has_cap("account") && has_cap("playlist")) {
+            return Err(
+                "playlistEdit 能力需要同时声明 login / account 与 playlist（编辑的是登录账号的歌单）"
+                    .into(),
+            );
+        }
+        if has_cap("radio") && !has_cap("stream") {
+            return Err("radio 能力需要同时声明 stream（电台给出的曲目必须能播放）".into());
+        }
+        if has_cap("artistSimilar") && !has_cap("artist") {
+            return Err("artistSimilar 能力需要同时声明 artist".into());
+        }
+        if has_cap("collect") && !has_cap("account") {
+            return Err("collect 能力需要同时声明 login / account（收藏属于登录账号）".into());
         }
         if has_cap("lyricsSearch") != has_cap("lyricsFetch") {
             return Err("lyricsSearch 与 lyricsFetch 能力必须同时声明".into());
@@ -307,6 +326,45 @@ mod tests {
         assert!(
             Manifest::parse(j.to_string().as_bytes()).is_ok(),
             "like 随登录能力声明"
+        );
+        // 编辑歌单 / 电台 / 相似艺人 / 收藏：各自的依赖缺一不可。
+        for (caps, why) in [
+            (
+                serde_json::json!(["search", "login", "account", "playlistEdit"]),
+                "playlistEdit 需要 playlist",
+            ),
+            (
+                serde_json::json!(["search", "playlist", "playlistEdit"]),
+                "playlistEdit 需要 account",
+            ),
+            (serde_json::json!(["search", "radio"]), "radio 需要 stream"),
+            (
+                serde_json::json!(["search", "artistSimilar"]),
+                "artistSimilar 需要 artist",
+            ),
+            (
+                serde_json::json!(["search", "collect"]),
+                "collect 需要 account",
+            ),
+        ] {
+            j["capabilities"] = caps;
+            assert!(Manifest::parse(j.to_string().as_bytes()).is_err(), "{why}");
+        }
+        j["capabilities"] = serde_json::json!([
+            "search",
+            "login",
+            "account",
+            "playlist",
+            "playlistEdit",
+            "stream",
+            "radio",
+            "artist",
+            "artistSimilar",
+            "collect"
+        ]);
+        assert!(
+            Manifest::parse(j.to_string().as_bytes()).is_ok(),
+            "新能力随依赖声明"
         );
         // 歌词插件：lyricsSearch / lyricsFetch 成对声明，可以只声明这两个。
         for caps in [

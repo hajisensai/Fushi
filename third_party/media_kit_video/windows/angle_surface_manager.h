@@ -114,6 +114,10 @@ class ANGLESurfaceManager {
   // draws into. See |ANGLESurfaceManager::shared_d3d_11_device_|.
   static bool EnsureSharedD3D11Device();
 
+  // FUSHI FORK (BUG-3888): whether the loaded flutter_windows.dll copies
+  // keyed-mutex share handles under the key (Fushi engine patch export).
+  static bool EngineSyncsKeyedMutexTextures();
+
   // Creates (once per process) the |EGLDisplay|. Prefers an ANGLE display that
   // runs on |shared_d3d_11_device_| so libmpv's `d3d11-egl` hardware decoding
   // interop can adopt the very same device; falls back to letting ANGLE create
@@ -144,6 +148,9 @@ class ANGLESurfaceManager {
   ID3D11DeviceContext* d3d_11_device_context_ = nullptr;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> internal_d3d_11_texture_2D_;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d_11_texture_2D_;
+  // FUSHI FORK (BUG-3888): keyed mutex of |d3d_11_texture_2D_|, or null when
+  // the engine does not synchronize on it (|EngineSyncsKeyedMutexTextures|).
+  Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex_;
   // ANGLE
   EGLSurface surface_ = EGL_NO_SURFACE;
   EGLDisplay display_ = EGL_NO_DISPLAY;

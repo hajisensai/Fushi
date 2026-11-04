@@ -50,6 +50,22 @@ class RemoteContinueCandidate {
   /// host 端主合集归属的合集名（[RemoteCollectionMembership.collectionName]；
   /// null = 散卡/旧 host 不带）。「继续」卡按显示名规则拼「合集名 + 条目名」用。
   final String? collectionName;
+
+  /// 值相等：[RemoteContinueFeed.publish] 靠它判断首页新一轮结果是否真的变了。
+  @override
+  bool operator ==(Object other) =>
+      other is RemoteContinueCandidate &&
+      other.kind == kind &&
+      other.id == id &&
+      other.title == title &&
+      other.recentMs == recentMs &&
+      other.percent == percent &&
+      other.coverUrl == coverUrl &&
+      other.collectionName == collectionName;
+
+  @override
+  int get hashCode =>
+      Object.hash(kind, id, title, recentMs, percent, coverUrl, collectionName);
 }
 
 /// 从互联 host 清单里挑「继续」远端候选：

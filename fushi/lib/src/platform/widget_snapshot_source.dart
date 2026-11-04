@@ -15,7 +15,8 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
-import 'package:fushi_engine/srs/srs_stats.dart' show SrsStatsData, SrsStreak;
+import 'package:fushi_engine/srs/srs_stats.dart'
+    show SrsStatCard, SrsStatCardState, SrsStatsData, SrsStreak;
 import 'package:fushi_engine/srs/srs_stats_loader.dart'
     show SrsStatsBundle, loadSrsStats;
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -35,6 +36,9 @@ import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/music/music_player_engine.dart'
     show MusicPlayerEngine;
+import 'package:fushi/src/mining/galgame_library.dart' show GalgameEntry;
+import 'package:fushi/src/mining/galgame_repository.dart'
+    show GalgameRepository;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -57,6 +61,10 @@ import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart'
     show ServerContinueFeed;
 import 'package:fushi/src/utils/misc/dashboard_server_continue_gates.dart'
     show serverContinueGates;
+import 'package:fushi/src/utils/misc/dashboard_remote_continue_feed.dart'
+    show RemoteContinueFeed;
+import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart'
+    show RemoteContinueCandidate;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
     show audiobookshelfTabServers;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
@@ -68,12 +76,23 @@ const int _kCoverProbeLimit = kWidgetShelfLimit;
 /// 从 app 状态收集桌面小组件快照（Android / iOS / macOS 同一份），并在数据变化时推给 [publisher]。
 ///
 /// 数据口径尽量与首页 dashboard 一致（同一批 provider / 同一批纯函数）：
-/// - 书 / 漫画「继续」：`fushiBooksProvider` + [isDashboardContinueBook]，
-///   最近阅读时刻取 `bookLastReadAtProvider`。
-/// - 视频「继续」：`VideoBookRepository.listForShelf()` 里有断点且没看完的，
-///   进度 [dashboardVideoContinueProgress]，封面 [dashboardVideoCoverPath]。
-/// - 今日 / 近 7 天：[loadStatFacts] 的完整日面（阅读 + 视频 + 游戏，与首页
-///   「今日」卡同一批行），窗口 [StatWindow]。
+/// - 「继续」/ 书架只有这**一个**来源（Android 与 Apple 同一份 `shelf`），与首页
+///   「继续」同口径混排：
+///   - 书 / 漫画：`fushiBooksProvider` + [isDashboardContinueBook]，最近阅读时刻取
+///     `bookLastReadAtProvider`。
+///   - 视频：`VideoBookRepository.listForShelf()` 里有断点且没看完的，进度
+///     [dashboardVideoContinueProgress]，封面 [dashboardVideoCoverPath]。
+///   - 游戏：`GalgameRepository` 里玩过的（`lastPlayedMs > 0`，与首页同判据），点卡
+///     落到游戏 tab。
+///   - 互联远端补位：首页算好的 [RemoteContinueFeed]（不另发互联请求），点卡落到
+///     对应 tab（与首页远端卡一致）。
+///   - 用户自配服务器条目：与「接下来」同一份 [ServerContinueFeed] 缓存、同一道
+///     opt-in 门控，点卡走 `fushi://widget/server`。
+/// - 今日 / 近 7 天 / 35 天 / 16 周热力图：[loadStatFacts] 的完整日面（阅读 + 视频 +
+///   游戏，与首页「今日」卡同一批行），窗口 [StatWindow]；下一个统计日边界给快照的
+///   `rollover`（小组件零点自己换日）。
+/// - 复习到期预排：内置 SRS 时按学习步 `dueAt` 与次日到期复习卡排出 `srs.timeline`
+///   （[buildWidgetSrsDueTimeline]），小组件不开 app 也会随卡片到期涨数。
 /// - 复习：provider 跟制卡去向（`srsMiningTarget` + 复习模块开关）：内置 SRS 取
 ///   [srsDeckListProvider] 顶层牌组计数 + [loadSrsStats]（按修订号 / 日缓存，只在
 ///   provider 是 fushi 时才读）；Anki 只带包名，计数由原生侧现读。
@@ -117,6 +136,8 @@ class WidgetSnapshotSource {
   // ---- Downloads widget: light republish loop (see [_scheduleDownloadsTick]) ----
   StreamSubscription<void>? _downloadsSubscription;
   StreamSubscription<void>? _serverFeedSubscription;
+  StreamSubscription<void>? _remoteFeedSubscription;
+  GalgameRepository? _galgameRepo;
   DiscoveryDownloadQueue? _downloadQueue;
   Timer? _downloadsTimer;
   DateTime? _downloadsPublishedAt;
@@ -164,6 +185,12 @@ class WidgetSnapshotSource {
     _serverFeedSubscription = ServerContinueFeed.of(
       appModel.database,
     ).updates.listen((_) => requestRefresh());
+    _remoteFeedSubscription = RemoteContinueFeed.of(
+      appModel.database,
+    ).updates.listen((_) => requestRefresh());
+    // 游戏「最近游玩」写在 galgame 会话表里，不在 [watchDashboardDataChanges] 的表集合
+    // 内；仓储每次落库后都会 notify。
+    _galgameRepo = appModel.galgameRepo..addListener(requestRefresh);
   }
 
   void dispose() {
@@ -181,6 +208,10 @@ class WidgetSnapshotSource {
     _downloadsSubscription = null;
     unawaited(_serverFeedSubscription?.cancel());
     _serverFeedSubscription = null;
+    unawaited(_remoteFeedSubscription?.cancel());
+    _remoteFeedSubscription = null;
+    _galgameRepo?.removeListener(requestRefresh);
+    _galgameRepo = null;
     _downloadQueue?.removeListener(_onDownloadsSignal);
     _downloadQueue = null;
     _lastSnapshot = null;
@@ -272,14 +303,18 @@ class WidgetSnapshotSource {
     final StatWindow window = StatWindow(now);
 
     final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+    final WidgetOnDeckInput onDeck = await _collectOnDeck(appModel);
     final List<WidgetMediaInput> media = <WidgetMediaInput>[
       if (modules.isEnabled(ModuleId.books) ||
           modules.isEnabled(ModuleId.manga))
         ...await _collectBooks(appModel, facts, window),
       if (modules.isEnabled(ModuleId.video)) ...await _collectVideos(db, facts),
+      if (modules.isEnabled(ModuleId.games)) ...await _collectGames(appModel),
+      ..._collectRemote(appModel),
+      ..._serverShelfItems(onDeck),
     ];
 
-    final WidgetSrsInput srs = await _collectSrs(appModel);
+    final WidgetSrsInput srs = await _collectSrs(appModel, now);
     final WidgetImmersionInput immersion = _collectImmersion(facts, window);
     int minedToday = 0;
     // 制卡数口径同统计页：`mining_statistics` 按 (来源, 统计日) 聚合的计数（行很少）。
@@ -326,7 +361,10 @@ class WidgetSnapshotSource {
       formatTimeLeft: (int ms) =>
           t.widget_label_time_left(time: formatStatTime(ms)),
       downloads: await _collectDownloads(appModel),
-      onDeck: await _collectOnDeck(appModel),
+      onDeck: onDeck,
+      nextDayAt: now
+          .add(StatWindow.untilNextStatDayBoundary(now))
+          .millisecondsSinceEpoch,
     );
     _lastSnapshot = snapshot;
     return snapshot;
@@ -549,9 +587,10 @@ class WidgetSnapshotSource {
   }
 
   /// 沉浸四类按统计日聚合（只认书 / 音乐 / 视频 / 游戏，复习不算沉浸）。毫秒与字数
-  /// 只留最近 35 天（月 + 周 + 上周环比都在里面），活跃日保留全部历史给连续天数。
+  /// 只留最近 [kWidgetHeatmapDays] 天（16 周热力图 + 月 + 周 + 上周环比都在里面），
+  /// 活跃日保留全部历史给连续天数。
   WidgetImmersionInput _collectImmersion(StatFacts facts, StatWindow window) {
-    final String oldestKept = window.lastDayKeys(kWidgetMonthDays).first;
+    final String oldestKept = window.lastDayKeys(kWidgetHeatmapDays).first;
     final Map<String, Map<WidgetImmersionCategory, int>> msByDay =
         <String, Map<WidgetImmersionCategory, int>>{};
     final Map<String, int> charsByDay = <String, int>{};
@@ -578,7 +617,7 @@ class WidgetSnapshotSource {
 
   /// provider 规则（不另设开关，见 docs/agent/android-widgets.md）：制卡去向是 Anki
   /// → `anki`；去向是 Fushi 复习且复习模块开着 → `fushi`；其余 → `none`。
-  Future<WidgetSrsInput> _collectSrs(AppModel appModel) async {
+  Future<WidgetSrsInput> _collectSrs(AppModel appModel, DateTime now) async {
     if (appModel.srsMiningTarget == SrsMiningTarget.anki) {
       return WidgetSrsInput(
         provider: WidgetSrsProvider.anki,
@@ -590,6 +629,11 @@ class WidgetSnapshotSource {
     }
     final SrsDeckListData? decks = await _ref.read(srsDeckListProvider.future);
     final _SrsStatsDigest? digest = await _srsStatsDigest();
+    final int nowMs = now.millisecondsSinceEpoch;
+    final int dueNow =
+        (decks?.todayNew ?? 0) +
+        (decks?.todayLearn ?? 0) +
+        (decks?.todayReview ?? 0);
     return WidgetSrsInput(
       provider: WidgetSrsProvider.fushi,
       label: t.widget_label_provider_fushi,
@@ -601,6 +645,15 @@ class WidgetSnapshotSource {
       streakCurrent: digest?.streakCurrent ?? 0,
       streakLongest: digest?.streakLongest ?? 0,
       reviewsByDay: digest?.reviewsByDay ?? const <int>[],
+      timeline: digest == null
+          ? const <WidgetSrsDueStep>[]
+          : buildWidgetSrsDueTimeline(
+              nowMs: nowMs,
+              dueNow: dueNow,
+              learningDueAts: digest.learningDueAts,
+              dayIndexOf: digest.dayIndexOf,
+              reviewsDueNextDay: digest.reviewsNextDay,
+            ),
     );
   }
 
@@ -627,6 +680,27 @@ class WidgetSnapshotSource {
       final SrsStatsData data = bundle.data;
       final Map<int, int> counts = data.countsByDay();
       final SrsStreak streak = data.streak();
+      // 到期预排的原料：学习 / 重学卡的精确到期时刻；明天（SRS 日序号 +1）到期的复习卡。
+      // 只算 Fushi 排程、没暂停、今天没搁置的卡（与 [SrsStatsData.futureDue] 同口径）。
+      // 换日点的增量是近似值：① 没套每日复习上限，明天到期卡多于上限时会多估；
+      // ② 没算次日重新放出的新卡额度，也没算今天没复习完、明天仍到期的积压，会少估。
+      // 用户打开 app 或下一次采集时由牌组汇总（含上限）给出准确的 `srs.due`。
+      final List<int> learningDueAts = <int>[];
+      int reviewsNextDay = 0;
+      for (final SrsStatCard card in data.cards) {
+        if (!card.fushiScheduled || card.suspended || card.buried) continue;
+        switch (card.state) {
+          case SrsStatCardState.learning || SrsStatCardState.relearning:
+            final int? at = card.dueAt;
+            if (at != null && at > data.nowMs) learningDueAts.add(at);
+          case SrsStatCardState.young || SrsStatCardState.mature:
+            if (!card.byRecall && card.dueDay == data.today + 1) {
+              reviewsNextDay++;
+            }
+          case SrsStatCardState.newCard:
+            break;
+        }
+      }
       return _srsStatsCache = _SrsStatsDigest(
         store: store,
         revision: revision,
@@ -641,6 +715,9 @@ class WidgetSnapshotSource {
           for (int i = kWidgetMonthDays - 1; i >= 0; i--)
             counts[data.today - i] ?? 0,
         ],
+        learningDueAts: learningDueAts,
+        reviewsNextDay: reviewsNextDay,
+        dayIndexOf: data.day.dayIndexOf,
       );
     } on Object catch (error) {
       debugPrint('WidgetSnapshotSource: srs stats failed: $error');
@@ -900,6 +977,100 @@ class WidgetSnapshotSource {
     );
   }
 
+  /// 玩过的游戏（`lastPlayedMs > 0`，与首页「继续」同判据；游戏没有完成度，不画
+  /// 进度条）。仓储没载入过就载一次（毫秒级，与首页同一个缓存）。
+  Future<List<WidgetMediaInput>> _collectGames(AppModel appModel) async {
+    final GalgameRepository repo = appModel.galgameRepo;
+    final List<GalgameEntry> games = repo.isLoaded
+        ? repo.games
+        : await repo.load();
+    return <WidgetMediaInput>[
+      for (final GalgameEntry g in games)
+        if (g.lastPlayedMs > 0)
+          WidgetMediaInput(
+            kind: WidgetMediaKind.game,
+            id: g.id,
+            title: g.displayName,
+            recentAt: g.lastPlayedMs,
+            // 本机封面候选；真正是否存在在 [_withCovers] 里探测。
+            coverPath: g.coverPath ?? '',
+          ),
+    ];
+  }
+
+  /// 首页算好的互联远端补位（[RemoteContinueFeed]）。点卡与首页远端卡同一落地：切到
+  /// 对应 tab（远端占位卡在那里承接播放 / 下载）。封面在 host 上、要经互联取图，小组件
+  /// 不另发请求，画类型占位。
+  List<WidgetMediaInput> _collectRemote(AppModel appModel) {
+    final ModuleVisibility modules = appModel.moduleVisibility;
+    final RemoteContinueFeed feed = RemoteContinueFeed.of(appModel.database);
+    final String device = feed.deviceName ?? t.home_remote_source;
+    return <WidgetMediaInput>[
+      for (final RemoteContinueCandidate c in feed.current)
+        if (_remoteKind(c) case final WidgetMediaKind kind
+            when modules.isEnabled(kind.module))
+          WidgetMediaInput(
+            kind: kind,
+            id: 'remote:${c.kind.dbValue}:${c.id}',
+            // 与首页「继续」卡同一显示规则：合集成员标题取合集名，条目名与来源设备进副标题。
+            title: _nonEmpty(c.collectionName) ?? c.title,
+            subtitle: <String>[
+              if (_nonEmpty(c.collectionName) != null &&
+                  c.collectionName != c.title)
+                c.title,
+              device,
+            ].join(' · '),
+            progress: c.isVideo ? 0 : c.percent / 100,
+            recentAt: c.recentMs,
+            link:
+                (kind == WidgetMediaKind.video
+                        ? WidgetTab.video
+                        : WidgetTab.books)
+                    .link,
+          ),
+    ];
+  }
+
+  /// 远端候选只有书（epub / srt）与视频两种进「继续」（host 侧的漫画 / 游戏不进）。
+  WidgetMediaKind? _remoteKind(RemoteContinueCandidate c) => switch (c.kind) {
+    MediaKind.video => WidgetMediaKind.video,
+    MediaKind.epub || MediaKind.srt => WidgetMediaKind.book,
+    MediaKind.game => null,
+  };
+
+  /// 「接下来」已经取好的服务器条目（同一份 [ServerContinueFeed] 缓存、同一道门控、
+  /// 同一批封面），同时混进「继续」——首页「继续」本就混排它们。
+  List<WidgetMediaInput> _serverShelfItems(
+    WidgetOnDeckInput onDeck,
+  ) => <WidgetMediaInput>[
+    for (final WidgetOnDeckItemInput item in onDeck.items)
+      WidgetMediaInput(
+        kind: item.source == WidgetServerSource.mediaServer
+            ? WidgetMediaKind.video
+            : WidgetMediaKind.book,
+        id: 'server:${WidgetServerLink(source: item.source, serverId: item.serverId, itemId: item.itemId).key}',
+        // 与首页「继续」卡同一显示规则：系列 / 播客名作标题，条目名与服务器名进副标题。
+        title: _nonEmpty(item.collectionName) ?? item.title,
+        subtitle: <String>[
+          if (_nonEmpty(item.collectionName) != null &&
+              item.collectionName != item.title)
+            item.title,
+          item.serverName,
+        ].join(' · '),
+        progress: item.progress ?? 0,
+        recentAt: item.recentMs,
+        coverPath: item.coverPath,
+        link: WidgetServerLink.build(
+          source: item.source,
+          serverId: item.serverId,
+          itemId: item.itemId,
+        ),
+      ),
+  ];
+
+  static String? _nonEmpty(String? value) =>
+      value == null || value.isEmpty ? null : value;
+
   String _formatCount(int count) {
     try {
       return NumberFormat.decimalPattern(
@@ -1068,18 +1239,36 @@ class WidgetSnapshotSource {
           progress: m.progress,
           recentAt: m.recentAt,
           remainingMs: m.remainingMs,
-          coverPath: m.kind == WidgetMediaKind.video
-              ? await dashboardVideoCoverPath(
-                      collectionCovers: const <String?>[],
-                      ownCover: m.coverPath,
-                      exists: (String path) => File(path).exists(),
-                    ) ??
-                    ''
-              : _bookCoverPath(appModel, m.id),
+          link: m.link,
+          coverPath: await _coverOf(appModel, m),
         ),
       );
     }
     return withCovers;
+  }
+
+  /// 一条入选卡的封面文件：服务器条目已由封面缓存解析好、互联远端没有本机封面，原样
+  /// 透传；本机视频 / 游戏探测候选是否存在；本机书走书架同一条取图链。
+  Future<String> _coverOf(AppModel appModel, WidgetMediaInput m) async {
+    if (m.link.isNotEmpty) return m.coverPath;
+    switch (m.kind) {
+      case WidgetMediaKind.video:
+        return await dashboardVideoCoverPath(
+              collectionCovers: const <String?>[],
+              ownCover: m.coverPath,
+              exists: (String path) => File(path).exists(),
+            ) ??
+            '';
+      case WidgetMediaKind.game:
+        if (m.coverPath.isEmpty) return '';
+        try {
+          return await File(m.coverPath).exists() ? m.coverPath : '';
+        } on FileSystemException {
+          return '';
+        }
+      case WidgetMediaKind.book || WidgetMediaKind.manga:
+        return _bookCoverPath(appModel, m.id);
+    }
   }
 
   String _bookCoverPath(AppModel appModel, String mediaIdentifier) {
@@ -1158,6 +1347,9 @@ class _SrsStatsDigest {
     required this.streakCurrent,
     required this.streakLongest,
     required this.reviewsByDay,
+    required this.learningDueAts,
+    required this.reviewsNextDay,
+    required this.dayIndexOf,
   });
 
   final SrsDbStore store;
@@ -1168,4 +1360,13 @@ class _SrsStatsDigest {
   final int streakCurrent;
   final int streakLongest;
   final List<int> reviewsByDay;
+
+  /// 学习 / 重学卡的精确到期时刻（取数那一刻还没到期的）；用时再按「现在」过滤。
+  final List<int> learningDueAts;
+
+  /// SRS 明天到期的复习卡数。
+  final int reviewsNextDay;
+
+  /// store 口径的 SRS 日序号（可配翻日时刻）。
+  final int Function(int ms) dayIndexOf;
 }

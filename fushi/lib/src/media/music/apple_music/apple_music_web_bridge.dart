@@ -94,6 +94,20 @@ try {
 }
 ''';
 
+/// 放一个电台：队列交给 MusicKit 自管；[autoplay] 为假时只排好不出声。
+const String _kPlayStationJs = '''
+const r = await window.fushiMusicKit.init();
+if (!r || r.ok !== true) return JSON.stringify(r || {ok:false});
+try {
+  const m = window.MusicKit.getInstance();
+  await m.setQueue({ station: String(stationId), startPlaying: false });
+  if (autoplay) await m.play();
+  return JSON.stringify({ok: true});
+} catch (e) {
+  return JSON.stringify({ok: false, error: {name: String((e && (e.name || e.errorCode)) || 'Error'), message: String((e && (e.message || e.description)) || e)}});
+}
+''';
+
 /// `{ok:false, error:{name,message}}` → 异常文本。
 String _errorText(Object? decoded) {
   if (decoded is Map) {
@@ -110,10 +124,12 @@ String _errorText(Object? decoded) {
 /// 页面 `fushiMusicKit` 事件 → 播放器事件。返回 null = 不转发（`ready` / 未知类型）。
 ///
 /// [lastState] 是上一次的 MusicKit 播放状态（出声沿判定用）；结束只在进入 ended / completed
-/// 那一刻发一次。
+/// 那一刻发一次。[station] = 正在放电台：每首歌放完都会过一下 ended，那只是电台换歌的过渡，
+/// 只有整个队列 completed 才算结束。
 ({AppleMusicPlayerEvent? event, int? state}) parseAppleMusicWebEvent(
   Object? raw, {
   int? lastState,
+  bool station = false,
 }) {
   if (raw is! Map) return (event: null, state: lastState);
   final Object? song = raw['songId'];
@@ -136,6 +152,9 @@ String _errorText(Object? decoded) {
     case 'item':
       final int? state = ms(raw['state']);
       if (state == null || state == lastState) {
+        return (event: null, state: lastState);
+      }
+      if (station && state == MusicKitPlaybackState.ended) {
         return (event: null, state: lastState);
       }
       if (state == MusicKitPlaybackState.ended ||
@@ -169,6 +188,8 @@ String _errorText(Object? decoded) {
         ),
         state: lastState,
       );
+    case 'nowPlaying':
+      return (event: AppleMusicNowPlaying.fromMap(raw), state: lastState);
     case 'auth':
       return (
         event: AppleMusicAccountChanged(
@@ -230,6 +251,9 @@ class AppleMusicWebBridge implements AppleMusicBridge {
   /// [AppleMusicSessionLost]：播放后端才知道那首已经不在了，不会对着新页面发 resume / seek。
   bool _hasQueue = false;
 
+  /// 排着的是电台（[playStation]）：页面事件按电台语义解析（每首之间的 ended 不算结束）。
+  bool _station = false;
+
   /// 正在等的桥调用数：调用自己的失败经返回值上报，这期间页面顺带发的 `error` 事件不再重复转发。
   int _calls = 0;
   bool _disposed = false;
@@ -243,7 +267,7 @@ class AppleMusicWebBridge implements AppleMusicBridge {
 
   void _onPageEvent(Object? raw) {
     final ({AppleMusicPlayerEvent? event, int? state}) r =
-        parseAppleMusicWebEvent(raw, lastState: _lastState);
+        parseAppleMusicWebEvent(raw, lastState: _lastState, station: _station);
     _lastState = r.state;
     final AppleMusicPlayerEvent? e = r.event;
     if (e == null) return;
@@ -346,6 +370,7 @@ class AppleMusicWebBridge implements AppleMusicBridge {
     _ready = null;
     _lastState = null;
     _hasQueue = false;
+    _station = false;
     if (lostReason != null && hadQueue) {
       _emit(AppleMusicSessionLost(lostReason));
     }
@@ -455,6 +480,7 @@ class AppleMusicWebBridge implements AppleMusicBridge {
     bool autoplay = true,
   }) async {
     _lastState = null;
+    _station = false;
     final Object? r = await _run(_kPlayJs, <String, dynamic>{
       'songId': songId,
       'startMs': startMs,
@@ -464,6 +490,27 @@ class AppleMusicWebBridge implements AppleMusicBridge {
       throw AppleMusicBridgeException('play', _errorText(r));
     }
     _hasQueue = true;
+  }
+
+  @override
+  Future<void> playStation(String stationId, {bool autoplay = true}) async {
+    _lastState = null;
+    // 先置上：setQueue 期间页面就会发 nowPlaying / state。
+    _station = true;
+    final Object? r = await _run(_kPlayStationJs, <String, dynamic>{
+      'stationId': stationId,
+      'autoplay': autoplay,
+    });
+    if (r is! Map || r['ok'] != true) {
+      throw AppleMusicBridgeException('playStation', _errorText(r));
+    }
+    _hasQueue = true;
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    if (_ready == null) return;
+    await _api('skipToNext');
   }
 
   @override
@@ -478,6 +525,7 @@ class AppleMusicWebBridge implements AppleMusicBridge {
   @override
   Future<void> stop() async {
     _hasQueue = false;
+    _station = false;
     if (_ready == null) return;
     await _api('stop');
   }

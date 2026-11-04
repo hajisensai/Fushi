@@ -51,7 +51,7 @@ void main() {
     test('continue needs a known kind', () {
       expect(WidgetLink.tryParse('fushi://widget/continue?id=x'), isNull);
       expect(
-        WidgetLink.tryParse('fushi://widget/continue?kind=game&id=x'),
+        WidgetLink.tryParse('fushi://widget/continue?kind=audiobook&id=x'),
         isNull,
       );
       expect(WidgetLink.tryParse('fushi://widget/continue'), isNull);
@@ -155,6 +155,13 @@ void main() {
       expect(WidgetLink.tryParse('fushi://widget/music/queue'), isNull);
     });
 
+    test('continue parses game items (Home > Continue game cards)', () {
+      expect(
+        WidgetLink.tryParse('fushi://widget/continue?kind=game&id=g1'),
+        const WidgetContinueLink(kind: WidgetMediaKind.game, id: 'g1'),
+      );
+    });
+
     test('continue links round-trip through toUri', () {
       const String id = 'reader_fushi://book/a b&c';
       const WidgetContinueLink link = WidgetContinueLink(
@@ -256,6 +263,8 @@ void main() {
       expect(WidgetMediaKind.manga.homeTab, HomeTab.manga);
       expect(WidgetMediaKind.video.module, ModuleId.video);
       expect(WidgetMediaKind.video.homeTab, HomeTab.video);
+      expect(WidgetMediaKind.game.module, ModuleId.games);
+      expect(WidgetMediaKind.game.homeTab, HomeTab.games);
     });
   });
 
@@ -455,6 +464,26 @@ void main() {
       await run(tester, link);
       expect(selectedTabs, <HomeTab>[HomeTab.manga]);
       expect(openedItems, <WidgetContinueLink>[link]);
+    });
+
+    testWidgets('continue on a game lands on the games tab only', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      const WidgetContinueLink link = WidgetContinueLink(
+        kind: WidgetMediaKind.game,
+        id: 'g1',
+      );
+      await run(tester, link);
+      expect(selectedTabs, <HomeTab>[HomeTab.games]);
+      // The landing action itself declines (no silent game launch, BUG-1111).
+      expect(openedItems, <WidgetContinueLink>[link]);
+      await run(
+        tester,
+        link,
+        visibility: const ModuleVisibility(<ModuleId>{ModuleId.books}),
+      );
+      expect(selectedTabs, <HomeTab>[HomeTab.games]);
     });
 
     testWidgets('continue on the item that is already open does nothing', (
@@ -810,6 +839,17 @@ void main() {
           video,
           openMediaIdentifier: 'uid-1',
           activeVideoUid: 'uid-2',
+        ),
+        isFalse,
+      );
+    });
+
+    test('a game is never "open" (it only lands on the games tab)', () {
+      expect(
+        isWidgetContinueItemOpen(
+          const WidgetContinueLink(kind: WidgetMediaKind.game, id: 'g1'),
+          openMediaIdentifier: 'g1',
+          activeVideoUid: 'g1',
         ),
         isFalse,
       );
