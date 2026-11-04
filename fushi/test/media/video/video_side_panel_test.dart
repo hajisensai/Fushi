@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiColorScheme;
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderPanelSwitcher;
@@ -316,6 +318,41 @@ void main() {
       },
     );
   }
+
+  // 反馈 DGApb0CQgE：自定义主题钉了页面底色时，字幕轨抽屉等播放器面板必须与页面
+  // 同族——此前面板方案只拿主色重新 fromSeed，表面是 seed 的 tone 95 / 90（粉主色下
+  // #FFF0F1 / #FFD9DF），与钉死的底色不同族。
+  test(
+    'panel scheme keeps the app surface family of a pinned-surface theme',
+    () {
+      for (final Brightness brightness in Brightness.values) {
+        final Color pinned = brightness == Brightness.light
+            ? const Color(0xFFF4F1EA)
+            : const Color(0xFF1B1D22);
+        final ColorScheme app = buildFushiColorScheme(
+          seedColor: const Color(0xFFE91E63),
+          brightness: brightness,
+          surface: pinned,
+        );
+        final ColorScheme panel = videoM3ePanelScheme(app);
+        expect(panel.surface, pinned, reason: '$brightness');
+        expect(panel.surfaceContainerLow, app.surfaceContainerLow);
+        expect(panel.surfaceContainer, app.surfaceContainer);
+        expect(panel.surfaceContainerHigh, app.surfaceContainerHigh);
+        expect(panel.surfaceContainerHighest, app.surfaceContainerHighest);
+        expect(panel.onSurface, app.onSurface);
+        expect(panel.onSurfaceVariant, app.onSurfaceVariant);
+        expect(panel.outlineVariant, app.outlineVariant);
+        expect(
+          videoM3ePanelSurfaceColor(app, opaque: true),
+          app.surfaceContainerLow,
+        );
+        // 强调色仍是播放器自己的 seed 方案（面板选中页签 / 开关的色相不变）。
+        expect(panel.primary, videoM3eChromeScheme(app).primary);
+        expect(panel.brightness, brightness);
+      }
+    },
+  );
 
   test(
     'panel / chrome schemes are cached per brightness, not just primary',

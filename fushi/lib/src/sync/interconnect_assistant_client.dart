@@ -6,8 +6,14 @@ import 'dart:convert';
 
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
+import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart'
+    show kAiAgentRemoteScene;
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart'
-    show kHostAssistantReasonsKey;
+    show
+        kHostAssistantAgentHistoryKey,
+        kHostAssistantAgentHistoryVersion,
+        kHostAssistantReasonsKey;
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
@@ -21,6 +27,8 @@ class HostAssistantTarget {
     this.reason,
     this.reasons = const <String, String>{},
     this.fingerprintSha256,
+    this.agentHistoryVersion = 0,
+    this.pairedToken = false,
   });
 
   final String baseUrl;
@@ -37,6 +45,18 @@ class HostAssistantTarget {
   /// 提供商…）。老 host 没有这个字段。
   final Map<String, String> reasons;
   final String? fingerprintSha256;
+
+  /// host 宣告的远端会话历史协议版本（能力位 `agentHistory`，BUG-4067）；0 = 老 host /
+  /// 没有存档，不发 `history` 路由、不发 `resume`。
+  final int agentHistoryVersion;
+
+  /// 这台设备用的是 host 派给它的 per-peer 口令（不是老版本的共享口令）。host 按
+  /// 口令认设备、按设备列会话历史；共享口令认不出是谁，历史路由一律 403。
+  final bool pairedToken;
+
+  /// 这台 host 能列 / 续接 / 改名 / 删除这台设备发起的 AI 助手会话。
+  bool get supportsAgentHistory =>
+      pairedToken && agentHistoryVersion >= kHostAssistantAgentHistoryVersion;
 
   String get label => deviceName ?? baseUrl;
 
@@ -162,6 +182,9 @@ class InterconnectAssistantClient {
                 }
               : const <String, String>{},
           fingerprintSha256: candidate.fingerprintSha256,
+          agentHistoryVersion:
+              (assistant[kHostAssistantAgentHistoryKey] as num?)?.toInt() ?? 0,
+          pairedToken: (candidate.token ?? '').isNotEmpty,
         );
       } catch (_) {
         return null;
@@ -172,18 +195,96 @@ class InterconnectAssistantClient {
     return null;
   }
 
+  /// 开会话；[resume] 非空 = 续接 host 上这场存档会话（只在
+  /// [HostAssistantTarget.supportsAgentHistory] 时发：老 host 不认这个字段，会静默
+  /// 开一场新的）。
   Future<HostAssistantEnvelope> open(
     HostAssistantTarget target, {
     required String feature,
     required String locale,
-  }) async => HostAssistantEnvelope.fromJson(
+    String? resume,
+  }) async {
+    if (resume != null && !target.supportsAgentHistory) {
+      throw const HostAssistantException('history_unsupported');
+    }
+    return HostAssistantEnvelope.fromJson(
+      await _call(
+        target,
+        'POST',
+        '/api/assistant/sessions',
+        jsonBody: <String, Object?>{
+          'feature': feature,
+          'locale': locale,
+          'resume': ?resume,
+        },
+      ),
+    );
+  }
+
+  /// 这台设备在 [target] 上发起的 [feature] 会话（最近更新的在前）。
+  Future<List<AiAgentSessionSummary>> listHistory(
+    HostAssistantTarget target, {
+    required String feature,
+  }) async {
+    _requireHistory(target);
+    final Map<String, dynamic> body = await _call(
+      target,
+      'GET',
+      '/api/assistant/history',
+      query: <String, String>{'feature': feature},
+    );
+    final Object? sessions = body['sessions'];
+    int intOf(Object? v) => (v as num?)?.toInt() ?? 0;
+    return <AiAgentSessionSummary>[
+      if (sessions is List)
+        for (final Object? s in sessions)
+          if (s is Map && s['id'] is String)
+            AiAgentSessionSummary(
+              id: s['id'] as String,
+              title: '${s['title'] ?? ''}',
+              scene: kAiAgentRemoteScene,
+              profileUid: '',
+              totalTokens: intOf(s['tokens']),
+              createdAt: intOf(s['createdAt']),
+              updatedAt: intOf(s['updatedAt']),
+            ),
+    ];
+  }
+
+  Future<void> renameHistory(
+    HostAssistantTarget target,
+    String id, {
+    required String feature,
+    required String title,
+  }) async {
+    _requireHistory(target);
     await _call(
       target,
-      'POST',
-      '/api/assistant/sessions',
-      jsonBody: <String, Object?>{'feature': feature, 'locale': locale},
-    ),
-  );
+      'PATCH',
+      '/api/assistant/history/${Uri.encodeComponent(id)}',
+      jsonBody: <String, Object?>{'feature': feature, 'title': title},
+    );
+  }
+
+  Future<void> deleteHistory(
+    HostAssistantTarget target,
+    String id, {
+    required String feature,
+  }) async {
+    _requireHistory(target);
+    await _call(
+      target,
+      'DELETE',
+      '/api/assistant/history/${Uri.encodeComponent(id)}',
+      query: <String, String>{'feature': feature},
+    );
+  }
+
+  static void _requireHistory(HostAssistantTarget target) {
+    if (!target.supportsAgentHistory) {
+      throw const HostAssistantException('history_unsupported');
+    }
+  }
 
   /// 长轮询：快照越过 [after] 或等满 [wait] 就返回。
   Future<HostAssistantEnvelope> read(

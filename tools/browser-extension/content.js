@@ -1959,6 +1959,12 @@ window.fushiToggleSubtitleHiding = function () {
   return true;
 };
 
+// 只读查询：用户此刻是否主动隐藏了字幕（'manual' 原因）。video-shortcuts.js 据此把「隐藏」
+// 当作「字幕已关」，←/→ 放回站点（BUG-4053）。状态仍只由本模块持有，调用方不另读 storage。
+window.fushiSubtitleManuallyHidden = function () {
+  return fushiSubtitleHidden === true;
+};
+
 function fushiReadSubtitleHidden() {
   try {
     chrome.storage.local.get(['subtitleHidden'], (r) => {

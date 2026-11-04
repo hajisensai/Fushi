@@ -3787,6 +3787,13 @@ class AiAgentSessions extends Table {
   /// （v141 前的存档且迁移时解析不出激活 Profile 的 uid），对所有 Profile 可见。
   TextColumn get profileUid => text().withDefault(const Constant(''))();
 
+  /// v144：互联 host 替已配对设备跑的远端会话是**哪台设备**发起的
+  /// （`fushi_paired_peers.peer_id`，配对时对端上报的稳定设备 id，重新配对不变）。
+  /// 首次落库时盖戳，之后不改——本机续接这场会话也不改，发起的设备照样能在自己的
+  /// 会话列表里看到它。空串 = 本机发起（或用共享口令开的、认不出设备的老会话）。
+  /// 已配对设备经 `/api/assistant/history` 只能列 / 续接 / 改名 / 删除自己发起的。
+  TextColumn get originPeerId => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => <Column>{id};
 }

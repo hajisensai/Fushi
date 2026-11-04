@@ -27,6 +27,8 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_browser/data/memory_web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
@@ -213,6 +215,74 @@ void main() {
     expect(state.tabsController.tabs.map((WebBrowserTab t) => t.url), <Uri>[
       Uri.parse('https://old.example/'),
     ]);
+  });
+
+  testWidgets('入口页地址栏有链接时点「进入浏览器」打开这个链接，不只恢复上次的标签页', (
+    WidgetTester tester,
+  ) async {
+    await store.saveSession(
+      WebBrowserSession(
+        tabs: <WebBrowserSessionTab>[
+          WebBrowserSessionTab(
+            id: 'old',
+            url: Uri.parse('https://old.example/'),
+            title: 'Old',
+          ),
+        ],
+        activeTabId: 'old',
+      ),
+    );
+    await pumpApp(
+      tester,
+      const Size(1280, 720),
+      const FushiWebBrowserHomePage(),
+    );
+    await tester.enterText(
+      find.descendant(
+        of: byKey('web-browser-address'),
+        matching: find.byType(EditableText),
+      ),
+      'https://bookwalker.jp/de123/',
+    );
+    await tester.tap(byKey('web-browser-enter'));
+    await tester.pumpAndSettle();
+    final FushiWebBrowserPageState state = page(tester);
+    expect(
+      state.tabsController.tabs.map((WebBrowserTab t) => t.url),
+      contains(Uri.parse('https://bookwalker.jp/de123/')),
+    );
+  });
+
+  testWidgets('入口页「进入浏览器」是地址栏的尾部动作，带按压动效，没有单独的按钮', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      const Size(1280, 720),
+      const FushiWebBrowserHomePage(),
+    );
+    final Finder enter = byKey('web-browser-enter');
+    expect(enter, findsOneWidget);
+    // 在地址栏（FushiSearchField）里，而不是地址栏下面另起一行。
+    expect(
+      find.ancestor(of: enter, matching: find.byType(FushiSearchField)),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(of: enter, matching: find.byType(FushiPressScale)),
+      findsOneWidget,
+    );
+    // 旧的单独 tonal 按钮（带「进入浏览器」文字）已删除，文字只进 tooltip。
+    expect(find.text(t.web_browser_enter), findsNothing);
+    expect(find.byTooltip(t.web_browser_enter), findsOneWidget);
+    // 尾部动作与输入框同一行。
+    final Rect field = tester.getRect(
+      find.descendant(
+        of: byKey('web-browser-address'),
+        matching: find.byType(EditableText),
+      ),
+    );
+    final Rect button = tester.getRect(enter);
+    expect(button.center.dy, moreOrLessEquals(field.center.dy, epsilon: 4));
+    expect(button.left, greaterThan(field.left));
   });
 
   testWidgets('竖屏：点站点推全屏浏览页，底栏在网页下方，地址栏点开才可编辑，后退回入口页', (

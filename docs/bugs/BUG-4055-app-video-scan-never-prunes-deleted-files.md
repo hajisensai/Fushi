@@ -1,6 +1,6 @@
 ## BUG-4055 · app 本地视频来源重扫从不回收已删除文件，删掉的视频留在待确认刮削队列
 - **报告**：2026-11-02（反馈 i5rQ5dMlBH，Windows 10 / app 3.0.0+19763：「视频刮削不存在的文件。我把那个视频删除之后，它把这视频也当成刮削的内容了，现在显示资料源不可用」；截图：后台任务 → 待确认 1 条「擅长作弄的高木同学.07.中日双语.720p.HDT…」，动漫文件，原因「资料源不可用」）
-- **真实性**：✅ 现象属实、代码路径已坐实；但根因处是一条**现行的有意语义**，改它要所有者拍板（见「选项」），本条不擅自改。
+- **真实性**：✅ 现象属实、代码路径已坐实；根因处是一条**现行的有意语义**，按下文「拍板」选 B 修。
   - 待确认队列 / 自动补刮的数据源是刮削计划器，它只看库里的行：
     `VideoLibraryScrapeSweep._plannedWorks`（`packages/fushi_engine/lib/media/video/metadata/video_library_scrape_sweep.dart:391-426`）
     → `VideoSourceWorkPlanner.plan`（`packages/fushi_engine/lib/media/video/metadata/video_source_work_planner.dart:84-86`，
@@ -25,12 +25,21 @@
     删掉的条目仍在库里。
   - **C. 显式清理入口**：重扫照旧不删；来源菜单加「清理已删除的文件」，走 A 的同一判据（用户显式意图，可像服务端 purge 那样
     `force`）。代价：用户得知道去点；待确认队列在清理前仍会列出它。
-- **[ ] ① 未修复（待拍板）** — 已先落三个选项都需要的前置修正（提交 `0705088af7`）：`selectStaleVideoRows` 默认存在判据由裸
-  `File(path).existsSync()` 改为 `videoMemberExistsSync`（`packages/fushi_engine/lib/media/video/video_library_prune.dart`）。
-  DVD 标题是虚拟路径 `<盘根>/VIDEO_TS/TITLE_nn.dvdtitle`，裸判恒假，任何 app 侧接入都会把仍在盘上的 DVD 当成「文件没了」
-  删掉；它躲过守卫 `fushi/test/build/video_member_file_exists_guard_test.dart` 只因变量名叫 `path`。服务端扫描器不导入原盘，
-  目前对服务端是潜在问题。
-- **[ ] ② 未加自动化测试（主修复待拍板）** — 前置修正的测试：`packages/fushi_engine/test/media/video/video_library_prune_test.dart`
-  「DVD 标题按盘上真实文件判：盘在 → 保留，盘没了 → 失效（默认判据）」（`dart test` 17 条全绿）。
+- **拍板**：2026-11-04 所有者委托按根因选 —— 选 **B（保留行、刮削跳过）**。理由：
+  - 现象的根因不是「行没删」，而是**刮削计划把「行在库里」当成「文件在磁盘上」**：待确认队列 / 自动补刮 /
+    资料刷新 / 哈希补齐都从 `VideoLibraryScrapeSweep._plannedWorks` 派生，它对一部成员文件全都不在的作品照样
+    排进去——哈希算不出、sidecar 写不了，问资料源只会一轮轮挂成「资料源不可用」。
+  - 行保留是 #792（`c22490be86`）有意定下的语义，护的是拔掉的移动盘 / 离线网络盘：盘回来时观看进度、刮削资料、
+    合集成员都还在。A 会推翻它（库外改名、暂时离线都会丢进度），且锁定测试 `source_library_scanner_test.dart:803-819`
+    正是在守这一条；C 不修队列（清理前队列照样列出它）。B 两头都对：语义不动，刮削只碰此刻真在的作品。
+- **[x] ① 已修复** — `packages/fushi_engine/lib/media/video/metadata/video_library_scrape_sweep.dart`
+  `_plannedWorks` 对每部作品先判 `_hasPresentMember`（默认判据 `videoMemberExists`，原盘按盘上真实文件，逐成员判、
+  命中即停），成员全不在的作品不进待确认 / 已忽略 / 已识别任何一份清单；行与进度不动，文件回来下一次计划自然复现。
+  构造参数 `memberExists` 只为测试注入。只作用于本地来源（sweep 本来就只看 `transport == 'local'`）。
+  未做：库页「暂缺」视觉态、手动整源刮削（`scrapeSource` 不经 sweep）仍会把暂缺作品排进去——用户显式操作，留作后续。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_library_scrape_sweep_test.dart`
+  「成员文件都不在磁盘上的作品不进待确认队列、不自动补刮，文件回来后复现」（真实临时目录 + 默认判据）、
+  「合集只要还有一个成员文件在就照常进队列；全不在才跳过」；`source_library_scanner_test.dart:803-819`（#792 语义）不改仍绿。
+  前置修正（`0705088af7`）的测试：`packages/fushi_engine/test/media/video/video_library_prune_test.dart`。
 - **备注**：app 的来源扫描只在「添加来源」与手动「重新扫描」时跑，没有定时 / 文件监听重扫；无论选哪项，库外删文件后都要等
   下一次扫描（或 B 的判定时机）才生效。
