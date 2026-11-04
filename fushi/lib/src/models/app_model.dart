@@ -128,6 +128,9 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
+export 'package:fushi/src/lookup/lookup_edge_punctuation.dart'
+    show leadingPunctuationStripUnits;
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -567,12 +570,8 @@ String normalizeSearchTerm(
 ///
 /// 与 [normalizeSearchTerm] 共用同一 [punctuationRegex]（单一真相）：只取句首分支
 /// （`match.start == 0` 的命中）；只有句尾标点时命中不在句首，返回 0。
-@visibleForTesting
-int leadingPunctuationStripUnits(String raw, RegExp punctuationRegex) {
-  if (raw.isEmpty) return 0;
-  final Match? m = punctuationRegex.firstMatch(raw);
-  return (m != null && m.start == 0) ? m.end : 0;
-}
+///
+/// 实现与正则住在 `lookup/lookup_edge_punctuation.dart`（取词层也要用），此处 re-export。
 
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
 /// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
@@ -2509,10 +2508,7 @@ class AppModel with ChangeNotifier {
   static RegExp get _emojiRegex =>
       _emojiRegexInstance ??= RegExp(RemoveEmoji().getRegexString());
 
-  static final RegExp _punctuationRegex = RegExp(
-    r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$',
-    unicode: true,
-  );
+  static final RegExp _punctuationRegex = lookupEdgePunctuationRegex;
   static final RegExp _loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
