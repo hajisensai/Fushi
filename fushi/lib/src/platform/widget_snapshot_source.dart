@@ -1009,10 +1009,14 @@ class WidgetSnapshotSource {
           WidgetMediaInput(
             kind: kind,
             id: 'remote:${c.kind.dbValue}:${c.id}',
-            title: c.collectionName != null && c.collectionName != c.title
-                ? '${c.collectionName} · ${c.title}'
-                : c.title,
-            subtitle: device,
+            // 与首页「继续」卡同一显示规则：合集成员标题取合集名，条目名与来源设备进副标题。
+            title: _nonEmpty(c.collectionName) ?? c.title,
+            subtitle: <String>[
+              if (_nonEmpty(c.collectionName) != null &&
+                  c.collectionName != c.title)
+                c.title,
+              device,
+            ].join(' · '),
             progress: c.isVideo ? 0 : c.percent / 100,
             recentAt: c.recentMs,
             link:
@@ -1042,13 +1046,14 @@ class WidgetSnapshotSource {
             ? WidgetMediaKind.video
             : WidgetMediaKind.book,
         id: 'server:${WidgetServerLink(source: item.source, serverId: item.serverId, itemId: item.itemId).key}',
-        title:
-            item.collectionName != null &&
-                item.collectionName!.isNotEmpty &&
-                item.collectionName != item.title
-            ? '${item.collectionName} · ${item.title}'
-            : item.title,
-        subtitle: item.serverName,
+        // 与首页「继续」卡同一显示规则：系列 / 播客名作标题，条目名与服务器名进副标题。
+        title: _nonEmpty(item.collectionName) ?? item.title,
+        subtitle: <String>[
+          if (_nonEmpty(item.collectionName) != null &&
+              item.collectionName != item.title)
+            item.title,
+          item.serverName,
+        ].join(' · '),
         progress: item.progress ?? 0,
         recentAt: item.recentMs,
         coverPath: item.coverPath,
@@ -1059,6 +1064,9 @@ class WidgetSnapshotSource {
         ),
       ),
   ];
+
+  static String? _nonEmpty(String? value) =>
+      value == null || value.isEmpty ? null : value;
 
   String _formatCount(int count) {
     try {
