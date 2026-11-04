@@ -10,11 +10,15 @@
 //   Ctrl+Shift+F      收藏 / 取消收藏当前字幕句（进 Fushi 收藏夹，见 video-favorite.js）
 //   Ctrl+Shift+[ / ]  播放速度 −0.25x / ＋0.25x
 //   Shift+←/→   按秒快退 / 快进（秒数 videoSeekSeconds，不需要字幕轨）
-//   E（按住）    临时倍速，松开恢复原速（倍速 videoHoldSpeedRate；与 App 视频页同键同语义）
+//   E（按住）    临时倍速，松开恢复原速（倍速 videoHoldSpeedRate；与 App 视频页同键同语义）。
+//               裸字母键会抢站点自己的快捷键，所以**默认关闭**（DEFAULT_OFF），用户在设置页打开。
 // 判定是纯函数 decide()（node 可测）；执行端是 subtitle-panel.js 暴露的
 // window.fushiSubtitleShortcut(action)（控制器持有轨/偏移/模式状态）与 fushiSubtitleSeekBy，
 // 播放速度直接操作 <video>。
-// 输入框/可编辑区一律放行；旧 videoShortcutsEnabled 只作为升级时各动作的缺省值。
+// 输入框/可编辑区一律放行；旧 videoShortcutsEnabled 只作为升级时各动作的缺省值（DEFAULT_OFF 的不吃它）。
+// 生效门槛：页面上有一个**受 Fushi 控制的目标视频**（video-target.js controlledVideo：可见、
+// 不是静音预览 / 广告位；全屏的 <video> 直接算），所有动作共用这一个判据、也只操作这一个视频；
+// 只是 DOM 里存在某个 <video>（隐藏的、预告片、静音悬停预览）不接管任何键。
 // 上面是**默认**键位；每个动作的组合键可在设置页「快捷键」里改（videoShortcutKeys）。
 (function (root, factory) {
   var api = factory();
@@ -54,6 +58,18 @@
     'hold-speed': 'KeyE',
   };
   var ACTIONS = Object.keys(DEFAULT_COMBOS);
+
+  // 无存量时默认**关**的动作（其余默认开）。裸字母键在任意网页都会和站点快捷键撞（E 是很多
+  // 站点 / 网页游戏 / 编辑器的键），默认接管等于替所有带视频的网页改键；用户打开才生效。
+  // 旧总开关 videoShortcutsEnabled 早于这些动作存在，true 不能把它们顺带打开。
+  // App 设置页（settings_schema_web_browser_extension.dart kWebBrowserVideoShortcutsDefaultOff）
+  // 与 options.js settingDefaults 同一份，守卫测试比对。
+  var DEFAULT_OFF = { 'hold-speed': 1 };
+  // 某动作开关没有显式布尔值时的缺省：DEFAULT_OFF → false；其余跟旧总开关（缺省 true）。
+  function bindingDefault(action, legacyEnabled) {
+    if (DEFAULT_OFF[action]) return false;
+    return legacyEnabled !== false;
+  }
 
   // 快退 / 快进的秒数（options 下拉 videoSeekSeconds，存字符串）与按住倍速（videoHoldSpeedRate）。
   // 只认表里的值，别的（缺省 / 写歪）回落默认——与 App 设置页 _choice 同一套取值。
@@ -169,7 +185,9 @@
   }
 
   // 纯函数按键判定。ev = {key, code, ctrl, shift, alt, editable}；
-  // ctx = {enabled, hasVideo, hasTrack, bindings?, combos?}。返回 {action} 或 null（null = 不接管，放行给站点）。
+  // ctx = {enabled, hasVideo, hasTrack, bindings?, combos?}。hasVideo = 有受 Fushi 控制的目标视频
+  // （运行时 controlledVideo() 非空，不是「DOM 里有 <video>」）；bindings 缺某动作时按 bindingDefault。
+  // 返回 {action} 或 null（null = 不接管，放行给站点）。
   function decide(ev, ctx) {
     if (!ev || !ctx || !ctx.enabled || ev.editable || !ctx.hasVideo) return null;
     var combo = comboFromEvent(ev);
@@ -178,7 +196,9 @@
     for (var i = 0; i < ACTIONS.length; i++) {
       var action = ACTIONS[i];
       if (combos[action] !== combo) continue;
-      if (ctx.bindings && ctx.bindings[action] === false) return null;
+      var on = ctx.bindings && typeof ctx.bindings[action] === 'boolean'
+        ? ctx.bindings[action] : bindingDefault(action, true);
+      if (!on) return null;
       if (NEEDS_TRACK[action] && !ctx.hasTrack) return null;
       return { action: action };
     }
@@ -194,6 +214,8 @@
   return {
     decide: decide,
     nextRate: nextRate,
+    bindingDefault: bindingDefault,
+    DEFAULT_OFF: DEFAULT_OFF,
     comboFromEvent: comboFromEvent,
     normalizeCombo: normalizeCombo,
     resolveCombos: resolveCombos,
@@ -249,10 +271,10 @@
   function applySettings(saved) {
     saved = saved || {};
     for (var k in saved) rawSettings[k] = saved[k];
-    var legacyEnabled = rawSettings.videoShortcutsEnabled !== false;
     for (var action in bindingKeys) {
       var value = rawSettings[bindingKeys[action]];
-      bindings[action] = typeof value === 'boolean' ? value : legacyEnabled;
+      bindings[action] = typeof value === 'boolean'
+        ? value : api.bindingDefault(action, rawSettings.videoShortcutsEnabled);
     }
     combos = api.resolveCombos(rawSettings[api.KEYS_SETTING]);
     rebuildComboSet();
@@ -308,19 +330,15 @@
     return false;
   }
 
-  // 正片：与字幕覆盖层 / 播放器按钮同一个挑法（video-target.js），契约缺席时回落第一个 <video>。
-  function mainVideo() {
-    try {
-      if (typeof window.fushiMainVideo === 'function') {
-        var mv = window.fushiMainVideo();
-        if (mv) return mv;
-      }
-    } catch (_) {}
-    return document.querySelector('video');
+  // 受 Fushi 控制的目标视频（video-target.js controlledVideo，manifest 里排在本文件之前）。
+  // **不回落**到 document.querySelector('video')：那正是「页面上随便有个 <video> 就抢键」的根因。
+  // 契约缺席 = 没有目标，快捷键一律放行。
+  function targetVideo(tracked) {
+    if (typeof window.fushiControlledVideo !== 'function') return null;
+    return window.fushiControlledVideo(tracked) || null;
   }
 
-  function adjustRate(delta) {
-    var v = mainVideo();
+  function adjustRate(v, delta) {
     if (!v || typeof v.playbackRate !== 'number') return false;
     var next = api.nextRate(v.playbackRate, delta);
     try { v.playbackRate = next; } catch (_) { return false; }
@@ -333,8 +351,7 @@
   // 按秒快退 / 快进。执行端是 subtitle-panel.js 的 fushiSubtitleSeekBy（它持有 seekTo：
   // Netflix 必须走主世界桥的官方 player.seek，直接改 currentTime 会触发 DRM 报错 M7375）；
   // 执行端缺席（面板脚本没装）时直接改 <video>.currentTime。
-  function seekBy(direction) {
-    var v = mainVideo();
+  function seekBy(v, direction) {
     if (!v || typeof v.currentTime !== 'number') return false;
     var deltaSec = direction * api.seekSeconds(rawSettings[api.SEEK_SECONDS_SETTING]);
     if (typeof window.fushiSubtitleSeekBy === 'function') {
@@ -348,9 +365,8 @@
   // 设定倍速，松开**同一个物理键**恢复原速；按住期间的自动重复按键一并吞掉（否则漏给站点）。
   // 失焦 / 切走标签页时收不到 keyup，必须在那里同样恢复，否则视频永远卡在临时倍速。
   var hold = null; // {code, video, previous}
-  function engageHold(code) {
+  function engageHold(v, code) {
     if (hold) return true;
-    var v = mainVideo();
     if (!v || typeof v.playbackRate !== 'number') return false;
     var rate = api.holdRate(rawSettings[api.HOLD_RATE_SETTING]);
     hold = { code: code, video: v, previous: v.playbackRate };
@@ -406,6 +422,8 @@
         if (path && path.length) realTarget = path[0];
       }
     } catch (_) {}
+    var tracked = hasTrackForVideo();
+    var target = targetVideo(tracked);
     var decision = api.decide(
       {
         key: e.key,
@@ -417,18 +435,18 @@
       },
       {
         enabled: true,
-        hasVideo: !!document.querySelector('video'),
-        hasTrack: hasTrackForVideo(),
+        hasVideo: !!target,
+        hasTrack: tracked,
         bindings: bindings,
         combos: combos,
       });
     if (!decision) return;
     var handled = false;
-    if (decision.action === 'rate-up') handled = adjustRate(0.25);
-    else if (decision.action === 'rate-down') handled = adjustRate(-0.25);
-    else if (decision.action === 'seek-back') handled = seekBy(-1);
-    else if (decision.action === 'seek-forward') handled = seekBy(1);
-    else if (decision.action === 'hold-speed') handled = e.repeat ? false : engageHold(e.code);
+    if (decision.action === 'rate-up') handled = adjustRate(target, 0.25);
+    else if (decision.action === 'rate-down') handled = adjustRate(target, -0.25);
+    else if (decision.action === 'seek-back') handled = seekBy(target, -1);
+    else if (decision.action === 'seek-forward') handled = seekBy(target, 1);
+    else if (decision.action === 'hold-speed') handled = e.repeat ? false : engageHold(target, e.code);
     else if (typeof window.fushiSubtitleShortcut === 'function') {
       handled = window.fushiSubtitleShortcut(decision.action) === true;
     }
