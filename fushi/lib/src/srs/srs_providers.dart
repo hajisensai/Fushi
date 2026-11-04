@@ -255,28 +255,6 @@ final Provider<SrsProfileStores> srsProfileStoresProvider =
       );
     });
 
-/// 打开 store 时、旧库迁移之前的钩子（[SrsDbStore.open] 的 `beforeMigrate`，BUG-4005）：模块开着时由
-/// `srsAppRuntimeProvider` 装上调度器的有界只拉不发（`SrsSyncScheduler.pullInto`，最多等
-/// `kSrsPullBeforeMigrateBudget`），迁移只包还没有任何设备的操作代表的旧行，第二台设备不再把同一份旧库整个再包一遍。
-/// 没装（模块关着 / 测试）就直接迁移。只在 store 还没迁移时调用（每个 profile 一生一次）。
-class SrsBeforeMigrateHook {
-  Future<void> Function(SrsDbStore store)? pull;
-
-  Future<void> run(SrsDbStore store) async {
-    final Future<void> Function(SrsDbStore store)? f = pull;
-    if (f == null) return;
-    try {
-      await f(store);
-    } catch (e, stack) {
-      // 拉取出错不挡迁移（照常迁移，靠收敛合并），但必须留日志。
-      ErrorLogService.instance.log('SrsBeforeMigrateHook', e, stack);
-    }
-  }
-}
-
-final Provider<SrsBeforeMigrateHook> srsBeforeMigrateHookProvider =
-    Provider<SrsBeforeMigrateHook>((Ref ref) => SrsBeforeMigrateHook());
-
 /// 当前 profile 的 SRS 副本；模块关着时为 null。
 ///
 /// 经 [srsProfileStoresProvider] 打开：浏览器扩展之前为这个配置开过的副本先作废，同一个 uid 不会
@@ -302,9 +280,6 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
     app.database,
   ).getOrCreateDeviceId();
   final Directory support = await ref.watch(srsSupportRootProvider)();
-  final SrsBeforeMigrateHook beforeMigrate = ref.read(
-    srsBeforeMigrateHookProvider,
-  );
   final SrsDbStore store = await stores.activate(
     profileUid,
     () => SrsDbStore.open(
@@ -313,8 +288,9 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       profileUid: profileUid,
       deviceId: deviceId,
       engine: engine,
-      // 旧库还没迁移时，迁移之前先从已配置的同步位置收一轮（有界，见 [SrsBeforeMigrateHook]）。
-      beforeMigrate: beforeMigrate.run,
+      // 旧库迁移推迟到首次同步确认之后、第一轮上传之前，先从同步位置收一轮再迁移（BUG-4005，
+      // SrsSyncScheduler.ensureMigrated）。确认弹框没回答前不迁移也不拉。
+      deferMigration: true,
       // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
       // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
       fallbackRolloverHour: () => app.statDayResetHour,

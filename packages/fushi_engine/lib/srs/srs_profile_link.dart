@@ -396,7 +396,14 @@ abstract interface class SrsProfileLinker {
 
   /// 用户在 [SrsProfileLinkChoose] 的候选里选了 [uid]：本机 profile 改用它（本机有用户笔记时并入），返回按新身份
   /// 重开的 store。本设备在旧 uid 下的同步目录由之后的 [link] 清掉。
-  Future<SrsDbStore> adopt(SrsDbStore store, String uid);
+  ///
+  /// [within]：候选所在的那条通道（调用方正拿着它的通道锁）；并入之前从它收目标 uid 的数据。null = 候选在本机目录 /
+  /// 文件夹位置上，或那条通道此刻不可用。
+  Future<SrsDbStore> adopt(
+    SrsDbStore store,
+    String uid, {
+    SyncAssetStore? within,
+  });
 
   /// 引擎跑成功之后：在本机写入者目录里写 profile 说明文件（内容没变就不重写）。
   Future<void> publish(
@@ -418,8 +425,20 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   });
 
   /// 并入之前把同步位置上目标 uid 已有的数据收进目标 store（[srsMergeProfileUid] 的 `pullTarget`；app 给调度器的
-  /// 有界只拉不发）。null = 不拉（并入时目标里有什么就按什么判断）。
-  final Future<void> Function(SrsDbStore target)? pullBeforeMerge;
+  /// 有界只拉不发）。`within` = 正在跑的那条通道（[link] 的 backend / [adopt] 的 `within`）：调用方在一轮同步里、
+  /// 拿着通道锁，只能从它收，不能再去取别的通道。null = 不拉（并入时目标里有什么就按什么判断）。
+  final Future<void> Function(SrsDbStore target, SyncAssetStore? within)?
+  pullBeforeMerge;
+
+  /// [pullBeforeMerge] 绑上这次的通道，交给 [srsMergeProfileUid]。
+  Future<void> Function(SrsDbStore target)? _pullTarget(
+    SyncAssetStore? within,
+  ) {
+    final Future<void> Function(SrsDbStore, SyncAssetStore?)? pull =
+        pullBeforeMerge;
+    if (pull == null) return null;
+    return (SrsDbStore target) => pull(target, within);
+  }
 
   /// 全部 profile 的 SRS 媒体根（`<support>/srs_media`）：并入时把旧 uid 的媒体与共享样式文件搬到新 uid 下。
   final Future<Directory?> Function()? mediaRoot;
@@ -468,7 +487,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     SrsDbStore store,
   ) async {
     // 上次并入做到一半进程就退出了（标记还在 srs.db）：先用同样的参数做完，再按新身份判定。
-    final SrsDbStore? resumed = await _resumePendingMerges(store);
+    final SrsDbStore? resumed = await _resumePendingMerges(store, backend);
     if (resumed != null) return SrsProfileLinkOutcome(resumed, linked: true);
     final List<SrsRemoteProfile> remote = await srsListRemoteProfiles(backend);
     // 本设备的孤儿目录：本设备**换 uid 时离开的**旧 uid（[kSrsRetiredProfileUidsKey]，例如用户在冲突弹窗里选了
@@ -552,12 +571,21 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   }
 
   @override
-  Future<SrsDbStore> adopt(SrsDbStore store, String uid) async {
+  Future<SrsDbStore> adopt(
+    SrsDbStore store,
+    String uid, {
+    SyncAssetStore? within,
+  }) async {
     if (uid == store.profileUid) return store;
     if (await _uidTakenLocally(uid)) {
       throw StateError('profile uid $uid is already another local profile');
     }
-    return _switchUid(store, uid, merge: await store.hasUserNotes());
+    return _switchUid(
+      store,
+      uid,
+      merge: await store.hasUserNotes(),
+      within: within,
+    );
   }
 
   /// srs.db `srs_meta` 里 [key] 存的字符串集合（JSON 数组；没有 / 坏了为空）。
@@ -612,7 +640,10 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   }
 
   /// 当前 profile 有没做完的并入（[srsPendingProfileMerges]）：做完并按新身份重开 store；没有返回 null。
-  Future<SrsDbStore?> _resumePendingMerges(SrsDbStore store) async {
+  Future<SrsDbStore?> _resumePendingMerges(
+    SrsDbStore store,
+    SyncAssetStore within,
+  ) async {
     final int profileId = await activeProfileId();
     bool resumed = false;
     for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
@@ -628,7 +659,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         newUid: m.newUid,
         deviceId: store.deviceId,
         mediaRoot: await mediaRoot?.call(),
-        pullTarget: pullBeforeMerge,
+        pullTarget: _pullTarget(within),
       );
       await _addToMetaSet(store, kSrsRetiredProfileUidsKey, m.oldUid);
       resumed = true;
@@ -648,6 +679,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     SrsDbStore store,
     String uid, {
     required bool merge,
+    SyncAssetStore? within,
   }) async {
     final int profileId = await activeProfileId();
     final String oldUid = store.profileUid;
@@ -662,7 +694,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         newUid: uid,
         deviceId: store.deviceId,
         mediaRoot: await mediaRoot?.call(),
-        pullTarget: pullBeforeMerge,
+        pullTarget: _pullTarget(within),
       );
     } else {
       await srsAdoptProfileUid(

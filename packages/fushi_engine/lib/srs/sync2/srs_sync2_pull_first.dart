@@ -7,7 +7,8 @@
 /// 只读位置：不建 `meta.json`、不写围栏 / 段 / head、不删任何东西（与 [srsSync2Round] 的握手不同：那边位置上还没有
 /// 集合时会新建 `meta.json`）。本机只多了收进来的操作（与一轮同步收段同一条路径，[srsSync2Pull]）。
 ///
-/// **有界**（[srsSync2PullWithin]）：调用方在打开 store 的路上等它，网络慢 / 卡住不能让复习页无限等。到点就关上
+/// **有界**（[srsSync2PullWithin]）：调用方（首次同步确认后的第一轮 / 档案合并）在一轮同步里等它，网络慢 / 卡住
+/// 不能让这一轮无限等。到点就关上
 /// [SrsSync2PullGate]：在途的那一次内核调用做完（本地、有界），开着的收段会话放掉，之后迟到的网络结果再也碰不到
 /// 本机库；已收的批次都已提交，没收到的由之后的常规同步补齐（迁移照常做，只是可能多包几条，靠收敛合并）。
 library;
@@ -21,8 +22,9 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 
-/// 打开 store 时迁移前最多等多久（首次打开复习页最多多等这么久；之后的打开已迁移，不再等）。
-const Duration kSrsPullBeforeMigrateBudget = Duration(seconds: 10);
+/// 推迟的旧库迁移之前最多收多久（app 首次同步确认后的第一轮里做一次，store 早已可用、不挡复习页；之后已迁移，
+/// 不再等）。
+const Duration kSrsPullBeforeMigrateBudget = Duration(minutes: 2);
 
 /// 档案合并前收目标 uid 的数据最多等多久（用户在冲突弹窗里选定之后的一次性操作）。
 const Duration kSrsPullBeforeMergeBudget = Duration(minutes: 2);

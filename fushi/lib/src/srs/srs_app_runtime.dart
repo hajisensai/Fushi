@@ -24,7 +24,7 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
-    show kSrsPullBeforeMergeBudget, kSrsPullBeforeMigrateBudget;
+    show kSrsPullBeforeMergeBudget;
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show SrsSync2Report;
@@ -59,92 +59,81 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
-final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
-  (Ref ref) {
-    if (!ref.watch(srsModuleEnabledProvider)) return null;
-    final AppModel app = ref.read(appProvider);
-    final SrsRevisionOrigin revisionOrigin = SrsRevisionOrigin();
-    late final SrsAppRuntime runtime;
-    runtime = SrsAppRuntime(
-      app: app,
-      readStore: () async {
-        try {
-          return await ref.read(srsStoreProvider.future);
-        } catch (e, stack) {
-          ErrorLogService.instance.log('SrsAppRuntime.readStore', e, stack);
-          return null;
-        }
-      },
-      readMedia: () async {
-        try {
-          return await ref.read(srsMediaStoreProvider.future);
-        } catch (e, stack) {
-          ErrorLogService.instance.log('SrsAppRuntime.readMedia', e, stack);
-          return null;
-        }
-      },
-      engine: () => ref.read(srsEngineProvider),
-      bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
-      bumpPulledRevision: () =>
-          revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier)),
-      // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
-      profileLinker: SrsDbProfileLinker(
-        db: app.database,
-        activeProfileId: () async {
-          final int id = ref.read(profileViewModelProvider).activeProfileId;
-          return id > 0 ? id : app.database.resolveActiveProfileId();
-        },
-        reopenStore: () async {
-          ref.invalidate(srsStoreProvider);
-          return ref.read(srsStoreProvider.future);
-        },
-        mediaRoot: () async => SrsMediaStore.mediaRootFor(
-          await ref.read(srsSupportRootProvider)(),
-        ),
-        onError: ErrorLogService.instance.log,
-        // 并入之前先把目标 uid 已有的数据收进来（BUG-4005：合并沿用目标里已有的写入者，不再改名造出第二份）。
-        pullBeforeMerge: (SrsDbStore target) => runtime.sync.pullInto(
-          target,
-          budget: kSrsPullBeforeMergeBudget,
-          purpose: 'merge',
-        ),
-      ),
-    );
-    // 旧库迁移之前先收一轮（BUG-4005，[srsBeforeMigrateHookProvider]）。要在下面听 RWKV 之前装上：它会把
-    // srsStoreProvider 拉起来，store 打开走到迁移那一步时钩子必须已经在。
-    final SrsBeforeMigrateHook beforeMigrate = ref.read(
-      srsBeforeMigrateHookProvider,
-    );
-    Future<void> pullBeforeMigrate(SrsDbStore store) => runtime.sync.pullInto(
-      store,
-      budget: kSrsPullBeforeMigrateBudget,
-      purpose: 'migrate',
-    );
-    beforeMigrate.pull = pullBeforeMigrate;
-    ref.onDispose(() {
-      if (identical(beforeMigrate.pull, pullBeforeMigrate)) {
-        beforeMigrate.pull = null;
+final Provider<SrsAppRuntime?>
+srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
+  if (!ref.watch(srsModuleEnabledProvider)) return null;
+  final AppModel app = ref.read(appProvider);
+  final SrsRevisionOrigin revisionOrigin = SrsRevisionOrigin();
+  late final SrsAppRuntime runtime;
+  runtime = SrsAppRuntime(
+    app: app,
+    readStore: () async {
+      try {
+        return await ref.read(srsStoreProvider.future);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.readStore', e, stack);
+        return null;
       }
-    });
-    // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
-    // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
-    listenSrsLocalWrites(ref, revisionOrigin, runtime.localPush.trigger);
-    // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
-    ref.listen<int>(
-      srsLocalWriteProvider,
-      (int? previous, int next) => runtime.localPush.trigger(),
-    );
-    // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
-    ref.listen<AsyncValue<Object?>>(
-      srsRwkvServiceProvider,
-      (AsyncValue<Object?>? previous, AsyncValue<Object?> next) {},
-      fireImmediately: true,
-    );
-    runtime.install();
-    ref.onDispose(runtime.dispose);
-    return runtime;
-  },
-);
+    },
+    readMedia: () async {
+      try {
+        return await ref.read(srsMediaStoreProvider.future);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.readMedia', e, stack);
+        return null;
+      }
+    },
+    engine: () => ref.read(srsEngineProvider),
+    bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
+    bumpPulledRevision: () =>
+        revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier)),
+    // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
+    profileLinker: SrsDbProfileLinker(
+      db: app.database,
+      activeProfileId: () async {
+        final int id = ref.read(profileViewModelProvider).activeProfileId;
+        return id > 0 ? id : app.database.resolveActiveProfileId();
+      },
+      reopenStore: () async {
+        ref.invalidate(srsStoreProvider);
+        return ref.read(srsStoreProvider.future);
+      },
+      mediaRoot: () async =>
+          SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
+      onError: ErrorLogService.instance.log,
+      // 并入之前先把目标 uid 已有的数据收进来（BUG-4005：合并沿用目标里已有的写入者，不再改名造出第二份）。
+      // 并入总在一轮同步 / [SrsSyncScheduler.adoptProfile] 的 [_serially] 里：只从正在跑的那条通道和本机目录 /
+      // 文件夹位置收，不再去取通道锁。
+      pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
+          runtime.sync.pullInto(
+            target,
+            budget: kSrsPullBeforeMergeBudget,
+            purpose: 'merge',
+            within: within,
+            channels: false,
+          ),
+    ),
+  );
+  // 旧库迁移推迟到首次同步确认之后（BUG-4005）：store 打开时不迁移（srs_providers.dart `deferMigration`），
+  // 由调度器在确认后的第一轮上传之前先收一轮再迁移（[SrsSyncScheduler.ensureMigrated]）。
+  // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
+  // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
+  listenSrsLocalWrites(ref, revisionOrigin, runtime.localPush.trigger);
+  // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
+  ref.listen<int>(
+    srsLocalWriteProvider,
+    (int? previous, int next) => runtime.localPush.trigger(),
+  );
+  // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
+  ref.listen<AsyncValue<Object?>>(
+    srsRwkvServiceProvider,
+    (AsyncValue<Object?>? previous, AsyncValue<Object?> next) {},
+    fireImmediately: true,
+  );
+  runtime.install();
+  ref.onDispose(runtime.dispose);
+  return runtime;
+});
 
 /// 把 [srsAppRuntimeProvider] 挂到根容器上保活（main.dart 在 initialise 之后调一次）。
 void installSrsAppRuntime(ProviderContainer container) {

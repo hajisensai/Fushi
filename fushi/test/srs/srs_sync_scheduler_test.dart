@@ -178,7 +178,11 @@ class _RecordingLinker implements SrsProfileLinker {
   }
 
   @override
-  Future<SrsDbStore> adopt(SrsDbStore store, String uid) async {
+  Future<SrsDbStore> adopt(
+    SrsDbStore store,
+    String uid, {
+    SyncAssetStore? within,
+  }) async {
     adopted.add('${store.profileUid}->$uid');
     return store;
   }

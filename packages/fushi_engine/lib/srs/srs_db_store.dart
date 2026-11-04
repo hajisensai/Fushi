@@ -319,6 +319,7 @@ class SrsDbStore implements SrsSync2Host {
     SrsStyleStore? styles,
     SrsExclusiveOuter? exclusiveOuter,
     Future<void> Function(SrsDbStore store)? beforeMigrate,
+    bool deferMigration = false,
   }) async {
     final SrsDbStore s = SrsDbStore._(
       db: db,
@@ -344,7 +345,7 @@ class SrsDbStore implements SrsSync2Host {
       await s.afterRestore();
     }
     await s.ensureBuiltins();
-    await s._sync2Open(beforeMigrate);
+    await s._sync2Open(beforeMigrate, deferMigration);
     return s;
   }
 
@@ -358,8 +359,12 @@ class SrsDbStore implements SrsSync2Host {
   /// [beforeMigrate]：还没迁移时、迁移之前在同一个独占区里先跑一次（store 还没交给调用方，不会有本机写入），用来先
   /// 收一轮同步位置上别的设备已迁出的操作：迁移只包还没有任何设备的操作代表的旧行（内核 store/sync2/mod.rs
   /// `enqueue_legacy_rows`，BUG-4005），先收到的那部分旧行不会再被包成第二条重复的操作流。已迁移时不调用。
+  ///
+  /// [deferMigration]：这次打开不迁移，留给调用方之后调 [migrateLegacy]（App 等首次同步确认之后、第一轮同步之前
+  /// 才迁移，BUG-4005）。没迁移的副本照常可读可写：本机写入本来就是操作，迁移时按「已有操作代表」跳过。
   Future<void> _sync2Open([
     Future<void> Function(SrsDbStore store)? beforeMigrate,
+    bool deferMigration = false,
   ]) => runExclusive(() async {
     final (int nowMs, _) = now();
     final Map<String, Object?> id = await _sync2(<String, Object?>{
@@ -369,17 +374,45 @@ class SrsDbStore implements SrsSync2Host {
     _sync2Device = id['device'] as String?;
     // 上次在新设备收段途中退出、通道没做完：开 Drift 事务前先按片做完（[_transactionOrReload]）。
     _channelLive = id['channel'] == true;
-    if (id['migrated'] == true) return;
+    _sync2Migrated = id['migrated'] == true;
+    if (_sync2Migrated || deferMigration) return;
     if (beforeMigrate != null) await beforeMigrate(this);
+    await _sync2MigrateAll(nowMs);
+  });
+
+  /// 旧库还没并成操作就并（打开时用 `deferMigration` 推迟了的那一次）。已迁移时立即返回。
+  ///
+  /// [beforeMigrate] 在独占区**外**先跑（只拉不发的一轮可能要等网络，期间本机复习照常落库），然后在独占区里分批
+  /// 迁移（迁移期间本机写入等它做完）。迁移只包还没有任何操作代表的旧行，所以 [beforeMigrate] 与迁移之间插进来的
+  /// 本机写入 / 收到的操作都不会被重复包装。
+  Future<void> migrateLegacy({
+    Future<void> Function(SrsDbStore store)? beforeMigrate,
+  }) async {
+    if (_sync2Migrated) return;
+    if (beforeMigrate != null) await beforeMigrate(this);
+    await runExclusive(() async {
+      if (_sync2Migrated) return;
+      await _sync2MigrateAll(now().$1);
+    });
+  }
+
+  /// 本 profile 的旧库已并成操作（或本来就没有要并的）。
+  bool get sync2Migrated => _sync2Migrated;
+  bool _sync2Migrated = false;
+
+  Future<void> _sync2MigrateAll(int nowMs) async {
     while (true) {
       final Map<String, Object?> m = await _sync2(<String, Object?>{
         'op': 'migrate',
         'now': nowMs,
         'limit': kSrsSync2MigrateBatch,
       });
-      if (m['done'] == true) return;
+      if (m['done'] == true) {
+        _sync2Migrated = true;
+        return;
+      }
     }
-  });
+  }
 
   /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。
   String? get sync2Device => _sync2Device;
