@@ -10446,7 +10446,7 @@
   "video_source_scrape_list_load_failed": "تعذّر تحميل هذه القائمة. حاول مرة أخرى.",
   "video_source_scrape_list_reload": "إعادة التحميل",
   "video_source_scrape_locale": "لغة البيانات الوصفية",
-  "video_source_scrape_locale_follow_ui": "اتركه فارغًا لاتباع لغة الواجهة",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "اللغة المفضلة لبيانات TMDB البديلة والتفاصيل التكميلية. يستخدم MAL العناوين والنصوص الأصلية التي يوفّرها.",
   "video_source_scrape_manual_ambiguous": "توجد عدة أعمال بهذا العنوان. افتح تبويب الأعمال المعلّقة واختر العنصر المحدد لمطابقته.",
   "video_source_scrape_manual_by_id": "معرّف العمل",

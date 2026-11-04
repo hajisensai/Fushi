@@ -10446,7 +10446,7 @@
   "video_source_scrape_list_load_failed": "Could not load this list. Try again.",
   "video_source_scrape_list_reload": "Reload",
   "video_source_scrape_locale": "Metadata language",
-  "video_source_scrape_locale_follow_ui": "Leave empty to follow the interface language",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "Preferred language for TMDB fallback and supplementary details. MAL uses the titles and text supplied by MAL.",
   "video_source_scrape_manual_ambiguous": "Several works have this title. Open the pending works tab and select the specific item to match.",
   "video_source_scrape_manual_by_id": "Work ID",

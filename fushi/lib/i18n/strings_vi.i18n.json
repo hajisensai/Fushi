@@ -10446,7 +10446,7 @@
   "video_source_scrape_list_load_failed": "Không thể tải danh sách này. Vui lòng thử lại.",
   "video_source_scrape_list_reload": "Tải lại",
   "video_source_scrape_locale": "Ngôn ngữ metadata",
-  "video_source_scrape_locale_follow_ui": "Để trống để theo ngôn ngữ giao diện",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "Ngôn ngữ ưu tiên cho dữ liệu dự phòng và thông tin bổ sung từ TMDB. MAL sử dụng tiêu đề và văn bản gốc do MAL cung cấp.",
   "video_source_scrape_manual_ambiguous": "Có nhiều tác phẩm trùng tên này. Mở thẻ tác phẩm chờ xác nhận và chọn mục cụ thể để ghép.",
   "video_source_scrape_manual_by_id": "ID tác phẩm",

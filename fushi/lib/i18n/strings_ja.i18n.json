@@ -10446,7 +10446,7 @@
   "video_source_scrape_list_load_failed": "リストを読み込めませんでした。もう一度お試しください。",
   "video_source_scrape_list_reload": "再読み込み",
   "video_source_scrape_locale": "メタデータの言語",
-  "video_source_scrape_locale_follow_ui": "空欄の場合はインターフェース言語に従います",
+  "video_source_scrape_locale_follow_original": "Leave empty to use each work's original language",
   "video_source_scrape_locale_hint": "TMDB の代替・補足情報で優先する言語です。MAL の情報には、MAL が提供するタイトルと原文を使用します。",
   "video_source_scrape_manual_ambiguous": "同じタイトルの作品が複数あります。確認待ちタブを開き、照合する項目を選択してください。",
   "video_source_scrape_manual_by_id": "作品 ID",

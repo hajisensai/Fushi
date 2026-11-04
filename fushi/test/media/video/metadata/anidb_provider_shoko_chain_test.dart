@@ -56,11 +56,13 @@ void main() {
     required Future<http.Response> Function(http.Request) handler,
     Directory? cacheDirectory,
     DateTime Function()? now,
+    bool followOriginalLanguage = false,
   }) {
     final AniDbVideoMetadataProvider result = AniDbVideoMetadataProvider(
       clientName: 'fushitest',
       clientVersion: 1,
       language: 'zh-CN',
+      followOriginalLanguage: followOriginalLanguage,
       titleCatalog: catalog,
       client: MockClient(handler),
       now: now,
@@ -78,6 +80,25 @@ void main() {
     200,
     headers: const <String, String>{'content-type': 'application/xml'},
   );
+
+  // BUG-4056：资料语言留空 = 按作品原语言。主标题 x-jat → 原语言日语，标题取
+  // 日文官方名；兜底语言（界面语言 zh-CN）不参与。
+  test('跟随原语言时按主标题推出的原语言选标题', () async {
+    final AniDbVideoMetadataProvider anidb = provider(
+      handler: (_) async => xml(_animeXml),
+      followOriginalLanguage: true,
+    );
+    final VideoMetadataWork work = (await anidb.fetchWork(lookup))!;
+    expect(work.title, 'ヴァイオレット・エヴァーガーデン');
+    final AniDbVideoMetadataProvider explicit = provider(
+      handler: (_) async => xml(_animeXml),
+    );
+    expect(
+      (await explicit.fetchWork(lookup))!.title,
+      '紫罗兰永恒花园',
+      reason: '显式资料语言 zh-CN 不受影响',
+    );
+  });
 
   test(
     'MAL ids from <resources type="2"> become non-default cross references',

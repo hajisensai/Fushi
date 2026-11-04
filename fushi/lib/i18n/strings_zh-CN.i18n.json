@@ -10446,7 +10446,7 @@
   "video_source_scrape_list_load_failed": "列表加载失败，请重试。",
   "video_source_scrape_list_reload": "重新加载",
   "video_source_scrape_locale": "资料语言",
-  "video_source_scrape_locale_follow_ui": "留空 = 跟随界面语言",
+  "video_source_scrape_locale_follow_original": "留空 = 按作品原语言",
   "video_source_scrape_locale_hint": "TMDB 兜底及补充资料的首选语言；MAL 使用其提供的标题和原始文本。",
   "video_source_scrape_manual_ambiguous": "存在多个同名作品。请打开待确认页，选择具体条目进行匹配。",
   "video_source_scrape_manual_by_id": "按作品 ID",
