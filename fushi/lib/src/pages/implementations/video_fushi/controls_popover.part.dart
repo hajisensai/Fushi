@@ -456,28 +456,8 @@ extension _VideoControlsPopover on _VideoFushiPageState {
       ? videoM3eFloatingColor(Theme.of(context).colorScheme)
       : null;
 
-  Widget _buildControlPopoverFrame({
-    required double width,
-    required Widget child,
-  }) {
-    final ColorScheme cs = _videoPopoverColorScheme(context);
-    final bool neutral = _m3eChrome && !isEinkTheme(context);
-    // 与音量浮层同一外框（Apple 玻璃 / M3E 中性面 / 墨水屏实底）。
-    final Widget frame = VideoControlPopoverFrame(
-      width: width,
-      padding: EdgeInsets.all(10 * _videoUiScale),
-      colorScheme: cs,
-      m3eSurfaceColor: _videoPopoverM3eSurface,
-      child: child,
-    );
-    if (!neutral) return frame;
-    // M3E：浮层内的文字按钮 / 滑条读无色相中性方案（白字，强调色仍是主题 primary）。
-    return Theme(
-      data: Theme.of(context).copyWith(colorScheme: cs),
-      child: frame,
-    );
-  }
-
+  // 浮层内容的主题（Apple 恒深色档 / M3E 中性方案 / 墨水屏实底）由
+  // [VideoControlPopoverFrame] 统一提供，这里不再按设计系统各包一层 Theme。
   Widget _buildVolumePopover({required double width}) {
     return ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
@@ -485,7 +465,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
         final double max = _maxVideoVolume;
         final double clamped = value.clamp(0.0, max).toDouble();
         final ColorScheme cs = _videoPopoverColorScheme(context);
-        final Widget card = VideoVolumePopoverCard(
+        return VideoVolumePopoverCard(
           width: width,
           value: clamped,
           maximum: max,
@@ -496,12 +476,6 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           tooltip: t.shortcut_action_video_toggle_mute,
           onToggleMute: () => unawaited(_toggleMute()),
           onChanged: _setVolumeFromSlider,
-        );
-        if (_appleChrome || isEinkTheme(context)) return card;
-        // M3E：浮层内的滑条读无色相中性方案（与悬浮胶囊同一表面）。
-        return Theme(
-          data: Theme.of(context).copyWith(colorScheme: cs),
-          child: card,
         );
       },
     );
@@ -521,52 +495,20 @@ extension _VideoControlsPopover on _VideoFushiPageState {
   }
 
   Widget _buildSpeedPopover({required double width}) {
-    final ColorScheme cs = _videoPopoverColorScheme(context);
     final List<double> speedPresets = _speedMenuPresets();
-    final double sliderValue = _playbackSpeed.clamp(0.5, 2.0).toDouble();
-    return _buildControlPopoverFrame(
+    return VideoSpeedPopoverCard(
       width: width,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              FushiIcon(
-                Icons.speed,
-                color: cs.primary,
-                size: 20 * _videoUiScale,
-              ),
-              SizedBox(width: 8 * _videoUiScale),
-              Expanded(
-                child: Text(
-                  '${_playbackSpeed.toStringAsFixed(1)}x',
-                  style: TextStyle(
-                    color: cs.onSurface,
-                    fontSize: 14 * _videoUiScale,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              FushiTextButton(
-                onPressed: () => unawaited(_setSpeed(1.0)),
-                child: const Text('1.0x'),
-              ),
-            ],
-          ),
-          FushiSlider(
-            value: sliderValue,
-            min: 0.5,
-            max: 2.0,
-            divisions: speedPresets.length > 1 ? speedPresets.length - 1 : null,
-            label: '${_playbackSpeed.toStringAsFixed(1)}x',
-            onChanged: (double value) {
-              final double next = _nearestSpeedPreset(value, speedPresets);
-              unawaited(_setSpeed(next));
-            },
-          ),
-        ],
-      ),
+      speed: _playbackSpeed,
+      uiScale: _videoUiScale,
+      colorScheme: _videoPopoverColorScheme(context),
+      m3eSurfaceColor: _videoPopoverM3eSurface,
+      icon: Icons.speed,
+      divisions: speedPresets.length > 1 ? speedPresets.length - 1 : null,
+      onReset: () => unawaited(_setSpeed(1.0)),
+      onChanged: (double value) {
+        final double next = _nearestSpeedPreset(value, speedPresets);
+        unawaited(_setSpeed(next));
+      },
     );
   }
 }

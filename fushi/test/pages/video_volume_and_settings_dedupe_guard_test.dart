@@ -240,12 +240,20 @@ void main() {
         reason: '倍速浮层继续复用既有预设生成逻辑',
       );
       expect(
-        body.contains('Slider('),
+        body.contains('VideoSpeedPopoverCard('),
+        isTrue,
+        reason: '倍速浮层内容应由可渲染测试的 helper widget 承载',
+      );
+      final int card = overlaySrc.indexOf('class VideoSpeedPopoverCard');
+      expect(card, greaterThanOrEqualTo(0), reason: '需有 VideoSpeedPopoverCard');
+      final String cardSrc = overlaySrc.substring(card);
+      expect(
+        cardSrc.contains('Slider('),
         isTrue,
         reason: '倍速浮层应提供 0.5x 到 2.0x 紧凑 slider',
       );
-      expect(body.contains('min: 0.5'), isTrue);
-      expect(body.contains('max: 2.0'), isTrue);
+      expect(cardSrc.contains('min: 0.5'), isTrue);
+      expect(cardSrc.contains('max: 2.0'), isTrue);
       expect(
         body.contains('_setSpeed('),
         isTrue,

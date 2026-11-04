@@ -1051,7 +1051,8 @@ class AnotherPopupPart {
           'sibling video_thumbnail_preview_overlay / video_volume_overlays '
           'HUD entries and the volume_osd.part.dart OSD.',
       'lib/src/media/video/video_volume_overlays.dart':
-          'TODO-517 split out the compact video volume popover and '
+          'TODO-517 split out the compact video volume popover (the speed '
+          'popover card moved here later, its readout fontSize included) and '
           'volume/brightness HUD to keep visible slider/HUD layers from '
           'occupying the full screen; the barrier may be full-screen, '
           'but these visible layers are video-subsystem transient overlays, '
@@ -1095,14 +1096,6 @@ class AnotherPopupPart {
           'semantic notice bar over the video controls; same reviewed '
           'media-page exception class as the parent video player page '
           'allowlist entry.',
-      'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
-          'Volume / playback-speed compact control popover chrome '
-          '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
-          'label, VideoVolumePopoverCard) extracted verbatim from '
-          'video_fushi_page.dart (TODO-590 batch6); the popover frame + '
-          'speed-label typography scales with appUiScale and is the same '
-          'reviewed media-page exception class as the parent video player '
-          'page allowlist entry.',
       'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           'Mobile/desktop media-controls theme + horizontal-seek absolute-time '
           'HUD indicator chrome (BorderRadius.circular frame, fontSize '
@@ -1529,8 +1522,6 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
-          <String>{'fontSize:'},
       'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
       'lib/src/pages/implementations/video_fushi/episode.part.dart': <String>{
