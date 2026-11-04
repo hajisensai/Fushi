@@ -1103,12 +1103,19 @@ void main() {
 
     // 新层解出首帧后撤掉垫底层：留下的就是新层那个实例（不再重建一次从头播）。
     final State<StatefulWidget> fresh = tester.state(images.last);
-    // 文件读取与解码在真实 IO 里回调：让出真实时间后再 pump。
-    for (int i = 0; i < 20 && images.evaluate().length > 1; i++) {
+    // 文件读取与解码是真实 IO，但新层的 completer 是 Image 在假时钟 zone 里 resolve
+    // 出来的：每一步（读字节 → 建 buffer → 解码 → 取帧）完成后的续体排进假 zone 的
+    // 微任务队列，只有 pump 才冲刷——所以既不能在 runAsync 里直接 await 它（会挂死），也
+    // 只能「让出真实时间 + pump」交替推进。以前固定 20 轮 × 50 ms：整批并发跑、机器忙时
+    // 1 秒内走不完这几步，垫底层还没撤就断言，成了看机器负载的伪红。改成按真实时间截止
+    // （与断言无关，只放宽等真实 IO 的预算），解出来就立即停。
+    final Stopwatch waited = Stopwatch()..start();
+    while (images.evaluate().length > 1 &&
+        waited.elapsed < const Duration(seconds: 15)) {
       await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );
-      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump();
     }
     expect(images, findsOneWidget);
     expect(identical(tester.state(images), fresh), isTrue);
