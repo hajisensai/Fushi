@@ -1,5 +1,6 @@
 /// RWKV 排程服务：维护「整个 collection 的复习历史回放进 RWKV」这份状态，排队时给候选复习卡打
-/// 给定时刻的回忆率（RWKV-Instant，[instantRetrievability]：排队给今天结束的时刻，统计给此刻）。
+/// 给定时刻的回忆率（RWKV-Instant）：排队里今天还没答过的卡给今天结束的时刻（[instantRetrievability]，
+/// 走常驻分数表）；今天答过的卡与统计页给此刻（[currentRetrievability]，直接查询、不进分数表）。
 ///
 /// - 状态由后台 isolate 里的原生 runtime 持有（[RwkvWorker]）；本类只发粗粒度命令。
 /// - **对齐日志，结果始终与全量回放逐位相同**（RWKV 的笔记 / 牌组 / 预设 / 全局状态是多张卡共用的，回放
@@ -1255,6 +1256,53 @@ class SrsRwkvService implements SrsRwkvScheduling {
     SrsDayContext day,
     int atMs,
   ) async {
+    final ({RwkvRows rows, Int64List anchors}) q = await _queryRows(
+      cards,
+      tree,
+      day,
+      atMs,
+    );
+    return _serial(() => backend.updateScores(q.rows, versions, q.anchors));
+  }
+
+  @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async {
+    if (_current.phase != SrsRwkvPhase.ready) {
+      unawaited(start());
+      return null;
+    }
+    final SrsRwkvBackend? backend = _backend;
+    if (backend == null) return null;
+    try {
+      if (!await refresh()) return null;
+      if (cards.isEmpty) return const <double>[];
+      // 直接查询、不进分数表（[SrsRwkvScheduling.currentRetrievability]）：表只按排队的「今天结束」时刻维护，
+      // 这里既不读也不改它的时刻（[_scoresAt]）。
+      final ({RwkvRows rows, Int64List anchors}) q = await _queryRows(
+        cards,
+        await store.deckTree(),
+        await store.dayContext(),
+        nowMs,
+      );
+      final Float32List scores = await _serial(() => backend.query(q.rows));
+      return <double>[for (final double v in scores) v];
+    } catch (error, stack) {
+      _log('RWKV current retrievability failed: $error\n$stack');
+      _scoringFailed(backend, error);
+      return null;
+    }
+  }
+
+  /// [cards] 在时刻 [atMs] 的查询行（读每张卡最后一条保留评分）与锚点（那条评分的时刻；没有 = -1）。
+  Future<({RwkvRows rows, Int64List anchors})> _queryRows(
+    List<SrsRwkvCandidate> cards,
+    SrsDeckTree tree,
+    SrsDayContext day,
+    int atMs,
+  ) async {
     final Int64List anchors = Int64List(cards.length);
     final List<SrsRwkvNowCard> now = <SrsRwkvNowCard>[];
     for (int at = 0; at < cards.length; at += 500) {
@@ -1289,8 +1337,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         ));
       }
     }
-    final RwkvRows rows = srsRwkvNowRows(now, nowMs: atMs, day: day);
-    return _serial(() => backend.updateScores(rows, versions, anchors));
+    return (rows: srsRwkvNowRows(now, nowMs: atMs, day: day), anchors: anchors);
   }
 
   @override

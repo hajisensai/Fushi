@@ -131,7 +131,8 @@ class SrsDeckSummary {
   final bool rwkvPending;
 
   /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看存下的到期日，按 RWKV 预测的
-  /// 今天结束时的回忆率挑（降到目标保留率以下的就是今天到期，[_instantInput]），已算进 [reviewCount]。
+  /// 今天结束时的回忆率挑（降到目标保留率以下的就是今天到期；今天已答过的卡按此刻的回忆率，[_instantInput]），
+  /// 已算进 [reviewCount]。
   final bool rwkvScheduled;
 }
 
@@ -4247,25 +4248,43 @@ class SrsDbStore implements SrsSync2Host {
       return pending;
     }
     final int today = day.dayIndexOf(nowMs);
-    final List<_RwkvCandidate> rows = (await _rwkvCandidates(
+    final int todayStart = day.dayStartMs(today);
+    // 今天还没答过的卡取今天结束那一刻（下一个翻日时刻前 1 ms）的 R：到那时会降到目标线以下的就是今天到期，与
+    // FSRS 按天到期同一粒度。计数是「今天还剩多少」，出卡与它同一口径（数字 > 0 就有卡出）。
+    // 今天已答过的卡取此刻的 R：答过就不再是「今天还剩的」，同日重出要等它真的掉到目标线下（再加内核的同日
+    // 间隔守卫）。它也按今天结束时的 R 判的话，刚答完模型仍预测它撑不到今天结束（年轻卡、刚重学毕业的卡），
+    // 守卫一过又合格，一天里被反复刷、答一张计数不降。「今天答过」与内核守卫同一判据（上次作答 ≥ 今天开始，
+    // store/study.rs `instant_eligible`）。
+    final List<_RwkvCandidate> rows = <_RwkvCandidate>[];
+    final List<_RwkvCandidate> answered = <_RwkvCandidate>[];
+    for (final _RwkvCandidate r in (await _rwkvCandidates(
       today,
       targets.keys,
-    )).values.toList();
-    // 今天结束那一刻（下一个翻日时刻前 1 ms）的 R：到那时会降到目标线以下的卡就是今天到期，与 FSRS 按天到期同一
-    // 粒度。计数是「今天还剩多少」，出卡与它同一口径（数字 > 0 就有卡出）；按此刻的 R 排的话合格的卡一天里不断冒
-    // 出来，计数只是一个快照。
-    final List<double>? scores = await source.instantRetrievability(
+    )).values) {
+      final int? last = r.lastReviewedAt;
+      (last != null && last >= todayStart ? answered : rows).add(r);
+    }
+    final List<double>? dayEnd = await source.instantRetrievability(
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
       atMs: day.dayStartMs(today + 1) - 1,
     );
-    if (scores == null) return pending;
-    if (scores.length != rows.length) {
-      // 违反 [SrsRwkvScheduling.instantRetrievability] 的契约（与候选同序同长）：不是「没准备好」，当成
-      // pending 的话复习页会一直等一个已经来过的「就绪」。
+    if (dayEnd == null) return pending;
+    final List<double>? current = answered.isEmpty
+        ? const <double>[]
+        : await source.currentRetrievability(<SrsRwkvCandidate>[
+            for (final _RwkvCandidate r in answered) r.card,
+          ], nowMs: nowMs);
+    if (current == null) return pending;
+    if (dayEnd.length != rows.length || current.length != answered.length) {
+      // 违反 [SrsRwkvScheduling] 的契约（与候选同序同长）：不是「没准备好」，当成 pending 的话复习页会一直等
+      // 一个已经来过的「就绪」。
       throw StateError(
-        'SrsDbStore: RWKV returned ${scores.length} scores for ${rows.length} cards',
+        'SrsDbStore: RWKV returned ${dayEnd.length} + ${current.length} scores '
+        'for ${rows.length} + ${answered.length} cards',
       );
     }
+    rows.addAll(answered);
+    final List<double> scores = <double>[...dayEnd, ...current];
     final bool anyMinimum = queueOf.values.any(
       (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
     );
@@ -4388,16 +4407,17 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// [cards]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。
+  /// [cards]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。不经排队的
+  /// 常驻分数表（[SrsRwkvScheduling.currentRetrievability]）：那张表按今天结束的时刻维护。
   Future<Map<String, double>?> instantRetrievabilityOf(
     List<SrsRwkvCandidate> cards,
   ) async {
     final SrsRwkvScheduling? source = rwkv;
     if (source == null || !source.ready) return null;
     if (cards.isEmpty) return const <String, double>{};
-    final List<double>? scores = await source.instantRetrievability(
+    final List<double>? scores = await source.currentRetrievability(
       cards,
-      atMs: now().$1,
+      nowMs: now().$1,
     );
     if (scores == null || scores.length != cards.length) return null;
     return <String, double>{
