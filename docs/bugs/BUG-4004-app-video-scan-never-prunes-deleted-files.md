@@ -25,7 +25,7 @@
     删掉的条目仍在库里。
   - **C. 显式清理入口**：重扫照旧不删；来源菜单加「清理已删除的文件」，走 A 的同一判据（用户显式意图，可像服务端 purge 那样
     `force`）。代价：用户得知道去点；待确认队列在清理前仍会列出它。
-- **[ ] ① 未修复（待拍板）** — 已先落三个选项都需要的前置修正（提交见下）：`selectStaleVideoRows` 默认存在判据由裸
+- **[ ] ① 未修复（待拍板）** — 已先落三个选项都需要的前置修正（提交 `0705088af7`）：`selectStaleVideoRows` 默认存在判据由裸
   `File(path).existsSync()` 改为 `videoMemberExistsSync`（`packages/fushi_engine/lib/media/video/video_library_prune.dart`）。
   DVD 标题是虚拟路径 `<盘根>/VIDEO_TS/TITLE_nn.dvdtitle`，裸判恒假，任何 app 侧接入都会把仍在盘上的 DVD 当成「文件没了」
   删掉；它躲过守卫 `fushi/test/build/video_member_file_exists_guard_test.dart` 只因变量名叫 `path`。服务端扫描器不导入原盘，
