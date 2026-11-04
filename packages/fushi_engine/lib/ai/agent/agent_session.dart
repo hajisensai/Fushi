@@ -217,7 +217,15 @@ class AgentEntry {
     if (imageCount > 0) 'images': imageCount,
   };
 
-  static AgentEntry fromJson(Map<String, Object?> json) {
+  /// [settleInterrupted]：存档读回时为 true——存档里还在跑 / 等作答的条目所属的
+  /// 那一轮已经没了（进程被关、崩溃、被系统杀），按失败 / 未作答收尾，并记
+  /// [AgentStopCode.interrupted]：界面据此说「中断了」，而不是空白的「失败：」与
+  /// 用户从没点过的「已拒绝」（反馈 qg_L2sVx3p）。活的快照（远端会话视图）传
+  /// false，状态原样还原。
+  static AgentEntry fromJson(
+    Map<String, Object?> json, {
+    bool settleInterrupted = true,
+  }) {
     AgentEntryKind kind = AgentEntryKind.notice;
     for (final AgentEntryKind k in AgentEntryKind.values) {
       if (k.name == json['kind']) kind = k;
@@ -226,9 +234,15 @@ class AgentEntry {
     for (final AgentEntryStatus s in AgentEntryStatus.values) {
       if (s.name == json['status']) status = s;
     }
-    // 存档里还在跑 / 等确认的条目：进程已经没了，按失败 / 拒绝收尾。
-    if (status == AgentEntryStatus.running) status = AgentEntryStatus.failed;
-    if (status == AgentEntryStatus.pending) status = AgentEntryStatus.declined;
+    String? errorCode = json['errorCode'] as String?;
+    if (settleInterrupted &&
+        (status == AgentEntryStatus.running ||
+            status == AgentEntryStatus.pending)) {
+      status = status == AgentEntryStatus.running
+          ? AgentEntryStatus.failed
+          : AgentEntryStatus.declined;
+      errorCode = AgentStopCode.interrupted;
+    }
     return AgentEntry(
       id: '${json['id'] ?? ''}',
       kind: kind,
@@ -247,7 +261,7 @@ class AgentEntry {
       before: json['before'] as String?,
       after: json['after'] as String?,
       resultPreview: json['resultPreview'] as String?,
-      errorCode: json['errorCode'] as String?,
+      errorCode: errorCode,
       options: <AgentChoiceOption>[
         for (final Object? o in (json['options'] as List? ?? const <Object?>[]))
           if (o is Map)
@@ -273,6 +287,65 @@ abstract final class AgentStopCode {
 
   /// 不是停止：长任务结束的通知条目（[AgentSession.continueAfterTask]）。
   static const String taskFinished = 'task_finished';
+
+  /// 这一步所在的那一轮没跑完进程就没了（存档读回时收尾，见
+  /// [AgentEntry.fromJson]）；也是补给模型的那条工具结果的错误码
+  /// （[repairInterruptedAgentHistory]）。
+  static const String interrupted = 'interrupted';
+}
+
+/// 存档读回的模型历史：补齐没跑完那一轮留下的半截工具调用。
+///
+/// 一轮里先把 assistant 的 tool_calls 记进历史，每个工具跑完再补它的结果；存档在
+/// 这一轮中途落盘（长任务结束时、撤销时都会存）后进程没了，读回的历史就停在
+/// 「有 tool_use、没 tool_result」。Anthropic 与 OpenAI 都拒收这种历史（400），
+/// 于是用户下一句话直接报「AI 请求失败」，这场对话再也续不上（反馈 qg_L2sVx3p）。
+///
+/// 这里给每个缺结果的调用补一条错误结果（[AgentStopCode.interrupted]，告诉模型
+/// 这一步可能生效也可能没有，先查状态再重试），结尾不是 assistant 时补一句
+/// assistant——与 [AgentSession] 停下时同一个交替约定。完整的历史原样返回。
+List<AiChatMessage> repairInterruptedAgentHistory(List<AiChatMessage> history) {
+  final List<AiChatMessage> repaired = <AiChatMessage>[];
+  int i = 0;
+  while (i < history.length) {
+    final AiChatMessage message = history[i];
+    repaired.add(message);
+    i++;
+    if (message.role != 'assistant' || message.toolCalls.isEmpty) continue;
+    final Set<String> answered = <String>{};
+    while (i < history.length && history[i].role == 'tool') {
+      final AiChatMessage result = history[i];
+      if (result.toolCallId != null) answered.add(result.toolCallId!);
+      repaired.add(result);
+      i++;
+    }
+    for (final AiChatToolCall call in message.toolCalls) {
+      if (answered.contains(call.id)) continue;
+      repaired.add(
+        AiChatMessage.toolResult(
+          toolCallId: call.id,
+          toolName: call.name,
+          content: wrapAgentUntrusted(
+            'runtime',
+            jsonEncode(<String, Object?>{
+              'error': AgentStopCode.interrupted,
+              'message':
+                  'The app closed before this step finished. It may or may '
+                  'not have taken effect; check the current state before '
+                  'retrying it.',
+            }),
+          ),
+          isError: true,
+        ),
+      );
+    }
+  }
+  if (repaired.isNotEmpty && repaired.last.role != 'assistant') {
+    repaired.add(
+      AiChatMessage.assistant('(stopped: ${AgentStopCode.interrupted})'),
+    );
+  }
+  return repaired;
 }
 
 /// 元工具：由 loop 自己处理，不进目录。
@@ -357,6 +430,7 @@ class AgentSession {
     Set<String>? loadedTools,
     AiChatUsage? usage,
     Map<String, double>? cost,
+    List<Map<String, Object?>>? pendingTaskEvents,
   }) : _llm = llm,
        _toolbox = toolbox,
        _host = host,
@@ -365,7 +439,8 @@ class AgentSession {
        _history = history ?? <AiChatMessage>[],
        _loadedTools = loadedTools ?? <String>{},
        _usage = usage ?? const AiChatUsage(),
-       _cost = cost ?? <String, double>{};
+       _cost = cost ?? <String, double>{},
+       _pendingTaskEvents = pendingTaskEvents ?? <Map<String, Object?>>[];
 
   final String id;
   final AgentLimits limits;
@@ -449,7 +524,16 @@ class AgentSession {
       final String contextBlock = context == null
           ? ''
           : '\n\n<ui_context>${jsonEncode(context.toJson())}</ui_context>';
-      _history.add(AiChatMessage.user('$trimmed$contextBlock', images: images));
+      // 这里还排着任务结果，只可能是存档读回的：上一轮跑到一半进程没了，那时排队
+      // 的结果没来得及交给模型。随这句话一起交出去，模型才知道那些任务的下场
+      // （反馈 qg_L2sVx3p）。活的会话在跑一轮时不接受新话，排队的结果在那一轮
+      // 结束时就已续上。
+      final String taskBlock = _pendingTaskEvents.isEmpty
+          ? ''
+          : '${_taskUpdateText(_takePendingTaskEvents())}\n\n';
+      _history.add(
+        AiChatMessage.user('$taskBlock$trimmed$contextBlock', images: images),
+      );
       await _runTurn();
     } finally {
       _running = false;
@@ -495,9 +579,9 @@ class AgentSession {
       if (e.taskId != null && e.taskState == 'running') e.taskId!,
   ];
 
-  /// 等本轮结束再报告的任务结果（任务在模型还在说话时结束）。
-  final List<(String, String, Map<String, Object?>)> _pendingTaskEvents =
-      <(String, String, Map<String, Object?>)>[];
+  /// 等本轮结束再报告的任务结果（任务在模型还在说话时结束）。随存档落盘：
+  /// 这一轮没跑完进程就没了时，读回后随下一句话交给模型（[send]）。
+  final List<Map<String, Object?>> _pendingTaskEvents;
 
   /// 长任务结束（spec §6.1）：把条目标成 done / failed，在对话里插一条通知，
   /// 再**自动续一轮**——模型拿到结果去汇报或做下一步（如下载完再补字幕）。
@@ -530,7 +614,7 @@ class AgentSession {
       ...status,
     };
     if (_running) {
-      _pendingTaskEvents.add((taskId, opId, event));
+      _pendingTaskEvents.add(event);
       return;
     }
     await _resumeWithTaskEvents(<Map<String, Object?>>[event]);
@@ -540,14 +624,7 @@ class AgentSession {
     _running = true;
     _cancelled = false;
     try {
-      _history.add(
-        AiChatMessage.user(
-          '[Background task update — not from the user]\n'
-          '${wrapAgentUntrusted('tasks', jsonEncode(events))}\n'
-          'Tell the user the outcome briefly, and continue the plan if a next '
-          'step depended on it.',
-        ),
-      );
+      _history.add(AiChatMessage.user(_taskUpdateText(events)));
       await _runTurn();
     } finally {
       _running = false;
@@ -558,14 +635,23 @@ class AgentSession {
 
   Future<void> _drainTaskEvents() async {
     if (_pendingTaskEvents.isEmpty || _running) return;
-    final List<Map<String, Object?>> events = <Map<String, Object?>>[
-      for (final (String _, String _, Map<String, Object?> e)
-          in _pendingTaskEvents)
-        e,
-    ];
-    _pendingTaskEvents.clear();
-    await _resumeWithTaskEvents(events);
+    await _resumeWithTaskEvents(_takePendingTaskEvents());
   }
+
+  List<Map<String, Object?>> _takePendingTaskEvents() {
+    final List<Map<String, Object?>> events = List<Map<String, Object?>>.of(
+      _pendingTaskEvents,
+    );
+    _pendingTaskEvents.clear();
+    return events;
+  }
+
+  /// 交给模型的任务结果块（不可信数据）。
+  static String _taskUpdateText(List<Map<String, Object?>> events) =>
+      '[Background task update — not from the user]\n'
+      '${wrapAgentUntrusted('tasks', jsonEncode(events))}\n'
+      'Tell the user the outcome briefly, and continue the plan if a next '
+      'step depended on it.';
 
   // -------------------------------------------------------------------------
   // 一轮
@@ -1175,8 +1261,13 @@ class AgentSession {
     'loadedTools': _loadedTools.toList(),
     'usage': _usage.toJson(),
     if (_cost.isNotEmpty) 'cost': _cost,
+    if (_pendingTaskEvents.isNotEmpty) 'pendingTaskEvents': _pendingTaskEvents,
   };
 
+  /// 存档读回。存档可能落在某一轮中途（长任务结束、撤销时都会存）之后进程
+  /// 就没了：在途条目按中断收尾（[AgentEntry.fromJson]），历史里没结果的工具
+  /// 调用补上中断结果（[repairInterruptedAgentHistory]），那时排队的任务结果
+  /// 随下一句话交给模型——读回的会话能直接接着说（反馈 qg_L2sVx3p）。
   static AgentSession fromJson(
     Map<String, Object?> json, {
     required AgentLlm llm,
@@ -1195,10 +1286,10 @@ class AgentSession {
       for (final Object? e in (json['entries'] as List? ?? const <Object?>[]))
         if (e is Map) AgentEntry.fromJson(Map<String, Object?>.from(e)),
     ],
-    history: <AiChatMessage>[
+    history: repairInterruptedAgentHistory(<AiChatMessage>[
       for (final Object? m in (json['history'] as List? ?? const <Object?>[]))
         if (m is Map) ?agentMessageFromJson(Map<String, Object?>.from(m)),
-    ],
+    ]),
     loadedTools: <String>{
       for (final Object? t
           in (json['loadedTools'] as List? ?? const <Object?>[]))
@@ -1210,6 +1301,11 @@ class AgentSession {
       ),
     ),
     cost: agentCostFromJson(json['cost']),
+    pendingTaskEvents: <Map<String, Object?>>[
+      for (final Object? e
+          in (json['pendingTaskEvents'] as List? ?? const <Object?>[]))
+        if (e is Map) Map<String, Object?>.from(e),
+    ],
   );
 }
 

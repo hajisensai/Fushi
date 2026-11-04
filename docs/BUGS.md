@@ -127,6 +127,12 @@
 | [BUG-4006](bugs/BUG-4006-feedback-bottom-left-image-no-material.md) | 🚧 | 🚧 | 左下角图片不自动消失（反馈材料拉取失败，未定位） |
 | [BUG-4005](bugs/BUG-4005-video-volume-popover-md2-slider.md) | ✅ | ✅ | 视频音量浮层仍是 MD2 圆钮细轨、外框不分设计系统 |
 | [BUG-4004](bugs/BUG-4004-filled-field-label-clipped-desktop-density.md) | ✅ | ✅ | 带标题输入框 / 下拉的浮起标题贴住或骑出填充块上沿（文字显示不全） |
+> 共 3609 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4005](bugs/BUG-4005-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
+| [BUG-4004](bugs/BUG-4004-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
 | [BUG-4003](bugs/BUG-4003-game-stream-mining-ignores-target.md) | ✅ | ✅ | 游戏串流制卡无视主机挖词目标、一律发往 Anki |
 | [BUG-4002](bugs/BUG-4002-gal-session-survives-game-exit.md) | ✅ | ✅ | 附加 / 启动的游戏关掉后捕获会话仍显示正在监听 |
 | [BUG-4001](bugs/BUG-4001-srs-android-temp-store-oom.md) | ✅ | ✅ | Android 上大 srs.db 做备份导出 / 整理时 Scudo OOM 闪退 |
