@@ -1600,9 +1600,9 @@ Future<T?> showFushiMenu<T>({
     settings: routeSettings,
     requestFocus: requestFocus,
   );
-  final VoidCallback unregister = FushiMenuPresence.instance.register(route);
+  // 在场登记由路由自己按生命周期管（install 登记，didComplete / dispose 注销），
+  // 不靠 push 返回的 future：菜单开着时整个 Navigator 被销毁，future 不会完成。
   return navigator.push(route).then<T?>((T? value) {
-    unregister();
     // 取消（Esc / B / 点外面）后把焦点还给打开前的节点：路由出栈时
     // 下层作用域只会恢复「它记得的」焦点，触发器若是被代码 / 手柄聚焦的，
     // 这里显式补一次。选中某项后不抢焦点（选项可能已推了新页面）。
@@ -1740,8 +1740,32 @@ class _FushiMenuRoute<T> extends PopupRoute<T> {
     }
   }
 
+  /// [FushiMenuPresence] 的注销回调；null = 未登记 / 已注销。
+  VoidCallback? _unregisterPresence;
+
+  void _releasePresence() {
+    final VoidCallback? unregister = _unregisterPresence;
+    _unregisterPresence = null;
+    unregister?.call();
+  }
+
+  @override
+  void install() {
+    super.install();
+    _unregisterPresence ??= FushiMenuPresence.instance.register(this);
+  }
+
+  @override
+  void didComplete(T? result) {
+    // 出栈（选中 / 取消 / 被移除）即不在场，退场动效期间不再算菜单开着。
+    _releasePresence();
+    super.didComplete(result);
+  }
+
   @override
   void dispose() {
+    // Navigator 整体销毁时路由只 dispose、不 didComplete：这里兜住，登记不泄漏。
+    _releasePresence();
     _progress?.dispose();
     _opacity?.dispose();
     super.dispose();

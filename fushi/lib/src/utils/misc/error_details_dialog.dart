@@ -28,13 +28,11 @@ Future<void> showErrorDetails(
         title: Text(title),
         content: SizedBox(
           width: 420,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              details,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontFamily: 'monospace',
-                fontFamilyFallback: const <String>['Courier New', 'monospace'],
-              ),
+          child: SelectableText(
+            details,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              fontFamilyFallback: const <String>['Courier New', 'monospace'],
             ),
           ),
         ),

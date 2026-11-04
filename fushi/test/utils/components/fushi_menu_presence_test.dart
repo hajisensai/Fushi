@@ -69,6 +69,22 @@ void main() {
     expect(states.last, isFalse);
   });
 
+  testWidgets('菜单开着时整个 Navigator 被销毁：登记随路由 dispose 注销，不泄漏', (
+    WidgetTester tester,
+  ) async {
+    final BuildContext context = await pumpHost(tester);
+    unawaited(openMenu(context, 'orphan'));
+    await tester.pumpAndSettle();
+    expect(presence.isOpen.value, isTrue);
+    expect(presence.debugOpenCount, 1);
+
+    // 宿主整棵树换掉：Navigator 销毁时路由只 dispose，push 的 future 永不完成。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    expect(presence.debugOpenCount, 0);
+    expect(presence.isOpen.value, isFalse);
+  });
+
   testWidgets('dismissAll 关掉在场菜单（WebView pointerdown 回报路径），不动页面路由', (
     WidgetTester tester,
   ) async {

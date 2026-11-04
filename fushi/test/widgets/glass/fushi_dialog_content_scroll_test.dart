@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_dialog_content_scroll.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
 const Key _lastField = ValueKey<String>('last-field');
@@ -164,6 +165,71 @@ void main() {
             .maxScrollExtent,
         0,
         reason: '吃满型内容由它自己滚，外壳不另起一层滚动',
+      );
+    });
+
+    testWidgets('$ds：调用点只定宽（SizedBox → 输入框列）也不溢出，且只有外壳一层滚动', (
+      WidgetTester tester,
+    ) async {
+      await _pumpDialog(
+        tester,
+        content: SizedBox(width: 360, child: _fieldsContent()),
+        size: const Size(420, 320),
+        glass: glass,
+      );
+      expect(tester.takeException(), isNull, reason: '内容区不得 RenderFlex 溢出');
+      expect(
+        find.descendant(
+          of: find.byType(FushiDialogContentScroll),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsOneWidget,
+        reason: '定宽调用点不再手包 SingleChildScrollView，滚动只由外壳负责',
+      );
+      expect(
+        tester
+            .state<ScrollableState>(_contentScrollable())
+            .position
+            .maxScrollExtent,
+        greaterThan(0),
+      );
+    });
+
+    testWidgets('$ds：横屏并排两组设置（Row → Expanded → 设置分组）在矮窗口里按内容高滚', (
+      WidgetTester tester,
+    ) async {
+      Widget group(String prefix) => AdaptiveSettingsSection(
+        title: prefix,
+        children: <Widget>[
+          for (int i = 0; i < 6; i++) ListTile(title: Text('$prefix row $i')),
+        ],
+      );
+      await _pumpDialog(
+        tester,
+        content: SizedBox(
+          width: 380,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: group('A')),
+              Expanded(child: group('B')),
+            ],
+          ),
+        ),
+        size: const Size(420, 300),
+        glass: glass,
+      );
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '设置分组按内容收高（min 列），有界视口里被判成固定高度而滚动，不溢出',
+      );
+      expect(
+        tester
+            .state<ScrollableState>(_contentScrollable())
+            .position
+            .maxScrollExtent,
+        greaterThan(0),
       );
     });
   }

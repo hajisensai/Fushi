@@ -464,15 +464,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 child: ListenableBuilder(
                   listenable: _session,
                   builder: (BuildContext context, Widget? child) {
-                    return SingleChildScrollView(
-                      child: GalAudioTracksPanel(
-                        state: _session.state,
-                        onSelectVoice: _session.selectVoiceTrack,
-                        onToggleExcluded: _session.setTrackExcluded,
-                        onPreviewTrack: (GalAudioTrack track) =>
-                            unawaited(handlePreview(track)),
-                        previewingSourcePtr: previewingPtr,
-                      ),
+                    return GalAudioTracksPanel(
+                      state: _session.state,
+                      onSelectVoice: _session.selectVoiceTrack,
+                      onToggleExcluded: _session.setTrackExcluded,
+                      onPreviewTrack: (GalAudioTrack track) =>
+                          unawaited(handlePreview(track)),
+                      previewingSourcePtr: previewingPtr,
                     );
                   },
                 ),
@@ -1919,25 +1917,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             builder: (BuildContext context, Widget? child) {
               final GalAudioFallbackPolicy current =
                   _session.state.audioFallbackPolicy;
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    for (final GalAudioFallbackPolicy policy
-                        in GalAudioFallbackPolicy.values)
-                      FushiRadioListTile<GalAudioFallbackPolicy>(
-                        value: policy,
-                        groupValue: current,
-                        title: Text(_audioFallbackPolicyLabel(policy)),
-                        subtitle: Text(_audioFallbackPolicyDescription(policy)),
-                        onChanged: (GalAudioFallbackPolicy? picked) {
-                          if (picked != null) {
-                            _session.setAudioFallbackPolicy(picked);
-                          }
-                        },
-                      ),
-                  ],
-                ),
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final GalAudioFallbackPolicy policy
+                      in GalAudioFallbackPolicy.values)
+                    FushiRadioListTile<GalAudioFallbackPolicy>(
+                      value: policy,
+                      groupValue: current,
+                      title: Text(_audioFallbackPolicyLabel(policy)),
+                      subtitle: Text(_audioFallbackPolicyDescription(policy)),
+                      onChanged: (GalAudioFallbackPolicy? picked) {
+                        if (picked != null) {
+                          _session.setAudioFallbackPolicy(picked);
+                        }
+                      },
+                    ),
+                ],
               );
             },
           ),
@@ -1979,16 +1975,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           child: ListenableBuilder(
             listenable: _session,
             builder: (BuildContext context, Widget? child) =>
-                SingleChildScrollView(
-                  child: _CaptureHealthCard(
-                    state: _session.state,
-                    endpoints: _session.endpointStatuses,
-                    // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
-                    // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
-                    ankiConfigured: ref.watch(
-                      ankiViewModelProvider.select(
-                        (AnkiUiState uiState) => uiState.isConfigured,
-                      ),
+                _CaptureHealthCard(
+                  state: _session.state,
+                  endpoints: _session.endpointStatuses,
+                  // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
+                  // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
+                  ankiConfigured: ref.watch(
+                    ankiViewModelProvider.select(
+                      (AnkiUiState uiState) => uiState.isConfigured,
                     ),
                   ),
                 ),
@@ -3831,70 +3825,69 @@ class _CaptureHealthCard extends StatelessWidget {
         .where((e) => e.phase == TexthookerEndpointPhase.connected)
         .length;
     return FushiCard(
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const FushiListLeadingIcon(
-                  Icons.monitor_heart_outlined,
-                  shape: FushiLeadingShape.square,
-                  size: 36,
-                  iconSize: 20,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const FushiListLeadingIcon(
+                Icons.monitor_heart_outlined,
+                shape: FushiLeadingShape.square,
+                size: 36,
+                iconSize: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  t.game_health,
+                  style: context.fushiType.titleMediumEmphasized,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    t.game_health,
-                    style: context.fushiType.titleMediumEmphasized,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _HealthRow(
-              label: t.game_health_process,
-              value: state.gamePid == null ? '—' : 'PID ${state.gamePid}',
-              ready: state.gamePid != null,
-            ),
-            _HealthRow(
-              label: t.game_health_window,
-              value: state.hasWindow
-                  ? t.game_window_bound
-                  : t.game_window_missing,
-              ready: state.hasWindow,
-            ),
-            // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
-            // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
-            const _UpscalingHealthRows(),
-            _HealthRow(
-              label: t.game_health_text,
-              value: endpoints.isEmpty
-                  ? t.game_status_not_configured
-                  : '$connected/${endpoints.length}',
-              ready: state.hasText || connected > 0,
-            ),
-            _HealthRow(
-              label: t.game_health_audio,
-              value: galHookAudioBackendLabel(state.audioBackend),
-              ready: state.hasAudio,
-            ),
-            _HealthRow(
-              label: t.game_health_helper,
-              value: galHookSessionPhaseLabel(state.phase),
-              ready: state.isActive && state.phase != GalHookSessionPhase.error,
-            ),
-            // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
-            _HealthRow(
-              label: t.game_health_anki,
-              value: ankiConfigured
-                  ? t.game_status_ready
-                  : t.game_status_not_configured,
-              ready: ankiConfigured,
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _HealthRow(
+            label: t.game_health_process,
+            value: state.gamePid == null ? '—' : 'PID ${state.gamePid}',
+            ready: state.gamePid != null,
+          ),
+          _HealthRow(
+            label: t.game_health_window,
+            value: state.hasWindow
+                ? t.game_window_bound
+                : t.game_window_missing,
+            ready: state.hasWindow,
+          ),
+          // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
+          // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
+          const _UpscalingHealthRows(),
+          _HealthRow(
+            label: t.game_health_text,
+            value: endpoints.isEmpty
+                ? t.game_status_not_configured
+                : '$connected/${endpoints.length}',
+            ready: state.hasText || connected > 0,
+          ),
+          _HealthRow(
+            label: t.game_health_audio,
+            value: galHookAudioBackendLabel(state.audioBackend),
+            ready: state.hasAudio,
+          ),
+          _HealthRow(
+            label: t.game_health_helper,
+            value: galHookSessionPhaseLabel(state.phase),
+            ready: state.isActive && state.phase != GalHookSessionPhase.error,
+          ),
+          // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
+          _HealthRow(
+            label: t.game_health_anki,
+            value: ankiConfigured
+                ? t.game_status_ready
+                : t.game_status_not_configured,
+            ready: ankiConfigured,
+          ),
+        ],
       ),
     );
   }

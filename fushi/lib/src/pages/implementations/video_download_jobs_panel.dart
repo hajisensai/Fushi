@@ -1564,24 +1564,22 @@ class _VideoDownloadJobCard extends StatelessWidget {
           title: Text(t.download_task_error_detail_title),
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    videoDownloadErrorSummary(raw),
-                    style: theme.textTheme.bodyMedium,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  videoDownloadErrorSummary(raw),
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  raw,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 12),
-                  SelectableText(
-                    raw,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           actions: <Widget>[

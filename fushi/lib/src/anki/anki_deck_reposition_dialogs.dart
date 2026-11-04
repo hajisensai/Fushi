@@ -143,96 +143,94 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       title: Text(t.anki_reposition_title),
       content: SizedBox(
         width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(t.anki_reposition_hint, style: hintStyle),
-              const SizedBox(height: 12),
-              FushiDropdownButtonFormField<int>(
-                key: const Key('anki_reposition_deck'),
-                value: _deckId,
-                decoration: InputDecoration(
-                  labelText: t.anki_deck,
-                  helperText: t.anki_reposition_include_subdecks_hint,
-                  helperMaxLines: 2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.anki_reposition_hint, style: hintStyle),
+            const SizedBox(height: 12),
+            FushiDropdownButtonFormField<int>(
+              key: const Key('anki_reposition_deck'),
+              value: _deckId,
+              decoration: InputDecoration(
+                labelText: t.anki_deck,
+                helperText: t.anki_reposition_include_subdecks_hint,
+                helperMaxLines: 2,
+              ),
+              items: <DropdownMenuItem<int>>[
+                for (final AnkiDeck d in decks)
+                  DropdownMenuItem<int>(
+                    value: d.id,
+                    child: Text(d.name, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (int? id) {
+                      setState(() => _deckId = id);
+                      unawaited(_refreshSnapshot());
+                    },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              t.anki_reposition_source,
+              style: context.fushiType.titleSmallEmphasized,
+            ),
+            const SizedBox(height: 6),
+            FushiSegmentedButton<AnkiRepositionSource>(
+              key: const Key('anki_reposition_source'),
+              segments: <ButtonSegment<AnkiRepositionSource>>[
+                ButtonSegment<AnkiRepositionSource>(
+                  value: AnkiRepositionSource.dictionaries,
+                  label: Text(t.anki_reposition_source_dictionaries),
+                  icon: const FushiIcon(FushiIcons.dictionary),
                 ),
-                items: <DropdownMenuItem<int>>[
-                  for (final AnkiDeck d in decks)
-                    DropdownMenuItem<int>(
-                      value: d.id,
-                      child: Text(d.name, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (int? id) {
-                        setState(() => _deckId = id);
-                        unawaited(_refreshSnapshot());
-                      },
-              ),
-              const SizedBox(height: 16),
-              Text(
-                t.anki_reposition_source,
-                style: context.fushiType.titleSmallEmphasized,
-              ),
-              const SizedBox(height: 6),
-              FushiSegmentedButton<AnkiRepositionSource>(
-                key: const Key('anki_reposition_source'),
-                segments: <ButtonSegment<AnkiRepositionSource>>[
-                  ButtonSegment<AnkiRepositionSource>(
-                    value: AnkiRepositionSource.dictionaries,
-                    label: Text(t.anki_reposition_source_dictionaries),
-                    icon: const FushiIcon(FushiIcons.dictionary),
-                  ),
-                  ButtonSegment<AnkiRepositionSource>(
-                    value: AnkiRepositionSource.field,
-                    label: Text(t.anki_reposition_source_field),
-                    icon: const FushiIcon(FushiIcons.textFields),
-                  ),
-                ],
-                selected: <AnkiRepositionSource>{_source},
-                onSelectionChanged: _busy
-                    ? null
-                    : (Set<AnkiRepositionSource> s) =>
-                          setState(() => _source = s.first),
-              ),
-              const SizedBox(height: 8),
-              if (dictsMode) ..._buildDictionaryControls(theme, hintStyle),
-              if (!dictsMode)
-                Text(t.anki_reposition_source_field_hint, style: hintStyle),
-              AdaptiveSettingsSwitchRow(
-                key: const Key('anki_reposition_rare_first'),
-                title: t.anki_reposition_rare_first,
-                value: _rareFirst,
-                horizontalPadding: 0,
-                onChanged: _busy
-                    ? null
-                    : (bool v) => setState(() => _rareFirst = v),
-              ),
-              Text(t.anki_reposition_gather_order_hint, style: hintStyle),
-              if (_snapshot != null) ...<Widget>[
-                const FushiDividerControl(height: 24),
-                AdaptiveSettingsRow(
-                  key: const Key('anki_reposition_undo'),
-                  icon: FushiIcons.undo,
-                  showIcon: true,
-                  horizontalPadding: 0,
-                  title: t.anki_reposition_undo,
-                  subtitle: t.anki_reposition_undo_hint(
-                    time: _snapshot!.createdAt
-                        .toLocal()
-                        .toString()
-                        .split('.')
-                        .first,
-                  ),
-                  subtitleMaxLines: 3,
-                  onTap: _busy ? null : _undo,
+                ButtonSegment<AnkiRepositionSource>(
+                  value: AnkiRepositionSource.field,
+                  label: Text(t.anki_reposition_source_field),
+                  icon: const FushiIcon(FushiIcons.textFields),
                 ),
               ],
+              selected: <AnkiRepositionSource>{_source},
+              onSelectionChanged: _busy
+                  ? null
+                  : (Set<AnkiRepositionSource> s) =>
+                        setState(() => _source = s.first),
+            ),
+            const SizedBox(height: 8),
+            if (dictsMode) ..._buildDictionaryControls(theme, hintStyle),
+            if (!dictsMode)
+              Text(t.anki_reposition_source_field_hint, style: hintStyle),
+            AdaptiveSettingsSwitchRow(
+              key: const Key('anki_reposition_rare_first'),
+              title: t.anki_reposition_rare_first,
+              value: _rareFirst,
+              horizontalPadding: 0,
+              onChanged: _busy
+                  ? null
+                  : (bool v) => setState(() => _rareFirst = v),
+            ),
+            Text(t.anki_reposition_gather_order_hint, style: hintStyle),
+            if (_snapshot != null) ...<Widget>[
+              const FushiDividerControl(height: 24),
+              AdaptiveSettingsRow(
+                key: const Key('anki_reposition_undo'),
+                icon: FushiIcons.undo,
+                showIcon: true,
+                horizontalPadding: 0,
+                title: t.anki_reposition_undo,
+                subtitle: t.anki_reposition_undo_hint(
+                  time: _snapshot!.createdAt
+                      .toLocal()
+                      .toString()
+                      .split('.')
+                      .first,
+                ),
+                subtitleMaxLines: 3,
+                onTap: _busy ? null : _undo,
+              ),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[

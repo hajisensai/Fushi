@@ -685,45 +685,43 @@ class _AnkiSourceNoteChangesDialogState
       title: Text(t.card_source_review_changes),
       content: SizedBox(
         width: 640,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(t.card_source_review_conflict_warning),
-              const SizedBox(height: 12),
-              if (changed.isEmpty) Text(t.card_source_review_no_changes),
-              for (final String field in changed)
-                FushiExpansionTile(
-                  key: ValueKey<String>('anki-source-expand-$field'),
-                  title: Text(field),
-                  leading: FushiCheckbox(
-                    key: ValueKey<String>('anki-source-change-$field'),
-                    value: _selected.contains(field),
-                    onChanged: (bool? value) => setState(() {
-                      if (value == true) {
-                        _selected.add(field);
-                      } else {
-                        _selected.remove(field);
-                      }
-                    }),
-                  ),
-                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  children: <Widget>[
-                    _AnkiNoteField(
-                      label: t.card_source_review_before,
-                      value: widget.original[field]!,
-                      raw: true,
-                    ),
-                    const SizedBox(height: 12),
-                    _AnkiNoteField(
-                      label: t.card_source_review_after,
-                      value: widget.candidate[field]!,
-                      raw: true,
-                    ),
-                  ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.card_source_review_conflict_warning),
+            const SizedBox(height: 12),
+            if (changed.isEmpty) Text(t.card_source_review_no_changes),
+            for (final String field in changed)
+              FushiExpansionTile(
+                key: ValueKey<String>('anki-source-expand-$field'),
+                title: Text(field),
+                leading: FushiCheckbox(
+                  key: ValueKey<String>('anki-source-change-$field'),
+                  value: _selected.contains(field),
+                  onChanged: (bool? value) => setState(() {
+                    if (value == true) {
+                      _selected.add(field);
+                    } else {
+                      _selected.remove(field);
+                    }
+                  }),
                 ),
-            ],
-          ),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: <Widget>[
+                  _AnkiNoteField(
+                    label: t.card_source_review_before,
+                    value: widget.original[field]!,
+                    raw: true,
+                  ),
+                  const SizedBox(height: 12),
+                  _AnkiNoteField(
+                    label: t.card_source_review_after,
+                    value: widget.candidate[field]!,
+                    raw: true,
+                  ),
+                ],
+              ),
+          ],
         ),
       ),
       actions: <Widget>[
