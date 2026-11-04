@@ -1208,6 +1208,7 @@ class LibraryShapeBackdrop extends StatelessWidget {
   const LibraryShapeBackdrop({
     required this.child,
     this.show = true,
+    this.settings,
     super.key,
   });
 
@@ -1215,6 +1216,10 @@ class LibraryShapeBackdrop extends StatelessWidget {
 
   /// false = 本页不画装饰（整页要透明的底层合成页，见 `FushiPageBackdrop`）。
   final bool show;
+
+  /// 这一页要画的设置（路由层按模块解析好传进来，反馈 DYI1IOZxSM）；null = 监听
+  /// 全局 [pageBackdropSettings]。
+  final PageBackdropSettings? settings;
 
   /// 当前主题与背景设置下是否画装饰层。
   static bool enabledOf(BuildContext context) =>
@@ -1236,21 +1241,26 @@ class LibraryShapeBackdrop extends StatelessWidget {
     // （FushiPageBackdrop）垫在每一页下面，路由给页面的是**紧约束**（整屏）；
     // Stack 默认的 loose 会把紧约束放松，根组件不是 Scaffold 的页面（按钮、
     // 按内容定尺寸的 Material 等）就缩到左上角、不再铺满路由。
+    final PageBackdropSettings? fixed = settings;
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
-          child: ValueListenableBuilder<PageBackdropSettings>(
-            valueListenable: pageBackdropSettings,
-            builder:
-                (
-                  BuildContext context,
-                  PageBackdropSettings settings,
-                  Widget? _,
-                ) => show && enabledFor(context, settings)
-                ? _LibraryShapeLayer(settings: settings)
-                : const SizedBox.shrink(),
-          ),
+          child: fixed != null
+              ? (show && enabledFor(context, fixed)
+                    ? _LibraryShapeLayer(settings: fixed)
+                    : const SizedBox.shrink())
+              : ValueListenableBuilder<PageBackdropSettings>(
+                  valueListenable: pageBackdropSettings,
+                  builder:
+                      (
+                        BuildContext context,
+                        PageBackdropSettings settings,
+                        Widget? _,
+                      ) => show && enabledFor(context, settings)
+                      ? _LibraryShapeLayer(settings: settings)
+                      : const SizedBox.shrink(),
+                ),
         ),
         child,
       ],
