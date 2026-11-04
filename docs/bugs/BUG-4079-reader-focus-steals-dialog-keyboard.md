@@ -1,6 +1,6 @@
 ## BUG-4079 · 小说阅读器高级制卡对话框的句子输入框键盘弹出即收回
 - **报告**：2026-11-04（应用内反馈 IhPv0LqmYU，同一反馈人首报 -RZluBdDUL；Android Xiaomi 2312DRAABG，只在小说阅读器出现，浮动键盘正常）
 - **真实性**：✅ 真 bug。高级制卡对话框（`base_source_page.dart` `_openAdvancedMiningDialog` → `showAppDialog`，独立路由）打开期间查词弹窗 WebView 只是停靠屏外；非浮动键盘弹出改了视口 → 弹窗 JS `resize` → 重报高度 `popupRendered` → 阅读器 `onDictionaryPopupRendered` → `_focusOwnership.reclaim(FocusReclaimCause.popupRendered)`。判据 `readerCanOwnFocus`（`fushi/lib/src/pages/implementations/reader_fushi_page.dart`，修前 `:353-354`）这一支只返回 `dictionaryShown`，不看 `routeIsCurrent`（gesture / chromeToggled / popupDismissed 同样不看），于是把焦点从对话框的 TextField 抢回正文 `_focusNode`，键盘随即收回。漫画页 `_canOwnMangaFocus` 与视频页早已在函数开头对所有原因统一判 `isCurrent`，阅读器是唯一的漏网者。
-- **[x] ① 已修复** — `readerCanOwnFocus` 开头统一 `if (!routeIsCurrent) return false;`（与漫画 / 视频页同一判据），各分支去掉重复的 `routeIsCurrent`；以后新增的回收原因也漏不掉。提交见下。
+- **[x] ① 已修复** — `readerCanOwnFocus` 开头统一 `if (!routeIsCurrent) return false;`（与漫画 / 视频页同一判据），各分支去掉重复的 `routeIsCurrent`；以后新增的回收原因也漏不掉。提交 `17bdccf03b`。
 - **[x] ② 已加自动化测试** — `fushi/test/reader/reader_focus_route_gate_test.dart`：全部 `FocusReclaimCause` × 歌词态 × 弹窗可见在 `routeIsCurrent=false` 下都返回 false；当前路由时原有答案不变；widget 测试用与 `_canOwnReaderFocus` 同一接法（路由取自页面 context）把 `readerCanOwnFocus` 接进 `PageFocusOwnership`，对话框 TextField 持焦时 `reclaim(popupRendered)` 被否决、焦点不动，关掉对话框后照常收回。
 - **备注**：未在 Android 真机用 Gboard 非浮动模式复测原始路径（本轮不做真机验证）。
