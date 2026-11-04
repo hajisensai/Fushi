@@ -8,7 +8,9 @@
 ///
 /// 本模块提供对账原语：枚举库根下现存的视频文件，挑出「行还在、文件没了」的条目，
 /// 走既有回收路径 [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 删除
-/// （级联清刮削资料 + 回收封面）。app 与服务端共用同一份判据。
+/// （级联清刮削资料 + 回收封面）。目前只有服务端 `LibraryScanner._pruneVideoRoot`
+/// （BUG-2809）调用；app 本地视频来源重扫有意保留「暂缺」文件的行（观看进度 /
+/// 用户资料），是否接入见 BUG-4004 的待拍板选项。
 ///
 /// 边界（有意）：
 /// - 只在 [pruneMissingVideoRows] 的 `root` 路径范围内的行上动手；上传副本 / 下载
@@ -35,6 +37,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.da
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show videoMemberExistsSync;
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 /// 枚举 [root] 下现存的视频文件路径（[normalizeVideoPath] 归一）。纯文件系统读。
@@ -80,7 +84,10 @@ List<VideoBookRow> videoRowsWithinRoot(
 /// 纯函数：从候选行里挑出「文件已不存在」的行。
 ///
 /// [candidates] 应只包含目标库根范围内的行；[foundPaths] 是本次枚举到的归一路径
-/// 集合；[exists] 可注入以便测试（默认 `File(path).existsSync()`）。
+/// 集合；[exists] 可注入以便测试（默认 [videoMemberExistsSync]：原盘成员按盘上真实
+/// 文件判——DVD 标题是虚拟路径 `<盘根>/VIDEO_TS/TITLE_nn.dvdtitle`，裸
+/// `File(path).existsSync()` 对它恒为假，会把仍在盘上的整张 DVD 的标题行当成
+/// 「文件没了」删掉，BUG-4004）。
 ///
 /// 网络流（[isNetworkOnlyVideoPath]）永不判失效——它们本来就没有本地文件。
 /// 即便 [foundPaths] 未命中，也要 [exists] 二次确认：枚举可能因权限或竞态漏项，
@@ -93,8 +100,7 @@ List<VideoBookRow> selectStaleVideoRows({
   required Set<String> foundPaths,
   bool Function(String path)? exists,
 }) {
-  final bool Function(String path) fileExists =
-      exists ?? (String path) => File(path).existsSync();
+  final bool Function(String path) fileExists = exists ?? videoMemberExistsSync;
   final List<VideoBookRow> stale = <VideoBookRow>[];
   for (final VideoBookRow row in candidates) {
     final String primary = row.videoPath;

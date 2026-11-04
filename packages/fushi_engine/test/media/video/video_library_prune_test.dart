@@ -116,6 +116,36 @@ void main() {
 
       expect(stale, isEmpty);
     });
+
+    // BUG-4004：默认存在判据必须是「这一条还在不在」（videoMemberExistsSync）。
+    // DVD 标题是虚拟路径，磁盘上没有 TITLE_nn.dvdtitle 这个文件；裸 File.existsSync
+    // 会把盘还在的整张 DVD 当成「文件没了」，app 来源重扫接入对账后每扫一次删一次。
+    test('DVD 标题按盘上真实文件判：盘在 → 保留，盘没了 → 失效（默认判据）', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_dvd_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final String liveDisc = p.join(root.path, 'LIVE_DISC');
+      Directory(p.join(liveDisc, 'VIDEO_TS')).createSync(recursive: true);
+      File(
+        p.join(liveDisc, 'VIDEO_TS', 'VIDEO_TS.IFO'),
+      ).writeAsStringSync('ifo');
+      await addVideo(p.join(liveDisc, 'VIDEO_TS', 'TITLE_01.dvdtitle'));
+      final String goneTitle = p.join(
+        root.path,
+        'GONE_DISC',
+        'VIDEO_TS',
+        'TITLE_02.dvdtitle',
+      );
+      await addVideo(goneTitle);
+
+      final List<VideoBookRow> stale = selectStaleVideoRows(
+        candidates: await repo.listAll(),
+        foundPaths: const <String>{},
+      );
+
+      expect(stale.map((VideoBookRow r) => r.videoPath), <String>[goneTitle]);
+    });
   });
 
   group('pruneMissingVideoRows', () {
