@@ -44,11 +44,8 @@ class _StubLlm implements AgentLlm {
   }
 }
 
-/// 头 [answered] 次照常答，之后的请求一直挂着（模拟 host 还在跑这一轮）。
+/// 第一次照常答，之后的请求一直挂着（模拟 host 还在跑这一轮）。
 class _HangingLlm implements AgentLlm {
-  _HangingLlm({this.answered = 1});
-
-  final int answered;
   int calls = 0;
 
   @override
@@ -63,7 +60,7 @@ class _HangingLlm implements AgentLlm {
     List<AiChatToolSpec> tools,
   ) {
     calls++;
-    if (calls > answered) return Completer<AiChatTurn>().future;
+    if (calls > 1) return Completer<AiChatTurn>().future;
     return Future<AiChatTurn>.value(
       AiChatTurn(
         text: 'a$calls',
