@@ -92,10 +92,9 @@ void main() {
       r'static let fushiRoutedUrlHosts: Set<String> = \[([^\]]*)\]',
     ).firstMatch(delegate);
     expect(match, isNotNull, reason: 'fushiRoutedUrlHosts literal not found');
-    final Set<String> native = RegExp(r'"([a-z_]+)"')
-        .allMatches(match!.group(1)!)
-        .map((RegExpMatch m) => m.group(1)!)
-        .toSet();
+    final Set<String> native = RegExp(
+      r'"([a-z_]+)"',
+    ).allMatches(match!.group(1)!).map((RegExpMatch m) => m.group(1)!).toSet();
     expect(native, SourceUrlChannel.routedHosts);
     // 每个 host 都真有 Dart 落地：卡片出处 / 小组件 / 快捷方式 / 查词。
     expect(SourceUrlChannel.isRoutedUrl('fushi://widget/srs'), isTrue);
