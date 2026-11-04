@@ -1,14 +1,16 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/models/app_model.dart' show appProvider;
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ShortcutBindingScope;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show FushiHeaderSearchController;
 
@@ -30,25 +32,21 @@ class FushiHeaderSearchKeys extends StatelessWidget {
   final FushiHeaderSearchController? Function() resolve;
   final Widget child;
 
-  /// 当前生效的 librarySearch 绑定：有 ProviderScope 且注册表已装载时读用户
-  /// 绑定；否则（没挂 ProviderScope 的组件测试、启动早期）回落平台默认。
+  /// 当前生效的 librarySearch 绑定：子树上方有 [ShortcutBindingScope]（app 根部
+  /// `wrapWithGlobalNavigation` 挂的那份注册表）且已装载时读用户绑定；否则（没挂
+  /// 注册表的组件测试、启动早期）回落平台默认。
+  ///
+  /// 经 widget 树取注册表而不是读 `appProvider`：本文件被下载任务页等底层页面
+  /// import，读 AppModel 会把它们拖进 AppModel 的 import 环
+  /// （test/build/import_cycle_guard_test.dart）。
   static List<InputBinding> _bindings(BuildContext context) {
-    final bool hasScope =
-        context
-            .getElementForInheritedWidgetOfExactType<
-              UncontrolledProviderScope
-            >() !=
-        null;
-    if (hasScope) {
-      final registry = ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appProvider).shortcutRegistry;
-      if (registry.isLoaded) {
-        return registry
-            .bindingsFor(ShortcutAction.librarySearch)
-            .keyboardBindings;
-      }
+    final FushiShortcutRegistry? registry = ShortcutBindingScope.maybeOf(
+      context,
+    );
+    if (registry != null && registry.isLoaded) {
+      return registry
+          .bindingsFor(ShortcutAction.librarySearch)
+          .keyboardBindings;
     }
     return ShortcutDefaults.forPlatform(
           defaultTargetPlatform,

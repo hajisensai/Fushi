@@ -22,6 +22,7 @@ import 'package:fushi/src/web_browser/features/open_in_fushi/web_open_in_fushi_a
 import 'package:fushi/src/web_browser/features/open_in_fushi/web_page_content.dart';
 import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
+import 'package:fushi/src/web_browser/features/play_in_fushi/web_browser_media_hold_scripts.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/web_browser/web_browser_site_launch.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -29,24 +30,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
-/// 交给 Fushi 播放器期间按住页面的媒体：暂停在播的 `<video>` / `<audio>`，并在捕获阶段拦
-/// `play` 事件，之后谁开播都立刻停。只暂停一次不够（BUG-3801，用户「感觉有两个视频在播放」）：
-/// 自动交接发生在地址刚变到观看页时，站点的 `<video>` 还没建；退回选集页后预告片也会自动播。
-/// 幂等；由 [kWebBrowserReleaseMediaScript] 解除。
-const String kWebBrowserHoldMediaScript =
-    '(function(){var n=0;if(!window.__fushiMediaHold){'
-    'window.__fushiMediaHold=function(e){var v=e.target;'
-    'if(v&&v.pause){try{v.pause();}catch(_){}}};'
-    'document.addEventListener("play",window.__fushiMediaHold,true);}'
-    'var vs=document.querySelectorAll("video,audio");'
-    'for(var i=0;i<vs.length;i++){try{if(!vs[i].paused){vs[i].pause();n++;}}'
-    'catch(e){}}return n;})();';
-
-/// 解除 [kWebBrowserHoldMediaScript]（播放页关掉、浏览器标签页重新在前台时）。
-const String kWebBrowserReleaseMediaScript =
-    '(function(){var h=window.__fushiMediaHold;if(h){'
-    'document.removeEventListener("play",h,true);'
-    'window.__fushiMediaHold=null;}})();';
+// 按住 / 解除媒体的两段脚本搬到了 web_browser_media_hold_scripts.dart；这里再导出。
+export 'package:fushi/src/web_browser/features/play_in_fushi/web_browser_media_hold_scripts.dart';
 
 /// JS → Dart 交接 handler 名（[kWebBrowserWatchHandoffScript] 调它）。
 const String kWebBrowserWatchHandoffHandler = 'fushiHandoffWatch';

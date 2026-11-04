@@ -1,19 +1,18 @@
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ShortcutBindingScope;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:material_ui/material_ui.dart';
-
-import '../helpers/test_platform_services.dart';
 
 /// 库页「可展开搜索的单行页头」（2026-10-14 用户定案）的交互契约：
 /// 🔍 展开整行搜索栏、← 清空并收起、Esc 两段（先清空再收起）、库页搜索快捷键
@@ -184,9 +183,7 @@ void main() {
     expect(search.expanded, isFalse);
   });
 
-  testWidgets('默认绑定（无 ProviderScope 回落平台默认）：Ctrl+F 与 `/` 都展开', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('默认绑定（无注册表回落平台默认）：Ctrl+F 与 `/` 都展开', (WidgetTester tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     await pumpPage(tester);
@@ -231,8 +228,9 @@ void main() {
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    final AppModel app = AppModel(testPlatformServices());
-    app.shortcutRegistry
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
+    addTearDown(registry.dispose);
+    registry
       ..loadDefaults(TargetPlatform.windows)
       ..updateBinding(
         ShortcutAction.librarySearch,
@@ -247,10 +245,7 @@ void main() {
       );
     await pumpPage(
       tester,
-      wrap: ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((Ref ref) => app)],
-        child: page(),
-      ),
+      wrap: ShortcutBindingScope(registry: registry, child: page()),
     );
 
     await parkFocus(tester);

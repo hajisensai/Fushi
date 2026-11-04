@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
-    show kReaderSourcePersistedKey;
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:fushi/src/models/preferences_repository.dart'
     show kFloatingLyricWindowRectPrefKey;
 import 'package:fushi/src/profile/profile_keys.dart';
