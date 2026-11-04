@@ -71,6 +71,62 @@ const HeavyNeed _test = HeavyNeed(
   capMb: 12288,
   worktreeExclusive: true,
 );
+
+// Test booking (2026-11-05, measured Job peaks of `flutter test` with
+// --concurrency=4 on this desktop, cold build/test_cache):
+//   closure  1039 files (only flutter_test)  1 file   3331 MB
+//   closure  2276 files (widget + material)  1 file   4832 MB
+//   closure  8683 files (whole app)          1 file   4759 MB
+//   whole app                                4 files  5593 MB
+// About 3.3 GB is flutter_tools + the platform kernel whatever the test
+// compiles, so booking the 12 GB ceiling for every run promised 2-3x what
+// tests use and let only one test run at a time in a 16 GB budget. A run is
+// booked from its import closure (heavy_test_closure.dart) and its tester
+// count; the ceiling stays as the hard limit for a runaway.
+
+/// A test whose import closure stays at about flutter_test's own size.
+const int kSmallTestClosureFiles = 1500;
+
+/// What a pure-Dart `dart test` run books. It runs every suite in isolates
+/// of one VM, without flutter_tools or a frontend_server: a fushi_engine
+/// suite peaked at 765 MB (2026-11-05), so whole-package runs fit too.
+const int kDartTestBookMb = 2048;
+
+/// What a `flutter test` / `dart test` run books: [closureFiles] is its
+/// import closure (null when it runs whole directories or the closure could
+/// not be read: book the ceiling), [testers] the test processes it starts
+/// (min of its concurrency and its file count), [flutter] false for
+/// `dart test`.
+int testBookMb({
+  required int? closureFiles,
+  required int testers,
+  bool flutter = true,
+}) {
+  if (!flutter) return kDartTestBookMb;
+  if (closureFiles == null) return _test.capMb;
+  final int base = closureFiles <= kSmallTestClosureFiles ? 4096 : 6144;
+  final int extraTesters = (testers - 1).clamp(0, 64);
+  final int booked = base + 512 * extraTesters;
+  return booked < _test.capMb ? booked : _test.capMb;
+}
+
+/// The `--concurrency` / `-j` a test argv sets, or null.
+int? testConcurrencyOf(List<String> argv) {
+  for (int i = 0; i < argv.length; i++) {
+    final String a = argv[i];
+    if (a.startsWith('--concurrency=')) {
+      return int.tryParse(a.substring('--concurrency='.length));
+    }
+    if ((a == '--concurrency' || a == '-j') && i + 1 < argv.length) {
+      return int.tryParse(argv[i + 1]);
+    }
+    if (a.startsWith('-j') && a.length > 2) {
+      return int.tryParse(a.substring(2));
+    }
+  }
+  return null;
+}
+
 // Analyze (2026-10-25, measured): 1004 local runs peaked at p50 3.4 GB /
 // p90 4.0 GB / max 7.8 GB, never hit the 8 GB ceiling, and the analysis
 // server averages under one core. Holding a regular slot and booking the
