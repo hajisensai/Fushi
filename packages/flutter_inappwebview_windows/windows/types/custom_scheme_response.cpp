@@ -1,3 +1,4 @@
+#include "../utils/content_type.h"
 #include "../utils/flutter.h"
 #include "../utils/string.h"
 #include "custom_scheme_response.h"
@@ -46,11 +47,9 @@ namespace flutter_inappwebview_plugin
 
       wil::com_ptr<ICoreWebView2HttpResponseHeaders> responseHeaders;
       if (SUCCEEDED(webResourceResponse->get_Headers(&responseHeaders))) {
+        // Fushi patch: contentEncoding is the charset, see utils/content_type.h.
         if (!contentType.empty()) {
-          responseHeaders->AppendHeader(L"Content-Type", utf8_to_wide(contentType).c_str());
-        }
-        if (!contentEncoding.empty()) {
-          responseHeaders->AppendHeader(L"Content-Encoding", utf8_to_wide(contentEncoding).c_str());
+          responseHeaders->AppendHeader(L"Content-Type", utf8_to_wide(contentTypeWithCharset(contentType, contentEncoding)).c_str());
         }
       }
 
