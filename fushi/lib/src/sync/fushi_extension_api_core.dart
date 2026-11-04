@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
@@ -11,7 +13,10 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteHandler, ExtensionVideoFavoriteRequest;
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
+import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart'
+    show GraphicSubtitleOcrFrame, GraphicSubtitleOcrUnavailable;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 
 /// [FushiExtensionApiCore.handle] 的结果：成功体是 JSON 对象，失败是状态码 + 纯文本
@@ -57,7 +62,9 @@ class FushiExtensionApiCore {
     void Function(BrowserVideoSample sample)? onExtensionStudy,
     ExtensionVideoFavoriteHandler? onVideoFavorite,
     YoutubeCaptionsResolver? youtubeCaptionsResolver,
+    ExtensionImageOcr? imageOcr,
   }) : _subtitleRegistryProvider = subtitleRegistryProvider,
+       _imageOcr = imageOcr,
        _onVideoFavorite = onVideoFavorite,
        _fontApi = fontApi,
        _onExtensionPopupSize = onExtensionPopupSize,
@@ -78,6 +85,9 @@ class FushiExtensionApiCore {
   /// 反馈 KGC1ifR1a3：看网页视频时收藏当前句 / 视频本身（写 App 收藏夹同一份收藏句）。
   static const String videoFavoritePath = '/api/extension/video-favorite';
 
+  /// canvas 渲染的网页阅读器（BookWalker 等）抓图取词：截图 → OCR → 字级位置。
+  static const String ocrImagePath = kExtensionOcrImagePath;
+
   /// 本核心认的全部路径（含 jimaku 两条旧路径）。
   static const Set<String> paths = <String>{
     youtubeCaptionsPath,
@@ -90,6 +100,7 @@ class FushiExtensionApiCore {
     popupSizePath,
     studyPath,
     videoFavoritePath,
+    ocrImagePath,
   };
 
   final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
@@ -98,6 +109,7 @@ class FushiExtensionApiCore {
   final void Function(BrowserVideoSample sample)? _onExtensionStudy;
   final ExtensionVideoFavoriteHandler? _onVideoFavorite;
   final YoutubeCaptionsResolver _youtubeCaptionsResolver;
+  final ExtensionImageOcr? _imageOcr;
 
   static Future<Map<String, dynamic>> _defaultYoutubeCaptionsResolver(
     String idOrUrl, {
@@ -150,6 +162,10 @@ class FushiExtensionApiCore {
             'Video favorite sink off',
           );
         }
+      case ocrImagePath:
+        if (_imageOcr == null) {
+          return const FushiExtensionApiResponse.error(404, 'Image OCR off');
+        }
     }
     return null;
   }
@@ -191,6 +207,8 @@ class FushiExtensionApiCore {
         return _study(body);
       case videoFavoritePath:
         return _videoFavorite(body);
+      case ocrImagePath:
+        return _ocrImage(body);
       default:
         return const FushiExtensionApiResponse.error(404, 'Unknown endpoint');
     }
@@ -310,6 +328,29 @@ class FushiExtensionApiCore {
     return FushiExtensionApiResponse.json(
       (await _onVideoFavorite!(request)).toJson(),
     );
+  }
+
+  /// 抓图取词：body `{image: base64 PNG/JPEG（可带 data: 前缀）}` →
+  /// [extensionOcrFrameJson]。引擎不可用不是错误，回 `{error: <原因>, blocks: []}`，
+  /// 扩展据此提示「先在 app 里装好 OCR 引擎」而不是「连不上 Fushi」。
+  Future<FushiExtensionApiResponse> _ocrImage(Map<String, dynamic> body) async {
+    final Uint8List? image = decodeExtensionOcrImage(body['image']);
+    if (image == null) {
+      return const FushiExtensionApiResponse.error(400, 'Missing image');
+    }
+    if (image.length > kExtensionOcrImageMaxBytes) {
+      return const FushiExtensionApiResponse.error(413, 'Image too large');
+    }
+    final GraphicSubtitleOcrFrame frame;
+    try {
+      frame = await _imageOcr!(image);
+    } on GraphicSubtitleOcrUnavailable catch (e) {
+      return FushiExtensionApiResponse.json(<String, dynamic>{
+        'error': e.reason.name,
+        'blocks': <Object?>[],
+      });
+    }
+    return FushiExtensionApiResponse.json(extensionOcrFrameJson(frame));
   }
 
   FushiExtensionApiResponse _study(Map<String, dynamic> body) {

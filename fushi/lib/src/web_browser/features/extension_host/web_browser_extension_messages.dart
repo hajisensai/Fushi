@@ -102,6 +102,11 @@ Future<Map<String, Object?>> routeWebBrowserExtensionMessage(
         FushiExtensionApiCore.subtitleFetchPath,
         <String, dynamic>{'handle': _str(message['handle'])},
       );
+    // canvas 阅读器抓图取词（canvas-ocr.js）：与扩展 background.js 同形转发。
+    case 'ocrImage':
+      return _apiReply(s, FushiExtensionApiCore.ocrImagePath, <String, dynamic>{
+        'image': _str(message['image']),
+      });
     case 'subtitleFonts':
       // 字体列表照给；app 内没有可供页面 @font-face 取字节的地址，覆盖层按字体名用本机已装字体。
       final FushiExtensionApiResponse r = await s.api(

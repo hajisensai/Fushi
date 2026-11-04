@@ -2212,10 +2212,33 @@ function fushiClearNativeSelection() {
   } catch (_) { /* 某些跨域/detached 上下文 getSelection 可能抛：静默 */ }
 }
 
+// canvas 抓图取词这一窗的字框（视口坐标，从被查的字起逐字）；null = 本次查词来自 DOM 文本。
+// 每次查词由 fushiSendLookup 刷新，绝不让上一个 OCR 词的框跟到下一个 DOM 词上。
+let fushiOcrHighlightRects = null;
+function fushiOcrRectsOf(all, charCount) {
+  const rects = all.slice(0, Math.max(0, charCount)).filter((r) => r && r.width > 0 && r.height > 0);
+  let bx = null;
+  for (const r of rects) {
+    if (!bx) bx = { left: r.left, top: r.top, right: r.left + r.width, bottom: r.top + r.height };
+    else {
+      bx.left = Math.min(bx.left, r.left);
+      bx.top = Math.min(bx.top, r.top);
+      bx.right = Math.max(bx.right, r.left + r.width);
+      bx.bottom = Math.max(bx.bottom, r.top + r.height);
+    }
+  }
+  return {
+    rects,
+    bounds: bx ? { x: bx.left, y: bx.top, width: bx.right - bx.left, height: bx.bottom - bx.top } : null,
+  };
+}
+
 // 从 fushiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
 // Range.getClientRects，**不改宿主页 DOM**），并算出整体 bbox 作弹窗锚点。返回 {rects, bounds}。
 // 与 selection.js highlightSelection 的裁词逻辑同构，但不做 DOM 包裹。
 function fushiSelectionRects(charCount) {
+  // canvas 抓图取词：词不在 DOM 里，高亮框是 OCR 交回的字框（fushiCanvasOcrScanAt 存下）。
+  if (fushiOcrHighlightRects) return fushiOcrRectsOf(fushiOcrHighlightRects, charCount);
   const rects = [];
   let bx = null;
   const sel = window.fushiSelection && window.fushiSelection.selection;
@@ -2309,6 +2332,13 @@ function fushiOnPageScroll() {
 
 function fushiFollowLookupAnchor() {
   if (!fushiHost || !fushiPlaceAnchor || !(fushiHighlightTermLen > 0)) return;
+  // OCR 字框是识别那一刻的视口坐标，滚动后无从重量（画面里的字已经挪了）：同「量不到 rects」，
+  // 撤掉会错位的高亮，弹窗留在原处。
+  if (fushiOcrHighlightRects) {
+    fushiHighlightTermLen = 0;
+    fushiClearHighlightOverlay();
+    return;
+  }
   const hl = fushiSelectionRects(fushiHighlightTermLen);
   const b = hl.bounds;
   if (!b) {
@@ -2492,7 +2522,9 @@ document.addEventListener('mousemove', (e) => {
 function fushiShiftHoverAt(x, y, target, clearNativeSelection, bypassMoveThreshold) {
   // 宿主模式：网页正文的 Shift 悬停由宿主自己的取词脚本负责（两边都扫会弹两次），这里只管
   // 扩展自绘的字幕覆盖层。
-  if (fushiHostAdapter() && !fushiOwnPageUiTarget(target)) return;
+  // canvas 阅读器例外：宿主的取词脚本只认文本节点，canvas 上的字只有这里的抓图取词能查。
+  if (fushiHostAdapter() && !fushiOwnPageUiTarget(target) &&
+      !(typeof fushiCanvasOcrTargetAt === 'function' && fushiCanvasOcrTargetAt(document, x, y))) return;
   // 用户关掉了 Shift 悬停查词：整条入口不动，连原生选区清理也不做（Shift+拖选照常是浏览器的）。
   if (!fushiShiftHoverLookup) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
   // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
@@ -2566,7 +2598,8 @@ function fushiShiftScanAt(x, y) {
       ? String(hit.node.textContent || '').slice(hit.offset, hit.offset + 12)
       : 'null';
   } catch (_) {}
-  if (!hit) return;
+  // 取不到文本节点：指针下若是 canvas 渲染的阅读器正文（BookWalker 等），走抓图取词。
+  if (!hit) { fushiCanvasOcrScanAt(x, y, true); return; }
   // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 fushiSelection.selection，
   // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 经 bridge-shim 进 __fushiOnLinkClick，
   // 那里按选区不在弹窗 ShadowRoot 内丢弃（页面选词不是递归查词）。
@@ -2589,6 +2622,83 @@ function fushiShiftScanAt(x, y) {
   fushiLastLookupKey = lookupKey;
   fushiSendLookup(term, fushiAnchorRect, null, false, hit, true, termRuby);
 }
+// ── canvas 阅读器抓图取词（canvas-ocr.js）────────────────────────────────────────────
+let fushiCanvasOcr = null;
+let fushiLastCanvasOcrHintAt = 0;
+function fushiCanvasOcrSession() {
+  if (fushiCanvasOcr || typeof fushiCreateCanvasOcrSession !== 'function') return fushiCanvasOcr;
+  fushiCanvasOcr = fushiCreateCanvasOcrSession({
+    doc: document,
+    win: window,
+    sendMessage: (msg) => new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(msg, (resp) => {
+          try { if (chrome.runtime.lastError) { resolve(null); return; } } catch (_) { resolve(null); return; }
+          resolve(resp || null);
+        });
+      } catch (_) { resolve(null); }
+    }),
+    loadImage: (url) => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('screenshot decode failed'));
+      img.src = url;
+    }),
+    // 截屏路截的是屏幕像素：先收起扩展自己的弹窗与高亮，等浏览器把撤掉后的画面合成出来
+    // （两帧：第一帧提交样式，第二帧上屏）再截，免得把上一页的词条识别成正文。
+    beforeScreenshot: () => {
+      if (fushiHost) fushiRemoveContainer();
+      fushiClearHighlightOverlay();
+      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    },
+  });
+  // 翻页类输入：canvas 上的画面可能已经换了，缓存的识别结果作废，下一次悬停重新识别。
+  // 只按住扫词修饰键（Shift 等）不算翻页。
+  const invalidate = () => { if (fushiCanvasOcr) fushiCanvasOcr.invalidate(); };
+  document.addEventListener('pointerdown', invalidate, true);
+  window.addEventListener('wheel', invalidate, { capture: true, passive: true });
+  window.addEventListener('resize', invalidate, { passive: true });
+  document.addEventListener('scroll', invalidate, { capture: true, passive: true });
+  document.addEventListener('keydown', (e) => {
+    const k = e && e.key;
+    if (k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta') return;
+    invalidate();
+  }, true);
+  return fushiCanvasOcr;
+}
+function fushiReportCanvasOcrError(r) {
+  if (r.error === 'request') { fushiShowConnectionFailure(r.resp); return; }
+  const now = Date.now();
+  if (now - fushiLastCanvasOcrHintAt < 8000) return; // 悬停连发时只提醒一次
+  fushiLastCanvasOcrHintAt = now;
+  const noEngine = r.error === 'noEngine' || r.error === 'lensDeclined' || r.error === 'unsupported';
+  try { window.fushiToast('⚠ ' + fushiTr(noEngine ? 'canvas_ocr_no_engine' : 'canvas_ocr_failed')); } catch (_) {}
+}
+// 指针 (x, y) 下的 canvas 阅读器正文：识别（一页一次）→ 命中字 → 既有查词弹窗。
+// openedByHover：Shift 悬停 = true（同词去重、悬停会话），点按 = false（同词且弹窗在场 = 停在这儿看）。
+function fushiCanvasOcrScanAt(x, y, openedByHover) {
+  const session = fushiCanvasOcrSession();
+  if (!session) return;
+  session.lookupAt(x, y, FUSHI_MAX_LEN).then((r) => {
+    if (!r) return;
+    if (r.status === 'error') { fushiReportCanvasOcrError(r); return; }
+    if (r.status !== 'hit') return;
+    const lookup = r.lookup;
+    if (!lookup.term || !lookup.term.trim()) return;
+    const lookupKey = fushiLookupKey(lookup.term, null);
+    if (openedByHover) {
+      if (lookupKey === fushiLastLookupKey) return;
+    } else if ((fushiHost || fushiHostLookupOpen) && lookupKey === fushiShownLookupKey) {
+      fushiHoldLookupSession();
+      return;
+    }
+    fushiLastLookupKey = lookupKey;
+    // 页面锚点取 canvas 本身：悬停会话的「查词区」就是整块 canvas，指针在页面上挪动不算离开。
+    fushiSendLookup(lookup.term, lookup.anchorRect, null, false, { node: r.canvas, offset: 0 },
+      openedByHover, null, lookup.sentence, lookup.rects);
+  }, () => { /* lookupAt 内部已把异常收成 error 结果 */ });
+}
+
 // 在途结果回来后补查被在途闸吞掉的最后一次悬停取词。补查照走各自入口的全部门控（Shift 总开关、
 // 同词去重、悬浮字幕的 cue 去重），指针停在已显示的那个词上时就是 no-op。
 function fushiReplayDeferredScan() {
@@ -2712,7 +2822,9 @@ function fushiSelectionRuby(term) {
     return null;
   }
 }
-function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover, ruby) {
+// pageSentence / ocrRects：canvas 抓图取词专用——词不在 DOM 里，例句是 OCR 识别出的整块文字，
+// 高亮框是 OCR 字框。其余入口不传（例句照旧惰性从页面锚点算，高亮照旧量 DOM 选区）。
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover, ruby, pageSentence, ocrRects) {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
@@ -2721,7 +2833,8 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   // 页面命中点），绝不让上一次查词的句子跟到下一个词的卡上。
   fushiPendingLookupAnchor =
       lookupAnchor && lookupAnchor.node ? lookupAnchor : null;
-  fushiPendingPageSentence = null;
+  fushiPendingPageSentence = typeof pageSentence === 'string' ? pageSentence : null;
+  fushiOcrHighlightRects = Array.isArray(ocrRects) && ocrRects.length ? ocrRects : null;
   fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
@@ -2912,7 +3025,11 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
       hit = { node: subRange.startContainer, offset: subRange.startOffset };
     }
   }
-  if (!hit) return;
+  if (!hit) {
+    // 点按 / 长按落在 canvas 阅读器正文上：抓图取词（悬浮字幕自动查词不会落在 canvas 上，不走）。
+    if (!autoLookup) fushiCanvasOcrScanAt(clientX, clientY, false);
+    return;
+  }
   const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, clientX, clientY);
   const termRuby = fushiSelectionRuby(term);
   fushiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮

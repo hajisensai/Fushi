@@ -161,6 +161,10 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart'
+    show GoogleLensDisclosureScene, hasGoogleLensDisclosure;
+import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
+    show MangaStreamOcrSetup, prepareMangaStreamOcr;
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -417,6 +421,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
+import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -10317,6 +10322,8 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_extensionImageOcr?.close());
+    _extensionImageOcr = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -11490,7 +11497,46 @@ class AppModel with ChangeNotifier {
               repository: FavoriteSentenceRepository(database),
               request: request,
             ),
+        // canvas 渲染的网页阅读器（BookWalker 等）抓图取词：与漫画 / 视频暂停帧同一套 OCR。
+        imageOcr: (Uint8List image) =>
+            _ensureExtensionImageOcr().recognize(image),
       );
+
+  /// 浏览器扩展 / app 内浏览器抓图取词的识别会话（懒建，设置变了自动换会话；
+  /// [dispose] 时关掉，释放模型 isolate 与临时目录）。
+  ExtensionImageOcrService? _extensionImageOcr;
+
+  ExtensionImageOcrService _ensureExtensionImageOcr() =>
+      _extensionImageOcr ??= ExtensionImageOcrService(
+        prepare: _prepareExtensionImageOcr,
+        configKey: () =>
+            '$mangaOcrEnginePreference|$mangaOcrLocalModel|'
+            '$mangaOcrLensLanguage|$mangaOcrIgnoreFurigana',
+      );
+
+  /// 抓图取词的引擎解析：与漫画在线直读同一口径（引擎偏好 / 本机模型），但用户此刻
+  /// 在浏览器里、不在 app 里——不弹任何框：Lens 只在本机已同意过上传漫画页面时才用
+  /// （网页阅读器的内容就是漫画 / 书页），不做大模型重读。
+  ///
+  /// 引擎装配要一个能拿到 `ProviderContainer` 的 context（同
+  /// [_autoOcrDownloadedMangaChapter]）；app 还没起完时抛错，这次请求失败、下次重探。
+  Future<MangaStreamOcrSetup> _prepareExtensionImageOcr(String workDirPath) {
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null) {
+      throw StateError('No navigator context to assemble OCR engines');
+    }
+    return prepareMangaStreamOcr(
+      imageDirPath: workDirPath,
+      engines: MangaOcrWizardEngines.resolve(
+        context: context,
+        db: database,
+      ).withoutAiRefinement(),
+      preference: MangaOcrEnginePreferenceKey.fromKey(mangaOcrEnginePreference),
+      lensLanguage: mangaOcrLensLanguage,
+      confirmLensUpload: () =>
+          hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.mangaPages),
+    );
+  }
 
   FushiApiServerManager _ensureYomitanManager() {
     final FushiApiServerManager? existing = _yomitanServerManager;
