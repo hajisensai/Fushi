@@ -100,6 +100,32 @@ pub struct SrsCore {
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub(crate) ingest_commit_hook: Mutex<Option<Box<dyn Fn(&SrsCore) + Send>>>,
+    /// 存活计数（[live_cores]）：构造时 +1、结构体真正释放时 -1。放最后：连接都关完才减。
+    _live: LiveCore,
+}
+
+/// 进程内还没释放的 [SrsCore] 个数（含已从句柄表摘掉、在途调用还握着 `Arc` 的）。
+static LIVE_CORES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// [SrsCore] 的存活令牌：内存诊断（`ffsrs_store_diag_counts`）看「退役的库是否还驻留」。
+struct LiveCore;
+
+impl LiveCore {
+    fn new() -> Self {
+        LIVE_CORES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self
+    }
+}
+
+impl Drop for LiveCore {
+    fn drop(&mut self) {
+        LIVE_CORES.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// 进程内还没释放的 [SrsCore] 个数。
+pub fn live_cores() -> usize {
+    LIVE_CORES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
@@ -431,6 +457,7 @@ impl SrsCore {
             ingest_prepare_hook: Mutex::new(None),
             #[cfg(test)]
             ingest_commit_hook: Mutex::new(None),
+            _live: LiveCore::new(),
         })
     }
 
@@ -808,6 +835,11 @@ impl SrsCore {
     /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
     pub fn read_concurrency(&self) -> usize {
         self.drift_readers.cap()
+    }
+
+    /// 只读连接池眼下开着的连接数（空闲 + 借出），内存诊断用。
+    pub fn pooled_readers(&self) -> usize {
+        self.drift_readers.live()
     }
 
     /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池

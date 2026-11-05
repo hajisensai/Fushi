@@ -47,6 +47,7 @@ import 'package:fushi/game_stream_companion_main.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
+import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi/src/srs/srs_mining.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
@@ -690,6 +691,11 @@ void main([List<String> args = const <String>[]]) {
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
       ]);
+      // BUG-4075：周期内存采样写进会话标记（进程 RSS + SRS 原生内核计数），下次启动的
+      // 「上次未正常退出」带上崩前几分钟的内存曲线。
+      PreviousExitLog.startMemorySampling(
+        probes: const <MemoryProbe>[srsMemoryProbe],
+      );
       // 闪退报告（crash_report.dart）：上次是崩溃 / 异常退出就记进待报，下次问用户要不要
       // 把日志发给开发者。debug 构建（停 `flutter run` 就是强杀）与集成测试根下不问不发——
       // 测试绝不能往线上反馈服务交东西。

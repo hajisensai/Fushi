@@ -116,6 +116,9 @@ typedef _SimpleC =
     );
 typedef _SimpleDart =
     int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Pointer<ffi.Char>>);
+typedef _DiagCountsC =
+    ffi.Size Function(ffi.Pointer<ffi.Int64> out, ffi.Size n);
+typedef _DiagCountsDart = int Function(ffi.Pointer<ffi.Int64> out, int n);
 typedef _StateC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Void>,
@@ -318,6 +321,10 @@ final class SrsCoreBindings {
       readConcurrency = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_read_concurrency',
       ),
+      diagCounts = lib.lookupFunction<_DiagCountsC, _DiagCountsDart>(
+        'ffsrs_store_diag_counts',
+        isLeaf: true,
+      ),
       historyStates = lib.lookupFunction<_HistC, _HistDart>(
         'ffsrs_store_history_states',
       ),
@@ -352,6 +359,7 @@ final class SrsCoreBindings {
   final _PageDart execBatch;
   final _StateDart inTransaction;
   final _StateDart readConcurrency;
+  final _DiagCountsDart diagCounts;
   final _HistDart historyStates;
   final _CmdDart optimizerItems;
   final _CmdDart rwkvRows;
@@ -399,6 +407,42 @@ final class SrsCoreBindings {
     if (ms < 0) throw StateError('ffsrs_boot_time_ms: boot clock unavailable');
     return ms;
   }
+}
+
+/// [SrsCore.diagCounts] 的一次读数（native/fushi_fsrs/src/store/ffi.rs `ffsrs_store_diag_counts`）。
+final class SrsCoreDiagCounts {
+  const SrsCoreDiagCounts({
+    required this.openHandles,
+    required this.liveCores,
+    required this.readSessions,
+    required this.pooledReaders,
+    required this.sqliteBytes,
+    required this.sqliteHighwaterBytes,
+  });
+
+  /// 原生一次写出的项数（Rust `DIAG_COUNT_LEN`）。
+  static const int length = 6;
+
+  /// 句柄表里打开着的库。
+  final int openHandles;
+
+  /// 还没释放的库结构体（含已关闭、在途调用还握着的）：大于 [openHandles] = 有退役的库还驻留。
+  final int liveCores;
+
+  /// 没结束的只读会话。
+  final int readSessions;
+
+  /// 各库只读连接池开着的连接总数。
+  final int pooledReaders;
+
+  /// 本库内置 SQLite 的堆用量（页缓存等）与其高水位，字节。
+  final int sqliteBytes;
+  final int sqliteHighwaterBytes;
+
+  /// 面包屑里的紧凑写法：`srs=开/存活 sess=… rd=… sqlite=当前/高水位MB`。
+  String describe() =>
+      'srs=$openHandles/$liveCores sess=$readSessions rd=$pooledReaders '
+      'sqlite=${sqliteBytes >> 20}/${sqliteHighwaterBytes >> 20}MB';
 }
 
 /// 一个打开的 srs.db。
@@ -474,6 +518,32 @@ final class SrsCore {
   /// [openInBackground] 的后台一半（顶层签名只带可发送的参数，闭包不捕获 [SrsCoreBindings]）。
   static int _openAddress(String path, String? libraryPath) =>
       open(path, libraryPath: libraryPath).address;
+
+  /// 进程级内存诊断计数（`ffsrs_store_diag_counts`，不需要打开的库，任意 isolate 可调）：
+  /// 移动端内存耗尽闪退（BUG-4075）的取证面包屑用。原生库加载不了返回 null。
+  static SrsCoreDiagCounts? diagCounts({String? libraryPath}) {
+    final SrsCoreBindings b;
+    try {
+      b = SrsCoreBindings.load(libraryPath: libraryPath);
+    } on SrsCoreUnavailableError {
+      return null;
+    }
+    return using((Arena arena) {
+      final ffi.Pointer<ffi.Int64> out = arena<ffi.Int64>(
+        SrsCoreDiagCounts.length,
+      );
+      final int n = b.diagCounts(out, SrsCoreDiagCounts.length);
+      if (n < SrsCoreDiagCounts.length) return null;
+      return SrsCoreDiagCounts(
+        openHandles: out[0],
+        liveCores: out[1],
+        readSessions: out[2],
+        pooledReaders: out[3],
+        sqliteBytes: out[4],
+        sqliteHighwaterBytes: out[5],
+      );
+    });
+  }
 
   /// 包装别的 isolate 打开的同一个句柄（不拥有，[close] 不关）。
   static SrsCore fromAddress(int address, {String? libraryPath}) => SrsCore._(
