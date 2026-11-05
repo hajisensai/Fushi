@@ -280,9 +280,18 @@ export async function requestCode(env, ip, body, now, ctx) {
   if (!emailConfigured(env)) throw new HttpError(503, 'email_not_configured');
   const lang = MESSAGES[body.lang] ? body.lang : 'en';
   await hit(env, `email:ip:${ip}`, HOUR, EMAIL_LIMITS.perIpHour, now);
-  const work = deliverCode(env, email, purpose, lang, now).catch((e) => {
-    console.warn('email code dropped', e && e.code ? e.code : String(e));
-  });
+  // 结果与耗时进 Workers Logs（wrangler.toml [observability]）：发码在后台、对外永远 202，
+  // 不记日志就无从分辨「发信慢」「发信失败」「被按邮箱限流静默丢弃」。日志不含邮箱。
+  const started = Date.now();
+  const work = deliverCode(env, email, purpose, lang, now).then(
+    (outcome) => console.log('email code', { purpose, outcome, ms: Date.now() - started }),
+    (e) => console.warn('email code dropped', {
+      purpose,
+      code: e && e.code ? e.code : String(e),
+      detail: e && e.detail ? String(e.detail).slice(0, 160) : '',
+      ms: Date.now() - started,
+    }),
+  );
   if (ctx && ctx.waitUntil) ctx.waitUntil(work);
   else await work;
 }
@@ -294,7 +303,7 @@ async function deliverCode(env, email, purpose, lang, now) {
   await hit(env, `email:addr:${hash}`, HOUR, EMAIL_LIMITS.perAddressHour, now);
   await hit(env, `email:addrday:${hash}`, DAY, EMAIL_LIMITS.perAddressDay, now);
   if (purpose === 'login') {
-    if (!(await emailTaken(env, ids))) return; // 没账户（新旧哈希都没命中）：不发信
+    if (!(await emailTaken(env, ids))) return 'no_account'; // 没账户（新旧哈希都没命中）：不发信
   }
   await spend(env, 'email', 1, now);
   // 发信经常迟到几分钟（发信服务排队 / 收件方延迟投递），用户等不到就会重发。若重发换新码，
@@ -304,7 +313,8 @@ async function deliverCode(env, email, purpose, lang, now) {
     'SELECT expires_at, attempts FROM email_codes WHERE email_hash = ?1 AND purpose = ?2',
   ).bind(hash, purpose).first();
   let code;
-  if (live && live.expires_at - now >= CODE_REUSE_MIN_REMAINING_MS && live.attempts < CODE_MAX_ATTEMPTS) {
+  const reuse = Boolean(live && live.expires_at - now >= CODE_REUSE_MIN_REMAINING_MS && live.attempts < CODE_MAX_ATTEMPTS);
+  if (reuse) {
     code = await deriveCode(env, hash, purpose, live.expires_at);
   } else {
     const expiresAt = now + CODE_TTL_MS;
@@ -319,6 +329,7 @@ async function deliverCode(env, email, purpose, lang, now) {
   const m = MESSAGES[lang];
   // 发到用户输入的地址（保留 +tag / 点号）：别名本来就投递到同一个收件箱。
   await sendEmail(env, email.delivery, m.subject, m.body(code));
+  return reuse ? 'resent_same_code' : 'sent_new_code';
 }
 
 /** 每个邮箱每天累计最多猜错这么多次（跨重发、跨用途）：重发会重置单码的 5 次，但不重置它。 */
