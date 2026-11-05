@@ -128,7 +128,7 @@ class CtlVideoSubtitleHandlers {
       if (!consented()) {
         if (call.optBool('consentAi') != true) {
           throw const CtlFailure.rejected(
-            'AI 校对会把 ASR 识别出的日语文本与本作专名表发给所选提供商（不发音频与画面，'
+            'AI 校对会把 ASR 识别出的文本与本作专名表发给所选提供商（不发音频与画面，'
             '按提供商计费）。同意请加 --consent-ai（只需一次），或加 --no-ai',
           );
         }

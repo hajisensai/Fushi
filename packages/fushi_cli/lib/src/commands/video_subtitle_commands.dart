@@ -13,7 +13,8 @@ import '../ctl_commands.dart';
 const List<CtlCommandSpec> videoSubtitleCommands = <CtlCommandSpec>[
   CtlCommandSpec(
     name: 'subtitle-gen',
-    summary: '给一个视频条目或整个合集生成日语字幕（<视频名>.ja.srt；缺省 AI 校对，--no-ai 只识别）',
+    summary:
+        '给一个视频条目或整个合集生成日语 / 普通话字幕（<视频名>.ja.srt / .zh.srt，--language 选；缺省 AI 校对，--no-ai 只识别）',
     usage: '<bookUid> | --collection <id>',
     configure: _configureGen,
     build: _buildGen,
