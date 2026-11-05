@@ -1,0 +1,6 @@
+## BUG-4123 · 视频首页「继续观看」竖图被垫模糊塞进 16:9，大卡旁窄卡标题被挤没
+- **报告**：2026-11-05（群反馈：iPhone 竖屏截图「左边空了一大块，应该改成自适应」；应用内反馈 5soJyg8CPP「视频ui优化」，Android 平板横屏 1138x711）
+- **真实性**：✅ 真 bug。根因两处：① `fushi/lib/src/pages/implementations/home_video_page.dart` `_spotlightEntry` 只要剧照取图链给了图就硬定 `coverAspectRatio: 16 / 9`，但取图链末端（`_continueCollectionHero` / `_continueEntryHero` / `_continueRemoteHero` 的 `image`）会回落到竖版封面 / 远端海报——在线源与未刮削的远端条目只有竖图，于是 `LandscapeCoverImage` 垫模糊底，主卡左侧一大块空；② `fushi/lib/src/utils/components/fushi_continue_card_row.dart` `_TintedContinueCard` 恒「封面 | 信息列」且封面按行高定宽：宽屏大卡旁只放得下一张卡时卡窄而高，16:9 封面撑到 168 高，信息列只剩几十像素（标题「七つの魔剣…」）；取色卡也不认 `orientationImage`，竖图同样垫模糊。
+- **[x] ① 已修复** — 视频首页剧照条目改为按解码后的真实宽高比定型（`orientationImage`，与首页 dashboard 同一套）：横图 → 剧照叠层卡，竖图 → 封面皮；取色卡包 `FushiContinueOrientedEntry` 跟着探测走，卡宽按 `FushiContinueEntry.layoutAspectRatio`（未探测按 16:9 留宽）；卡内排法 `_CardGeometry.resolve`：放得下左右排，窄而高改上图下文，窄而矮按比例缩封面保住信息列下限。（分支 `pr/video-home-adaptive-cover`）
+- **[x] ② 已加自动化测试** — `fushi/test/utils/components/fushi_continue_card_row_test.dart`「取色卡封面与信息列自适应」三条（窄高上下排 / 宽卡左右排 / 窄矮缩封面）+「layoutAspectRatio」三条。
+- **备注**：没在真机上复测（本机无 iPhone / 安卓平板在线环境）；「最近添加」行未刮削本地视频的横版截帧在竖框里垫模糊是既有设计（`PortraitCoverImage` 不硬裁），不在本条范围。
