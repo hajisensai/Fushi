@@ -2504,6 +2504,58 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('牌组设置页：RWKV 牌组的步长收在「高级」；还带着步长（如 Anki 预设带来的）时基础区提示并可一键清空', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckSteps: <String, Object?>{
+              'learn': <double>[1, 10],
+              'relearn': <double>[10],
+            },
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      Finder byKey(String key) =>
+          find.byKey(ValueKey<String>(key), skipOffstage: false);
+      // 步长在高级区的 RWKV 步长分组里，不在基础区单独一张卡片。
+      expect(
+        find.descendant(
+          of: byKey('srs-settings-rwkv-steps'),
+          matching: byKey('srs-settings-learn-steps'),
+        ),
+        findsOneWidget,
+      );
+      expect(byKey('srs-settings-rwkv-steps-set'), findsOneWidget);
+      await tester.ensureVisible(byKey('srs-settings-steps-clear'));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-settings-steps-clear')),
+      );
+      await _settle(tester);
+      expect(byKey('srs-settings-rwkv-steps-set'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckView deck = (await tester.runAsync(
+        store.deckTree,
+      ))![store.defaultDeckId]!;
+      expect(deck.learnSteps, isEmpty);
+      expect(deck.relearnSteps, isEmpty);
+      await _unmount(tester);
+    });
+
     testWidgets('牌组设置页：同一次编辑里切换算法，步长显示与「是否改动」按新算法重算，保存后的生效值与显示一致', (
       WidgetTester tester,
     ) async {
@@ -2570,6 +2622,8 @@ void main() {
       expect(stepsText('srs-settings-relearn-steps'), '');
       // 切到 FSRS-7：没改过的步长输入换成 FSRS 下的生效值（默认 1 10 / 10）。
       await pickAlgorithm('FSRS-7');
+      // FSRS 牌组的步长在基础区（RWKV 的收在高级区）：换了位置，重新滚到它。
+      await reveal('srs-settings-learn-steps');
       expect(stepsText('srs-settings-learn-steps'), '1 10');
       expect(stepsText('srs-settings-relearn-steps'), '10');
       await save();

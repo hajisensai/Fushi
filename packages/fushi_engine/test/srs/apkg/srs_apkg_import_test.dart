@@ -325,135 +325,141 @@ void main() {
   String basicNt(String profile) => SrsIds.noteType(profile, kBasic);
   String clozeNt(String profile) => SrsIds.noteType(profile, kCloze);
 
-  test('① 导入：笔记 / 卡片 / 日志数正确，ID 按 SrsIds 规则；⑤ 遗忘卡写锚点为新卡；⑥ 1d 步长被截掉', () async {
-    final SrsDbStore s = await openTestStore(
-      profileUid: kProfile,
-      deviceId: 'a',
-      now: () => t,
-    );
-    final SrsImportReport rep = await importInto(s, legacyApkg(t));
-    expect(rep.notesAdded, 3);
-    expect(rep.cardsAdded, 5);
-    expect(rep.latestFormat, isFalse);
+  test(
+    '① 导入：笔记 / 卡片 / 日志数正确，ID 按 SrsIds 规则；⑤ 遗忘卡写锚点为新卡；⑥ 开 RWKV 时 FSRS 预设的步长不带过来',
+    () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(s, legacyApkg(t));
+      expect(rep.notesAdded, 3);
+      expect(rep.cardsAdded, 5);
+      expect(rep.latestFormat, isFalse);
 
-    // 笔记类型 / 字段 / 模板身份。
-    final String nt = basicNt(kProfile);
-    final SrsNoteTypeView? v = await s.noteType(nt);
-    expect(v, isNotNull);
-    expect(v!.name, 'Basic (and reversed)');
-    final String front = SrsIds.field(nt, 111);
-    final String back = SrsIds.field(nt, 222);
-    expect(v.fields.map((SrsFieldDef f) => f.id), <String>[front, back]);
-    expect(v.fields.first.ankiNum, 111);
-    final String t1 = SrsIds.template(nt, 333);
-    final String t2 = SrsIds.templateByName(nt, 'Card 2');
-    expect(v.templates.map((SrsTemplateDef x) => x.id), <String>[t1, t2]);
-    expect(v.templates.first.front, '{{fld:$front}}<img src="h_a.png">');
-    expect(v.css, contains('h__font.woff'));
-    final SrsNoteTypeView? cv = await s.noteType(clozeNt(kProfile));
-    expect(cv!.isCloze, isTrue);
-    expect(cv.fields.first.id, SrsIds.fieldByName(clozeNt(kProfile), 'Text'));
+      // 笔记类型 / 字段 / 模板身份。
+      final String nt = basicNt(kProfile);
+      final SrsNoteTypeView? v = await s.noteType(nt);
+      expect(v, isNotNull);
+      expect(v!.name, 'Basic (and reversed)');
+      final String front = SrsIds.field(nt, 111);
+      final String back = SrsIds.field(nt, 222);
+      expect(v.fields.map((SrsFieldDef f) => f.id), <String>[front, back]);
+      expect(v.fields.first.ankiNum, 111);
+      final String t1 = SrsIds.template(nt, 333);
+      final String t2 = SrsIds.templateByName(nt, 'Card 2');
+      expect(v.templates.map((SrsTemplateDef x) => x.id), <String>[t1, t2]);
+      expect(v.templates.first.front, '{{fld:$front}}<img src="h_a.png">');
+      expect(v.css, contains('h__font.woff'));
+      final SrsNoteTypeView? cv = await s.noteType(clozeNt(kProfile));
+      expect(cv!.isCloze, isTrue);
+      expect(cv.fields.first.id, SrsIds.fieldByName(clozeNt(kProfile), 'Text'));
 
-    // 笔记：guid 原样，createdAt = 来源笔记 id，媒体引用改写。
-    final String n1 = SrsIds.note(kProfile, 'g1');
-    final SrsNoteView? note = await s.note(n1);
-    expect(note!.guid, 'g1');
-    expect(note.createdAt, ms(2026, 2, 28));
-    expect(note.field(front), '猫<img src="h_a.png">');
-    expect(note.tags, <String>['animal', 'n5']);
-    expect(stored.toSet(), <String>{'a.png', '_font.woff'});
+      // 笔记：guid 原样，createdAt = 来源笔记 id，媒体引用改写。
+      final String n1 = SrsIds.note(kProfile, 'g1');
+      final SrsNoteView? note = await s.note(n1);
+      expect(note!.guid, 'g1');
+      expect(note.createdAt, ms(2026, 2, 28));
+      expect(note.field(front), '猫<img src="h_a.png">');
+      expect(note.tags, <String>['animal', 'n5']);
+      expect(stored.toSet(), <String>{'a.png', '_font.woff'});
 
-    // 卡片 ID 与牌组：首选牌组 = 第一张卡的牌组，其它卡单独记。
-    final SrsDeckTree tree = await s.deckTree();
-    String deckNamed(String full) => tree.decks
-        .firstWhere((SrsDeckView d) => tree.fullName(d.id) == full)
-        .id;
-    final String c11 = SrsIds.card(n1, t1, 0);
-    final String c12 = SrsIds.card(n1, t2, 0);
-    expect(
-      (await s.cardsOfNote(n1)).map((SrsCardCacheRow c) => c.id).toSet(),
-      <String>{c11, c12},
-    );
-    expect(note.deckId, deckNamed('Lang::JP'));
-    expect((await s.cardRow(c11))!.deckId, deckNamed('Lang::JP'));
-    expect((await s.cardRow(c12))!.deckId, deckNamed('Lang'));
-    // Anki 旧格式 decks JSON 的 collapsed → 牌组折叠；没写的缺省展开。
-    expect(tree[deckNamed('Lang')]!.collapsed, isTrue);
-    expect(tree[deckNamed('Lang::JP')]!.collapsed, isFalse);
+      // 卡片 ID 与牌组：首选牌组 = 第一张卡的牌组，其它卡单独记。
+      final SrsDeckTree tree = await s.deckTree();
+      String deckNamed(String full) => tree.decks
+          .firstWhere((SrsDeckView d) => tree.fullName(d.id) == full)
+          .id;
+      final String c11 = SrsIds.card(n1, t1, 0);
+      final String c12 = SrsIds.card(n1, t2, 0);
+      expect(
+        (await s.cardsOfNote(n1)).map((SrsCardCacheRow c) => c.id).toSet(),
+        <String>{c11, c12},
+      );
+      expect(note.deckId, deckNamed('Lang::JP'));
+      expect((await s.cardRow(c11))!.deckId, deckNamed('Lang::JP'));
+      expect((await s.cardRow(c12))!.deckId, deckNamed('Lang'));
+      // Anki 旧格式 decks JSON 的 collapsed → 牌组折叠；没写的缺省展开。
+      expect(tree[deckNamed('Lang')]!.collapsed, isTrue);
+      expect(tree[deckNamed('Lang::JP')]!.collapsed, isFalse);
 
-    // revlog 日志 + 锚点（Filtered 也导入，但不是评分类）。
-    final SrsCardHistory h11 = await s.history(c11);
-    expect(h11.all.map((SrsReviewLog l) => l.id).toSet(), <String>{
-      SrsIds.importedRevlog(c11, r1),
-      SrsIds.importedRevlog(c11, r2),
-      SrsIds.importedRevlog(c11, r3),
-      SrsIds.importedRevlog(c11, r4),
-      SrsIds.importAnchor(c11, r3),
-    });
-    final SrsReviewLog filtered = h11.all.firstWhere(
-      (SrsReviewLog l) => l.ankiRevlogId == r4,
-    );
-    expect(filtered.reviewType, SrsReviewType.filtered);
-    expect(filtered.isRatingReview, isFalse);
-    final SrsReviewLog anchor = h11.all.firstWhere(
-      (SrsReviewLog l) => l.kind == SrsLogKind.importAnchor,
-    );
-    expect(anchor.hlc, srsImportAnchorHlc(r3));
-    expect(anchor.result!.dueDay, crtDay + 70);
-    expect(anchor.result!.lastReviewedAt, r3);
-    expect(anchor.result!.memory!.stability, 12.5);
-    expect(anchor.extra['memAlg'], 'fsrs6');
-    final SrsCardCacheRow row11 = (await s.cardRow(c11))!;
-    expect(row11.queue, SrsQueue.review.wire);
-    expect(row11.dueDay, crtDay + 70);
-    expect(h11.effectiveRatings, hasLength(3));
+      // revlog 日志 + 锚点（Filtered 也导入，但不是评分类）。
+      final SrsCardHistory h11 = await s.history(c11);
+      expect(h11.all.map((SrsReviewLog l) => l.id).toSet(), <String>{
+        SrsIds.importedRevlog(c11, r1),
+        SrsIds.importedRevlog(c11, r2),
+        SrsIds.importedRevlog(c11, r3),
+        SrsIds.importedRevlog(c11, r4),
+        SrsIds.importAnchor(c11, r3),
+      });
+      final SrsReviewLog filtered = h11.all.firstWhere(
+        (SrsReviewLog l) => l.ankiRevlogId == r4,
+      );
+      expect(filtered.reviewType, SrsReviewType.filtered);
+      expect(filtered.isRatingReview, isFalse);
+      final SrsReviewLog anchor = h11.all.firstWhere(
+        (SrsReviewLog l) => l.kind == SrsLogKind.importAnchor,
+      );
+      expect(anchor.hlc, srsImportAnchorHlc(r3));
+      expect(anchor.result!.dueDay, crtDay + 70);
+      expect(anchor.result!.lastReviewedAt, r3);
+      expect(anchor.result!.memory!.stability, 12.5);
+      expect(anchor.extra['memAlg'], 'fsrs6');
+      final SrsCardCacheRow row11 = (await s.cardRow(c11))!;
+      expect(row11.queue, SrsQueue.review.wire);
+      expect(row11.dueDay, crtDay + 70);
+      expect(h11.effectiveRatings, hasLength(3));
 
-    // 新卡：没有历史 → 无日志无锚点。
-    expect((await s.history(c12)).all, isEmpty);
+      // 新卡：没有历史 → 无日志无锚点。
+      expect((await s.history(c12)).all, isEmpty);
 
-    // ⑤ 遗忘过的卡：最后一条是 Manual 重置 → 写锚点，结果是新卡。
-    final String n2 = SrsIds.note(kProfile, 'g2');
-    final String ct = cv.templates.single.id;
-    final String c21 = SrsIds.card(n2, ct, 1);
-    final String c22 = SrsIds.card(n2, ct, 2);
-    final SrsCardHistory h21 = await s.history(c21);
-    expect(h21.all, hasLength(3));
-    final SrsReviewLog a21 = h21.all.firstWhere(
-      (SrsReviewLog l) => l.kind == SrsLogKind.importAnchor,
-    );
-    expect(a21.id, SrsIds.importAnchor(c21, c21reset));
-    expect(a21.result!.queue, SrsQueue.newCard);
-    expect((await s.cardRow(c21))!.queue, SrsQueue.newCard.wire);
-    expect((await s.cardRow(c22))!.suspended, isTrue);
-    expect(rep.anchorsWritten, 2);
-    expect(rep.reviewLogsImported, 6);
+      // ⑤ 遗忘过的卡：最后一条是 Manual 重置 → 写锚点，结果是新卡。
+      final String n2 = SrsIds.note(kProfile, 'g2');
+      final String ct = cv.templates.single.id;
+      final String c21 = SrsIds.card(n2, ct, 1);
+      final String c22 = SrsIds.card(n2, ct, 2);
+      final SrsCardHistory h21 = await s.history(c21);
+      expect(h21.all, hasLength(3));
+      final SrsReviewLog a21 = h21.all.firstWhere(
+        (SrsReviewLog l) => l.kind == SrsLogKind.importAnchor,
+      );
+      expect(a21.id, SrsIds.importAnchor(c21, c21reset));
+      expect(a21.result!.queue, SrsQueue.newCard);
+      expect((await s.cardRow(c21))!.queue, SrsQueue.newCard.wire);
+      expect((await s.cardRow(c22))!.suspended, isTrue);
+      expect(rep.anchorsWritten, 2);
+      expect(rep.reviewLogsImported, 6);
 
-    // 未来时刻的卡：不导入排程，进报告。
-    expect(rep.futureCards, <int>[31]);
+      // 未来时刻的卡：不导入排程，进报告。
+      expect(rep.futureCards, <int>[31]);
 
-    // ⑥ 步长 ≥ 1 天被截掉并进报告；同一预设：父牌组 own、子牌组 inherit。
-    expect(rep.truncatedSteps, hasLength(1));
-    expect(rep.truncatedSteps.single.preset, 'JP preset');
-    expect(rep.truncatedSteps.single.removed, <double>[1440]);
-    final SrsDeckView jp = tree[deckNamed('Lang::JP')]!;
-    final SrsDeckView lang = tree[deckNamed('Lang')]!;
-    expect(jp.learnSteps, <double>[1, 10]);
-    expect(jp.ownParams, isFalse);
-    expect(jp.newPerDay, 15);
-    expect(lang.ownParams, isTrue);
-    // 带 FSRS 参数的预设也用默认的 RWKV；参数照样存下，切回 FSRS-6 时还在。
-    expect(lang.algorithmWire, SrsAlgorithm.rwkv.wire);
-    expect(lang.fsrs6!.params, fsrs6Params);
-    expect(lang.desiredRetention, 0.85);
-    expect(tree.paramsOwner(jp.id).id, lang.id);
-    expect(jsonEncode(rep.toJson()), contains('JP preset'));
-    // 报告列出改用 RWKV 的 FSRS 预设与它自己管参数的牌组（导入报告据此提供「继续用 FSRS」）。
-    expect(rep.fsrsPresets, <String, SrsAlgorithm>{
-      'JP preset': SrsAlgorithm.fsrs6,
-    });
-    expect(rep.fsrsDecks, <String, SrsAlgorithm>{lang.id: SrsAlgorithm.fsrs6});
-    expect(rep.defaultAlgorithmPresets, isEmpty);
-  });
+      // ⑥ 开着「使用 RWKV」：FSRS 预设的步长不带过来（RWKV 不用步长），也就没有被截的步长可报（关 RWKV 时的
+      // 截断见「只要牌组预设、关 RWKV」）；同一预设：父牌组 own、子牌组 inherit。
+      expect(rep.truncatedSteps, isEmpty);
+      final SrsDeckView jp = tree[deckNamed('Lang::JP')]!;
+      final SrsDeckView lang = tree[deckNamed('Lang')]!;
+      expect(jp.learnStepsSet, isFalse);
+      expect(jp.relearnStepsSet, isFalse);
+      expect(jp.learnStepsFor(SrsAlgorithm.rwkv), isEmpty);
+      expect(jp.ownParams, isFalse);
+      expect(jp.newPerDay, 15);
+      expect(lang.ownParams, isTrue);
+      // 带 FSRS 参数的预设也用默认的 RWKV；参数照样存下，切回 FSRS-6 时还在。
+      expect(lang.algorithmWire, SrsAlgorithm.rwkv.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(lang.desiredRetention, 0.85);
+      expect(tree.paramsOwner(jp.id).id, lang.id);
+      expect(jsonEncode(rep.toJson()), contains('JP preset'));
+      // 报告列出改用 RWKV 的 FSRS 预设与它自己管参数的牌组（导入报告据此提供「继续用 FSRS」）。
+      expect(rep.fsrsPresets, <String, SrsAlgorithm>{
+        'JP preset': SrsAlgorithm.fsrs6,
+      });
+      expect(rep.fsrsDecks, <String, SrsAlgorithm>{
+        lang.id: SrsAlgorithm.fsrs6,
+      });
+      expect(rep.defaultAlgorithmPresets, isEmpty);
+    },
+  );
 
   test('② 两台设备各导入同一个包，同步后不出重复', () async {
     final SrsDbStore a = await openTestStore(
@@ -1748,21 +1754,29 @@ void main() {
       });
     });
 
-    test('只要牌组预设、开 RWKV：步长与上限照搬，算法用默认 RWKV，不报「FSRS 参数已保留」', () async {
-      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
-        kFullOptions.copyWith(withDeckConfigs: true, withFsrsParams: false),
-      );
-      expect(jp.learnSteps, <double>[1, 10]);
-      expect(jp.newPerDay, 15);
-      expect(rep.truncatedSteps, hasLength(1));
-      expect(lang.fsrs6, isNull);
-      expect(lang.desiredRetention, 0.8);
-      expect(lang.localAlgorithm, srsDefaultAlgorithm);
-      expect(lang.algorithmWire, isNot(SrsAlgorithm.fsrs6.wire));
-      // 参数没导入：报告不能说「参数保留了，可以继续用 FSRS」，也不提供切回。
-      expect(rep.fsrsPresets, isEmpty);
-      expect(rep.fsrsDecks, isEmpty);
-    });
+    test(
+      '只要牌组预设、开 RWKV：上限照搬、FSRS 预设的步长不带（RWKV 不用步长），算法用默认 RWKV，不报「FSRS 参数已保留」',
+      () async {
+        final (
+          SrsImportReport rep,
+          SrsDeckView lang,
+          SrsDeckView jp,
+        ) = await run(
+          kFullOptions.copyWith(withDeckConfigs: true, withFsrsParams: false),
+        );
+        expect(jp.learnStepsSet, isFalse);
+        expect(jp.relearnStepsSet, isFalse);
+        expect(jp.newPerDay, 15);
+        expect(rep.truncatedSteps, isEmpty);
+        expect(lang.fsrs6, isNull);
+        expect(lang.desiredRetention, 0.8);
+        expect(lang.localAlgorithm, srsDefaultAlgorithm);
+        expect(lang.algorithmWire, isNot(SrsAlgorithm.fsrs6.wire));
+        // 参数没导入：报告不能说「参数保留了，可以继续用 FSRS」，也不提供切回。
+        expect(rep.fsrsPresets, isEmpty);
+        expect(rep.fsrsDecks, isEmpty);
+      },
+    );
 
     test('只要牌组预设、关 RWKV：算法落 FSRS-7（默认参数），不是默认的 RWKV', () async {
       final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
@@ -1778,6 +1792,11 @@ void main() {
       expect(lang.fsrs7, isNull);
       expect(lang.desiredRetention, 0.8);
       expect(jp.ownParams, isFalse);
+      // 关 RWKV：步长照搬，≥ 1 天的被截掉并进报告。
+      expect(jp.learnSteps, <double>[1, 10]);
+      expect(rep.truncatedSteps, hasLength(1));
+      expect(rep.truncatedSteps.single.preset, 'JP preset');
+      expect(rep.truncatedSteps.single.removed, <double>[1440]);
       expect(rep.fsrsPresets, isEmpty);
       expect(rep.fsrsDecks, isEmpty);
     });
@@ -1890,6 +1909,8 @@ void main() {
         'collection.anki21': collection,
         'media': utf8.encode('{}'),
       }),
+      // 关 RWKV：这里看预设各项（含步长）原样落库；开着时非 RWKV 预设的步长不带过来。
+      options: kFullOptions.copyWith(useRwkv: false),
     );
     final SrsDeckTree tree = await s.deckTree();
     SrsDeckView deck(String name) =>

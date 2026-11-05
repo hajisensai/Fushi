@@ -1305,14 +1305,23 @@ class _Importer {
       return kept;
     }
 
-    v[SrsFieldKeys.deckSteps] = <String, Object?>{
-      'learn': steps(p.learnSteps, SrsDeckView.defaultLearnSteps, 'learn'),
-      'relearn': steps(
-        p.relearnSteps,
-        SrsDeckView.defaultRelearnSteps,
-        'relearn',
-      ),
-    };
+    // 开着「使用 RWKV」时，没开 RWKV 的来源预设（FSRS / SM-2）的步长不带过来：那是给按到期日排程配的，
+    // RWKV 牌组推荐不用步长（答错的卡由 RWKV 按回忆率决定何时再出）。不写步长 = RWKV 下不用步长、
+    // 改回 FSRS 时用 FSRS 默认步长（[SrsDeckView.learnStepsFor]）。来源本来就是 RWKV 预设的照搬用户自己的
+    // 设置；两种步长都是空的同样不写（与「不写」在 RWKV 下等价，且 Fushi 导出的 RWKV 牌组在预设里填的
+    // 就是生效值空表，这样往返后仍是「没写过」）。
+    if (!options.useRwkv ||
+        p.rwkvEnabled &&
+            (p.learnSteps.isNotEmpty || p.relearnSteps.isNotEmpty)) {
+      v[SrsFieldKeys.deckSteps] = <String, Object?>{
+        'learn': steps(p.learnSteps, SrsDeckView.defaultLearnSteps, 'learn'),
+        'relearn': steps(
+          p.relearnSteps,
+          SrsDeckView.defaultRelearnSteps,
+          'relearn',
+        ),
+      };
+    }
     v[SrsFieldKeys.deckLimits] = <String, Object?>{
       'new': p.newPerDay,
       'review': p.reviewsPerDay,

@@ -257,7 +257,7 @@ class _Fixture {
   final Directory dir;
   final List<int> clock;
 
-  static Future<_Fixture> create() async {
+  static Future<_Fixture> create({bool builtinDefaults = false}) async {
     final List<int> clock = <int>[
       DateTime.utc(2026, 3, 1, 12).millisecondsSinceEpoch,
     ];
@@ -274,6 +274,17 @@ class _Fixture {
         bootId: 'b',
       ),
     );
+    // 这些用例测的是「按 R 合格」的排队规则：默认牌组没改过时带推荐的每天最少复习 40（会把 R 高于目标的卡补进
+    // 来），这里显式关掉；测最少复习数的用例自己再写。
+    if (!builtinDefaults) {
+      await store.editFields(
+        SrsEntityKind.deck,
+        store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+        },
+      );
+    }
     return _Fixture._(
       store,
       Directory.systemTemp.createTempSync('srs_rwkv'),
@@ -1506,6 +1517,24 @@ void main() {
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
     });
 
+    test('内置默认牌组没改过 RWKV 排队设置：按推荐值（与新建牌组同一份），R 都高于目标也补足最少复习数', () async {
+      final _Fixture fresh = await _Fixture.create(builtinDefaults: true);
+      final List<String> ids = await fresh.cards(3);
+      await fresh.graduate(ids);
+      final _FakeBackend b = _FakeBackend()..defaultR = 0.95;
+      final SrsRwkvService s = fresh.service(b);
+      fresh.store.rwkv = s;
+      await s.start();
+      await _settled(s);
+      expect(
+        (await fresh.store.deckTree())[fresh.store.defaultDeckId]!.rwkvQueue,
+        SrsRwkvQueueSettings.forNewDeck,
+      );
+      fresh.advance(kDay);
+      expect(await fresh.reviewCount(), 3, reason: '最少 40：R 全高于目标的 3 张都补进来');
+      await s.close();
+    });
+
     test('每天最少复习数：R 都高于目标时按 R 升序补足，今天复习过的算进去', () async {
       f.advance(kDay);
       backend
@@ -1588,7 +1617,7 @@ void main() {
             SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 2},
           },
         );
-        // 内置默认牌组从没写过 rwkvQueue（= 加这项设置之前就有的牌组）：用户的上限照旧生效。
+        // 默认牌组的 rwkvQueue 没开忽略上限：用户的上限照旧生效。
         expect(
           (await f.store.deckTree())[f.store.defaultDeckId]!
               .rwkvQueue

@@ -137,10 +137,13 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   void initState() {
     super.initState();
     // 每日上限卡片里的联动提示（复习上限 < 10× 新卡、最少复习数超过上限）随输入实时刷新。
+    // RWKV 牌组「还带着步长」的提示随步长输入实时出现 / 消失。
     for (final TextEditingController c in <TextEditingController>[
       _newPerDay,
       _reviewsPerDay,
       _rwkvMinReviews,
+      _learnSteps,
+      _relearnSteps,
     ]) {
       c.addListener(_onLimitsEdited);
     }
@@ -709,8 +712,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       children: <Widget>[
         Text(t.srs_settings_rwkv_queue, style: tokens.type.sectionLabel),
         Text(
-          '${t.srs_settings_rwkv_queue_defaults_hint}\n'
-          '${t.srs_settings_rwkv_steps_note}',
+          t.srs_settings_rwkv_queue_defaults_hint,
           style: context.fushiType.bodySmall,
         ),
         _numberField(
@@ -735,6 +737,51 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-rwkv-repeat-seconds'),
         ),
         ?_conflictNote(context, SrsFieldKeys.deckRwkvQueue),
+      ],
+    );
+  }
+
+  /// 学习 / 重学步长两个输入框（步长是牌组自己的值，不随参数继承）。说明只写一次，放在第二个框下面。
+  List<Widget?> _stepsFields(BuildContext context) => <Widget?>[
+    FushiTextField(
+      key: const ValueKey<String>('srs-settings-learn-steps'),
+      controller: _learnSteps,
+      labelText: t.srs_settings_learn_steps,
+      errorText: _learnError,
+    ),
+    FushiTextField(
+      key: const ValueKey<String>('srs-settings-relearn-steps'),
+      controller: _relearnSteps,
+      labelText: t.srs_settings_relearn_steps,
+      helperText:
+          '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
+      errorText: _relearnError,
+    ),
+    _conflictNote(context, SrsFieldKeys.deckSteps),
+  ];
+
+  /// 保存后按 RWKV 排程（自己选的或随上级）：步长推荐留空，不放在基础区，收进「高级」。
+  bool get _stepsUnderRwkv => _stepsAlgorithm.usesRwkv;
+
+  /// 输入框里还有步长（解析得出、非空）。
+  bool get _hasSteps =>
+      (parseSrsSteps(_learnSteps.text) ?? const <double>[]).isNotEmpty ||
+      (parseSrsSteps(_relearnSteps.text) ?? const <double>[]).isNotEmpty;
+
+  /// RWKV 牌组的步长（高级区）：说明 + 两个输入框。
+  Widget _rwkvStepsSection(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      key: const ValueKey<String>('srs-settings-rwkv-steps'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap * 1.5,
+      children: <Widget>[
+        Text(t.srs_settings_steps_section, style: tokens.type.sectionLabel),
+        Text(
+          t.srs_settings_rwkv_steps_note,
+          style: context.fushiType.bodySmall,
+        ),
+        ..._stepsFields(context).whereType<Widget>(),
       ],
     );
   }
@@ -932,6 +979,23 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _conflictNote(context, SrsFieldKeys.name),
       ]),
       _limitsGroup(context, ownsParams),
+      // RWKV 牌组还带着步长（多半是 Anki 预设带来的）：步长本身收在「高级」，紧跟每日上限提示并给一键清空。
+      if (_stepsUnderRwkv && _hasSteps)
+        FushiInlineNotice(
+          key: const ValueKey<String>('srs-settings-rwkv-steps-set'),
+          severity: FushiNoticeSeverity.warning,
+          message: t.srs_settings_rwkv_steps_set_warning,
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('srs-settings-steps-clear'),
+              onPressed: () {
+                _learnSteps.text = '';
+                _relearnSteps.text = '';
+              },
+              child: Text(t.srs_settings_steps_clear),
+            ),
+          ],
+        ),
       _group(context, <Widget?>[
         if (ownsParams) ...<Widget?>[
           Text(
@@ -986,25 +1050,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             style: context.fushiType.bodyMedium,
           ),
       ]),
-      _group(context, <Widget?>[
-        FushiTextField(
-          key: const ValueKey<String>('srs-settings-learn-steps'),
-          controller: _learnSteps,
-          labelText: t.srs_settings_learn_steps,
-          helperText:
-              '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
-          errorText: _learnError,
-        ),
-        FushiTextField(
-          key: const ValueKey<String>('srs-settings-relearn-steps'),
-          controller: _relearnSteps,
-          labelText: t.srs_settings_relearn_steps,
-          helperText:
-              '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
-          errorText: _relearnError,
-        ),
-        _conflictNote(context, SrsFieldKeys.deckSteps),
-      ]),
+      if (!_stepsUnderRwkv) _group(context, _stepsFields(context)),
       // 新卡顺序与记忆率同一条继承（只看 own 祖先，见 [SrsDeckView.newCardOrder]）。
       _group(context, <Widget?>[
         if (ownsParams) ...<Widget?>[
@@ -1203,6 +1249,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         );
       }
     }
+    // RWKV 牌组（自己选的或随上级）的步长收在这里；FSRS 牌组的在基础区。
+    if (_stepsUnderRwkv) add(_rwkvStepsSection(context));
     add(
       _numberField(
         _maxInterval,
