@@ -40,7 +40,7 @@
   - **证据缺口 ⑤ 补上（取证，不是修复）**：内存采样再加三样，下一份同机报告直接点名涨的是谁、谁在跑：
     - `anon= file= shm=`（`/proc/self/status` 的 RssAnon / RssFile / RssShmem，`processRssBreakdownProbe`）：file 涨 = srs.db 等文件映射页；
     - `malloc=`（bionic `mallinfo().uordblks`，`fushi/lib/src/diagnostics/native_heap_probe.dart`）：anon 涨而 malloc 不涨 = Dart 堆 / 图形映射，malloc 跟着涨 = Rust / SQLite / C++；
-    - `srsops=[…] marks=[…] busy=[…]`（`packages/fushi_engine/lib/srs/srs_op_ledger.dart` `SrsOpLedger`）：每个采样窗口里 SRS 内核命令（`core:<op>`，含 RWKV 回放 / 日志尾）、srs.db 上每条 Drift 语句（`sql:<动词> <表>`，查询道与写那一路都记，带行数与读回字节）、`dart:load_stats` 整库统计装载的次数 / 用时 / 字节，正在跑超过 2 s 的操作，以及修订号 / 牌组列表 / 首页统计 / 冲突角标 provider 的重建次数。单次超过 3 s 或读回超过 32 MB 的操作另记诊断日志 `SrsOpLedger.heavy`。
+    - `srsops=[…] marks=[…] busy=[…]`（`packages/fushi_engine/lib/srs/srs_op_ledger.dart` `SrsOpLedger`）：每个采样窗口里 SRS 内核命令（`core:<op>`，含 RWKV 回放 / 日志尾）、srs.db 上每条 Drift 语句（`sql:<动词> <表>`，查询道与写那一路都记，带行数与读回字节）、`dart:load_stats` 整库统计装载的次数 / 用时 / 字节，正在跑超过 2 s 的操作，修订号按来源分开的跳数（`rev:local` 本机写入 / `rev:pulled` 同步拉入），以及牌组列表 / 首页统计 / 冲突角标 provider 的重建次数。单次超过 3 s 或读回超过 32 MB 的操作另记诊断日志 `SrsOpLedger.heavy`。
   - **2026-11-05 第一份带 malloc 分项 + SRS 账本的报告**：`7ED7Jiky72`（同机 Xiaomi 23116PN5BC，3.3.0-debug.23868，即 #2916 合并点 `758bd5a`，账本已在包里）。15:06:07 启动、全程前台（`lastLifecycle=resumed`），15:11:02 Scudo `internal map failure (Out of memory)` SIGABRT（崩溃线程 AudioThread，受害者）。采样每 30 s：
     - malloc 955 → 1263 → 1535 → 1914 → 2399 → 2902 MB（约 10 MB/s 线性涨），anon 1169 → 2904 MB 同步涨，file 577 → 308 MB（内存压力下被回收）；
     - SRS 原生计数全程不变 `srs=1/1 sess=0 rd=3 sqlite=2/221MB`；**6 个窗口都没有 `srsops=` / `marks=` / `busy=` 段**——`takeSummary()` 只在窗口为空时返回 null，即这 3 分钟里没有任何 SRS 内核命令、srs.db 语句、整库统计装载，也没有修订号 / 牌组列表 / 首页统计 provider 重建；

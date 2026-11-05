@@ -111,7 +111,7 @@ abstract final class SrsOpLedger {
   static void mark(String event) =>
       _marks.update(event, (int n) => n + 1, ifAbsent: () => 1);
 
-  /// 取走当前窗口的汇总并清零：`srsops=[op N× 总ms max=ms 字节 …; …] marks=[rev+3] busy=[op 12.3s]`；
+  /// 取走当前窗口的汇总并清零：`srsops=[op N× 总ms max=ms 字节 …; …] marks=[rev:local+1 rev:pulled+2] busy=[op 12.3s]`；
   /// 窗口里什么都没有时为 null。正在跑的操作不清（跨窗口照样列在 busy 里）。
   static String? takeSummary() {
     final Map<String, _OpStat> window = _window;
@@ -180,7 +180,10 @@ abstract final class SrsOpLedger {
       : '${(bytes / 1024).ceil()}KB';
 }
 
-/// 一条 SQL 的账本名：`sql:<动词> <首个表>`（如 `sql:SELECT srs_field_edits`），不带参数与字面量。
+/// 一条 SQL 的账本名：`sql:<动词> <首个表>`（如 `sql:SELECT <表>`、`sql:PRAGMA`），不带参数与字面量。
+///
+/// 表名只从经过 srs.db 连接的语句文本里取，本文件不写任何 SRS 表名（表名与 SQL 归 SrsDatabase /
+/// SrsDbStore，见 `fushi/test/build/srs_store_ownership_guard_test.dart`）。
 String srsSqlLedgerName(String statement) {
   final String s = statement.trimLeft();
   final RegExpMatch? verb = RegExp(r'^(\w+)').firstMatch(s);
