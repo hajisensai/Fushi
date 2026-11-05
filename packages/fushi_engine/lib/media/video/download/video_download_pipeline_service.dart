@@ -3603,12 +3603,12 @@ class VideoDownloadPipelineService {
             )
             .toList();
     // 多部电影一个种子（BUG-2007）：job 携带的身份只描述用户确认的那一部
-    // （= 主片，最大文件，与组织器抬正片同判据）。并列正片拿 job 标题去搜
+    // （= 主片，与组织器抬正片同判据，见 [mainMovieDownloadFile]）。并列正片拿 job 标题去搜
     // 只会装上主片的字幕，这里直接跳过——等它们刮出各自规范身份后由刮削后
     // 字幕补齐链路（VideoSubtitleBackfillService）接手。
     final VideoDownloadJobFileRow? movieMain =
         job.mediaKind == VideoMetadataMediaKind.movie.name
-        ? _mainMovieRow(files)
+        ? mainMovieDownloadFile(files, title: job.title)
         : null;
     bool anyInstalled = false;
     for (final VideoDownloadJobFileRow file in files) {
@@ -4384,9 +4384,13 @@ class VideoDownloadPipelineService {
       ], source);
     } else {
       // 多部电影一个种子（BUG-2007）：organize 已把够体量的并列正片保成
-      // `kind: 'video'`，这里逐部入库。主片（最大文件，与组织器抬正片同判据）
-      // 沿用 job.title；并列正片的标题见 [_standaloneMovieTitles]。
-      final VideoDownloadJobFileRow? movieMain = _mainMovieRow(files);
+      // `kind: 'video'`，这里逐部入库。主片（与组织器抬正片同判据，见
+      // [mainMovieDownloadFile]）沿用 job.title；并列正片的标题见
+      // [_standaloneMovieTitles]。
+      final VideoDownloadJobFileRow? movieMain = mainMovieDownloadFile(
+        files,
+        title: job.title,
+      );
       final Map<int, String> siblingTitles = _standaloneMovieTitles(
         files,
         mainFileId: movieMain?.id,
@@ -4941,12 +4945,6 @@ class VideoDownloadPipelineService {
     }
     return null;
   }
-
-  /// movie 形态 job 的主片行：最大 `sizeBytes`（与组织器抬正片的判据一致；
-  /// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
-  static VideoDownloadJobFileRow? _mainMovieRow(
-    List<VideoDownloadJobFileRow> files,
-  ) => mainMovieDownloadFile(files);
 
   /// 并列正片的入库标题（BUG-2007）：优先文件名解析出的标题（剥字幕组/分辨率
   /// 噪音）；解析为空、与主片标题相同或与其他并列正片撞名时退回整理后文件名。
