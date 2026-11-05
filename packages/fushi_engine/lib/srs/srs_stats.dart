@@ -247,38 +247,6 @@ class SrsTodayStats {
   int kind(SrsStatReviewKind k) => byKind[k] ?? 0;
 }
 
-/// RWKV 牌组的复习卡此刻的回忆率分布（[SrsStatsData.rwkvNow]）：全是测量，不是预测。
-/// RWKV 不知道一张卡哪天到期（每答一题模型状态都在变），所以这些卡不进 [SrsFutureDue]，
-/// 统计页也不给它们算「到期数」，只画此刻估计回忆率的分布与各自牌组目标线的相对位置。
-class SrsRwkvNow {
-  const SrsRwkvNow({
-    required this.total,
-    required this.atOrBelowTarget,
-    required this.aboveTarget,
-    required this.meanRecall,
-  });
-
-  /// 按 R 排队的复习卡（[SrsStatCard.byRecall]，未暂停、归 Fushi 排程）。
-  final int total;
-
-  /// 此刻 R ≤ 所在牌组目标保留率的卡，按 R 分 [binCount] 格（第 i 格 = [i/binCount, (i+1)/binCount)，
-  /// R = 1 落末格）。目标保留率逐牌组不同，所以同一格里可能两种都有。
-  final List<int> atOrBelowTarget;
-
-  /// 此刻 R 高于所在牌组目标保留率的卡，分格同 [atOrBelowTarget]。
-  final List<int> aboveTarget;
-
-  /// 有 R 的卡的平均估计回忆率；一张都没有时为 null。
-  final double? meanRecall;
-
-  /// 分格数（每格 5 个百分点）。
-  static const int binCount = 20;
-
-  /// R → 所在格。
-  static int binOf(double r) =>
-      math.min(binCount - 1, math.max(0, (r * binCount).floor()));
-}
-
 /// 未来到期预测。
 class SrsFutureDue {
   const SrsFutureDue({
@@ -648,49 +616,32 @@ class SrsStatsData {
     );
   }
 
-  /// RWKV 牌组复习卡此刻的情况；范围里没有按 R 排队的复习卡时为 null。
-  SrsRwkvNow? get rwkvNow => _queueShape.rwkvNow;
+  /// 范围里有没有按 R 排队（RWKV-Instant，[SrsStatCard.byRecall]）的复习卡。这些卡没有到期日，
+  /// 统计页不给它们任何「到期 / 回忆率」类数字（都是会随作答漂移的模型估计）。
+  bool get hasRecallCards => _queueShape.hasRecallCards;
 
   /// 有没有按到期日排队、会进 [futureDue] 的卡（学习中的卡、FSRS 牌组的复习卡）。
   /// 范围里只有 RWKV 复习卡时未来到期图是空的，统计页不显示它。
   bool get hasDueDateCards => _queueShape.hasDueDateCards;
 
-  /// [rwkvNow] 与 [hasDueDateCards]：一趟遍历卡片，按这份数据记住（统计页每次 build 都读它们）。
+  /// [hasRecallCards] 与 [hasDueDateCards]：一趟遍历卡片，按这份数据记住（统计页每次 build 都读它们）。
   /// 数据是不可变快照，换范围 / 牌组是新对象。
-  late final ({SrsRwkvNow? rwkvNow, bool hasDueDateCards}) _queueShape =
+  late final ({bool hasRecallCards, bool hasDueDateCards}) _queueShape =
       _computeQueueShape();
 
-  ({SrsRwkvNow? rwkvNow, bool hasDueDateCards}) _computeQueueShape() {
-    int total = 0;
-    final List<int> below = List<int>.filled(SrsRwkvNow.binCount, 0);
-    final List<int> above = List<int>.filled(SrsRwkvNow.binCount, 0);
-    double recallSum = 0;
-    int withRecall = 0;
+  ({bool hasRecallCards, bool hasDueDateCards}) _computeQueueShape() {
+    bool recall = false;
     bool dueDate = false;
     for (final SrsStatCard c in cards) {
       if (!c.fushiScheduled || c.suspended) continue;
-      if (!(c.byRecall && c.isReview)) {
-        if (c.state != SrsStatCardState.newCard) dueDate = true;
-        continue;
+      if (c.byRecall && c.isReview) {
+        recall = true;
+      } else if (c.state != SrsStatCardState.newCard) {
+        dueDate = true;
       }
-      total++;
-      final double? raw = c.retrievability;
-      if (raw == null || !raw.isFinite) continue;
-      final double r = raw.clamp(0.0, 1.0);
-      recallSum += r;
-      withRecall++;
-      (r <= c.desiredRetention ? below : above)[SrsRwkvNow.binOf(r)]++;
+      if (recall && dueDate) break;
     }
-    if (total == 0) return (rwkvNow: null, hasDueDateCards: dueDate);
-    return (
-      rwkvNow: SrsRwkvNow(
-        total: total,
-        atOrBelowTarget: below,
-        aboveTarget: above,
-        meanRecall: withRecall == 0 ? null : recallSum / withRecall,
-      ),
-      hasDueDateCards: dueDate,
-    );
+    return (hasRecallCards: recall, hasDueDateCards: dueDate);
   }
 
   /// 「全部」范围下未来到期看多远：最晚到期日（夹在 30..3650 天）。

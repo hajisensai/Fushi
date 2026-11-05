@@ -326,9 +326,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     final List<_Section> sections = empty
         ? <_Section>[]
         : <_Section>[
-            if (data.rwkvNow case final SrsRwkvNow now)
-              _Section(_rwkvNowSection(now, colors), 3),
-            if (data.hasDueDateCards || data.rwkvNow == null)
+            if (data.hasDueDateCards || !data.hasRecallCards)
               _Section(_futureSection(data, colors), 3.2),
             _Section(_calendarSection(data), 2.6),
             _Section(_reviewsSection(data, colors), 3.6),
@@ -652,51 +650,6 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     SrsStatsRange.year => 366,
     SrsStatsRange.all => data.furthestDueOffset(),
   };
-
-  /// RWKV 牌组：此刻估计回忆率的分布，按各自牌组目标线分「已到 / 高于」两色堆叠（都是测量；
-  /// RWKV 不预测到期日，所以不给到期数，也不仿 Anki 的未来到期图）。
-  Widget _rwkvNowSection(SrsRwkvNow now, SrsStatColors colors) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<SrsChartSeries> series = <SrsChartSeries>[
-      SrsChartSeries(t.srs_stats_rwkv_recall_below, colors.again),
-      SrsChartSeries(t.srs_stats_rwkv_recall_above, colors.good),
-    ];
-    final double? mean = now.meanRecall;
-    return StatSectionCard(
-      key: const ValueKey<String>('srs-stats-rwkv-now'),
-      title: t.srs_stats_rwkv_now_title,
-      icon: FushiIcons.trendingUp,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _statLine(<(String, String)>[
-            (
-              t.srs_stats_rwkv_recall_mean,
-              mean == null ? kStatEmptyValue : '${(mean * 100).round()}%',
-            ),
-            (t.srs_stats_cards_title, t.srs_stats_cards_total(n: now.total)),
-          ]),
-          if (mean != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.card),
-            SrsBarChart(
-              key: const ValueKey<String>('srs-stats-rwkv-recall-chart'),
-              bars: srsRwkvRecallBars(now),
-              series: series,
-              scaleOf: statCountAxisScale,
-              valueText: (int v) => t.srs_stats_cards_total(n: v),
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            SrsChartLegend(series: series),
-          ],
-          SizedBox(height: tokens.spacing.gap),
-          Text(
-            t.srs_stats_rwkv_recall_hint,
-            style: context.fushiType.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _futureSection(SrsStatsData data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1516,28 +1469,3 @@ List<List<int>> srsStatsColumnSlots(List<double> weights, int columns) {
   }
   return out;
 }
-
-/// RWKV 回忆率分布的柱子：从最低一格有卡的位置画到 100%（低回忆率那头常年全空，不占宽度），
-/// 至少画 [_kRwkvMinBars] 格；每格两段 = [已到目标线, 高于目标线]。
-@visibleForTesting
-List<SrsBarDatum> srsRwkvRecallBars(SrsRwkvNow now) {
-  const int n = SrsRwkvNow.binCount;
-  int first = n - _kRwkvMinBars;
-  for (int i = 0; i < n; i++) {
-    if (now.atOrBelowTarget[i] + now.aboveTarget[i] > 0) {
-      first = math.min(first, i);
-      break;
-    }
-  }
-  const int step = 100 ~/ n;
-  return <SrsBarDatum>[
-    for (int i = first; i < n; i++)
-      SrsBarDatum(
-        label: '${i * step}',
-        title: '${i * step} – ${(i + 1) * step}%',
-        values: <int>[now.atOrBelowTarget[i], now.aboveTarget[i]],
-      ),
-  ];
-}
-
-const int _kRwkvMinBars = 6;

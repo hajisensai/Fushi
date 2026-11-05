@@ -18,7 +18,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -147,36 +146,6 @@ void main() {
     );
     expect(statsCenterVisibleTabs(srsEnabled: true).last, StatsCenterTab.srs);
     expect(statsCenterVisibleTabs(srsEnabled: false), hasLength(4));
-  });
-
-  test('RWKV 回忆率分布：从最低有卡的一格画到 100%，至少 6 格，每格两段', () {
-    List<int> bins(Map<int, int> m) => <int>[
-      for (int i = 0; i < SrsRwkvNow.binCount; i++) m[i] ?? 0,
-    ];
-    final List<SrsBarDatum> wide = srsRwkvRecallBars(
-      SrsRwkvNow(
-        total: 4,
-        atOrBelowTarget: bins(<int, int>{12: 1, 16: 1}),
-        aboveTarget: bins(<int, int>{16: 1, 19: 1}),
-        meanRecall: 0.8,
-      ),
-    );
-    expect(wide, hasLength(8), reason: '60% 那格起到末格');
-    expect(wide.first.label, '60');
-    expect(wide.first.values, <int>[1, 0]);
-    expect(wide[4].values, <int>[1, 1], reason: '80–85% 两段都有');
-    expect(wide.last.title, '95 – 100%');
-
-    final List<SrsBarDatum> narrow = srsRwkvRecallBars(
-      SrsRwkvNow(
-        total: 1,
-        atOrBelowTarget: bins(const <int, int>{}),
-        aboveTarget: bins(<int, int>{19: 1}),
-        meanRecall: 0.97,
-      ),
-    );
-    expect(narrow, hasLength(6), reason: '只有一格有卡也至少画 6 格');
-    expect(narrow.first.label, '70');
   });
 
   test('多列排布：按顺序放进最矮的一列，单列保持原顺序', () {

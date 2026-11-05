@@ -571,7 +571,7 @@ void main() {
       expect(m, <int>[1, 2, 1]);
     });
 
-    test('RWKV 此刻：按 R 分格，与所在牌组目标线比出高 / 低；均值只算有 R 的卡', () {
+    test('按 R 排队的卡与按到期日排队的卡分开认出（RWKV 卡不进未来到期）', () {
       SrsStatCard rwkv(String id, double? r, {bool suspended = false}) =>
           SrsStatCard(
             id: id,
@@ -617,20 +617,17 @@ void main() {
         ],
         maturityEvents: const <SrsStatMaturityEvent>[],
       );
-      final SrsRwkvNow now = d.rwkvNow!;
-      expect(now.total, 5);
-      expect(now.atOrBelowTarget, hasLength(SrsRwkvNow.binCount));
-      expect(now.atOrBelowTarget[16], 1, reason: 'a: R 0.8 落 [80,85)');
-      expect(now.atOrBelowTarget.fold<int>(0, (int a, int b) => a + b), 1);
-      expect(now.aboveTarget[16], 1, reason: 'b: 0.84');
-      expect(now.aboveTarget[18], 1, reason: 'c: 0.9');
-      expect(now.aboveTarget[19], 1, reason: 'g: 1.0');
-      expect(now.aboveTarget.fold<int>(0, (int a, int b) => a + b), 3);
-      expect(now.meanRecall, closeTo((0.8 + 0.84 + 0.9 + 1.0) / 4, 1e-9));
+      expect(d.hasRecallCards, isTrue);
       expect(d.hasDueDateCards, isTrue, reason: 'FSRS 卡 f 按到期日');
       final SrsStatsData onlyRwkv = d.subset(<String>{'a', 'b', 'c'});
       expect(onlyRwkv.hasDueDateCards, isFalse);
-      expect(d.subset(<String>{'f'}).rwkvNow, isNull, reason: '没有按 R 排队的卡');
+      expect(onlyRwkv.hasRecallCards, isTrue);
+      expect(
+        d.subset(<String>{'f'}).hasRecallCards,
+        isFalse,
+        reason: '没有按 R 排队的卡',
+      );
+      expect(d.subset(<String>{'e'}).hasRecallCards, isFalse, reason: '暂停的不算');
     });
   });
 
