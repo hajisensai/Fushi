@@ -126,7 +126,9 @@ jobs:
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
     if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 120：split-per-abi 逐 ABI 串行后要编三遍 kernel + AOT（ubuntu-26.04 上单 ABI
+    # kernel ~170 s、AOT ~285 s），formal 在构建前的原生步骤已占 ~30 min，90 不够余量。
+    timeout-minutes: 120
     permissions:
       contents: write
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
@@ -960,6 +962,14 @@ jobs:
         ls -la build/app/outputs/flutter-apk || true
         find build/app/outputs/flutter-apk -maxdepth 1 -type f -name '*.apk' -print -exec ls -lh {} \; || true
         echo "::endgroup::"
+        # 构建步骤被 runner 掐死时（"The runner has received a shutdown signal"）不会留下
+        # 任何诊断；资源基线必须在这里先打出来，事后才能分清内存还是磁盘。
+        echo "::group::Runner resources"
+        nproc || true
+        free -m || true
+        swapon --show || true
+        df -h / "$GITHUB_WORKSPACE" /mnt 2>/dev/null || df -h || true
+        echo "::endgroup::"
 
     - name: Build debug APK
       if: steps.channel.outputs.build_debug_apk == 'true'
@@ -1040,17 +1050,50 @@ jobs:
           exit 1
         fi
 
+    # 逐 ABI 串行出包（2026-11-05，3.3.0 正式版预构建 run 41955804997 连挂两次）：
+    # 一次 `--split-per-abi` 不带 target-platform 时，flutter assemble 把 arm / arm64 / x64
+    # 三个 gen_snapshot **同时**拉起（日志里三条 android_aot_release_* 同一毫秒 Starting），
+    # 叠在 Gradle daemon（-Xmx4608m）+ Kotlin daemon 上。ubuntu-latest 换成 ubuntu-26.04
+    # 镜像后（v3.0.0 那次还是 24.04），三份 AOT 并发约 70 s 后 runner 收到 shutdown signal，
+    # 整个 job 被平台回收；同一天同一代码只编单 ABI arm64 的 debug 通道是绿的。
+    # 每次只带一个 target-platform，峰值退回到单个 gen_snapshot（= debug 通道已验证的量级）；
+    # 产物与一次出三份完全相同：splits.abi 只 include 本次的 ABI，versionCode 偏移按输出
+    # ABI 算（build.gradle），flutter-apk/ 里三份 APK 依次累积。
+    # 后台每 15 s 打一行内存 / 磁盘采样进本步日志：runner 被掐时 post 步骤不会跑，
+    # 只有实时打进本步的行能留下来。
     - name: Build release APK (split per ABI)
       if: steps.channel.outputs.build_split_release_apk == 'true'
       working-directory: fushi
-      timeout-minutes: 60
+      timeout-minutes: 80
       shell: bash
       run: |
         set -euo pipefail
-        flutter --verbose build apk --split-per-abi --release \
-          --build-name "${{ steps.channel.outputs.build_version_name }}" \
-          --build-number "${{ steps.channel.outputs.android_build_number }}" \
-          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+        (
+          # 采样只是诊断：ps|head 的 SIGPIPE 之类不许在 pipefail 下把采样器自己弄死。
+          set +e +o pipefail
+          while sleep 15; do
+            echo "[res] $(awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/{printf "%s%dMiB ", $1, $2/1024}' /proc/meminfo)disk=$(df -h --output=avail "$GITHUB_WORKSPACE" | tail -n 1 | tr -d ' ')"
+            ps -eo rss=,comm= --sort=-rss | head -n 4 | awk '{printf "[res]   %6d MiB %s\n", $1/1024, $2}'
+          done
+        ) &
+        sampler=$!
+        trap 'kill "$sampler" 2>/dev/null || true' EXIT
+        for platform in android-arm android-arm64 android-x64; do
+          echo "::group::split-per-abi release build: $platform"
+          flutter --verbose build apk --split-per-abi --release --target-platform "$platform" \
+            --build-name "${{ steps.channel.outputs.build_version_name }}" \
+            --build-number "${{ steps.channel.outputs.android_build_number }}" \
+            --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          echo "::endgroup::"
+        done
+        missing=0
+        for abi in armeabi-v7a arm64-v8a x86_64; do
+          if [ ! -f "build/app/outputs/flutter-apk/app-${abi}-release.apk" ]; then
+            echo "::error title=Split APK missing::build/app/outputs/flutter-apk/app-${abi}-release.apk was not produced"
+            missing=1
+          fi
+        done
+        exit "$missing"
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
