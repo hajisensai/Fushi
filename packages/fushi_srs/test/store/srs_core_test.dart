@@ -34,6 +34,38 @@ void main() {
     );
   });
 
+  test(
+    'diagCounts sees an open core and its SQLite heap (BUG-4075 memory probe)',
+    () {
+      final SrsCoreDiagCounts before = SrsCore.diagCounts()!;
+      final SrsCore core = SrsCore.open(
+        '${dir.path}${Platform.pathSeparator}srs.db',
+      );
+      addTearDown(core.close);
+      final SrsCoreDiagCounts open = SrsCore.diagCounts()!;
+      expect(open.openHandles, before.openHandles + 1);
+      expect(open.liveCores, before.liveCores + 1);
+      expect(open.pooledReaders, greaterThanOrEqualTo(1));
+      expect(open.sqliteBytes, greaterThan(0));
+      expect(open.sqliteHighwaterBytes, greaterThanOrEqualTo(open.sqliteBytes));
+      expect(open.dbBytes, greaterThan(before.dbBytes));
+      expect(open.walBytes, greaterThanOrEqualTo(0));
+      expect(
+        open.describe(),
+        matches(
+          RegExp(
+            r'^srs=\d+/\d+ sess=\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$',
+          ),
+        ),
+      );
+
+      core.close();
+      final SrsCoreDiagCounts closed = SrsCore.diagCounts()!;
+      expect(closed.openHandles, before.openHandles);
+      expect(closed.liveCores, before.liveCores);
+    },
+  );
+
   test('open, legacy import, snapshot and debug query', () {
     final String path = '${dir.path}${Platform.pathSeparator}srs.db';
     final SrsCore core = SrsCore.open(path);
