@@ -18,6 +18,7 @@ import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
 /// 首页预测图看几天（含今天）。
 const int kSrsHomeForecastDays = 7;
@@ -201,6 +202,7 @@ SrsHomeStats srsHomeStatsOf(SrsStatsData data) {
 final FutureProvider<SrsHomeStats?> srsHomeStatsProvider =
     FutureProvider<SrsHomeStats?>((Ref ref) async {
       ref.watch(srsRevisionProvider);
+      SrsOpLedger.mark('home_stats');
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
       final SrsStatsBundle bundle = await loadSrsStats(store);

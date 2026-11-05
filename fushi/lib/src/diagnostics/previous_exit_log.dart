@@ -1194,6 +1194,36 @@ String? _procStatus() {
   }
 }
 
+/// 进程常驻内存分项探针（Android / Linux 读 `/proc/self/status`）：`anon=…MB file=…MB shm=…MB`。
+///
+/// anon = 匿名页（Dart 堆、malloc、线程栈、部分 GPU 映射）；file = 文件映射页（so、srs.db 的 mmap
+/// 读——干净页，内存紧时可回收）；shm = 共享内存（ashmem / memfd）。BUG-4075：分清涨的是不是 srs.db
+/// 的 mmap 文件页。别的平台或读不到返回 null。
+String? processRssBreakdownProbe() => Platform.isAndroid || Platform.isLinux
+    ? parseProcStatusRssBreakdown(_procStatus())
+    : null;
+
+/// 从 `/proc/<pid>/status` 正文取 `RssAnon` / `RssFile` / `RssShmem`（kB），格式化为
+/// `anon=…MB file=…MB shm=…MB`；一项都没有返回 null，缺的项不写。
+@visibleForTesting
+String? parseProcStatusRssBreakdown(String? status) {
+  if (status == null) return null;
+  final List<String> parts = <String>[];
+  for (final (String key, String label) in const <(String, String)>[
+    ('RssAnon', 'anon'),
+    ('RssFile', 'file'),
+    ('RssShmem', 'shm'),
+  ]) {
+    final RegExpMatch? m = RegExp(
+      '^$key'
+      r':\s*(\d+)\s*kB',
+      multiLine: true,
+    ).firstMatch(status);
+    if (m != null) parts.add('$label=${int.parse(m.group(1)!) >> 10}MB');
+  }
+  return parts.isEmpty ? null : parts.join(' ');
+}
+
 /// 从 `/proc/<pid>/status` 正文取 `Threads:` 行，格式化为 `thr=<n>`；没有返回 null。
 @visibleForTesting
 String? parseProcStatusThreads(String? status) {
