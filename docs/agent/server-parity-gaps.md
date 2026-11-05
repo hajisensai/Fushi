@@ -31,7 +31,8 @@ assistant, lookup, history, mining, dictionary media/styles and prefs.
 
 ## Music libraries: deliberately deferred
 
-The owner decided on 2026-10-28 to defer music. The server rejects `kind: music` on
+Music was left out of the server's first library-kinds pass (2026-10-28) because of its
+size; see the plan below. The server rejects `kind: music` on
 purpose: yaml loading and `POST /api/admin/libraries` fail with a message that points
 here, and `_purgeRoot` in `packages/fushi_server/lib/src/admin/admin_api.dart` throws for
 `SourceLibraryKind.music`. Do not "quick fix" this by letting music roots through. Without
