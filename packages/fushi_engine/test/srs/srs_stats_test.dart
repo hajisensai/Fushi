@@ -571,7 +571,7 @@ void main() {
       expect(m, <int>[1, 2, 1]);
     });
 
-    test('RWKV 此刻：现在该复习 / 接近目标线按 R 与所在牌组目标数；日均只数这些卡近 30 天的复习', () {
+    test('RWKV 此刻：按 R 分格，与所在牌组目标线比出高 / 低；均值只算有 R 的卡', () {
       SrsStatCard rwkv(String id, double? r, {bool suspended = false}) =>
           SrsStatCard(
             id: id,
@@ -601,9 +601,11 @@ void main() {
           review('f', today), // FSRS 卡不算
         ],
         cards: <SrsStatCard>[
-          rwkv('a', 0.8), // = 目标：该复习
-          rwkv('b', 0.84), // 接近
+          rwkv('a', 0.8), // = 目标：算「目标线及以下」
+          rwkv('b', 0.84),
           rwkv('c', 0.9),
+          rwkv('g', 1.0), // R = 1 落末格
+          rwkv('h', null), // 没有 R：计入总数，不进分布
           rwkv('e', 0.1, suspended: true),
           const SrsStatCard(
             id: 'f',
@@ -616,10 +618,15 @@ void main() {
         maturityEvents: const <SrsStatMaturityEvent>[],
       );
       final SrsRwkvNow now = d.rwkvNow!;
-      expect(now.total, 3);
-      expect(now.due, 1);
-      expect(now.near, 1);
-      expect(now.dailyAverage, closeTo(2 / 30, 1e-9));
+      expect(now.total, 5);
+      expect(now.atOrBelowTarget, hasLength(SrsRwkvNow.binCount));
+      expect(now.atOrBelowTarget[16], 1, reason: 'a: R 0.8 落 [80,85)');
+      expect(now.atOrBelowTarget.fold<int>(0, (int a, int b) => a + b), 1);
+      expect(now.aboveTarget[16], 1, reason: 'b: 0.84');
+      expect(now.aboveTarget[18], 1, reason: 'c: 0.9');
+      expect(now.aboveTarget[19], 1, reason: 'g: 1.0');
+      expect(now.aboveTarget.fold<int>(0, (int a, int b) => a + b), 3);
+      expect(now.meanRecall, closeTo((0.8 + 0.84 + 0.9 + 1.0) / 4, 1e-9));
       expect(d.hasDueDateCards, isTrue, reason: 'FSRS 卡 f 按到期日');
       final SrsStatsData onlyRwkv = d.subset(<String>{'a', 'b', 'c'});
       expect(onlyRwkv.hasDueDateCards, isFalse);
