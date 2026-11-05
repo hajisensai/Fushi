@@ -1180,6 +1180,31 @@ class _ExitEvidenceObserver with WidgetsBindingObserver {
 /// 每次采样同步调用，必须便宜（不做 I/O、不等锁）。
 typedef MemoryProbe = String? Function();
 
+/// 进程线程数探针（Android / Linux 读 `/proc/self/status` 的 `Threads:`）：`thr=95`；别的平台
+/// 或读不到返回 null。线程栈也吃地址空间与内存，看它随时间涨不涨。
+String? processThreadCountProbe() => Platform.isAndroid || Platform.isLinux
+    ? parseProcStatusThreads(_procStatus())
+    : null;
+
+String? _procStatus() {
+  try {
+    return File('/proc/self/status').readAsStringSync();
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// 从 `/proc/<pid>/status` 正文取 `Threads:` 行，格式化为 `thr=<n>`；没有返回 null。
+@visibleForTesting
+String? parseProcStatusThreads(String? status) {
+  if (status == null) return null;
+  final RegExpMatch? m = RegExp(
+    r'^Threads:\s*(\d+)',
+    multiLine: true,
+  ).firstMatch(status);
+  return m == null ? null : 'thr=${m.group(1)}';
+}
+
 /// 一次内存采样的文本：`HH:mm:ss rss=…MB max=…MB [探针…] [(trigger)]`。探针抛异常时记
 /// `probe!` 而不是让采样失败（取证不能反过来变成崩溃源）。
 String describeMemorySample({

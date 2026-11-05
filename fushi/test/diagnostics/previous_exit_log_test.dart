@@ -133,6 +133,15 @@ void main() {
       );
     });
 
+    test('线程数探针：从 /proc/self/status 正文取 Threads 行', () {
+      expect(
+        parseProcStatusThreads('Name:\tapp\nThreads:\t95\nVmRSS:\t1 kB\n'),
+        'thr=95',
+      );
+      expect(parseProcStatusThreads('Name:\tapp\n'), isNull);
+      expect(parseProcStatusThreads(null), isNull);
+    });
+
     test('startMemorySampling 立即采一次并写进本次会话标记；系统内存压力也采', () async {
       await PreviousExitLog.collect(
         appDir: tmp,

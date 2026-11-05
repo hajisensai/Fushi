@@ -102,6 +102,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/diagnostics/storage_footprint_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
@@ -694,8 +695,10 @@ void main([List<String> args = const <String>[]]) {
       // BUG-4075：周期内存采样写进会话标记（进程 RSS + SRS 原生内核计数），下次启动的
       // 「上次未正常退出」带上崩前几分钟的内存曲线。
       PreviousExitLog.startMemorySampling(
-        probes: const <MemoryProbe>[srsMemoryProbe],
+        probes: const <MemoryProbe>[processThreadCountProbe, srsMemoryProbe],
       );
+      // 同一 bug：启动后在后台量一遍 App 数据根的目录 / 大文件分项，记进诊断日志随反馈上传。
+      scheduleStorageFootprintLog();
       // 闪退报告（crash_report.dart）：上次是崩溃 / 异常退出就记进待报，下次问用户要不要
       // 把日志发给开发者。debug 构建（停 `flutter run` 就是强杀）与集成测试根下不问不发——
       // 测试绝不能往线上反馈服务交东西。

@@ -48,9 +48,15 @@ void main() {
       expect(open.pooledReaders, greaterThanOrEqualTo(1));
       expect(open.sqliteBytes, greaterThan(0));
       expect(open.sqliteHighwaterBytes, greaterThanOrEqualTo(open.sqliteBytes));
+      expect(open.dbBytes, greaterThan(before.dbBytes));
+      expect(open.walBytes, greaterThanOrEqualTo(0));
       expect(
         open.describe(),
-        matches(RegExp(r'^srs=\d+/\d+ sess=\d+ rd=\d+ sqlite=\d+/\d+MB$')),
+        matches(
+          RegExp(
+            r'^srs=\d+/\d+ sess=\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$',
+          ),
+        ),
       );
 
       core.close();

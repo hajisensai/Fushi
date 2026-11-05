@@ -494,11 +494,12 @@ pub extern "C" fn ffsrs_store_exec_batch(
 }
 
 /// [ffsrs_store_diag_counts] 写出的项数。
-pub const DIAG_COUNT_LEN: usize = 6;
+pub const DIAG_COUNT_LEN: usize = 8;
 
 /// 进程级内存诊断计数（不需要句柄，任意线程可调）：按序写 `out[0..min(n, DIAG_COUNT_LEN)]`，返回写了几项。
 /// `[句柄表里打开着的库, 还没释放的 SrsCore（含已关、在途调用还握着的）, 没结束的只读会话,
-///   各库只读连接池开着的连接总数, 本库内置 SQLite 的堆用量字节, 其高水位字节]`。
+///   各库只读连接池开着的连接总数, 本库内置 SQLite 的堆用量字节, 其高水位字节,
+///   打开着的库文件总字节, 它们的 `-wal` 总字节]`。
 /// 用途：移动端内存耗尽闪退（BUG-4075）的取证面包屑看「退役的库还驻留没有 / 连接与 SQLite 页缓存占多少」。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
@@ -506,11 +507,18 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
         return 0;
     }
     catch_unwind(AssertUnwindSafe(|| {
-        let (open, readers) = {
+        let (open, readers, cores) = {
             let table = handles();
             let readers: usize = table.values().map(|c| c.pooled_readers()).sum();
-            (table.len(), readers)
+            let cores: Vec<Arc<SrsCore>> = table.values().cloned().collect();
+            (table.len(), readers, cores)
         };
+        // stat 在句柄表锁外做：慢盘上也不挡别的线程取句柄。
+        let (db, wal) = cores.iter().map(|c| c.file_sizes()).fold(
+            (0u64, 0u64),
+            |(d, w), (a, b)| (d + a, w + b),
+        );
+        drop(cores);
         let values: [i64; DIAG_COUNT_LEN] = [
             open as i64,
             super::live_cores() as i64,
@@ -518,6 +526,8 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
             readers as i64,
             unsafe { rusqlite::ffi::sqlite3_memory_used() },
             unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) },
+            db as i64,
+            wal as i64,
         ];
         let k = n.min(DIAG_COUNT_LEN);
         let dst = unsafe { std::slice::from_raw_parts_mut(out, k) };
@@ -1837,12 +1847,14 @@ mod tests {
             ffsrs_store_diag_counts(out.as_mut_ptr(), out.len()),
             DIAG_COUNT_LEN
         );
-        assert_eq!(&out[DIAG_COUNT_LEN..], &[-7, -7], "must not write past the six counts");
+        assert_eq!(&out[DIAG_COUNT_LEN..], &[-7, -7], "must not write past the counts");
         assert!(out[0] >= 1, "open handles {out:?}");
         assert!(out[1] >= 1, "live cores {out:?}");
         assert!(out[3] >= 1, "pooled readers {out:?}");
         assert!(out[4] > 0, "sqlite memory used {out:?}");
         assert!(out[5] >= out[4], "highwater below current use {out:?}");
+        assert!(out[6] > 0, "open db bytes {out:?}");
+        assert!(out[7] >= 0, "wal bytes {out:?}");
 
         let mut two = [-7i64; 3];
         assert_eq!(ffsrs_store_diag_counts(two.as_mut_ptr(), 2), 2);

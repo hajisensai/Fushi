@@ -418,10 +418,12 @@ final class SrsCoreDiagCounts {
     required this.pooledReaders,
     required this.sqliteBytes,
     required this.sqliteHighwaterBytes,
+    required this.dbBytes,
+    required this.walBytes,
   });
 
   /// 原生一次写出的项数（Rust `DIAG_COUNT_LEN`）。
-  static const int length = 6;
+  static const int length = 8;
 
   /// 句柄表里打开着的库。
   final int openHandles;
@@ -439,10 +441,15 @@ final class SrsCoreDiagCounts {
   final int sqliteBytes;
   final int sqliteHighwaterBytes;
 
-  /// 面包屑里的紧凑写法：`srs=开/存活 sess=… rd=… sqlite=当前/高水位MB`。
+  /// 打开着的库文件与其 `-wal` 的总字节（看同步中库 / WAL 有没有在胀）。
+  final int dbBytes;
+  final int walBytes;
+
+  /// 面包屑里的紧凑写法：`srs=开/存活 sess=… rd=… sqlite=当前/高水位MB db=…MB wal=…MB`。
   String describe() =>
       'srs=$openHandles/$liveCores sess=$readSessions rd=$pooledReaders '
-      'sqlite=${sqliteBytes >> 20}/${sqliteHighwaterBytes >> 20}MB';
+      'sqlite=${sqliteBytes >> 20}/${sqliteHighwaterBytes >> 20}MB '
+      'db=${dbBytes >> 20}MB wal=${walBytes >> 20}MB';
 }
 
 /// 一个打开的 srs.db。
@@ -541,6 +548,8 @@ final class SrsCore {
         pooledReaders: out[3],
         sqliteBytes: out[4],
         sqliteHighwaterBytes: out[5],
+        dbBytes: out[6],
+        walBytes: out[7],
       );
     });
   }

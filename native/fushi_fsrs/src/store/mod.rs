@@ -842,6 +842,14 @@ impl SrsCore {
         self.drift_readers.live()
     }
 
+    /// 库文件与 `-wal` 的当前字节数（拿不到记 0），内存 / 存储诊断用。
+    pub fn file_sizes(&self) -> (u64, u64) {
+        let len = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
+        let mut wal = self.path.clone().into_os_string();
+        wal.push("-wal");
+        (len(&self.path), len(Path::new(&wal)))
+    }
+
     /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池
     /// （store/read_pool.rs）里借一条连接执行，不看 Drift 事务开没开、不碰写连接——事务外的读本来就只该看已提交
     /// 的数据；并发的查询各占一条连接并行执行。语句不是以 SELECT / WITH / VALUES 开头、或 SQLite 判为非只读，
