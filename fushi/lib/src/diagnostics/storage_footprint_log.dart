@@ -136,6 +136,7 @@ StorageFootprint measureStorageFootprint(Directory root) {
     final int bySize = b.$2.compareTo(a.$2);
     return bySize != 0 ? bySize : a.$1.compareTo(b.$1);
   }
+
   final List<(String, int)> dirs = <(String, int)>[
     for (final MapEntry<String, int> e in dirSizes.entries)
       if (e.value >= kStorageFootprintDirMinBytes) (e.key, e.value),

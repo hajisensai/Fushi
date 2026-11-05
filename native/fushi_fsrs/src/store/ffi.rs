@@ -514,10 +514,10 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
             (table.len(), readers, cores)
         };
         // stat 在句柄表锁外做：慢盘上也不挡别的线程取句柄。
-        let (db, wal) = cores.iter().map(|c| c.file_sizes()).fold(
-            (0u64, 0u64),
-            |(d, w), (a, b)| (d + a, w + b),
-        );
+        let (db, wal) = cores
+            .iter()
+            .map(|c| c.file_sizes())
+            .fold((0u64, 0u64), |(d, w), (a, b)| (d + a, w + b));
         drop(cores);
         let values: [i64; DIAG_COUNT_LEN] = [
             open as i64,
@@ -1847,7 +1847,11 @@ mod tests {
             ffsrs_store_diag_counts(out.as_mut_ptr(), out.len()),
             DIAG_COUNT_LEN
         );
-        assert_eq!(&out[DIAG_COUNT_LEN..], &[-7, -7], "must not write past the counts");
+        assert_eq!(
+            &out[DIAG_COUNT_LEN..],
+            &[-7, -7],
+            "must not write past the counts"
+        );
         assert!(out[0] >= 1, "open handles {out:?}");
         assert!(out[1] >= 1, "live cores {out:?}");
         assert!(out[3] >= 1, "pooled readers {out:?}");
