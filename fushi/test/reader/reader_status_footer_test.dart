@@ -311,29 +311,58 @@ void main() {
       VoidCallback? onTap,
       VoidCallback? onTapTracker,
       VoidCallback? onTapProgress,
+      bool tickerEnabled = true,
     }) {
       return MaterialApp(
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomCenter,
-            child: ReaderStatusFooter(
-              sessionTotals: totals,
-              currentChars: current,
-              totalChars: total,
-              showTimer: showTimer,
-              showProgress: showProgress,
-              centered: centered,
-              textColor: Colors.white,
-              backgroundColor: Colors.black,
-              tick: const Duration(milliseconds: 100),
-              onTap: onTap,
-              onTapTracker: onTapTracker,
-              onTapProgress: onTapProgress,
+            child: TickerMode(
+              enabled: tickerEnabled,
+              child: ReaderStatusFooter(
+                sessionTotals: totals,
+                currentChars: current,
+                totalChars: total,
+                showTimer: showTimer,
+                showProgress: showProgress,
+                centered: centered,
+                textColor: Colors.white,
+                backgroundColor: Colors.black,
+                tick: const Duration(milliseconds: 100),
+                onTap: onTap,
+                onTapTracker: onTapTracker,
+                onTapProgress: onTapProgress,
+              ),
             ),
           ),
         ),
       );
     }
+
+    testWidgets('covered by TickerMode (lyrics overlay, BUG-4102) the clock '
+        'stops ticking and resumes with the live reading', (
+      WidgetTester tester,
+    ) async {
+      int ms = 0;
+      StudySessionTotals totals() => (durationMs: ms, chars: 0, active: true);
+      await tester.pumpWidget(host(totals: totals, tickerEnabled: false));
+      expect(find.text('0:00'), findsOneWidget);
+      ms = 61000;
+      for (int i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(
+          tester.binding.hasScheduledFrame,
+          isFalse,
+          reason: '被盖住时秒表 tick 不重建、不请帧',
+        );
+      }
+      expect(find.text('0:00'), findsOneWidget);
+      await tester.pumpWidget(host(totals: totals));
+      expect(find.text('1:01'), findsOneWidget, reason: '恢复帧立即读现值');
+      ms = 122000;
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.text('2:02'), findsOneWidget, reason: '恢复后计时器重新起');
+    });
 
     testWidgets('renders tracker + progress and re-samples on every tick', (
       WidgetTester tester,
