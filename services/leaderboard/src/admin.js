@@ -1,6 +1,7 @@
 // 管理端 JSON API（HTTP Basic Auth，缺 ADMIN_USER/ADMIN_PASS 则 fail-closed）。
 //
 //   GET  /admin/api/reports                     未处理举报
+//   GET  /admin/api/stats                       安装统计（与处理台 /dev/stats 同一份数据：installStats）
 //   GET  /admin/api/email-conflicts             邮箱别名归一时没能升级的账户对（只有账户 id）
 //   POST /admin/api/reports/:id/resolve
 //   POST /admin/api/accounts/:id  {hidden}      隐藏/恢复账户（不删数据）
@@ -23,6 +24,7 @@ import { accountPeriodsStatements, exactWorkPeriodsStatements, periodContributio
 import { deleteMedia } from './budget.js';
 import { recountStatement, settleStatements, workCoverCandidates } from './cover_votes.js';
 import { refreshSnapshots } from './snapshots.js';
+import { installStats } from './installs.js';
 
 /**
  * 管理操作改了作品归属后的精确重算语句（放进同一个事务）：作品读者数与周期读者数现场 COUNT，
@@ -233,6 +235,10 @@ export async function handleAdmin(env, request, path, body, now) {
   if (request.method === 'GET' && path === '/admin/api/reports') {
     const rows = await env.DB.prepare('SELECT * FROM reports WHERE resolved = 0 ORDER BY id DESC LIMIT 200').all();
     return json({ rows: rows.results });
+  }
+  if (request.method === 'GET' && path === '/admin/api/stats') {
+    // 给维护者自己的看板（Fushi Pulse）取数：和 /dev/stats 同口径，只是 JSON + Basic Auth，不用网页会话。
+    return json(await installStats(env, now));
   }
   if (request.method === 'GET' && path === '/admin/api/email-conflicts') {
     // 同一个收件箱在旧规则下注册出的多个账户（见 migrations/0015）。不返回邮箱或哈希。

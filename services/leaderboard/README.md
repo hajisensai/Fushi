@@ -202,6 +202,7 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | GET | `/admin/api/reports` | 未处理举报 |
+| GET | `/admin/api/stats` | 安装统计 JSON（`installStats`，与处理台 `/dev/stats` 同口径；维护者看板 Fushi Pulse 用它取数） |
 | POST | `/admin/api/reports/:id/resolve` | 标记已处理 |
 | GET | `/admin/api/email-conflicts` | 邮箱别名归一时没能惰性升级的账户对 `{count, rows: [{accountId, holderId, firstSeenAt, lastSeenAt, seenCount}]}`（同一收件箱在旧规则下注册过多个账户；不含邮箱） |
 | POST | `/admin/api/accounts/:id` `{hidden}` | 隐藏 / 恢复账户 |

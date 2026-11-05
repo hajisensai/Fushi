@@ -661,6 +661,19 @@ describe('统计', () => {
     expect(page.data).toContain('2026-10-17');
     expect(page.data).toContain('未验证：今日 1');
   });
+
+  it('GET /admin/api/stats：Basic Auth 后返回与 /dev/stats 同一份 JSON', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    await ping(env);
+    expect((await call(env, 'GET', '/admin/api/stats', { now: NOW })).status).toBe(401);
+    const r = await call(env, 'GET', '/admin/api/stats', { headers: basic, now: NOW });
+    expect(r.status).toBe(200);
+    expect(r.data).toEqual(await installStats(env, NOW));
+    expect(r.data.dau).toBe(1);
+    expect(r.data.unverified.dau).toBe(1);
+    expect(r.data.daily[0].day).toBe('2026-10-17');
+  });
 });
 
 describe('反馈关联安装', () => {
