@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.23669",
-  "tag": "v3.3.0-debug.23669+1cda164",
+  "version": "3.3.0-debug.23853",
+  "tag": "v3.3.0-debug.23853+b2818b0",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 23669,
-  "notes": "Automated release-signed debug-channel build from develop @ 1cda164. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 23853,
+  "notes": "Automated release-signed debug-channel build from develop @ b2818b0. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.23643-macos-arm64.dmg",
@@ -26,15 +26,6 @@
       "sha256": "5de40792fe41766085bd8518b5429f2aa3c46fa96ef26ce9889d97e99b2219fa"
     },
     {
-      "name": "fushi-3.3.0-debug.23669-1cda164-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23669-1cda164-debug.apk",
-      "releaseSequence": 23669,
-      "tag": "v3.3.0-debug.23669+1cda164",
-      "version": "3.3.0-debug.23669",
-      "size": 264520108,
-      "sha256": "4a366da226dadbbfe147b19e7fc92adf64a42d3f4e6600aa18627e7da2621d4b"
-    },
-    {
       "name": "fushi-3.3.0-debug.23669-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23669-ios.ipa",
       "releaseSequence": 23669,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.23669",
       "size": 295438992,
       "sha256": "374b36287c7ab097bdc3abbea5c637efb760d36ec370761c930815cefdb34d7a"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23853-b2818b0-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23853-b2818b0-debug.apk",
+      "releaseSequence": 23853,
+      "tag": "v3.3.0-debug.23853+b2818b0",
+      "version": "3.3.0-debug.23853",
+      "size": 265515542,
+      "sha256": "bc5a677bb2b8700c57de8f065529823ffcce9e2d31628aeaf2ebb5c1aadcd2ab"
     }
   ]
 }
