@@ -299,6 +299,48 @@ void main() {
       expect(UiActivityProbe.probe(), isNot(contains('req=')));
     });
 
+    testWidgets('3.47 Ticker 顺序（先要帧、后注册且不再要帧）：仍按启动点逐帧计入 fcb', (
+      WidgetTester tester,
+    ) async {
+      UiActivityProbe.resetFrames();
+      void step({required bool rescheduling, required StackTrace stack}) {
+        UiActivityProbe.recordFrameRequest(stack: frameworkOnly);
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: rescheduling,
+          stack: stack,
+        );
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+
+      step(rescheduling: false, stack: started);
+      for (int i = 0; i < 4; i++) {
+        step(rescheduling: true, stack: frameworkOnly);
+      }
+      final String out = UiActivityProbe.probe()!;
+      expect(
+        out,
+        contains('req=5 fcb=[_OrphanState._resume@orphan.dart:77×5]'),
+      );
+    });
+
+    testWidgets('被 TickerMode 关掉的子树里没静音的 ticker 也数，标 (hidden)', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: TickerMode(
+            enabled: false,
+            child: Column(children: <Widget>[_Spinner()]),
+          ),
+        ),
+      );
+      // 静音的不算：正常情况下关掉的子树里一个都数不到。
+      expect(scanUiActivity(tester.binding.rootElement).tickers, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('帧回调之外的要帧：每次计数，调用点按间隔节流', (WidgetTester tester) async {
       UiActivityProbe.resetFrames();
       final StackTrace paint = st(

@@ -127,6 +127,10 @@ abstract final class UiActivityProbe {
       }
     }
     _registeringSite = site;
+    // 每次注册记一笔（#dPfBq8zQaI）：3.47 的 Ticker.scheduleTick **先** scheduleFrame、**后**
+    // scheduleFrameCallback(scheduleNewFrame: false)，要帧发生在注册之前，按「注册期间的要帧」
+    // 归账会全部漏掉。ticker 每帧续排注册一次，所以注册次数 = 它驱动的帧数。
+    _callbackRequestSites.update(site, (int n) => n + 1, ifAbsent: () => 1);
   }
 
   /// 帧回调注册结束。
@@ -138,15 +142,8 @@ abstract final class UiActivityProbe {
   /// [stack] 只给测试用。
   static void recordFrameRequest({StackTrace? stack}) {
     _requests++;
-    final String? registering = _registeringSite;
-    if (registering != null) {
-      _callbackRequestSites.update(
-        registering,
-        (int n) => n + 1,
-        ifAbsent: () => 1,
-      );
-      return;
-    }
+    // 注册帧回调顺带要的帧已在注册时按调用点记过（fcb），这里不再抓栈。
+    if (_registeringSite != null) return;
     if (_sinceRequestStack.isRunning &&
         _sinceRequestStack.elapsed < kUiActivityStackSampleInterval) {
       return;
@@ -360,25 +357,30 @@ UiActivitySnapshot scanUiActivity(
   final Map<String, int> tickers = <String, int>{};
   if (root == null) return (pages: pages, tickers: tickers);
   int visited = 0;
-  void visit(Element element) {
+  // [hidden]：在 `TickerMode(enabled: false)` 子树里。页面只收看得见的；ticker 照数（只数未静音的）
+  // ——被盖住的子树里若有没被静音的 ticker，它照样逐帧要帧，正是要点名的那种。
+  void visit(Element element, bool hidden) {
     if (visited >= maxElements) return;
     visited++;
     final Widget widget = element.widget;
-    if (widget is TickerMode && !widget.enabled) return;
+    final bool nowHidden = hidden || (widget is TickerMode && !widget.enabled);
     final String name = _typeName(widget);
-    if (name.endsWith('Page') && (pages.isEmpty || pages.last != name)) {
+    if (!nowHidden &&
+        name.endsWith('Page') &&
+        (pages.isEmpty || pages.last != name)) {
       pages.add(name);
     }
     if (element is StatefulElement) {
       final int active = _activeTickerCount(element.state);
       if (active > 0) {
-        tickers.update(name, (int n) => n + active, ifAbsent: () => active);
+        final String key = nowHidden ? '$name(hidden)' : name;
+        tickers.update(key, (int n) => n + active, ifAbsent: () => active);
       }
     }
-    element.visitChildElements(visit);
+    element.visitChildElements((Element child) => visit(child, nowHidden));
   }
 
-  visit(root);
+  visit(root, false);
   return (
     pages: pages.length <= maxPages
         ? pages
