@@ -14,8 +14,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
-    show kFloatingBallOcrLanguage;
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart'
     show hostOwnsWebViewHoverLookup;
@@ -1004,7 +1002,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     try {
       result = await const MethodChannelSystemOcr().recognize(
         bytes,
-        language: kFloatingBallOcrLanguage,
+        language: _prefs.screenOcrLanguage,
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('WebBrowserTabView.ocr', error, stack);
