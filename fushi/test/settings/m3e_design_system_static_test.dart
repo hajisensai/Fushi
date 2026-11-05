@@ -2217,13 +2217,15 @@ class AnotherPopupPart {
     expect(frame, contains('FushiDialogFrame('));
     expect(frame, contains('.surfaces.overlay'));
     expect(frame, contains('class _CoverAspectResolver'));
-    // B：宫格 + 大色块；D：分组分段列表（组首尾大圆角、组内小圆角）。
+    // B：宫格 + 大色块；D：分组分段网格（2026-11-05 宽屏重排：组内动作按行铺
+    // 进多列，网格外圈大圆角、内部小圆角、格间分段缝）。
     expect(frame, contains('_ActionTile('));
     expect(frame, contains('_HeroActionTile('));
-    expect(frame, contains('_ActionSection('));
+    expect(frame, contains('_ActionGridSection('));
     expect(frame, contains('_Md3SegmentRow('));
     expect(frame, contains('kSettingsSegmentOuterRadius'));
-    expect(frame, contains('SizedBox(height: kSettingsSegmentGap)'));
+    expect(frame, contains('kSettingsSegmentInnerRadius'));
+    expect(frame, contains('apple ? 0 : kSettingsSegmentGap'));
     expect(frame, contains('FushiFilledButton.tonalIcon('));
     // E：设置组收进子菜单。
     expect(frame, contains('_ContextSubmenuRow('));
