@@ -842,6 +842,19 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
   if (method === 'GET' && path === '/dev/stats.json') return json(await installStats(env, now));
+  if (method === 'GET' && path === '/dev/feedback.json') {
+    // 与 /dev 列表同一份数据（devList），给 Fushi Pulse 之类的本机面板用；status 缺省 = 未结案，all = 全部。
+    const status = url.searchParams.get('status') || 'active';
+    return json(await devList(env, {
+      status: status === 'all' ? null : status,
+      cursor: url.searchParams.get('cursor'),
+      limit: url.searchParams.get('limit') || 50,
+      q: (url.searchParams.get('q') || '').trim(),
+    }));
+  }
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\.json$/.exec(path))) {
+    return json(await devView(env, await feedbackById(env, m[1])));
+  }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {
     await refreshProjectStats(env, now, { force: true });
