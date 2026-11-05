@@ -26,3 +26,7 @@
   - **与 BUG-4013 的关系**（同日、同机型 iPhone18,3 的 iOS 同步闪退，4013 定位为进程虚拟地址空间耗尽，PR #2834）：
     - 4013 的修复**可能覆盖**本 bug 的 iOS 三份报告：rss 只有 1.0–1.4 GB 却在 Rust 与 Dart 堆各处分配失败，符合「地址空间满、物理内存未满」的特征；4013 去掉了重载期词典映射翻倍、media.bin 映射、逐 WebView 编译拦截规则，并开扩展虚拟地址空间 entitlement。本 bug 的报告里没有 VM 摘要，无法直接对照，需含 4013 修复的构建上再收 iOS 崩溃报告确认。
     - 4013 **不覆盖**：Android `7oF6GvM4Ii`（Scudo OOM，pss 约 3.3 GB，64 位进程，是物理内存耗尽）；假设 (a) 在 64 位上不变（4013 只给 32 位进程的次要连接关 mmap）；假设 (b)、(c) 未触及。本 bug 保持未修复，根因定位所需证据不变。
+  - **2026-11-05 续报（Android，含 4013 修复之后）**：`Eg5thU2wox`，与 `7oF6GvM4Ii` 同一台 Xiaomi 23116PN5BC / Android 16，**3.3.0-debug.23853**（晚于 23591）。两次 Scudo / `mprotect ... Out of memory` SIGABRT（09:58、10:02，各在启动后约 4 分钟、前台），第二次 pss 1.9 GB / rss 2.0 GB，`memoryPressure=2x`。
+    - 同一份日志里的历史段把这台机的进程内存曲线串起来了：23213 `stage=downloading` rss 1.1–1.4 GB → pss 3.3 GB；23261 `stage=start:plan heads=2` rss 3.45 GB（maxRss 3.6 GB），同轮 Dart 侧报 `SrsCoreException(-1): out of memory`（`SrsCore.sync2` ← `_coreSync2`，`srs_db_store.dart:5325`），即 Rust sync2 自己分配失败。
+    - **23853 这两次崩溃没有 `srs_sync` / `srs_v1_migrate` 活动面包屑**，且 09:51 上一轮互联同步已因 `No reachable Fushi server address` 在 `srsDirectoryKeyOf` 前失败——崩溃当时 SRS 同步大概率没在跑。错误日志在这两个进程里没有任何记录（只有 popup WebView 的 `ResizeObserver` 噪声），内存涨到 1.9 GB 的来源**无证据**，不能直接归给 SRS 同步。
+    - 推论：本 bug 在 Android 上不是 4013 覆盖的地址空间问题，且「只在同步中爆」的前提被这份报告削弱。证据缺口新增 ④：非活动期间也要有内存采样面包屑（周期 rss + 原生 core / 连接数 / WebView 数），否则此类前台 OOM 永远只剩 pss 一个数。
