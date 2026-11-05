@@ -100,20 +100,23 @@ class SubsCredentials {
   String? unavailableReason(String providerId) {
     switch (providerId) {
       case 'opensubtitles':
-        if (!openSubtitles.enabled)
+        if (!openSubtitles.enabled) {
           return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
+        }
         if (openSubtitles.effectiveApiKey.isEmpty) {
           return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或从已配好的 Fushi 经互联同步';
         }
         return null;
       case kSubdlSubtitleProviderId:
-        if (subdlApiKey.isEmpty)
+        if (subdlApiKey.isEmpty) {
           return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
+        }
         if (!subdlEnabled) return 'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）';
         return null;
       case 'jimaku':
-        if (jimakuApiKey.isEmpty)
+        if (jimakuApiKey.isEmpty) {
           return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
+        }
         if (!jimakuEnabled) return 'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）';
         return null;
     }
@@ -358,8 +361,9 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
           if (!file.isTextSubtitle) continue;
           final String language = detectSubtitleLanguage(file.name) ?? '';
           if (request.languages.isNotEmpty &&
-              !request.languages.contains(language))
+              !request.languages.contains(language)) {
             continue;
+          }
           out.add(
             _JimakuCliCandidate(
               entry: entry,

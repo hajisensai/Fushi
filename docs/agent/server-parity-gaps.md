@@ -8,6 +8,27 @@ Library root kinds the server scans today: `video`, `book`, `manga`, `audiobook`
 (`kServerLibraryRootKinds` in `packages/fushi_server/lib/src/config/server_config.dart`;
 yaml loading, the admin API and the WebUI all use that list).
 
+## Host hooks: app vs server
+
+Both sides run the same engine host, `FushiSyncServer`
+(`packages/fushi_engine/lib/sync/fushi_sync_server.dart`). The app builds it in
+`fushi/lib/src/sync/fushi_server_controller.dart`, the server in
+`packages/fushi_server/lib/src/headless_host.dart`. A hook left null turns its endpoints
+into 404/501 and clears its `/api/capabilities` bit, so diff the two call sites first when
+checking parity. Hooks the server leaves null today:
+
+| Hook | Effect on the server | Status |
+|---|---|---|
+| `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | No remote review (`/api/srs/remote/*` 404), no host-side SRS sync | Gap. Needs an SRS store on the server first (see "SRS on the server"). Size L, needs a spec. |
+| `hostSelfUpdater` | `/api/host/update` 404, `hostUpdate=false` | Gap. Implement `HostSelfUpdater` (`fushi_engine/lib/sync/host_update/host_update_protocol.dart`) by fetching the `hajisensai/fushi-server` release asset for the running OS, unpacking it next to `bin/`, and exiting for the service manager to restart. The app version is `fushi/lib/src/updates/host_self_update_service.dart`. Size M. |
+| `leaderboardLinkHost` | Paired devices can't sign in to the Fushi account through the server | Gap. The server already stores per-profile accounts in the app's file format (`leaderboard_store.dart`); this needs an `InterconnectLeaderboardLinkHost` adapter on top. Size S/M. |
+| `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
+| `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
+
+The other hooks are wired on both sides: pairing, peer tokens, `hostId`, public URLs, P2P,
+graphic-subtitle export, `videoSubtitleBackfill`, OCR, jobs, downloads, subscriptions,
+assistant, lookup, history, mining, dictionary media/styles and prefs.
+
 ## Music libraries: deliberately deferred
 
 The owner decided on 2026-10-28 to defer music. The server rejects `kind: music` on
@@ -41,7 +62,10 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 
 - **SRS on the server**: there is no SRS store or profile wiring yet, so there is no
   AnkiConnect layer on the server (`TODO(srs-ankiconnect)` at the top of
-  `packages/fushi_server/lib/src/host_bindings.dart`).
+  `packages/fushi_server/lib/src/host_bindings.dart`). The same missing store keeps
+  `srsRemoteStoreProvider` / `onClientWrite` / `onClientUpload` null (table above). With
+  a store, both would reuse the engine pieces the app uses: `SrsRemoteStoreService`
+  (`fushi_engine/lib/srs/srs_remote_store.dart`) and `SrsAnkiConnectHandler`.
 - **Backup**: there is no `backup` CLI command or admin endpoint. App backups
   (`createBackup` / `restoreBackup`) live in `fushi/lib/src/sync/backup_*`.
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations

@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -713,6 +714,8 @@ class HeadlessHost {
           defaultContentLanguage: serverDefaultContentLanguage(prefs),
         ),
         videoId: videoId,
+        // 与 app 同一判据：用户在下载确认里选定的作品身份优先于刮削结论。
+        confirmedIdentities: DownloadConfirmedIdentityResolver(db),
         language: language,
         seriesLanguage: (String seriesKey) =>
             serverSeriesSubtitleLanguage(prefs, seriesKey),

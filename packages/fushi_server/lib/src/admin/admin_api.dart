@@ -561,8 +561,9 @@ class AdminApi {
     final String path = (body['path'] ?? '').toString().trim();
     if (path.isEmpty) throw const FormatException('path required');
     final String kind = (body['kind'] ?? 'video').toString();
-    if (!kServerLibraryRootKinds.contains(kind))
+    if (!kServerLibraryRootKinds.contains(kind)) {
       throw FormatException(unsupportedLibraryKindMessage(kind));
+    }
     final String id = (body['id'] ?? '').toString().trim().isEmpty
         ? 'lib${DateTime.now().millisecondsSinceEpoch}'
         : body['id'].toString().trim();
@@ -645,8 +646,9 @@ class AdminApi {
             library.path,
             kAudiobookSourceMediaKind,
           );
-      if (source == null)
+      if (source == null) {
         return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
+      }
       return LibraryScanner.pruneAudiobookSource(
         db: ctx.db,
         source: source,

@@ -213,8 +213,9 @@ class LibraryScanner {
           await _groupBookSeries(summary);
         case kAudiobookSourceMediaKind:
           final _BookScan scan = await _scanAudiobooks(dir, root, summary);
-          if (pruneMissing)
+          if (pruneMissing) {
             await _pruneAudiobookRoot(dir, root.id, scan, summary);
+          }
         default:
           // 配置加载（`LibraryRootConfig.fromYaml`）已拒绝未知 kind；这里只防手搓的配置对象。
           summary.errors.add(
@@ -380,8 +381,9 @@ class LibraryScanner {
       mediaKind,
     )) {
       if (row.transport == 'local' &&
-          p.equals(p.normalize(row.rootPath), rootPath))
+          p.equals(p.normalize(row.rootPath), rootPath)) {
         return row;
+      }
     }
     return null;
   }
@@ -955,6 +957,7 @@ class LibraryScanner {
     final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
       DiscoveryMediaKind.audiobook,
       folder.files,
+      subtitleLangCode: subtitleLanguage,
     );
     switch (plan) {
       case AlignAudiobookPlan():
@@ -1200,8 +1203,9 @@ List<AudiobookFolder> planAudiobookFolders(Directory root) {
   String? discParentOf(String dir) {
     final String parent = p.dirname(dir);
     if (p.equals(parent, rootPath) ||
-        !_kDiscFolderPattern.hasMatch(p.basename(dir)))
+        !_kDiscFolderPattern.hasMatch(p.basename(dir))) {
       return null;
+    }
     return parent;
   }
 
