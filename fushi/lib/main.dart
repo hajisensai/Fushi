@@ -102,6 +102,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/storage_footprint_log.dart';
@@ -337,8 +338,9 @@ void main([List<String> args = const <String>[]]) {
   runZonedGuarded<Future<void>>(
     () async {
       /// Necessary to initialise Flutter when running native code before
-      /// starting the application.
-      final binding = WidgetsFlutterBinding.ensureInitialized();
+      /// starting the application. 用本类而非裸 WidgetsFlutterBinding：内存采样的要帧归因
+      /// （`req= fcb= fvis=`，BUG-4075）只能在 binding 的要帧入口上记。
+      final binding = FushiWidgetsFlutterBinding.ensureInitialized();
       // BUG-4072 方案 C：无界面拉起（Android audio_service 的 MediaBrowserService 被媒体
       // 续播 / 媒体键 / 车机绑、iOS 后台拉起）的引擎停在精简入口，界面接上来（第一个
       // resumed / inactive）之前不往下跑：不 runApp、不读写会话标记、不判闪退 / 不提示 /
