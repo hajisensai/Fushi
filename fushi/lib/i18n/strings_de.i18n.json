@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Kartenmedien",
   "settings_check_update_now": "Nach Updates suchen",
   "settings_content_language_description": "Fallback-Sprache für Inhalte, die keine eigene deklarieren. Individuelle Einstellungen pro Buch, Video, Spiel und Wörterbuch überschreiben dies.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Standard-Inhaltssprache",
   "settings_content_language_unset": "Nicht festgelegt",
   "settings_destination_appearance": "Erscheinungsbild",

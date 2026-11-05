@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Multimedia de las tarjetas",
   "settings_check_update_now": "Buscar actualizaciones",
   "settings_content_language_description": "Idioma de respaldo para contenido que no declara uno. Los ajustes por libro, por vídeo, por juego y por diccionario tienen prioridad.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Idioma de contenido predeterminado",
   "settings_content_language_unset": "No establecido",
   "settings_destination_appearance": "Apariencia",

@@ -7168,6 +7168,7 @@
   "settings_anki_media": "卡片媒體",
   "settings_check_update_now": "檢查更新",
   "settings_content_language_description": "內容沒有聲明語言時用的預設值。書/影片/遊戲/詞典各自的設定會覆蓋它。",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "預設內容語言",
   "settings_content_language_unset": "未設定",
   "settings_destination_appearance": "外觀",

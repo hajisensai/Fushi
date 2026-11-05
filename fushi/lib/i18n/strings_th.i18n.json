@@ -7168,6 +7168,7 @@
   "settings_anki_media": "สื่อของบัตรคำ",
   "settings_check_update_now": "ตรวจสอบอัปเดต",
   "settings_content_language_description": "ภาษาสำรองสำหรับเนื้อหาที่ไม่ได้ระบุไว้ การตั้งค่าแต่ละหนังสือ วิดีโอ เกม และพจนานุกรมจะแทนที่ค่านี้",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "ภาษาเนื้อหาเริ่มต้น",
   "settings_content_language_unset": "ยังไม่ได้ตั้ง",
   "settings_destination_appearance": "รูปลักษณ์",

@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Media delle schede",
   "settings_check_update_now": "Controlla aggiornamenti",
   "settings_content_language_description": "Lingua di fallback per contenuti che non ne dichiarano una. Le impostazioni per libro, video, gioco e dizionario hanno la priorità.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Lingua del contenuto predefinita",
   "settings_content_language_unset": "Non impostata",
   "settings_destination_appearance": "Aspetto",

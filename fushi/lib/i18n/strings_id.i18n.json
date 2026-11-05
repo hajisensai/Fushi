@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Media kartu",
   "settings_check_update_now": "Periksa pembaruan",
   "settings_content_language_description": "Bahasa fallback untuk konten yang tidak mendeklarasikan bahasanya. Pengaturan per-buku, per-video, per-game, dan per-kamus menimpa ini.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Bahasa konten default",
   "settings_content_language_unset": "Belum diatur",
   "settings_destination_appearance": "Tampilan",

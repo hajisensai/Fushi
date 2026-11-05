@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Nội dung đa phương tiện của thẻ",
   "settings_check_update_now": "Kiểm tra cập nhật",
   "settings_content_language_description": "Ngôn ngữ dự phòng cho nội dung không khai báo ngôn ngữ. Cài đặt theo sách, video, trò chơi và từ điển sẽ ghi đè.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Ngôn ngữ nội dung mặc định",
   "settings_content_language_unset": "Chưa đặt",
   "settings_destination_appearance": "Giao diện",

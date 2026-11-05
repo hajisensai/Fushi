@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Card media",
   "settings_check_update_now": "Check for updates",
   "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Default content language",
   "settings_content_language_unset": "Not set",
   "settings_destination_appearance": "Appearance",

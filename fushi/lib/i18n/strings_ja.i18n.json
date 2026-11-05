@@ -7168,6 +7168,7 @@
   "settings_anki_media": "カードのメディア",
   "settings_check_update_now": "アップデートを確認",
   "settings_content_language_description": "言語を宣言していないコンテンツのフォールバック言語です。書籍、動画、ゲーム、辞書ごとの設定がこれを上書きします。",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "デフォルトコンテンツ言語",
   "settings_content_language_unset": "未設定",
   "settings_destination_appearance": "外観",

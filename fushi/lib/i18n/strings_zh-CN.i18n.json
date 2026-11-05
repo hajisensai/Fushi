@@ -7168,6 +7168,7 @@
   "settings_anki_media": "制卡媒体",
   "settings_check_update_now": "检查更新",
   "settings_content_language_description": "内容没有声明语言时用的默认值。书/视频/游戏/词典各自的设置会覆盖它。",
+  "settings_content_language_screen_ocr_note": "截屏识字（悬浮球、拍照查词）也按这个语言识别；未设置时按日语。",
   "settings_content_language_title": "默认内容语言",
   "settings_content_language_unset": "未设置",
   "settings_destination_appearance": "外观",

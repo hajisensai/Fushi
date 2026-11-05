@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Медиа карточек",
   "settings_check_update_now": "Проверить обновления",
   "settings_content_language_description": "Резервный язык для контента, в котором язык не указан. Индивидуальные настройки книги, видео, игры и словаря имеют приоритет.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Язык содержимого по умолчанию",
   "settings_content_language_unset": "Не задан",
   "settings_destination_appearance": "Внешний вид",

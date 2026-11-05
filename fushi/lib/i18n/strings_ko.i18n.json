@@ -7168,6 +7168,7 @@
   "settings_anki_media": "카드 미디어",
   "settings_check_update_now": "업데이트 확인",
   "settings_content_language_description": "언어를 선언하지 않은 콘텐츠의 대체 언어. 개별 책, 동영상, 게임, 사전 설정이 이를 재정의합니다.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "기본 콘텐츠 언어",
   "settings_content_language_unset": "설정 안 됨",
   "settings_destination_appearance": "외관",

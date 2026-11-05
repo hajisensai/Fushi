@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Kart medyası",
   "settings_check_update_now": "Güncellemeleri kontrol et",
   "settings_content_language_description": "Dil beyan etmeyen içerikler için yedek dil. Kitap, video, oyun ve sözlük başına ayarlar bunu geçersiz kılar.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Varsayılan içerik dili",
   "settings_content_language_unset": "Ayarlanmadı",
   "settings_destination_appearance": "Görünüm",

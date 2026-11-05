@@ -7168,6 +7168,7 @@
   "settings_anki_media": "وسائط البطاقات",
   "settings_check_update_now": "التحقق من التحديثات",
   "settings_content_language_description": "لغة احتياطية للمحتوى الذي لا يعلن عن لغته. إعدادات كل كتاب وفيديو ولعبة وقاموس تتجاوز هذا.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "لغة المحتوى الافتراضية",
   "settings_content_language_unset": "غير مُعيّنة",
   "settings_destination_appearance": "المظهر",

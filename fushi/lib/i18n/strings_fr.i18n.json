@@ -7168,6 +7168,7 @@
   "settings_anki_media": "Médias des cartes",
   "settings_check_update_now": "Vérifier les mises à jour",
   "settings_content_language_description": "Langue de repli pour le contenu qui n'en déclare pas. Les paramètres par livre, par vidéo, par jeu et par dictionnaire l'emportent.",
+  "settings_content_language_screen_ocr_note": "Screen OCR (floating ball, camera lookup) also reads text in this language; Japanese when not set.",
   "settings_content_language_title": "Langue du contenu par défaut",
   "settings_content_language_unset": "Non définie",
   "settings_destination_appearance": "Apparence",
