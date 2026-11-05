@@ -273,31 +273,42 @@ const int kUiActivityMaxLayerTypes = 10;
 /// 一次 layer 普查最多访问的 layer 数。
 const int kUiActivityMaxLayers = 50000;
 
-/// 要帧调用点：先取第一个应用栈帧（同 [buildSiteOf]）；整栈都是框架时（滚动惯性、墨水波纹、
-/// TickerMode 解除静音……）退而取第一个不属于调度 / ticker / 动画控制器 / binding 本身的框架栈帧，
-/// 前缀 `~`（如 `~ScrollPosition.goBallistic@scroll_position.dart:900`），至少知道是哪类框架机制。
+/// 要帧调用链最多记几帧。
+const int kUiActivityMaxChainFrames = 10;
+
+/// 要帧调用点：先取第一个应用栈帧（同 [buildSiteOf]）；整栈都是框架 / SDK 时，记**原始调用链**：
+/// 去掉探针与 binding 自身后栈顶最多 [kUiActivityMaxChainFrames] 帧，`~` 开头、`<` 相连，
+/// 每帧 `函数(文件:行)`（如 `~SchedulerBinding.scheduleFrame(binding.dart:957)<…`）。
+///
+/// #AaRXcVUaXv：上一版此时只挑「第一个非调度框架帧」，结果整栈都落在调度 / 渲染 / dart:ui 里的
+/// 那种要帧被记成 `?`，恰好丢掉了最关键的那条链。不用 `@` 连接：日志脱敏会把 `x@y:n` 当邮箱抹掉。
+/// 不符合 `#n 函数 (uri:行)` 格式的行（AOT 未符号化帧等）截断后原样记入。
 @visibleForTesting
 String frameRequestSiteOf(String stack) {
   final String app = buildSiteOf(stack);
   if (app != '?') return app;
-  final RegExp frame = RegExp(r'^#\d+\s+(.+?) \((.+?):(\d+)(?::\d+)?\)$');
-  for (final String line in stack.split('\n')) {
-    final RegExpMatch? m = frame.firstMatch(line.trim());
-    if (m == null) continue;
+  final RegExp frame = RegExp(r'^#\d+\s+(.+?) \((.+?)(?::(\d+))?(?::\d+)?\)$');
+  final List<String> chain = <String>[];
+  for (final String raw in stack.split('\n')) {
+    final String line = raw.trim();
+    if (line.isEmpty) continue;
+    if (chain.length >= kUiActivityMaxChainFrames) break;
+    final RegExpMatch? m = frame.firstMatch(line);
+    if (m == null) {
+      final String text = line.replaceFirst(RegExp(r'^#\d+\s+'), '');
+      chain.add(text.length <= 60 ? text : text.substring(0, 60));
+      continue;
+    }
     final String uri = m.group(2)!;
-    if (uri.startsWith('dart:') ||
-        uri.endsWith('/scheduler/binding.dart') ||
-        uri.endsWith('/scheduler/ticker.dart') ||
-        uri.endsWith('/animation/animation_controller.dart') ||
-        uri.endsWith('/rendering/object.dart') ||
-        uri.endsWith('/ui_activity_probe.dart') ||
+    if (uri.endsWith('/ui_activity_probe.dart') ||
         uri.endsWith('/fushi_binding.dart')) {
       continue;
     }
     final String file = uri.substring(uri.lastIndexOf('/') + 1);
-    return '~${m.group(1)}@$file:${m.group(3)}';
+    final String? lineNo = m.group(3);
+    chain.add('${m.group(1)}($file${lineNo == null ? '' : ':$lineNo'})');
   }
-  return '?';
+  return chain.isEmpty ? '?' : '~${chain.join('<')}';
 }
 
 /// 合成树里各类 layer 的数量（类型名 → 个数），走 [views] 的根 layer，最多 [maxLayers] 个。

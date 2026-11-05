@@ -232,19 +232,35 @@ void main() {
 
     tearDown(UiActivityProbe.resetFrames);
 
-    test('调用点：先取应用栈帧，整栈是框架时取第一个非调度框架栈帧并加 ~', () {
+    test('调用点：先取应用栈帧，整栈是框架 / SDK 时记原始调用链（不含 @）', () {
       expect(
         frameRequestSiteOf(started.toString()),
         '_OrphanState._resume@orphan.dart:77',
       );
       expect(
         frameRequestSiteOf(frameworkOnly.toString()),
-        '~TickerMode._update@ticker_provider.dart:90',
+        '~Ticker.scheduleTick(ticker.dart:300)<Ticker.muted=(ticker.dart:120)'
+        '<TickerMode._update(ticker_provider.dart:90)',
       );
+      // #AaRXcVUaXv 的形态：整栈只有调度 / 渲染 / dart:ui，旧版记成 `?`。
       expect(
-        frameRequestSiteOf('#0      _rootRun (dart:async/zone.dart:1:1)'),
-        '?',
+        frameRequestSiteOf(
+          '#0      FushiWidgetsFlutterBinding.scheduleFrame (package:fushi/src/diagnostics/fushi_binding.dart:60:7)\n'
+          '#1      SchedulerBinding.ensureVisualUpdate (package:flutter/src/scheduler/binding.dart:910:9)\n'
+          '#2      PipelineOwner.requestVisualUpdate (package:flutter/src/rendering/object.dart:1070:7)\n'
+          '#3      _invoke (dart:ui/hooks.dart:312:13)\n'
+          '#4      <asynchronous suspension>\n',
+        ),
+        '~SchedulerBinding.ensureVisualUpdate(binding.dart:910)'
+        '<PipelineOwner.requestVisualUpdate(object.dart:1070)'
+        '<_invoke(hooks.dart:312)<<asynchronous suspension>',
       );
+      // 没有行号的帧也记。
+      expect(
+        frameRequestSiteOf('#0      _rootRun (dart:async/zone.dart)'),
+        '~_rootRun(zone.dart)',
+      );
+      expect(frameRequestSiteOf(''), '?');
     });
 
     testWidgets('逐帧续排的要帧按首次注册（启动）的调用点精确归账', (WidgetTester tester) async {
