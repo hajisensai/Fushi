@@ -203,15 +203,22 @@ function codeHash(env, hash, purpose, code) {
   return hmacHex(pepper(env), `code|${hash}|${purpose}|${code}`);
 }
 
-/** 6 位均匀随机数字（拒绝采样，避免取模偏差）。 */
-export function randomCode(fill = (b) => crypto.getRandomValues(b)) {
-  const buf = new Uint32Array(1);
-  const limit = Math.floor(0x100000000 / 1_000_000) * 1_000_000;
-  for (;;) {
-    fill(buf);
-    if (buf[0] < limit) return String(buf[0] % 1_000_000).padStart(6, '0');
-  }
+/**
+ * 6 位验证码 = HMAC(EMAIL_PEPPER, 邮箱哈希|用途|过期时刻) 取 64 位模 10^6（偏差 < 10^-13）。
+ * 不知道 pepper 就无法预测；而服务端只存码的哈希也能在重发时**算回同一个码**——见 deliverCode。
+ * @param {object} env
+ * @param {string} hash 规范化邮箱哈希
+ * @param {string} purpose
+ * @param {number} expiresAt 该码的过期时刻（ms），即 email_codes.expires_at
+ * @returns {Promise<string>}
+ */
+export async function deriveCode(env, hash, purpose, expiresAt) {
+  const h = await hmacHex(pepper(env), `otp|${hash}|${purpose}|${expiresAt}`);
+  return String(BigInt(`0x${h.slice(0, 16)}`) % 1_000_000n).padStart(6, '0');
 }
+
+/** 重发时现有码至少还剩这么久才沿用，否则换新码（免得刚收到就过期）。 */
+export const CODE_REUSE_MIN_REMAINING_MS = CODE_TTL_MS / 2;
 
 // 验证码后面紧跟句末标点，下一句也不以数字开头：通知栏 / 邮件列表摘要会把换行吞掉，
 // 旧文案「…：123456\n\n10 分钟内有效」在摘要里读成「12345610 分钟内有效」，码和时长粘成一串数字。
@@ -290,13 +297,25 @@ async function deliverCode(env, email, purpose, lang, now) {
     if (!(await emailTaken(env, ids))) return; // 没账户（新旧哈希都没命中）：不发信
   }
   await spend(env, 'email', 1, now);
-  const code = randomCode();
-  await env.DB.prepare(
-    `INSERT INTO email_codes (email_hash, purpose, code_hash, expires_at, attempts)
-     VALUES (?1, ?2, ?3, ?4, 0)
-     ON CONFLICT (email_hash, purpose) DO UPDATE SET
-       code_hash = excluded.code_hash, expires_at = excluded.expires_at, attempts = 0`,
-  ).bind(hash, purpose, await codeHash(env, hash, purpose, code), now + CODE_TTL_MS).run();
+  // 发信经常迟到几分钟（发信服务排队 / 收件方延迟投递），用户等不到就会重发。若重发换新码，
+  // 先前那封迟到的邮件一到手里的码已作废，只能继续重发直到撞上限流。所以现有码还有足够有效期、
+  // 次数也没用完时，重发**同一个码**、不动过期时刻与已试次数（重发也就不能刷新猜码次数）。
+  const live = await env.DB.prepare(
+    'SELECT expires_at, attempts FROM email_codes WHERE email_hash = ?1 AND purpose = ?2',
+  ).bind(hash, purpose).first();
+  let code;
+  if (live && live.expires_at - now >= CODE_REUSE_MIN_REMAINING_MS && live.attempts < CODE_MAX_ATTEMPTS) {
+    code = await deriveCode(env, hash, purpose, live.expires_at);
+  } else {
+    const expiresAt = now + CODE_TTL_MS;
+    code = await deriveCode(env, hash, purpose, expiresAt);
+    await env.DB.prepare(
+      `INSERT INTO email_codes (email_hash, purpose, code_hash, expires_at, attempts)
+       VALUES (?1, ?2, ?3, ?4, 0)
+       ON CONFLICT (email_hash, purpose) DO UPDATE SET
+         code_hash = excluded.code_hash, expires_at = excluded.expires_at, attempts = 0`,
+    ).bind(hash, purpose, await codeHash(env, hash, purpose, code), expiresAt).run();
+  }
   const m = MESSAGES[lang];
   // 发到用户输入的地址（保留 +tag / 点号）：别名本来就投递到同一个收件箱。
   await sendEmail(env, email.delivery, m.subject, m.body(code));

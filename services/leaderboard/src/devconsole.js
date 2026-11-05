@@ -267,6 +267,24 @@ async function readForm(request, maxBytes = 32 * 1024) {
   return new URLSearchParams(text);
 }
 
+/** 登录页错误码 → 中文说明（未列出的原样显示错误码，便于排查）。 */
+const AUTH_ERROR_TEXT = {
+  rate_limited: '请求太频繁（同一网络每小时最多发 5 次验证码），请稍后再试。已发出的验证码 10 分钟内仍然有效。',
+  bad_email: '邮箱格式不对。',
+  bad_code: '验证码不对。',
+  code_expired: '验证码已过期，请重新发送。',
+  too_many_attempts: '尝试次数过多，请重新发送验证码（同一邮箱每天猜错 10 次后当天不能再登录）。',
+  email_not_configured: '服务端没有配置发信。',
+};
+
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+function authErrorText(code) {
+  return AUTH_ERROR_TEXT[code] || code;
+}
+
 function loginPage({ email = '', step = 'email', error = '' } = {}) {
   const err = error ? `<p class="err">${esc(error)}</p>` : '';
   const form = step === 'email'
@@ -277,10 +295,14 @@ function loginPage({ email = '', step = 'email', error = '' } = {}) {
 </form>`
     : `<form method="post" action="/dev/login">
 <input type="hidden" name="email" value="${esc(email)}">
-<p class="muted">如果该邮箱是已注册的 Fushi 账户，验证码已发出（10 分钟内有效）。</p>
+<p class="muted">如果该邮箱是已注册的 Fushi 账户，验证码已发出（10 分钟内有效）。邮件有时会迟到几分钟，也请看看垃圾邮件；有效期内重发收到的是同一个验证码，先到的那封就能用。</p>
 <label for="code">验证码</label>
 <input id="code" name="code" inputmode="numeric" pattern="\\d{6}" autocomplete="one-time-code" required>
 <button>登录</button>
+</form>
+<form method="post" action="/dev/code">
+<input type="hidden" name="email" value="${esc(email)}">
+<button class="link">重新发送</button>
 </form>`;
   return html(layout('登录', `<h1>登录</h1>
 <div class="card">
@@ -803,7 +825,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     try {
       await requestCode(env, ip, { email, purpose: 'login', lang: 'zh' }, now, ctx);
     } catch (e) {
-      if (e instanceof HttpError) return loginPage({ email, error: `发送失败：${e.code}` });
+      if (e instanceof HttpError) return loginPage({ email, error: `发送失败：${authErrorText(e.code)}` });
       throw e;
     }
     return loginPage({ email, step: 'code' });
@@ -815,7 +837,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     try {
       ids = await consumeCode(env, email, 'login', form.get('code') || '', now);
     } catch (e) {
-      if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${e.code}` });
+      if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${authErrorText(e.code)}` });
       throw e;
     }
     const acc = await resolveEmailAccount(env, ids, now);
