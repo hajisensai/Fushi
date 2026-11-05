@@ -2269,6 +2269,7 @@ updateLive: function(patch) {
       onWebViewCreated: (controller) {
         _controller = controller;
         _bodyMenuDismiss.attach(controller);
+        notifyPopupBodyWebViewChanged();
         _openTrace.mark('webViewCreated');
         assert(() {
           // TODO-2603：调试钩子的生命周期属于**本页 State**，不属于单个 WebView

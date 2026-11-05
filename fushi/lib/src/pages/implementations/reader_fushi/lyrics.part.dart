@@ -240,6 +240,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _lyricsWebViewRetained = true;
         _lyricsPageReady = false;
         _rebuild(() => _lyricsMode = true);
+        notifyPopupBodyWebViewChanged();
         // 查词弹窗换成歌词页主题：Apple 深色档当场生效（app 已是深色时宿主主题
         // 不变、不会发布通知）；MD3 封面取色到达后经宿主通知再换一次。
         _syncDictionaryTheme();
@@ -254,6 +255,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           _lyricsWebViewParkedSize = lyricsBox.size;
         }
         _rebuild(() => _lyricsMode = false);
+        notifyPopupBodyWebViewChanged();
         // 查词弹窗立即回到阅读器主题（不等覆盖层卸载后宿主再发布）。
         _syncDictionaryTheme();
         await _exitLyricsMode();
@@ -1499,6 +1501,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // 复用（BUG-3913），下次进入由 _toggleLyricsMode 装载文档。
         _lyricsWebViewController = controller;
         _lyricsMenuDismiss.attach(controller);
+        notifyPopupBodyWebViewChanged();
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
           callback: (List<dynamic> args) async {

@@ -1777,6 +1777,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
+  /// 查词弹窗下的正文：歌词模式时是盖在书上的歌词 WebView，否则是书页 WebView。
+  @override
+  Object? get popupBodyWebViewId => _lyricsMode
+      ? _lyricsWebViewController?.getViewId()
+      : _controller?.getViewId();
+
   /// 订阅中的 app 主题通知器（dispose 时按同一实例退订）。
   ThemeNotifier? _observedThemeNotifier;
 
