@@ -2149,10 +2149,13 @@ void main() {
       );
       expect(autoplay, findsOneWidget);
       expect(replay, findsOneWidget);
+      // ensureVisible 改的滚动位置要下一帧才排版到位：开关不在首屏时（每日上限卡片多了 RWKV 两项）不 pump 就点空。
       await tester.ensureVisible(autoplay);
+      await tester.pump();
       await tester.tap(autoplay);
       await tester.pump();
       await tester.ensureVisible(replay);
+      await tester.pump();
       await tester.tap(replay);
       await tester.pump();
       await tester.tap(
@@ -2359,9 +2362,22 @@ void main() {
           apple: false,
           page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
         );
-        Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+        // 只读断言不看是否在视口里（skipOffstage: false）：点了某个按钮滚动后，同一张卡片可能滚出首屏。
+        Finder byKey(String key) =>
+            find.byKey(ValueKey<String>(key), skipOffstage: false);
+        EditableText field(String key) => tester.widget<EditableText>(
+          find.descendant(
+            of: byKey(key),
+            matching: find.byType(EditableText, skipOffstage: false),
+          ),
+        );
+        Future<void> reveal(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.pump();
+        }
+
         Future<void> enter(String key, String value) async {
-          await tester.ensureVisible(byKey(key));
+          await reveal(byKey(key));
           await tester.enterText(
             find.descendant(
               of: byKey(key),
@@ -2372,74 +2388,60 @@ void main() {
           await _settle(tester);
         }
 
-        String text(String key) => tester
-            .widget<EditableText>(
-              find.descendant(
-                of: byKey(key),
-                matching: find.byType(EditableText),
-              ),
-            )
-            .controller
-            .text;
+        Future<void> tapKey(String key) async {
+          await reveal(byKey(key));
+          await tester.tap(find.byKey(ValueKey<String>(key)));
+          await _settle(tester);
+        }
 
-        // 默认 20 / 200：不提示；最少复习数在每日上限卡片里（默认牌组是 RWKV）。
+        // 默认 20 / 200：不提示；最少复习数与忽略上限在每日上限卡片里（默认牌组是 RWKV）。
         expect(byKey('srs-settings-review-limit-low'), findsNothing);
-        expect(
-          find.descendant(
-            of: byKey('srs-settings-limits'),
-            matching: byKey('srs-settings-rwkv-min-reviews'),
-          ),
-          findsOneWidget,
-        );
-        expect(
-          find.descendant(
-            of: byKey('srs-settings-limits'),
-            matching: byKey('srs-settings-rwkv-ignore-limit'),
-          ),
-          findsOneWidget,
-        );
+        for (final String key in <String>[
+          'srs-settings-rwkv-min-reviews',
+          'srs-settings-rwkv-ignore-limit',
+        ]) {
+          expect(
+            find.descendant(
+              of: byKey('srs-settings-limits'),
+              matching: byKey(key),
+            ),
+            findsOneWidget,
+            reason: key,
+          );
+        }
 
         await enter('srs-settings-new', '30');
         expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
-        expect(find.text(t.srs_settings_set_to(n: 300)), findsOneWidget);
-        await tester.ensureVisible(byKey('srs-settings-review-limit-fix'));
-        await tester.tap(byKey('srs-settings-review-limit-fix'));
-        await _settle(tester);
-        expect(text('srs-settings-review'), '300');
+        expect(
+          find.text(t.srs_settings_set_to(n: 300), skipOffstage: false),
+          findsOneWidget,
+        );
+        await tapKey('srs-settings-review-limit-fix');
+        expect(field('srs-settings-review').controller.text, '300');
         expect(byKey('srs-settings-review-limit-low'), findsNothing);
 
         await enter('srs-settings-rwkv-min-reviews', '400');
         expect(byKey('srs-settings-min-over-limit'), findsOneWidget);
-        await tester.ensureVisible(byKey('srs-settings-min-reviews-fix'));
-        await tester.tap(byKey('srs-settings-min-reviews-fix'));
-        await _settle(tester);
-        expect(text('srs-settings-rwkv-min-reviews'), '60');
+        await tapKey('srs-settings-min-reviews-fix');
+        expect(field('srs-settings-rwkv-min-reviews').controller.text, '60');
         expect(byKey('srs-settings-min-over-limit'), findsNothing);
 
         // 开「忽略每日复习上限」：上限不截断，输入框置灰，上限相关的提示都不出。
         await enter('srs-settings-review', '10');
         expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
-        await tester.ensureVisible(byKey('srs-settings-rwkv-ignore-limit'));
+        await reveal(byKey('srs-settings-rwkv-ignore-limit'));
         await tester.tap(
           find.descendant(
-            of: byKey('srs-settings-rwkv-ignore-limit'),
+            of: find.byKey(
+              const ValueKey<String>('srs-settings-rwkv-ignore-limit'),
+            ),
             matching: find.byType(Switch),
           ),
         );
         await _settle(tester);
         expect(byKey('srs-settings-review-limit-low'), findsNothing);
         expect(byKey('srs-settings-min-over-limit'), findsNothing);
-        expect(
-          tester
-              .widget<EditableText>(
-                find.descendant(
-                  of: byKey('srs-settings-review'),
-                  matching: find.byType(EditableText),
-                ),
-              )
-              .readOnly,
-          isTrue,
-        );
+        expect(field('srs-settings-review').readOnly, isTrue);
         await _unmount(tester);
       },
     );
@@ -2472,10 +2474,12 @@ void main() {
       );
       final Finder minField = find.byKey(
         const ValueKey<String>('srs-settings-rwkv-min-reviews'),
+        skipOffstage: false,
       );
       expect(minField, findsNothing, reason: 'FSRS 牌组不显示 RWKV 的最少复习数');
       final Finder rwkv = find.text(t.srs_settings_algorithm_rwkv_recommended);
       await tester.ensureVisible(rwkv);
+      await tester.pump();
       await tester.tap(rwkv);
       await _settle(tester);
       expect(minField, findsOneWidget);
@@ -2484,7 +2488,7 @@ void main() {
             .widget<EditableText>(
               find.descendant(
                 of: minField,
-                matching: find.byType(EditableText),
+                matching: find.byType(EditableText, skipOffstage: false),
               ),
             )
             .controller

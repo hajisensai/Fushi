@@ -199,7 +199,7 @@ impl DeckTree {
     }
 
     /// 牌组按 RWKV 排程，且（参数归属的 own 祖先上）开了「忽略每日复习上限」（`SrsRwkvQueueSettings.ignoreReviewLimit`：
-    /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的旧牌组照旧按每日复习上限截断，新建牌组建时写上 true）。
+    /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的牌组与新建牌组都按每日复习上限截断）。
     pub fn ignores_review_limit(&self, deck: &str) -> bool {
         let id = self.effective(deck);
         let Some(owner) = self.params_owner(&id) else {
