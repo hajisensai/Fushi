@@ -155,17 +155,23 @@ impl DeckTree {
 
     /// 最近一个 own 祖先（顶层恒为 own）。
     pub fn params_owner(&self, id: &str) -> Option<&DeckNode> {
-        let mut cur = Some(id.to_owned());
+        self.params_owner_id(id).and_then(|o| self.decks.get(o))
+    }
+
+    /// [Self::params_owner] 的牌组 id。
+    pub fn params_owner_id<'a>(&'a self, id: &'a str) -> Option<&'a str> {
+        let mut cur = id;
         let mut guard = 0;
-        while let Some(c) = cur {
-            let d = self.decks.get(&c)?;
-            if d.own || d.parent.is_none() || guard > 64 {
-                return Some(d);
+        loop {
+            let d = self.decks.get(cur)?;
+            match d.parent.as_deref() {
+                Some(p) if !d.own && guard <= 64 => {
+                    guard += 1;
+                    cur = p;
+                }
+                _ => return Some(self.decks.get_key_value(cur)?.0.as_str()),
             }
-            guard += 1;
-            cur = d.parent.clone();
         }
-        None
     }
 
     /// 子树（含自己）。

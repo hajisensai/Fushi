@@ -2349,6 +2349,157 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets(
+      '牌组设置页：每日上限卡片里三个值联动提示——复习上限 < 10× 新卡、最少复习超过上限，各带一键改成参考值；开了忽略上限就不提示',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: false,
+          page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+        );
+        Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+        Future<void> enter(String key, String value) async {
+          await tester.ensureVisible(byKey(key));
+          await tester.enterText(
+            find.descendant(
+              of: byKey(key),
+              matching: find.byType(EditableText),
+            ),
+            value,
+          );
+          await _settle(tester);
+        }
+
+        String text(String key) => tester
+            .widget<EditableText>(
+              find.descendant(
+                of: byKey(key),
+                matching: find.byType(EditableText),
+              ),
+            )
+            .controller
+            .text;
+
+        // 默认 20 / 200：不提示；最少复习数在每日上限卡片里（默认牌组是 RWKV）。
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+        expect(
+          find.descendant(
+            of: byKey('srs-settings-limits'),
+            matching: byKey('srs-settings-rwkv-min-reviews'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: byKey('srs-settings-limits'),
+            matching: byKey('srs-settings-rwkv-ignore-limit'),
+          ),
+          findsOneWidget,
+        );
+
+        await enter('srs-settings-new', '30');
+        expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
+        expect(find.text(t.srs_settings_set_to(n: 300)), findsOneWidget);
+        await tester.ensureVisible(byKey('srs-settings-review-limit-fix'));
+        await tester.tap(byKey('srs-settings-review-limit-fix'));
+        await _settle(tester);
+        expect(text('srs-settings-review'), '300');
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+
+        await enter('srs-settings-rwkv-min-reviews', '400');
+        expect(byKey('srs-settings-min-over-limit'), findsOneWidget);
+        await tester.ensureVisible(byKey('srs-settings-min-reviews-fix'));
+        await tester.tap(byKey('srs-settings-min-reviews-fix'));
+        await _settle(tester);
+        expect(text('srs-settings-rwkv-min-reviews'), '60');
+        expect(byKey('srs-settings-min-over-limit'), findsNothing);
+
+        // 开「忽略每日复习上限」：上限不截断，输入框置灰，上限相关的提示都不出。
+        await enter('srs-settings-review', '10');
+        expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
+        await tester.ensureVisible(byKey('srs-settings-rwkv-ignore-limit'));
+        await tester.tap(
+          find.descendant(
+            of: byKey('srs-settings-rwkv-ignore-limit'),
+            matching: find.byType(Switch),
+          ),
+        );
+        await _settle(tester);
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+        expect(byKey('srs-settings-min-over-limit'), findsNothing);
+        expect(
+          tester
+              .widget<EditableText>(
+                find.descendant(
+                  of: byKey('srs-settings-review'),
+                  matching: find.byType(EditableText),
+                ),
+              )
+              .readOnly,
+          isTrue,
+        );
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets('牌组设置页：从 FSRS 切到 RWKV 时，没设过的每天最少复习数预填复习上限的 1/5', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckAlgorithm: <String, Object?>{
+              'alg': SrsAlgorithm.fsrs7.wire,
+              'auto': false,
+            },
+            SrsFieldKeys.deckLimits: <String, Object?>{
+              'new': 10,
+              'review': 150,
+            },
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder minField = find.byKey(
+        const ValueKey<String>('srs-settings-rwkv-min-reviews'),
+      );
+      expect(minField, findsNothing, reason: 'FSRS 牌组不显示 RWKV 的最少复习数');
+      final Finder rwkv = find.text(t.srs_settings_algorithm_rwkv_recommended);
+      await tester.ensureVisible(rwkv);
+      await tester.tap(rwkv);
+      await _settle(tester);
+      expect(minField, findsOneWidget);
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: minField,
+                matching: find.byType(EditableText),
+              ),
+            )
+            .controller
+            .text,
+        '30',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.rwkvQueue.minReviewsPerDay, 30);
+      await _unmount(tester);
+    });
+
     testWidgets('牌组设置页：同一次编辑里切换算法，步长显示与「是否改动」按新算法重算，保存后的生效值与显示一致', (
       WidgetTester tester,
     ) async {

@@ -324,7 +324,8 @@ fn marks(n: usize) -> String {
 /// - R ≤ 卡所在牌组的目标保留率才合格；
 /// - 同日重复的间隔守卫：今天答过的卡，距上次作答不足 `repeat_seconds` 秒，或这之后 [scope] 里别的卡的作答不足
 ///   `repeat_reviews` 次 → 暂缓；
-/// - 每天最少复习数：某牌组今天复习过的卡加上合格卡仍不到这个数时，从只因 R 高于目标被挡的卡里按 R 升序补足。
+/// - 每天最少复习数：共用一套设置（同一个参数归属牌组）的牌组今天复习过的卡加上合格卡仍不到这个数时，从只因 R
+///   高于目标被挡的卡里按 R 升序补足。
 fn instant_eligible(
     ctx: &Ctx<'_>,
     scope: &HashSet<&str>,
@@ -379,30 +380,37 @@ fn instant_eligible(
             .then_with(|| a.0.cmp(&b.0))
     };
     if decks.values().any(|q| q.min_reviews > 0) && !above.is_empty() {
-        let mut remaining: HashMap<&str, i64> = decks
-            .iter()
-            .filter(|(_, q)| q.min_reviews > 0)
-            .map(|(d, q)| (d.as_str(), q.min_reviews))
-            .collect();
+        // 配额按参数归属牌组（设置所在的 own 祖先）记：随参数继承的子牌组共用设置，也共用这一份「每天最少」，
+        // 不是每个子牌组各补一份（Anki 导入的牌组常有几十个继承同一预设的子牌组）。
+        let owner = |d: &str| ctx.tree.params_owner_id(d).unwrap_or(d).to_owned();
+        let mut remaining: HashMap<String, i64> = HashMap::new();
+        for (d, q) in decks.iter().filter(|(_, q)| q.min_reviews > 0) {
+            remaining.insert(owner(d), q.min_reviews);
+        }
+        let mut quota_of: HashMap<String, String> = HashMap::new();
+        let mut take = |d: &str, only_if_left: bool| -> bool {
+            let o = quota_of.entry(d.to_owned()).or_insert_with(|| owner(d));
+            match remaining.get_mut(o.as_str()) {
+                Some(left) if !only_if_left || *left > 0 => {
+                    *left -= 1;
+                    true
+                }
+                _ => false,
+            }
+        };
         for id in ctx.logs.reviewed_cards() {
             if let Some((d, _)) = answered_deck.get(id) {
-                if let Some(left) = remaining.get_mut(d.as_str()) {
-                    *left -= 1;
-                }
+                take(d, false);
             }
         }
         for (_, d, _) in &eligible {
-            if let Some(left) = remaining.get_mut(d.as_str()) {
-                *left -= 1;
-            }
+            take(d, false);
         }
         above.sort_by(by_r);
         for c in above {
-            match remaining.get_mut(c.1.as_str()) {
-                Some(left) if *left > 0 => *left -= 1,
-                _ => continue,
+            if take(&c.1, true) {
+                eligible.push(c);
             }
-            eligible.push(c);
         }
     }
     eligible.sort_by(by_r);

@@ -39,7 +39,14 @@ void main() {
       }).ignoreReviewLimit,
       isTrue,
     );
-    expect(SrsRwkvQueueSettings.forNewDeck.ignoreReviewLimit, isTrue);
+    // 新建牌组按 RWKV 推荐用法：复习上限当停止点，最少复习 = 默认上限 200 的 1/5。
+    expect(SrsRwkvQueueSettings.forNewDeck.ignoreReviewLimit, isFalse);
+    expect(SrsRwkvQueueSettings.forNewDeck.minReviewsPerDay, 40);
+    expect(
+      SrsRwkvQueueSettings.recommendedMinReviews(200),
+      SrsRwkvQueueSettings.forNewDeck.minReviewsPerDay,
+    );
+    expect(SrsDeckView.recommendedReviewsPerDay(30), 300);
     expect(
       SrsRwkvQueueSettings.fromValue(SrsRwkvQueueSettings.forNewDeck.toValue()),
       SrsRwkvQueueSettings.forNewDeck,
