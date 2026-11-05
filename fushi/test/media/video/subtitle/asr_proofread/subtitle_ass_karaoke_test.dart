@@ -109,8 +109,8 @@ void main() {
     expect(line, contains(',Afterglow Kara,'));
     // 继承英文译文行的 \fad；行首空档写成空音节 \k15。
     expect(line, contains(r'{\fad(100,100)}{\k15}{\kf30}振'));
-    // 标点粘在前一个字上，不单独计时。
-    expect(line, contains(r'{\kf30}る、{\kf'));
+    // 标点粘在前一个字上，不单独计时；它占的那段时间成了空音节 \k30。
+    expect(line, contains(r'{\kf30}る、{\k30}{\kf30}何'));
     expect(RegExp(r'\\kf').allMatches(line).length, 7);
     final List<int> cum = _karaokeCumulative(line);
     for (int i = 1; i < cum.length; i++) {
