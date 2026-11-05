@@ -131,7 +131,11 @@ StorageFootprint measureStorageFootprint(Directory root) {
   }
 
   final int total = walk(root, 0);
-  int bySizeDesc((String, int) a, (String, int) b) => b.$2.compareTo(a.$2);
+  // 大小降序；同样大（父目录只含一个子目录）按路径升序，父目录在前——`List.sort` 不稳定。
+  int bySizeDesc((String, int) a, (String, int) b) {
+    final int bySize = b.$2.compareTo(a.$2);
+    return bySize != 0 ? bySize : a.$1.compareTo(b.$1);
+  }
   final List<(String, int)> dirs = <(String, int)>[
     for (final MapEntry<String, int> e in dirSizes.entries)
       if (e.value >= kStorageFootprintDirMinBytes) (e.key, e.value),
