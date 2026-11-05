@@ -10,12 +10,13 @@
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
 //   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
+//   GET  /dev/stats.json          同一份数据的 JSON（installStats），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
 // 业务一律复用 feedback.js 的函数，与 App 端开发者接口同一份逻辑。
 
-import { HttpError, hex, sha256 } from './util.js';
+import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
 import {
@@ -834,12 +835,13 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   const dev = await sessionAccount(env, request, now);
   if (!dev) {
     if (method === 'GET' && path === '/dev') return loginPage();
-    if (method === 'GET') return redirect('/dev');
+    if (method === 'GET' && !path.endsWith('.json')) return redirect('/dev');
     throw new HttpError(401, 'dev_session_required');
   }
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
+  if (method === 'GET' && path === '/dev/stats.json') return json(await installStats(env, now));
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {
     await refreshProjectStats(env, now, { force: true });
