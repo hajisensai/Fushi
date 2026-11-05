@@ -29,6 +29,7 @@ import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleCue, parseSrt;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:path/path.dart' as p;
@@ -214,16 +215,21 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     required this.serviceFactory,
     required this.moss,
     this.preference = asr.AsrAccelerationPreference.auto,
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
   /// 与 `AsrHostJobRunner.serviceFactory` 同形；本识别器只用
-  /// [asr.AsrAudioProfile.mixedAudio]（日语 = Parakeet）。
+  /// [asr.AsrAudioProfile.mixedAudio]（日语 = Parakeet，普通话 = X-ASR zipformer）。
   final asr.AsrTranscriptionService Function(asr.AsrAudioProfile profile)
   serviceFactory;
 
   /// 已装好 CLI / 权重 / 后端 / 进程启动器的 MOSS 运行器。
   final asr.MossRunner moss;
   final asr.AsrAccelerationPreference preference;
+
+  /// 按分段识别用的语言。MOSS 分段本身不分语言（自动识别），这里只决定上游转录
+  /// 服务用哪个模型包。不进 [id]：各语言的任务目录本来就分开。
+  final VideoSubtitleLanguage language;
 
   @override
   String get id => kMossVideoSubtitleRecognizerId;
@@ -240,6 +246,7 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
       videoPath: videoPath,
       workDir: workDir,
       cancel: cancel,
+      language: language,
     );
     throwIfSubtitleCancelled(cancel);
 
@@ -247,14 +254,14 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     final asr.AsrTranscriptionService service = serviceFactory(
       asr.AsrAudioProfile.mixedAudio,
     );
-    const asr.AsrLanguage language = asr.AsrLanguage.japanese;
+    final asr.AsrLanguage asrLanguage = language.asrLanguage;
     final asr.AsrTranscribePlan plan = await service.plan(
-      language: language,
+      language: asrLanguage,
       preference: preference,
     );
     if (!plan.modelReady) {
-      throw const VideoSubtitleRecognizeFailure(
-        'asr models for ja (mixedAudio) are not downloaded',
+      throw VideoSubtitleRecognizeFailure(
+        'asr models for ${language.tag} (mixedAudio) are not downloaded',
       );
     }
 
@@ -275,7 +282,7 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     onProgress(base, 'loading model');
     final asr.AsrRunningTranscription running = await service.start(
       audioPaths: <String>[audio.path],
-      language: language,
+      language: asrLanguage,
       variant: plan.variant,
       preference: preference,
       segments: spans,

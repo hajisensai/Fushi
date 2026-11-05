@@ -21,6 +21,7 @@ import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -29,6 +30,8 @@ export 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart'
     show FushiAsrFfmpegBackend;
 export 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
     show MossBackendDecision, MossProvisionStatus, MossUnavailableCode;
+export 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart'
+    show VideoSubtitleLanguage;
 export 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
     show
         MossBackendPreference,
@@ -197,9 +200,11 @@ Future<Process> appAsrProcessStarter(
 Future<VideoSubtitleRecognizerChoice> resolveAppVideoSubtitleRecognizer({
   required VideoSubtitleSegmenterMode mode,
   MossBackendPreference mossBackend = MossBackendPreference.auto,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) => resolveVideoSubtitleRecognizer(
   mode: mode,
   mossBackend: mossBackend,
+  language: language,
   serviceFactory: (asr.AsrAudioProfile profile) =>
       createAsrTranscriptionService(audioProfile: profile),
   startProcess: appAsrProcessStarter,

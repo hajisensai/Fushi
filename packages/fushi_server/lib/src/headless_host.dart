@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show videoSubtitleJobsRootUnder;
@@ -257,9 +258,11 @@ class HeadlessHost {
               (
                 VideoSubtitleSegmenterMode mode,
                 MossBackendPreference mossBackend,
+                VideoSubtitleLanguage language,
               ) => resolveServerVideoSubtitleRecognizer(
                 mode: mode,
                 mossBackend: mossBackend,
+                language: language,
               ),
           pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
           database: () => db,

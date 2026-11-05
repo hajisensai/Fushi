@@ -1,4 +1,5 @@
-/// 「生成日语字幕」面板（视频页单集 / 合集页整季共用）：识别模型与 MOSS 的就绪状态、
+/// 「生成字幕」面板（视频页单集 / 合集页整季共用）：字幕语言（日语 / 普通话，按音轨
+/// 语言猜初值）、识别模型与 MOSS 的就绪状态、
 /// 分段方式、AI 校对开关（默认关，首次开启说明会发送什么）、当前提供商、费用预估、
 /// 专名表入口、阶段进度、取消，以及 AI 失败 / 专名表校验失败后的「继续」。
 ///
@@ -18,6 +19,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossar
     show SubtitleGlossaryProblem;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
     show MossUnavailableCode;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:path/path.dart' as p;
@@ -107,16 +109,22 @@ String videoSubtitleStageLabel(VideoSubtitleStage stage) => switch (stage) {
   VideoSubtitleStage.export => t.video_subtitle_ai_stage_export,
 };
 
-/// 一集最终去向的文案。
-String videoSubtitleEpisodeStatusLabel(VideoSubtitleEpisodeResult r) {
-  final String label = _episodeStatusLabel(r);
+/// 一集最终去向的文案。[language] 决定「已有 `.<语言>.srt`」类文案里的后缀。
+String videoSubtitleEpisodeStatusLabel(
+  VideoSubtitleEpisodeResult r, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
+  final String label = _episodeStatusLabel(r, language);
   final String? reference = r.styleReference;
   return r.styledOutputPath == null || reference == null
       ? label
       : '$label · ${t.video_subtitle_ai_episode_styled_from(name: reference)}';
 }
 
-String _episodeStatusLabel(VideoSubtitleEpisodeResult r) => switch (r.status) {
+String _episodeStatusLabel(
+  VideoSubtitleEpisodeResult r,
+  VideoSubtitleLanguage language,
+) => switch (r.status) {
   VideoSubtitleEpisodeStatus.exported => t.video_subtitle_ai_episode_exported(
     name: p.basename(r.styledOutputPath ?? r.outputPath ?? ''),
   ),
@@ -125,14 +133,33 @@ String _episodeStatusLabel(VideoSubtitleEpisodeResult r) => switch (r.status) {
       name: p.basename(r.styledOutputPath ?? r.outputPath ?? ''),
     ),
   VideoSubtitleEpisodeStatus.skippedExistingSubtitle =>
-    t.video_subtitle_ai_episode_skipped_existing,
-  VideoSubtitleEpisodeStatus.skippedBothExist =>
-    t.video_subtitle_ai_episode_skipped_both,
+    videoSubtitleSkippedExistingLabel(language),
+  VideoSubtitleEpisodeStatus.skippedBothExist => switch (language) {
+    VideoSubtitleLanguage.japanese => t.video_subtitle_ai_episode_skipped_both,
+    VideoSubtitleLanguage.mandarin =>
+      t.video_subtitle_ai_episode_skipped_both_zh,
+  },
   VideoSubtitleEpisodeStatus.skippedSong =>
     t.video_subtitle_ai_episode_skipped_song,
   VideoSubtitleEpisodeStatus.skippedNoDialogue =>
     t.video_subtitle_ai_episode_skipped_no_dialogue,
 };
+
+/// 「已有 `.<语言>.srt`、跳过」。
+String videoSubtitleSkippedExistingLabel(VideoSubtitleLanguage language) =>
+    switch (language) {
+      VideoSubtitleLanguage.japanese =>
+        t.video_subtitle_ai_episode_skipped_existing,
+      VideoSubtitleLanguage.mandarin =>
+        t.video_subtitle_ai_episode_skipped_existing_zh,
+    };
+
+/// 语言选择里的名字。
+String videoSubtitleLanguageLabel(VideoSubtitleLanguage language) =>
+    switch (language) {
+      VideoSubtitleLanguage.japanese => t.video_subtitle_ai_language_ja,
+      VideoSubtitleLanguage.mandarin => t.video_subtitle_ai_language_zh,
+    };
 
 /// MOSS 用不上的原因 → 文案（有分类按分类，否则显示排查原文）。
 String videoSubtitleMossProblemText(VideoSubtitleMossProblem problem) {
@@ -224,6 +251,11 @@ class _VideoSubtitleGenerateSheetState
   late bool _proofread = widget.prefs.proofread;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
 
+  /// 字幕语言。初值：接回的任务用它自己的；否则先按日语，音轨探测出来后
+  /// （[_guessLanguage]）若用户还没动过就换成猜到的。
+  VideoSubtitleLanguage _language = VideoSubtitleLanguage.japanese;
+  bool _languageTouched = false;
+
   /// 识别模型是否已下载；null = 还在查。
   bool? _modelReady;
   String? _planError;
@@ -241,40 +273,82 @@ class _VideoSubtitleGenerateSheetState
   AppVideoSubtitleJob? _job;
   String? _startError;
 
-  /// 整季：已有 `<视频名>.ja.srt`、管线会跳过的集。initState 里 async 探好后
+  /// 整季：已有 `<视频名>.<语言>.srt`、管线会跳过的集。initState 里 async 探好后
   /// setState（[_loadExisting]）：这些字幕在视频旁边，常在网络盘上，旧实现作为
   /// late 字段在 build 里逐集同步 stat，冷目录一次数秒、冻结 UI isolate（BUG-3756）。
   Set<String> _existing = const <String>{};
 
   Future<void> _loadExisting() async {
     if (!_target.wholeSeason) return;
+    final VideoSubtitleLanguage language = _language;
     final Set<String> existing = <String>{
       for (final AppVideoSubtitleEpisode e in _target.episodes)
         if (await File(
           p.join(
             p.dirname(e.videoPath),
-            '${p.basenameWithoutExtension(e.videoPath)}.ja.srt',
+            '${p.basenameWithoutExtension(e.videoPath)}.${language.tag}.srt',
           ),
         ).exists())
           e.videoPath,
     };
-    if (!mounted) return;
+    if (!mounted || language != _language) return;
     setState(() => _existing = existing);
+  }
+
+  Future<void> _guessLanguage() async {
+    final VideoSubtitleLanguage guessed = await _service.guessLanguage(_target);
+    if (!mounted || _languageTouched || guessed == _language) return;
+    await _applyLanguage(guessed);
+  }
+
+  Future<void> _setLanguage(VideoSubtitleLanguage language) async {
+    if (_running || language == _language) return;
+    _languageTouched = true;
+    await _applyLanguage(language);
+  }
+
+  /// 换语言：识别模型、已有字幕、费用预估都跟着语言走，重查一遍。
+  Future<void> _applyLanguage(VideoSubtitleLanguage language) async {
+    setState(() {
+      _language = language;
+      _modelReady = null;
+      _planError = null;
+      _asrDownloadError = null;
+      _existing = const <String>{};
+      _estimate = null;
+    });
+    final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
+        .resumeDownload(language: language);
+    if (asr != null) {
+      setState(() => _asrDownload = _starting);
+      unawaited(_followAsr(asr));
+    } else {
+      setState(() => _asrDownload = null);
+    }
+    unawaited(_loadExisting());
+    unawaited(_refreshPlan());
+    if (_proofread) unawaited(_refreshEstimate());
   }
 
   @override
   void initState() {
     super.initState();
-    unawaited(_loadExisting());
     final AppVideoSubtitleJob? latest = _service.latestJobFor(_target);
-    if (latest != null) _attach(latest);
+    if (latest != null) {
+      _attach(latest);
+      _language = latest.options.language;
+      _languageTouched = true;
+    } else {
+      unawaited(_guessLanguage());
+    }
+    unawaited(_loadExisting());
     unawaited(_refreshPlan());
     unawaited(_refreshMoss());
     if (_proofread) unawaited(_refreshEstimate());
     // 下载归全应用登记表、不归弹层（kZZmXQBv7E）：关掉再打开弹层时接回进行中的
     // 那条，进度照常显示、按钮不再亮——以前这里看不到它，再点一次就起第二条写者。
     final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload();
+        .resumeDownload(language: _language);
     if (asr != null) {
       _asrDownload = _starting;
       unawaited(_followAsr(asr));
@@ -310,11 +384,18 @@ class _VideoSubtitleGenerateSheetState
   bool get _running => _job?.isRunning ?? false;
 
   Future<void> _refreshPlan() async {
+    final VideoSubtitleLanguage language = _language;
     try {
-      final bool ready = await _service.asrModelPort.isReady();
-      if (mounted) setState(() => _modelReady = ready);
+      final bool ready = await _service.asrModelPort.isReady(
+        language: language,
+      );
+      if (mounted && language == _language) {
+        setState(() => _modelReady = ready);
+      }
     } catch (error) {
-      if (mounted) setState(() => _planError = '$error');
+      if (mounted && language == _language) {
+        setState(() => _planError = '$error');
+      }
     }
   }
 
@@ -357,6 +438,7 @@ class _VideoSubtitleGenerateSheetState
     try {
       final AppVideoSubtitleCostEstimate estimate = await _service.estimateCost(
         _target,
+        language: _language,
       );
       if (mounted) setState(() => _estimate = estimate);
     } catch (error, stack) {
@@ -379,7 +461,7 @@ class _VideoSubtitleGenerateSheetState
       _asrDownloadError = null;
       _asrDownload = _starting;
     });
-    unawaited(_followAsr(_service.asrModelPort.download()));
+    unawaited(_followAsr(_service.asrModelPort.download(language: _language)));
   }
 
   /// 跟一条识别模型下载的进度。弹层关掉只摘掉这个监听，下载本身继续。
@@ -432,7 +514,10 @@ class _VideoSubtitleGenerateSheetState
       final bool ok = await showFushiConfirmDialog(
         context: context,
         title: t.video_subtitle_ai_consent_title,
-        message: t.video_subtitle_ai_consent_body,
+        message: switch (_language) {
+          VideoSubtitleLanguage.japanese => t.video_subtitle_ai_consent_body,
+          VideoSubtitleLanguage.mandarin => t.video_subtitle_ai_consent_body_zh,
+        },
         confirmLabel: t.video_subtitle_ai_consent_confirm,
         cancelLabel: t.cancel,
         icon: FushiIcons.ai,
@@ -463,6 +548,7 @@ class _VideoSubtitleGenerateSheetState
           target: _target,
           candidate: useCandidate ? job?.glossaryFailure?.candidate : null,
           openAiSettings: widget.openAiSettings,
+          language: _language,
         ),
       ),
     );
@@ -483,6 +569,7 @@ class _VideoSubtitleGenerateSheetState
           proofread: _proofread,
           segmenter: _segmenter,
           mossBackend: widget.prefs.mossBackend,
+          language: _language,
         ),
       );
       setState(() => _attach(job));
@@ -511,15 +598,16 @@ class _VideoSubtitleGenerateSheetState
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> sections = <Widget>[
       _section(0, t.video_subtitle_ai_target_label, _targetSummary(context)),
-      _section(1, t.video_subtitle_ai_model_label, _modelStatus(context)),
-      _section(2, t.video_subtitle_ai_segmenter_label, _segmenterControl()),
-      _section(3, t.video_subtitle_ai_proofread_label, _proofreadControl()),
+      _section(1, t.video_subtitle_ai_language_label, _languageControl()),
+      _section(2, t.video_subtitle_ai_model_label, _modelStatus(context)),
+      _section(3, t.video_subtitle_ai_segmenter_label, _segmenterControl()),
+      _section(4, t.video_subtitle_ai_proofread_label, _proofreadControl()),
     ];
     final AppVideoSubtitleJob? job = _job;
     return FushiModalSheetFrame(
       title: _target.wholeSeason
-          ? t.video_subtitle_ai_season_title
-          : t.video_subtitle_ai_title,
+          ? t.video_subtitle_ai_generate_season_title
+          : t.video_subtitle_ai_generate_title,
       leadingIcon: FushiIcons.subtitles,
       scrollable: true,
       bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
@@ -572,7 +660,7 @@ class _VideoSubtitleGenerateSheetState
         index: index,
         child: FushiGroupedListItem(
           index: index,
-          count: 4,
+          count: 5,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
             child: Column(
@@ -600,13 +688,17 @@ class _VideoSubtitleGenerateSheetState
     final List<Widget> lines = <Widget>[
       Text(_target.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       if (_target.wholeSeason)
-        _hint(
-          t.video_subtitle_ai_season_summary(
+        _hint(switch (_language) {
+          VideoSubtitleLanguage.japanese => t.video_subtitle_ai_season_summary(
             n: _target.episodes.length,
             skipped: _existing.length,
           ),
-          key: const ValueKey<String>('video-subtitle-ai-season-summary'),
-        ),
+          VideoSubtitleLanguage.mandarin =>
+            t.video_subtitle_ai_season_summary_zh(
+              n: _target.episodes.length,
+              skipped: _existing.length,
+            ),
+        }, key: const ValueKey<String>('video-subtitle-ai-season-summary')),
       for (final AppVideoSubtitleUnavailable u in _target.unavailable)
         _hint(switch (u.reason) {
           AppVideoSubtitleUnavailableReason.remote =>
@@ -634,13 +726,43 @@ class _VideoSubtitleGenerateSheetState
     ),
   );
 
+  Widget _languageControl() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      KeyedSubtree(
+        key: const ValueKey<String>('video-subtitle-ai-language'),
+        child: adaptiveSegmentedButton<VideoSubtitleLanguage>(
+          context: context,
+          segments: <ButtonSegment<VideoSubtitleLanguage>>[
+            for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+              ButtonSegment<VideoSubtitleLanguage>(
+                value: l,
+                label: Text(
+                  videoSubtitleLanguageLabel(l),
+                  key: ValueKey<String>('video-subtitle-ai-language-${l.tag}'),
+                ),
+              ),
+          ],
+          selected: <VideoSubtitleLanguage>{_language},
+          onSelectionChanged: (Set<VideoSubtitleLanguage> s) =>
+              unawaited(_setLanguage(s.first)),
+        ),
+      ),
+      const SizedBox(height: 8),
+      _hint(t.video_subtitle_ai_language_hint),
+    ],
+  );
+
   Widget _modelStatus(BuildContext context) {
     final bool? ready = _modelReady;
+    final bool zh = _language == VideoSubtitleLanguage.mandarin;
     if (_planError != null) return _hint(_planError!, error: true);
     if (ready == null) return const FushiLinearProgressIndicator();
     if (ready) {
       return _hint(
-        t.video_subtitle_ai_model_ready,
+        zh
+            ? t.video_subtitle_ai_model_ready_zh
+            : t.video_subtitle_ai_model_ready,
         key: const ValueKey<String>('video-subtitle-ai-model-ready'),
       );
     }
@@ -648,7 +770,11 @@ class _VideoSubtitleGenerateSheetState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _hint(t.video_subtitle_ai_model_missing),
+        _hint(
+          zh
+              ? t.video_subtitle_ai_model_missing_zh
+              : t.video_subtitle_ai_model_missing,
+        ),
         const SizedBox(height: 8),
         FushiOutlinedButton.icon(
           key: const ValueKey<String>('video-subtitle-ai-model-download'),
@@ -966,9 +1092,12 @@ class _VideoSubtitleGenerateSheetState
   ) {
     final VideoSubtitleEpisodeResult? result = e.result;
     final String state = result != null
-        ? videoSubtitleEpisodeStatusLabel(result)
+        ? videoSubtitleEpisodeStatusLabel(
+            result,
+            language: job.options.language,
+          )
         : _existing.contains(e.episode.videoPath)
-        ? t.video_subtitle_ai_episode_skipped_existing
+        ? videoSubtitleSkippedExistingLabel(job.options.language)
         : e.stage != null
         ? videoSubtitleStageLabel(e.stage!)
         : t.video_subtitle_ai_episode_pending;

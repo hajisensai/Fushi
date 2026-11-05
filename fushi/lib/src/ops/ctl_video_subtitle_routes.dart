@@ -1,5 +1,6 @@
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
@@ -108,6 +109,14 @@ class CtlVideoSubtitleHandlers {
     }
     final AppVideoSubtitleTarget target = await _target(call);
     final bool proofread = call.optBool('proofread') ?? true;
+    final String? languageTag = call.optString('language');
+    final VideoSubtitleLanguage language = languageTag == null
+        ? VideoSubtitleLanguage.japanese
+        : VideoSubtitleLanguage.fromTag(languageTag) ??
+              (throw CtlFailure.badRequest(
+                'language 只能是 '
+                '${VideoSubtitleLanguage.values.map((VideoSubtitleLanguage l) => l.tag).join(' / ')}',
+              ));
     final AppVideoSubtitleService svc = service();
     if (proofread) {
       if (svc.proofreadProvider == null) {
@@ -141,6 +150,7 @@ class CtlVideoSubtitleHandlers {
         defaultMossBackend(),
       ),
       regenerateGlossary: call.optBool('regenerateGlossary') ?? false,
+      language: language,
     );
     final AppVideoSubtitleJob job;
     try {

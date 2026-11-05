@@ -16,6 +16,8 @@ import 'dart:io';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_prompts_zh.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 
 /// S4 提示词（`consistency.py` 的 `RULES`；除输出格式一句外逐字照搬——基准要求 JSON
@@ -40,10 +42,14 @@ const String kSubtitleConsistencyRules =
 String buildConsistencyStablePrefix({
   required String title,
   required String glossaryText,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) {
   const String marker = '\n{lines}';
-  final int at = kSubtitleConsistencyRules.indexOf(marker);
-  return kSubtitleConsistencyRules
+  final String rules = language == VideoSubtitleLanguage.mandarin
+      ? kSubtitleConsistencyRulesZh
+      : kSubtitleConsistencyRules;
+  final int at = rules.indexOf(marker);
+  return rules
       .substring(0, at)
       .replaceAll('{title}', title)
       .replaceAll('{glossary}', glossaryText);
@@ -53,6 +59,9 @@ String buildConsistencyStablePrefix({
 final RegExp kSubtitleKatakanaRun = RegExp('[ァ-ヺー]{2,}');
 final RegExp _kKatakanaWord = RegExp(r'^[ァ-ヺー]{2,}$');
 final RegExp _kReadingNoise = RegExp(r'[\s・]');
+
+/// 全是汉字的写法（普通话的人名 / 用语）。
+final RegExp _kHanWord = RegExp(r'^\p{Script=Han}+$', unicode: true);
 
 /// 码点长度（Python `len` 的口径；Dart `String.length` 数的是 UTF-16 单元）。
 int _len(String s) => s.runes.length;
@@ -90,10 +99,15 @@ int levenshteinDistance(String a, String b) {
 /// 一行里可能该统一成专名表写法的残留写法，形如 `誤→正?`（排序去重）。
 ///
 /// 同 `consistency.py` 的 `suspects`（per-episode `asr_fixes` 本管线不生成，略去）。
+///
+/// 普通话（[language]）没有片假名：「片假名名字编辑距离 1」换成「≥3 个汉字的正式写法、
+/// 同长度窗口里恰好错 1 个字」（`林晓明` ↔ `林小明`）。2 个字的写法不比：同音同长的
+/// 普通词太多。
 List<String> subtitleConsistencySuspects(
   String text,
-  List<SubtitleGlossaryEntry> entries,
-) {
+  List<SubtitleGlossaryEntry> entries, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
   final List<String> canon = <String>{
     for (final SubtitleGlossaryEntry e in entries) e.ja,
   }.toList()..sort((String a, String b) => _len(b).compareTo(_len(a)));
@@ -122,6 +136,12 @@ List<String> subtitleConsistencySuspects(
         why.add('$m→$ja?');
       }
     }
+    if (language == VideoSubtitleLanguage.mandarin) {
+      if (_kHanWord.hasMatch(ja) && _len(ja) >= 3) {
+        why.addAll(_hanNearMisses(rest, ja, canonSet));
+      }
+      continue;
+    }
     if (_kKatakanaWord.hasMatch(ja) && _len(ja) >= 3) {
       for (final RegExpMatch match in kSubtitleKatakanaRun.allMatches(rest)) {
         final String tok = match.group(0)!;
@@ -134,6 +154,31 @@ List<String> subtitleConsistencySuspects(
     }
   }
   return why.toList()..sort();
+}
+
+/// [rest] 里与 [ja] 等长、恰好差 1 个字、且两端都是汉字的片段（`误→正?`）。
+Iterable<String> _hanNearMisses(
+  String rest,
+  String ja,
+  Set<String> canonSet,
+) sync* {
+  final List<int> target = ja.runes.toList();
+  final List<int> hay = rest.runes.toList();
+  for (int i = 0; i + target.length <= hay.length; i++) {
+    int diff = 0;
+    bool han = true;
+    for (int k = 0; k < target.length && diff <= 1; k++) {
+      final int ch = hay[i + k];
+      if (!_kHanWord.hasMatch(String.fromCharCode(ch))) {
+        han = false;
+        break;
+      }
+      if (ch != target[k]) diff++;
+    }
+    if (!han || diff != 1) continue;
+    final String tok = String.fromCharCodes(hay.sublist(i, i + target.length));
+    if (!canonSet.contains(tok)) yield '$tok→$ja?';
+  }
 }
 
 /// 第 [i] 行是否处在疑似唱段里（同 `consistency.py` 的 `lyric_like`；弱信号）。
@@ -159,16 +204,22 @@ bool subtitleLyricLike(List<SubtitleDraftCue> cues, int i) {
 /// 每行被标出的原因；只含被标出的行。
 Map<int, List<String>> flagSubtitleConsistencyLines(
   List<SubtitleDraftCue> cues,
-  SubtitleGlossary glossary,
-) {
+  SubtitleGlossary glossary, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
   final Map<int, List<String>> flagged = <int, List<String>>{};
   for (int i = 0; i < cues.length; i++) {
     final List<String> why = subtitleConsistencySuspects(
       cues[i].text,
       glossary.entries,
+      language: language,
     );
     if (subtitleLyricLike(cues, i) && !cues[i].text.startsWith('♪')) {
-      why.add('歌詞?');
+      why.add(
+        language == VideoSubtitleLanguage.mandarin
+            ? SubtitleConsistencyLabelsZh.lyric
+            : '歌詞?',
+      );
     }
     if (why.isNotEmpty) flagged[i] = why;
   }
@@ -199,12 +250,16 @@ class SubtitleConsistencyPass {
     this.batchSize = 40,
     this.contextLines = 2,
     this.maxAttempts = 3,
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
   final AiTextCompleter completer;
   final int batchSize;
   final int contextLines;
   final int maxAttempts;
+
+  /// 选提示词与可疑写法规则（[subtitleConsistencySuspects]）。
+  final VideoSubtitleLanguage language;
 
   /// [cacheFile] 存在即复用（`{"fix": {...}, "usage": {...}}`）；否则只问被标出的行，
   /// 全部批次的回复都写完才写缓存（没有被标出的行也写一份空缓存，标记完成）。
@@ -218,6 +273,7 @@ class SubtitleConsistencyPass {
     final Map<int, List<String>> flagged = flagSubtitleConsistencyLines(
       cues,
       glossary,
+      language: language,
     );
     final SubtitleAiUsageTally usage = SubtitleAiUsageTally();
     Map<String, Object?>? fix = _readCache(cacheFile, usage);
@@ -225,7 +281,9 @@ class SubtitleConsistencyPass {
       fix = <String, Object?>{};
       final String gl = <String>[
         for (final SubtitleGlossaryEntry e in glossary.entries)
-          '${e.ja}(${e.reading}) ${e.kind}',
+          language == VideoSubtitleLanguage.mandarin && e.reading.trim().isEmpty
+              ? '${e.ja} ${e.kind}'
+              : '${e.ja}(${e.reading}) ${e.kind}',
       ].join('\n');
       final List<int> ids = flagged.keys.toList()..sort();
       for (int b = 0; b < ids.length; b += batchSize) {
@@ -284,6 +342,12 @@ class SubtitleConsistencyPass {
       final String nxt = <String>[
         for (int j = i + 1; j < to; j++) cues[j].text,
       ].join(' / ');
+      if (language == VideoSubtitleLanguage.mandarin) {
+        return 'id=$i ${SubtitleConsistencyLabelsZh.before}: $ctx\n'
+            '  ${SubtitleConsistencyLabelsZh.target}: ${cues[i].text}\n'
+            '  ${SubtitleConsistencyLabelsZh.after}: $nxt\n'
+            '  ${SubtitleConsistencyLabelsZh.suspect}: ${flagged[i]!.join('、')}';
+      }
       return 'id=$i 前: $ctx\n  対象: ${cues[i].text}\n  後: $nxt\n'
           '  疑い: ${flagged[i]!.join('、')}';
     }
@@ -297,6 +361,7 @@ class SubtitleConsistencyPass {
       stablePrefix: buildConsistencyStablePrefix(
         title: title,
         glossaryText: glossaryText,
+        language: language,
       ),
       body: () => <String>[
         for (final int i in chunk)

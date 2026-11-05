@@ -14,6 +14,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:path/path.dart' as p;
@@ -22,7 +23,7 @@ import 'package:path/path.dart' as p;
 typedef VideoSubtitleRecognizeProgress =
     void Function(double fraction, String message);
 
-/// 识别阶段：视频 → 带时间轴的日语字幕稿。
+/// 识别阶段：视频 → 带时间轴的字幕稿（目标语言见各实现的 `language`）。
 abstract interface class VideoSubtitleRecognizer {
   /// 稳定 id（进缓存键 `drafts.<id>.json`）；只用 `[a-z0-9_]`。
   String get id;
@@ -53,25 +54,17 @@ const Duration kVideoSubtitleAudioStallTimeout = Duration(minutes: 2);
 /// 不支持观察式运行的后端（测试替身 / 未知后端）的总时限。
 const Duration kVideoSubtitleAudioTimeout = Duration(hours: 1);
 
-/// 抽出的 16 kHz 单声道音轨在任务目录里的文件名：`audio_<任务目录名>.ja.wav`。
+/// 抽出的 16 kHz 单声道音轨在任务目录里的文件名：`audio_<任务目录名>.<语言>.wav`
+/// （日语 `.ja.wav`，与加入语言选择前相同）。
 ///
 /// **文件名必须因视频而异**：上游转录服务的任务 id 只哈希「音频文件名 + 字节数 +
 /// 模型包」，而 16 kHz 单声道 s16 WAV 的字节数只由时长决定——都叫同一个名字时，
 /// 采样数相同的两个视频（NC OP/ED、逐帧等长的各集）会共用上游任务目录、拿回对方的
 /// 转录稿。任务目录名本身就是 `videoSubtitleJobId`（视频文件名 + 字节数的 SHA-1）。
-String videoSubtitleAudioFileName(Directory workDir) =>
-    'audio_${p.basename(workDir.path)}.ja.wav';
-
-/// 从探测结果里挑日语音轨：有 `jpn` / `ja` 标签的取第一条，否则取第一条音轨；
-/// 没有音轨返回 null。返回的是**全局流序号**（`-map 0:<index>`）。
-int? pickJapaneseAudioStream(List<AudioTrackFacts> tracks) {
-  if (tracks.isEmpty) return null;
-  for (final AudioTrackFacts t in tracks) {
-    final String? lang = t.language?.toLowerCase();
-    if (lang == 'jpn' || lang == 'ja') return t.index;
-  }
-  return tracks.first.index;
-}
+String videoSubtitleAudioFileName(
+  Directory workDir, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) => 'audio_${p.basename(workDir.path)}.${language.tag}.wav';
 
 /// 抽音轨的 ffmpeg 参数（同基准 `common.py` 的 `extract_audio`）。
 List<String> videoSubtitleAudioExtractArgs({
@@ -99,7 +92,8 @@ List<String> videoSubtitleAudioExtractArgs({
   outputPath,
 ];
 
-/// 抽 [videoPath] 的日语音轨到 `<workDir>/`[videoSubtitleAudioFileName]；已有就直接用。
+/// 抽 [videoPath] 里 [language] 的音轨（[pickVideoSubtitleAudioStream]）到
+/// `<workDir>/`[videoSubtitleAudioFileName]；已有就直接用。
 ///
 /// ffmpeg 走引擎的后端装配点（[resolveFfmpegBackend]：子进程登记表、`FUSHI_FFMPEG`
 /// 覆盖、移动端 ffmpeg-kit），不裸起进程；测试用 `setFfmpegBackendForTesting` 换后端。
@@ -107,15 +101,19 @@ Future<File> extractVideoSubtitleAudio({
   required String videoPath,
   required Directory workDir,
   required SubtitleCancelToken cancel,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   void Function(Duration processed)? onProcessed,
 }) async {
   final File out = File(
-    p.join(workDir.path, videoSubtitleAudioFileName(workDir)),
+    p.join(
+      workDir.path,
+      videoSubtitleAudioFileName(workDir, language: language),
+    ),
   );
   if (out.existsSync() && out.lengthSync() > 44) return out;
   final FfmpegBackend backend = resolveFfmpegBackend();
   final VideoProbeFacts facts = await probeVideoFacts(videoPath);
-  final int? stream = pickJapaneseAudioStream(facts.audioTracks);
+  final int? stream = pickVideoSubtitleAudioStream(facts.audioTracks, language);
   if (stream == null) {
     throw VideoSubtitleRecognizeFailure(
       facts.isUnavailable
@@ -158,9 +156,9 @@ Future<File> extractVideoSubtitleAudio({
   return out;
 }
 
-/// 现有滑窗识别：抽日语音轨 → 上游 `AsrTranscriptionService`（`mixedAudio`：
-/// Parakeet + 15 s/3 s 滑窗）跑 plan → start → run → 读回 `transcript.srt` 与
-/// `transcript.tokens.jsonl`。
+/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（`mixedAudio`：
+/// 日语 Parakeet、普通话 X-ASR zipformer，均为 15 s/3 s 滑窗）跑 plan → start → run →
+/// 读回 `transcript.srt` 与 `transcript.tokens.jsonl`。
 ///
 /// 转录任务目录由上游服务管（按音频文件名 + 字节数 + 模型包派生），中途暂停 /
 /// 进程重启后再调同一音频即从断点续。
@@ -168,6 +166,7 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   SlidingWindowVideoSubtitleRecognizer({
     required this.serviceFactory,
     this.preference = asr.AsrAccelerationPreference.auto,
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
   /// 与 `AsrHostJobRunner.serviceFactory` 同形：按素材建服务。本识别器只用
@@ -175,6 +174,9 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   final asr.AsrTranscriptionService Function(asr.AsrAudioProfile profile)
   serviceFactory;
   final asr.AsrAccelerationPreference preference;
+
+  /// 识别语言。不进 [id]：各语言的任务目录本来就分开（[VideoSubtitleLanguage.jobId]）。
+  final VideoSubtitleLanguage language;
 
   @override
   String get id => 'sliding_mixed';
@@ -191,25 +193,26 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
       videoPath: videoPath,
       workDir: workDir,
       cancel: cancel,
+      language: language,
     );
     throwIfSubtitleCancelled(cancel);
     final asr.AsrTranscriptionService service = serviceFactory(
       asr.AsrAudioProfile.mixedAudio,
     );
-    const asr.AsrLanguage language = asr.AsrLanguage.japanese;
+    final asr.AsrLanguage asrLanguage = language.asrLanguage;
     final asr.AsrTranscribePlan plan = await service.plan(
-      language: language,
+      language: asrLanguage,
       preference: preference,
     );
     if (!plan.modelReady) {
-      throw const VideoSubtitleRecognizeFailure(
-        'asr models for ja (mixedAudio) are not downloaded',
+      throw VideoSubtitleRecognizeFailure(
+        'asr models for ${language.tag} (mixedAudio) are not downloaded',
       );
     }
     onProgress(0, 'loading model');
     final asr.AsrRunningTranscription running = await service.start(
       audioPaths: <String>[audio.path],
-      language: language,
+      language: asrLanguage,
       variant: plan.variant,
       preference: preference,
     );

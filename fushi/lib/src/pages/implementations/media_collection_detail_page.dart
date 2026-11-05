@@ -3426,7 +3426,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         action(
           _CollectionManageAction.generateJaSubtitles,
           FushiIcons.ai,
-          t.video_subtitle_ai_season_title,
+          t.video_subtitle_ai_generate_season_title,
           enabled: _members.isNotEmpty || _remoteMembers.isNotEmpty,
         ),
       action(

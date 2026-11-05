@@ -862,10 +862,11 @@ List<OpDescription> _describeSubtitleOps(
     method: 'POST',
     pattern: '$_video/subtitle-gen',
     summary:
-        'Generate Japanese subtitles for a video or a whole collection with '
-        'on-device ASR, optionally proofread by the LLM assigned to subtitle '
-        'proofreading (sends ASR text, billed by the provider). Writes .ja.srt '
-        'files. Returns a job id (video.job.get).',
+        'Generate Japanese or Mandarin subtitles for a video or a whole '
+        'collection with on-device ASR, optionally proofread by the LLM '
+        'assigned to subtitle proofreading (sends ASR text, billed by the '
+        'provider). Writes .ja.srt or .zh.srt files. Returns a job id '
+        '(video.job.get).',
     risk: OpRisk.irreversible,
     longRunning: true,
     taskIdOf: opTaskIdFromId,
@@ -887,6 +888,12 @@ List<OpDescription> _describeSubtitleOps(
         'mossBackend',
         description: 'MOSS backend: auto, cuda, vulkan or cpu.',
         enumValues: <String>['auto', 'cuda', 'vulkan', 'cpu'],
+      ),
+      OpParam.string(
+        'language',
+        description:
+            'Spoken language: ja (Japanese, default) or zh (Mandarin).',
+        enumValues: <String>['ja', 'zh'],
       ),
       OpParam.boolean(
         'regenerateGlossary',

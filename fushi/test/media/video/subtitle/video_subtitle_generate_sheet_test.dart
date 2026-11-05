@@ -13,7 +13,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
@@ -60,17 +62,22 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   int downloads = 0;
 
   @override
-  Future<bool> isReady() async => false;
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async => false;
 
   @override
-  Stream<ModelDownloadEvent> download() {
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) {
     downloads++;
     return running.stream;
   }
 
   @override
-  Stream<ModelDownloadEvent>? resumeDownload() =>
-      running.isClosed ? null : running.stream;
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => running.isClosed ? null : running.stream;
 }
 
 void main() {
@@ -108,6 +115,7 @@ void main() {
 
   AppVideoSubtitleService buildService({
     VideoSubtitleAsrModelPort asrModelPort = const ReadyModels(),
+    List<AudioTrackFacts> audioTracks = const <AudioTrackFacts>[],
   }) => AppVideoSubtitleService(
     database: db,
     settings: settings,
@@ -115,12 +123,14 @@ void main() {
     jobRegistry: VideoRemoteJobRegistry(),
     jobsRoot: () async => Directory(p.join(tmp.path, 'jobs')),
     probeDurationMs: (String _) async => 24 * 60 * 1000,
+    probeAudioTracks: (String _) async => audioTracks,
     mossPort: const ReadyModels(),
     asrModelPort: asrModelPort,
     recognizerResolver:
         ({
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
+          VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
         }) async =>
             VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
     completerFactory: (AiProviderConfig _) =>
@@ -151,6 +161,18 @@ void main() {
     await tester.pumpAndSettle();
     return openedSettings;
   }
+
+  VideoSubtitleLanguage selectedLanguage(WidgetTester tester) => tester
+      .widget<SegmentedButton<VideoSubtitleLanguage>>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('video-subtitle-ai-language')),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is SegmentedButton<VideoSubtitleLanguage>,
+          ),
+        ),
+      )
+      .selected
+      .single;
 
   VoidCallback? startPressed(WidgetTester tester) => tester
       .widget<FushiFilledButton>(
@@ -347,5 +369,48 @@ void main() {
       find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
       findsNothing,
     );
+  });
+
+  testWidgets('只有中文音轨：语言默认中文，可手动改回日语', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'chi'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+
+    final Finder ja = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-language-ja'),
+    );
+    await tester.ensureVisible(ja);
+    await tester.tap(ja);
+    await tester.pumpAndSettle();
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+  });
+
+  testWidgets('日中双音轨：语言默认日语（原有行为）', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'jpn'),
+          AudioTrackFacts(index: 2, language: 'chi'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
   });
 }

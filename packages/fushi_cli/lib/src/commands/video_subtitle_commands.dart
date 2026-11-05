@@ -34,6 +34,7 @@ const String _glossaryPath = '/api/admin/video/subtitle-glossary';
 
 const List<String> _segmenters = <String>['auto', 'moss', 'window'];
 const List<String> _mossBackends = <String>['auto', 'cuda', 'vulkan', 'cpu'];
+const List<String> _languages = <String>['ja', 'zh'];
 
 void _addTargetOption(ArgParser parser) {
   parser.addOption(
@@ -80,6 +81,11 @@ void _configureGen(ArgParser parser) {
       allowed: _mossBackends,
       help: 'MOSS 后端（缺省取设置里的值）',
     )
+    ..addOption(
+      'language',
+      allowed: _languages,
+      help: '音频语言：ja 日语（缺省）/ zh 普通话；输出 <视频名>.<语言>.srt',
+    )
     ..addFlag(
       'regen-glossary',
       negatable: false,
@@ -96,6 +102,7 @@ void _configureGen(ArgParser parser) {
 CtlRequestSpec _buildGen(CtlCommandContext context) {
   final String? segmenter = context.option('segmenter');
   final String? backend = context.option('moss-backend');
+  final String? language = context.option('language');
   return CtlRequestSpec.post(
     _genPath,
     body: <String, Object?>{
@@ -103,6 +110,7 @@ CtlRequestSpec _buildGen(CtlCommandContext context) {
       'proofread': context.flag('ai'),
       if (segmenter != null) 'segmenter': segmenter,
       if (backend != null) 'mossBackend': backend,
+      if (language != null) 'language': language,
       if (context.flag('regen-glossary')) 'regenerateGlossary': true,
       if (context.flag('consent-ai')) 'consentAi': true,
       if (context.flag('wait')) 'wait': true,

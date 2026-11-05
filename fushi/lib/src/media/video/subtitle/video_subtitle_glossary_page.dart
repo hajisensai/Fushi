@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
     show SubtitleAiRequestFailure;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
@@ -49,9 +50,13 @@ class VideoSubtitleGlossaryPage extends StatefulWidget {
     required this.target,
     required this.openAiSettings,
     this.candidate,
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
   final AppVideoSubtitleService service;
+
+  /// 哪种语言的表（日语与普通话各一张）。
+  final VideoSubtitleLanguage language;
 
   /// 这张表属于哪部作品（[AppVideoSubtitleTarget.work]），「只重跑写法统一」跑哪些集。
   final AppVideoSubtitleTarget target;
@@ -95,6 +100,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
   Future<void> _load() async {
     final SubtitleGlossary? saved = await _service.loadGlossary(
       widget.target.work,
+      language: widget.language,
     );
     if (!mounted) return;
     final List<SubtitleGlossaryEntry>? candidate = widget.candidate;
@@ -115,6 +121,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
         widget.target.work,
         next,
         previous: _candidateMode ? null : _saved,
+        language: widget.language,
       );
     } on Object catch (e) {
       if (mounted) {
@@ -202,6 +209,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
     try {
       final SubtitleGlossary glossary = await _service.regenerateGlossary(
         widget.target,
+        language: widget.language,
       );
       if (!mounted) return;
       setState(() {
@@ -238,6 +246,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
     try {
       final AppVideoSubtitleJob job = await _service.startConsistencyRerun(
         widget.target,
+        language: widget.language,
       );
       if (!mounted) return;
       _rerun?.removeListener(_onRerun);
@@ -307,7 +316,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.video_subtitle_glossary_title,
-      subtitle: widget.target.work.japaneseTitle,
+      subtitle: widget.language.workTitle(widget.target.work),
       header: apple ? null : _buildTopBar(context),
       actions: apple
           ? <Widget>[
@@ -338,7 +347,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
       // 动作默认全部平铺，放不下才按优先级（最后一个最先）收进「⋯」。
       child: FushiFloatingTopBar(
         title: t.video_subtitle_glossary_title,
-        subtitle: widget.target.work.japaneseTitle,
+        subtitle: widget.language.workTitle(widget.target.work),
         leading: <FushiToolbarItem>[
           if (navigator != null && navigator.canPop())
             FushiToolbarItem(
