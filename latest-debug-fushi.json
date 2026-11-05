@@ -8,15 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ b2818b0. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-3.3.0-debug.23669-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23669-ios.ipa",
-      "releaseSequence": 23669,
-      "tag": "v3.3.0-debug.23669+1cda164",
-      "version": "3.3.0-debug.23669",
-      "size": 98047032,
-      "sha256": "209be962ff6b23095c9218c00d6b2185c5b98de49f3faa400e17eb8ab5c3d8a5"
-    },
-    {
       "name": "fushi-3.3.0-debug.23853-b2818b0-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23853-b2818b0-debug.apk",
       "releaseSequence": 23853,
@@ -24,6 +15,33 @@
       "version": "3.3.0-debug.23853",
       "size": 265515542,
       "sha256": "bc5a677bb2b8700c57de8f065529823ffcce9e2d31628aeaf2ebb5c1aadcd2ab"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23853-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23853-ios.ipa",
+      "releaseSequence": 23853,
+      "tag": "v3.3.0-debug.23853+b2818b0",
+      "version": "3.3.0-debug.23853",
+      "size": 98454822,
+      "sha256": "84095c6cc39695b6380b62009b6bc601a862cffc649070368998cd975af664fb"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23853-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23853-macos-arm64.dmg",
+      "releaseSequence": 23853,
+      "tag": "v3.3.0-debug.23853+b2818b0",
+      "version": "3.3.0-debug.23853",
+      "size": 282646802,
+      "sha256": "639f49dfbaf8bb1df638eb7df5957b204c3de385da58c9f0847183f666ace9a6"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23853-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23853-macos-arm64.zip",
+      "releaseSequence": 23853,
+      "tag": "v3.3.0-debug.23853+b2818b0",
+      "version": "3.3.0-debug.23853",
+      "size": 268305817,
+      "sha256": "1650e05bdc8324073c4df5d00e9d9d6822747f11732c5c1cb1db640b03303f6d"
     },
     {
       "name": "fushi-3.3.0-debug.23853-windows-setup.exe",
