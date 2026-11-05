@@ -180,8 +180,35 @@ void main() {
       await tester.pump();
     }
     await tester.pump(); // 没排程：不出帧，不计。
-    expect(UiActivityProbe.probe(), 'frames=3');
-    expect(UiActivityProbe.probe(), 'frames=0');
+    expect(UiActivityProbe.probe(), startsWith('frames=3 '));
+    expect(UiActivityProbe.probe(), startsWith('frames=0 '));
+    UiActivityProbe.resetFrames();
+  });
+
+  test('重建调用点：跳过框架 / SDK / 探针自身的栈帧，取第一个应用栈帧', () {
+    const String stack =
+        '#0      UiActivityProbe.recordBuildScheduled (package:fushi/src/diagnostics/ui_activity_probe.dart:60:5)\n'
+        '#1      BuildOwner.scheduleBuildFor (package:flutter/src/widgets/framework.dart:3000:7)\n'
+        '#2      State.setState (package:flutter/src/widgets/framework.dart:1200:15)\n'
+        '#3      _NowListeningMiniBarState._onSessionChanged (package:fushi/src/media/audiobook/now_listening_mini_bar.dart:48:7)\n'
+        '#4      ChangeNotifier.notifyListeners (package:flutter/src/foundation/change_notifier.dart:437:24)\n';
+    expect(
+      buildSiteOf(stack),
+      '_NowListeningMiniBarState._onSessionChanged@now_listening_mini_bar.dart:48',
+    );
+    expect(buildSiteOf('#0      _rootRun (dart:async/zone.dart:1:1)'), '?');
+  });
+
+  testWidgets('重建要帧：每次计数，调用点按间隔节流抓一次', (WidgetTester tester) async {
+    UiActivityProbe.resetFrames();
+    final StackTrace stack = StackTrace.fromString(
+      '#0      _FooState._tick (package:fushi/src/foo.dart:12:3)\n',
+    );
+    UiActivityProbe.recordBuildScheduled(stack);
+    UiActivityProbe.recordBuildScheduled(stack);
+    UiActivityProbe.recordBuildScheduled(stack);
+    final String out = UiActivityProbe.probe()!;
+    expect(out, contains('build=3 who=[_FooState._tick@foo.dart:12]'));
     UiActivityProbe.resetFrames();
   });
 }
