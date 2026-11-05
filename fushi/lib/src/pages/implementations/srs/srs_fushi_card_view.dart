@@ -1613,7 +1613,7 @@ class SrsRubyText extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                _NoBaseline(
+                SrsNoBaseline(
                   child: tag(
                     Text(
                       s.ruby!,
@@ -1654,8 +1654,8 @@ class SrsRubyText extends StatelessWidget {
 
 /// 不对外报告基线的包装：Column 取「第一个有基线的孩子」作自己的基线，注音行包上它
 /// 后，注音段的基线就是下面基字的基线。
-class _NoBaseline extends SingleChildRenderObjectWidget {
-  const _NoBaseline({required super.child});
+class SrsNoBaseline extends SingleChildRenderObjectWidget {
+  const SrsNoBaseline({super.key, required super.child});
 
   @override
   RenderObject createRenderObject(BuildContext context) => _RenderNoBaseline();
