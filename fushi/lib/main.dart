@@ -102,6 +102,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/storage_footprint_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -696,6 +697,8 @@ void main([List<String> args = const <String>[]]) {
       ]);
       // BUG-4075：周期内存采样写进会话标记（进程 RSS + SRS 原生内核计数），下次启动的
       // 「上次未正常退出」带上崩前几分钟的内存曲线。
+      // 帧数 + 可见页面：停着不动时是否仍在逐帧重绘、停在哪一页（BUG-4075 证据缺口 ⑥）。
+      UiActivityProbe.install();
       PreviousExitLog.startMemorySampling(
         probes: const <MemoryProbe>[
           processRssBreakdownProbe,
@@ -703,6 +706,7 @@ void main([List<String> args = const <String>[]]) {
           processThreadCountProbe,
           srsMemoryProbe,
           srsOpLedgerProbe,
+          UiActivityProbe.probe,
         ],
       );
       // 单次超过 3 s 或读回超过 32 MB 的 SRS 操作另记一条诊断日志（随反馈上传）。
