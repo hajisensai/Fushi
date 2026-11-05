@@ -35,8 +35,18 @@ AI 字幕管线（识别 → S0 专名表 → S3 校对 → S4 写法统一 → 
 ### 选语言
 
 - 面板（`video_subtitle_generate_sheet.dart`）新增「音频语言」分段（`adaptiveSegmentedButton`，日语 / 中文）。
-  初值按第一集音轨标签猜（`guessVideoSubtitleLanguage`）：有中文标签且没有日语标签 → 中文，其余 → 日语；
-  用户可改。改语言会重查模型是否就绪、已有字幕（`.<tag>.srt`）与费用估算。
+  初值由 `resolveVideoSubtitleLanguage` 按这部作品自己的证据从强到弱取第一档有结论的：
+  1. 用户给视频设的内容语言（`VideoBooks.language`；整季要求设了的集一致）；
+  2. 明确的音轨标签（带标签的音轨里只有日语或只有中文；日中双音轨 / 无标签跳过）；
+  3. 刮削的作品原语言（`video_metadata_works.originalLanguage`，经 `SubtitleWorkContext.originalLanguage`）；
+  4. 日语。
+
+  音轨排在原语言前：日本动画的普通话配音版刮削原语言是 `ja`。全局「默认内容语言」不参与（同 BUG-3083）。
+  标签映射 `videoSubtitleLanguageForTag`：`zh` / `zh-Hans` / `zh-Hant` / `cmn` → 普通话；粤语
+  （`yue` / TMDB `cn` / `zh-HK` / `zh-MO`）与 `ko` / `en` 等不支持 → 交给下一档（不用会把 `yue` 归成 `zh` 的
+  `normalizeSubtitleLanguageCode`）。分段下方提示初值的来由；用户手动选后提示消失。
+  `originalLanguage` 不进专名表指纹（已有专名表不失效）。
+- 用户可改。改语言会重查模型是否就绪、已有字幕（`.<tag>.srt`）与费用估算。
 - 操作目录 `video.subtitle.generate`、远程宿主任务参数、`fushi_cli`、`fushi_server subgen` 都接受
   `language: ja|zh`（缺省 ja），不认识的值 = 400 / 用法错误。
 

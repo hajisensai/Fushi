@@ -99,15 +99,116 @@ int? pickVideoSubtitleAudioStream(
   return tracks.first.index;
 }
 
-/// 按音轨标签猜目标语言：有中文标签、没有日语标签 → 普通话；其余（含没有标签）→ 日语
-/// （原有默认）。面板用它给语言选择定初值，用户可改。
-VideoSubtitleLanguage guessVideoSubtitleLanguage(List<AudioTrackFacts> tracks) {
-  bool has(VideoSubtitleLanguage l) => tracks.any(
-    (AudioTrackFacts t) =>
-        l.audioTrackTags.contains(t.language?.toLowerCase() ?? ''),
+/// 声明过的语言标签（`VideoBooks.language`、TMDB `original_language`）→ 能跑的字幕
+/// 语言。认不出或不支持（`ko` / `en`、粤语 `yue` / `cn` / `zh-HK` / `zh-MO`）返回
+/// null，由下一档决定。
+///
+/// 不用 `normalizeSubtitleLanguageCode`：它把 `yue` 归成 `zh`（字幕筛选够用），但
+/// 粤语音频喂普通话识别模型是错的。`zh-Hant` 只是书写系统，仍算普通话。
+VideoSubtitleLanguage? videoSubtitleLanguageForTag(String? tag) {
+  final List<String> parts = (tag ?? '')
+      .trim()
+      .toLowerCase()
+      .replaceAll('_', '-')
+      .split('-');
+  final String base = parts.first;
+  if (const <String>{'ja', 'jpn', 'jp'}.contains(base)) {
+    return VideoSubtitleLanguage.japanese;
+  }
+  if (const <String>{'zh', 'zho', 'chi', 'cmn'}.contains(base)) {
+    if (parts.contains('yue') || parts.contains('hk') || parts.contains('mo')) {
+      return null;
+    }
+    return VideoSubtitleLanguage.mandarin;
+  }
+  return null;
+}
+
+/// 音轨标签**明确**时的语言：带标签的音轨里只出现一种能跑的语言（日语或中文）才算；
+/// 日中双音轨、没有标签、只有别的语言都返回 null（标签说明不了要哪条）。
+VideoSubtitleLanguage? videoSubtitleLanguageFromAudio(
+  List<AudioTrackFacts> tracks,
+) {
+  final Set<VideoSubtitleLanguage> seen = <VideoSubtitleLanguage>{
+    for (final AudioTrackFacts t in tracks)
+      for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+        if (l.audioTrackTags.contains(t.language?.toLowerCase() ?? '')) l,
+  };
+  return seen.length == 1 ? seen.single : null;
+}
+
+/// 面板语言初值是从哪一档来的（面板据此提示「为什么选了它」）。
+enum VideoSubtitleLanguageSource {
+  /// 用户给这个视频设的内容语言。
+  contentLanguage,
+
+  /// 音轨语言标签（只有一种能跑的语言时）。
+  audioTrack,
+
+  /// 刮削资料里作品的原语言。
+  metadata,
+
+  /// 什么都没有：日语（原有默认）。
+  fallback,
+}
+
+typedef VideoSubtitleLanguageGuess = ({
+  VideoSubtitleLanguage language,
+  VideoSubtitleLanguageSource source,
+});
+
+/// 每集的内容语言（[contentLanguages]，没设的为 null / 空）合成一个：设了的全部
+/// 指向同一种能跑的语言才算；有冲突或有不支持的值返回 null。
+VideoSubtitleLanguage? videoSubtitleLanguageForContent(
+  Iterable<String?> contentLanguages,
+) {
+  final List<String> set = <String>[
+    for (final String? tag in contentLanguages)
+      if ((tag ?? '').trim().isNotEmpty) tag!,
+  ];
+  if (set.isEmpty) return null;
+  final Set<VideoSubtitleLanguage?> mapped = <VideoSubtitleLanguage?>{
+    for (final String tag in set) videoSubtitleLanguageForTag(tag),
+  };
+  return mapped.length == 1 ? mapped.single : null;
+}
+
+/// 面板语言初值（用户可改）。按「这部作品自己的证据」从强到弱，取第一档有结论的：
+/// 1. 用户给视频设的内容语言（[contentLanguages]，整季要一致）；
+/// 2. 明确的音轨标签（[videoSubtitleLanguageFromAudio]）；
+/// 3. 刮削的作品原语言（[originalLanguage]）；
+/// 4. 日语。
+///
+/// 音轨在原语言前面：日本动画的普通话配音版，刮削原语言是 `ja`，只有音轨说得对。
+/// 全局「默认内容语言」不参与——它不是这部作品的证据（同字幕下载 BUG-3083）。
+VideoSubtitleLanguageGuess resolveVideoSubtitleLanguage({
+  Iterable<String?> contentLanguages = const <String?>[],
+  List<AudioTrackFacts> audioTracks = const <AudioTrackFacts>[],
+  String? originalLanguage,
+}) {
+  final VideoSubtitleLanguage? content = videoSubtitleLanguageForContent(
+    contentLanguages,
   );
-  return has(VideoSubtitleLanguage.mandarin) &&
-          !has(VideoSubtitleLanguage.japanese)
-      ? VideoSubtitleLanguage.mandarin
-      : VideoSubtitleLanguage.japanese;
+  if (content != null) {
+    return (
+      language: content,
+      source: VideoSubtitleLanguageSource.contentLanguage,
+    );
+  }
+  final VideoSubtitleLanguage? audio = videoSubtitleLanguageFromAudio(
+    audioTracks,
+  );
+  if (audio != null) {
+    return (language: audio, source: VideoSubtitleLanguageSource.audioTrack);
+  }
+  final VideoSubtitleLanguage? original = videoSubtitleLanguageForTag(
+    originalLanguage,
+  );
+  if (original != null) {
+    return (language: original, source: VideoSubtitleLanguageSource.metadata);
+  }
+  return (
+    language: VideoSubtitleLanguage.japanese,
+    source: VideoSubtitleLanguageSource.fallback,
+  );
 }

@@ -86,11 +86,13 @@ void main() {
   late FakeVideoSubtitleSettings settings;
   late AppVideoSubtitleTarget target;
   AiTextCompleter completer = FakeAiCompleter(answerAll);
+  final List<String> probedAudio = <String>[];
 
   setUpAll(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
   tearDownAll(() => db.close());
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('vsub_sheet_');
+    probedAudio.clear();
     settings = FakeVideoSubtitleSettings();
     final File video = File(p.join(tmp.path, 'ep01.mkv'))
       ..writeAsBytesSync(List<int>.filled(32, 1));
@@ -123,7 +125,10 @@ void main() {
     jobRegistry: VideoRemoteJobRegistry(),
     jobsRoot: () async => Directory(p.join(tmp.path, 'jobs')),
     probeDurationMs: (String _) async => 24 * 60 * 1000,
-    probeAudioTracks: (String _) async => audioTracks,
+    probeAudioTracks: (String path) async {
+      probedAudio.add(path);
+      return audioTracks;
+    },
     mossPort: const ReadyModels(),
     asrModelPort: asrModelPort,
     recognizerResolver:
@@ -412,5 +417,94 @@ void main() {
       _FakePrefs(),
     );
     expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+  });
+
+  AppVideoSubtitleTarget retarget({
+    String? contentLanguage,
+    String? originalLanguage,
+  }) => AppVideoSubtitleTarget(
+    title: target.title,
+    work: SubtitleWorkContext(
+      workKey: target.work.workKey,
+      title: target.work.title,
+      originalTitle: target.work.originalTitle,
+      originalLanguage: originalLanguage,
+    ),
+    episodes: <AppVideoSubtitleEpisode>[
+      for (final AppVideoSubtitleEpisode e in target.episodes)
+        AppVideoSubtitleEpisode(
+          bookUid: e.bookUid,
+          videoPath: e.videoPath,
+          title: e.title,
+          contentLanguage: contentLanguage,
+        ),
+    ],
+    bookUid: target.bookUid,
+  );
+
+  String? languageHint(WidgetTester tester) {
+    final Finder f = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-language-source'),
+    );
+    return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+  }
+
+  testWidgets('视频设了内容语言 zh：压过只有 jpn 的音轨，不探测音轨，提示来由', (
+    WidgetTester tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    target = retarget(contentLanguage: 'zh-Hans', originalLanguage: 'ja');
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'jpn'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+    expect(probedAudio, isEmpty);
+    expect(languageHint(tester), t.video_subtitle_ai_language_from_content);
+  });
+
+  testWidgets('音轨没标语言：按刮削原语言 zh 选中文；手动改后提示消失', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    target = retarget(originalLanguage: 'zh');
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[AudioTrackFacts(index: 1)],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+    expect(probedAudio, hasLength(1));
+    expect(languageHint(tester), t.video_subtitle_ai_language_from_metadata);
+
+    final Finder ja = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-language-ja'),
+    );
+    await tester.ensureVisible(ja);
+    await tester.tap(ja);
+    await tester.pumpAndSettle();
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+    expect(languageHint(tester), isNull);
+  });
+
+  testWidgets('什么语言信息都没有：日语，提示是默认', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpSheet(tester, buildService(), _FakePrefs());
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+    expect(languageHint(tester), t.video_subtitle_ai_language_from_default);
   });
 }

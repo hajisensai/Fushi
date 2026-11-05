@@ -140,11 +140,16 @@ class AppVideoSubtitleEpisode {
     required this.title,
     this.registersSubtitleSource = true,
     this.replacesSubtitleSelection = false,
+    this.contentLanguage,
   });
 
   final String bookUid;
   final String videoPath;
   final String title;
+
+  /// 用户给这一集设的内容语言（`VideoBooks.language`；没设 null）。只用来给字幕
+  /// 语言定初值（[resolveVideoSubtitleLanguage]）。
+  final String? contentLanguage;
 
   /// 导出后能否把字幕登记到这一行的 `subtitleSource`：播放列表里的子集共用一行，
   /// 那一行的字幕选择不属于其中某一集，不登记。
@@ -648,6 +653,7 @@ class AppVideoSubtitleService {
           videoPath: videoPath,
           title: row.title,
           registersSubtitleSource: false,
+          contentLanguage: row.language,
         ),
       );
     }
@@ -748,6 +754,7 @@ class AppVideoSubtitleService {
           title: playlist ? p.basenameWithoutExtension(path) : row.title,
           registersSubtitleSource: p.equals(path, row.videoPath) && !playlist,
           replacesSubtitleSelection: replaceSelection,
+          contentLanguage: row.language,
         ),
       );
     }
@@ -766,20 +773,34 @@ class AppVideoSubtitleService {
 
   // ── 字幕语言 ────────────────────────────────────────────────────────────
 
-  /// 按第一集的音轨语言标签猜字幕语言（[guessVideoSubtitleLanguage]）；探测失败或
-  /// 没有集时按日语（原有默认）。面板拿它当语言选择的初值，用户可改。
-  Future<VideoSubtitleLanguage> guessLanguage(
+  /// 面板语言选择的初值与来由（[resolveVideoSubtitleLanguage]：各集内容语言 →
+  /// 第一集的明确音轨标签 → 刮削原语言 → 日语）。内容语言已能定时不探测音轨；
+  /// 探测失败只当没有音轨标签。
+  Future<VideoSubtitleLanguageGuess> guessLanguage(
     AppVideoSubtitleTarget target,
   ) async {
-    if (target.episodes.isEmpty) return VideoSubtitleLanguage.japanese;
-    try {
-      return guessVideoSubtitleLanguage(
-        await _probeAudioTracks(target.episodes.first.videoPath),
-      );
-    } catch (error, stack) {
-      ErrorLogService.instance.log('video.subtitleLanguageGuess', error, stack);
-      return VideoSubtitleLanguage.japanese;
+    final List<String?> contentLanguages = <String?>[
+      for (final AppVideoSubtitleEpisode e in target.episodes)
+        e.contentLanguage,
+    ];
+    List<AudioTrackFacts> tracks = const <AudioTrackFacts>[];
+    if (videoSubtitleLanguageForContent(contentLanguages) == null &&
+        target.episodes.isNotEmpty) {
+      try {
+        tracks = await _probeAudioTracks(target.episodes.first.videoPath);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'video.subtitleLanguageGuess',
+          error,
+          stack,
+        );
+      }
     }
+    return resolveVideoSubtitleLanguage(
+      contentLanguages: contentLanguages,
+      audioTracks: tracks,
+      originalLanguage: target.work.originalLanguage,
+    );
   }
 
   // ── 识别模型 / MOSS ─────────────────────────────────────────────────────

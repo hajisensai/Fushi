@@ -169,6 +169,7 @@ class SubtitleWorkContext {
     this.originalTitle,
     this.kanjiTitle,
     this.characters = const <SubtitleWorkCharacter>[],
+    this.originalLanguage,
   });
 
   /// 专名表的存储键：`collection:<id>` / `work:<metadata work id>` /
@@ -184,6 +185,10 @@ class SubtitleWorkContext {
   /// AniDB 汉字标题（`anidb_file_identities.kanjiTitle`）。
   final String? kanjiTitle;
   final List<SubtitleWorkCharacter> characters;
+
+  /// 刮削的作品原语言（`video_metadata_works.originalLanguage`，TMDB / AniDB 给的
+  /// 标签）。只用来给字幕语言定初值，不进专名表指纹（换了它不该让已有表失效）。
+  final String? originalLanguage;
 
   /// 有没有可当权威的刮削数据。
   bool get hasScrapedData =>

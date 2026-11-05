@@ -256,6 +256,9 @@ class _VideoSubtitleGenerateSheetState
   VideoSubtitleLanguage _language = VideoSubtitleLanguage.japanese;
   bool _languageTouched = false;
 
+  /// 语言初值从哪一档来（提示「为什么选了它」）；用户自己选过 / 接回已有任务后为 null。
+  VideoSubtitleLanguageSource? _languageSource;
+
   /// 识别模型是否已下载；null = 还在查。
   bool? _modelReady;
   String? _planError;
@@ -296,16 +299,31 @@ class _VideoSubtitleGenerateSheetState
   }
 
   Future<void> _guessLanguage() async {
-    final VideoSubtitleLanguage guessed = await _service.guessLanguage(_target);
-    if (!mounted || _languageTouched || guessed == _language) return;
-    await _applyLanguage(guessed);
+    final VideoSubtitleLanguageGuess guess = await _service.guessLanguage(
+      _target,
+    );
+    if (!mounted || _languageTouched) return;
+    setState(() => _languageSource = guess.source);
+    if (guess.language != _language) await _applyLanguage(guess.language);
   }
 
   Future<void> _setLanguage(VideoSubtitleLanguage language) async {
     if (_running || language == _language) return;
     _languageTouched = true;
+    _languageSource = null;
     await _applyLanguage(language);
   }
+
+  String? _languageSourceHint() => switch (_languageSource) {
+    null => null,
+    VideoSubtitleLanguageSource.contentLanguage =>
+      t.video_subtitle_ai_language_from_content,
+    VideoSubtitleLanguageSource.audioTrack => t.video_subtitle_ai_language_hint,
+    VideoSubtitleLanguageSource.metadata =>
+      t.video_subtitle_ai_language_from_metadata,
+    VideoSubtitleLanguageSource.fallback =>
+      t.video_subtitle_ai_language_from_default,
+  };
 
   /// 换语言：识别模型、已有字幕、费用预估都跟着语言走，重查一遍。
   Future<void> _applyLanguage(VideoSubtitleLanguage language) async {
@@ -748,8 +766,21 @@ class _VideoSubtitleGenerateSheetState
               unawaited(_setLanguage(s.first)),
         ),
       ),
-      const SizedBox(height: 8),
-      _hint(t.video_subtitle_ai_language_hint),
+      FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: switch (_languageSourceHint()) {
+          null => const SizedBox(width: double.infinity),
+          final String hint => Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: _hint(
+              hint,
+              key: const ValueKey<String>('video-subtitle-ai-language-source'),
+            ),
+          ),
+        },
+      ),
     ],
   );
 

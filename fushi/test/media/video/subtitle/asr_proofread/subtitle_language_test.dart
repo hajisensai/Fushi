@@ -130,23 +130,210 @@ void main() {
       );
     });
 
-    test('只有中文标签才猜普通话；双语 / 无标签按日语', () {
+    test('音轨只在明确时有结论：双语 / 无标签 / 只有别的语言为 null', () {
       expect(
-        guessVideoSubtitleLanguage(const <AudioTrackFacts>[
+        videoSubtitleLanguageFromAudio(const <AudioTrackFacts>[
           AudioTrackFacts(index: 1, language: 'chi'),
+          AudioTrackFacts(index: 2, language: 'eng'),
         ]),
         VideoSubtitleLanguage.mandarin,
       );
-      expect(guessVideoSubtitleLanguage(dual), VideoSubtitleLanguage.japanese);
       expect(
-        guessVideoSubtitleLanguage(const <AudioTrackFacts>[
-          AudioTrackFacts(index: 1),
+        videoSubtitleLanguageFromAudio(const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'jpn'),
         ]),
         VideoSubtitleLanguage.japanese,
       );
+      expect(videoSubtitleLanguageFromAudio(dual), isNull);
       expect(
-        guessVideoSubtitleLanguage(const <AudioTrackFacts>[]),
+        videoSubtitleLanguageFromAudio(const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1),
+        ]),
+        isNull,
+      );
+      expect(
+        videoSubtitleLanguageFromAudio(const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'yue'),
+        ]),
+        isNull,
+      );
+    });
+  });
+
+  group('语言标签映射', () {
+    test('日语 / 普通话（含书写系统子标签）', () {
+      for (final String tag in <String>['ja', 'JPN', 'ja-JP']) {
+        expect(
+          videoSubtitleLanguageForTag(tag),
+          VideoSubtitleLanguage.japanese,
+          reason: tag,
+        );
+      }
+      for (final String tag in <String>[
+        'zh',
+        'zh-Hans',
+        'zh-Hant',
+        'zh_CN',
+        'zh-TW',
+        'cmn',
+        'chi',
+      ]) {
+        expect(
+          videoSubtitleLanguageForTag(tag),
+          VideoSubtitleLanguage.mandarin,
+          reason: tag,
+        );
+      }
+    });
+
+    test('粤语与不支持的语言为 null（交给下一档）', () {
+      for (final String? tag in <String?>[
+        'yue',
+        'zh-yue',
+        'cn',
+        'zh-HK',
+        'zh-Hant-HK',
+        'zh-MO',
+        'ko',
+        'en',
+        '',
+        null,
+      ]) {
+        expect(videoSubtitleLanguageForTag(tag), isNull, reason: '$tag');
+      }
+    });
+  });
+
+  group('语言初值：内容语言 → 明确音轨 → 刮削原语言 → 日语', () {
+    const List<AudioTrackFacts> chiOnly = <AudioTrackFacts>[
+      AudioTrackFacts(index: 1, language: 'chi'),
+    ];
+    const List<AudioTrackFacts> jpnOnly = <AudioTrackFacts>[
+      AudioTrackFacts(index: 1, language: 'jpn'),
+    ];
+    const List<AudioTrackFacts> dualAudio = <AudioTrackFacts>[
+      AudioTrackFacts(index: 1, language: 'jpn'),
+      AudioTrackFacts(index: 2, language: 'chi'),
+    ];
+    const List<AudioTrackFacts> untagged = <AudioTrackFacts>[
+      AudioTrackFacts(index: 1),
+    ];
+
+    void expectGuess(
+      VideoSubtitleLanguageGuess guess,
+      VideoSubtitleLanguage language,
+      VideoSubtitleLanguageSource source,
+    ) {
+      expect(guess.language, language);
+      expect(guess.source, source);
+    }
+
+    test('中文剧没标音轨：靠刮削原语言 zh', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          audioTracks: untagged,
+          originalLanguage: 'zh',
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.metadata,
+      );
+    });
+
+    test('中文剧标了 chi：音轨', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(audioTracks: chiOnly),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.audioTrack,
+      );
+    });
+
+    test('日本动画日中双音轨：原语言 ja → 日语', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          audioTracks: dualAudio,
+          originalLanguage: 'ja',
+        ),
         VideoSubtitleLanguage.japanese,
+        VideoSubtitleLanguageSource.metadata,
+      );
+    });
+
+    test('国漫双音轨：原语言 zh → 中文', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          audioTracks: dualAudio,
+          originalLanguage: 'zh',
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.metadata,
+      );
+    });
+
+    test('日本动画的普通话配音（只有 chi 轨）：音轨压过原语言 ja', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          audioTracks: chiOnly,
+          originalLanguage: 'ja',
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.audioTrack,
+      );
+    });
+
+    test('用户设的内容语言压过音轨与原语言', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          contentLanguages: <String?>['zh-Hans'],
+          audioTracks: jpnOnly,
+          originalLanguage: 'ja',
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.contentLanguage,
+      );
+    });
+
+    test('内容语言不支持（ko）或整季冲突：跳过这一档', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          contentLanguages: <String?>['ko'],
+          audioTracks: chiOnly,
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.audioTrack,
+      );
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          contentLanguages: <String?>['zh', 'ja'],
+          originalLanguage: 'zh',
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.metadata,
+      );
+    });
+
+    test('整季：设了的集一致即可（没设的集不算冲突；zh 与 zh-Hant 是同一种）', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          contentLanguages: <String?>['zh', null, 'zh-Hant', ''],
+        ),
+        VideoSubtitleLanguage.mandarin,
+        VideoSubtitleLanguageSource.contentLanguage,
+      );
+    });
+
+    test('粤语原语言（TMDB cn）与什么都没有：日语兜底', () {
+      expectGuess(
+        resolveVideoSubtitleLanguage(
+          audioTracks: untagged,
+          originalLanguage: 'cn',
+        ),
+        VideoSubtitleLanguage.japanese,
+        VideoSubtitleLanguageSource.fallback,
+      );
+      expectGuess(
+        resolveVideoSubtitleLanguage(),
+        VideoSubtitleLanguage.japanese,
+        VideoSubtitleLanguageSource.fallback,
       );
     });
   });
