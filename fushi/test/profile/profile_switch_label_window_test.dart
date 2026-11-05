@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -41,6 +42,12 @@ class _FakeAppModel extends ChangeNotifier implements AppModel {
 }
 
 class _FakePlatformServices implements PlatformServices {
+  /// [profileRepositoryProvider] 取的是裸本机仓库（live Anki 设置存储），不经
+  /// [ankiRepositoryProvider]——替身必须像生产实现一样给出一个真仓库。
+  @override
+  BaseAnkiRepository createAnkiRepository({AnkiSettingsStore? settingsStore}) =>
+      FakeAnkiRepository();
+
   @override
   dynamic noSuchMethod(Invocation invocation) => null;
 }
