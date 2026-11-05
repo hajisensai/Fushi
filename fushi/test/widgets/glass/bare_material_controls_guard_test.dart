@@ -107,7 +107,7 @@ const Map<String, int> _pendingFiles = <String, int>{
   'src/reader/reader_panel_chrome_kit.dart': 1,
   'src/reader/reader_panel_kit.dart': 1,
   'src/settings/master_detail_settings_sheet.dart': 1,
-  'src/settings/settings_kit.dart': 1,
+  'src/settings/settings_kit_core.dart': 1,
   'src/sync/sync_settings_schema/account.part.dart': 2,
   'src/utils/components/fushi_m3e_overlays.dart': 1,
   'src/utils/components/settings_shared.dart': 1,
