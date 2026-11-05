@@ -40,4 +40,4 @@
   - **证据缺口 ⑤ 补上（取证，不是修复）**：内存采样再加三样，下一份同机报告直接点名涨的是谁、谁在跑：
     - `anon= file= shm=`（`/proc/self/status` 的 RssAnon / RssFile / RssShmem，`processRssBreakdownProbe`）：file 涨 = srs.db 等文件映射页；
     - `malloc=`（bionic `mallinfo().uordblks`，`fushi/lib/src/diagnostics/native_heap_probe.dart`）：anon 涨而 malloc 不涨 = Dart 堆 / 图形映射，malloc 跟着涨 = Rust / SQLite / C++；
-    - `srsops=[…] marks=[…] busy=[…]`（`packages/fushi_engine/lib/srs/srs_op_ledger.dart` `SrsOpLedger`）：每个采样窗口里 SRS 内核命令（`core:<op>`，含 RWKV 回放 / 日志尾）、srs.db 上每条 Drift 语句（`sql:<动词> <表>`，查询道与写那一路都记，带行数与读回字节）、`dart:load_stats` 整库统计装载的次数 / 用时 / 字节，正在跑超过 2 s 的操作，以及修订号 / 牌组列表 / 首页统计 / 冲突角标 provider 的重建次数。单次超过 3 s 或读回超过 32 MB 的操作另记诊断日志 `SrsOpLedger.heavy`。
+    - `srsops=[…] marks=[…] busy=[…]`（`packages/fushi_engine/lib/srs/srs_op_ledger.dart` `SrsOpLedger`）：每个采样窗口里 SRS 内核命令（`core:<op>`，含 RWKV 回放 / 日志尾）、srs.db 上每条 Drift 语句（`sql:<动词> <表>`，查询道与写那一路都记，带行数与读回字节）、`dart:load_stats` 整库统计装载的次数 / 用时 / 字节，正在跑超过 2 s 的操作，修订号按来源分开的跳数（`rev:local` 本机写入 / `rev:pulled` 同步拉入），以及牌组列表 / 首页统计 / 冲突角标 provider 的重建次数。单次超过 3 s 或读回超过 32 MB 的操作另记诊断日志 `SrsOpLedger.heavy`。

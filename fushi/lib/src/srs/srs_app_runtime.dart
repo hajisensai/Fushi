@@ -86,8 +86,11 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
     },
     engine: () => ref.read(srsEngineProvider),
     bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
-    bumpPulledRevision: () =>
-        revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier)),
+    bumpPulledRevision: () {
+      revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier));
+      // BUG-4075 取证：修订号「同步拉入」的一跳（本机写入的一跳在下面 listenSrsLocalWrites 里记）。
+      SrsOpLedger.mark('rev:pulled');
+    },
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
       db: app.database,
@@ -119,12 +122,13 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
   // 由调度器在确认后的第一轮上传之前先收一轮再迁移（[SrsSyncScheduler.ensureMigrated]）。
   // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
   // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
-  listenSrsLocalWrites(ref, revisionOrigin, runtime.localPush.trigger);
-  // BUG-4075 取证：修订号每跳一次记一笔（停在复习页不动时它跳不跳、跳多少次，直接看内存采样里的 marks）。
-  ref.listen<int>(
-    srsRevisionProvider,
-    (int? previous, int next) => SrsOpLedger.mark('rev'),
-  );
+  // BUG-4075 取证：修订号每跳一次按来源记一笔（`rev:local` 本机写入 / `rev:pulled` 同步拉入，后者在
+  // bumpPulledRevision 里记）：停在复习页不动时它跳不跳、跳多少次、是谁在跳，直接看内存采样里的 marks。
+  // 不另挂直接 listen 修订号的监听：那样分不出来源（srs_revision_origin_test 接线守卫）。
+  listenSrsLocalWrites(ref, revisionOrigin, () {
+    SrsOpLedger.mark('rev:local');
+    runtime.localPush.trigger();
+  });
   // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
   ref.listen<int>(
     srsLocalWriteProvider,
