@@ -57,6 +57,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
 final Provider<SrsAppRuntime?>
@@ -119,6 +120,11 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
   // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
   // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
   listenSrsLocalWrites(ref, revisionOrigin, runtime.localPush.trigger);
+  // BUG-4075 取证：修订号每跳一次记一笔（停在复习页不动时它跳不跳、跳多少次，直接看内存采样里的 marks）。
+  ref.listen<int>(
+    srsRevisionProvider,
+    (int? previous, int next) => SrsOpLedger.mark('rev'),
+  );
   // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
   ref.listen<int>(
     srsLocalWriteProvider,

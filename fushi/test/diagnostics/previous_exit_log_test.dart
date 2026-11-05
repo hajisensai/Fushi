@@ -142,6 +142,23 @@ void main() {
       expect(parseProcStatusThreads(null), isNull);
     });
 
+    test(
+      'RSS 分项探针：从 /proc/self/status 正文取 RssAnon / RssFile / RssShmem（BUG-4075）',
+      () {
+        expect(
+          parseProcStatusRssBreakdown(
+            'Name:\tapp\nVmRSS:\t3145728 kB\nRssAnon:\t2097152 kB\n'
+            'RssFile:\t1022976 kB\nRssShmem:\t25600 kB\nThreads:\t95\n',
+          ),
+          'anon=2048MB file=999MB shm=25MB',
+        );
+        // 缺的项不写。
+        expect(parseProcStatusRssBreakdown('RssAnon:\t1024 kB\n'), 'anon=1MB');
+        expect(parseProcStatusRssBreakdown('Name:\tapp\n'), isNull);
+        expect(parseProcStatusRssBreakdown(null), isNull);
+      },
+    );
+
     test('startMemorySampling 立即采一次并写进本次会话标记；系统内存压力也采', () async {
       await PreviousExitLog.collect(
         appDir: tmp,

@@ -24,6 +24,7 @@ import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
@@ -1815,20 +1816,29 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request,
   ) async {
     debugCoreCommands++;
-    final (
-      Object? json,
-      Map<String, TransferableTypedData> files,
-    ) = await _coreColumns(core.address, core.libraryPath, <String, Object?>{
-      ...request,
-      'profile': profileUid,
-    });
-    return (
-      json: json,
-      tables: <String, SrsColumns>{
-        for (final MapEntry<String, TransferableTypedData> f in files.entries)
-          f.key: SrsColumns.decode(f.value.materialize().asUint8List()),
-      },
-    );
+    final int token = SrsOpLedger.begin('core:${request['op']}');
+    int bytes = 0;
+    int rows = 0;
+    try {
+      final (
+        Object? json,
+        Map<String, TransferableTypedData> files,
+      ) = await _coreColumns(core.address, core.libraryPath, <String, Object?>{
+        ...request,
+        'profile': profileUid,
+      });
+      final Map<String, SrsColumns> tables = <String, SrsColumns>{};
+      for (final MapEntry<String, TransferableTypedData> f in files.entries) {
+        final Uint8List b = f.value.materialize().asUint8List();
+        bytes += b.length;
+        final SrsColumns c = SrsColumns.decode(b);
+        rows += c.rows;
+        tables[f.key] = c;
+      }
+      return (json: json, tables: tables);
+    } finally {
+      SrsOpLedger.end(token, bytes: bytes, rows: rows);
+    }
   }
 
   Future<SrsSync2Result> _sync2Raw(
@@ -1836,16 +1846,23 @@ class SrsDbStore implements SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   }) {
     debugCoreCommands++;
-    return _coreSync2(
-      core.address,
-      core.libraryPath,
-      <String, Object?>{
-        ...request,
-        'profile': profileUid,
-        if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
-      },
-      blobs,
-      lane: srsCoreLaneOf(request['op']),
+    return SrsOpLedger.track(
+      'core:${request['op']}',
+      () => _coreSync2(
+        core.address,
+        core.libraryPath,
+        <String, Object?>{
+          ...request,
+          'profile': profileUid,
+          if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
+        },
+        blobs,
+        lane: srsCoreLaneOf(request['op']),
+      ),
+      measure: (SrsSync2Result r) => (
+        r.files.fold<int>(0, (int n, (String, Uint8List) f) => n + f.$2.length),
+        0,
+      ),
     );
   }
 
@@ -5564,15 +5581,19 @@ Future<Uint8List> _coreOptimizerItems(
   int algorithm,
   int utcOffsetMin,
   int rolloverHour,
-) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
-  address,
-  (SrsCore c) => c.optimizerItems(
-    groups,
-    cardIds,
-    algorithm: algorithm,
-    utcOffsetMin: utcOffsetMin,
-    rolloverHour: rolloverHour,
+) => SrsOpLedger.track(
+  'core:optimizer_items',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.optimizerItems(
+      groups,
+      cardIds,
+      algorithm: algorithm,
+      utcOffsetMin: utcOffsetMin,
+      rolloverHour: rolloverHour,
+    ),
   ),
+  measure: (Uint8List b) => (b.length, 0),
 );
 
 Future<Uint8List> _coreRwkvCards(
@@ -5582,14 +5603,18 @@ Future<Uint8List> _coreRwkvCards(
   List<int> ids,
   int utcOffsetMin,
   int rolloverHour,
-) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
-  address,
-  (SrsCore c) => c.rwkvCards(
-    groups,
-    ids,
-    utcOffsetMin: utcOffsetMin,
-    rolloverHour: rolloverHour,
+) => SrsOpLedger.track(
+  'core:rwkv_cards',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.rwkvCards(
+      groups,
+      ids,
+      utcOffsetMin: utcOffsetMin,
+      rolloverHour: rolloverHour,
+    ),
   ),
+  measure: (Uint8List b) => (b.length, 0),
 );
 
 Future<TransferableTypedData> _coreRwkvReplay(
@@ -5603,17 +5628,20 @@ Future<TransferableTypedData> _coreRwkvReplay(
   int since,
   int? rebaseSince,
   int? rowsFrom,
-) => SrsCoreWorkers.of(libraryPath).run<TransferableTypedData>(
-  address,
-  (SrsCore c) => c.rwkvReplay(
-    profileUid,
-    groups,
-    ids,
-    utcOffsetMin: utcOffsetMin,
-    rolloverHour: rolloverHour,
-    since: since,
-    rebaseSince: rebaseSince,
-    rowsFrom: rowsFrom,
+) => SrsOpLedger.track(
+  'core:rwkv_replay',
+  () => SrsCoreWorkers.of(libraryPath).run<TransferableTypedData>(
+    address,
+    (SrsCore c) => c.rwkvReplay(
+      profileUid,
+      groups,
+      ids,
+      utcOffsetMin: utcOffsetMin,
+      rolloverHour: rolloverHour,
+      since: since,
+      rebaseSince: rebaseSince,
+      rowsFrom: rowsFrom,
+    ),
   ),
 );
 
@@ -5624,14 +5652,18 @@ Future<Uint8List> _coreRwkvLogTail(
   int since,
   bool withRows,
   bool incremental,
-) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
-  address,
-  (SrsCore c) => c.rwkvLogTail(
-    profileUid,
-    since: since,
-    withRows: withRows,
-    incremental: incremental,
+) => SrsOpLedger.track(
+  'core:rwkv_log_tail',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.rwkvLogTail(
+      profileUid,
+      since: since,
+      withRows: withRows,
+      incremental: incremental,
+    ),
   ),
+  measure: (Uint8List b) => (b.length, 0),
 );
 
 Future<(Object?, Map<String, TransferableTypedData>)> _coreColumns(

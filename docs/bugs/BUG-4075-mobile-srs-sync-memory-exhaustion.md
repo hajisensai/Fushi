@@ -32,3 +32,12 @@
     - 推论：本 bug 在 Android 上不是 4013 覆盖的地址空间问题，且「只在同步中爆」的前提被这份报告削弱。证据缺口新增 ④：非活动期间也要有内存采样面包屑（周期 rss + 原生 core / 连接数 / WebView 数），否则此类前台 OOM 永远只剩 pss 一个数。
   - **证据缺口 ② / ④ 补上（取证，不是修复）**：会话标记滚动保留最近 6 次内存采样（每 30 s 一次 + 系统内存压力时一次，`fushi/lib/src/diagnostics/previous_exit_log.dart` `PreviousExitLog.startMemorySampling`），下次启动的 `Process.previousExitUnclean` 带 `memory=[HH:mm:ss rss=… max=… srs=开/存活 sess=… rd=… sqlite=当前/高水位MB; …]`。SRS 读数来自新导出 `ffsrs_store_diag_counts`（`native/fushi_fsrs/src/store/ffi.rs`）：句柄表里打开的库、还没释放的 `SrsCore`（存活 > 打开 = 退役的库还驻留，对应假设 (b)）、只读会话、只读连接池连接总数（假设 (a)）、内置 SQLite 堆用量与高水位。WebView 个数没有现成登记点，未纳入。下一份 ≥ 本 PR 构建的同机报告据此判 (a)/(b) 是否成立。
   - **2026-11-05 用户另交 issue**（同机，6 份 tombstone）：崩溃线程有 DartWorker、`1.raster`（Adreno Vulkan 驱动 calloc）、主线程（pthread shadow stack mprotect），都是内存见底时的受害者，不指向元凶；线程数稳定 94–95。新线索：同 profile 手机 App Data 15.6 GB（曾 26 GB），桌面 srs.db 2.68 GB，分项未知。为此加了启动后 20 s 的存储分项诊断（`fushi/lib/src/diagnostics/storage_footprint_log.dart`，`Storage.footprint`：App 数据根前两层 ≥50 MB 的目录与 ≥100 MB 的大文件），内存采样另带线程数与打开着的 srs.db / -wal 字节。issue 建议的「回退 Skia」违反 Impeller 硬规则、「分配失败不 abort」App 层做不到，均不采纳。
+  - **2026-11-05 第一份带内存采样的报告**：`2sNhUbaEBO`（同一台 Xiaomi 23116PN5BC，3.3.0-debug.23862）。13:01:31 启动、全程前台，13:04:57 Scudo `internal map failure (Out of memory)` SIGABRT。用户补充：当时**停在 SRS 页面不动**。采样：
+    - rss 1164 → 1491 → 1802 → 2255 → 2848 → 3036 MB（每 30 s，约 10 MB/s 线性涨）；
+    - SRS 原生计数全程不变：`srs=1/1 sess=0 rd=3 sqlite=2/221MB db=2597MB wal=0MB`；
+    - 13:01:51 那轮互联同步在 `srsDirectoryKeyOf` 就因 `No reachable Fushi server address` 失败，之后没有 `srs_sync` 面包屑。
+    - 结论：假设 (b)（退役的库还驻留）**不成立**（只有 1 份 core）；假设 (a) 的「连接页缓存」部分**不成立**（SQLite 堆 2 MB、连接数不变）；同步没在跑。**但 `sqlite=` 只量 SQLite 页缓存**：连接开了 256 MB mmap，经 mmap 读的页不进页缓存，所以这个读数证明不了库在这 3 分钟里没被大块地读——涨的是谁仍无证据。
+  - **证据缺口 ⑤ 补上（取证，不是修复）**：内存采样再加三样，下一份同机报告直接点名涨的是谁、谁在跑：
+    - `anon= file= shm=`（`/proc/self/status` 的 RssAnon / RssFile / RssShmem，`processRssBreakdownProbe`）：file 涨 = srs.db 等文件映射页；
+    - `malloc=`（bionic `mallinfo().uordblks`，`fushi/lib/src/diagnostics/native_heap_probe.dart`）：anon 涨而 malloc 不涨 = Dart 堆 / 图形映射，malloc 跟着涨 = Rust / SQLite / C++；
+    - `srsops=[…] marks=[…] busy=[…]`（`packages/fushi_engine/lib/srs/srs_op_ledger.dart` `SrsOpLedger`）：每个采样窗口里 SRS 内核命令（`core:<op>`，含 RWKV 回放 / 日志尾）、srs.db 上每条 Drift 语句（`sql:<动词> <表>`，查询道与写那一路都记，带行数与读回字节）、`dart:load_stats` 整库统计装载的次数 / 用时 / 字节，正在跑超过 2 s 的操作，以及修订号 / 牌组列表 / 首页统计 / 冲突角标 provider 的重建次数。单次超过 3 s 或读回超过 32 MB 的操作另记诊断日志 `SrsOpLedger.heavy`。

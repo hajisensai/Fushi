@@ -48,6 +48,7 @@ import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
 /// 复习模块此刻是否可见（用户意愿 + 平台判据的唯一合成，见 [ModuleVisibility]）。
 final Provider<bool> srsModuleEnabledProvider = Provider<bool>(
@@ -660,6 +661,7 @@ List<SrsDeckSummary> srsVisibleDecks(
 final FutureProvider<SrsDeckListData?>
 srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
   ref.watch(srsRevisionProvider);
+  SrsOpLedger.mark('deck_list');
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return null;
   final int revision = store.revision;
@@ -770,6 +772,7 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   Ref ref,
 ) async {
   ref.watch(srsRevisionProvider);
+  SrsOpLedger.mark('conflict_count');
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return 0;
   return _srsMemoByContent(_conflictCountMemo, store, () async {

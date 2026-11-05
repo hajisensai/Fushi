@@ -101,6 +101,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/diagnostics/native_heap_probe.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/storage_footprint_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -177,6 +178,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi/src/platform/desktop/linux_external_open_channel.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -695,8 +697,17 @@ void main([List<String> args = const <String>[]]) {
       // BUG-4075：周期内存采样写进会话标记（进程 RSS + SRS 原生内核计数），下次启动的
       // 「上次未正常退出」带上崩前几分钟的内存曲线。
       PreviousExitLog.startMemorySampling(
-        probes: const <MemoryProbe>[processThreadCountProbe, srsMemoryProbe],
+        probes: const <MemoryProbe>[
+          processRssBreakdownProbe,
+          nativeHeapProbe,
+          processThreadCountProbe,
+          srsMemoryProbe,
+          srsOpLedgerProbe,
+        ],
       );
+      // 单次超过 3 s 或读回超过 32 MB 的 SRS 操作另记一条诊断日志（随反馈上传）。
+      SrsOpLedger.onHeavy = (String line) =>
+          ErrorLogService.instance.logDiagnostic('SrsOpLedger.heavy', line);
       // 同一 bug：启动后在后台量一遍 App 数据根的目录 / 大文件分项，记进诊断日志随反馈上传。
       scheduleStorageFootprintLog();
       // 闪退报告（crash_report.dart）：上次是崩溃 / 异常退出就记进待报，下次问用户要不要
