@@ -1,4 +1,4 @@
-## BUG-4127 · 音乐歌词：日文歌拿到 LRCLIB 罗马音版（不检查歌词书写系统）
+## BUG-4130 · 音乐歌词：日文歌拿到 LRCLIB 罗马音版（不检查歌词书写系统）
 - **报告**：2026-10-28（用户：开发者本人，应用内反馈 zl9Nmfldfr，「文字位置不对，而且文本是英文的，应该默认对应的语言才对」；截图是 Windows 歌词页播放 うさぎとかめ / 平沢唯(CV:豊崎愛生)，整页罗马音纯文本）
 - **真实性**：✅ 真 bug（语言部分）。日志里同曲 sidecar / 内嵌都没有（`resolve` 的 ②③ 早返回没触发），罗马音来自 LRCLIB。根因：
   - `fushi/lib/src/media/music/lyrics/music_lyrics_service.dart` `_resolveLrclib`（修前 574-608）：`/api/get` 命中的 `bestLyrics` 不看正文书写系统直接落库、返回，罗马音 / 翻译版与原文版一视同仁；缓存命中同样直接返回。
