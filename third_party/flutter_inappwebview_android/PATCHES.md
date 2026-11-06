@@ -109,3 +109,31 @@ Added (androidx.webkit 1.12.0, already the plugin's dependency, has the
   the platform interface has no field for this, so the name is attached to the
   `InAppWebViewSettings` instance through an `Expando` and
   `AndroidInAppWebViewWidget.build` forwards it in the creation params.
+
+## No hardware layer under Hybrid Composition (2026-11-05)
+
+Upstream maps the default `hardwareAcceleration = true` to
+`setLayerType(View.LAYER_TYPE_HARDWARE, null)` when `useHybridComposition` is
+on. That is not "turn on GPU rendering" — the WebView is already a real View in
+a hardware-accelerated window — it adds a full-size offscreen layer that has to
+be redrawn and composited every frame while the page scrolls or animates. On a
+120 Hz tablet the in-app browser's RenderThread took 13.6 ms per frame (over the
+8.3 ms budget, so ~55 fps with 9% janky frames); with `LAYER_TYPE_NONE` it took
+8.0 ms (74-82 fps, 0.3% janky). Texture Layer Hybrid Composition was measured
+worse (29 fps), so Hybrid Composition stays.
+
+`InAppWebView.prepare()` now always sets `LAYER_TYPE_NONE` under Hybrid
+Composition, and `setSettings` no longer switches the layer type; the
+`hardwareAcceleration` setting is kept for API compatibility and ignored.
+Guard: `fushi/test/build/inappwebview_android_no_hardware_layer_guard_test.dart`.
+
+### Static layer on demand (`fushiSetStaticLayer`)
+
+Without the layer, a WebView that stays still while another WebView animates
+over it (the in-app dictionary popup scrolling above the reader) has its whole
+draw functor re-run every frame: popup scrolling measured 80 -> 61 fps. The
+per-view channel therefore gets `fushiSetStaticLayer({enabled})`, handled by
+`InAppWebView.setStaticLayer` (Hybrid Composition only), and Dart exports
+`AndroidWebViewStaticLayer.set(viewId, enabled: ...)`
+(`lib/src/webview_static_layer.dart`). Fushi turns it on for the page under the
+popup while the popup stack is non-empty and off when it empties.

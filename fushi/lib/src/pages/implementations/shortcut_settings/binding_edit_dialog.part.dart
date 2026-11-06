@@ -416,11 +416,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       return KeyEventResult.handled;
     }
 
-    // BUG-1422：IME（Windows 微软输入法）激活时引擎把 logicalKey 改写成
-    // LogicalKeyboardKey.process，物理键不受影响。运行时解析
-    // (FushiShortcutRegistry.resolveKeyboard) 早有这条回退，录入侧必须用同一条
-    // 契约，否则物理 Z 会被存成 `Process` —— 既显示成看不懂的键，运行时也永远
-    // 匹配不上，用户看到的是「录不进去 / 录完没反应」。
+    // 录入侧与运行时解析（FushiShortcutRegistry.resolveKeyboard）共用同一条归一
+    // 契约：表外逻辑键（BUG-2948，macOS Shift+/ 报 `question`）按物理键收拢回表内
+    // 键，否则录进去的是 `#<keyId>`，跨设备 / WebView 键盘桥都对不上。
     final LogicalKeyboardKey key = InputBinding.normalizeCapturedKey(
       logicalKey: event.logicalKey,
       physicalKey: event.physicalKey,

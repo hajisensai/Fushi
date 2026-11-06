@@ -6,6 +6,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
 /// Shared empty result used to mount the popup WebView during the search phase
@@ -231,7 +232,15 @@ class DictionaryPopupController extends ChangeNotifier {
   DictionaryPopupController({
     required this.lowMemory,
     this.onLookupStackDepthChanged,
-  }) {
+    PopupBodyStaticLayerGate? bodyStaticLayer,
+  }) : bodyStaticLayer =
+           bodyStaticLayer ??
+           PopupBodyStaticLayerGate(
+             setter: platformWebViewStaticLayerSetter(),
+           ) {
+    // 正文静态层的唯一收口：所有栈 / 可见性 / 搜索占位变化都经 notifyListeners，
+    // 这里统一折成「弹窗是否在屏上」交给闸门（去重在闸门里）。
+    addListener(_syncBodyStaticLayer);
     // 手柄重设计 P2：每个弹窗栈 controller 把自己登记为 dictionaryPopup scope 手柄
     // 动作的执行体（GamepadService 在页面 Actions 未消费后按可见性取用）。7 个宿主
     // （书内/漫画/视频/首页词典/独立查词/歌词浮窗/texthooker）由此免逐个接线。
@@ -251,6 +260,15 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   late final DictionaryPopupGamepadHooks _gamepadHooks;
+
+  /// 查词弹窗打开期间给宿主正文 WebView 开静态硬件层（Android Hybrid Composition；
+  /// 其它平台 no-op）。宿主设 [PopupBodyStaticLayerGate.resolveBody]，正文 WebView
+  /// 新建 / 重建时调 [PopupBodyStaticLayerGate.bodyChanged]；开 / 关由本 controller 驱动。
+  final PopupBodyStaticLayerGate bodyStaticLayer;
+
+  /// 弹窗（可见层或搜索期占位）是否在屏上——开关动画期间正文同样静止被覆盖。
+  void _syncBodyStaticLayer() =>
+      bodyStaticLayer.popupOpenChanged(hasVisiblePopup || isSearchingUi);
 
   /// 栈顶**可见**层的 WebView 状态（热槽隐身层不算）；无可见层或 WebView 未挂载
   /// 返回 null（钩子就地变 no-op，不抛）。
@@ -944,6 +962,8 @@ class DictionaryPopupController extends ChangeNotifier {
   @override
   void dispose() {
     DictionaryPopupGamepadRegistry.pop(_gamepadHooks);
+    removeListener(_syncBodyStaticLayer);
+    bodyStaticLayer.dispose();
     // 防泄漏：销毁时取消所有挂起的兜底 Timer。
     for (final Timer t in _revealFailsafeTimers.values) {
       t.cancel();
