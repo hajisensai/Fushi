@@ -713,6 +713,7 @@ void main() {
       isMacOS: false,
       isIOS: false,
       localAppData: tmp.path,
+      windowsEventQuery: (String _) async => null,
     );
     final ExitReportEntry crash = entries.firstWhere(
       (ExitReportEntry e) => e.source == kWindowsCrashSummarySource,

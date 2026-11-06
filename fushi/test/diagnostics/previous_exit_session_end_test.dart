@@ -45,6 +45,7 @@ void main() {
     isMacOS: false,
     isIOS: false,
     localAppData: tmp.path,
+    windowsEventQuery: (String _) async => null,
   );
 
   test('同 pid 的 session_end.log → systemSessionEnd 压过「疑似闪退」，不上报', () async {
