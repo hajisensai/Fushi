@@ -277,7 +277,6 @@ extension _ReaderCaret on _ReaderFushiPageState {
       key: event.logicalKey,
       modifiers: modifiers,
       hasActiveAudiobook: _hasActiveAudiobook,
-      physicalKey: imeFallbackPhysicalKey,
     );
     final ShortcutAction? bareArrowBinding =
         appModel.shortcutRegistry.resolveKeyboard(
@@ -298,7 +297,6 @@ extension _ReaderCaret on _ReaderFushiPageState {
       rtl: _isRtlReading,
       boundAction: bareArrowBinding,
       reverse: ReaderFushiSource.instance.reverseArrowPageTurn,
-      physicalKey: imeFallbackPhysicalKey,
     );
     return spaceOverride ??
         arrowOverride ??

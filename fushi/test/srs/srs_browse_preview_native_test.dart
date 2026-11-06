@@ -11,6 +11,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -18,6 +19,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -174,6 +177,78 @@ void main() {
       findsNothing,
     );
     expect(find.byType(SrsFushiCardView), findsNothing);
+    expect(webFaces, isNotEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  Future<String> basicCard(
+    WidgetTester tester,
+    SrsDbStore store, {
+    required String front,
+    required String back,
+  }) async {
+    final String nt = (await tester.runAsync(
+      () => store.createStockNoteType(SrsStockNoteType.basic, 'Basic'),
+    ))!;
+    final SrsNoteTypeView v = (await tester.runAsync<SrsNoteTypeView?>(
+      () => store.noteType(nt),
+    ))!;
+    String id(String name) =>
+        v.fields.firstWhere((SrsFieldDef f) => f.name == name).id;
+    return cardOf(tester, store, nt, <String, String>{
+      id('Front'): front,
+      id('Back'): back,
+    });
+  }
+
+  for (final bool answer in <bool>[false, true]) {
+    final String side = answer ? '背面' : '正面';
+
+    testWidgets('非 Fushi 卡片$side：两面原生画得全时预览同复习页走原生 HTML 卡面', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await openStore(tester);
+      final String card = await basicCard(
+        tester,
+        store,
+        front: '<b>図書館</b>',
+        back: 'library',
+      );
+      final List<SrsCardFace> webFaces = await pump(
+        tester,
+        store,
+        card,
+        showAnswer: answer,
+      );
+      final Finder html = find.byKey(
+        const ValueKey<String>('srs-browse-preview-html'),
+      );
+      expect(html, findsOneWidget);
+      expect(tester.widget<SrsHtmlCardView>(html).face.showingAnswer, answer);
+      expect(webFaces, isEmpty, reason: '不再建整面 WebView');
+      expect(find.textContaining('図書館'), findsWidgets);
+      if (answer) expect(find.textContaining('library'), findsWidgets);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('非 Fushi 卡片带卡片脚本：原生画不了，照旧整面 WebView', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await openStore(tester);
+    final String card = await basicCard(
+      tester,
+      store,
+      front: '図書館<script>void 0;</script>',
+      back: 'library',
+    );
+    final List<SrsCardFace> webFaces = await pump(
+      tester,
+      store,
+      card,
+      showAnswer: false,
+    );
+    expect(find.byType(SrsHtmlCardView), findsNothing);
     expect(webFaces, isNotEmpty);
     await tester.pumpWidget(const SizedBox());
   });

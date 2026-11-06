@@ -42,7 +42,6 @@ add_executable(${BINARY_NAME} WIN32
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
   "ime_language_switch.cpp"
-  "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "screen_ocr_overlay.cpp"
@@ -118,22 +117,6 @@ add_dependencies(${BINARY_NAME} flutter_assemble)
 # HBK-AUDIT-052: timeout/failed installer waits must not restart an app into a
 # bundle still being copied or rolled back. Uses live native function bodies.
 include("tests/update_launcher_completion_test.cmake")
-
-# BUG-1239: compile and execute the production IME Space predicate/dispatch
-# seam as part of every Windows runner build. Source-string tests could not
-# detect WM_KEYDOWN -> WM_KEYUP or removed Alt/Win guards.
-add_executable(fushi_windows_ime_space_test
-  "ime_space_dispatch.cpp"
-  "tests/ime_space_dispatch_test.cpp"
-)
-apply_standard_settings(fushi_windows_ime_space_test)
-target_compile_definitions(fushi_windows_ime_space_test PRIVATE "NOMINMAX")
-add_custom_target(fushi_windows_ime_space_gate
-  COMMAND "$<TARGET_FILE:fushi_windows_ime_space_test>"
-  DEPENDS fushi_windows_ime_space_test
-  VERBATIM
-)
-add_dependencies(${BINARY_NAME} fushi_windows_ime_space_gate)
 
 # 反馈「粘贴截图」：截图工具的 32bpp DIB（alpha 常全 0）→ 不透明 PNG、掩码偏移、
 # CF_HDROP → UTF-8 路径。只测纯转换、不碰真剪贴板，所以能随每次构建跑。
