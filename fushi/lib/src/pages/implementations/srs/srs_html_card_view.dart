@@ -42,7 +42,10 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsCardAppearanceProvider, srsMediaStoreProvider, srsRunLogged;
 import 'package:fushi/src/srs/srs_review_edit.dart' show SrsCardSelection;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -928,7 +931,7 @@ class _Painter {
   /// 强调色底。
   Widget sound(SrsHtmlSoundRun r, ColorScheme scheme) => Padding(
     padding: EdgeInsets.symmetric(horizontal: 4 * zoom),
-    child: Tooltip(
+    child: FushiTooltip(
       message: t.play,
       child: Semantics(
         button: true,
@@ -1274,12 +1277,11 @@ class _DetailsViewState extends State<_DetailsView> {
             ),
           ),
         ),
-        ClipRect(
-          child: AnimatedSize(
-            duration: d,
-            alignment: Alignment.topCenter,
-            child: _open ? widget.body : const SizedBox.shrink(),
-          ),
+        FushiAnimatedSize(
+          duration: d,
+          curve: FushiMotion.standard,
+          alignment: Alignment.topCenter,
+          child: _open ? widget.body : const SizedBox.shrink(),
         ),
       ],
     );
