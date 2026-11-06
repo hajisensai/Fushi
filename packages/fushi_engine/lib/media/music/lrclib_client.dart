@@ -2,7 +2,8 @@
 ///
 /// - 精确匹配 `GET /api/get`：标题 + 艺人 + 专辑 + 时长（秒）；服务端按时长 ±2 s 判同一录音，
 ///   这里再在客户端核一遍（[lrclibDurationMatches]），不信任返回值；
-/// - 失败再模糊搜索 `GET /api/search`，结果交给用户挑（不自动采用）；
+/// - 模糊搜索 `GET /api/search`：交给用户挑；app 侧只在精确命中的歌词书写系统与曲目元数据
+///   明显对不上（期望日文却是罗马音）时，自动从搜索结果里挑同名、同时长的原文版；
 /// - 出站一律经 `createAppHttpClient`（全应用代理装配），测试注入 [LrclibTransport] 走离线 fixture。
 library;
 
@@ -159,16 +160,21 @@ class LrclibClient {
     return r;
   }
 
-  /// 模糊搜索（结果交给用户挑），已按 [rankLrclibCandidates] 排序。
+  /// 模糊搜索，已按 [rankLrclibCandidates] 排序。[query] 非空时走 LRCLIB 的全字段关键词
+  /// `q`（标题 / 艺人 / 专辑任一命中），忽略 [title] / [artist]；否则按标题 + 艺人字段搜。
   Future<List<LrclibRecord>> search({
     required String title,
     String? artist,
     int? durationMs,
+    String? query,
   }) async {
-    final Uri uri = _uri('/api/search', <String, String>{
-      'track_name': title,
-      'artist_name': artist ?? '',
-    });
+    final String q = query?.trim() ?? '';
+    final Uri uri = _uri(
+      '/api/search',
+      q.isNotEmpty
+          ? <String, String>{'q': q}
+          : <String, String>{'track_name': title, 'artist_name': artist ?? ''},
+    );
     final ({int status, String body}) res = await _transport(uri);
     if (res.status != 200) {
       throw HttpException(
