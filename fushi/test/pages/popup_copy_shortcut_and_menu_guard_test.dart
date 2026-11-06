@@ -7,7 +7,7 @@
 //   ② 空选区不得**静默**早退（必须有反馈），成功复制必须有反馈；
 //   ③ 桌面弹窗必须挂复制键兼容层，且判据复用与阅读器同一个纯谓词；平台判定只在谓词里
 //      做一次。注意这层只在 Flutter 焦点进了弹窗子树时收得到键——macOS 上不会发生
-//      （BUG-3131），macOS 的 ⌘C 靠宿主经 `copyNativeSelectionForHost` 分派（BUG-4130，
+//      （BUG-3131），macOS 的 ⌘C 靠宿主经 `copyNativeSelectionForHost` 分派（BUG-4165，
 //      阅读器侧守卫在 test/reader/reader_desktop_copy_guard_test.dart）。
 // 纯谓词本身的真值表已由 test/shortcuts/reader_desktop_copy_test.dart 覆盖，此处不重复。
 import 'dart:io';
@@ -95,7 +95,7 @@ void main() {
     });
   });
 
-  group('BUG-1451 / BUG-4130 ③ 桌面复制键兼容层', () {
+  group('BUG-1451 / BUG-4165 ③ 桌面复制键兼容层', () {
     test('弹窗挂了 onKeyEvent 复制兼容层', () {
       expect(
         code.contains('onKeyEvent: _handleDesktopCopyKey'),
@@ -141,7 +141,7 @@ void main() {
         body.contains('isWindows: isWindowsPlatform') &&
             body.contains('isMacOS: isMacOSPlatform'),
         isTrue,
-        reason: '谓词必须同时拿到 Windows 与 macOS 平台事实（BUG-4130：macOS ⌘C 也要接管）。',
+        reason: '谓词必须同时拿到 Windows 与 macOS 平台事实（BUG-4165：macOS ⌘C 也要接管）。',
       );
       expect(
         code.contains(
@@ -164,7 +164,7 @@ void main() {
     });
   });
 
-  group('BUG-4130 宿主复制入口（macOS 焦点不进弹窗子树）', () {
+  group('BUG-4165 宿主复制入口（macOS 焦点不进弹窗子树）', () {
     test('copyNativeSelectionForHost：同一来源取选区，空选区返回 false 且不提示', () {
       final String body = methodBody(
         code,

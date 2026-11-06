@@ -130,7 +130,7 @@ bool readerWheelTickIsForward({
   return deltaPositive == swipeLeftIsForward(invert: invertSwipe, rtl: rtl);
 }
 
-/// 桌面阅读器 / 查词弹窗「复制选中文字」兼容层（BUG-402 Windows、BUG-4130 macOS）。
+/// 桌面阅读器 / 查词弹窗「复制选中文字」兼容层（BUG-402 Windows、BUG-4165 macOS）。
 ///
 /// 两个桌面平台的浏览器原生 `copy` 都收不到这一按键，只是断法不同：
 /// * Windows：WebView 走 WebView2 合成模式，fork 的 `flutter_inappwebview_windows`
@@ -173,7 +173,7 @@ bool desktopShouldHandleCopyGesture({
   return modifiers.length == 1 && modifiers.contains(primary);
 }
 
-/// 桌面复制键命中后「复制哪一个 WebView 的原生选区」（BUG-4130）。
+/// 桌面复制键命中后「复制哪一个 WebView 的原生选区」（BUG-4165）。
 ///
 /// 阅读器页同时挂着几个各自持有独立原生选区的 WebView：正文、有声书歌词覆盖层、
 /// 词典弹窗栈的每一层。复制键（macOS 上 Flutter 焦点从不跟随点击进入平台视图——

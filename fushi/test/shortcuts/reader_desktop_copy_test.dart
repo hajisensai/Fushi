@@ -129,10 +129,10 @@ void main() {
     });
   });
 
-  // BUG-4130 审查补修：复制键落在阅读器上时，按可见层叠顺序（弹窗各层 → 阅读面）
+  // BUG-4165 审查补修：复制键落在阅读器上时，按可见层叠顺序（弹窗各层 → 阅读面）
   // 找第一个有原生选区的面。每个面用一个「有选区就复制并返回 true」的假面模拟，
   // reads 记录被读过的面，用来证明下层（尤其残留旧选区的正文）不会被抢先读。
-  group('copyFromTopmostSurfaceWithSelection（BUG-4130）', () {
+  group('copyFromTopmostSurfaceWithSelection（BUG-4165）', () {
     Future<bool> Function() surface(
       String name,
       List<String> reads, {
