@@ -439,6 +439,7 @@ import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
@@ -2061,6 +2062,13 @@ class AppModel with ChangeNotifier {
         onClose: () => unawaited(setMusicDesktopLyrics(false)),
       ),
       desktopEnabled: () => isDatabaseReady && prefsRepo.musicDesktopLyrics,
+      // 与有声书悬浮字幕同一个「同时显示句数」：自动 = 填满窗口（拖高看到更多行）。
+      desktopSpan: () => floatingLyricVisibleSpan(
+        isDatabaseReady
+            ? prefsRepo.floatingLyricVisibleLines
+            : PreferencesRepository.floatingLyricVisibleLinesDefault,
+        autoFillsWindow: !Platform.isAndroid,
+      ),
       mediaSessionEnabled: () =>
           isDatabaseReady && prefsRepo.musicLyricsMediaSession,
       sessionOwnerChanged: audioCtrl.sessionOwner,
@@ -12337,8 +12345,11 @@ class AppModel with ChangeNotifier {
 
   // 悬浮字幕同时显示句数（1..15；0 = 按窗口高度自动）。
   int get floatingLyricVisibleLines => prefsRepo.floatingLyricVisibleLines;
-  Future<void> setFloatingLyricVisibleLines(int value) =>
-      prefsRepo.setFloatingLyricVisibleLines(value);
+  Future<void> setFloatingLyricVisibleLines(int value) async {
+    await prefsRepo.setFloatingLyricVisibleLines(value);
+    // 音乐桌面歌词共用这个设置：改完立即按新行数重推（有声书由设置页 resync）。
+    _musicLyricsLive?.onSettingsChanged();
+  }
 
   void _setupFloatingDictHandlers() {
     FloatingDictChannel.setEventHandlers(

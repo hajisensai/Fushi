@@ -1,0 +1,6 @@
+## BUG-4127 · Music desktop lyric always shows two lines; ignores Sentences shown
+- **报告**：2026-11-05（用户：把桌面歌词窗口拉大后，不应该能放下更多歌词吗？截图里只有当前行 + 下一行，其余全是空白）
+- **真实性**：✅ 真 bug（根因 `fushi/lib/src/media/music/lyrics/music_lyrics_live.dart` 的 `musicDesktopLyricsBlock`：块写死为「当前行 + 下一行」，窗口大小 / 设置都影响不到；音乐桌面歌词与有声书共用同一个原生悬浮字幕窗，并已在用「聆听 → 悬浮字幕」区的字体 / 颜色（`_appLevelFloatingLyricStyle`），唯独没接同区的「同时显示句数」——有声书 `audiobook_session.dart` 的 `_syncFloatingLyric` 经 `floatingLyricVisibleSpan` 接了，「自动」档在 Windows / macOS 前后各送 12 句、原生窗把当前句居中并裁掉超出窗高的部分，拖高即看到更多）
+- **[x] ① 已修复** — `musicDesktopLyricsBlock` 改为当前行居中、前后各取 `before` / `after` 个主行（伴唱 / 空行不占名额，新增 `musicLyricPreviousMainLine`）；`MusicLyricsLive` 新增 `desktopSpan`，`AppModel` 用与有声书同一个 `floatingLyricVisibleSpan(floatingLyricVisibleLines, autoFillsWindow: !Platform.isAndroid)` 供给；`setFloatingLyricVisibleLines` 改完即让音乐重推。同时修掉随之暴露的高亮偏移：逐音节已唱高亮原来写死从块首 0 开始，当前行前有上文后会高亮到上一行，改为从块内当前行起点算（原生 `Highlight` 是整块 DWrite 区间）。（分支 fix/music-desktop-lyric-visible-lines）
+- **[x] ② 已加自动化测试** — `fushi/test/media/music/lyrics/music_lyrics_learning_test.dart`（居中 / 跳过伴唱 / 两端截断 / 前奏）、`fushi/test/media/music/lyrics/music_lyrics_live_test.dart`（带上文时块内起点 6、已唱高亮 `hl:6+2`；改设置即按新行数重推）
+- **备注**：行为变化——默认「同时显示句数」是 3，音乐桌面歌词从「当前 + 下一行」变为「上一行 + 当前 + 下一行」，与有声书一致。该窗口在歌词条模式下字号随窗高缩放（原生既有行为），拉高同时会放大字号，本条不改。待 Windows 真机复测：设为「自动」→ 拉高窗口 → 看到更多行、当前行居中、逐音节高亮落在当前行。

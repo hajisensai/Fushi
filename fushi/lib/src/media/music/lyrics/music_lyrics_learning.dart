@@ -140,3 +140,13 @@ int musicLyricNextMainLine(LyricTimeline t, int lineIndex) {
   }
   return -1;
 }
+
+/// [lineIndex] 之前最近的主行（跳过伴唱 / 空行）；没有为 -1。
+int musicLyricPreviousMainLine(LyricTimeline t, int lineIndex) {
+  for (int i = lineIndex - 1; i >= 0; i--) {
+    if (!t.lines[i].isBackground && t.lines[i].text.trim().isNotEmpty) {
+      return i;
+    }
+  }
+  return -1;
+}
