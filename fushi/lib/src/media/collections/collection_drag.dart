@@ -525,7 +525,7 @@ class _CollectionDropHighlight extends StatelessWidget {
     return AnimatedScale(
       scale: hovering ? 1.04 : 1,
       duration: fushiMotionDuration(context, FushiMotion.short),
-      curve: Curves.easeOutCubic,
+      curve: FushiMotion.standard,
       child: stack,
     );
   }

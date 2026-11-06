@@ -9268,12 +9268,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             childAspectRatio: cardLayout.cardWidth / cellHeight,
           ),
           itemBuilder: (BuildContext context, int index) =>
-              _videoDragReorderCell(
-                dragReorderKeys,
-                index,
-                FushiStaggeredEntrance(
-                  index: index,
-                  child: cells[index].build(VideoCardOrientation.portrait),
+              FushiStaggeredEntrance(
+                index: index,
+                child: _videoDragReorderCell(
+                  dragReorderKeys,
+                  index,
+                  cells[index].build(VideoCardOrientation.portrait),
                 ),
               ),
         ),
@@ -9325,12 +9325,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             childAspectRatio: cardLayout.cardWidth / cellHeight,
           ),
           itemBuilder: (BuildContext context, int index) =>
-              _videoDragReorderCell(
-                dragReorderKeys,
-                index,
-                FushiStaggeredEntrance(
-                  index: index,
-                  child: cells[index].build(VideoCardOrientation.landscape),
+              FushiStaggeredEntrance(
+                index: index,
+                child: _videoDragReorderCell(
+                  dragReorderKeys,
+                  index,
+                  cells[index].build(VideoCardOrientation.landscape),
                 ),
               ),
         ),
