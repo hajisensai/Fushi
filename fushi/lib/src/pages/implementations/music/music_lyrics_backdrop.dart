@@ -76,8 +76,9 @@ const int _kMinRenderSide = 64;
 /// pixi 四层先画进的极小图的长边像素（见 `_paintPixi`）。
 const int _kPixiTinySide = 40;
 
-/// pixi 着色器取样的封面贴图边长：越小越糊（B 样条放大后约等于一次超大模糊）。
-const int _kPixiTextureSide = 16;
+/// pixi 着色器取样的封面贴图边长：32px 双线性取样，色块之间留清楚的边界（对齐
+/// QPlayer 观感；更小 / 再加 B 样条会糊成一团）。
+const int _kPixiTextureSide = 32;
 
 /// 重画间隔（≈30fps）。
 const int _kFrameMicros = 33000;
@@ -713,6 +714,9 @@ class _BackdropSource {
 
   ui.Image? _pixiTexture;
 
+  /// pixi 四层的初始角度与弯曲方向（按 [id] 定，换歌才换）。
+  late final ({List<double> angles, double bend}) pixiPose = musicPixiPose(id);
+
   /// pixi 着色器取样的极小封面（边长 [_kPixiTextureSide]，首次用到时生成）。
   ui.Image? get pixiTexture {
     final ui.Image? cover = image;
@@ -733,6 +737,16 @@ class _BackdropSource {
     _pixiTexture?.dispose();
     _pixiTexture = null;
   }
+}
+
+/// 按歌的 [seed] 定 pixi 四层初始角度（0–2π）与弯曲方向（±1）：同一首歌每次进
+/// 页面形态一致，换歌换形态。
+({List<double> angles, double bend}) musicPixiPose(int seed) {
+  final math.Random r = math.Random(seed);
+  final List<double> angles = <double>[
+    for (int i = 0; i < 4; i++) r.nextDouble() * math.pi * 2,
+  ];
+  return (angles: angles, bend: r.nextBool() ? 1.0 : -1.0);
 }
 
 /// 封面整张缩进 side×side（带 mipmap 的缩小 = 区域平均）。
@@ -1069,16 +1083,22 @@ class _BackdropSceneState extends State<_BackdropScene> {
           pixiTexture: widget.style == MusicLyricsBackdropStyle.pixi
               ? widget.source.pixiTexture
               : null,
+          pixiPose: widget.source.pixiPose,
           mesh: widget.source.mesh,
           grid: grid,
           base: base,
           matrix: musicBackdropColorMatrix(
             saturation: widget.saturation,
             brightness: cs.brightness,
-            // 封面 mesh 的贴图已压过亮度、还有暗角，再按默认比例压会发闷。
+            // 封面 mesh 的贴图已压过亮度、还有暗角，再按默认比例压会发闷；pixi
+            // 着色器的调色里已经压暗并封顶亮度，不再叠主题压暗。
             darkKeep:
-                widget.style == MusicLyricsBackdropStyle.meshGradient &&
-                    widget.source.meshTexture != null
+                _pixiShader != null &&
+                    widget.style == MusicLyricsBackdropStyle.pixi &&
+                    widget.source.pixiTexture != null
+                ? 1.0
+                : widget.style == MusicLyricsBackdropStyle.meshGradient &&
+                      widget.source.meshTexture != null
                 ? 0.85
                 : null,
           ),
@@ -1097,6 +1117,7 @@ class _BackdropPainter extends CustomPainter {
     required this.meshTexture,
     required this.pixiShader,
     required this.pixiTexture,
+    required this.pixiPose,
     required this.mesh,
     required this.grid,
     required this.base,
@@ -1106,6 +1127,9 @@ class _BackdropPainter extends CustomPainter {
   /// pixi 的全分辨率着色器与它取样的极小封面；任一为 null 时走离屏图画法。
   final ui.FragmentShader? pixiShader;
   final ui.Image? pixiTexture;
+
+  /// pixi 四层初始角度与弯曲方向（[musicPixiPose]）。
+  final ({List<double> angles, double bend}) pixiPose;
 
   /// 流动时钟（秒）。
   final ValueListenable<double> phase;
@@ -1129,6 +1153,11 @@ class _BackdropPainter extends CustomPainter {
         ..setFloat(2, phase.value)
         ..setFloat(3, texture.width.toDouble())
         ..setFloat(4, texture.height.toDouble())
+        ..setFloat(5, pixiPose.angles[0])
+        ..setFloat(6, pixiPose.angles[1])
+        ..setFloat(7, pixiPose.angles[2])
+        ..setFloat(8, pixiPose.angles[3])
+        ..setFloat(9, pixiPose.bend)
         ..setImageSampler(0, texture, filterQuality: FilterQuality.low);
       canvas.drawRect(
         Offset.zero & size,

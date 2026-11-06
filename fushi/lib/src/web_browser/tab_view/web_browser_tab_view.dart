@@ -22,6 +22,7 @@ import 'package:fushi/src/focus/webview_key_bridge.dart'
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
@@ -96,7 +97,7 @@ class WebBrowserTabView extends ConsumerStatefulWidget {
 }
 
 class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
-    implements SrsCardLookupSurface {
+    implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web-browser-tab',
     flushBeforeRebuild: () async => _detachController(),
@@ -126,6 +127,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   bool _environmentReady = false;
   WebViewEnvironment? _environment;
   InAppWebViewController? _controller;
+
+  /// 本标签页发起查词时，弹窗打开期间给它开静态硬件层（见 [PopupBodyStaticLayerGate]）。
+  @override
+  Object? get popupBodyWebViewId => _controller?.getViewId();
   PullToRefreshController? _pullToRefresh;
   late final WebBrowserDownloader _downloader;
   WebBrowserVisitRecorder? _recorder;
@@ -1258,6 +1263,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _registerHandlers(controller);
     _windowConsumed = true;
     _controller = controller;
+    _lookup?.bodyWebViewChanged(this);
     _tab.attachController(controller);
     _tab.attachViewport(_viewportRectToGlobal);
     for (final WebBrowserFeature f in widget.host.features) {

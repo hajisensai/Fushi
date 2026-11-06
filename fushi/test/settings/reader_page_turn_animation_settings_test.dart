@@ -41,8 +41,8 @@ void main() {
   });
 
   group('偏好', () {
-    test('默认：淡入淡出 / 正常 / 跟手开', () {
-      expect(readerSettings.pageTurnAnimation, PageTurnAnimation.fade);
+    test('默认：卷页 / 正常 / 跟手开', () {
+      expect(readerSettings.pageTurnAnimation, PageTurnAnimation.curl);
       expect(
         readerSettings.pageTurnAnimationSpeed,
         PageTurnAnimationSpeed.normal,
@@ -50,7 +50,7 @@ void main() {
       expect(readerSettings.pageTurnFollowDrag, isTrue);
       expect(
         ReaderFushiSource.instance.pageTurnAnimation,
-        PageTurnAnimation.fade,
+        PageTurnAnimation.curl,
       );
     });
 
@@ -69,7 +69,7 @@ void main() {
       await db.setPref('src:reader_fushi:page_turn_animation', 'flip');
       await db.setPref('src:reader_fushi:page_turn_animation_speed', 'warp');
       await restored.refreshFromDb();
-      expect(restored.pageTurnAnimation, PageTurnAnimation.fade);
+      expect(restored.pageTurnAnimation, PageTurnAnimation.curl);
       expect(restored.pageTurnAnimationSpeed, PageTurnAnimationSpeed.normal);
     });
 
@@ -255,7 +255,7 @@ void main() {
         items[first + 1] as SettingsSegmentedItem<Object>;
     final SettingsSwitchItem follow = items[first + 2] as SettingsSwitchItem;
     expect(effect.options.map((o) => o.value), PageTurnAnimation.values);
-    expect(effect.defaultValue, PageTurnAnimation.fade);
+    expect(effect.defaultValue, PageTurnAnimation.curl);
     expect(speed.defaultValue, PageTurnAnimationSpeed.normal);
     expect(follow.defaultValue, isTrue);
 
@@ -263,7 +263,10 @@ void main() {
     expect(effect.isEnabled(settingsContext), isTrue);
     expect(speed.isEnabled(settingsContext), isTrue);
     expect(effect.resolveSubtitle(settingsContext), isNull);
-    // 默认淡入淡出：跟手对无位移的效果没有意义 → 置灰。
+    // 默认卷页：有方向、可跟手 → 开关可用。
+    expect(follow.isEnabled(settingsContext), isTrue);
+    // 淡入淡出：跟手对无位移的效果没有意义 → 置灰。
+    await readerSettings.setPageTurnAnimation(PageTurnAnimation.fade);
     expect(follow.isEnabled(settingsContext), isFalse);
     await readerSettings.setPageTurnAnimation(PageTurnAnimation.slide);
     expect(follow.isEnabled(settingsContext), isTrue);
