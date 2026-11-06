@@ -457,14 +457,18 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - **只对发布包可用**：包根目录的 `release.json`（`release-server.yml` 打包时写入版本、发布序号、
   通道）是版本身份；本机 `dart run` / 自己 `dart build cli` 出的 bundle 没有它，端点回
   `platform_unsupported`。有发布包的平台：Linux x64、Windows x64。
-- **更新源**：独立发布仓 `hajisensai/fushi-server` 的 Releases，新旧只比发布序号。beta 包跟最近的
+- **更新源**：独立发布仓 `hajisensai/fushi-server` 的 Releases，新旧只比发布序号；下载地址只认该仓的
+  `https://github.com/hajisensai/fushi-server/releases/download/…`，出站走全应用代理。beta 包跟最近的
   release（beta 与正式版都收），正式版只跟 Latest。
 - **安装**：本平台包下载到安装目录里的 `.fushi_update/`，核对 GitHub 给资产算的 SHA-256（没有
   校验值或对不上一律不装），系统 `tar` 解包（Windows 用自带的 `System32\tar.exe`），然后逐个文件
   换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
   覆盖），新文件再改名到位；中途失败整体还原。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
 - **重启**：换完进程以**退出码 75** 退出，由 systemd（`Restart=on-failure`）/ 服务管理器拉起新版；
-  新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
+  新版**起来之后**（互联端口绑定成功）才删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve`
+  需要自己再起一次。
+- **回滚**：新版起不来时 `*.fushi-old` 还在：停掉服务，把安装目录里每个 `X.fushi-old` 改回 `X`
+  （覆盖新文件）再启动，就回到了更新前的版本。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
 
 ### 上传协议
