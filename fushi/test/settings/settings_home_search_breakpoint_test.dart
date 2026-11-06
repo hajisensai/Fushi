@@ -82,87 +82,89 @@ void main() {
     'glass',
     'cupertino',
   ]) {
-    for (final double width in <double>[599, 600, 640, 711]) {
-      testWidgets(
-        '$designSystem settings home at ${width.toInt()}dp is '
-        '${width >= kFushiSettingsHomeTwoPaneMinWidth ? 'two-pane' : 'single-column'}',
-        (WidgetTester tester) async {
-          final AppModel model = (await tester.runAsync<AppModel>(
-            () => _buildAppModel(
-              designSystem == 'cupertino' ? 'material' : designSystem,
-            ),
-          ))!;
-          tester.view.devicePixelRatio = 1;
-          tester.view.physicalSize = const Size(900, 1000);
-          addTearDown(() {
-            tester.view.resetDevicePixelRatio();
-            tester.view.resetPhysicalSize();
-          });
-          final ThemeData baseTheme = model.themeNotifier.theme;
-          await tester.pumpWidget(
-            ProviderScope(
-              overrides: <Override>[
-                appProvider.overrideWith((Ref ref) => model),
-                platformServicesProvider.overrideWithValue(
-                  model.platformServices,
+    // 期望写成字面量而不是拿常量反推：门槛被改回 720 时 600/640/711 必须红。
+    for (final (double width, bool twoPane) in <(double, bool)>[
+      (599, false),
+      (600, true),
+      (640, true),
+      (711, true),
+    ]) {
+      testWidgets('$designSystem settings home at ${width.toInt()}dp is '
+          '${twoPane ? 'two-pane' : 'single-column'}', (
+        WidgetTester tester,
+      ) async {
+        final AppModel model = (await tester.runAsync<AppModel>(
+          () => _buildAppModel(
+            designSystem == 'cupertino' ? 'material' : designSystem,
+          ),
+        ))!;
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(900, 1000);
+        addTearDown(() {
+          tester.view.resetDevicePixelRatio();
+          tester.view.resetPhysicalSize();
+        });
+        final ThemeData baseTheme = model.themeNotifier.theme;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: <Override>[
+              appProvider.overrideWith((Ref ref) => model),
+              platformServicesProvider.overrideWithValue(
+                model.platformServices,
+              ),
+            ],
+            child: TranslationProvider(
+              child: MaterialApp(
+                theme: baseTheme.copyWith(
+                  splashFactory: NoSplash.splashFactory,
+                  extensions: <ThemeExtension<dynamic>>[
+                    ...baseTheme.extensions.values.cast(),
+                    if (designSystem == 'cupertino')
+                      const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
+                  ],
                 ),
-              ],
-              child: TranslationProvider(
-                child: MaterialApp(
-                  theme: baseTheme.copyWith(
-                    splashFactory: NoSplash.splashFactory,
-                    extensions: <ThemeExtension<dynamic>>[
-                      ...baseTheme.extensions.values.cast(),
-                      if (designSystem == 'cupertino')
-                        const FushiDesignSystemTheme(
-                          FushiDesignSystem.cupertino,
-                        ),
-                    ],
-                  ),
-                  home: Scaffold(
-                    body: Align(
-                      alignment: Alignment.topLeft,
-                      child: SizedBox(
-                        width: width,
-                        child: const SettingsHomePage(embedded: true),
-                      ),
+                home: Scaffold(
+                  body: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: width,
+                      child: const SettingsHomePage(embedded: true),
                     ),
                   ),
                 ),
               ),
             ),
-          );
-          await tester.pumpAndSettle();
-          final Finder home = find.byType(SettingsHomePage);
-          expect(tester.getSize(home).width, width);
+          ),
+        );
+        await tester.pumpAndSettle();
+        final Finder home = find.byType(SettingsHomePage);
+        expect(tester.getSize(home).width, width);
+        expect(
+          isCupertinoPlatform(tester.element(home)),
+          designSystem == 'cupertino',
+        );
+        final Finder split = find.byType(MaterialSupportingPaneLayout);
+        if (!twoPane) {
+          expect(split, findsNothing);
+        } else {
+          expect(split, findsOneWidget);
+          // 双栏真的铺开了（不是外层判宽、内层 minSplitWidth 又退回单列）：
+          // 分栏 Row 的第一个孩子就是定宽左栏。
+          final Finder supporting = find
+              .descendant(of: split, matching: find.byType(SizedBox))
+              .first;
+          final double expectedSupporting = designSystem == 'cupertino'
+              ? supportingPaneWidthForLayout(width)
+              : 240;
+          expect(tester.getSize(supporting).width, expectedSupporting);
           expect(
-            isCupertinoPlatform(tester.element(home)),
-            designSystem == 'cupertino',
+            width - expectedSupporting,
+            greaterThanOrEqualTo(designSystem == 'cupertino' ? 320 : 360),
           );
-          final Finder split = find.byType(MaterialSupportingPaneLayout);
-          if (width < kFushiSettingsHomeTwoPaneMinWidth) {
-            expect(split, findsNothing);
-          } else {
-            expect(split, findsOneWidget);
-            // 双栏真的铺开了（不是外层判宽、内层 minSplitWidth 又退回单列）：
-            // 分栏 Row 的第一个孩子就是定宽左栏。
-            final Finder supporting = find
-                .descendant(of: split, matching: find.byType(SizedBox))
-                .first;
-            final double expectedSupporting = designSystem == 'cupertino'
-                ? supportingPaneWidthForLayout(width)
-                : 240;
-            expect(tester.getSize(supporting).width, expectedSupporting);
-            expect(
-              width - expectedSupporting,
-              greaterThanOrEqualTo(designSystem == 'cupertino' ? 320 : 360),
-            );
-          }
-          expect(tester.takeException(), isNull);
-          await tester.pumpWidget(const SizedBox.shrink());
-        },
-        timeout: const Timeout(Duration(seconds: 60)),
-      );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }, timeout: const Timeout(Duration(seconds: 60)));
     }
   }
 
