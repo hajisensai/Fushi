@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 
 DroppedFiles _files({
   List<String> books = const [],
@@ -21,6 +23,11 @@ DroppedFiles _files({
   urls: urls,
   torrents: torrents,
   unknown: const [],
+  // 与 classifyDroppedFiles 同一判据。
+  pureAudios: <String>[
+    for (final String a in audios)
+      if (isAudioOnlyMediaPath(a)) a,
+  ],
 );
 
 void main() {
@@ -241,6 +248,34 @@ void main() {
       expect(files.videos, <String>['/x/ep.mp4']);
       // .mp4 也在 audios 里（书卡挂音频用），但它首先是视频，不算纯音频。
       expect(files.pureAudios, <String>['/x/01.flac', '/x/02.MP3']);
+    });
+    test('.ape / .dsf on video surface -> importAudioToMusic (not in the '
+        'audiobook table, still pure audio)', () {
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/x/01.ape',
+        '/x/02.DSF',
+      ]);
+      expect(
+        decideDropIntent(
+          surface: DropSurface.video,
+          files: files,
+          cardHit: false,
+        ),
+        DropIntent.importAudioToMusic,
+      );
+      expect(files.pureAudios, <String>['/x/01.ape', '/x/02.DSF']);
+    });
+    test('.ape on a book card is not attached (audiobook player cannot '
+        'decode it) and says unsupported instead of staying silent', () {
+      final DroppedFiles files = classifyDroppedFiles(<String>['/x/01.ape']);
+      expect(
+        decideDropIntent(
+          surface: DropSurface.books,
+          files: files,
+          cardHit: true,
+        ),
+        DropIntent.unsupportedSurface,
+      );
     });
     test('audio-only on books surface still means audiobook material', () {
       expect(
