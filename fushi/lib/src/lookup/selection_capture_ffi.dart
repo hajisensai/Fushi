@@ -118,8 +118,9 @@ abstract final class SelectionCapture {
       // (SelectionCaptureMac.swift: AX selected text → synthetic ⌘C + pasteboard
       // restore → current pasteboard when Accessibility is not granted). Same
       // serial gate as the Windows path: the pasteboard is one global resource.
-      // Linux (X11): the runner reads the PRIMARY selection, which holds the
-      // selected text of whatever app owns it, so no copy is injected and the
+      // Linux: the runner reads the primary selection (the highlighted text of
+      // whatever app owns it): the compositor's through ext-data-control-v1 on
+      // a Wayland desktop, else X11 PRIMARY. No copy is injected and the
       // clipboard is never touched (linux/runner/global_lookup_channel.cc).
       return _runClipboardExclusive<String>(
         _captureForegroundSelectionNative,

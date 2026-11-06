@@ -88,6 +88,31 @@ void main() {
     expect(overlay, contains('SkipCloseAnimation('));
   });
 
+  test('dropped captures and a stopped ball end quietly', () {
+    // The portal capture is asynchronous: a capture that a newer one, Stop or
+    // the runner going away overtook answers "cancelled", which Dart ignores
+    // (no main window, no failure toast).
+    expect(channel, contains('CaptureError("cancelled"'));
+    expect(dartChannel, contains("cancelled = 'cancelled'"));
+    // As on Windows, stopping the ball closes the freeze layer too.
+    final int stop = channel.indexOf('method == "stopSystemBall"');
+    final int next = channel.indexOf('} else if', stop);
+    expect(
+      channel.substring(stop, next),
+      allOf(
+        contains('screen_ocr->Close()'),
+        contains('++self->capture_generation'),
+      ),
+    );
+  });
+
+  test('a portal request outlives its pending method reply', () {
+    // Response (or the timeout) can arrive before the Screenshot reply; the
+    // request must not be freed until both happened.
+    expect(capture, contains('call_pending'));
+    expect(capture, contains('if (!request->call_pending) delete request;'));
+  });
+
   test('both sources are built into the runner', () {
     expect(cmake, contains('"screen_capture.cc"'));
     expect(cmake, contains('"screen_ocr_overlay.cc"'));

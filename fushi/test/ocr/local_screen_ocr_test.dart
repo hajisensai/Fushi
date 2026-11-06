@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
@@ -125,6 +126,34 @@ void main() {
       expect(service.session.closed, isTrue);
     });
 
+    test(
+      'idle timer never closes the session under a running recognition',
+      () async {
+        final _FakeService service = _FakeService(ready: true);
+        final LocalScreenOcr ocr = LocalScreenOcr(
+          service,
+          workDir: work,
+          idleTimeout: const Duration(milliseconds: 40),
+        );
+        await ocr.recognize(png, language: 'ja');
+        // The second one starts before the first one's idle timer fires and
+        // is still running when it would have fired.
+        final Completer<void> gate = Completer<void>();
+        service.session.gate = gate;
+        final Future<SystemOcrPageResult> running = ocr.recognize(
+          png,
+          language: 'ja',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(service.session.closed, isFalse);
+        gate.complete();
+        expect((await running).lines.single.text, '日本語');
+        // Idle again: now it closes.
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(service.session.closed, isTrue);
+      },
+    );
+
     test('an image that does not decode is a format error', () async {
       final LocalScreenOcr ocr = LocalScreenOcr(
         _FakeService(ready: true),
@@ -141,6 +170,7 @@ void main() {
 class _FakeSession implements MangaOcrPageSession, MangaOcrTextImageSession {
   final List<String> sizes = <String>[];
   bool closed = false;
+  Completer<void>? gate;
 
   @override
   Future<OcrRecognition> recognizeTextImage(
@@ -149,6 +179,7 @@ class _FakeSession implements MangaOcrPageSession, MangaOcrTextImageSession {
     required int height,
   }) async {
     sizes.add('${width}x$height:${rgba.length}');
+    await gate?.future;
     return const OcrRecognition(
       text: '日本語',
       vertical: false,

@@ -1011,6 +1011,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     }
     final Uint8List? png = capture.png;
     final Rect? screen = capture.screen;
+    if (capture.error == DesktopScreenOcrCapture.cancelled) return;
     if (png == null || screen == null) {
       // 没截到图就没有冻结层可写字：提示只能在主窗里给。
       await target.bringMainWindowToFront();

@@ -314,13 +314,15 @@ void StartScreenOcrCapture(FushiFloatingBall* self, FlMethodCall* call,
           g_object_unref(call);
           g_object_unref(monitor);
         };
+        // Dropped captures answer "cancelled": Dart ends quietly instead of
+        // reporting a failure the user never saw.
         if (alive.expired()) {
-          finish(CaptureError("capture_failed", "runner closed"));
+          finish(CaptureError("cancelled", "runner closed"));
           return;
         }
         if (generation != self->capture_generation) {
-          // stopScreenOcr or a newer capture came first.
-          finish(CaptureError("capture_failed", "superseded"));
+          // stopScreenOcr / stopSystemBall or a newer capture came first.
+          finish(CaptureError("cancelled", "superseded"));
           return;
         }
         if (!error.empty() || capture.pixbuf == nullptr) {
@@ -408,6 +410,10 @@ void MethodCallCb(FlMethodChannel*, FlMethodCall* call, gpointer user_data) {
     g_autoptr(FlValue) value = fl_value_new_bool(started);
     RespondValue(call, value);
   } else if (method == "stopSystemBall") {
+    // The freeze layer goes with the ball (as on Windows), and a capture still
+    // in flight is dropped. No callback.
+    ++self->capture_generation;
+    self->screen_ocr->Close();
     self->window->Stop();
     RespondValue(call, nullptr);
   } else if (method == "isSystemBallRunning") {

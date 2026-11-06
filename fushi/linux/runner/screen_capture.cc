@@ -132,6 +132,10 @@ struct PortalRequest {
   guint timeout = 0;
   std::string handle;
   bool finished = false;
+  // The Screenshot method reply is still due. The Response signal (or the
+  // timeout) can finish the request before it arrives; the request is freed
+  // only once both have happened.
+  bool call_pending = true;
 };
 
 void Finish(PortalRequest* request, MonitorCapture capture,
@@ -147,9 +151,9 @@ void Finish(PortalRequest* request, MonitorCapture capture,
     request->timeout = 0;
   }
   CaptureDone done = std::move(request->done);
-  g_object_unref(request->monitor);
-  g_object_unref(request->bus);
-  delete request;
+  g_clear_object(&request->monitor);
+  g_clear_object(&request->bus);
+  if (!request->call_pending) delete request;
   done(std::move(capture), error);
 }
 
@@ -228,12 +232,16 @@ void Subscribe(PortalRequest* request, const std::string& handle) {
 
 void OnScreenshotCalled(GObject* source, GAsyncResult* result, gpointer data) {
   auto* request = static_cast<PortalRequest*>(data);
+  request->call_pending = false;
   GError* error = nullptr;
   GVariant* reply =
       g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
   if (request->finished) {
+    // Finish already ran (Response came first, or the timeout) and left the
+    // request for this callback to free.
     if (reply != nullptr) g_variant_unref(reply);
     g_clear_error(&error);
+    delete request;
     return;
   }
   if (reply == nullptr) {

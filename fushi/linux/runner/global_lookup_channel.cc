@@ -158,8 +158,14 @@ void ReadWaylandSelectionInThread(GTask* task, gpointer, gpointer,
                                   GCancellable*) {
   std::optional<std::string> text =
       ReadWaylandPrimarySelection(kWaylandSelectionTimeoutMs);
+  // The source app's bytes: legacy STRING is Latin-1, and the size cap can cut
+  // a character in half. Flutter's codec rejects invalid UTF-8.
   g_task_return_pointer(
-      task, text.has_value() ? g_strdup(text->c_str()) : nullptr, g_free);
+      task,
+      text.has_value()
+          ? g_utf8_make_valid(text->data(), static_cast<gssize>(text->size()))
+          : nullptr,
+      g_free);
 }
 
 void OnWaylandSelection(GObject*, GAsyncResult* result, gpointer data) {
@@ -348,9 +354,13 @@ void _FushiGlobalLookup::OnHelperReply(int64_t id, FlValue* message) {
              fl_value_get_type(error) == FL_VALUE_TYPE_MAP) {
     FlValue* code = fl_value_lookup_string(error, "code");
     FlValue* text = fl_value_lookup_string(error, "message");
+    const bool has_code =
+        code != nullptr && fl_value_get_type(code) == FL_VALUE_TYPE_STRING;
+    const bool has_text =
+        text != nullptr && fl_value_get_type(text) == FL_VALUE_TYPE_STRING;
     response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-        code != nullptr ? fl_value_get_string(code) : "card_error",
-        text != nullptr ? fl_value_get_string(text) : nullptr, nullptr));
+        has_code ? fl_value_get_string(code) : "card_error",
+        has_text ? fl_value_get_string(text) : nullptr, nullptr));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(
         fl_value_lookup_string(message, "result")));

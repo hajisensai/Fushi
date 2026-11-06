@@ -10,7 +10,8 @@
 /// 载时抛 [SystemOcrUnavailableException]（[kSystemOcrModelUnavailableReason]），宿主
 /// 在冻结层提示条上让用户去设置里下载。
 ///
-/// 会话常驻复用（建会话约 0.7 s），空闲 [idleTimeout] 后关掉释放 ORT 内存。
+/// 会话常驻复用（建会话约 0.7 s），空闲 [idleTimeout] 后关掉释放 ORT 内存。空闲
+/// 计时只在没有识别在跑时走：关会话会让在跑的识别失败。
 library;
 
 import 'dart:async';
@@ -43,6 +44,7 @@ class LocalScreenOcr implements SystemOcrPlatform {
 
   Future<MangaOcrPageSession>? _session;
   Timer? _idleTimer;
+  int _running = 0;
 
   @override
   Future<bool> isAvailable() async {
@@ -60,31 +62,34 @@ class LocalScreenOcr implements SystemOcrPlatform {
     required String language,
     List<Rect> tiles = const <Rect>[],
   }) async {
-    if (!await isAvailable()) {
-      throw const SystemOcrUnavailableException(
-        kSystemOcrModelUnavailableReason,
-      );
-    }
-    final _Rgba? frame = await Isolate.run(() => _decodeRgba(imageBytes));
-    if (frame == null) {
-      throw const FormatException('screenshot could not be decoded');
-    }
-    final MangaOcrTextImageSession session = await _textSession();
-    final OcrRecognition result;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _running++;
     try {
-      result = await session.recognizeTextImage(
+      if (!await isAvailable()) {
+        throw const SystemOcrUnavailableException(
+          kSystemOcrModelUnavailableReason,
+        );
+      }
+      final _Rgba? frame = await Isolate.run(() => _decodeRgba(imageBytes));
+      if (frame == null) {
+        throw const FormatException('screenshot could not be decoded');
+      }
+      final MangaOcrTextImageSession session = await _textSession();
+      final OcrRecognition result = await session.recognizeTextImage(
         frame.rgba,
         width: frame.width,
         height: frame.height,
       );
+      return systemOcrPageFromRecognition(
+        result,
+        width: frame.width,
+        height: frame.height,
+      );
     } finally {
-      _armIdleTimer();
+      _running--;
+      if (_running == 0 && _session != null) _armIdleTimer();
     }
-    return systemOcrPageFromRecognition(
-      result,
-      width: frame.width,
-      height: frame.height,
-    );
   }
 
   /// 释放会话（宿主销毁时）。

@@ -1987,7 +1987,9 @@ void main() {
           expect(called('stopScreenOcr'), isTrue);
         });
 
-        testWidgets('Linux 本机 OCR 模型没下载：冻结层提示去设置里下载', (WidgetTester tester) async {
+        testWidgets('Linux 本机 OCR 模型没下载：冻结层提示去设置里下载', (
+          WidgetTester tester,
+        ) async {
           mockCapture(tester, <String, Object?>{
             'png': png,
             'screen': <double>[0, 0, 1920, 1080],
@@ -2026,6 +2028,18 @@ void main() {
             find.text(t.floating_ball_ocr_screen_permission),
             findsOneWidget,
           );
+          expect(called('updateScreenOcrOverlay'), isFalse);
+        });
+
+        testWidgets('截图途中被作废（Linux 异步 portal）：静默收场，不唤起主窗、不报失败', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{'error': 'cancelled'});
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(target.log, <String>['dismiss']);
+          await tester.pump();
+          expect(find.text(t.floating_ball_ocr_failed), findsNothing);
           expect(called('updateScreenOcrOverlay'), isFalse);
         });
       });

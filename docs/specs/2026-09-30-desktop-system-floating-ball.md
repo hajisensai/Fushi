@@ -87,7 +87,7 @@
 
 - **Wayland 会话**（`XDG_SESSION_TYPE=wayland` 或有 `WAYLAND_DISPLAY`，Steam Deck 桌面模式）：xdg-desktop-portal `Screenshot`，`interactive=false`。桌面第一次会问用户（KDE 把答案记进权限库），之后静默，Deck 实测约 0.35 s。portal 把整张桌面写成文件并回 URI：读进来、按显示器几何裁出来（整桌面图与逻辑包围盒的比例换算），然后删掉文件（这是我们的临时截图，不是用户要留的截图）。用户拒绝（response 1）→ `permission_denied`。第一次请求等用户回答权限框，超时 60 s。
 - **X11 会话**：直接读根窗（`gdk_pixbuf_get_from_window`）。
-- 截图前收起旧冻结层、藏球，`gdk_display_sync` 确认 X 服务器已取消映射再发请求。portal 是异步的，`startScreenOcrCapture` 等截完才回话；期间 `stopScreenOcr` / 再一次截图会作废这次结果。
+- 截图前收起旧冻结层、藏球，`gdk_display_sync` 确认 X 服务器已取消映射再发请求。portal 是异步的，`startScreenOcrCapture` 等截完才回话；期间 `stopScreenOcr` / `stopSystemBall` / 再一次截图会作废这次结果（回 `cancelled`）。`stopSystemBall` 同 Windows，连冻结层一起关。
 - KWin 会让消失的窗口淡出约 150 ms，紧接着的截图会拍到半透明的按钮列。球、按钮列和冻结层窗口都设 `_KDE_NET_WM_SKIP_CLOSE_ANIMATION`=1（`SkipCloseAnimation`），藏起即消失；其他合成器忽略这个属性。
 - Steam Deck 游戏模式（gamescope）不在本阶段范围。
 
@@ -95,7 +95,7 @@
 
 | 方法 | 参数 | 返回 | 说明 |
 |---|---|---|---|
-| `startScreenOcrCapture` | `{anchor: [l,t,r,b] \| null, labels: {recognizing, hint, close}, colors: {primary, surface, onSurface}}` | `{png: Uint8List, screen: [l,t,r,b]}`；失败 `{error: String}`（`permission_denied` / `capture_failed`） | 选 anchor 中心所在显示器（null 取光标所在）；先藏起球与按钮列（不销毁），等合成后截**整块显示器**（物理像素，PNG 宽高 = screen 宽高），然后立刻显示冻结层并显示 `labels.recognizing`。失败时球已恢复、不显示冻结层。 |
+| `startScreenOcrCapture` | `{anchor: [l,t,r,b] \| null, labels: {recognizing, hint, close}, colors: {primary, surface, onSurface}}` | `{png: Uint8List, screen: [l,t,r,b]}`；失败 `{error: String}`（`permission_denied` / `capture_failed` / `cancelled`：Linux 异步截图途中被新的截图、`stopScreenOcr` 或 `stopSystemBall` 作废，Dart 静默收场） | 选 anchor 中心所在显示器（null 取光标所在）；先藏起球与按钮列（不销毁），等合成后截**整块显示器**（物理像素，PNG 宽高 = screen 宽高），然后立刻显示冻结层并显示 `labels.recognizing`。失败时球已恢复、不显示冻结层。 |
 | `updateScreenOcrOverlay` | `{lines: [[l,t,r,b], …], message: String?}` | — | `lines` 是截图像素坐标；画行框（primary 描边 + 12% 填充）。`message` 非空时替换顶部提示文字（识别失败 / 没识别到字 / 语言没装），为 null 时显示 `labels.hint`。 |
 | `stopScreenOcr` | — | — | 关冻结层、恢复球。Dart 主动关不回调。 |
 
