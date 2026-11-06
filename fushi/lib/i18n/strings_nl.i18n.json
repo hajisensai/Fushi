@@ -2975,6 +2975,7 @@
   "floating_ball_ocr_failed": "Scherm-OCR mislukt",
   "floating_ball_ocr_language_pack_missing": "Windows heeft geen tekstherkenning voor $language. Voeg die taal toe (met optische tekenherkenning) via Instellingen → Tijd en taal → Taal en regio",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "Het OCR-model van het systeem is nog niet gereed",
   "floating_ball_ocr_notification": "Scherm-OCR bezig",
   "floating_ball_ocr_pick_hint": "Tik op tekst om op te zoeken",

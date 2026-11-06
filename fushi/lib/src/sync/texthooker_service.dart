@@ -540,6 +540,15 @@ class TexthookerService extends ChangeNotifier {
   /// 注销的生命周期和 observer 顺序问题。
   List<String> get lastFoldedLineIds =>
       List<String>.unmodifiable(_lastFoldedLineIds);
+
+  /// 上一次 [appendLine] 返回行的**文本出处**：null = 文本就是本次入参；否则是被折叠
+  /// 回吞、文本更长而胜出的那条旧行的 id（合并结果显示的是它的文本，不是本次入参）。
+  ///
+  /// galgame 会话据此记住「当前这条字幕到底是哪一份 hook 原文经管线得来的」——规则
+  /// 过滤页的预览样本必须是这一份，否则预览看的是一份输入、字幕吃的是另一份（BUG-4029）。
+  /// 与 [lastFoldedLineIds] 同生命周期：调用方在 [appendLine] 返回后立刻读走。
+  String? get lastAppendTextDonorId => _lastAppendTextDonorId;
+  String? _lastAppendTextDonorId;
   final List<String> _lastFoldedLineIds = <String>[];
   final Map<String, TexthookerTextThread> _discoveredTextThreads =
       <String, TexthookerTextThread>{};
@@ -905,6 +914,7 @@ class TexthookerService extends ChangeNotifier {
     final String trimmed = parsed.text;
     if (trimmed.isEmpty) return null;
     _lastFoldedLineIds.clear();
+    _lastAppendTextDonorId = null;
 
     // 同一句被引擎分多次吐出来时，把 buffer 尾巴上属于这一句的几条**一次性回吞**成
     // 一条，而不是追加新行。用户报的 Zato 序列是三拍：
@@ -963,6 +973,7 @@ class TexthookerService extends ChangeNotifier {
             normalizeForFold(mergedText).length) {
           mergedText = tail.text;
           mergedSpans = tail.rubySpans;
+          _lastAppendTextDonorId = tail.id;
         }
         absorbed.add(_entries.removeAt(tailIndex));
       }

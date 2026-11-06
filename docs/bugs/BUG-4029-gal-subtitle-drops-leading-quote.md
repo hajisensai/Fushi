@@ -1,11 +1,11 @@
 ## BUG-4029 · 游戏抓取文本进字幕窗后丢句首「、偶尔先重复上一句三遍
 - **报告**：2026-11-02（_今ヶ瀬°，经 fushi-bot 代提交 Ee2aQAngTN，Windows，游戏「スロウ・ダメージ」，抓取方式未提供：规则过滤页的抓取结果正常，进字幕窗后每句句首「丢失；点下一句后字幕偶尔先重复三遍上一句再出最新句）
-- **真实性**：❌ 未复现（无样本、无日志）。按 `docs/agent/galgame-hooking.md`「0. 硬规则」，galgame 文本链路的修改必须先在原始启动路径建身份 / 时序台账并只修第一个未通过阶段；本次没有游戏样本（反馈附的网盘链接属不可信外部内容，未下载）、没有 `FUSHI_LUNA_DIAG` 逐行诊断，也不知道引擎与抓取方式，无法确定第一个未通过边界，故不改代码。沿代码路径排除掉的部分（只读核对）：
-  - native 同源：`native/galgame_hook/injector/injector_main.cpp` `LunaOutput` 里线程预览（`WriteThreadPreview`，规则过滤页「使用最近抓到的一行」读的 `previewText`）与文本道（`WriteLunaTextLine`）写的是**同一份** `normalized_text` / `normalized_len`，两者在 native 侧不会一个有「一个没有。差别只有文本道多一道 `g_lunaRepeats.IsRepeat` 去重与 `LunaShouldWriteLine` 选线程门。
-  - 文本处理管线同源：`gal_hook_session_controller.dart` `_processSelectedThreadText` 与编辑页预览调用同一个 `GalTextProcessPipeline.apply`。
-  - 入工作台：`texthooker_service.dart` `appendLine` 的 `parseRubyMarkup`（`ruby_markup.dart`）只认 `<ruby>` / `<r…>` / `｜…《》` / 裸 `《》` / 平假名 `[]`，不碰「；`trim()` 不剥「。
-  - 浮窗：`gal_hook_text_overlay_controller.dart` 把 `latest.text` 原样经 `updateText` 推给 native 浮窗。
-  剩下的嫌疑点都需要现场数据才能区分：① 预览与文本道**不是同一条 Output**——引擎分多次输出（例如「先单独吐出 / 被过滤、正文另一条），预览槽被后一条覆盖前用户恰好看到的是带「的那条；② `texthooker_service.dart` 的渐进折叠（`isProgressiveTextUpdate`，前缀 / 后缀关系即合并、保留较长一份）与「重复三遍上一句」形态吻合度待证；③ native 浮窗（`flutter_window.cpp` 的 `gal_hook_text_window_->UpdateText`）的排版。
-- **[ ] ① 未修复** — 未复现，不硬改。
-- **[ ] ② 未加自动化测试** — 同上。
-- **备注**：复现所需：游戏 exe 架构 / 引擎识别（`tool/galhook.ps1 probe`）、所选线程的 hook code、`FUSHI_LUNA_DIAG=1` 下一句台词从 Output 到 lane 的逐行记录、同一时刻工作台（texthooker 页）里那一行的原文截图——工作台与浮窗是否一致可以立刻把嫌疑缩到「入工作台之前」或「浮窗渲染」。
+- **真实性**：✅ 真 bug（结构性分叉已在代码上证实；Slow Damage 现场具体走的是下面哪一支仍缺诊断）。反馈两张截图（s0/s1）对照：规则页「结果」是 `「それこそ…よ」` / `「アンタ…かい？」`，同一时刻字幕窗是 `それこそ…よ」`（缺「）与 `れこそ…よ」「それこそ…よ」「それこそ…よ」「アンタ…かい？」`（缺「そ、后接两遍上一句再出新句）。
+  - 管线本身同源：`fushi/lib/src/mining/gal_hook_session_controller.dart` `_processSelectedThreadText` 与编辑页预览都走 `GalTextProcessPipeline.apply`，同一输入必同一输出；管线里没有任何一步会削掉句首字符（`galgame_text_process.dart` 全部步骤核过）。
+  - **分叉在输入**：规则页「使用最近抓到的一行」原取 `texthooker_page.dart` `_selectedThreadSample` → 选定线程的 `previewText`（native 预览槽，只是**选定线程自己**最近一次 Output）。字幕吃的是 `_acceptsLineFromSelectedThread`（`gal_hook_session_controller.dart:2884`）放行的全部行——**含同 hook 面、不同 ctx 的兄弟线程**（BUG-1159 起刻意放行）——再经 `TexthookerService.appendLine` 的渐进折叠（`texthooker_service.dart` 折叠分支，前/后缀关系即合并、**保留更长那份**）。于是：
+    - 症状一（缺句首「）：兄弟线程送来不带「的同一句，它与选定线程不同 `textThreadKey`、不参与折叠，成为字幕最后一行；预览槽仍是带「的那句。折叠只会取输入之一且偏长，单线程内不可能把带「的版本换成不带的，故这一症状只有「另一条线程的行」能解释。
+    - 症状二（先重复上一句再出新句）：某次 Output 是累积快照（上一句若干遍 + 新句），紧接着干净的新句到达，新句是快照的后缀 → 折叠保留更长的快照留在字幕上；预览槽看到的是最后那条干净新句。
+  - 预览槽与文本道 native 侧同源（`injector_main.cpp` `LunaOutput` 写同一份 `normalized_text`，文本道只多 `g_lunaRepeats.IsRepeat` 与 `LunaShouldWriteLine`），所以分叉全在 Dart 消费侧。
+- **[x] ① 已修（预览/字幕输入分叉）** — `b67c6d4135`：`TexthookerService.lastAppendTextDonorId` 记下折叠胜出文本的出处；会话按行记住产出该行**当前文本**的那份管线输入（`GalHookSessionController.selectedLineProcessInput`），规则页样本首选它（无经管线入库的字幕行时才回落预览槽）。规则页从此与字幕是同一输入过同一管线，用户能在规则页看到并处理字幕真实拿到的文本。**未改**：同 face 兄弟线程放行（BUG-1159 依赖它）、折叠保留更长那份（逐段重绘依赖它）——是否要对 Slow Damage 所属引擎收紧，需要现场数据。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_text_lane_consumer_filter_test.dart`「同 hook 面兄弟线程送来缺句首「的一行」「累积快照被渐进折叠留在字幕上」：用含「」的多句输入复现两种症状，断言旧样本（预览槽）过管线 ≠ 字幕、新样本过管线 == 字幕。
+- **备注**：仍缺、待用户补：① `tool/galhook.ps1 probe` 的引擎识别与 exe 架构；② 所选线程 hook code；③ `FUSHI_LUNA_DIAG=1` 下一句台词的全部 `[lunadiag]` 行（看是否同一 hook 名出现多个 ctx、是否有累积快照 Output）；④ 同一时刻工作台截图（相邻两条还是一条）。拿到后才能决定是否在该引擎 profile 上收紧兄弟线程放行或累积快照处理（按引擎级判据，不按单游戏）。未做真机复测（无样本）。

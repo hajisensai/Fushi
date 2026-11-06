@@ -26,6 +26,7 @@ import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
@@ -103,10 +104,16 @@ class GlobalLookupController {
   static bool? platformOverride;
 
   /// Windows: runner GlobalLookupWindow (WebView2). macOS: Runner
-  /// GlobalLookupOverlay.swift (NSPanel + WKWebView) on the SAME channel
-  /// contract. Linux has no native overlay yet.
+  /// GlobalLookupOverlay.swift (NSPanel + WKWebView). Linux (X11 only): the
+  /// `fushi_lookup_card` helper (GTK + WebKitGTK), which the runner forwards
+  /// the channel to. All three speak the SAME channel contract.
   static bool get isSupported =>
-      platformOverride ?? (Platform.isWindows || Platform.isMacOS);
+      platformOverride ??
+      (Platform.isWindows || Platform.isMacOS || linuxLookupCardAvailableHere);
+
+  /// 覆盖窗能不能从截图 / 录屏里排除自己（「防截屏」开关）：Windows display
+  /// affinity、macOS sharingType 有，X11 没有这种能力。
+  static bool get canBlockCapture => isSupported && !Platform.isLinux;
 
   /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
   /// 覆盖窗还是退回主窗 tab，请求不丢。

@@ -62,6 +62,7 @@
 
 - **Windows**：`WS_POPUP` + `WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，owner = nullptr（主窗最小化时球不能跟着隐藏），`UpdateLayeredWindow` 逐像素 alpha（全透明像素点击穿透），D2D / WIC 自绘（范式同 `floating_lyric_window.cpp`）；`WM_MOUSEACTIVATE` 与 `WM_POINTERACTIVATE` 都交给 `window_activation_policy.h` 的 `OverlayNoActivateReply()`（`MA_NOACTIVATE` / `PA_NOACTIVATE`；`WS_EX_NOACTIVATE` 只挡鼠标，触摸 / 触控笔按下另走 `WM_POINTERACTIVATE`，同 BUG-2788），点球不抢前台（否则「应用外查词」取不到别的程序的选区）。窗口类名 `FushiFloatingBallWindow`，**标题不能是 "Fushi"**（`main.cpp` 按标题 FindWindow 找主窗）。PerMonitorV2：处理 `WM_DPICHANGED`、`WM_DISPLAYCHANGE`、`WM_SETTINGCHANGE(SPI_SETWORKAREA)`。纯几何放头文件并按 `windows/runner/CMakeLists.txt` 现有范式加 `_test` + `_gate`。
 - **macOS**：`NSPanel`，styleMask `[.borderless, .nonactivatingPanel]`，`level = .statusBar`，collectionBehavior `[.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]`，`hidesOnDeactivate = false`，`becomesKeyOnlyIfNeeded`，自绘 `NSView`（`acceptsFirstMouse = true`，不激活 app）；监听 `NSApplication.didChangeScreenParametersNotification` 重摆。坐标：AppKit 左下原点 ↔ 通道里的物理像素左上原点按 `backingScaleFactor` 换算（同 `GlobalLookupOverlay.swift` 约定）。
+- **Linux（X11，2026-11-04 补）**：`fushi/linux/runner/floating_ball_window.cc`，几何直接复用 `windows/runner/floating_ball_geometry.h`（纯 C++）。两个 `GTK_WINDOW_POPUP`（override-redirect，球窗 / 按钮窗，同 Windows 分工）：窗管不摆放、不约束、不给焦点（点球不抢焦点），KWin 把非托管窗叠在所有托管窗之上，移动直达 X 服务器。最初用托管窗（keep_above + NOTIFICATION 类型）时，Deck 上手指拖动球明显落后于手指：每次移动都要等 KWin 处理 ConfigureRequest。RGBA visual + Cairo 自绘，输入形状只留球 / 48 DIP 按钮圆（条带近似）/ 标签胶囊，其余点击穿透；没有合成器时同一区域兼作可见形状。坐标用 GDK 根坐标（逻辑像素），DIP 缩放 = `gdk_screen_get_resolution / 96`（Plasma X11 的分数缩放走 Xft.dpi）；报给 Dart 的 anchor = 逻辑 × `gdk_monitor_get_scale_factor` = 物理像素。视口 = `gdk_monitor_get_workarea`；`monitors-changed` / `size-changed` 时收起重摆。拖动阈值取 `gtk-dnd-drag-threshold`。配置菜单 = `GtkMenu`（单选勾）`popup_at_rect` 到球旁。**Wayland 会话不提供**：程序不能摆放自己的窗口，Dart 侧 `isDesktopSystemBallPlatform` 按 `linuxSessionIsX11`（`GDK_BACKEND` / `WAYLAND_DISPLAY` / `DISPLAY`）判定，原生在非 X11 显示上 `startSystemBall` 回 false。Steam Deck「切换到桌面」在 SteamOS 3.9 默认是 Plasma **Wayland**，Flatpak 用 `--socket=x11` + `GDK_BACKEND=x11` 让 Fushi 走 XWayland。分阶段：第一阶段只有球与不依赖全局查词卡的按钮（`lookup` / `clipboard` 退回主窗 / `sync` / `ai` / `switch_profile` / `open_app`）；第二阶段（2026-11-05）补了全局查词卡（[Linux 全局查词卡](2026-11-05-linux-global-lookup-card.md)），`popup_lookup` 随 `GlobalLookupController.isSupported` 出现；第三阶段（2026-11-05）补了截屏识字（见下节「Linux」），`screen_ocr` 与 `popup_lookup` 同一条件。
 
 ## 设置
 
@@ -78,11 +79,23 @@
 - macOS：沿用 `app.fushi.reader/system_ocr`（`apple/FushiSystemOcr.swift`，Vision）。
 - Windows：本次补上 `app.fushi.reader/system_ocr` 的 Windows 实现（`Windows.Media.Ocr`，WRL/ABI，不用 C++/WinRT 投影——runner 以 `_HAS_EXCEPTIONS=0` 编译）。`isAvailable` = 本机有任何可用识别语言；`recognize` 按 `language` 建引擎，该语言识别器没装时报 `PlatformException(code: 'LANGUAGE_UNAVAILABLE')`，Dart 映射成 `SystemOcrUnavailableException('language_unavailable')` 并提示去「设置 → 时间和语言 → 语言」装日语（含 OCR 组件）。行框 = 该行所有词框的并集；CJK 词之间不插空格（Windows OCR 会把日文按词拆开）。识别在工作线程跑，结果投回平台线程回话。副作用（有意）：漫画「设备自带 OCR」引擎在 Windows 上也随之可用。
 
+- Linux：没有系统 OCR，用 Fushi 的本机 OCR 模型（`lib/src/ocr/local_screen_ocr.dart`，设置 › 模型 › OCR 里下载的漫画 OCR 模型，离线不上传），走「整帧当一块文字图」的文字图会话（PP 行检测 + 逐行识别，与图形字幕整轨识别同一入口），会话常驻、空闲 1 分钟释放。模型没下载时抛 `SystemOcrUnavailableException('model_unavailable')`，冻结层提示条显示 `floating_ball_ocr_model_missing`。
+
+### 截屏（Linux）
+
+`linux/runner/screen_capture.cc`。Fushi 画在 XWayland 上时，X 客户端只看得到 X 窗口，读根窗是一片黑，所以：
+
+- **Wayland 会话**（`XDG_SESSION_TYPE=wayland` 或有 `WAYLAND_DISPLAY`，Steam Deck 桌面模式）：xdg-desktop-portal `Screenshot`，`interactive=false`。桌面第一次会问用户（KDE 把答案记进权限库），之后静默，Deck 实测约 0.35 s。portal 把整张桌面写成文件并回 URI：读进来、按显示器几何裁出来（整桌面图与逻辑包围盒的比例换算），然后删掉文件（这是我们的临时截图，不是用户要留的截图）。用户拒绝（response 1）→ `permission_denied`。第一次请求等用户回答权限框，超时 60 s。
+- **X11 会话**：直接读根窗（`gdk_pixbuf_get_from_window`）。
+- 截图前收起旧冻结层、藏球，`gdk_display_sync` 确认 X 服务器已取消映射再发请求。portal 是异步的，`startScreenOcrCapture` 等截完才回话；期间 `stopScreenOcr` / `stopSystemBall` / 再一次截图会作废这次结果（回 `cancelled`）。`stopSystemBall` 同 Windows，连冻结层一起关。
+- KWin 会让消失的窗口淡出约 150 ms，紧接着的截图会拍到半透明的按钮列。球、按钮列和冻结层窗口都设 `_KDE_NET_WM_SKIP_CLOSE_ANIMATION`=1（`SkipCloseAnimation`），藏起即消失；其他合成器忽略这个属性。
+- Steam Deck 游戏模式（gamescope）不在本阶段范围。
+
 ### 通道补充（Dart → 原生）
 
 | 方法 | 参数 | 返回 | 说明 |
 |---|---|---|---|
-| `startScreenOcrCapture` | `{anchor: [l,t,r,b] \| null, labels: {recognizing, hint, close}, colors: {primary, surface, onSurface}}` | `{png: Uint8List, screen: [l,t,r,b]}`；失败 `{error: String}`（`permission_denied` / `capture_failed`） | 选 anchor 中心所在显示器（null 取光标所在）；先藏起球与按钮列（不销毁），等合成后截**整块显示器**（物理像素，PNG 宽高 = screen 宽高），然后立刻显示冻结层并显示 `labels.recognizing`。失败时球已恢复、不显示冻结层。 |
+| `startScreenOcrCapture` | `{anchor: [l,t,r,b] \| null, labels: {recognizing, hint, close}, colors: {primary, surface, onSurface}}` | `{png: Uint8List, screen: [l,t,r,b]}`；失败 `{error: String}`（`permission_denied` / `capture_failed` / `cancelled`：Linux 异步截图途中被新的截图、`stopScreenOcr` 或 `stopSystemBall` 作废，Dart 静默收场） | 选 anchor 中心所在显示器（null 取光标所在）；先藏起球与按钮列（不销毁），等合成后截**整块显示器**（物理像素，PNG 宽高 = screen 宽高），然后立刻显示冻结层并显示 `labels.recognizing`。失败时球已恢复、不显示冻结层。 |
 | `updateScreenOcrOverlay` | `{lines: [[l,t,r,b], …], message: String?}` | — | `lines` 是截图像素坐标；画行框（primary 描边 + 12% 填充）。`message` 非空时替换顶部提示文字（识别失败 / 没识别到字 / 语言没装），为 null 时显示 `labels.hint`。 |
 | `stopScreenOcr` | — | — | 关冻结层、恢复球。Dart 主动关不回调。 |
 
@@ -93,12 +106,13 @@
 | `screenOcrTap` | `{x, y}` | 冻结层上左键点下（不含关闭钮）：截图像素坐标（= 相对 screen 左上的物理像素）。 |
 | `screenOcrDismissed` | — | Esc / 右键 / 关闭钮：原生已关层、已恢复球。 |
 
-坐标约定同上文：物理像素、左上原点（macOS 按 `backingScaleFactor` 与 AppKit 左下原点换算，同 `GlobalLookupOverlay.swift`）。
+坐标约定同上文：物理像素、左上原点（macOS 按 `backingScaleFactor` 与 AppKit 左下原点换算，同 `GlobalLookupOverlay.swift`；Linux = GDK 逻辑坐标 × `gdk_monitor_get_scale_factor`，同球的 anchor）。
 
 ### 冻结层窗口
 
 - 必须在**查词卡之下**：卡在冻结层之上弹出、点卡外时卡自己收起，冻结层同时收到那一记点击（可能就是查下一个字）。
 - Windows：`WS_POPUP`，`WS_EX_TOPMOST | WS_EX_TOOLWINDOW`，覆盖显示器整块（含任务栏）；显示时取一次前台（为了收 Esc——点球是本进程收到的最后一次输入，`SetForegroundWindow` 允许），之后 `WM_MOUSEACTIVATE` 回 `MA_NOACTIVATE`，点击不改 Z 序（查词卡 `HWND_TOPMOST` 后到者在上）。类名 `FushiScreenOcrWindow`，标题不得是 "Fushi"。
+- Linux（X11 / XWayland，`linux/runner/screen_ocr_overlay.cc`）：`GTK_WINDOW_POPUP`（override-redirect，同球），盖满显示器，Cairo 画截图 + 压暗 + 行框 + 提示条，绘制常量 / 提示条布局 / 点击分类 / 选显示器直接复用 `windows/runner/screen_ocr_logic.h`。查词卡（同为非托管窗）上屏时 `gdk_window_raise`，后到者在上。映射后 `gdk_seat_grab` 键盘收 Esc；XWayland 上抓取只覆盖 X 客户端，焦点在 Wayland 应用时 Esc 可能收不到，关闭钮与右键始终可用。
 - macOS：`NSPanel` 无边框，level `.statusBar`（卡是 `.popUpMenu`，在其上），`canBecomeKey` 以收 Esc，`collectionBehavior` 同球（含 `.fullScreenAuxiliary`）。截屏：macOS 14+ 用 ScreenCaptureKit `SCScreenshotManager`（只排除球的面板，不排除主窗），13.x 回落 `CGDisplayCreateImage`；没有「屏幕录制」权限时 `CGRequestScreenCaptureAccess()` 并返回 `permission_denied`，Dart 唤起主窗提示。
 
 ### Dart 侧

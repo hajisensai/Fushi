@@ -2975,6 +2975,7 @@
   "floating_ball_ocr_failed": "OCR màn hình thất bại",
   "floating_ball_ocr_language_pack_missing": "Windows không có bộ nhận dạng văn bản cho $language. Thêm ngôn ngữ đó (kèm Nhận dạng ký tự quang học) trong Cài đặt → Thời gian & ngôn ngữ → Ngôn ngữ & khu vực",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "Mô hình OCR của hệ thống chưa sẵn sàng",
   "floating_ball_ocr_notification": "Đang OCR màn hình",
   "floating_ball_ocr_pick_hint": "Chạm vào văn bản để tra",

@@ -784,11 +784,15 @@ void main() {
       debugLatestSystemBallSync = null;
       target = _RecordingActionTarget();
       debugDesktopSystemBallPlatformOverride = true;
+      // 「应用外查词」「截屏识字」要全局查词覆盖窗；不钉住的话 Linux CI 上
+      // isSupported 为 false，这两项被隐藏（本机 Windows 恒真，所以本地绿）。
+      GlobalLookupController.platformOverride = true;
       desktopSystemBallActionTarget = target;
     });
 
     tearDown(() {
       debugDesktopSystemBallPlatformOverride = null;
+      GlobalLookupController.platformOverride = null;
       desktopSystemBallActionTarget = const DesktopSystemBallActionTarget();
       FloatingBallChannel.debugResetHandler();
     });
@@ -2001,6 +2005,24 @@ void main() {
           expect(called('stopScreenOcr'), isTrue);
         });
 
+        testWidgets('Linux 本机 OCR 模型没下载：冻结层提示去设置里下载', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrModelUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
+          expect(update['message'], t.floating_ball_ocr_model_missing);
+          expect(update['lines'], isEmpty);
+        });
+
         testWidgets('默认内容语言是中文且没装中文识别器：提示里写的是中文', (WidgetTester tester) async {
           await prefs.setDefaultContentLanguage('zh-Hans');
           mockCapture(tester, <String, Object?>{
@@ -2044,6 +2066,18 @@ void main() {
             find.text(t.floating_ball_ocr_screen_permission),
             findsOneWidget,
           );
+          expect(called('updateScreenOcrOverlay'), isFalse);
+        });
+
+        testWidgets('截图途中被作废（Linux 异步 portal）：静默收场，不唤起主窗、不报失败', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{'error': 'cancelled'});
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(target.log, <String>['dismiss']);
+          await tester.pump();
+          expect(find.text(t.floating_ball_ocr_failed), findsNothing);
           expect(called('updateScreenOcrOverlay'), isFalse);
         });
       });
@@ -2214,6 +2248,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
     required String language,
+    SystemOcrPlatform? engine,
   }) async {
     log.add('recognize');
     recognizeLanguages.add(language);

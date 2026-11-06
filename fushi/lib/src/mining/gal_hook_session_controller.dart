@@ -990,6 +990,19 @@ class GalHookSessionController extends ChangeNotifier {
   /// 见 [_sessionScopedLines] 的说明（BUG-1734）。
   List<TexthookerLineEntry> get selectedSessionLines => _sessionScopedLines;
 
+  /// 当前字幕（[selectedSessionLines] 最后一行）是由哪一份 hook 原文经文本处理管线
+  /// 得来的；还没有这样的行（或该行不是经管线入库的引擎行）时为 null。
+  ///
+  /// 规则过滤页「使用最近抓到的一行」必须取这一份，而不是选定线程的 native 预览槽：
+  /// 消费期还会放行同 hook 面的兄弟线程（BUG-1159），渐进折叠还会让更长的旧快照留在
+  /// 字幕上——预览槽只看得见选定线程自己最近一次 Output，于是预览「正常」、字幕却是
+  /// 另一份输入的结果（BUG-4029）。取这一份，预览与字幕就是同一输入过同一管线。
+  String? get selectedLineProcessInput {
+    final List<TexthookerLineEntry> lines = selectedSessionLines;
+    if (lines.isEmpty) return null;
+    return _lineProcessInputCache[lines.last.id];
+  }
+
   TexthookerLineEntry? entryById(String lineId) =>
       _textService.entryById(lineId);
 
@@ -1126,6 +1139,9 @@ class GalHookSessionController extends ChangeNotifier {
   static const int _textThreadRestoreMinLines = 3;
   final Map<String, int> _lineTimestampCache = <String, int>{};
   final Map<String, int> _lineTextEventIdCache = <String, int>{};
+
+  /// 行 id → 产出它**当前文本**的那份管线输入原文（见 [selectedLineProcessInput]）。
+  final Map<String, String> _lineProcessInputCache = <String, String>{};
   final Map<String, ({int timestampMs, int textEventId, bool eventOwnedOnly})>
   _pendingResourceMatches =
       <String, ({int timestampMs, int textEventId, bool eventOwnedOnly})>{};
@@ -2993,6 +3009,7 @@ class GalHookSessionController extends ChangeNotifier {
       audioStatus: TexthookerLineAudioStatus.unavailable,
     );
     if (entry == null) return false;
+    _recordLineProcessInput(entry.id, line.text);
     _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
     _lineTimestampCache[entry.id] = line.timestampMs;
     _lineTextEventIdCache[entry.id] = line.seq;
@@ -3647,6 +3664,29 @@ class GalHookSessionController extends ChangeNotifier {
     if (pipeline.isEmpty) return text;
     final String processed = pipeline.apply(text);
     return processed.trim().isEmpty ? null : processed;
+  }
+
+  /// 记下 [appendLine] 刚返回的行 [lineId] 的文本出自哪份管线输入。
+  ///
+  /// 必须在 [TexthookerService.appendLine] 返回后立刻调用（读的是它的
+  /// `lastAppendTextDonorId` / `lastFoldedLineIds`）：折叠时若胜出的是更长的旧快照，
+  /// 字幕显示的就是那条旧行的文本，它的输入也随之沿用，而不是本次的 [rawText]。
+  void _recordLineProcessInput(String lineId, String rawText) {
+    final String? donorId = _textService.lastAppendTextDonorId;
+    final String? input = donorId == null
+        ? rawText
+        : _lineProcessInputCache[donorId];
+    for (final String folded in _textService.lastFoldedLineIds) {
+      _lineProcessInputCache.remove(folded);
+    }
+    if (input == null) {
+      _lineProcessInputCache.remove(lineId);
+    } else {
+      // 重新插入，让它排到最新，_trimCache 从最旧的开始淘汰。
+      _lineProcessInputCache.remove(lineId);
+      _lineProcessInputCache[lineId] = input;
+    }
+    _trimCache(_lineProcessInputCache);
   }
 
   /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
@@ -5134,6 +5174,7 @@ class GalHookSessionController extends ChangeNotifier {
     _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
     _lineTextEventIdCache.clear();
+    _lineProcessInputCache.clear();
     _loopbackCacheInFlight.clear();
     _cancelLoopbackFreezes();
     _pendingResourceMatches.clear();
@@ -5460,6 +5501,7 @@ class GalHookSessionController extends ChangeNotifier {
     _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
     _lineTextEventIdCache.clear();
+    _lineProcessInputCache.clear();
     _loopbackCacheInFlight.clear();
     _cancelLoopbackFreezes();
     _pendingResourceMatches.clear();
@@ -5681,6 +5723,7 @@ class GalHookSessionController extends ChangeNotifier {
           continue;
         }
         receivedTextLine = true;
+        _recordLineProcessInput(entry.id, line.text);
         // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
         // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
         _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
