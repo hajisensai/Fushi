@@ -31,6 +31,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
         DictionaryPopupWebViewState,
+        OpenAdvancedMiningCallback,
         QueuedOverwriteReply,
         closePopupAfterAcceptedMine;
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
@@ -316,6 +317,23 @@ mixin DictionaryPageMixin {
       }
     }
   }
+
+  /// 「高级制卡」入口：接到 [webViewKey] 那个弹窗 WebView 的 `onOpenAdvancedMining` 上
+  /// （浮层各层与查词页结果区同一个口径）。只跟制卡模块走——模块关着时为 null，
+  /// popup 不渲染这颗按钮。
+  @protected
+  OpenAdvancedMiningCallback? advancedMiningOpenerFor(
+    GlobalKey<DictionaryPopupWebViewState> webViewKey,
+  ) => mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
+      ? (int entryIndex, String matched, String expression, String reading) =>
+            _openAdvancedMiningDialog(
+              webViewKey: webViewKey,
+              entryIndex: entryIndex,
+              matched: matched,
+              expression: expression,
+              reading: reading,
+            )
+      : null;
 
   /// 「高级制卡」（视频 / 首页查词车道）：点某词条的「高级制卡」→ 弹 **app 原生顶层
   /// 对话框**（[showAdvancedMiningDialog]，BUG-763/766：不画在查词弹窗 WebView 内）。
@@ -1385,21 +1403,7 @@ mixin DictionaryPageMixin {
           // 「高级制卡」：点某词条的「高级制卡」→ 弹 app 原生顶层对话框（BUG-763/766：
           // 不画在弹窗 WebView 内）；确认制卡回该层 WebView 精确点中该词条的「+」并带上
           // 覆盖项。只跟制卡模块走——纯查词页也有（对话框只有卡组分区）。
-          onOpenAdvancedMining:
-              mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
-              ? (
-                  int entryIndex,
-                  String matched,
-                  String expression,
-                  String reading,
-                ) => _openAdvancedMiningDialog(
-                  webViewKey: entry.webViewKey,
-                  entryIndex: entryIndex,
-                  matched: matched,
-                  expression: expression,
-                  reading: reading,
-                )
-              : null,
+          onOpenAdvancedMining: advancedMiningOpenerFor(entry.webViewKey),
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
             appUiScale: mixinAppModel.popupUiScale,

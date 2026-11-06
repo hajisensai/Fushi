@@ -1976,6 +1976,21 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           onUpdateEntry(noteId, _withSourceSentence(fields)),
                       onDuplicateCheck: checkDuplicate,
                       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+                      // 反馈 -xJWu33WgJ：结果区以前只接了 + 与覆写最新卡两条，点 ✓
+                      // （这个词以前就制过卡）时 popup.js 按「app 内宿主有原生操作单」
+                      // 调 minedCardAction，这里没接 → 桥回空结果、静默无反应，以前
+                      // 制的那张没句子的卡永远覆写不了。☆ / ↗ / 高级制卡同样漏接。
+                      // 与浮层各层（DictionaryPageMixin.buildNestedPopupLayer）同一套。
+                      onMinedCardAction: (Map<String, String> fields) =>
+                          onMinedCardAction(_withSourceSentence(fields)),
+                      onQueueOverwrite: (Map<String, String> fields) =>
+                          onQueueOverwrite(_withSourceSentence(fields)),
+                      onOpenInAnki: onOpenInAnki,
+                      onFavoriteEntry: onFavoriteEntry,
+                      onFavoriteCheck: onFavoriteCheck,
+                      onOpenAdvancedMining: advancedMiningOpenerFor(
+                        _resultWebViewKey,
+                      ),
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
                       onTopPullReleased: _clearSearchFromResultPull,
                       // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
