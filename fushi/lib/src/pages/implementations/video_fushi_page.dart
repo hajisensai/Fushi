@@ -435,8 +435,6 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
 import 'package:fushi/src/platform/sensor_housing_edge.dart';
-import 'package:fushi/src/platform/windows_ime_space_channel.dart';
-import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
@@ -3664,9 +3662,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
-    if (Platform.isWindows) {
-      WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown);
-    }
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
@@ -6811,7 +6806,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 网页档：退窗口全屏、拆会话、归还底层合成（见 web_source.part.dart）。
     _disposeWebSource();
     if (Platform.isWindows) {
-      WindowsImeSpaceChannel.clearHandler(this);
       // Abnormal route teardown must never leave the app frame hidden. The
       // normal fullscreen exit releases this owner only after HWND restoration.
       FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
@@ -7847,10 +7841,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   void _popNestedPopupAt(int index) {
-    debugPrint(
-      '[video-lookup] dismiss popup index=$index '
-      'visibleTop=$_topVisiblePopupIndex',
-    );
     // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
     // survives for the next lookup (BUG-094): closing index 0 hides the warm
     // slot + drops children; closing a child drops from there up.
@@ -7965,7 +7955,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// BUG-3685：查词浮层跟随的路由——窗口模式是本页路由，全屏期间是全屏路由（与键盘
-  /// 所有者同一口径，见 [_handleWindowsImeSpaceDown]）。别的路由（反馈 / 设置等整页、
+  /// 所有者同一口径）。别的路由（反馈 / 设置等整页、
   /// 根导航上的对话框）压上来时它不再是栈顶，[DictionaryPageMixin] 据此把浮层停靠屏外、
   /// 撤掉整屏 barrier；查词会话与「因查词暂停」原样保留，回到本页即复原。
   @override
@@ -8822,73 +8812,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return handled ? KeyEventResult.handled : KeyEventResult.ignored;
   }
 
-  /// BUG-853 / TODO-847 对齐：Windows 微软 IME 激活时裸 Space 的 `logicalKey` 被引擎
-  /// 改写成 [LogicalKeyboardKey.process]，视频页两条空格「播放/暂停」路径
-  /// （旧 media_kit controls 表与页级空格兜底）都用
-  /// `SingleActivator(LogicalKeyboardKey.space)` 匹配 `logicalKey`，故 IME 下按空格既不
-  /// 被内层消费、也不被页级兜底消费，最终上浮到本最外层 [Focus]（[_wrapVideoGamepadControls]
-  /// 是 [_videoFocusNode] 及所有子焦点节点的祖先，冒泡最后到这里）。这里按**物理键**
-  /// 还原 Space 语义，触发与页级 press-time 通道完全一致的 togglePlayPause（同样
-  /// 经 [_runWhenImmersiveAllowsShortcuts] 尊重沉浸锁门控）。
-  ///
-  /// 纯识别逻辑抽到可单测的 [isVideoImeSpacePlayPause]。文本框正在 composing 时
-  /// （[focusedEditableText] 非空）不接管，避免 IME 变换候选词按空格误触暂停。BUG-936：
-  /// 按**物理键** [PhysicalKeyboardKey.space] 判定（唯一不受 IME 改写的稳定信号），只要
-  /// 逻辑键已被 IME 改写（非裸 `space`）即命中，覆盖 `process` 及任意其它 IME 改写值；
-  /// 裸 Space 仍走既有 SingleActivator 路径不变（Never break userspace）。
-  bool _handleVideoImeSpacePlayPause(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
-    final bool hasModifier =
-        HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isShiftPressed ||
-        HardwareKeyboard.instance.isAltPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
-    final bool hit = isVideoImeSpacePlayPause(
-      logicalKey: event.logicalKey,
-      physicalKey: event.physicalKey,
-      hasModifier: hasModifier,
-      hasEditableFocus: focusedEditableText() != null,
-    );
-    if (!hit) return false;
-    _runWhenImmersiveAllowsShortcuts(() => unawaited(controller.playOrPause()));
-    return true;
-  }
-
-  /// BUG-1239：Windows runner 在 Flutter 丢掉 `VK_PROCESSKEY` 的 scan code 之前，
-  /// 把「无修饰的物理 Space 按下沿」经专用 channel 送到这里。
-  ///
-  /// 这条入口绕过 Focus 冒泡，故必须显式复刻页面快捷键的所有权边界：只有当前视频
-  /// 路由（窗口或 media_kit 全屏路由）可响应；文本框持焦时让给 IME；词典浮层可见时
-  /// 只关浮层；其余才按沉浸模式门控播放/暂停。普通半角 Space 仍走既有 KeyEvent /
-  /// SingleActivator 路径，本通道只接 native 已确认的 `VK_PROCESSKEY + Space scan code`。
-  void _handleWindowsImeSpaceDown() {
-    final ModalRoute<Object?>? owner = mounted
-        ? (_videoFullscreenActive
-              ? _videoFullscreenRoute
-              : ModalRoute.of(context))
-        : null;
-    final WindowsImeSpaceDispatchAction action = resolveWindowsImeSpaceDispatch(
-      mounted: mounted,
-      hasController: _controller != null,
-      isCurrentRoute: owner == null || owner.isCurrent,
-      hasEditableFocus: focusedEditableText() != null,
-      hasVisiblePopup: _hasVisiblePopup,
-      immersiveAllowsShortcuts: _immersiveAllowsShortcuts,
-    );
-    switch (action) {
-      case WindowsImeSpaceDispatchAction.ignore:
-        return;
-      case WindowsImeSpaceDispatchAction.dismissPopup:
-        _dismissTopVisiblePopup();
-        return;
-      case WindowsImeSpaceDispatchAction.togglePlayPause:
-        final VideoPlayerController controller = _controller!;
-        unawaited(controller.playOrPause());
-    }
-  }
-
   /// 按住临时倍速的键盘入口（用户请求：与手机长按画面同语义——按下加速、松开
   /// 恢复）。按住语义需要 keyup 边沿，SingleActivator/CallbackShortcuts 表达不了，
   /// 故该动作的键盘绑定不进 activator 表（见 [buildVideoPlayerShortcutsFromRegistry]），
@@ -9148,12 +9071,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           }
           // 视频快捷键主通道（方案 D）：press-time 问注册表，整页唯一挂载点。
           if (_handleVideoKeyboardShortcut(event)) {
-            return KeyEventResult.handled;
-          }
-          // BUG-853 / BUG-936：IME 把裸空格的 logicalKey 改写成非 space 值，主通道
-          // 按逻辑键匹配不到，在此按**物理键**还原播放/暂停。放在主通道之后，两条路径
-          // 互斥不会双触发。
-          if (!_discLearningBlocked && _handleVideoImeSpacePlayPause(event)) {
             return KeyEventResult.handled;
           }
           return _handleVideoGamepadNativeKey(node, event);
