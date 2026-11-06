@@ -64,7 +64,8 @@ enum HostUpdateDenial {
   /// host 平台不能应用内自更新（iOS / Linux 等）。
   unsupported('platform_unsupported'),
 
-  /// 请求来自 P2P 隧道或公网，不在允许触发的信任区内。
+  /// 请求来自 P2P 隧道或公网，不在允许触发的信任区内。现行 host 已不发这个拒绝
+  /// （反馈 d639PMD5mS），只有旧版 host 还会回它，client 据此提示先更新一次主机。
   zone('zone_not_allowed'),
 
   /// 没有带已配对设备的专属 token（老的共享 token 不收）。
