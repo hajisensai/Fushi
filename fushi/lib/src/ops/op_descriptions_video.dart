@@ -889,12 +889,7 @@ List<OpDescription> _describeSubtitleOps(
         description: 'MOSS backend: auto, cuda, vulkan or cpu.',
         enumValues: <String>['auto', 'cuda', 'vulkan', 'cpu'],
       ),
-      OpParam.string(
-        'language',
-        description:
-            'Spoken language: ja (Japanese, default) or zh (Mandarin).',
-        enumValues: <String>['ja', 'zh'],
-      ),
+      _subtitleLanguageParam,
       OpParam.boolean(
         'regenerateGlossary',
         description: 'Rebuild the work\'s name glossary first.',
@@ -912,22 +907,28 @@ List<OpDescription> _describeSubtitleOps(
     pattern: '$_video/subtitle-glossary',
     summary:
         'Read the name glossary (proper nouns, readings, misrecognitions) used '
-        'by subtitle generation for a video / collection.',
+        'by subtitle generation for a video / collection. Japanese and '
+        'Mandarin each have their own table.',
     availability: video,
-    params: const <OpParam>[_bookUidParam, _collectionIdParam],
+    params: const <OpParam>[
+      _bookUidParam,
+      _collectionIdParam,
+      _subtitleLanguageParam,
+    ],
   ),
   OpDescription(
     id: 'video.subtitle.glossary.set',
     method: 'PUT',
     pattern: '$_video/subtitle-glossary',
     summary:
-        'Replace the whole name glossary of a video / collection. Undo writes '
-        'the previous table back.',
+        'Replace the whole name glossary of a video / collection (per '
+        'language). Undo writes the previous table back.',
     risk: OpRisk.write,
     availability: video,
     params: const <OpParam>[
       _bookUidParam,
       _collectionIdParam,
+      _subtitleLanguageParam,
       OpParam.object(
         'glossary',
         description:
@@ -938,7 +939,8 @@ List<OpDescription> _describeSubtitleOps(
       ),
     ],
     undo: opScopedSnapshotUndo(
-      bodyKeys: const <String>['bookUid', 'collectionId'],
+      // `language` 也进作用域：撤销要写回同一门语言的那张表。
+      bodyKeys: const <String>['bookUid', 'collectionId', 'language'],
       read: (OpUndoScope scope) async => _map(
         await kit.callRoute(
           'GET',
@@ -1030,3 +1032,10 @@ List<OpDescription> _describeSubtitleOps(
     undo: _subtitleFileUndo(),
   ),
 ];
+
+/// 视频字幕的语言（生成任务的识别语言，也选专名表：日语与普通话各一张）。
+const OpParam _subtitleLanguageParam = OpParam.string(
+  'language',
+  description: 'Spoken language: ja (Japanese, default) or zh (Mandarin).',
+  enumValues: <String>['ja', 'zh'],
+);

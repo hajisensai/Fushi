@@ -22,7 +22,8 @@ const List<CtlCommandSpec> videoSubtitleCommands = <CtlCommandSpec>[
   ),
   CtlCommandSpec(
     name: 'subtitle-glossary',
-    summary: '查看作品专名表；--set <json 文件> 整表替换（改过的条目重新生成时保留）',
+    summary:
+        '查看作品专名表（日语 / 普通话各一张，--language 选）；--set <json 文件> 整表替换（改过的条目重新生成时保留）',
     usage: '<bookUid> | --collection <id>',
     configure: _configureGlossary,
     build: _buildGlossary,
@@ -160,13 +161,19 @@ String _renderGen(Object? data) {
 
 void _configureGlossary(ArgParser parser) {
   _addTargetOption(parser);
-  parser.addOption(
-    'set',
-    valueHelp: 'json 文件',
-    help:
-        '用文件整表替换：条目数组 [{ja, reading, kind, misrecognitions, note}]，'
-        '或 subtitle-glossary --json 的输出（取其 entries）',
-  );
+  parser
+    ..addOption(
+      'language',
+      allowed: _languages,
+      help: '哪种语言的表：ja 日语（缺省）/ zh 普通话',
+    )
+    ..addOption(
+      'set',
+      valueHelp: 'json 文件',
+      help:
+          '用文件整表替换：条目数组 [{ja, reading, kind, misrecognitions, note}]，'
+          '或 subtitle-glossary --json 的输出（取其 entries）',
+    );
 }
 
 /// 读 `--set` 的文件：条目数组，或带 `entries` 的对象。
@@ -192,7 +199,11 @@ List<Object?> _readEntries(String path) {
 }
 
 CtlRequestSpec _buildGlossary(CtlCommandContext context) {
-  final Map<String, Object?> target = _target(context);
+  final Map<String, Object?> target = <String, Object?>{
+    ..._target(context),
+    if (context.option('language') case final String language)
+      'language': language,
+  };
   final String? set = context.option('set');
   if (set == null) {
     return CtlRequestSpec.get(

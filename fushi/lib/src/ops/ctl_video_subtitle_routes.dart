@@ -109,14 +109,7 @@ class CtlVideoSubtitleHandlers {
     }
     final AppVideoSubtitleTarget target = await _target(call);
     final bool proofread = call.optBool('proofread') ?? true;
-    final String? languageTag = call.optString('language');
-    final VideoSubtitleLanguage language = languageTag == null
-        ? VideoSubtitleLanguage.japanese
-        : VideoSubtitleLanguage.fromTag(languageTag) ??
-              (throw CtlFailure.badRequest(
-                'language 只能是 '
-                '${VideoSubtitleLanguage.values.map((VideoSubtitleLanguage l) => l.tag).join(' / ')}',
-              ));
+    final VideoSubtitleLanguage language = _language(call);
     final AppVideoSubtitleService svc = service();
     if (proofread) {
       if (svc.proofreadProvider == null) {
@@ -191,11 +184,25 @@ class CtlVideoSubtitleHandlers {
     };
   }
 
+  /// `language`（`ja` / `zh`，缺省日语）：生成任务的识别语言，也选专名表——日语与
+  /// 普通话各一张（[VideoSubtitleLanguage.glossaryKey]）。
+  VideoSubtitleLanguage _language(CtlCall call) {
+    final String? tag = call.optString('language');
+    if (tag == null) return VideoSubtitleLanguage.japanese;
+    return VideoSubtitleLanguage.fromTag(tag) ??
+        (throw CtlFailure.badRequest(
+          'language 只能是 '
+          '${VideoSubtitleLanguage.values.map((VideoSubtitleLanguage l) => l.tag).join(' / ')}',
+        ));
+  }
+
   Map<String, Object?> _glossaryJson(
     AppVideoSubtitleTarget target,
     SubtitleGlossary? glossary,
+    VideoSubtitleLanguage language,
   ) => <String, Object?>{
     'workKey': target.work.workKey,
+    'language': language.tag,
     'title': target.title,
     'japaneseTitle': target.work.japaneseTitle,
     'hasScrapedData': target.work.hasScrapedData,
@@ -212,7 +219,12 @@ class CtlVideoSubtitleHandlers {
   Future<Object?> glossary(CtlCall call) async {
     _requireVideoModule();
     final AppVideoSubtitleTarget target = await _target(call);
-    return _glossaryJson(target, await service().loadGlossary(target.work));
+    final VideoSubtitleLanguage language = _language(call);
+    return _glossaryJson(
+      target,
+      await service().loadGlossary(target.work, language: language),
+      language,
+    );
   }
 
   /// `video subtitle-glossary … --set <json>`：整表替换（改过 / 新增的条目标
@@ -220,6 +232,7 @@ class CtlVideoSubtitleHandlers {
   Future<Object?> setGlossary(CtlCall call) async {
     _requireVideoModule();
     final AppVideoSubtitleTarget target = await _target(call);
+    final VideoSubtitleLanguage language = _language(call);
     final Object? raw = call.body['entries'];
     if (raw is! List) {
       throw const CtlFailure.badRequest('entries 必须是条目数组');
@@ -247,8 +260,9 @@ class CtlVideoSubtitleHandlers {
     final SubtitleGlossary saved = await svc.saveGlossary(
       target.work,
       entries,
-      previous: await svc.loadGlossary(target.work),
+      previous: await svc.loadGlossary(target.work, language: language),
+      language: language,
     );
-    return _glossaryJson(target, saved);
+    return _glossaryJson(target, saved, language);
   }
 }
