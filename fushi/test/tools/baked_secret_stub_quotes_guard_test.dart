@@ -17,7 +17,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 仓库根（本测试从 `fushi/` 下跑）。
 Directory get _repoRoot => Directory.current.path.endsWith('fushi')

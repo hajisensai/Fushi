@@ -610,8 +610,27 @@ impl Corpus {
             .filter_map(|k| st.term_ids.get(*k).copied())
             .collect();
         let mut ids: Vec<u32> = Vec::new();
-        for &t in &term_set {
-            ids.extend_from_slice(&st.postings[t as usize]);
+        if q.match_all {
+            // 文本搜索：每个查询词都得在库里有、且同一句全含。
+            let wanted: HashSet<&str> = q.keys.iter().copied().collect();
+            if !wanted.is_empty() && term_set.len() == wanted.len() {
+                let mut lists: Vec<&Vec<u32>> =
+                    term_set.iter().map(|&t| &st.postings[t as usize]).collect();
+                lists.sort_by_key(|l| l.len());
+                let mut acc: HashSet<u32> = lists[0].iter().copied().collect();
+                for l in &lists[1..] {
+                    let other: HashSet<u32> = l.iter().copied().collect();
+                    acc.retain(|sid| other.contains(sid));
+                    if acc.is_empty() {
+                        break;
+                    }
+                }
+                ids.extend(acc);
+            }
+        } else {
+            for &t in &term_set {
+                ids.extend_from_slice(&st.postings[t as usize]);
+            }
         }
         ids.sort_unstable();
         ids.dedup();

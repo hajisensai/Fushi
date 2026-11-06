@@ -19,6 +19,7 @@ Future<List<Duration>> _seeksAt(
   WidgetTester tester,
   List<double Function(Rect bar)> xs, {
   TextDirection direction = TextDirection.ltr,
+  Duration? holdFor,
 }) async {
   final List<Duration> seeks = <Duration>[];
   await tester.pumpWidget(
@@ -55,7 +56,15 @@ Future<List<Duration>> _seeksAt(
   );
   expect(bar.width, 400);
   for (final double Function(Rect bar) x in xs) {
-    await tester.tapAt(Offset(x(bar), bar.center.dy));
+    if (holdFor == null) {
+      await tester.tapAt(Offset(x(bar), bar.center.dy));
+    } else {
+      final TestGesture g = await tester.startGesture(
+        Offset(x(bar), bar.center.dy),
+      );
+      await tester.pump(holdFor);
+      await g.up();
+    }
     await tester.pump(const Duration(seconds: 1));
   }
   return seeks;
@@ -96,5 +105,17 @@ void main() {
       (Rect b) => b.right - half,
     ], direction: TextDirection.rtl);
     expect(seeks, <Duration>[const Duration(minutes: 4), Duration.zero]);
+  });
+
+  // #358s4Ae_fn：真机点按常超过 kPressTimeout（100ms），onTapDown 先于抬起触发。
+  testWidgets('按住超过 kPressTimeout 再松手也提交 seek', (WidgetTester tester) async {
+    final List<Duration> seeks = await _seeksAt(tester, <double Function(Rect)>[
+      (Rect b) => b.center.dx,
+      (Rect b) => b.left + half + usable * 0.25,
+    ], holdFor: const Duration(milliseconds: 300));
+    expect(seeks, <Duration>[
+      const Duration(minutes: 2),
+      const Duration(minutes: 1),
+    ]);
   });
 }

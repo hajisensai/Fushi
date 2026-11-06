@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-080 source guard: the dictionary popup WebView must be mounted as soon
 /// as the lookup starts (while `isSearching`, before results arrive) so it

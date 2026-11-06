@@ -15,6 +15,7 @@
 #include "sgre_family.h"
 #include "sgre_lookup.h"
 #include "sgre_voice_archive.h"
+#include "sgre_voice_binding.h"
 
 #pragma comment(lib, "bcrypt.lib")
 

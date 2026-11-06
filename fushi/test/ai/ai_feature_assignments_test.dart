@@ -1,5 +1,5 @@
 // 「功能 → 提供商」映射的默认提供商语义：显式指派 > 显式关掉 > 默认。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';

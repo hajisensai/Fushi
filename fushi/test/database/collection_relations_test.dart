@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
 
@@ -48,7 +48,7 @@ void main() {
     test('fresh DB (v66) has collection_relations table and '
         'video_scrape_meta.episode_number column', () async {
       final FushiDatabase db = await openDb();
-      expect(db.schemaVersion, 144);
+      expect(db.schemaVersion, 146);
       final List<QueryRow> tables = await db
           .customSelect(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_relations'",

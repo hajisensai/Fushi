@@ -12,7 +12,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show md5, sha256;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 const String _lib = '../third_party/media_kit_libs_windows_video';
 

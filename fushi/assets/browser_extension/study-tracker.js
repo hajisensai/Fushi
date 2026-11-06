@@ -25,6 +25,11 @@
 //   'always'               任何正片都计（旧行为）。
 // 门是**持续**判定的：字幕中途才加载 → 那一刻开始计；用户中途关掉字幕 → 立刻停表（发
 // ended，与换视频同一条路径）。app 侧按 mediaKey 持久化覆盖并集，停表再续不会重复计。
+//
+// 字幕字数（反馈 jk4rTLHPZ_）：样本另带 `cue` = 此刻 Fushi 正在出的那一句
+// （subtitle-panel.js 的 fushiSubtitleStudyCue；{index, startMs, endMs, text}，视频轴），
+// 没有 / 用户藏了字幕时为 null。app 侧 VideoWatchTracker 拿它走与视频页同一道停留门计字，
+// 此前样本只有位置，网页视频的 chars 恒为 0。
 (function () {
   'use strict';
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -105,19 +110,35 @@
     return true;
   }
 
+  // 此刻正在出的那一句；面板没装 / 字幕被藏 / 句间空隙 → null（不计字，宁可少算）。
+  function cueAt(posMs) {
+    if (subtitleHidden) return null;
+    try {
+      if (typeof window.fushiSubtitleStudyCue === 'function') {
+        var c = window.fushiSubtitleStudyCue(posMs);
+        if (c && typeof c.text === 'string' && isFinite(c.startMs) && isFinite(c.endMs)) {
+          return { index: c.index | 0, startMs: Math.round(c.startMs), endMs: Math.round(c.endMs), text: c.text };
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function sampleOf(v, ended) {
     var d = Number(v.duration);
     var pos = Number(v.currentTime);
     var rate = Number(v.playbackRate);
+    var posMs = isFinite(pos) && pos >= 0 ? Math.round(pos * 1000) : 0;
     return {
       mediaKind: 'video',
       mediaKey: trackedKey,
       title: pageTitle(),
-      positionMs: isFinite(pos) && pos >= 0 ? Math.round(pos * 1000) : 0,
+      positionMs: posMs,
       durationMs: isFinite(d) && d >= 0 ? Math.round(d * 1000) : null,
       playing: !ended && !v.paused && !v.ended,
       speed: isFinite(rate) && rate > 0 ? rate : 1,
       ended: ended === true,
+      cue: ended === true ? null : cueAt(posMs),
     };
   }
 

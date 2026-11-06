@@ -87,9 +87,13 @@ void main() {
     PendingMiningAnkiRepository.debugReset();
     db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     tmp = await Directory.systemTemp.createTemp('pending_mine_queue');
+    // 队列按 createdAt（毫秒）再按随机 id 排：同一毫秒内连制的卡顺序由 id 决定，断言
+    // 先后的用例会随机红。注入严格递增的时钟，入队次序就是发送次序。
+    int tick = DateTime.now().millisecondsSinceEpoch;
     store = PendingMineStore(
       db: () => db,
       root: () async => Directory('${tmp.path}/${PendingMineStore.dirName}'),
+      clock: () => tick++,
     );
     opened = <Uri>[];
   });

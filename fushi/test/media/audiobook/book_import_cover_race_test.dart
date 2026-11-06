@@ -21,7 +21,7 @@
 // `_coverExtraction` ahead of the `_audioCoverPath` branch in production code.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   // Mirror of the production ordering: the audio-cover path is only known after

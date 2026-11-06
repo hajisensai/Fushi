@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
 EpubBook _bookWithHtml(String html) {

@@ -56,10 +56,11 @@ void main() {
             mined.add(fields);
             return const MinePopupResult(ankiConnect: true, noteId: 1);
           },
-          onMinedCardAction: (Map<String, String> fields) async {
-            actions.add(fields);
-            return const MinePopupResult(ankiConnect: true, noteId: 2);
-          },
+          onMinedCardAction:
+              (Map<String, String> fields, {bool openChooser = false}) async {
+                actions.add(fields);
+                return const MinePopupResult(ankiConnect: true, noteId: 2);
+              },
           onUpdateEntry: (int noteId, Map<String, String> fields) async {
             updated.add((noteId, fields));
             return MinePopupResult(ankiConnect: true, noteId: noteId);

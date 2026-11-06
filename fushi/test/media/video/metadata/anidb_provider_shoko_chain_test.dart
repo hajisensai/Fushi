@@ -6,7 +6,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';

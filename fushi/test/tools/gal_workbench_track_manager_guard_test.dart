@@ -16,7 +16,7 @@
 //   ③ 共享面板按 galTrackSelectionAffectsCapture 门控，逐轨渲染排除/恢复操作。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String pageSrc = File(

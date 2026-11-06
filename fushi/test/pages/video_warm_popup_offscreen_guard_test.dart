@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-135 source guard: the seeded hidden warm popup slot (BUG-094) is an
 /// Android `InAppWebView` — a native platform view that eats touches even under

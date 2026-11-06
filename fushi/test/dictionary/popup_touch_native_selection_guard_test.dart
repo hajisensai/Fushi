@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-926 守卫（撤回 BUG-762）：词典弹窗触屏必须保留原生文本选区，否则安卓 ActionMode /
 /// iOS 长按 callout 都消费不到选区 → 词典释义**无法复制**（1.2.0 用户报「查词界面文字无法

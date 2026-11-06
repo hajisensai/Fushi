@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 反馈 XmUBLYR1Ut：互联远程播放合集连播时，`_loadRemoteEpisode` 的 [index] 是
 /// 合集内位置，而每个成员在主机上都是单视频（主机侧集序号恒 0，存在

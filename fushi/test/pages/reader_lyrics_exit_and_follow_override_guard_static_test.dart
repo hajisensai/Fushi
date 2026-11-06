@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 歌词覆盖层的两条生命周期不变式（源码守卫；阅读器整页依赖 WebView / DB，
 /// pumpWidget 过重，沿用本目录 `reader_lyrics_*_static_test` 的源码切片范式）。

@@ -133,7 +133,8 @@ class SrsProfileConflictKeepSeparate extends SrsProfileConflictChoice {
   const SrsProfileConflictKeepSeparate();
 }
 
-/// 候选的副标题：最近更新时刻（有的话）+ uid 前 8 位（同名的几份靠它区分）。
+/// 候选的副标题：写入它的设备（说明文件里报的人读名）、笔记数、最近更新时刻（各项有才显示）+ uid 前 8 位
+/// （同名的几份靠它区分）。反馈 dOv8AdJ6yV：只有名字和 uid 时用户分不清该选哪份。
 String srsProfileCandidateSubtitle(SrsRemoteProfile c) {
   final int? at = c.updatedAt;
   String two(int v) => v.toString().padLeft(2, '0');
@@ -144,7 +145,11 @@ String srsProfileCandidateSubtitle(SrsRemoteProfile c) {
           return '${d.year}-${two(d.month)}-${two(d.day)} '
               '${two(d.hour)}:${two(d.minute)}';
         }();
+  final int? notes = c.noteCount;
   return <String>[
+    if (c.devices.isNotEmpty)
+      t.srs_sync_profile_conflict_devices(devices: c.devices.join(', ')),
+    if (notes != null) t.srs_sync_profile_conflict_notes(count: notes),
     if (when != null) t.srs_sync_profile_conflict_updated(date: when),
     c.uid.length > 8 ? c.uid.substring(0, 8) : c.uid,
   ].join(' · ');
@@ -171,6 +176,13 @@ Future<SrsProfileConflictChoice?> showSrsProfileConflictDialog(
               ? t.srs_sync_profile_conflict_merge_hint
               : t.srs_sync_profile_conflict_adopt_hint,
           style: Theme.of(dialogContext).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        // 本机这一份的笔记数，与下面各候选报的笔记数对比着选。
+        Text(
+          t.srs_sync_profile_conflict_local(count: conflict.localNoteCount),
+          key: const ValueKey<String>('srs-profile-conflict-local'),
+          style: Theme.of(dialogContext).textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
         for (final SrsRemoteProfile c in conflict.candidates)

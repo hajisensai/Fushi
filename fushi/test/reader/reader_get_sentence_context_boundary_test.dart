@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-948/952 characterization test: pin down what
 /// `fushiSelection.getSentenceContext` returns for the boundary DOM shapes the

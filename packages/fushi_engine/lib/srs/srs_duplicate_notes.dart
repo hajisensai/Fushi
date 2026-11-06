@@ -141,17 +141,18 @@ extension SrsDuplicateNotes on SrsDbStore {
   }
 
   /// [ids] 各自标过「不是重复」的对方。
+  ///
+  /// 只读 `notDup/` 这一类键的修改记录（[SrsDbStore.noteFieldKeyPrefixValues]）。以前对组里每条笔记
+  /// 走 [SrsDbStore.entityEditsMany]，把全部修改记录（含字段正文）读回来只为找这一类键：两台设备各导入过
+  /// 同一个包的库上几乎每条笔记都成组，打开冲突页读回 22 万条、400+ MB，进程被系统杀掉（BUG-4187）。
   Future<Map<String, Set<String>>> _dismissedPairs(List<String> ids) async {
+    const String prefix = 'notDup/';
     final Map<String, Set<String>> out = <String, Set<String>>{};
-    for (final MapEntry<String, SrsEntityEdits> e in (await entityEditsMany(
-      SrsEntityKind.note,
-      ids,
-    )).entries) {
-      final SrsEntityEdits edits = e.value;
-      for (final String key in edits.keys) {
-        if (!key.startsWith('notDup/')) continue;
-        if (edits.value(key) == true) {
-          (out[e.key] ??= <String>{}).add(key.substring('notDup/'.length));
+    for (final MapEntry<String, Map<String, Object?>> e
+        in (await noteFieldKeyPrefixValues(ids, prefix)).entries) {
+      for (final MapEntry<String, Object?> kv in e.value.entries) {
+        if (kv.value == true) {
+          (out[e.key] ??= <String>{}).add(kv.key.substring(prefix.length));
         }
       }
     }

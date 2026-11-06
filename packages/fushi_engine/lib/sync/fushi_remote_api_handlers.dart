@@ -437,7 +437,13 @@ Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
     expression: expression,
     reading: reading,
   );
-  return <String, dynamic>{'duplicate': duplicate};
+  // 反馈 E0sdqm4h-F：扩展单击已制卡 ✓ 的判据（「允许重复」）随查重一起回，见
+  // [FushiRemoteDuplicatePolicyService]。不支持的 service 不带这个位（扩展照旧问用户）。
+  return <String, dynamic>{
+    'duplicate': duplicate,
+    if (mining case final FushiRemoteDuplicatePolicyService policy)
+      'allowDuplicates': await policy.allowsDuplicates(),
+  };
 }
 
 /// Issue #1409：`POST /api/anki/open` 的响应体。[body] 需含非空 `expression`

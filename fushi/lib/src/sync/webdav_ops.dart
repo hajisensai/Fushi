@@ -129,6 +129,7 @@ class DavEntry {
     required this.isCollection,
     this.etag,
     this.modifiedAt,
+    this.contentLength,
   });
 
   final String href;
@@ -140,6 +141,9 @@ class DavEntry {
 
   /// `getlastmodified`（RFC 1123 HTTP 日期）换成的 UTC 毫秒；服务器没给或解析不了为 null。
   final int? modifiedAt;
+
+  /// `getcontentlength`（字节）；集合或服务器没给时为 null。
+  final int? contentLength;
 }
 
 /// 把 WebDAV `getlastmodified` 的值（RFC 1123，如 `Wed, 14 Oct 2026 08:15:30 GMT`；
@@ -469,6 +473,10 @@ class WebDavOps {
       dotAll: true,
     );
 
+    final contentLengthPattern = RegExp(
+      r'<(?:[a-zA-Z0-9]+:)?getcontentlength(?:\s[^>]*)?>\s*(\d+)\s*</(?:[a-zA-Z0-9]+:)?getcontentlength>',
+    );
+
     for (final match in responsePattern.allMatches(xml)) {
       final block = match.group(1)!;
       final hrefMatch = hrefPattern.firstMatch(block);
@@ -501,6 +509,11 @@ class WebDavOps {
           modifiedAt: parseDavLastModified(
             lastModifiedPattern.firstMatch(block)?.group(1),
           ),
+          contentLength: isCollection
+              ? null
+              : int.tryParse(
+                  contentLengthPattern.firstMatch(block)?.group(1) ?? '',
+                ),
         ),
       );
     }
@@ -722,6 +735,7 @@ class WebDavOps {
       '<d:displayname/>'
       '<d:getetag/>'
       '<d:getlastmodified/>'
+      '<d:getcontentlength/>'
       '</d:prop>'
       '</d:propfind>';
 

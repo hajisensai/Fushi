@@ -954,6 +954,24 @@ BaseAnkiRepository _withPendingQueue(Ref ref, BaseAnkiRepository repo) {
 PendingMineStore pendingMineStoreFor(AppModel appModel) =>
     pendingMineStoreAtSupportRoot(() => appModel.database);
 
+/// 待发制卡队列此刻的张数：首帧读一次，队列表每变一次重读一次。
+///
+/// 「待发卡片」入口行露不露出由**排版它的分组**按这个值决定（#ZWr6B6u_RM）：行自己
+/// 在空队列时缩成零尺寸的话，分段分组仍把它算作组尾，真正的末行拿不到组尾大圆角。
+final StreamProvider<int> pendingMineCountProvider = StreamProvider<int>((
+  Ref ref,
+) async* {
+  final PendingMineStore store = pendingMineStoreFor(ref.watch(appProvider));
+  yield await store.count();
+  await for (final void _ in store.changes()) {
+    yield await store.count();
+  }
+});
+
+/// 待发张数的同步读数；还没读到 / 读失败（没有库的最小宿主）按 0。
+int pendingMineCountOf(WidgetRef ref) =>
+    ref.watch(pendingMineCountProvider).valueOrNull ?? 0;
+
 /// 给 [repo] 套上「制卡后自动重排新卡」。
 ///
 /// 调度器随 provider 生命周期走：provider 被 invalidate（切 Profile、改 Anki 连接

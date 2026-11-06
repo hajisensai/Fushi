@@ -158,6 +158,70 @@ out({ res, calls: h.player.calls, done: h.posted.filter((m) => m.type === 'seekD
     expect(done.single['id'], 4);
   }, skip: !hasNode);
 
+  // 播放器的重定位要过一拍才落地（真 Netflix 同样异步）：seek 只记账，落地放进计时器队列。
+  const String asyncSeekSetup = '''
+api.seek = (ms) => { h.player.calls.push('seek:' + ms); h.timers.push(() => { h.player.time = ms; }); };
+''';
+
+  test('连发 seek 合并：在途时只留最后一个目标，落地后再发一次（Netflix 不吃叠发的重定位）', () async {
+    final Object? r = await run('''
+const res = [fw.seek(10000, 1), fw.seek(15000, 2), fw.seek(20000, 3), fw.seek(25000, 4)];
+h.flush();
+out({ res, calls: h.player.calls, time: h.player.time,
+  done: h.posted.filter((m) => m.type === 'seekDone').map((m) => [m.id, m.ok, m.err]) });
+''', setup: asyncSeekSetup);
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['res'], <Object>['bridge', 'bridge', 'bridge', 'bridge']);
+    expect(m['calls'], <String>['seek:10000', 'seek:25000']);
+    expect(m['time'], 25000);
+    final List<dynamic> done = m['done'] as List<dynamic>;
+    expect(done, hasLength(4), reason: '每个 id 都有回执，调用方不会挂着');
+    expect(done.last, <Object>[4, true, ''], reason: '只有最后一个目标报落地');
+    expect(
+      done.take(3).map((dynamic d) => (d as List<dynamic>)[2]).toSet(),
+      <String>{'superseded'},
+    );
+  }, skip: !hasNode);
+
+  test('播放器 API 时间已到位但 <video> 还在 seeking：不放出排队的 seek，安定后才发', () async {
+    final Object? r = await run('''
+h.video.seeking = true;
+fw.seek(10000, 1); fw.seek(20000, 2);
+for (let i = 0; i < 5 && h.timers.length; i++) h.timers.shift()();
+const before = h.player.calls.slice();
+h.video.seeking = false;
+h.flush();
+out({ before, after: h.player.calls });
+''', setup: asyncSeekSetup);
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['before'], <String>['seek:10000']);
+    expect(m['after'], <String>['seek:10000', 'seek:20000']);
+  }, skip: !hasNode);
+
+  test('排队目标与刚落地的位置在落点精度内：不再发第二次 seek', () async {
+    final Object? r = await run('''
+fw.seek(10000, 1); fw.seek(10100, 2);
+h.flush();
+out({ calls: h.player.calls,
+  done: h.posted.filter((m) => m.type === 'seekDone').map((m) => [m.id, m.ok, m.err]) });
+''', setup: asyncSeekSetup);
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['calls'], <String>['seek:10000']);
+    expect((m['done'] as List<dynamic>).last, <Object>[2, true, '']);
+  }, skip: !hasNode);
+
+  test('Netflix 静音 / 音量增减走播放器 API，不直写 <video>', () async {
+    final Object? r = await run('''
+const res = [fw.nudgeVolume(-0.1), fw.toggleMute()];
+out({ res, calls: h.player.calls, vol: h.video.volume, muted: h.video.muted });
+''');
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['res'], <Object>['ok', true]);
+    expect(m['calls'], <String>['vol:0.9', 'muted:false', 'muted:true']);
+    expect(m['vol'], 1, reason: '<video>.volume 不被页面脚本直写');
+    expect(m['muted'], isFalse, reason: '<video>.muted 不被页面脚本直写');
+  }, skip: !hasNode);
+
   test('没有 watch 会话：seek 不发、返回 no-player（Dart 立即结束跳转在途）', () async {
     final Object? r = await run(
       'out(fw.seek(1000, 1));',

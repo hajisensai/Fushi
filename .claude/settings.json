@@ -1,4 +1,16 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tool/claude_hooks/subagent_model_router.mjs\"", "timeout": 10 }]
+      },
+      {
+        "matcher": "Workflow",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tool/claude_hooks/workflow_agent_type_default.mjs\"", "timeout": 10 }]
+      }
+    ]
+  },
   "permissions": {
     "defaultMode": "bypassPermissions",
     "deny": [

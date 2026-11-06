@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// `flutter test` 把测试文件的整个 import 闭包编进内存。2026-11-05 量到
 /// `fushi/lib` 2330 个文件里有 1329 个互相 import 成一个环，主要由

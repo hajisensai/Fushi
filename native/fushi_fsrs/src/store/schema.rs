@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 25;
+pub const SCHEMA_VERSION: i64 = 26;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -718,6 +718,13 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             tx.execute_batch(V25_NOTES.1).map_err(|e| e.to_string())?;
         }
         tx.execute_batch(V25_INDEX).map_err(|e| e.to_string())?;
+    }
+    if (1..26).contains(&current) {
+        // V26：卡片历史选取把同一事件的多 ID 副本只算一份（BUG-4218，history.rs `EventKey`）。按新规则重放可能带副本
+        // 的卡、写回日志投影行的 `res`（store/sync2/mod.rs [super::sync2::replay_event_copies]），让升级的库与收段新建
+        // 的库、与对端逐位相同（摘要前缀同时换成 `4:`，digest.rs `VV_PREFIX`）。只改投影行，操作日志不动；新建的库
+        // 没有日志，不跑。可重放。
+        super::sync2::replay_event_copies(&tx)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

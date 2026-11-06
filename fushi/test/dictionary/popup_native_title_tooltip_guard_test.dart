@@ -12,7 +12,7 @@
 // guard_test.dart 覆盖，这里只针对 in-app 真值 assets/popup/*。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   // flutter test 的 cwd 是 fushi 包根。

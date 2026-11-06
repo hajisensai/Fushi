@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4040（反馈 Xr7RRZ3zjm「新明解 词头【鯉】标注渲染异常」、dyDC7zou8x「【漁る】出现
 /// 奇怪符号」，两张截图都是 新明解国語辞典 第八版 的词头）。

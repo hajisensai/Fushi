@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guard locking the TODO-905 robust-open invariants into the
 /// database.dart open path so a later refactor can't silently regress to the

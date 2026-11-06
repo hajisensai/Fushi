@@ -2,7 +2,7 @@
 // 其余 <video>（YouTube 首页内联预览等）暂停并静音——进入视频后底下的首页预览不再接着播。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _functionBody(String source, String name) {
   final int start = source.indexOf('function $name(');

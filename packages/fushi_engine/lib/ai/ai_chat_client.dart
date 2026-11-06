@@ -17,6 +17,7 @@ import 'dart:typed_data';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_rate_limiter.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -489,7 +490,9 @@ class AiChatClient {
     AiKeyHealthStore? healthStore,
     DateTime Function()? clock,
     AiRateLimiter? rateLimiter,
+    AiRelayTransport? relayTransport,
   }) : _client = client ?? createAppHttpIoClient(),
+       _relayTransport = relayTransport,
        _ownsClient = client == null,
        _healthStore = healthStore,
        _clock = clock ?? DateTime.now,
@@ -497,6 +500,32 @@ class AiChatClient {
 
   final http.Client _client;
   final bool _ownsClient;
+
+  /// 「互联主机」提供商（[AiProviderConfig.relay]）的出口；null = 现取全局装配点
+  /// [aiRelayTransport]（app 在配对表可读之后才装上，客户端可能比那更早建）。
+  final AiRelayTransport? _relayTransport;
+
+  /// 互联主机提供商的一次调用：整个请求交给主机，限频 / key 轮换 / 临时性失败退避
+  /// 都在主机上做（本机没有 key，也看不见主机那家的限额），这里不再叠一层重试——
+  /// 重试一次就是让主机把一次花钱的补全重跑一遍。
+  Future<AiChatTurn> _relay(
+    AiProviderConfig provider,
+    AiRelayMode mode, {
+    List<AiChatMessage> messages = const <AiChatMessage>[],
+    List<AiChatToolSpec> tools = const <AiChatToolSpec>[],
+    int maxTokens = 2048,
+  }) {
+    if (_closed) throw const AiChatFailure('cancelled');
+    return sendAiRelayRequest(
+      provider: provider,
+      mode: mode,
+      messages: messages,
+      tools: tools,
+      maxTokens: maxTokens,
+      transport: _relayTransport,
+    );
+  }
+
   final AiKeyHealthStore? _healthStore;
   final DateTime Function() _clock;
 
@@ -556,6 +585,22 @@ class AiChatClient {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
     }
+    if (provider.isInterconnectHost) {
+      final AiChatTurn turn = await _relay(
+        provider,
+        AiRelayMode.complete,
+        messages: messages,
+        maxTokens: maxTokens,
+      );
+      if (turn.text.trim().isEmpty) {
+        throw const AiChatFailure('empty_response');
+      }
+      return AiChatCompletion(
+        text: turn.text,
+        usage: turn.usage,
+        stopReason: turn.stopReason,
+      );
+    }
     final Map<Object?, Object?> body = await _withRetry(
       provider,
       (String key) => _postChat(provider, key, messages, maxTokens),
@@ -593,6 +638,19 @@ class AiChatClient {
   }) async {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
+    }
+    if (provider.isInterconnectHost) {
+      final AiChatTurn turn = await _relay(
+        provider,
+        AiRelayMode.chat,
+        messages: messages,
+        tools: tools,
+        maxTokens: maxTokens,
+      );
+      if (turn.text.trim().isEmpty && turn.toolCalls.isEmpty) {
+        throw const AiChatFailure('empty_response');
+      }
+      return turn;
     }
     final Map<Object?, Object?> body = await _withRetry(
       provider,
@@ -651,6 +709,12 @@ class AiChatClient {
   /// 刷新）。至少一把通过即成功；全部是换 key 类失败时抛最后一个真实错误；与 key
   /// 无关的失败（网络 / 5xx / 坏回复 / 模型不对）立即原样抛出。
   Future<void> ping(AiProviderConfig provider) async {
+    // 互联主机提供商：由主机对它那家真发一次最小请求（主机逐把 key 测，结果落主机
+    // 的健康记录）；模型名在主机上，本机不要求填。
+    if (provider.isInterconnectHost) {
+      await _relay(provider, AiRelayMode.ping);
+      return;
+    }
     if (provider.model.trim().isEmpty) {
       throw const AiChatFailure('provider_not_configured');
     }
@@ -693,8 +757,18 @@ class AiChatClient {
   ///
   /// 存在的理由：内置预设里的默认模型名**必然过时**（厂商迭代比本 app 发版快），
   /// 把用户钉死在一个写死的字符串上迟早变成「开箱即 404」。
-  Future<List<String>> listModels(AiProviderConfig provider) =>
-      _withKeyRotation(provider, (String key) => _listModels(provider, key));
+  ///
+  /// 互联主机提供商没有模型列表可拉（选的是主机上的一家提供商，不是模型）：抛
+  /// [kAiRelayOperationUnsupported]。
+  Future<List<String>> listModels(AiProviderConfig provider) async {
+    if (provider.isInterconnectHost) {
+      throw const AiChatFailure(kAiRelayOperationUnsupported);
+    }
+    return _withKeyRotation(
+      provider,
+      (String key) => _listModels(provider, key),
+    );
+  }
 
   Future<List<String>> _listModels(
     AiProviderConfig provider,
@@ -755,6 +829,11 @@ class AiChatClient {
     String? language,
     String? prompt,
   }) async {
+    // 互联主机提供商只转发对话补全；音频转录整段交给主机有现成的任务通道（ASR
+    // 任务），不在这里另开一条上传音频的路。
+    if (provider.isInterconnectHost) {
+      throw const AiChatFailure(kAiRelayOperationUnsupported);
+    }
     if (provider.protocol != AiWireProtocol.openAiCompatible) {
       throw const AiChatFailure(kAiTranscriptionUnsupportedProtocol);
     }

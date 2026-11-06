@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// `WakelockPlus.enable/disable/toggle` 的失败全部经返回的 Future 抛出（Linux：
 /// D-Bus `org.freedesktop.ScreenSaver` 不存在时 `ServiceUnknown`）。调用点曾写成

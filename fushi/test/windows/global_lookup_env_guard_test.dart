@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guards for TODO-1153 / BUG-549
 /// (Windows 应用外查词没弹窗：覆盖窗 WebView2 env 静默创建失败).

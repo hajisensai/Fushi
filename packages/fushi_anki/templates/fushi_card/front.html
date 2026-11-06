@@ -4,8 +4,9 @@
   外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
-  {{#FrequencyRank}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
+  {{#FrequencyRank}}<div class="fc-front-freq" data-fc-block="frequency"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
 
+  <div class="fc-front-prompt" data-fc-block="prompt">
   {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
   <div class="fc-front-term">
     <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
@@ -43,8 +44,9 @@
     </div>
   </div>
   {{/IsAudioCard}}
+  </div>
 
-  {{#Hint}}<div class="fc-hint">{{Hint}}</div>{{/Hint}}
+  {{#Hint}}<div class="fc-hint" data-fc-block="hint">{{Hint}}</div>{{/Hint}}
 </div>
 
 <script>

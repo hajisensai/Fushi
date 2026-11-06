@@ -1200,7 +1200,7 @@ ruby rt, ruby rp {
    getCharacterAtPoint → caretPositionFromPoint + Range + CSS Highlights API，与
    user-select 无关（user-select 只管用户能否拖选、不影响程序化 Range/caret 与
    ::highlight 绘制）。原生选区在触屏上唯一「消费者」并不存在：Ctrl+C 复制
-   （caret.part.dart 的 readerShouldHandleDesktopCopy）与右键「查词/复制/导出」菜单
+   （caret.part.dart 的 desktopShouldHandleCopyGesture）与右键「查词/复制/导出」菜单
    （chrome.part.dart 的 _showReaderTextContextMenu）都 isWindowsPlatform / 桌面门控，
    触屏没有任何路径读原生选区。故按指针类型消除这条特殊情况：粗指针（触屏，pointer:
    coarse——手机/平板 WebView 报告的主指针）禁用原生 user-select + iOS 长按 callout，

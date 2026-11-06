@@ -7,7 +7,7 @@
 - 始终用中文回复。发现问题直接说，不为了顺滑把风险说轻。先读最近层级的 `AGENTS.md` / `CLAUDE.md`。
 - **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
 - 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。
-- 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。
+- 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
 - 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
 - 函数和新增 Dart helper 要有明确类型签名。
@@ -91,6 +91,7 @@
 | 各模块语言与职责 | [module-index.md](docs/agent/module-index.md) |
 | 有声书 / ASR 装配 | [asr-assembly.md](docs/agent/asr-assembly.md) |
 | 无头引擎 / 服务端 / 媒体服务器 / 互联 / galgame 制卡 | [subsystem-map.md](docs/agent/subsystem-map.md) |
+| `fushi_server` 相对 app 当 host 的能力缺口（未接的 host 钩子、音乐库刻意延后等） | [server-parity-gaps.md](docs/agent/server-parity-gaps.md) |
 | material_ui 升级 | [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md) |
 | 拍板原文（起因、日期、例外、实测数据） | [rules-detail.md](docs/agent/rules-detail.md) |
 | `fushi/` 主应用模块说明 | [fushi-app-module.md](docs/agent/fushi-app-module.md) |

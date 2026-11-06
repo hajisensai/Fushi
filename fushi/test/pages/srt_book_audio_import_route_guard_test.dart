@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_history_source_corpus.dart';
 
 /// TODO-1032 回归守卫（2026-08 扩写）：字幕书的音频真值必须落 `SrtBooks.audioPaths`，

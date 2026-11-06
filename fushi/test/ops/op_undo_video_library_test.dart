@@ -13,7 +13,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';

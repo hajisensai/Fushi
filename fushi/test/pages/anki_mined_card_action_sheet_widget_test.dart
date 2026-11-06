@@ -15,17 +15,26 @@ import '../helpers/glass_unwrap.dart';
 
 /// 受控假 repo：findMatchingNotes / noteFields / openNoteInAnki 走内存数据。
 class _FakeRepo extends BaseAnkiRepository {
-  _FakeRepo(this.matches, {this.fields = const {}});
+  _FakeRepo(this.matches, {this.fields = const {}, this.allowDupes = false});
 
   final List<MinedNoteRef> matches;
   final Map<String, String> fields;
+  final bool allowDupes;
   int openedNoteId = -1;
+  int findMatchingCalls = 0;
+
+  @override
+  Future<AnkiSettings> loadSettings() async =>
+      AnkiSettings(allowDupes: allowDupes);
 
   @override
   Future<List<MinedNoteRef>> findMatchingNotes(
     String expression,
     String reading,
-  ) async => matches;
+  ) async {
+    findMatchingCalls++;
+    return matches;
+  }
 
   @override
   Future<Map<String, String>?> noteFields(int noteId) async => fields;
@@ -210,6 +219,116 @@ void main() {
     expect(find.text(t.anki_mined_unverified_title), findsNothing);
     expect(mineNewCalls, 1);
     expect(result!.noteId, 333);
+  });
+
+  // 反馈 E0sdqm4h-F：勾了「允许重复」，点 ✓ 仍弹覆写 / 新增选择框。允许重复 = 制卡跳过查重，
+  // 点 ✓ 直接再制一张，不反查、不弹框。
+  testWidgets('允许重复：点 ✓ 直接新增，不反查、不弹选择框', (tester) async {
+    final repo = _FakeRepo(const [
+      MinedNoteRef(noteId: 300, preview: '日本語 A'),
+    ], allowDupes: true);
+    var mineNewCalls = 0;
+    var overwriteCalls = 0;
+    AnkiCardMutationResult? result;
+
+    await tester.pumpWidget(
+      _host((context) async {
+        result = await runAnkiMinedCardAction(
+          context: context,
+          repo: repo,
+          expression: '日本語',
+          reading: 'にほんご',
+          mineNew: () async {
+            mineNewCalls++;
+            return (ankiConnect: true, noteId: 444);
+          },
+          overwrite: (noteId) async {
+            overwriteCalls++;
+            return (ankiConnect: true, noteId: noteId);
+          },
+        );
+      }),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('日本語 A'), findsNothing, reason: '不该弹出命中卡列表');
+    expect(find.text(t.anki_mined_action_add_duplicate), findsNothing);
+    expect(repo.findMatchingCalls, 0, reason: '允许重复时不必反查');
+    expect(mineNewCalls, 1);
+    expect(overwriteCalls, 0);
+    expect(result!.noteId, 444);
+  });
+
+  testWidgets('不允许重复：有命中照旧弹选择框，不自动新增', (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 300, preview: '日本語 A')]);
+    var mineNewCalls = 0;
+
+    await tester.pumpWidget(
+      _host((context) async {
+        await runAnkiMinedCardAction(
+          context: context,
+          repo: repo,
+          expression: '日本語',
+          reading: 'にほんご',
+          mineNew: () async {
+            mineNewCalls++;
+            return (ankiConnect: true, noteId: 555);
+          },
+          overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+        );
+      }),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('日本語 A'), findsOneWidget);
+    expect(find.text(t.anki_mined_action_add_duplicate), findsOneWidget);
+    expect(mineNewCalls, 0);
+  });
+
+  // PR #2980 审查：开了允许重复，单击 ✓ 直接新增，但「覆写指定旧卡 / 查看」不能跟着消失——
+  // 右键 / 长按 ✓（openChooser）永远弹选择单，且能覆写选中的那张。
+  testWidgets('允许重复 + openChooser（右键 / 长按）：照旧弹选择单，覆写入口还在', (tester) async {
+    final repo = _FakeRepo(const [
+      MinedNoteRef(noteId: 300, preview: '日本語 A'),
+    ], allowDupes: true);
+    var mineNewCalls = 0;
+    final overwritten = <int>[];
+    AnkiCardMutationResult? result;
+
+    await tester.pumpWidget(
+      _host((context) async {
+        result = await runAnkiMinedCardAction(
+          context: context,
+          repo: repo,
+          expression: '日本語',
+          reading: 'にほんご',
+          openChooser: true,
+          mineNew: () async {
+            mineNewCalls++;
+            return (ankiConnect: true, noteId: 444);
+          },
+          overwrite: (noteId) async {
+            overwritten.add(noteId);
+            return (ankiConnect: true, noteId: noteId);
+          },
+        );
+      }),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('日本語 A'), findsOneWidget);
+    expect(find.text(t.anki_mined_action_add_duplicate), findsOneWidget);
+    expect(repo.findMatchingCalls, 1);
+    expect(mineNewCalls, 0, reason: '管理手势不能自动新增');
+
+    await tester.tap(find.byTooltip(t.anki_mined_action_overwrite));
+    await tester.pumpAndSettle();
+    expect(overwritten, <int>[300]);
+    expect(mineNewCalls, 0);
+    expect(result!.noteId, 300);
   });
 
   testWidgets('lists every matching card (decision 2) + three options', (

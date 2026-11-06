@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：pdfium_dart 的 native-assets 构建钩子下载 PDFium，CI 必须缓存它。
 ///

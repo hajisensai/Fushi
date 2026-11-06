@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1251 — app 外查词覆盖窗（也含 in-app 弹窗）点音频按钮时，若该词本来就没有
 /// 配置音频源（resolveWordAudio 返回 null），旧行为只把 ♪ 瞬间闪成 ✕ 再静默恢复，

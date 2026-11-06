@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// Source-scan guard: the lyrics-mode focus caret stays wired into the reader

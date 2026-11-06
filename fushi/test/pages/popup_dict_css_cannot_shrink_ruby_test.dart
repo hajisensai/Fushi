@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1897：某些词典的振假名小到看不清（用户 2026-08-28 报「小学館例解学習国語
 /// 第十二版 怎么振假名这么小」）。

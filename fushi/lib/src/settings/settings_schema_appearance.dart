@@ -439,7 +439,9 @@ SettingsDestination buildAppearanceDestination() {
                   : contentLanguageLabelOf(current);
               return '${t.settings_content_language_title} · $label';
             },
-            subtitle: t.settings_content_language_description,
+            subtitle:
+                '${t.settings_content_language_description} '
+                '${t.settings_content_language_screen_ocr_note}',
             icon: FushiIcons.language,
             onTap: (SettingsContext settingsContext) async {
               final String current =
@@ -447,7 +449,9 @@ SettingsDestination buildAppearanceDestination() {
               await showContentLanguagePicker(
                 context: settingsContext.context,
                 title: t.settings_content_language_title,
-                description: t.settings_content_language_description,
+                description:
+                    '${t.settings_content_language_description} '
+                    '${t.settings_content_language_screen_ocr_note}',
                 current: current.isEmpty ? null : current,
                 autoDetected: '',
                 autoLabel: t.settings_content_language_unset,

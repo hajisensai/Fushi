@@ -1,7 +1,7 @@
 /// OPDS 1.2 (Atom) / 2.0 (JSON) 解析器与格式表的契约测试。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_atom_parser.dart';

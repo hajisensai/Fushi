@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-079 源码守卫：主页把字幕拖到视频卡，必须走「直接挂到命中卡的现有视频书」
 /// 路径（[attachSubtitleToVideoBook] / `_attachSubtitleToVideoCard`），**不得**回退到

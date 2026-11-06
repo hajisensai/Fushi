@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 「今日」重置时刻：dateKey 派生的唯一输入是 [FushiDatabase.statDayResetHour]，

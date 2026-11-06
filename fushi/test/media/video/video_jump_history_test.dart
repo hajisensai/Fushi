@@ -140,5 +140,21 @@ void main() {
       expect(theme, contains('_videoJumpProgressMarks('));
       expect(mini, contains('_videoJumpProgressMarks('));
     });
+
+    // #ekVmlGuze5：返回 / 前进组自己是一枚浮动胶囊，按钮再上 tonal（M3E 开关「开」态，
+    // 方圆角色块）就在圆胶囊里叠出第二颗按钮。按钮必须是中性档。
+    test('返回 / 前进按钮是中性档，不在胶囊里再叠 tonal 色块', () {
+      final String part = read('$dir/video_fushi/jump_history.part.dart');
+      final int start = part.indexOf('Widget _videoJumpHistoryTopBarGroup(');
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = part.indexOf('\n  }\n', start);
+      final String group = part.substring(start, end);
+      expect(group, contains('_chromeIconButton('));
+      expect(group, contains('clusterStyle: _m3eFloatingBarStyle('));
+      expect(group, isNot(contains('VideoM3eButtonTone.secondary')));
+      expect(group, isNot(contains('VideoM3eButtonTone.tertiary')));
+      expect(group, isNot(contains('tonal: true')));
+      expect(group, isNot(contains('selected: true')));
+    });
   });
 }

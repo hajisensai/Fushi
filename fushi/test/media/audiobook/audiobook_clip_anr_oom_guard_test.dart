@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1167 / BUG-552 守卫：安卓「导出片段视频」竖排有声书 ANR/OOM 回归的根因修复。
 ///

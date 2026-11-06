@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v82 迁移（P3 Stage 1b）定向测试：四张子表（reader_positions / bookmarks /
@@ -152,7 +152,7 @@ CREATE TABLE revealed_images (
         .customSelect('PRAGMA user_version')
         .getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 144, reason: 'v82 = 四子表书键切 uid');
+    expect(db.schemaVersion, 146, reason: 'v82 = 四子表书键切 uid');
 
     // ── reader_positions：跨书族，epub 命中换 uid，SRT 照抄 ──
     expect(await count(db, 'reader_positions'), 2, reason: '迁移零丢行');

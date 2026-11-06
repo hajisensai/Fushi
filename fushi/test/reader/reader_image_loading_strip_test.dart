@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 
 /// 正文插图不得懒加载：分页是横向多列排版，`loading="lazy"` 的图在远列永远进不了

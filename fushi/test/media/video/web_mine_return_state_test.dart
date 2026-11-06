@@ -270,4 +270,82 @@ void main() {
       expect(select, contains('isNoneTrack'));
     });
   });
+
+  group('WebMineRestoreTracker（每项动作最多首发 + 一次补发，不再每秒重发）', () {
+    final DateTime t0 = DateTime(2026, 11, 6, 12);
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    final WebMineReturnState target = WebMineReturnState.of(
+      _state(positionMs: 600000, text: 'ja'),
+    );
+
+    test('位置一直对不上：seek 只发两次（首发 + 隔 4 s 补一次），之后结束', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      final List<int?> seeks = <int?>[];
+      WebMineRestorePlan? last;
+      for (int ms = 0; ms <= 12000; ms += 250) {
+        last = tr.step(_state(positionMs: 10000), at(ms));
+        if (last == null) break;
+        if (last.seekMs != null) seeks.add(ms);
+      }
+      expect(seeks, <int>[0, kWebMineRestoreRetryGap.inMilliseconds]);
+      expect(last, isNull, reason: '次数用完即结束，不再拖到 30 s 期限');
+    });
+
+    test('seek 落地后结束，不补发', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      expect(tr.step(_state(positionMs: 10000), at(0))?.seekMs, 600000);
+      expect(tr.step(_state(positionMs: 10000), at(250))?.seekMs, isNull);
+      expect(tr.step(_state(positionMs: 600200), at(500)), isNull);
+    });
+
+    test('seek 落地后轨还没对齐、续播漂出容差：不再补 seek 把用户拉回去', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      expect(
+        tr.step(_state(positionMs: 10000, text: 'en'), at(0))?.seekMs,
+        600000,
+      );
+      // 落地（轨还是 en，没报回来）。
+      expect(
+        tr.step(_state(positionMs: 600100, text: 'en'), at(500))?.seekMs,
+        isNull,
+      );
+      // 站点自动续播 5 s：位置早已超出 1.5 s 容差，但 seek 已对齐过，不再补。
+      final WebMineRestorePlan? later = tr.step(
+        _state(positionMs: 605000, text: 'en'),
+        at(5000),
+      );
+      expect(later?.seekMs, isNull);
+      expect(later?.selectTextTrack, 'ja', reason: '轨照常补发一次');
+    });
+
+    test('轨与位置同一拍下发（不再一项一项每秒排队）', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      final WebMineRestorePlan? p = tr.step(
+        _state(positionMs: 10000, text: 'en', audio: 'a-en'),
+        at(0),
+      );
+      expect(p?.selectTextTrack, 'ja');
+      expect(p?.selectAudioTrack, 'a-ja');
+      expect(p?.seekMs, 600000);
+    });
+
+    test('不在同一集：只导航一次，之后等新一集报上来再 seek', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      final WebMineRestorePlan? nav = tr.step(_state(videoKey: 'nf:2'), at(0));
+      expect(nav?.navigateHref, 'https://www.netflix.com/watch/1');
+      expect(tr.step(_state(videoKey: 'nf:2'), at(5000))?.navigateHref, isNull);
+      expect(tr.step(_state(positionMs: 0), at(6000))?.seekMs, 600000);
+    });
+
+    test('过了期限就结束', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      expect(
+        tr.step(
+          _state(positionMs: 0),
+          t0.add(kWebMineRestoreDeadline + const Duration(seconds: 1)),
+        ),
+        isNull,
+      );
+    });
+  });
 }

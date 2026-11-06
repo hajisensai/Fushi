@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 
 /// BUG-3487：截屏识字制卡句子从 OCR text block 里截整句。块全文是原生侧把块内

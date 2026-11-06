@@ -1,5 +1,6 @@
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
@@ -108,6 +109,7 @@ class CtlVideoSubtitleHandlers {
     }
     final AppVideoSubtitleTarget target = await _target(call);
     final bool proofread = call.optBool('proofread') ?? true;
+    final VideoSubtitleLanguage language = _language(call);
     final AppVideoSubtitleService svc = service();
     if (proofread) {
       if (svc.proofreadProvider == null) {
@@ -119,7 +121,7 @@ class CtlVideoSubtitleHandlers {
       if (!consented()) {
         if (call.optBool('consentAi') != true) {
           throw const CtlFailure.rejected(
-            'AI 校对会把 ASR 识别出的日语文本与本作专名表发给所选提供商（不发音频与画面，'
+            'AI 校对会把 ASR 识别出的文本与本作专名表发给所选提供商（不发音频与画面，'
             '按提供商计费）。同意请加 --consent-ai（只需一次），或加 --no-ai',
           );
         }
@@ -141,6 +143,7 @@ class CtlVideoSubtitleHandlers {
         defaultMossBackend(),
       ),
       regenerateGlossary: call.optBool('regenerateGlossary') ?? false,
+      language: language,
     );
     final AppVideoSubtitleJob job;
     try {
@@ -181,11 +184,25 @@ class CtlVideoSubtitleHandlers {
     };
   }
 
+  /// `language`（`ja` / `zh`，缺省日语）：生成任务的识别语言，也选专名表——日语与
+  /// 普通话各一张（[VideoSubtitleLanguage.glossaryKey]）。
+  VideoSubtitleLanguage _language(CtlCall call) {
+    final String? tag = call.optString('language');
+    if (tag == null) return VideoSubtitleLanguage.japanese;
+    return VideoSubtitleLanguage.fromTag(tag) ??
+        (throw CtlFailure.badRequest(
+          'language 只能是 '
+          '${VideoSubtitleLanguage.values.map((VideoSubtitleLanguage l) => l.tag).join(' / ')}',
+        ));
+  }
+
   Map<String, Object?> _glossaryJson(
     AppVideoSubtitleTarget target,
     SubtitleGlossary? glossary,
+    VideoSubtitleLanguage language,
   ) => <String, Object?>{
     'workKey': target.work.workKey,
+    'language': language.tag,
     'title': target.title,
     'japaneseTitle': target.work.japaneseTitle,
     'hasScrapedData': target.work.hasScrapedData,
@@ -202,7 +219,12 @@ class CtlVideoSubtitleHandlers {
   Future<Object?> glossary(CtlCall call) async {
     _requireVideoModule();
     final AppVideoSubtitleTarget target = await _target(call);
-    return _glossaryJson(target, await service().loadGlossary(target.work));
+    final VideoSubtitleLanguage language = _language(call);
+    return _glossaryJson(
+      target,
+      await service().loadGlossary(target.work, language: language),
+      language,
+    );
   }
 
   /// `video subtitle-glossary … --set <json>`：整表替换（改过 / 新增的条目标
@@ -210,6 +232,7 @@ class CtlVideoSubtitleHandlers {
   Future<Object?> setGlossary(CtlCall call) async {
     _requireVideoModule();
     final AppVideoSubtitleTarget target = await _target(call);
+    final VideoSubtitleLanguage language = _language(call);
     final Object? raw = call.body['entries'];
     if (raw is! List) {
       throw const CtlFailure.badRequest('entries 必须是条目数组');
@@ -237,8 +260,9 @@ class CtlVideoSubtitleHandlers {
     final SubtitleGlossary saved = await svc.saveGlossary(
       target.work,
       entries,
-      previous: await svc.loadGlossary(target.work),
+      previous: await svc.loadGlossary(target.work, language: language),
+      language: language,
     );
-    return _glossaryJson(target, saved);
+    return _glossaryJson(target, saved, language);
   }
 }

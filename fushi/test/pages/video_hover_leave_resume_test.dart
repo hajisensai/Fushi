@@ -138,7 +138,8 @@ void main() {
       final String fireBody = pageSource.substring(fireAt, fireAt + 1400);
       expect(fireBody, contains('_popNestedPopupAt(0)'));
       expect(
-        fireBody.contains('_controller?.play()'),
+        fireBody.contains('_controller?.play()') ||
+            fireBody.contains('_controller?.resumePlayback()'),
         isFalse,
         reason: '恢复播放必须继续由关栈汇聚点统一负责',
       );

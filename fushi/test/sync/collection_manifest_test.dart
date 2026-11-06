@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 
 /// 合集清单编解码纯函数测试（多端库联合视图 §2.3 任务3）：

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // TODO-766 / BUG: 查词能播放出声但制卡卡片无音频。
 //

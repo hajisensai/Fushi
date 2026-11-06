@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
@@ -103,7 +103,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 144);
+    expect(upgraded.schemaVersion, 146);
 
     // 激活 Profile 认领全部旧历史（Never break userspace：升级前后它看到的一样）。
     expect(await upgraded.resolveActiveProfileId(), seed.activeId);

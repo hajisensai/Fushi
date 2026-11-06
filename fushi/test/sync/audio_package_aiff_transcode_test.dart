@@ -3,11 +3,13 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/engine_storage_sandbox.dart';
 
 /// BUG-3312 延伸：桌面「引用原文件」导入的 AIFF 有声书，经同步包 / 互联下载到
 /// 另一端时，AIFF 原样进包。Android 的有声书播放器（ExoPlayer）不认 AIFF，所以
@@ -17,6 +19,8 @@ FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
+  useEngineStorageSandbox();
+
   late Directory temp;
   late FushiDatabase sourceDb;
   late FushiDatabase targetDb;

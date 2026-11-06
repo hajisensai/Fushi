@@ -8,9 +8,12 @@ import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -22,7 +25,9 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 
 /// `mm:ss`。
@@ -44,9 +49,41 @@ void openMusicTrackDetail(BuildContext context, String trackUid) {
   );
 }
 
+/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情。
+MusicItemMenu musicLocalTrackMenu(
+  BuildContext context,
+  MusicTrackRow track, {
+  required VoidCallback onPlay,
+}) => MusicItemMenu(
+  buttonKey: ValueKey<String>('music-track-menu-${track.trackUid}'),
+  open: (MusicMenuAnchor? anchor) => unawaited(
+    showMusicActionMenu(
+      context,
+      anchor: anchor,
+      errorText: (Object e) => t.music_play_failed(error: '$e'),
+      actions: <MusicMenuAction>[
+        MusicMenuAction(
+          id: 'play',
+          label: t.music_play_all,
+          icon: FushiIcons.play,
+          run: (_) async => onPlay(),
+        ),
+        MusicMenuAction(
+          id: 'detail',
+          label: t.music_track_detail,
+          icon: FushiIcons.info,
+          run: (BuildContext c) async =>
+              openMusicTrackDetail(c, track.trackUid),
+        ),
+      ],
+    ),
+  ),
+);
+
 /// 曲目列表（歌曲分区 / 艺人 / 专辑碟内）：点一首 = 以该列表为队列从这首开始播；
-/// 长按 / 行尾「详情」= 曲目详情页。
-class MusicTrackList extends ConsumerWidget {
+/// 长按 / 行尾「详情」= 曲目详情页。有没听完的断点（点开会接着放的，`music_resume.dart`）
+/// 的行：行尾显示剩余时间，副标题下一条细进度条。
+class MusicTrackList extends ConsumerStatefulWidget {
   const MusicTrackList({
     super.key,
     required this.tracks,
@@ -64,16 +101,64 @@ class MusicTrackList extends ConsumerWidget {
   final bool shrinkWrap;
   final bool showTrackNumbers;
 
+  @override
+  ConsumerState<MusicTrackList> createState() => _MusicTrackListState();
+}
+
+class _MusicTrackListState extends ConsumerState<MusicTrackList> {
+  /// 这一列曲目的断点：挂上时按块查齐，之后只吃这一列里那几首的改动。
+  late final MusicResumePointsWatch _resume;
+
+  List<MusicTrackRow> get tracks => widget.tracks;
+
+  static Iterable<String> _uids(List<MusicTrackRow> tracks) =>
+      tracks.map((MusicTrackRow t) => t.trackUid);
+
+  @override
+  void initState() {
+    super.initState();
+    _resume =
+        ref
+            .read(appProvider)
+            .musicSession
+            .watchResumePoints(_uids(widget.tracks))
+          ..addListener(_onResumeChanged);
+  }
+
+  @override
+  void didUpdateWidget(MusicTrackList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.tracks, widget.tracks)) {
+      _resume.watch(_uids(widget.tracks));
+    }
+  }
+
+  @override
+  void dispose() {
+    _resume
+      ..removeListener(_onResumeChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onResumeChanged() {
+    if (mounted) setState(() {});
+  }
+
   List<MusicPlayItem> _items() => <MusicPlayItem>[
     for (final MusicTrackRow t in tracks)
       musicPlayItemOf(
         t,
-        album: t.albumUid == null ? null : albums[t.albumUid!],
+        album: t.albumUid == null ? null : widget.albums[t.albumUid!],
       ),
   ];
 
   @override
-  Widget build(BuildContext buildContext, WidgetRef ref) {
+  Widget build(BuildContext buildContext) {
+    final MusicResumeMode mode = watchMusicResumeMode(ref);
+    final bool shrinkWrap = widget.shrinkWrap;
+    final bool showTrackNumbers = widget.showTrackNumbers;
+    final MusicQueueContext context = widget.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(buildContext);
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
     return FushiEntranceScope(
@@ -102,55 +187,69 @@ class MusicTrackList extends ConsumerWidget {
             bitDepth: track.bitDepth,
             bitrateKbps: track.bitrate,
           );
-          return FushiPressScale(
-            child: FushiGroupedListItem(
-              key: ValueKey<String>('music-track-${track.trackUid}'),
-              index: i,
-              count: tracks.length,
-              onTap: () => unawaited(
-                engine.playQueue(_items(), startIndex: i, context: context),
-              ),
-              onLongPress: () => openMusicTrackDetail(c, track.trackUid),
-              child: FushiListItem(
-                leading: showTrackNumbers
-                    ? SizedBox(
-                        width: 28,
-                        child: Text(
-                          track.trackNo?.toString() ?? '',
-                          textAlign: TextAlign.end,
-                          style: c.fushiType.bodySmall,
-                        ),
-                      )
-                    : const FushiListLeadingIcon(FushiIcons.music),
-                title: Text(
-                  track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  <String>[
-                    track.artistCredit ?? t.music_artist_unknown,
-                    if (badge.isNotEmpty) badge,
-                  ].join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      formatMusicDuration(track.durationMs),
-                      style: c.fushiType.bodySmall,
-                    ),
-                    FushiIconButton(
-                      key: ValueKey<String>(
-                        'music-track-detail-${track.trackUid}',
+          final Duration? resume = musicTrackResumeOf(
+            track,
+            _resume[track.trackUid],
+            mode,
+          );
+          final int? durationMs = track.durationMs;
+          final Text subtitle = Text(
+            <String>[
+              track.artistCredit ?? t.music_artist_unknown,
+              if (badge.isNotEmpty) badge,
+            ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+          void play() => unawaited(
+            engine.playQueue(_items(), startIndex: i, context: context),
+          );
+          return musicLocalTrackMenu(c, track, onPlay: play).contextMenu(
+            child: FushiPressScale(
+              child: FushiGroupedListItem(
+                key: ValueKey<String>('music-track-${track.trackUid}'),
+                index: i,
+                count: tracks.length,
+                onTap: play,
+                onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+                child: FushiListItem(
+                  leading: showTrackNumbers
+                      ? SizedBox(
+                          width: 28,
+                          child: Text(
+                            track.trackNo?.toString() ?? '',
+                            textAlign: TextAlign.end,
+                            style: c.fushiType.bodySmall,
+                          ),
+                        )
+                      : const FushiListLeadingIcon(FushiIcons.music),
+                  title: Text(
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: musicTrackSubtitleWithResume(
+                    track,
+                    subtitle,
+                    resume,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        musicTrackTimeLabel(durationMs, resume),
+                        style: c.fushiType.bodySmall,
                       ),
-                      icon: FushiIcons.info,
-                      tooltip: t.music_track_detail,
-                      onTap: () => openMusicTrackDetail(c, track.trackUid),
-                    ),
-                  ],
+                      FushiIconButton(
+                        key: ValueKey<String>(
+                          'music-track-detail-${track.trackUid}',
+                        ),
+                        icon: FushiIcons.info,
+                        tooltip: t.music_track_detail,
+                        onTap: () => openMusicTrackDetail(c, track.trackUid),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -159,6 +258,72 @@ class MusicTrackList extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 当前的断点续播模式（设置 `music_resume_mode`）；设置里切档时调用方跟着重建。
+MusicResumeMode watchMusicResumeMode(WidgetRef ref) => ref.watch(
+  appProvider.select(
+    (AppModel a) =>
+        a.isPreferencesReady ? a.musicResumeMode : MusicResumeMode.longTracks,
+  ),
+);
+
+/// [track] 点开会从哪接着放（与打开时同一判据）；null = 从头（不显示进度）。
+Duration? musicTrackResumeOf(
+  MusicTrackRow track,
+  MusicResumePointRow? row,
+  MusicResumeMode mode,
+) => row == null
+    ? null
+    : musicResumeDisplayStart(
+        mode: mode,
+        savedPositionMs: row.positionMs,
+        durationMs: track.durationMs ?? row.durationMs,
+      );
+
+/// 行尾时间：有断点显示「剩余 m:ss」，否则曲长。
+String musicTrackTimeLabel(int? durationMs, Duration? resume) =>
+    resume == null || durationMs == null
+    ? formatMusicDuration(durationMs)
+    : t.music_track_remaining(
+        time: formatMusicDuration(durationMs - resume.inMilliseconds),
+      );
+
+/// 有断点的行：副标题下加一条细进度条（key `music-track-resume-<uid>`）。
+Widget? musicTrackSubtitleWithResume(
+  MusicTrackRow track,
+  Widget? subtitle,
+  Duration? resume,
+) {
+  final int? durationMs = track.durationMs;
+  if (resume == null || durationMs == null) return subtitle;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      if (subtitle != null) ...<Widget>[subtitle, const SizedBox(height: 4)],
+      _MusicResumeBar(
+        key: ValueKey<String>('music-track-resume-${track.trackUid}'),
+        fraction: resume.inMilliseconds / durationMs,
+      ),
+    ],
+  );
+}
+
+/// 断点进度条（细、平直；值变化时按动效时长补间，减弱动态效果下瞬间到位）。
+class _MusicResumeBar extends StatelessWidget {
+  const _MusicResumeBar({super.key, required this.fraction});
+
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween<double>(end: fraction.clamp(0, 1).toDouble()),
+    duration: fushiMotionDuration(context, FushiMotion.medium),
+    curve: FushiMotion.enter,
+    builder: (BuildContext context, double value, _) =>
+        FushiLinearProgressIndicator(value: value, minHeight: 3, wavy: false),
+  );
 }
 
 /// 一列曲目的独立页（艺人）。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// P2-F：popup.js 的 `applyCustomCSS` 按「键 → `<style>`」diff 落地——内容不变时零
 /// DOM 增删，只改一本词典时原位改文本，键集合变 / realm 根换新才重建（Node 真执行

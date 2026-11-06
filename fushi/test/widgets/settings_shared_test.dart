@@ -378,58 +378,61 @@ void main() {
     );
   });
 
-  testWidgets('segmented rows use Cupertino segmented control on iOS', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _buildHarness(
-        platform: TargetPlatform.iOS,
-        designSystem: FushiDesignSystem.cupertino,
-        child: AdaptiveSettingsScaffold(
-          title: const Text('Reader settings'),
-          children: [
-            AdaptiveSettingsSection(
-              children: [
-                AdaptiveSettingsSegmentedRow<String>(
-                  title: 'Spread mode',
-                  segments: const [
-                    ButtonSegment(
-                      value: 'off',
-                      label: Text('Off'),
-                      tooltip: 'Off',
-                    ),
-                    ButtonSegment(
-                      value: 'on',
-                      label: Text('On'),
-                      tooltip: 'On',
-                    ),
-                    ButtonSegment(
-                      value: 'auto',
-                      label: Text('Auto'),
-                      tooltip: 'Auto',
-                    ),
-                  ],
-                  selected: 'auto',
-                  onChanged: (_) {},
-                ),
-              ],
-            ),
-          ],
+  testWidgets(
+    'segmented rows on iOS without Apple design use the M3E capsule',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildHarness(
+          platform: TargetPlatform.iOS,
+          designSystem: FushiDesignSystem.cupertino,
+          child: AdaptiveSettingsScaffold(
+            title: const Text('Reader settings'),
+            children: [
+              AdaptiveSettingsSection(
+                children: [
+                  AdaptiveSettingsSegmentedRow<String>(
+                    title: 'Spread mode',
+                    segments: const [
+                      ButtonSegment(
+                        value: 'off',
+                        label: Text('Off'),
+                        tooltip: 'Off',
+                      ),
+                      ButtonSegment(
+                        value: 'on',
+                        label: Text('On'),
+                        tooltip: 'On',
+                      ),
+                      ButtonSegment(
+                        value: 'auto',
+                        label: Text('Auto'),
+                        tooltip: 'Auto',
+                      ),
+                    ],
+                    selected: 'auto',
+                    onChanged: (_) {},
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is CupertinoSlidingSegmentedControl,
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-      findsNothing,
-    );
-  });
+      // BUG-4205：不再是原生 CupertinoSlidingSegmentedControl（等宽、不走
+      // fushiSegmentWidths），而是胶囊分段（SegmentedButton 子类）。
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is CupertinoSlidingSegmentedControl,
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('picker rows use Material dropdown on Android', (tester) async {
     await tester.pumpWidget(

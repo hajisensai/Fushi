@@ -4,7 +4,7 @@
 // 弹窗跑在 WebView 里没有 headless 渲染，故用源码文本扫描锁住这些约束，防回退。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 抽取第一个 `<selector> { ... }` 规则块的内容（单层花括号，popup 这些规则无嵌套）。
 String _ruleBody(String css, String selector) {

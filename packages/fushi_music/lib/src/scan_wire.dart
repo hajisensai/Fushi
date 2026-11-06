@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 /// 批次格式版本，与 native/fushi_music/src/wire.rs 的 `BATCH_FORMAT_VERSION` 一致。
-const int kMusicScanBatchFormatVersion = 1;
+const int kMusicScanBatchFormatVersion = 2;
+
+/// 远程扫描清单格式版本，与 native/fushi_music/src/remote.rs 的 `LISTING_FORMAT_VERSION` 一致。
+const int kMusicListingFormatVersion = 1;
 
 /// 一条曲目署名。
 final class MusicScanCredit {
@@ -36,6 +39,14 @@ final class MusicScanError extends MusicScanRecord {
   const MusicScanError(super.path, this.message);
 
   final String message;
+}
+
+/// 远程曲目的内嵌封面字节（远程扫描专有，排在该文件的曲目记录之前）：远程文件没有本地
+/// 路径可供之后再读封面，由调用方落进封面缓存。
+final class MusicScanCover extends MusicScanRecord {
+  const MusicScanCover(super.path, this.bytes);
+
+  final Uint8List bytes;
 }
 
 /// 一首曲目（普通文件或 CUE 虚拟曲目）。字段语义见 wire.rs 文件头。
@@ -185,6 +196,16 @@ class _Reader {
 
   String str() => _utf8(u32());
 
+  Uint8List bytes() {
+    final int n = u32();
+    _need(n);
+    final Uint8List out = Uint8List.fromList(
+      Uint8List.sublistView(_bytes, _pos, _pos + n),
+    );
+    _pos += n;
+    return out;
+  }
+
   String? optStr() {
     final int n = u32();
     if (n == 0xFFFFFFFF) return null;
@@ -225,6 +246,8 @@ MusicScanBatch decodeMusicScanBatch(Uint8List bytes) {
         records.add(MusicScanUnchanged(r.str()));
       case 2:
         records.add(MusicScanError(r.str(), r.str()));
+      case 3:
+        records.add(MusicScanCover(r.str(), r.bytes()));
       default:
         throw MusicScanWireError('unknown record kind $kind');
     }
@@ -336,4 +359,100 @@ Uint8List encodeMusicKnownFiles(Map<String, ({int mtimeMs, int size})> known) {
     out.add(nums.buffer.asUint8List());
   }
   return out.takeBytes();
+}
+
+/// 远程清单里的一个文件。[mtimeMs] / [size] 为 null = 来源没给（每次都重新解析）。
+typedef MusicListedFile = ({String path, int? mtimeMs, int? size});
+
+void _putStr(BytesBuilder out, String s) {
+  final List<int> b = utf8.encode(s);
+  out.add(
+    (ByteData(4)..setUint32(0, b.length, Endian.little)).buffer.asUint8List(),
+  );
+  out.add(b);
+}
+
+/// 远程扫描清单（`ffm_remote_scan_open` 的输入）：文件 + 每张 `.cue` 的**原始字节**
+/// （编码由 Rust 判，Shift-JIS 的 CUE 不经 UTF-8 转手）。
+Uint8List encodeMusicListing({
+  required String root,
+  required List<MusicListedFile> files,
+  required Map<String, Uint8List> cueBytes,
+}) {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  out.add(
+    (ByteData(4)..setUint32(0, kMusicListingFormatVersion, Endian.little))
+        .buffer
+        .asUint8List(),
+  );
+  _putStr(out, root);
+  out.add(
+    (ByteData(
+      4,
+    )..setUint32(0, files.length, Endian.little)).buffer.asUint8List(),
+  );
+  for (final MusicListedFile f in files) {
+    _putStr(out, f.path);
+    out.add(
+      (ByteData(16)
+            ..setInt64(0, f.mtimeMs ?? -1, Endian.little)
+            ..setInt64(8, f.size ?? -1, Endian.little))
+          .buffer
+          .asUint8List(),
+    );
+  }
+  final List<String> cuePaths = cueBytes.keys.toList()..sort();
+  out.add(
+    (ByteData(
+      4,
+    )..setUint32(0, cuePaths.length, Endian.little)).buffer.asUint8List(),
+  );
+  for (final String path in cuePaths) {
+    _putStr(out, path);
+    final Uint8List b = cueBytes[path]!;
+    out.add(
+      (ByteData(4)..setUint32(0, b.length, Endian.little)).buffer.asUint8List(),
+    );
+    out.add(b);
+  }
+  return out.takeBytes();
+}
+
+/// 远程游标一步的结果：要字节（[MusicRemoteNeed]）或一批记录（[MusicRemoteBatch]）。
+sealed class MusicRemoteStep {
+  const MusicRemoteStep();
+}
+
+/// 当前文件 [path] 缺这些（起点, 长度）区间。
+final class MusicRemoteNeed extends MusicRemoteStep {
+  const MusicRemoteNeed(this.path, this.ranges);
+
+  final String path;
+  final List<({int offset, int length})> ranges;
+}
+
+final class MusicRemoteBatch extends MusicRemoteStep {
+  const MusicRemoteBatch(this.bytes);
+
+  /// 批次原始字节（[decodeMusicScanBatch]）。
+  final Uint8List bytes;
+}
+
+/// 解码 `ffm_remote_scan_step` 的输出（remote.rs `encode_step`）。
+MusicRemoteStep decodeMusicRemoteStep(Uint8List bytes) {
+  if (bytes.isEmpty) throw const MusicScanWireError('empty remote step');
+  if (bytes[0] == 1) {
+    return MusicRemoteBatch(Uint8List.sublistView(bytes, 1));
+  }
+  if (bytes[0] != 0) {
+    throw MusicScanWireError('unknown remote step kind ${bytes[0]}');
+  }
+  final _Reader r = _Reader(Uint8List.sublistView(bytes, 1));
+  final String path = r.str();
+  final int n = r.u32();
+  final List<({int offset, int length})> ranges = <({int offset, int length})>[
+    for (int i = 0; i < n; i++) (offset: r.i64(), length: r.i64()),
+  ];
+  if (!r.atEnd) throw const MusicScanWireError('trailing bytes after step');
+  return MusicRemoteNeed(path, ranges);
 }

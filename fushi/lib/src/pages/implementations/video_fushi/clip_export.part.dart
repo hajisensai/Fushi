@@ -24,7 +24,10 @@ extension _VideoClipExport on _VideoFushiPageState {
       );
       return;
     }
-    if (_isRemote || _currentVideoPath == null) {
+    // 互联远端（反馈 6nBmSBj_2W）：host 裁原料段、本机烧字幕，见 [_exportRemoteClipFile]。
+    // 其它远端（媒体服务器 / 在线源 / 直链）没有 host 端裁切，仍要求先下载到本机。
+    final String? sourceKey = _clipExportSourceKey();
+    if (sourceKey == null) {
       _showOsd(
         t.video_clip_export_remote_download_required,
         severity: ToastSeverity.warning,
@@ -33,6 +36,10 @@ extension _VideoClipExport on _VideoFushiPageState {
     }
 
     if (!_clipExportMarking) {
+      // 标起点前先问 host 认不认这个端点：老 host 要在用户标完一整段之前就说清楚，
+      // 而不是等按下导出才失败。能力位按 host 基址缓存，只有第一次真发请求。
+      if (_isRemote && !await _remoteHostSupportsClipExport()) return;
+      if (!mounted || _clipExportSourceKey() != sourceKey) return;
       final int? positionMs = controller.positionMs;
       if (positionMs == null) {
         _showOsd(
@@ -45,7 +52,7 @@ extension _VideoClipExport on _VideoFushiPageState {
         _clipExportGeneration++;
         _clipExportMarking = true;
         _clipExportStartMs = positionMs;
-        _clipExportStartPath = _currentVideoPath;
+        _clipExportStartPath = sourceKey;
         _clipExportStartAudioStreamIndex = controller.currentAudioStreamIndex;
         _clipExportStartAudioStreamCount = controller.realAudioStreamCount;
       });
@@ -59,7 +66,7 @@ extension _VideoClipExport on _VideoFushiPageState {
     if (startMs == null ||
         startPath == null ||
         endMs == null ||
-        startPath != _currentVideoPath) {
+        startPath != sourceKey) {
       _rebuild(_clearClipExportState);
       _showOsd(
         t.video_clip_export_source_changed,
@@ -83,7 +90,10 @@ extension _VideoClipExport on _VideoFushiPageState {
     // 移动端落 app 文档目录后走系统分享。dialog 是异步阻塞 UI，返回后需重核
     // mounted / generation（用户可能中途换源）。取消对话框视为放弃本次导出。
     final String defaultName = _clipExportFileName(
-      inputPath: startPath,
+      // 远端没有本机路径：用作品标题当文件名主干（扩展名随后恒换成 .mp4）。
+      inputPath: _isRemote
+          ? '${_effectiveRemoteInfo?.title ?? 'video'}.mp4'
+          : startPath,
       startMs: startMs,
       endMs: endMs,
     );
@@ -101,7 +111,8 @@ extension _VideoClipExport on _VideoFushiPageState {
       _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
       return;
     }
-    if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
+    if (generation != _clipExportGeneration ||
+        _clipExportSourceKey() != startPath) {
       _rebuild(_clearClipExportState);
       _showOsd(
         t.video_clip_export_source_changed,
@@ -112,15 +123,24 @@ extension _VideoClipExport on _VideoFushiPageState {
     _rebuild(() => _clipExporting = true);
     _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
 
-    final VideoClipExportResult result = await _exportClipFile(
-      controller: controller,
-      inputPath: startPath,
-      startMs: startMs,
-      endMs: endMs,
-      outputPath: outputPath,
-      audioStreamIndex: audioStreamIndex,
-      audioStreamCount: audioStreamCount,
-    );
+    final VideoClipExportResult result = _isRemote
+        ? await _exportRemoteClipFile(
+            controller: controller,
+            startMs: startMs,
+            endMs: endMs,
+            outputPath: outputPath,
+            audioStreamIndex: audioStreamIndex,
+            audioStreamCount: audioStreamCount,
+          )
+        : await _exportClipFile(
+            controller: controller,
+            inputPath: startPath,
+            startMs: startMs,
+            endMs: endMs,
+            outputPath: outputPath,
+            audioStreamIndex: audioStreamIndex,
+            audioStreamCount: audioStreamCount,
+          );
 
     if (!mounted) {
       // 页面在导出期间被卸载（退视频页 / 换集 / 进退全屏重建）。旧实现在这里把
@@ -140,7 +160,8 @@ extension _VideoClipExport on _VideoFushiPageState {
       }
       return;
     }
-    if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
+    if (generation != _clipExportGeneration ||
+        _clipExportSourceKey() != startPath) {
       await _deleteClipOutput(result.outputPath ?? outputPath);
       if (mounted) {
         _rebuild(_clearClipExportState);
@@ -312,6 +333,10 @@ extension _VideoClipExport on _VideoFushiPageState {
 
   /// 片段导出的 ffmpeg 一步（快捷键两段式导出与桌面 CLI `video clip` 共用）：
   /// 当前看到的主 / 副字幕裁成 SRT、按 cue 烧录硬字幕、用户设的视频码率。
+  ///
+  /// [startMs]/[endMs] 是片段在**播放轴**上的区间，字幕按它挑 cue、平移到片段 0 点。
+  /// [inputStartMs]/[inputEndMs] 是 ffmpeg 在 [inputPath] 上裁的区间，缺省 = 播放
+  /// 区间（本机文件）；互联远端传进来的是 host 已裁好的原料段，在它上面裁 `0..时长`。
   Future<VideoClipExportResult> _exportClipFile({
     required VideoPlayerController controller,
     required String inputPath,
@@ -320,10 +345,12 @@ extension _VideoClipExport on _VideoFushiPageState {
     required String outputPath,
     required int? audioStreamIndex,
     required int? audioStreamCount,
+    int? inputStartMs,
+    int? inputEndMs,
   }) => exportVideoClipViaFfmpeg(
     inputPath: inputPath,
-    startMs: startMs,
-    endMs: endMs,
+    startMs: inputStartMs ?? startMs,
+    endMs: inputEndMs ?? endMs,
     outputPath: outputPath,
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
@@ -345,6 +372,122 @@ extension _VideoClipExport on _VideoFushiPageState {
     // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
     videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
   );
+
+  /// 片段导出的「源身份」：起点与终点必须落在同一个源上。本机 = 文件路径；互联远端 =
+  /// `host 视频 id + host 集下标`（[_remoteHostVideoTarget]）；其它远端（媒体服务器 /
+  /// 在线源 / 直链，没有 host 端裁切）与无源 → null，入口据此要求先下载到本机。
+  String? _clipExportSourceKey() {
+    if (!_isRemote) return _currentVideoPath;
+    final (InterconnectSyncBackend, String, int)? target =
+        _remoteHostVideoTarget();
+    if (target == null) return null;
+    final (_, String id, int episode) = target;
+    return 'interconnect:$id#$episode';
+  }
+
+  /// 互联 host 是否支持片段原料端点；不支持 / 探测失败时当场给出原因并返回 false。
+  Future<bool> _remoteHostSupportsClipExport() async {
+    final (InterconnectSyncBackend, String, int)? target =
+        _remoteHostVideoTarget();
+    if (target == null) return false;
+    try {
+      if (await target.$1.hostSupportsVideoClipExport()) return true;
+      if (mounted) {
+        _showOsd(
+          t.video_clip_export_host_outdated,
+          severity: ToastSeverity.warning,
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'VideoClipExport.remoteCapability',
+        e,
+        stack,
+      );
+      if (mounted) {
+        _showOsd(
+          t.video_clip_export_failed(
+            reason: t.video_clip_export_remote_source_failed,
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+    }
+    return false;
+  }
+
+  /// 互联远端片段导出（反馈 6nBmSBj_2W）：请 host 在本地逐帧精确裁出 `[startMs,endMs)`
+  /// 的无字幕原料段（[InterconnectSyncBackend.getRemoteVideoClip]），再交给与本机导出
+  /// **同一个** [_exportClipFile]——字幕用屏幕上这份 cue（host 下发的 ASS / 外挂 / 内嵌
+  /// 轨都已在播放器内存里，含用户调轴与字幕外观）按播放轴挑选、在原料段的 `0..时长`
+  /// 上烧录。原料段已只含所选音轨，本机这一步不再选轨。临时原料用完即删。
+  Future<VideoClipExportResult> _exportRemoteClipFile({
+    required VideoPlayerController controller,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    required int? audioStreamIndex,
+    required int? audioStreamCount,
+  }) async {
+    final (InterconnectSyncBackend, String, int)? target =
+        _remoteHostVideoTarget();
+    if (target == null) {
+      return const VideoClipExportResult.failure(
+        VideoClipExportFailure.inputMissing,
+      );
+    }
+    final (InterconnectSyncBackend backend, String id, int episode) = target;
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'fushi_remote_clip',
+    );
+    try {
+      final File source = File(p.join(tmp.path, 'source.mp4'));
+      try {
+        await backend.getRemoteVideoClip(
+          id,
+          source,
+          startMs: startMs,
+          endMs: endMs,
+          episodeIndex: episode,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+        );
+      } on RemoteVideoClipUnsupported {
+        return VideoClipExportResult.failure(
+          VideoClipExportFailure.remoteSourceFailed,
+          detail: t.video_clip_export_host_outdated,
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance.log('VideoClipExport.remoteSource', e, stack);
+        return VideoClipExportResult.failure(
+          VideoClipExportFailure.remoteSourceFailed,
+          detail: '$e',
+        );
+      }
+      if (!source.existsSync() || source.lengthSync() == 0) {
+        return const VideoClipExportResult.failure(
+          VideoClipExportFailure.remoteSourceFailed,
+        );
+      }
+      return await _exportClipFile(
+        controller: controller,
+        inputPath: source.path,
+        startMs: startMs,
+        endMs: endMs,
+        inputStartMs: 0,
+        inputEndMs: endMs - startMs,
+        outputPath: outputPath,
+        audioStreamIndex: null,
+        audioStreamCount: null,
+      );
+    } finally {
+      try {
+        await tmp.delete(recursive: true);
+      } catch (_) {
+        // best-effort：临时原料清理失败不影响导出结果。
+      }
+    }
+  }
 
   void _clearClipExportState() {
     _clipExportGeneration++;
@@ -424,6 +567,8 @@ extension _VideoClipExport on _VideoFushiPageState {
         return t.video_clip_export_ffmpeg_failed;
       case VideoClipExportFailure.outputMissing:
         return t.video_clip_export_output_missing;
+      case VideoClipExportFailure.remoteSourceFailed:
+        return t.video_clip_export_remote_source_failed;
       case null:
         return t.video_clip_export_ffmpeg_failed;
     }

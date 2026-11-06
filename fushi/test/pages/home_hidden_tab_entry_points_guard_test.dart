@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 「功能模块」把「下载」/「查词」tab 关掉后，`_selectTab` 会拒绝切到隐藏 tab
 /// （`if (!_activeTabs().contains(tab)) return;`）。这条守卫钉住**所有指向这两个

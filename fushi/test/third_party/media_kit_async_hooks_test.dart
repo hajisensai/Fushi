@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:media_kit/media_kit.dart';
 
 /// BUG-3507 收尾：media_kit 补丁把 `on_load` / `on_unload` 钩子体与

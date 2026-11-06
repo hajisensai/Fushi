@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-070）：有声书拖动倍速在桌面端（media_kit / libmpv）闪退。
 ///

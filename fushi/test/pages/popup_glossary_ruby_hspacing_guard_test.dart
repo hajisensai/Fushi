@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-345 / TODO-620: in the dictionary popup, glossary bodies that carry
 // per-character furigana (明鏡-style 逐字 ruby, e.g. 顔(かお)を洗(あら)う…) rendered

@@ -2606,6 +2606,10 @@ struct TextLaneWrite {
   uint32_t byte_len = 0;
   const char* hook_name = nullptr;
   const wchar_t* hook_code = nullptr;
+  // 0 = 用写入时刻。精确文本源若能证明「这一行开始出现在屏幕上」早于发布时刻（SGRE
+  // 打字机：整句显示完才发布，但语音与首个字形同时开始，BUG-4206），可以填首字形
+  // 时刻；必须与 GetTickCount64 同一时钟，且不得晚于写入时刻。
+  uint64_t timestamp_ms = 0;
 };
 
 // 把一条文本事件写进 [thread_id] 自己那条道。返回全局发布序（0 = 没写成：道满/参数非法）。
@@ -2676,7 +2680,11 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
   if (byte_len > max_bytes) byte_len = max_bytes;
   if (byte_len != 0) memcpy(slot + sizeof(TextSlot), write.text, byte_len);
   ts->seq = global_seq;
-  ts->timestamp_ms = GetTickCount64();
+  const uint64_t committed_ms = GetTickCount64();
+  ts->timestamp_ms =
+      write.timestamp_ms != 0 && write.timestamp_ms <= committed_ms
+          ? write.timestamp_ms
+          : committed_ms;
   ts->byte_len = byte_len;
   ts->is_utf8 = write.is_utf8;
   ts->thread_id = write.thread_id;
@@ -2702,7 +2710,7 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
     ts->hook_code[n] = L'\0';
     ts->hook_code_len = static_cast<uint32_t>(n);
   }
-  lane->last_write_ms = ts->timestamp_ms;
+  lane->last_write_ms = committed_ms;
   // 完成标记，**最后**写：Interlocked 是全栅栏（前面的 payload 写对 reader 必先可见）
   // 且 64 位不可撕裂（x86 上普通写会被拆成两次 32 位写）。与预览槽 seq 同一套纪律。
   AtomicStorePreview64(&ts->lane_seq, lane_seq);

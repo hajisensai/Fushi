@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
@@ -102,7 +104,10 @@ void main() {
     fail('never found $finder');
   }
 
-  Future<_TestAppModel> pumpDetail(WidgetTester tester) async {
+  Future<_TestAppModel> pumpDetail(
+    WidgetTester tester, {
+    LnReaderManager? withManager,
+  }) async {
     tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -116,8 +121,8 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: LnReaderNovelDetailPage(
-              manager: manager,
-              plugin: manager.installed.single,
+              manager: withManager ?? manager,
+              plugin: (withManager ?? manager).installed.single,
               item: item,
               imageHeaders: const <String, String>{},
             ),
@@ -127,6 +132,55 @@ void main() {
     );
     return appModel;
   }
+
+  // 审查（PR #2986）：作品页的登录入口（菜单常驻 + 加载失败时错误区）原先没有测试。
+  group('作品页登录入口', () {
+    const ValueKey<String> menuLogin = ValueKey<String>('novel_detail_login');
+    const ValueKey<String> errorLogin = ValueKey<String>(
+      'novel_source_login_syosetu',
+    );
+
+    testWidgets('能登录的源（有 jar）：菜单常驻「登录」，取不到作品时错误旁也给，且不被挤偏', (
+      WidgetTester tester,
+    ) async {
+      runtime.novelError = Exception('HTTP 401');
+      late LnReaderManager loginManager;
+      await tester.runAsync(() async {
+        loginManager = LnReaderManager(
+          rootDirectory: Directory(p.join(root.path, 'lnreader')),
+          runtime: runtime,
+          httpClientFactory: HttpClient.new,
+          legacyBuiltinStoreUrl: builtin,
+          cloudflare: LnReaderCloudflare(
+            MangaCookieJar(File(p.join(root.path, 'novel-cookies.json'))),
+          ),
+        );
+        await loginManager.initialise();
+        await pumpDetail(tester, withManager: loginManager);
+        await pumpUntil(tester, find.byKey(errorLogin));
+      });
+      addTearDown(loginManager.dispose);
+      expect(find.byKey(menuLogin), findsOneWidget);
+      final Finder wrap = find
+          .ancestor(of: find.byKey(errorLogin), matching: find.byType(Wrap))
+          .first;
+      expect(
+        tester.getSize(wrap).width,
+        tester.getSize(find.byKey(errorLogin)).width,
+        reason: '没显示的 Cloudflare 按钮不该留下 spacing 空隙',
+      );
+    });
+
+    testWidgets('没有 jar 的 manager：两处都不给登录', (WidgetTester tester) async {
+      runtime.novelError = Exception('HTTP 401');
+      await tester.runAsync(() async {
+        await pumpDetail(tester);
+        await pumpUntil(tester, find.text(t.retry));
+      });
+      expect(find.byKey(menuLogin), findsNothing);
+      expect(find.byKey(errorLogin), findsNothing);
+    });
+  });
 
   const ValueKey<String> addKey = ValueKey<String>('novel_detail_library_add');
   const ValueKey<String> removeKey = ValueKey<String>(

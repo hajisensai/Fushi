@@ -33,9 +33,11 @@ import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
+import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
+import 'package:fushi_server/src/admin/admin_backups.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
@@ -112,11 +114,18 @@ class AdminApi {
     }
   }
 
+  /// 整机备份端点（`/api/admin/backups*`，见 admin_backups.dart）。
+  late final AdminBackups backups = AdminBackups(ctx);
+
   Future<shelf.Response> _route(
     String method,
     String path,
     shelf.Request request,
   ) async {
+    if (path.startsWith(kAdminBackupsPath)) {
+      final shelf.Response? r = await backups.route(method, path, request);
+      if (r != null) return r;
+    }
     switch ((method, path)) {
       case ('GET', '/api/admin/status'):
         return _status();
@@ -130,6 +139,18 @@ class AdminApi {
         );
       case ('GET', '/api/admin/pairing'):
         return _pairing();
+      case ('PUT', _)
+          when path.startsWith('/api/admin/pairing/peers/') &&
+              path.endsWith('/owner'):
+        return _setOwnerDevice(
+          Uri.decodeComponent(
+            path.substring(
+              '/api/admin/pairing/peers/'.length,
+              path.length - '/owner'.length,
+            ),
+          ),
+          await _body(request),
+        );
       case ('DELETE', _) when path.startsWith('/api/admin/pairing/peers/'):
         return _revokePeer(
           Uri.decodeComponent(
@@ -513,10 +534,23 @@ class AdminApi {
 
   // ── 配对 ─────────────────────────────────────────────────────────────
 
+  InterconnectOwnerDeviceStore get _ownerDevices =>
+      InterconnectOwnerDeviceStore(ctx.db);
+
   Future<shelf.Response> _pairing() async {
     final PendingPairing? pending = ctx.host.pendingPairing;
     final List<FushiPairedPeerRow> peers = await ctx.db.getPairedPeers();
+    final Set<String> owners = await _ownerDevices.ownerDevicePeerIds();
+    final Map<String, String> deviceKeys = await _ownerDevices
+        .deviceKeyFingerprints();
     return _json(<String, Object?>{
+      // 「我的设备」跟随本机 Fushi 账户自动登录：`reachable` = 对端此刻能不能用这条端点
+      // （总闸开着且 host 跑在 TLS 上；端点在明文下一律 403）。
+      'leaderboardLink': <String, Object?>{
+        'enabled': ctx.config.leaderboardLink,
+        'tls': ctx.config.tls,
+        'reachable': ctx.config.leaderboardLink && ctx.config.tls,
+      },
       'pending': pending == null
           ? null
           : <String, Object?>{
@@ -532,13 +566,41 @@ class AdminApi {
             'deviceName': peer.deviceName,
             'lastSeenIp': peer.lastSeenIp,
             'pairedAtMs': peer.pairedAtMs,
+            // 只有配对时证明过设备钥匙的 peer 能被标成「我的设备」。
+            'deviceKeyVerified': deviceKeys.containsKey(peer.peerId),
+            'ownerDevice':
+                owners.contains(peer.peerId) &&
+                deviceKeys.containsKey(peer.peerId),
           },
       ],
     });
   }
 
+  /// 标记 / 取消「我的设备」（无头配对不授予，只能在这里手动标）。没证明过设备钥匙的
+  /// peer 标不上：409 `device_key_unverified`（要让它重新配对一次）。
+  Future<shelf.Response> _setOwnerDevice(
+    String peerId,
+    Map<String, dynamic> body,
+  ) async {
+    final Object? owner = body['owner'];
+    if (owner is! bool) throw const FormatException('owner must be a boolean');
+    final bool paired = (await ctx.db.getPairedPeers()).any(
+      (FushiPairedPeerRow r) => r.peerId == peerId,
+    );
+    if (!paired) return _err(404, 'peer $peerId not found');
+    final bool result = await _ownerDevices.setOwnerDevicePeer(peerId, owner);
+    if (owner && !result) {
+      return _json(<String, Object?>{
+        'error': '该设备配对时没有证明设备钥匙（旧版客户端），不能标为「我的设备」；升级客户端后重新配对',
+        'reason': 'device_key_unverified',
+      }, status: 409);
+    }
+    return _json(<String, Object?>{'peerId': peerId, 'ownerDevice': result});
+  }
+
   Future<shelf.Response> _revokePeer(String peerId) async {
     final int n = await ctx.db.revokePairedPeer(peerId);
+    await _ownerDevices.forgetPeer(peerId);
     ctx.host.invalidatePeerTokens();
     return _json(<String, Object?>{'ok': n > 0});
   }
@@ -561,8 +623,8 @@ class AdminApi {
     final String path = (body['path'] ?? '').toString().trim();
     if (path.isEmpty) throw const FormatException('path required');
     final String kind = (body['kind'] ?? 'video').toString();
-    if (kind != 'video' && kind != 'book') {
-      throw const FormatException('kind must be video or book');
+    if (!kServerLibraryRootKinds.contains(kind)) {
+      throw FormatException(unsupportedLibraryKindMessage(kind));
     }
     final String id = (body['id'] ?? '').toString().trim().isEmpty
         ? 'lib${DateTime.now().millisecondsSinceEpoch}'
@@ -639,6 +701,23 @@ class AdminApi {
 
   /// 按库根 kind 分派的 force 对账（见 [_removeLibrary]）。
   Future<LibraryPruneReport> _purgeRoot(LibraryRootConfig library) async {
+    if (library.kind == kAudiobookSourceMediaKind) {
+      final SourceLibraryRow? source =
+          await LibraryScanner.findLocalSourceByMediaKind(
+            ctx.db,
+            library.path,
+            kAudiobookSourceMediaKind,
+          );
+      if (source == null) {
+        return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
+      }
+      return LibraryScanner.pruneAudiobookSource(
+        db: ctx.db,
+        source: source,
+        root: Directory(library.path),
+        force: true,
+      );
+    }
     final SourceLibraryKind? kind = SourceLibraryKind.tryParse(library.kind);
     switch (kind) {
       case SourceLibraryKind.video:
@@ -671,7 +750,7 @@ class AdminApi {
       case SourceLibraryKind.music:
       case null:
         throw FormatException(
-          'library "${library.id}" has unsupported kind=${library.kind}',
+          'library "${library.id}": ${unsupportedLibraryKindMessage(library.kind)}',
         );
     }
   }
@@ -1286,6 +1365,7 @@ class AdminApi {
     'scanScrape': ctx.config.scanScrape,
     'profileTransfer': ctx.config.profileTransfer,
     'remoteUpdate': ctx.config.remoteUpdate,
+    'leaderboardLink': ctx.config.leaderboardLink,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
     'ffmpeg': ctx.config.ffmpegPath,
@@ -1360,6 +1440,7 @@ class AdminApi {
       'scanScrape',
       'profileTransfer',
       'remoteUpdate',
+      'leaderboardLink',
     ]) {
       if (body[key] != null && body[key] is! bool) {
         throw FormatException('$key must be a boolean');
@@ -1412,6 +1493,7 @@ class AdminApi {
       scanScrape: body['scanScrape'] as bool?,
       profileTransfer: body['profileTransfer'] as bool?,
       remoteUpdate: body['remoteUpdate'] as bool?,
+      leaderboardLink: body['leaderboardLink'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty
           ? null

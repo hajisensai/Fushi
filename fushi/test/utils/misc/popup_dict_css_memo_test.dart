@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 查词弹窗性能：`assets/popup/dict-media.js` 的 `constructDictCss` 现在是**带 memo
 /// 的入口**，真正的扫描实现是 `constructDictCssUncached`。

@@ -17,7 +17,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 头文件里一个导出函数的签名摘要。
 class _CExport {

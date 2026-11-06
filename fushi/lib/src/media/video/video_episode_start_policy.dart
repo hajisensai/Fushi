@@ -12,11 +12,20 @@ enum EpisodeStartIntent {
 const double kEpisodeStartNearEndProgress = 0.9;
 const int kEpisodeStartNearEndRemainingMs = 3000;
 
+/// 纯音频（音乐库逐曲续播，`music_resume.dart`）的片尾区比例。视频的 90% 是给片尾曲 /
+/// 预告留的；音频没有这段，而广播剧 CD 单轨常有 60 分钟，90% 意味着停在最后 6 分钟
+/// 再打开就从头放。音频只把最后 2% 当「听完」（10 分钟曲目是最后 12 秒），剩余
+/// [kEpisodeStartNearEndRemainingMs] 的下限两边共用。
+const double kAudioStartNearEndProgress = 0.98;
+
+/// 按意图定起点（毫秒）。[nearEndProgress]：片尾区比例，视频用缺省值，纯音频传
+/// [kAudioStartNearEndProgress]——意图分类与「到片尾就从头」的判据两边是同一套。
 int resolveEpisodeStart(
   EpisodeStartIntent intent,
   int savedPositionMs,
-  int? durationMs,
-) {
+  int? durationMs, {
+  double nearEndProgress = kEpisodeStartNearEndProgress,
+}) {
   final int savedMs = savedPositionMs < 0 ? 0 : savedPositionMs;
 
   switch (intent) {
@@ -28,7 +37,11 @@ int resolveEpisodeStart(
     case EpisodeStartIntent.initialOpen:
     case EpisodeStartIntent.manualNext:
     case EpisodeStartIntent.listSelect:
-      if (isEpisodePositionNearEnd(savedMs: savedMs, durationMs: durationMs)) {
+      if (isEpisodePositionNearEnd(
+        savedMs: savedMs,
+        durationMs: durationMs,
+        nearEndProgress: nearEndProgress,
+      )) {
         return 0;
       }
       return savedMs;
@@ -39,16 +52,18 @@ int resolveEpisodeStart(
 /// [kEpisodeStartNearEndRemainingMs]）：打开时从头放、合集续播视作「这一集已经
 /// 看完了」的同一个判据（BUG-3491：续播三层的「选条目」与「定起点」共用它，
 /// 不能一层说「停在这集」另一层却从头放）。时长未知 / 断点为 0 → false。
+/// [nearEndProgress] 见 [resolveEpisodeStart]。
 bool isEpisodePositionNearEnd({
   required int savedMs,
   required int? durationMs,
+  double nearEndProgress = kEpisodeStartNearEndProgress,
 }) {
   if (savedMs <= 0 || durationMs == null || durationMs <= 0) {
     return false;
   }
   final double progress = savedMs / durationMs;
   final int remainingMs = durationMs - savedMs;
-  return progress >= kEpisodeStartNearEndProgress ||
+  return progress >= nearEndProgress ||
       remainingMs <= kEpisodeStartNearEndRemainingMs;
 }
 

@@ -4,7 +4,7 @@
 // - isHlsStreamPlaylist：HLS media / master 是单条流，频道列表不是；
 // - parseM3u8：标题改走引号感知解析后，带属性的 EXTINF 不再切错位；
 // - strm_file：目标行、分类、路径判据；封面回填不碰 rtsp / .strm。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/strm_file.dart';

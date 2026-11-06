@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
@@ -54,7 +54,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 144);
+    expect(upgraded.schemaVersion, 146);
 
     // 升级前就有的 Profile 与两类既有绑定原样还在（Never break userspace）。
     final List<ProfileRow> profiles = await upgraded.getAllProfiles();

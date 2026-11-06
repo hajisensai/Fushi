@@ -10,6 +10,14 @@
 /// 并在来源扫描索引（引擎 `BookSourceIndex`）里记下「源相对路径 → 书 uid」——书 / 漫画
 /// 导入会把正文拷进 `fushi_books/`，行里记不住源文件，没有这张索引就判不出源文件被删。
 ///
+/// 有声书根（kind=audiobook）：每个「含音频的目录」（`CD1` / `Disc 2` 这类分碟子目录并进
+/// 上一层）或库根下散放的单个音频文件算一本，目录里可选的 EPUB / 字幕一起交给引擎同一套
+/// 判据（`classifyDiscoveryDirectory`，与代下载入库同源）：EPUB + 字幕 + 音频走对齐落库
+/// （`alignAndPersistAudiobook`），字幕 + 音频成独立字幕书（`importStandaloneSubtitleBook`），
+/// 只有音频的记进 [ScanSummary.audiobooksNeedSubtitle]——服务端扫描不自动转录（原因见
+/// `docs/agent/server-parity-gaps.md`）。音频是**引用导入**（留在库根、库里记原路径），
+/// 不像代下载那样拷进数据目录。正文行同样带 `sourceId`、记进来源扫描索引，对账与书根同一套。
+///
 /// 视频根与 app 的本地视频来源同构：每个根登记一行 `media_sources`（本地、递归），
 /// 入库行带 `sourceId`，入库后按引擎 `VideoFolderGroupCoordinator` 把分集归成作品
 /// 合集、`VideoSourceMetadataIndexer` 吃进 NFO。刮削计划器（`VideoSourceWorkPlanner`）
@@ -20,6 +28,7 @@ library;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart'
@@ -28,8 +37,16 @@ import 'package:fushi_engine/media/collections/library_organize/library_organize
     show OrganizeTrigger;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
+import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
+    show audiobookTitleForAudioPaths;
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_archive_probe.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
@@ -50,6 +67,11 @@ import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:path/path.dart' as p;
 
+/// 有声书根登记在 `media_sources.mediaKind` 里的串。共享枚举 `SourceLibraryKind` 没有
+/// 有声书（加一个值要改 app 里所有穷举 switch），而这一行只有服务端自己读，所以按原样
+/// 串落库；app 侧 `SourceLibraryKind.tryParse` 对它返回 null，与其它未知种类同样跳过。
+const String kAudiobookSourceMediaKind = 'audiobook';
+
 class ScanSummary {
   int videosAdded = 0;
   int videosSkipped = 0;
@@ -57,6 +79,11 @@ class ScanSummary {
   int booksSkipped = 0;
   int mangaAdded = 0;
   int mangaSkipped = 0;
+  int audiobooksAdded = 0;
+  int audiobooksSkipped = 0;
+
+  /// 有声书根里只有音频、没有字幕的书数（没导入：服务端扫描不自动转录）。
+  int audiobooksNeedSubtitle = 0;
 
   /// 扫描对账回收的失效视频条目数（行还在、文件已消失）。
   int videosPruned = 0;
@@ -64,6 +91,7 @@ class ScanSummary {
   /// 扫描对账回收的失效书 / 漫画卷数（源文件已消失）。
   int booksPruned = 0;
   int mangaPruned = 0;
+  int audiobooksPruned = 0;
 
   /// 被护栏（库根不存在 / 失效占比过高）或刮削租约拦下的库根数。
   int pruneSkipped = 0;
@@ -76,7 +104,11 @@ class ScanSummary {
   String toString() =>
       'videos +$videosAdded (skipped $videosSkipped, pruned $videosPruned), '
       'books +$booksAdded (skipped $booksSkipped${booksPruned > 0 ? ', pruned $booksPruned' : ''}), '
-      'manga +$mangaAdded (skipped $mangaSkipped${mangaPruned > 0 ? ', pruned $mangaPruned' : ''}), errors ${errors.length}'
+      'manga +$mangaAdded (skipped $mangaSkipped${mangaPruned > 0 ? ', pruned $mangaPruned' : ''}), '
+      '${audiobooksAdded + audiobooksSkipped + audiobooksPruned + audiobooksNeedSubtitle > 0 ? 'audiobooks +$audiobooksAdded (skipped $audiobooksSkipped'
+                '${audiobooksPruned > 0 ? ', pruned $audiobooksPruned' : ''}'
+                '${audiobooksNeedSubtitle > 0 ? ', need subtitle $audiobooksNeedSubtitle' : ''}), ' : ''}'
+      'errors ${errors.length}'
       '${pruneSkipped > 0 ? ', prune-skipped $pruneSkipped' : ''}';
 }
 
@@ -179,9 +211,15 @@ class LibraryScanner {
             );
           }
           await _groupBookSeries(summary);
+        case kAudiobookSourceMediaKind:
+          final _BookScan scan = await _scanAudiobooks(dir, root, summary);
+          if (pruneMissing) {
+            await _pruneAudiobookRoot(dir, root.id, scan, summary);
+          }
         default:
+          // 配置加载（`LibraryRootConfig.fromYaml`）已拒绝未知 kind；这里只防手搓的配置对象。
           summary.errors.add(
-            '${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）',
+            '${root.id}: ${unsupportedLibraryKindMessage(root.kind)}',
           );
       }
     }
@@ -237,7 +275,7 @@ class LibraryScanner {
     final SourceLibraryRow source = await _ensureSource(
       dir,
       root,
-      SourceLibraryKind.video,
+      SourceLibraryKind.video.dbValue,
     );
     final List<String> createdPaths = <String>[];
     final List<File> files = <File>[];
@@ -329,10 +367,18 @@ class LibraryScanner {
     FushiDatabase db,
     String path,
     SourceLibraryKind kind,
+  ) => findLocalSourceByMediaKind(db, path, kind.dbValue);
+
+  /// 同 [findLocalSource]，按 `media_sources.mediaKind` 落库串查（有声书根是
+  /// [kAudiobookSourceMediaKind]，不在共享枚举里）。
+  static Future<SourceLibraryRow?> findLocalSourceByMediaKind(
+    FushiDatabase db,
+    String path,
+    String mediaKind,
   ) async {
     final String rootPath = p.normalize(Directory(path).absolute.path);
     for (final SourceLibraryRow row in await db.getMediaSourcesByKind(
-      kind.dbValue,
+      mediaKind,
     )) {
       if (row.transport == 'local' &&
           p.equals(p.normalize(row.rootPath), rootPath)) {
@@ -346,19 +392,19 @@ class LibraryScanner {
   Future<SourceLibraryRow> _ensureSource(
     Directory dir,
     LibraryRootConfig root,
-    SourceLibraryKind kind,
+    String mediaKind,
   ) async {
-    final SourceLibraryRow? existing = await findLocalSource(
+    final SourceLibraryRow? existing = await findLocalSourceByMediaKind(
       db,
       dir.path,
-      kind,
+      mediaKind,
     );
     if (existing != null) return existing;
     final String rootPath = p.normalize(dir.absolute.path);
     final int id = await db.insertMediaSource(
       MediaSourcesCompanion(
         label: Value(root.id),
-        mediaKind: Value(kind.dbValue),
+        mediaKind: Value(mediaKind),
         transport: const Value('local'),
         rootPath: Value(rootPath),
         recursive: const Value(true),
@@ -528,9 +574,9 @@ class LibraryScanner {
   Future<_BookScan> _beginBookScan(
     Directory dir,
     LibraryRootConfig root,
-    SourceLibraryKind kind,
+    String mediaKind,
   ) async {
-    final SourceLibraryRow source = await _ensureSource(dir, root, kind);
+    final SourceLibraryRow source = await _ensureSource(dir, root, mediaKind);
     final BookSourceIndex index = await BookSourceIndex.load(db, source.id);
     index.retainUids(<String>{
       for (final BookSourceRow r in await loadBookSourceRows(db))
@@ -575,7 +621,7 @@ class LibraryScanner {
     final _BookScan scan = await _beginBookScan(
       dir,
       root,
-      SourceLibraryKind.book,
+      SourceLibraryKind.book.dbValue,
     );
     final int addedBefore = summary.booksAdded;
     int untracked = 0;
@@ -629,7 +675,7 @@ class LibraryScanner {
     final _BookScan scan = await _beginBookScan(
       dir,
       root,
-      SourceLibraryKind.manga,
+      SourceLibraryKind.manga.dbValue,
     );
     final int addedBefore = summary.mangaAdded;
     int untracked = 0;
@@ -848,11 +894,369 @@ class LibraryScanner {
     return true;
   }
 
-  /// 视频根收录的文件：视频容器 + 纯音频（无画面的视频，见
-  /// [kVideoLibraryMediaExtensions]）。与对账枚举 `enumerateLocalVideoPaths`
-  /// 同一张表，否则收进来的音频会在下一次对账被当成「磁盘上已不存在」修剪掉。
+  /// 有声书根：按 [planAudiobookFolders] 逐本导入并记进来源索引（键 = 书目录 / 散放
+  /// 音频文件的相对路径）。索引里已有、书还在库的不再导入；同名书已在库（别的库根 /
+  /// 手动导入 / 代下载）一律跳过、不认领——换音频换字幕是有损操作，交互入口在客户端。
+  /// 单本失败只记错误，不中断整批。
+  Future<_BookScan> _scanAudiobooks(
+    Directory dir,
+    LibraryRootConfig root,
+    ScanSummary summary,
+  ) async {
+    final _BookScan scan = await _beginBookScan(
+      dir,
+      root,
+      kAudiobookSourceMediaKind,
+    );
+    final int addedBefore = summary.audiobooksAdded;
+    int untracked = 0;
+    final List<AudiobookFolder> folders = planAudiobookFolders(dir);
+    for (final AudiobookFolder folder in folders) {
+      final String rel = bookSourceRelPath(dir.path, folder.path);
+      scan.found.add(rel);
+      scan.present.add(rel);
+      if (scan.index.uidOf(rel) != null) {
+        summary.audiobooksSkipped++;
+        continue;
+      }
+      try {
+        final String? bookKey = await _importAudiobookFolder(
+          folder,
+          scan.source.id,
+          summary,
+        );
+        if (bookKey == null) continue;
+        final String? uid = await bookUidForKey(db, bookKey);
+        if (uid == null) {
+          // 字幕解析不出 cue 的独立字幕书没有正文行，认领不了，也就永远不会被对账删。
+          untracked++;
+        } else {
+          scan.index.put(rel, uid);
+        }
+        summary.audiobooksAdded++;
+      } catch (err, stack) {
+        summary.errors.add('${folder.path}: $err');
+        engineLog.log('LibraryScanner.audiobook', err, stack);
+      }
+    }
+    await _finishBookScan(
+      root.id,
+      scan,
+      summary.audiobooksAdded - addedBefore,
+      untracked,
+    );
+    return scan;
+  }
+
+  /// 导入一本有声书，返回正文 bookKey；没导入（只有音频 / 同名书已在库）返回 null 并记数。
+  Future<String?> _importAudiobookFolder(
+    AudiobookFolder folder,
+    int sourceId,
+    ScanSummary summary,
+  ) async {
+    final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
+      DiscoveryMediaKind.audiobook,
+      folder.files,
+      subtitleLangCode: subtitleLanguage,
+    );
+    switch (plan) {
+      case AlignAudiobookPlan():
+        final String bookKey;
+        try {
+          bookKey = await EpubImporter.importFromPath(
+            db: db,
+            filePath: plan.contentPath,
+            fileName: p.basename(plan.contentPath),
+            policy: const DuplicatePolicy.skip(),
+            sourceId: sourceId,
+          );
+        } on DuplicateImportCancelledException {
+          summary.audiobooksSkipped++;
+          return null;
+        }
+        try {
+          final EpubBookRow? row = await db.getEpubBook(bookKey);
+          await alignAndPersistAudiobook(
+            db: db,
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            bookKey: bookKey,
+            title: row?.title ?? folder.title,
+            author: row?.author,
+            subtitlePath: plan.subtitlePath,
+            audioPaths: plan.audioPaths,
+            copyAudio: false,
+          );
+        } catch (_) {
+          // 对齐没落成：撤掉刚导入的正文，别留一本没有音频的「有声书」，下轮扫描再试。
+          await _rollBackBook(bookKey);
+          rethrow;
+        }
+        return bookKey;
+      case SubtitleAudiobookPlan():
+        final SrtBook book;
+        try {
+          book = await importStandaloneSubtitleBook(
+            db: db,
+            repo: SrtBookRepository(db),
+            title: folder.title,
+            subtitlePath: plan.subtitlePath,
+            audioPaths: plan.audioPaths,
+            copyAudio: false,
+            policy: const DuplicatePolicy.skip(),
+          );
+        } on DuplicateImportCancelledException {
+          summary.audiobooksSkipped++;
+          return null;
+        }
+        if (book.bookKey.isEmpty) return '';
+        await (db.update(db.epubBooks)
+              ..where(($EpubBooksTable t) => t.bookKey.equals(book.bookKey)))
+            .write(EpubBooksCompanion(sourceId: Value<int?>(sourceId)));
+        return book.bookKey;
+      case TranscribeAudiobookPlan():
+        summary.audiobooksNeedSubtitle++;
+        engineLog.logDiagnostic(
+          'LibraryScanner.audiobook',
+          '${folder.path}: audio only, no subtitle; not imported',
+        );
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _rollBackBook(String bookKey) async {
+    final EpubBookRow? row = await db.getEpubBook(bookKey);
+    await db.deleteEpubBook(bookKey);
+    await AudiobookStorage.deletePersistDir(bookKey);
+    final String extractDir = row?.extractDir ?? '';
+    if (extractDir.isNotEmpty &&
+        p.isWithin(await EpubStorage.baseDirectory(), extractDir)) {
+      await EpubStorage.deleteBookDir(extractDir);
+    }
+  }
+
+  Future<void> _pruneAudiobookRoot(
+    Directory dir,
+    String rootId,
+    _BookScan scan,
+    ScanSummary summary,
+  ) async {
+    final LibraryPruneReport report = await pruneAudiobookSource(
+      db: db,
+      source: scan.source,
+      root: dir,
+      index: scan.index,
+      foundRelPaths: scan.found,
+      baselineBookUids: scan.baselineUids,
+      threshold: pruneThreshold,
+      force: pruneForce,
+    );
+    if (report.skipped) {
+      summary.pruneSkipped++;
+      summary.pruneNotes.add('$rootId: ${report.skipReason}');
+      engineLog.logDiagnostic(
+        'LibraryScanner.prune',
+        '$rootId: skipped (${report.skipReason})',
+      );
+      return;
+    }
+    summary.audiobooksPruned += report.deleted;
+    if (report.unreachable > 0) {
+      summary.pruneNotes.add(
+        '$rootId: kept ${report.unreachable} missing audiobook(s) under an '
+        'empty or unreadable folder (unmounted disk?)',
+      );
+    }
+    for (final String e in report.errors) {
+      summary.errors.add('$rootId: prune: $e');
+      engineLog.logDiagnostic('LibraryScanner.prune', '$rootId: $e');
+    }
+  }
+
+  /// 有声书根的对账：书根同一套 `pruneMissingBookRows`（源 = 书目录 / 散放音频文件），
+  /// 之后回收被删书在 `<documents>/audiobooks/` 下的持久目录（只放字幕副本；音频是
+  /// 引用导入，留在库根原处，不碰）。扫描对账与 admin「移除并清理」共用。
+  ///
+  /// [foundRelPaths] 不给就按 [planAudiobookFolders] 现场枚举（库根不在 = 空集）。
+  static Future<LibraryPruneReport> pruneAudiobookSource({
+    required FushiDatabase db,
+    required SourceLibraryRow source,
+    required Directory root,
+    BookSourceIndex? index,
+    Set<String>? foundRelPaths,
+    Set<String>? baselineBookUids,
+    LibraryPruneThreshold threshold = const LibraryPruneThreshold(),
+    bool force = false,
+  }) async {
+    final Set<String> found =
+        foundRelPaths ??
+        (root.existsSync()
+            ? <String>{
+                for (final AudiobookFolder f in planAudiobookFolders(root))
+                  bookSourceRelPath(root.path, f.path),
+              }
+            : <String>{});
+    // 对账前记下本来源的书各自的持久目录键（对齐书 = bookKey，独立字幕书 = SrtBook uid）。
+    final Map<String, List<String>> persistKeys = <String, List<String>>{};
+    for (final BookSourceRow row in await loadBookSourceRows(db)) {
+      if (row.sourceId != source.id) continue;
+      final SrtBookRow? srt = await db.getSrtBookByBookKey(row.bookKey);
+      persistKeys[row.bookKey] = <String>[
+        row.bookKey,
+        if (srt != null && srt.uid.isNotEmpty) srt.uid,
+      ];
+    }
+    final LibraryPruneReport report = await pruneMissingBookRows(
+      db: db,
+      sourceId: source.id,
+      root: root,
+      // 只影响护栏文案（源集合已由 found 给出，不会再按 EPUB 枚举）。
+      kind: SourceLibraryKind.book,
+      index: index,
+      foundRelPaths: found,
+      baselineBookUids: baselineBookUids,
+      threshold: threshold,
+      force: force,
+    );
+    if (report.deleted > 0) {
+      for (final MapEntry<String, List<String>> e in persistKeys.entries) {
+        if (await db.getEpubBook(e.key) != null) continue;
+        for (final String key in e.value) {
+          try {
+            await AudiobookStorage.deletePersistDir(key);
+          } catch (err, stack) {
+            engineLog.log('LibraryScanner.audiobookPrune', err, stack);
+          }
+        }
+      }
+    }
+    return report;
+  }
+
+  /// 视频根收录的文件：只收视频容器（[kVideoExtensions]）。纯音频不进视频库
+  /// （反馈 QAondMh4M5，判据见 [isAudioOnlyMediaPath] 文档）；服务端暂无音乐库
+  /// （`server_config.dart`），视频根里的纯音频不入库。与对账枚举
+  /// `enumerateLocalVideoPaths` 同一张表。
   static bool _isVideo(String path) {
     final String ext = p.extension(path).toLowerCase();
-    return kVideoLibraryMediaExtensions.contains(ext);
+    return kVideoExtensions.contains(ext);
   }
+}
+
+/// 有声书根里的一本：[path] 是书目录（或库根下散放的单个音频文件），[files] 是交给
+/// `classifyDiscoveryDirectory` 的音频 + 可选 EPUB / 字幕（绝对路径）。
+class AudiobookFolder {
+  const AudiobookFolder({
+    required this.path,
+    required this.title,
+    required this.files,
+  });
+
+  final String path;
+  final String title;
+  final List<String> files;
+}
+
+/// 分碟子目录（`CD1` / `Disc 2` / `Disk_03` / `Part 1`）：并进上一层算同一本。
+final RegExp _kDiscFolderPattern = RegExp(
+  r'^(cd|disc|disk|part)[\s_\-]*\d+$',
+  caseSensitive: false,
+);
+
+/// 有声书文件名 / 目录名末尾的 `[ASIN]` 不是书名（与引擎 `audiobookTitleForAudioPaths` 同口径）。
+String _stripAsin(String raw) {
+  final String title = raw
+      .replaceFirst(RegExp(r'\s*\[[A-Z0-9]{10}\]$'), '')
+      .trim();
+  return title.isEmpty ? raw : title;
+}
+
+/// 把有声书根 [root] 划成一本本书（同步枚举、不跟链接、按路径排序）：
+/// - 直接含音频文件的目录算一本；目录名形如分碟（[_kDiscFolderPattern]）且不在库根
+///   正下方时并进上一层（`书名/CD1/01.mp3` + `书名/CD2/…` 是一本「书名」）；
+/// - 库根正下方散放的音频文件各算一本，同主名的 EPUB / 字幕跟它走；
+/// - 只收音频、EPUB 与字幕（[kDiscoverySubtitleExtensions]）——库根里的 `.txt`
+///   说明文件不能被当成正文。没有音频的目录不算书。
+List<AudiobookFolder> planAudiobookFolders(Directory root) {
+  final String rootPath = p.normalize(root.absolute.path);
+  bool isAudio(String path) => AudiobookStorage.audioExtensions.contains(
+    p.extension(path).toLowerCase(),
+  );
+  bool isSide(String path) {
+    final String ext = p.extension(path).toLowerCase();
+    return ext == '.epub' || kDiscoverySubtitleExtensions.contains(ext);
+  }
+
+  final List<String> files = <String>[
+    for (final FileSystemEntity e in root.absolute.listSync(
+      recursive: true,
+      followLinks: false,
+    ))
+      if (e is File && (isAudio(e.path) || isSide(e.path))) p.normalize(e.path),
+  ]..sort();
+  final Set<String> audioDirs = <String>{
+    for (final String f in files)
+      if (isAudio(f) && !p.equals(p.dirname(f), rootPath)) p.dirname(f),
+  };
+  // 分碟目录的上一层（不是分碟目录 / 就在库根正下方时为 null）。
+  String? discParentOf(String dir) {
+    final String parent = p.dirname(dir);
+    if (p.equals(parent, rootPath) ||
+        !_kDiscFolderPattern.hasMatch(p.basename(dir))) {
+      return null;
+    }
+    return parent;
+  }
+
+  final Set<String> unitDirs = <String>{
+    for (final String d in audioDirs) discParentOf(d) ?? d,
+  };
+  // 目录 → 它所属的书目录（null = 不属于任何一本）：书目录自己，或书目录下的分碟目录。
+  String? unitOf(String dir) {
+    if (unitDirs.contains(dir)) return dir;
+    final String? parent = discParentOf(dir);
+    return parent != null && unitDirs.contains(parent) ? parent : null;
+  }
+
+  final Map<String, List<String>> byUnit = <String, List<String>>{};
+  final List<String> looseAudio = <String>[];
+  for (final String f in files) {
+    final String dir = p.dirname(f);
+    if (p.equals(dir, rootPath)) {
+      if (isAudio(f)) looseAudio.add(f);
+      continue;
+    }
+    final String? unit = unitOf(dir);
+    if (unit != null) (byUnit[unit] ??= <String>[]).add(f);
+  }
+  final List<AudiobookFolder> out = <AudiobookFolder>[
+    for (final MapEntry<String, List<String>> e in byUnit.entries)
+      if (e.value.any(isAudio))
+        AudiobookFolder(
+          path: e.key,
+          title: _stripAsin(p.basename(e.key)),
+          files: e.value,
+        ),
+  ];
+  for (final String audio in looseAudio) {
+    final String stem = p.basenameWithoutExtension(audio);
+    out.add(
+      AudiobookFolder(
+        path: audio,
+        title: audiobookTitleForAudioPaths(<String>[audio]),
+        files: <String>[
+          audio,
+          for (final String f in files)
+            if (isSide(f) &&
+                p.equals(p.dirname(f), rootPath) &&
+                p.basenameWithoutExtension(f) == stem)
+              f,
+        ],
+      ),
+    );
+  }
+  out.sort((AudiobookFolder a, AudiobookFolder b) => a.path.compareTo(b.path));
+  return out;
 }

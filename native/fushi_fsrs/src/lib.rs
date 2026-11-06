@@ -51,7 +51,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
-pub const ABI_VERSION: i32 = 4;
+/// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
+pub const ABI_VERSION: i32 = 5;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
@@ -820,7 +821,7 @@ pub extern "C" fn ffsrs_history_states(
 }
 
 /// 一批卡片历史（列模式）的选取，布局见 [history::select_columns]。`ints` 长
-/// `n_logs × COLUMN_WORDS`，`offs` 长 `3·n_logs + 1`，`groups` 长 `n_groups + 1`。
+/// `n_logs × COLUMN_WORDS`，`offs` 长 `COLUMN_STRINGS·n_logs + 1`，`groups` 长 `n_groups + 1`。
 /// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
 #[no_mangle]
 pub extern "C" fn ffsrs_history_select(
@@ -847,7 +848,7 @@ pub extern "C" fn ffsrs_history_select(
             (
                 raw_slice(ints, n_logs * history::COLUMN_WORDS),
                 raw_slice(text, text_len),
-                raw_slice(offs, 3 * n_logs + 1),
+                raw_slice(offs, history::COLUMN_STRINGS * n_logs + 1),
                 raw_slice(groups, n_groups + 1),
             )
         };

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'

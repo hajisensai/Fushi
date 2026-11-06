@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-578 / TODO-1268 — 桌面悬浮字幕点词的程序化入口 [GlobalLookupController.lookupText]
 /// 必须在进入 `_lookupExternal` 之前 **await 一次 `hide(notify:false)` 前置复位**，与全局

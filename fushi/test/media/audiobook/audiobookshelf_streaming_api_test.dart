@@ -5,7 +5,7 @@
 // 响应形状取自 audiobooks.dev（ABS v2.37.1）的实测输出。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

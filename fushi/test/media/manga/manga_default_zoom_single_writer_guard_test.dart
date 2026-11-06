@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2782：「默认缩放」偏好（`manga_zoom_percent`）只能由设置项写。
 ///

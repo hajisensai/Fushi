@@ -17,9 +17,6 @@ const double _kSrsHomeContentMaxWidth = 1680;
 /// 内容宽于此值改三栏：热力图 / 未来 7 天单独成第三栏，不再压在牌组树下面。
 const double _kSrsHomeThreeColumnMin = 1320;
 
-/// 手机上热力图与未来 7 天两张小卡并排的最小内容宽度（更窄时上下排）。
-const double _kSrsHomeStatsSideBySideMin = 360;
-
 /// 顶层牌组徽章的 M3E 形状：按牌组在顶层里的位置轮流取，相邻行不撞形。
 final List<RoundedPolygon> _kSrsDeckBadgeShapes = <RoundedPolygon>[
   MaterialShapes.cookie9Sided,
@@ -1138,7 +1135,8 @@ class _SrsForecastCard extends StatelessWidget {
   }
 }
 
-/// 手机树下的两张小卡：热力图 + 未来 7 天，够宽时并排，否则上下排。
+/// 手机树下的两张小卡：热力图 + 未来 7 天，一律上下排（用户 2026-11-06：窄屏并排时
+/// 热力图只剩三个月、到期图横轴挤掉一半星期，两张都读不清）。
 class _SrsHomeStatsPair extends StatelessWidget {
   const _SrsHomeStatsPair({super.key, required this.stats});
 
@@ -1147,30 +1145,19 @@ class _SrsHomeStatsPair extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Widget heat = _SrsHeatmapCard(
-      key: const ValueKey<String>('srs-home-heatmap'),
-      stats: stats,
-    );
-    final Widget forecast = _SrsForecastCard(
-      key: const ValueKey<String>('srs-home-forecast'),
-      stats: stats,
-    );
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints box) =>
-          box.maxWidth >= _kSrsHomeStatsSideBySideMin
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                Expanded(child: heat),
-                Expanded(child: forecast),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[heat, forecast],
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap,
+      children: <Widget>[
+        _SrsHeatmapCard(
+          key: const ValueKey<String>('srs-home-heatmap'),
+          stats: stats,
+        ),
+        _SrsForecastCard(
+          key: const ValueKey<String>('srs-home-forecast'),
+          stats: stats,
+        ),
+      ],
     );
   }
 }

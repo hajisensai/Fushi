@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show GestureSettings;
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -23,6 +25,7 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -52,6 +55,7 @@ class _Backend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async => log.add('open:${current.trackUid}');
 
   @override
@@ -147,6 +151,7 @@ class _LyricsAppModel extends AppModel {
   late final MusicSession _session = MusicSession(
     engine: _engine,
     audio: audioCtrl,
+    hasSystemMediaSession: platformServices.hasSystemMediaSession,
     audiobook: audiobookSession,
     database: () => db,
     showMediaNotification: () => false,
@@ -166,6 +171,7 @@ class _LyricsAppModel extends AppModel {
     service: _lyrics,
     desktop: _NoDesktop(),
     desktopEnabled: () => false,
+    desktopSpan: () => (before: 0, after: 1),
     mediaSessionEnabled: () => false,
     sessionOwnerChanged: audioCtrl.sessionOwner,
     musicOwnsSession: () => true,
@@ -299,7 +305,30 @@ void main() {
     await app.musicSession.engine.pause();
   });
 
+  // 系统媒体会话判据来自平台服务（假服务 = 没有）：setUp 里已经放过一首，也不该去起
+  // audio_service——macOS 宿主上它会连带调 path_provider、在测试绑定里抛
+  // MissingPluginException。宿主平台无关：判据只看注入的平台服务。
+  test(
+    'playing music under fake platform services never starts audio_service',
+    () {
+      expect(app.platformServices.hasSystemMediaSession, isFalse);
+      expect(app.audioCtrl.audioHandler, isNull);
+    },
+  );
+
+  final bool Function() asrGate = musicSubtitleAsrSupported;
+
+  Future<void> settle(WidgetTester tester, {int rounds = 10}) async {
+    for (int i = 0; i < rounds; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
+
   tearDown(() async {
+    musicSubtitleAsrSupported = asrGate;
     musicLyricsClipExtractor = ffmpegClip;
     await db.close();
     dir.deleteSync(recursive: true);
@@ -519,6 +548,141 @@ void main() {
     expect(mined.single.durationMs, 4000);
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 音乐库生成字幕（Feedback QAondMh4M5）：没歌词的本机曲目就地给「生成日语字幕」，入口按
+  // 本机转录能力（isAsrSupported）门控——不支持的平台不出入口，而不是点了才报错。
+  // 每个用例只挂一次页面：ProviderScope 卸载会 dispose AppModel，同一用例里再挂会用到已
+  // dispose 的模型。
+  for (final bool supported in <bool>[false, true]) {
+    testWidgets('没歌词：本机${supported ? '能' : '不能'}转录时'
+        '${supported ? '出' : '不出'}「生成日语字幕」入口', (WidgetTester tester) async {
+      File('${dir.path}${Platform.pathSeparator}song.lrc').deleteSync();
+      musicSubtitleAsrSupported = () => supported;
+      await pumpPage(tester);
+      expect(
+        find.byKey(const ValueKey<String>('music_lyrics_find')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('music_lyrics_generate')),
+        supported ? findsOneWidget : findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('生成字幕写进当前这首：打开着的歌词页立即重载显示', (WidgetTester tester) async {
+    File('${dir.path}${Platform.pathSeparator}song.lrc').deleteSync();
+    await pumpPage(tester);
+    expect(find.bySemanticsLabel('ドラマの台詞'), findsNothing);
+
+    final Uint8List srt = Uint8List.fromList(
+      utf8.encode('1\n00:00:02,000 --> 00:00:04,000\nドラマの台詞\n'),
+    );
+    await tester.runAsync(
+      () async => app.musicLyrics.saveGenerated(
+        'uid-1',
+        format: 'srt',
+        raw: srt,
+        timeline: FushiLyrics.parse(srt, hint: 'srt'),
+      ),
+    );
+    await settle(tester);
+    expect(find.bySemanticsLabel('ドラマの台詞'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('曲内搜索：搜到的行点一下跳到那一行的时间', (WidgetTester tester) async {
+    await pumpPage(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_search')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('music_lyrics_search_field')),
+        matching: find.byType(EditableText),
+      ),
+      '沈む',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await settle(tester);
+    final Finder hit = find.byKey(
+      const ValueKey<String>('music_lyrics_search_result_0'),
+    );
+    expect(hit, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music_lyrics_search_result_1')),
+      findsNothing,
+    );
+    backend.log.clear();
+    await tester.tap(hit);
+    await settle(tester, rounds: 3);
+    expect(backend.log, contains('seek:4000'));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // #358s4Ae_fn（Android 荣耀 369x820@3.25）：「进度条只能拖、点按不跳转」。窄屏播放页
+  // 的真实布局 + Android 设备手势参数（系统 touch slop 8dp，比 Flutter 默认 18 小：
+  // 横向拖动识别器在手指抖 8dp 时就会赢过点按）下，点按和带抖动的点按都必须提交 seek。
+  Future<Rect> pumpPhone(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(369 * 3.25, 820 * 3.25);
+    tester.view.devicePixelRatio = 3.25;
+    tester.view.gestureSettings = const GestureSettings(
+      physicalTouchSlop: 8 * 3.25,
+    );
+    addTearDown(tester.view.reset);
+    await pumpPage(tester);
+    backend.controller.add(
+      const MusicBackendPosition(Duration(seconds: 5), Duration(seconds: 60)),
+    );
+    await tester.pump();
+    final Finder seek = find.byKey(const ValueKey<String>('music_lyrics_seek'));
+    expect(seek, findsOneWidget);
+    return tester.getRect(
+      find.descendant(of: seek, matching: find.byType(GestureDetector)).first,
+    );
+  }
+
+  List<int> seeks() => <int>[
+    for (final String e in backend.log)
+      if (e.startsWith('seek:')) int.parse(e.substring(5)),
+  ];
+
+  testWidgets('窄屏播放页：点按进度条提交 seek（Android 手势参数）', (WidgetTester tester) async {
+    final Rect bar = await pumpPhone(tester);
+    await tester.tapAt(bar.center);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(seeks(), hasLength(1));
+    expect(seeks().single, closeTo(30000, 1500));
+
+    // 长一点的按压（超过 kPressTimeout，onTapDown 先于抬起触发）同样提交。
+    final TestGesture press = await tester.startGesture(
+      Offset(bar.left + bar.width * 0.75, bar.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await press.up();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(seeks(), hasLength(2));
+    expect(seeks().last, closeTo(45000, 1500));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('窄屏播放页：带手指抖动（越过 8dp 横向 slop）的点按也提交 seek', (
+    WidgetTester tester,
+  ) async {
+    final Rect bar = await pumpPhone(tester);
+    final Offset start = Offset(bar.left + bar.width * 0.25, bar.center.dy);
+    final TestGesture g = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 16));
+    await g.moveBy(const Offset(10, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    await g.up();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(seeks(), hasLength(1));
+    expect(seeks().single, closeTo(15000 + 10 / bar.width * 60000, 1500));
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

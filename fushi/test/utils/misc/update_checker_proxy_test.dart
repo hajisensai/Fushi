@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 // BUG-1348：代理解析层已从 update_checker 的 net part 搬进独立库（同步层要用同一套
 // 出口，而 part 没法被外部 import）。测试跟着搬 import，断言逐字不变。
 import 'package:fushi_engine/utils/net/app_proxy.dart';

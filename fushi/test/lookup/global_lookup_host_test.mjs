@@ -2909,6 +2909,53 @@ function flushTimers() {
     'BUG-1139 ③: 非法 zoom 回落 1（绝不产生 0/NaN 几何）');
 }
 
+// Z2 — the root scrollHeight's viewport floor is the iframe's own height, and
+// its unit under a zoomed documentElement differs per engine: Chromium reports
+// it unzoomed (H / z), WebKitGTK (Linux card helper) already zoomed (H).
+// Multiplying WebKit's H by z again shrank the shell by z on every measure (a
+// feedback loop seen on the Steam Deck: 437 -> 423 -> 410 ... -> ~30 px). Both
+// engines must measure the shell at its own height and stay there.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  const docEl = iframe.contentDocument.documentElement;
+  const lastBox = () =>
+    hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  iframe.clientHeight = 480;
+  iframe.contentDocument.body.scrollHeight = 200;
+  iframe.contentDocument.body.offsetHeight = 200;
+  docEl.style.zoom = '0.9678';
+
+  // WebKitGTK: viewport floor already in host px.
+  docEl.scrollHeight = 480;
+  docEl.clientHeight = 480;
+  for (let i = 0; i < 3; i++) {
+    iframe.contentDocument.body._observers.forEach((cb) => cb([{ type: 'attributes' }]));
+    host.measureAndReport();
+    assert.strictEqual(lastBox().height, 480,
+      'WebKit viewport floor must not be zoomed again (measure ' + i + ')');
+  }
+
+  // Chromium: the same floor reported unzoomed gives the same result.
+  docEl.scrollHeight = 496;
+  docEl.clientHeight = 496;
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 480,
+    'Chromium viewport floor measures the same shell height');
+
+  // Overflowing content is still content: measured with z, capped by the plan.
+  docEl.scrollHeight = 900;
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 480,
+    'overflowing root scrollHeight stays capped by the planned frame');
+}
+
 // W1 (BUG-1166) — handleGlobalWheel 把 Ctrl/Alt 作为**显式 flag** 派发进命中的那张
 // 卡片；落在卡片外不派发。这是本修复的行为级证据：修饰键过不了「合成 WM_MOUSEWHEEL」
 // 那道边界（Chromium 读 GetKeyState），所以必须以数据形式抵达 JS 层。

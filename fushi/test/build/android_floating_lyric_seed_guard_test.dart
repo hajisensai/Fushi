@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guards for BUG-400 / TODO-711 (also the "opened but nothing
 /// appears" half of TODO-707).

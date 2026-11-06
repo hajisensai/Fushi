@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -10,6 +10,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
@@ -99,7 +100,11 @@ void main() {
     Future<String?> Function(String)? resolveVideo,
   }) => VideoSubtitleHostJobRunner(
     resolveRecognizer:
-        (VideoSubtitleSegmenterMode mode, MossBackendPreference backend) async {
+        (
+          VideoSubtitleSegmenterMode mode,
+          MossBackendPreference backend,
+          VideoSubtitleLanguage _,
+        ) async {
           asked.add((mode, backend));
           return VideoSubtitleRecognizerChoice(
             recognizer: recognizer,
@@ -398,8 +403,11 @@ void main() {
     int probes = 0;
     final VideoSubtitleHostJobRunner r = VideoSubtitleHostJobRunner(
       resolveRecognizer:
-          (VideoSubtitleSegmenterMode mode, MossBackendPreference b) async =>
-              VideoSubtitleRecognizerChoice(recognizer: recognizer),
+          (
+            VideoSubtitleSegmenterMode mode,
+            MossBackendPreference b,
+            VideoSubtitleLanguage _,
+          ) async => VideoSubtitleRecognizerChoice(recognizer: recognizer),
       pipelineJobsRoot: Directory(p.join(tmp.path, 'pipeline')),
       mossStatus: (MossBackendPreference _) async {
         probes++;

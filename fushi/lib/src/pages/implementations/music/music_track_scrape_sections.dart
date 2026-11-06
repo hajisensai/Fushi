@@ -222,6 +222,7 @@ class _MusicTrackIdentificationSectionState
     final String? blocked = switch (preview.blockedReason) {
       MusicTagBlocked.cueTrack => t.music_tag_writeback_cue,
       MusicTagBlocked.unreadable => t.music_tag_writeback_unreadable,
+      MusicTagBlocked.remoteFile => t.music_tag_writeback_remote,
       MusicTagBlocked.notIdentified => t.music_scrape_status_none,
       _ => null,
     };

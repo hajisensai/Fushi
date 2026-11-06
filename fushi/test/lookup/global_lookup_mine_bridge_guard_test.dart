@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1188 follow-up — app-external global lookup overlay: the ➕ (mine to Anki)
 /// button did nothing. Same shape as the favorite/audio bridge (see

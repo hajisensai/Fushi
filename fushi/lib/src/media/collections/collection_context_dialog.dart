@@ -72,24 +72,26 @@ Future<void> showCollectionContextDialog({
   List<DialogListAction> leadingListActions = const <DialogListAction>[],
   Widget? cover,
   ImageProvider? coverImage,
+  ImageProvider? Function()? resolveCoverImage,
+  Listenable? coverRefresh,
+  String? title,
   ShelfCoverMaterial? coverMaterial,
 }) async {
+  assert(
+    coverImage == null || resolveCoverImage == null,
+    'coverImage 与 resolveCoverImage 只给一个',
+  );
   // [coverMaterial]：封面卡的条目材质（[MediaItemDialogFrame.coverMaterial]），
   // 合集表不记媒体域，由调用方按所在库页给；null = 旧封面卡。
   // [coverImage]：合集封面图源（自设封面 / 首个有封面的成员）。只给图源时由这里
   // 画前景（contain，整幅可见），同时作为封面块两侧的模糊垫底
   // （[MediaItemDialogFrame.coverBackdrop]）——此前合集菜单根本没有封面，一眼
   // 认不出是哪个合集（2026-10-04 用户截图）。
-  final ImageProvider? coverSource = coverImage;
-  final Widget? effectiveCover =
-      cover ??
-      (coverSource == null
-          ? null
-          : Image(
-              image: coverSource,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-            ));
+  // [resolveCoverImage] + [coverRefresh]：图源要随调用方状态变（封面存在性还在
+  // 异步探测，打开那一刻只拿得到加载态）时，给取图函数而不是快照；菜单是独立
+  // 路由，调用方页面的重建到不了它，[coverRefresh] 每次通知就重取一次。
+  // [title]：头部标题，与打开菜单的那张卡同源（卡上画刮削作品名时传它）；
+  // null = 合集名。
   await showMediaItemActions<void>(
     context: context,
     anchor: anchor,
@@ -99,128 +101,149 @@ Future<void> showCollectionContextDialog({
         action();
       }
 
-      return MediaItemDialogFrame(
-        cover: effectiveCover,
-        coverBackdrop: coverSource,
-        coverMaterial: coverMaterial,
-        title: collection.name,
-        // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
-        launchLabel: t.collection_view_all,
-        onLaunch: () => closeThen(onOpenDetail),
-        listActions: <DialogListAction>[
-          // 媒体特有的首项（视频原盘合集：「进入原盘菜单」）。同样统一包 closeThen。
-          for (final DialogListAction action in leadingListActions)
+      Widget buildFrame() {
+        final ImageProvider? coverSource = resolveCoverImage != null
+            ? resolveCoverImage()
+            : coverImage;
+        final Widget? effectiveCover =
+            cover ??
+            (coverSource == null
+                ? null
+                : Image(
+                    image: coverSource,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ));
+        return MediaItemDialogFrame(
+          cover: effectiveCover,
+          coverBackdrop: coverSource,
+          coverMaterial: coverMaterial,
+          title: title ?? collection.name,
+          // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
+          launchLabel: t.collection_view_all,
+          onLaunch: () => closeThen(onOpenDetail),
+          listActions: <DialogListAction>[
+            // 媒体特有的首项（视频原盘合集：「进入原盘菜单」）。同样统一包 closeThen。
+            for (final DialogListAction action in leadingListActions)
+              DialogListAction(
+                label: action.label,
+                icon: action.icon,
+                onPressed: () => closeThen(action.onPressed),
+              ),
             DialogListAction(
-              label: action.label,
-              icon: action.icon,
-              onPressed: () => closeThen(action.onPressed),
-            ),
-          DialogListAction(
-            label: t.rename_collection,
-            icon: Icons.drive_file_rename_outline,
-            onPressed: () => closeThen(
-              () => _renameCollection(
-                context: context,
-                db: db,
-                collection: collection,
-                onChanged: onChanged,
-              ),
-            ),
-          ),
-          DialogListAction(
-            label: t.tag_label,
-            icon: Icons.sell_outlined,
-            onPressed: () => closeThen(
-              () => _editCollectionTags(
-                context: context,
-                collection: collection,
-                onChanged: onChanged,
-              ),
-            ),
-          ),
-          // 私密：整个合集（全部成员，书或视频）不上传排行榜、不推 Bangumi。
-          DialogListAction(
-            label: t.media_privacy_action,
-            icon: FushiIcons.lock,
-            onPressed: () => closeThen(
-              () => unawaited(
-                showMediaPrivacyDialog(
-                  context,
+              label: t.rename_collection,
+              icon: Icons.drive_file_rename_outline,
+              onPressed: () => closeThen(
+                () => _renameCollection(
+                  context: context,
                   db: db,
-                  kind: TagHostKind.collection,
-                  entryKey: collectionTagEntryKey(collection.id),
-                  title: collection.name,
+                  collection: collection,
+                  onChanged: onChanged,
                 ),
               ),
             ),
-          ),
-          // 右键 / 长按反查整个合集（全部成员身份之并）的学习统计。
-          DialogListAction(
-            label: t.media_stats_action,
-            icon: Icons.insights_outlined,
-            group: DialogActionGroup.progress,
-            onPressed: () => closeThen(
-              () => _openCollectionStatistics(
-                context: context,
-                db: db,
-                collection: collection,
-              ),
-            ),
-          ),
-          // 媒体特有项（视频：在线匹配封面 / 为合集获取字幕）。统一包 closeThen，
-          // 调用方回调无需自行 pop。
-          for (final DialogListAction action in extraListActions)
             DialogListAction(
-              label: action.label,
-              icon: action.icon,
-              onPressed: () => closeThen(action.onPressed),
-            ),
-          // 一键整理（与合集详情页 AppBar 排序菜单同一实现与落盘路径）。
-          DialogListAction(
-            label: t.collection_sort_by_title,
-            icon: Icons.sort_by_alpha,
-            onPressed: () => closeThen(
-              () => _sortCollection(
-                db: db,
-                collection: collection,
-                byTitle: true,
-                onChanged: onChanged,
+              label: t.tag_label,
+              icon: Icons.sell_outlined,
+              onPressed: () => closeThen(
+                () => _editCollectionTags(
+                  context: context,
+                  collection: collection,
+                  onChanged: onChanged,
+                ),
               ),
             ),
-          ),
-          DialogListAction(
-            label: t.collection_sort_by_imported,
-            icon: Icons.history,
-            onPressed: () => closeThen(
-              () => _sortCollection(
-                db: db,
-                collection: collection,
-                byTitle: false,
-                onChanged: onChanged,
+            // 私密：整个合集（全部成员，书或视频）不上传排行榜、不推 Bangumi。
+            DialogListAction(
+              label: t.media_privacy_action,
+              icon: FushiIcons.lock,
+              onPressed: () => closeThen(
+                () => unawaited(
+                  showMediaPrivacyDialog(
+                    context,
+                    db: db,
+                    kind: TagHostKind.collection,
+                    entryKey: collectionTagEntryKey(collection.id),
+                    title: collection.name,
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
-        dangerActions: <DialogDangerAction>[
-          DialogDangerAction(
-            label: t.delete_collection,
-            onPressed: () => closeThen(
-              () => _deleteCollection(
-                context: context,
-                db: db,
-                collection: collection,
-                onChanged: onChanged,
-                onDeleteMembersMedia: onDeleteMembersMedia,
-                deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
-                deleteMembersLocalFilesSubtitle:
-                    deleteMembersLocalFilesSubtitle,
-                deleteMembersStatisticsSubtitle:
-                    deleteMembersStatisticsSubtitle,
-                deleteMembersDisclosure: deleteMembersDisclosure,
+            // 右键 / 长按反查整个合集（全部成员身份之并）的学习统计。
+            DialogListAction(
+              label: t.media_stats_action,
+              icon: Icons.insights_outlined,
+              group: DialogActionGroup.progress,
+              onPressed: () => closeThen(
+                () => _openCollectionStatistics(
+                  context: context,
+                  db: db,
+                  collection: collection,
+                ),
               ),
             ),
-          ),
-        ],
+            // 媒体特有项（视频：在线匹配封面 / 为合集获取字幕）。统一包 closeThen，
+            // 调用方回调无需自行 pop。
+            for (final DialogListAction action in extraListActions)
+              DialogListAction(
+                label: action.label,
+                icon: action.icon,
+                onPressed: () => closeThen(action.onPressed),
+              ),
+            // 一键整理（与合集详情页 AppBar 排序菜单同一实现与落盘路径）。
+            DialogListAction(
+              label: t.collection_sort_by_title,
+              icon: Icons.sort_by_alpha,
+              onPressed: () => closeThen(
+                () => _sortCollection(
+                  db: db,
+                  collection: collection,
+                  byTitle: true,
+                  onChanged: onChanged,
+                ),
+              ),
+            ),
+            DialogListAction(
+              label: t.collection_sort_by_imported,
+              icon: Icons.history,
+              onPressed: () => closeThen(
+                () => _sortCollection(
+                  db: db,
+                  collection: collection,
+                  byTitle: false,
+                  onChanged: onChanged,
+                ),
+              ),
+            ),
+          ],
+          dangerActions: <DialogDangerAction>[
+            DialogDangerAction(
+              label: t.delete_collection,
+              onPressed: () => closeThen(
+                () => _deleteCollection(
+                  context: context,
+                  db: db,
+                  collection: collection,
+                  onChanged: onChanged,
+                  onDeleteMembersMedia: onDeleteMembersMedia,
+                  deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
+                  deleteMembersLocalFilesSubtitle:
+                      deleteMembersLocalFilesSubtitle,
+                  deleteMembersStatisticsSubtitle:
+                      deleteMembersStatisticsSubtitle,
+                  deleteMembersDisclosure: deleteMembersDisclosure,
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      final Listenable? refresh = coverRefresh;
+      if (refresh == null) return buildFrame();
+      return ListenableBuilder(
+        listenable: refresh,
+        builder: (BuildContext _, Widget? __) => buildFrame(),
       );
     },
   );

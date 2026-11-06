@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Guards the BUG-959 fix: the local video/book shelf first paint must stay fast.
 ///

@@ -2,7 +2,7 @@
 // 两场隔行 2 bit RLE、extradata 调色板与画布、结束时间的三种来源。
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/dvd_subtitle_decoder.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';

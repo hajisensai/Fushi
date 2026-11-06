@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   // BUG-121: 退出视频/退全屏闪红屏。根因 = 查词浮层 entry 插在根 Overlay（跨路由生存），

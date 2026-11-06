@@ -17,7 +17,7 @@
 //      Yu Gothic 提成全局兜底，另外两个表面就跟着换了脸。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String window = File(

@@ -5,7 +5,7 @@
 // 这三处都在超大页面 / 控制器里，行为测试要起真播放器，故钉源码接线。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _read(String path) => File(path).readAsStringSync();
 

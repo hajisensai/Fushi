@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 
 /// TODO-1237 ①：播放列表封面遍历取首个可用集。用注入的抽取器替身脱离 ffmpeg 测

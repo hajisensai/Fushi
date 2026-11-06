@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 反馈 #PwEC1evz1E：旧开关「启动时打开查词」泛化为「启动页」下拉，只能从此刻
 /// 可见、有底栏 tab 的模块里选。item id 沿用旧开关的（设置搜索锚点）。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1062 / BUG-1061：制卡（Anki mining）产出的 glossary 字段必须与上游 Yomitan
 /// 导出的卡片一致，用户在两处看到了差异。

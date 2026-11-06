@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/download/video_download_organizer.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
@@ -282,6 +282,103 @@ void main() {
       );
     },
   );
+
+  group('multi-movie pack picks the feature matching the job title, not the '
+      'largest (BUG-4195)', () {
+    // 真实种子 [Airota&VCB-Studio] BOCCHI THE ROCK! Re：／Re：Re：：Re： 比 Re：Re：
+    // 大，旧口径把 Re： 改名成任务标题「Re:Re:」，库里出现两部 Re:Re:。
+    const String root =
+        '[Airota&VCB-Studio] BOCCHI THE ROCK! Re：／Re：Re： '
+        '[Ma10p_1080p]';
+    const String reName =
+        '$root/[Airota&VCB-Studio] BOCCHI THE ROCK! Re： '
+        '[Ma10p_1080p][x265_flac].mkv';
+    const String rereName =
+        '$root/[Airota&VCB-Studio] BOCCHI THE ROCK! Re：Re： '
+        '[Ma10p_1080p][x265_flac].mkv';
+    const List<TorrentFileEntry> files = <TorrentFileEntry>[
+      TorrentFileEntry(name: reName, size: 4421550371, progress: 1, index: 3),
+      TorrentFileEntry(name: rereName, size: 3465579099, progress: 1, index: 7),
+    ];
+
+    Future<List<String>> targetsFor(String title) async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'fushi-organizer-bocchi-',
+      );
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: title,
+          year: 2024,
+          kind: VideoOrganizationKind.movie,
+          sourceRoot: dir.path,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: dir.path,
+          ),
+        ),
+        files,
+      );
+      return plan.files
+          .map((VideoOrganizationFilePlan file) => file.targetRelativePath)
+          .toList();
+    }
+
+    test('job Re:Re: renames the smaller Re：Re： file, mirrors Re：', () async {
+      expect(await targetsFor('ぼっち・ざ・ろっく！ Re:Re:'), <String>[
+        'ぼっち・ざ・ろっく！ Re_Re_ (2024)/'
+            '[Airota&VCB-Studio] BOCCHI THE ROCK! Re： [Ma10p_1080p][x265_flac].mkv',
+        'ぼっち・ざ・ろっく！ Re_Re_ (2024)/ぼっち・ざ・ろっく！ Re_Re_ (2024).mkv',
+      ]);
+    });
+
+    test('job Re: renames the Re： file, mirrors Re：Re：', () async {
+      expect(await targetsFor('ぼっち・ざ・ろっく！ Re:'), <String>[
+        'ぼっち・ざ・ろっく！ Re_ (2024)/ぼっち・ざ・ろっく！ Re_ (2024).mkv',
+        'ぼっち・ざ・ろっく！ Re_ (2024)/'
+            '[Airota&VCB-Studio] BOCCHI THE ROCK! Re：Re： [Ma10p_1080p][x265_flac].mkv',
+      ]);
+    });
+
+    test('title that matches no feature tail falls back to the largest', () {
+      expect(
+        mainMovieFeatureIndex(
+          title: '孤独摇滚 总集篇',
+          featurePaths: <String>[reName, rereName],
+          sizes: <int>[4421550371, 3465579099],
+        ),
+        0,
+      );
+      expect(
+        mainMovieFeatureIndex(
+          title: 'Doraemon Movies',
+          featurePaths: <String>[
+            'Pack/[Fabre-RAW] Doraemon Movie 01 (1980) [1080p].mkv',
+            'Pack/[Fabre-RAW] Doraemon Movie 02 (1981) [1080p].mkv',
+          ],
+          sizes: <int>[190, 200],
+        ),
+        1,
+      );
+    });
+
+    test('numbered sequel title picks its own file', () {
+      expect(
+        mainMovieFeatureIndex(
+          title: 'Doraemon Movie 2',
+          featurePaths: <String>[
+            'Pack/[Fabre-RAW] Doraemon Movie 1 (1980) [1080p].mkv',
+            'Pack/[Fabre-RAW] Doraemon Movie 2 (1981) [1080p].mkv',
+          ],
+          sizes: <int>[200, 190],
+        ),
+        1,
+      );
+    });
+  });
 
   group('movie identity holding a multi-episode pack (BUG-2760)', () {
     VideoOrganizationRequest movieRequest(String root) =>

@@ -9,7 +9,7 @@
 //   ⑥ selectVoiceTrack 无 engine 有结构化事件 + 页面 toast（不再静默）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String controllerSrc = File(

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1225 — app-external global lookup overlay: the ⤺ overwrite-card action
 /// (✓↩ "latest editable") did nothing. TODO-1188 wired the ➕ new-card + query

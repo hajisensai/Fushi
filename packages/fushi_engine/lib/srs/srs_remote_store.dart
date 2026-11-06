@@ -14,6 +14,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show FushiCardItem, kFushiCardDefaultBackItems, kFushiCardDefaultFrontItems;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -335,6 +337,12 @@ abstract final class SrsRemoteWire {
     'empty': r.isEmpty,
     'fields': r.fields,
     'defs': r.fushiCardDefinitions,
+    'front': <Object?>[
+      for (final FushiCardItem x in r.fushiCardFront) x.toJson(),
+    ],
+    'back': <Object?>[
+      for (final FushiCardItem x in r.fushiCardBack) x.toJson(),
+    ],
   };
 
   static SrsRenderedCard? renderedFrom(Object? json) {
@@ -347,6 +355,20 @@ abstract final class SrsRemoteWire {
       isEmpty: m['empty'] == true,
       fields: (m['fields']! as Map).cast<String, String>(),
       fushiCardDefinitions: m['defs'] as String?,
+      // 旧对端不发布局（它只在模板与代码定义逐字一致时才给 defs，即默认布局）：两面都按默认。
+      // 认不得的布局项跳过。
+      fushiCardFront: m['front'] is List
+          ? <FushiCardItem>[
+              for (final Object? x in m['front']! as List)
+                ?FushiCardItem.fromJson(x),
+            ]
+          : kFushiCardDefaultFrontItems,
+      fushiCardBack: m['back'] is List
+          ? <FushiCardItem>[
+              for (final Object? x in m['back']! as List)
+                ?FushiCardItem.fromJson(x),
+            ]
+          : kFushiCardDefaultBackItems,
     );
   }
 

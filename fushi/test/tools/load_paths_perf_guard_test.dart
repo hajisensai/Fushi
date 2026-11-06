@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 加载路径性能守卫（性能三轮优化第三轮）。这些都活在私有方法 / 启动序列上，
 /// 无法用 widget 测试量时间，源码级是最强可落地层。

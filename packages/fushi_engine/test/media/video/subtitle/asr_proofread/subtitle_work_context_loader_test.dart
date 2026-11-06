@@ -49,6 +49,7 @@ void main() {
     String? bookUid,
     required String title,
     String? originalTitle,
+    String? originalLanguage,
   }) => db
       .into(db.videoMetadataWorks)
       .insert(
@@ -58,6 +59,7 @@ void main() {
           mediaType: 'tv',
           title: title,
           originalTitle: Value<String?>(originalTitle),
+          originalLanguage: Value<String?>(originalLanguage),
           updatedAt: 1,
         ),
       );
@@ -248,13 +250,19 @@ void main() {
     await addVideo('ep1', '/lib/show/01.mkv');
     final int c = await addCollection('Show');
     await addMember(c, 'ep1');
-    await addWork(bookUid: 'ep1', title: 'Show', originalTitle: 'ショー');
+    await addWork(
+      bookUid: 'ep1',
+      title: 'Show',
+      originalTitle: 'ショー',
+      originalLanguage: 'ja',
+    );
 
     final SubtitleWorkContext viaBook = (await loader.forBook('ep1'))!;
     final SubtitleWorkContext viaCollection = (await loader.forCollection(c))!;
     expect(viaBook.workKey, 'collection:$c');
     expect(viaCollection.workKey, viaBook.workKey);
     expect(viaBook.originalTitle, 'ショー');
+    expect(viaBook.originalLanguage, 'ja');
   });
 
   test('独立视频自己挂作品行：work:<id>；播放列表不算作品归属', () async {
@@ -268,6 +276,7 @@ void main() {
     expect(ctx.workKey, 'work:$work');
     expect(ctx.title, 'Movie');
     expect(ctx.kanjiTitle, '映画');
+    expect(ctx.originalLanguage, isNull, reason: '作品行没有原语言');
   });
 
   test('没刮削：在合集里取合集键（无刮削数据），不在任何合集里返回 null', () async {

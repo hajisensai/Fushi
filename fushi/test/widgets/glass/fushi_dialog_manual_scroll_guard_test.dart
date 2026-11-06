@@ -5,7 +5,7 @@
 // 调用点只允许白名单里的「定高日志 / 显式限高区域」。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 有意保留内层滚动的调用点：路径 → 允许的处数与原因。
 const Map<String, (int, String)> _allowed = <String, (int, String)>{

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4028 回归守卫：安装器替换安装目录期间，新启动的 fushi.exe 必须立即退出。
 ///

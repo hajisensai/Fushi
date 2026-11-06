@@ -9,6 +9,7 @@
 //! | `ffm_lyrics_merge(primary, len, secondary, len, lang, lang_len, out, out_len) -> i32` | 翻译按时间配对 |
 //! | `ffm_lyrics_export(timeline, len, format, format_len, out, out_len) -> i32` | 导出 `ttml` / `lrc` |
 //! | `ffm_lyrics_ass_raw(data, len, out, out_len) -> i32` | ASS 原样渲染准备：`u32 PlayResX · u32 PlayResY · UTF-8 脚本` |
+//! | `ffm_lyrics_slice(timeline, len, start_ms, end_ms, out, out_len) -> i32` | 按 `[start, end)` 截取并平移（`end_ms < 0` = 到结尾） |
 //!
 //! `duration_ms < 0` = 曲长未知。
 
@@ -225,6 +226,40 @@ pub unsafe extern "C" fn ffm_lyrics_ass_raw(
         out.extend_from_slice(&raw.play_res_y.to_le_bytes());
         out.extend_from_slice(raw.text.as_bytes());
         hand_over_bytes(out, out_ptr, out_len);
+        status::OK
+    })
+}
+
+/// 时间轴切片（[super::slice::slice]）：CUE 整轨一次转写出的字幕按曲目区间截取、平移成
+/// 曲内时间。`end_ms < 0` = 取到结尾。
+///
+/// # Safety
+/// 同 [ffm_lyrics_parse]。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_lyrics_slice(
+    timeline_ptr: *const u8,
+    timeline_len: usize,
+    start_ms: i64,
+    end_ms: i64,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(tb) = slice_arg(timeline_ptr, timeline_len) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Some(t) = wire::decode(tb) else {
+            return status::BAD_INPUT;
+        };
+        let end = (end_ms >= 0).then_some(end_ms);
+        hand_over_bytes(
+            wire::encode(&super::slice::slice(&t, start_ms, end)),
+            out_ptr,
+            out_len,
+        );
         status::OK
     })
 }

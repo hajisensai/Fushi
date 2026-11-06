@@ -11,6 +11,22 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+/// 服务端扫描根支持的 kind：`fushi_server.yaml` 的 `libraries[].kind`、admin API 新增
+/// 库根与 WebUI 选择框共用这一份，与 `LibraryScanner.scanAll` 的分派一一对应。
+/// `music` 刻意不在内（所有者 2026-10-28 决定延后），见 `docs/agent/server-parity-gaps.md`。
+const List<String> kServerLibraryRootKinds = <String>[
+  'video',
+  'book',
+  'manga',
+  'audiobook',
+];
+
+/// [kind] 不是服务端支持的扫描根种类时的说明（含可选值；`music` 额外指向缺口文档）。
+String unsupportedLibraryKindMessage(String kind) => kind == 'music'
+    ? 'kind "music" is not supported by fushi_server yet (music libraries are deferred; '
+          'see docs/agent/server-parity-gaps.md); supported: ${kServerLibraryRootKinds.join(' / ')}'
+    : 'unsupported kind "$kind"; supported: ${kServerLibraryRootKinds.join(' / ')}';
+
 /// 一条扫描根：服务端库的来源目录。
 class LibraryRootConfig {
   const LibraryRootConfig({
@@ -28,10 +44,16 @@ class LibraryRootConfig {
     if (path == null || path.trim().isEmpty) {
       throw FormatException('libraries[$index].path 不能为空');
     }
+    final String kind = raw['kind']?.toString() ?? 'video';
+    if (!kServerLibraryRootKinds.contains(kind)) {
+      throw FormatException(
+        'libraries[$index].kind: ${unsupportedLibraryKindMessage(kind)}',
+      );
+    }
     return LibraryRootConfig(
       id: raw['id']?.toString() ?? 'lib$index',
       path: path,
-      kind: raw['kind']?.toString() ?? 'video',
+      kind: kind,
       enabled: raw['enabled'] != false,
     );
   }
@@ -39,7 +61,8 @@ class LibraryRootConfig {
   final String id;
   final String path;
 
-  /// `video` | `book`（epub）| `manga`（页图目录）。
+  /// [kServerLibraryRootKinds] 之一：`video` | `book`（epub）| `manga`（mokuro 卷 / 单文件卷 /
+  /// 页图目录）| `audiobook`（含音频的目录，可带 EPUB / 字幕）。
   final String kind;
   final bool enabled;
 
@@ -82,6 +105,7 @@ class ServerConfig {
     this.scanScrape = true,
     this.profileTransfer = false,
     this.remoteUpdate = false,
+    this.leaderboardLink = true,
     this.tmdbApiKey,
     this.ai,
   });
@@ -198,6 +222,13 @@ class ServerConfig {
   /// 运行期现读，WebUI 改完即生效。
   final bool remoteUpdate;
 
+  /// 允许被标记为「我的设备」的已配对设备跟随本机（当前激活 Profile）的 Fushi 排行榜账户
+  /// 自动登录（`/api/interconnect/leaderboard-link`，只在 TLS 下可达）。默认开：与 app 的
+  /// 「允许已配对设备自动登录我的账户」同一默认（所有者 2026-10-16 拍板）——真正的门是逐台
+  /// 的「我的设备」标记，无头配对从不自动授予，只能由管理员在 WebUI / `ctl pairing owner` 里手动标。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool leaderboardLink;
+
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
   final String? tmdbApiKey;
@@ -213,6 +244,7 @@ class ServerConfig {
   final ServerAiConfig? ai;
 
   ServerConfig copyWith({
+    String? dataDir,
     int? port,
     String? bind,
     bool? tls,
@@ -241,11 +273,12 @@ class ServerConfig {
     bool? scanScrape,
     bool? profileTransfer,
     bool? remoteUpdate,
+    bool? leaderboardLink,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
   }) => ServerConfig(
-    dataDir: dataDir,
+    dataDir: dataDir ?? this.dataDir,
     port: port ?? this.port,
     bind: bind ?? this.bind,
     tls: tls ?? this.tls,
@@ -274,6 +307,7 @@ class ServerConfig {
     scanScrape: scanScrape ?? this.scanScrape,
     profileTransfer: profileTransfer ?? this.profileTransfer,
     remoteUpdate: remoteUpdate ?? this.remoteUpdate,
+    leaderboardLink: leaderboardLink ?? this.leaderboardLink,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
   );
@@ -343,6 +377,7 @@ class ServerConfig {
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
       remoteUpdate: _bool(map['remote_update']) ?? base.remoteUpdate,
+      leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
     );
@@ -391,6 +426,7 @@ class ServerConfig {
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
     b.writeln('remote_update: $remoteUpdate');
+    b.writeln('leaderboard_link: $leaderboardLink');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     }

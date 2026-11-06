@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// PR#914 阻塞③：冷启动恢复重定向到「宿主正文章」时，必须把三个恢复锚一起归零。
 ///

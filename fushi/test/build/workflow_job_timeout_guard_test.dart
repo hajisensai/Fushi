@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：push / pull_request / pull_request_target 触发的 workflow，每个 job 都必须
 /// 显式写 `timeout-minutes`。

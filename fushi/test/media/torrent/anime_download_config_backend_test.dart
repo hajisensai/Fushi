@@ -1,6 +1,6 @@
 // 阶段2：QbConnectionConfig 的 backend 字段 codec / 向后兼容 / isConfigured。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 

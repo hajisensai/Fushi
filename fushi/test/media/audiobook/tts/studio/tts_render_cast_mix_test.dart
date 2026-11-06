@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';

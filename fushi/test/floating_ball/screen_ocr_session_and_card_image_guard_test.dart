@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Android 截屏识字的原生接线守卫（本仓 CI 不跑 Android JVM 单测，这里按源码钉住）：
 ///

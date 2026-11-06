@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guard for TODO-1268 — 「点击悬浮字幕文字没反应」的**更深根因**。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（BUG-2817）：`release: published` 触发的 workflow，每个会在 release 事件上
 /// 跑的 job 都只给**应用 release**（tag = `v<数字>…`）干活。

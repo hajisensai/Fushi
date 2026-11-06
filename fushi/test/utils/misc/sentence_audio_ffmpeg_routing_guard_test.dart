@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-970 source-scan guard: Android book/video sentence audio must be cut by
 /// **ffmpeg** (the same path as desktop), never by the native MediaChannel

@@ -3,7 +3,7 @@
 // 2026-10-08 用户实测（TMDB 合集 47 部，每部带日文标题 + 年份），每条「错选」都是
 // 下面用例里原样的发布名：重制版 / 续作被当成本作（身份），国语 / 英配 / 内嵌字幕
 // 被当成原语言（语言），老片的「WEB-4k」超分与 DVD 压过 1080p（画质）。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/video_release_language.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';

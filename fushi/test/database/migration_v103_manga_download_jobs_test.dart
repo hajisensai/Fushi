@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
@@ -125,7 +125,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 144);
+    expect(upgraded.schemaVersion, 146);
 
     // 邻居表原样在（Never break userspace）。
     expect(await upgraded.updateFeedEntriesPage(), hasLength(1));

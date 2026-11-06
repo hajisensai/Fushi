@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -74,7 +74,7 @@ void main() {
       });
 
       FushiDatabase migrated = FushiDatabase.atFile(path, isMainProcess: false);
-      expect(migrated.schemaVersion, 144);
+      expect(migrated.schemaVersion, 146);
       List<AiAgentSessionSummary> all = await migrated
           .listAiAgentSessionSummaries();
       expect(
@@ -87,7 +87,7 @@ void main() {
       await migrated.close();
 
       sqlite.Database raw = sqlite.sqlite3.open(path);
-      expect(raw.select('PRAGMA user_version').first.values.first, 144);
+      expect(raw.select('PRAGMA user_version').first.values.first, 146);
       expect(columnsOf(raw), contains('profile_uid'));
       expect(indexExists(raw, kAiAgentProfileIndex), isTrue);
       // 重跑 v141 步：列与索引已在，不得报错；已有归属不被改写。
@@ -109,7 +109,7 @@ void main() {
       await migrated.close();
       raw = sqlite.sqlite3.open(path);
       addTearDown(raw.dispose);
-      expect(raw.select('PRAGMA user_version').first.values.first, 144);
+      expect(raw.select('PRAGMA user_version').first.values.first, 146);
     });
 
     test('偏好指向已删的 Profile：退到最早建的那个', () async {

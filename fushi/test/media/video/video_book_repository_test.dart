@@ -1117,6 +1117,29 @@ void main() {
       expect(File(copy).existsSync(), isTrue);
     });
 
+    test('keepLocalFiles 里的副本（已转交音乐库，BUG-4175）→ 保留', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final String copy = await touch(copyDir, 'drama.flac');
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/drama'),
+          title: const Value('drama'),
+          videoPath: Value(copy),
+        ),
+      );
+
+      final int deleted = await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/drama'],
+        compactDatabase: false,
+        keepLocalFiles: <String>[copy],
+      );
+
+      expect(deleted, 1);
+      expect(File(copy).existsSync(), isTrue);
+    });
+
     test('isPickerImportCopyPath 只认严格位于副本目录之内的本地路径', () {
       final String root = copyDir.path;
       final List<String> roots = <String>[root];

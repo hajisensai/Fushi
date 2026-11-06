@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import '../../tool/test_flow/heavy_test_closure.dart';
 
@@ -95,6 +95,33 @@ void main() {
         testClosureFiles(app, <String>['test/a_test.dart', 'test/b_test.dart']),
         7,
       );
+    });
+
+    test('needsFlutter: dart:ui anywhere in the closure; root skips', () {
+      final String app = '${root.path}/app';
+      expect(
+        testClosureOf(app, <String>['test/a_test.dart'])!.needsFlutter,
+        isFalse,
+      );
+      File(
+        '${external.path}/lib/src/inner.dart',
+      ).writeAsStringSync("import 'dart:ui';\nclass Inner {}\n");
+      expect(
+        testClosureOf(app, <String>['test/a_test.dart'])!.needsFlutter,
+        isTrue,
+      );
+      // A skipped root import is not followed; the same URI deeper still is.
+      File(
+        '$app/test/c_test.dart',
+      ).writeAsStringSync("import 'package:ext/ext.dart';\nimport 'x.dart';\n");
+      File('$app/test/x.dart').writeAsStringSync('');
+      final TestClosure skipped = testClosureOf(
+        app,
+        <String>['test/c_test.dart'],
+        rootSkipUris: const <String>{'package:ext/ext.dart'},
+      )!;
+      expect(skipped.needsFlutter, isFalse);
+      expect(skipped.files, 2);
     });
 
     test('a missing target: null', () {

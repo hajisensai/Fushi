@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v83 迁移（P3 Stage 2）定向测试：shelf_entries / media_collection_items 的
@@ -145,7 +145,7 @@ CREATE TABLE media_collection_items (
     expect(version.read<int>('user_version'), db.schemaVersion);
     expect(
       db.schemaVersion,
-      144,
+      146,
       reason: 'v83 = shelf_entries / media_collection_items epub 键切 uid',
     );
 

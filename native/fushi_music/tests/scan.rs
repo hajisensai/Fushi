@@ -18,8 +18,12 @@ const ROOT: &str = "tests/fixtures/library";
 const GOLDEN: &str = "tests/fixtures/scan_golden.txt";
 
 fn scan_all(max: u32, known: Option<Vec<u8>>) -> Vec<(bool, Vec<Record>)> {
+    scan_root(ROOT, max, known)
+}
+
+fn scan_root(root: &str, max: u32, known: Option<Vec<u8>>) -> Vec<(bool, Vec<Record>)> {
     let mut handle = std::ptr::null_mut();
-    let rc = unsafe { ffm_scan_open(ROOT.as_ptr(), ROOT.len(), 1, &mut handle) };
+    let rc = unsafe { ffm_scan_open(root.as_ptr(), root.len(), 1, &mut handle) };
     assert_eq!(rc, status::OK);
     if let Some(k) = known {
         assert_eq!(
@@ -116,8 +120,9 @@ fn tracks(batches: &[(bool, Vec<Record>)]) -> Vec<TrackRecord> {
 }
 
 #[test]
-fn abi_version_is_one() {
-    assert_eq!(ffm_abi_version(), 1);
+fn abi_version_is_two() {
+    // 2：批次格式加了远程曲目的内嵌封面记录（kind 3）与远程扫描游标。
+    assert_eq!(ffm_abi_version(), 2);
 }
 
 #[test]
@@ -155,6 +160,126 @@ fn scan_matches_golden_vector() {
     for (album, uids) in &albums {
         assert_eq!(uids.len(), 1, "album {album} split into {uids:?}");
     }
+}
+
+#[test]
+fn single_file_root_scans_only_that_file() {
+    let whole = tracks(&scan_all(0, None));
+    // 与目录扫描同样的拼接方式（uid 含路径，分隔符要一致）。
+    let file = Path::new(ROOT).join("Album A").join("02 Second Song.mp3");
+    let only = tracks(&scan_root(file.to_str().unwrap(), 0, None));
+    assert_eq!(only.len(), 1, "a file root yields exactly that one track");
+    let from_dir = whole
+        .iter()
+        .find(|t| rel(&t.path) == "Album A/02 Second Song.mp3")
+        .expect("dir scan has the track");
+    // 同一文件经单文件导入与目录扫描得到同一条曲目（uid / 专辑 / 目录封面一致），
+    // 之后目录来源再扫到它只是更新同一行。
+    assert_eq!(line(&only[0]), line(from_dir));
+    assert_eq!(only[0].track_uid, from_dir.track_uid);
+    assert_eq!(only[0].album_uid, from_dir.album_uid);
+
+    // 调用方按来源根的归一写法（正斜杠）给文件路径：与登记在它父目录上的来源（同样
+    // 正斜杠写法的根）扫到同一条曲目、同一个 uid。
+    let dir_root = format!("{ROOT}/Album A");
+    let by_dir = tracks(&scan_root(&dir_root, 0, None));
+    let slash_file = format!("{ROOT}/Album A/02 Second Song.mp3");
+    let by_file = tracks(&scan_root(&slash_file, 0, None));
+    let twin = by_dir
+        .iter()
+        .find(|t| t.path.ends_with("02 Second Song.mp3"))
+        .expect("parent-dir scan has the track");
+    assert_eq!(by_file.len(), 1);
+    assert_eq!(by_file[0].path, twin.path);
+    assert_eq!(by_file[0].track_uid, twin.track_uid);
+
+    // 单文件导入 M4B 同样按章节拆成虚拟曲目，与目录扫描逐条一致。
+    let book = Path::new(ROOT).join("Formats").join("chapters.m4b");
+    let chapters = tracks(&scan_root(book.to_str().unwrap(), 0, None));
+    let in_dir: Vec<&TrackRecord> = whole
+        .iter()
+        .filter(|t| rel(&t.path) == "Formats/chapters.m4b")
+        .collect();
+    assert_eq!(chapters.len(), 3);
+    assert_eq!(
+        chapters.iter().map(line).collect::<Vec<_>>(),
+        in_dir.iter().map(|t| line(t)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        chapters.iter().map(|t| t.cue_start_ms).collect::<Vec<_>>(),
+        vec![Some(0), Some(1000), Some(2500)]
+    );
+
+    // 不是曲库认的音频：空扫描，不报错。
+    let cover = Path::new(ROOT).join("Album A").join("cover.png");
+    let none = scan_root(cover.to_str().unwrap(), 0, None);
+    assert!(tracks(&none).is_empty());
+    assert!(
+        none.iter()
+            .flat_map(|(_, r)| r.iter())
+            .all(|r| !matches!(r, Record::Error { .. }))
+    );
+}
+
+/// 同一个文件从三种根进来（单文件、所在目录、上层递归目录，根都按 Dart 的归一写成
+/// 正斜杠）得到同一条路径、同一个 uid——uid 含路径原文，拼法不一会在曲库里出两行。
+#[test]
+fn one_file_has_one_path_and_uid_whatever_the_root() {
+    let upper = tracks(&scan_root(ROOT, 0, None));
+    let by_dir = tracks(&scan_root(&format!("{ROOT}/Album A"), 0, None));
+    let by_file = tracks(&scan_root(
+        &format!("{ROOT}/Album A/02 Second Song.mp3"),
+        0,
+        None,
+    ));
+    let pick = |ts: &[TrackRecord]| {
+        ts.iter()
+            .find(|t| t.path.ends_with("02 Second Song.mp3"))
+            .cloned()
+            .expect("track present")
+    };
+    let (a, b, c) = (pick(&upper), pick(&by_dir), pick(&by_file));
+    assert_eq!(a.path, b.path);
+    assert_eq!(a.path, c.path);
+    assert_eq!(a.track_uid, b.track_uid);
+    assert_eq!(a.track_uid, c.track_uid);
+    assert_eq!(a.album_uid, b.album_uid);
+    assert_eq!(a.folder_cover_path, c.folder_cover_path);
+    // 路径里只有平台分隔符。
+    let foreign = if cfg!(windows) { '/' } else { '\\' };
+    assert!(!a.path.contains(foreign), "{}", a.path);
+}
+
+/// 库里存着旧版本的混合分隔符写法（`root/Album A\x`）：「文件没动过」照样认得出，
+/// 不因为拼法变了把整库重新解析一遍。
+#[test]
+fn known_files_in_legacy_spelling_still_count_as_unchanged() {
+    let first = tracks(&scan_all(0, None));
+    let flac = first
+        .iter()
+        .find(|t| rel(&t.path) == "Album A/01 First Song.flac")
+        .unwrap();
+    let legacy = if cfg!(windows) {
+        format!("{ROOT}/Album A\\01 First Song.flac")
+    } else {
+        format!("{ROOT}//Album A/./01 First Song.flac")
+    };
+    assert_ne!(legacy, flac.path);
+    let mut w = Writer::new();
+    w.u32(1);
+    w.str(&legacy);
+    w.i64(flac.file_mtime_ms);
+    w.i64(flac.file_size);
+    let second = scan_all(0, Some(w.into_bytes()));
+    let unchanged: Vec<String> = second
+        .iter()
+        .flat_map(|(_, r)| r.iter())
+        .filter_map(|r| match r {
+            Record::Unchanged(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(unchanged, vec![flac.path.clone()]);
 }
 
 #[test]

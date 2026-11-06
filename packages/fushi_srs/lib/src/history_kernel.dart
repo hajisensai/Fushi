@@ -38,6 +38,9 @@ const int _stateWords = 14;
 /// history.rs `COLUMN_WORDS`。
 const int _columnWords = 7;
 
+/// history.rs `COLUMN_STRINGS`：列模式每条日志的串（id、writerId、revokes、cardId；同一事件的副本只在同卡上成组）。
+const int _columnStrings = 4;
+
 /// history.rs 的 `STATUS_*` 位。
 const int srsHistoryEffective = 1;
 const int srsHistoryRevoked = 2;
@@ -46,6 +49,9 @@ const int srsHistoryRevoker = 8;
 
 /// 排序键的物理部分被钳位（HLC 物理时间超过 S(e) + 10 分钟；history.rs `STATUS_CLAMPED`）。
 const int srsHistoryClamped = 16;
+
+/// 同一事件的多 ID 副本里不是代表的那几份，不算有效（history.rs `STATUS_DUPLICATE` / `EventKey`）。
+const int srsHistoryDuplicate = 32;
 
 FushiFsrs _library(FushiFsrs? library) =>
     library ?? FushiFsrs.instance ?? (throw SrsHistoryKernelUnavailableError());
@@ -304,7 +310,7 @@ List<SrsHistorySelection> srsSelectHistories(
     ];
   }
   final FushiFsrs lib = _library(library);
-  final _Utf8Packer strings = _Utf8Packer(nLogs * 3);
+  final _Utf8Packer strings = _Utf8Packer(nLogs * _columnStrings);
   final Pointer<Int64> ints = malloc<Int64>(nLogs * _columnWords);
   final Pointer<Uint32> groups = malloc<Uint32>(histories.length + 1);
   final Pointer<Size> outLen = calloc<Size>();
@@ -330,7 +336,8 @@ List<SrsHistorySelection> srsSelectHistories(
         strings
           ..add(l.id)
           ..add(l.hlc.writerId)
-          ..add(l.revokesId ?? '');
+          ..add(l.revokesId ?? '')
+          ..add(l.cardId);
         i++;
       }
       g[k + 1] = i;

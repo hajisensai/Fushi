@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（TODO-1280）：**YouTube 分离流的 audio-only 音轨必须在恢复 seek + play() 之前外挂**。
 ///

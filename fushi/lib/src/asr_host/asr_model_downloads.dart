@@ -130,23 +130,39 @@ class AsrModelDownloads extends ChangeNotifier {
     );
   }
 
-  /// [pack] 的下载计划：变体与 EP 推荐按「语言 + 这个包服务的素材」取（与转录
-  /// 弹层同一个 `plan(auto)`），模型状态换成**这个包自己目录**的。设置页每一行
-  /// 与 CLI 都走这里。
+  /// [pack] 的下载计划：变体**推荐**与 EP 探测按「语言 + 这个包服务的素材」取
+  /// （与转录弹层同一个 `plan(auto)`），实际变体与模型状态换成**这个包自己目录**
+  /// 的：在这个目录里按上游同一条 [planAsrEncoderVariant] 挑已在盘的可用变体，
+  /// 没有时才是推荐的那个（= 要下载的）。「已下载」因此看任一可用变体，不随显存
+  /// 预算翻转（BUG-4128）。设置页每一行与 CLI 都走这里。
   Future<AsrTranscribePlan> planFor(
     AsrTranscriptionService service,
     AsrModelPack pack,
   ) async {
+    const AsrAccelerationPreference preference = AsrAccelerationPreference.auto;
     final AsrTranscribePlan byLanguage = await serviceFor(
       service,
       pack,
-    ).plan(language: pack.language, preference: AsrAccelerationPreference.auto);
+    ).plan(language: pack.language, preference: preference);
     final AsrModelStore store = await openPackStore(pack);
+    final AsrEncoderVariant variant = planAsrEncoderVariant(
+      recommended: byLanguage.recommendedVariant,
+      preference: preference,
+      isReady: store.isReady,
+    );
     return AsrTranscribePlan(
       language: byLanguage.language,
-      variant: byLanguage.variant,
-      expectedProvider: byLanguage.expectedProvider,
-      modelStatus: await store.status(byLanguage.variant),
+      variant: variant,
+      recommendedVariant: byLanguage.recommendedVariant,
+      expectedProvider: variant == byLanguage.variant
+          ? byLanguage.expectedProvider
+          : selectAsrEncoderProviders(
+              platform: currentAsrPlatform(),
+              available: byLanguage.availableProviders,
+              preference: preference,
+              variant: variant,
+            ).first,
+      modelStatus: await store.status(variant),
       probeError: byLanguage.probeError,
       availableProviders: byLanguage.availableProviders,
     );

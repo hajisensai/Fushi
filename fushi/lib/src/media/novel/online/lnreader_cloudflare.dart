@@ -16,7 +16,11 @@ class LnReaderCloudflareChallenge {
   final String userAgent;
 }
 
-/// 小说在线源的 Cloudflare 放行状态：持久 cookie + 每插件待解的挑战。
+/// 小说在线源的站点会话状态：持久 cookie + 每插件待解的挑战。
+///
+/// [jar] 是小说源**唯一**的 cookie 存储：Cloudflare 放行、用户在 app 里登录的会话、
+/// 站点在响应里下发 / 轮转的会话 cookie（出站桥按 (name, domain) 并进来）都在这
+/// 一份里。登录页 / 解题页整站替换后，下一个请求自然带的就是新会话，不需要通知谁。
 ///
 /// 纯 Dart（不依赖 Flutter）：[LnReaderFetchBridge] 只依赖 `dart:io`，页面在调用
 /// 失败后来查 [challengeFor] 即可，不需要监听。

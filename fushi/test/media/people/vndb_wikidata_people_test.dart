@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/people/person_identity.dart';
 import 'package:fushi_engine/media/people/vndb_voice_cast.dart';
 import 'package:fushi_engine/media/people/wikidata_person_bridge.dart';

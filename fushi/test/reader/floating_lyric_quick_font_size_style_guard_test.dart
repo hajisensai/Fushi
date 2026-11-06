@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3389：阅读器快捷设置改悬浮字幕字号时，原实现手拼一次
 /// `FloatingLyricChannel.updateStyle(...)` 只带字号与几种颜色，漏了圆角 / 窗宽

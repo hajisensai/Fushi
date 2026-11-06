@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_selected_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 

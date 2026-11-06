@@ -435,8 +435,9 @@ void main() {
     // Android 原生侧：模型还没由 Play 服务取下。
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       kSystemOcrChannel,
-      (MethodCall call) async =>
-          call.method == 'modelStatus' ? 'missing' : null,
+      (MethodCall call) async => call.method == 'modelStatus'
+          ? <String, Object?>{'status': 'missing'}
+          : null,
     );
     addTearDown(
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -784,11 +785,15 @@ void main() {
       debugLatestSystemBallSync = null;
       target = _RecordingActionTarget();
       debugDesktopSystemBallPlatformOverride = true;
+      // 「应用外查词」「截屏识字」要全局查词覆盖窗；不钉住的话 Linux CI 上
+      // isSupported 为 false，这两项被隐藏（本机 Windows 恒真，所以本地绿）。
+      GlobalLookupController.platformOverride = true;
       desktopSystemBallActionTarget = target;
     });
 
     tearDown(() {
       debugDesktopSystemBallPlatformOverride = null;
+      GlobalLookupController.platformOverride = null;
       desktopSystemBallActionTarget = const DesktopSystemBallActionTarget();
       FloatingBallChannel.debugResetHandler();
     });
@@ -1096,6 +1101,28 @@ void main() {
         },
       );
     }
+
+    testWidgets('应用外球截屏识字语言跟随默认内容语言，改了就重发给原生', (WidgetTester tester) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await startSystemBall(tester);
+      Object? ocrLanguageOf(MethodCall call) =>
+          (call.arguments as Map<Object?, Object?>)['ocrLanguage'];
+      expect(ocrLanguageOf(starts().single), 'ja', reason: '没设默认内容语言时回落日语');
+
+      await tester.runAsync(() async {
+        await prefs.setDefaultContentLanguage('zh-Hans');
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(2));
+      expect(ocrLanguageOf(starts().last), 'zh-Hans');
+    });
 
     testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (
       WidgetTester tester,
@@ -1800,6 +1827,17 @@ void main() {
           expect(update['message'], isNull);
         });
 
+        testWidgets('默认内容语言没设时截屏识字用日语识别器', (WidgetTester tester) async {
+          await startOcr(tester);
+          expect(target.recognizeLanguages, <String>['ja']);
+        });
+
+        testWidgets('默认内容语言设成中文时截屏识字跟着用中文识别器', (WidgetTester tester) async {
+          await prefs.setDefaultContentLanguage('zh-Hans');
+          await startOcr(tester);
+          expect(target.recognizeLanguages, <String>['zh-Hans']);
+        });
+
         testWidgets('原生回带取帧诊断（HDR 显示器走 scRGB / 回落 GDI）时记进诊断日志', (
           WidgetTester tester,
         ) async {
@@ -1942,7 +1980,9 @@ void main() {
           expect(called('stopScreenOcr'), isFalse);
         });
 
-        testWidgets('没装日语识别器：冻结层提示去装语言，点任意处退出', (WidgetTester tester) async {
+        testWidgets('没装对应语言的识别器（默认日语）：冻结层提示去装语言，点任意处退出', (
+          WidgetTester tester,
+        ) async {
           mockCapture(tester, <String, Object?>{
             'png': png,
             'screen': <double>[0, 0, 1920, 1080],
@@ -1954,13 +1994,54 @@ void main() {
           await pumpHost(tester);
           await tapAction(tester, 'screen_ocr');
           final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
-          expect(update['message'], t.floating_ball_ocr_language_missing);
+          expect(
+            update['message'],
+            t.floating_ball_ocr_language_pack_missing(language: '日本語 (ja)'),
+          );
           expect(update['lines'], isEmpty);
           await fromNative(tester, 'screenOcrTap', <String, Object?>{
             'x': 10.0,
             'y': 10.0,
           });
           expect(called('stopScreenOcr'), isTrue);
+        });
+
+        testWidgets('Linux 本机 OCR 模型没下载：冻结层提示去设置里下载', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrModelUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
+          expect(update['message'], t.floating_ball_ocr_model_missing);
+          expect(update['lines'], isEmpty);
+        });
+
+        testWidgets('默认内容语言是中文且没装中文识别器：提示里写的是中文', (WidgetTester tester) async {
+          await prefs.setDefaultContentLanguage('zh-Hans');
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrLanguageUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(
+            argsOf('updateScreenOcrOverlay')['message'],
+            t.floating_ball_ocr_language_pack_missing(
+              language: '简体中文 (zh-Hans)',
+            ),
+          );
         });
 
         testWidgets('没识别到字：冻结层上直接说', (WidgetTester tester) async {
@@ -1986,6 +2067,18 @@ void main() {
             find.text(t.floating_ball_ocr_screen_permission),
             findsOneWidget,
           );
+          expect(called('updateScreenOcrOverlay'), isFalse);
+        });
+
+        testWidgets('截图途中被作废（Linux 异步 portal）：静默收场，不唤起主窗、不报失败', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{'error': 'cancelled'});
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(target.log, <String>['dismiss']);
+          await tester.pump();
+          expect(find.text(t.floating_ball_ocr_failed), findsNothing);
           expect(called('updateScreenOcrOverlay'), isFalse);
         });
       });
@@ -2149,9 +2242,17 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         imageHeight: 1,
       );
 
+  /// 每次截屏识字交给系统 OCR 的语言（按调用顺序）。
+  final List<String> recognizeLanguages = <String>[];
+
   @override
-  Future<SystemOcrPageResult> recognize(Uint8List png) async {
+  Future<SystemOcrPageResult> recognize(
+    Uint8List png, {
+    required String language,
+    SystemOcrPlatform? engine,
+  }) async {
     log.add('recognize');
+    recognizeLanguages.add(language);
     return onRecognize(png);
   }
 

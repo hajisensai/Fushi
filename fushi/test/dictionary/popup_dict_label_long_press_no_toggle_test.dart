@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// ZdghRxjVCm：查词弹窗里长按词典标题（选它作制卡词典）松开后，分组同时被折叠/展开。
 ///

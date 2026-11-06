@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-900 源码守卫：app 回前台（[AppLifecycleState.resumed]）时阅读器必须把
 /// Flutter 焦点收回正文 _focusNode，修复「Alt+Tab 切窗回来后页级 / 全局快捷键整体

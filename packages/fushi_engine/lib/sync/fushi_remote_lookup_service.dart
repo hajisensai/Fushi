@@ -285,6 +285,15 @@ class RemoteDictionaryPopupLookup {
   final int bestLength;
 }
 
+/// 反馈 E0sdqm4h-F / PR #2980 审查：可选能力——挖词 service 能回答本机「允许重复」
+/// （`AnkiSettings.allowDupes`）时实现它。`POST /api/duplicate` 据此多回一个
+/// `allowDuplicates` 位，浏览器扩展单击已制卡 ✓ 时与 app 内同一判据：开着就直接再制一张、
+/// 不弹「新增为重复卡 / 取消」；没实现（旧 app / 无头服务端）时不带这个位，扩展照旧问。
+abstract interface class FushiRemoteDuplicatePolicyService {
+  /// 本机制卡是否跳过重复检查。实现方不得抛：读不到设置时回 false（照旧问用户）。
+  Future<bool> allowsDuplicates();
+}
+
 /// 浏览器扩展挖词的窄接口（与查词分离，避免 server 直接依赖 AnkiRepository）。
 abstract class FushiRemoteSourceNoteService {
   Future<AnkiSourceNote?> readSourceNote(String sourceId);

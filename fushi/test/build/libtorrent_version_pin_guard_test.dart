@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1772 源码扫描守卫：内置 torrent 引擎的 libtorrent 版本必须钉死。
 ///

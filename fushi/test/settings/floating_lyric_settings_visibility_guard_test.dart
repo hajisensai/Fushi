@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Guards the settings-panel visibility of the desktop floating-subtitle
 /// controls (TODO-038). The bug: the three floating-lyric items were gated to

@@ -6,8 +6,10 @@ part of '../fushi_sync_server.dart';
 ///   1. 装配方没接 [FushiSyncServer.hostSelfUpdater] → 404（老 host）；
 ///   2. 必须是已配对 peer 的专属 token（共享 token 不收）→ 403 peer_token_required；
 ///   3. GET：回状态 + 给这个 peer 签一个一次性 nonce；
-///   4. POST：平台门 → 用户开关 → 信任区（P2P / 公网拒）→ nonce 核销 → 交给
-///      [HostSelfUpdater.startUpdate]。
+///   4. POST：平台门 → 用户开关 → nonce 核销 → 交给 [HostSelfUpdater.startUpdate]。
+/// 不按信任区拒（反馈 d639PMD5mS）：能走到这里的请求已经带着配对时发的专属 token
+/// （P2P / 公网配对本就强制 PIN 或票据），再加上主机端开关与一次性 nonce，局域网、
+/// 组网、公网、P2P 隧道进来的已配对设备权限相同。
 /// 触发与拒绝都写一条诊断日志。
 extension _FushiSyncServerHostUpdate on FushiSyncServer {
   Future<shelf.Response> _handleHostUpdate(
@@ -59,9 +61,6 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
     if (!updater.platformSupported) return HostUpdateDenial.unsupported;
     if (!await updater.isRemoteUpdateAllowed()) {
       return HostUpdateDenial.disabled;
-    }
-    if (!_isLanPeerRequest(request, _remoteAddress(request))) {
-      return HostUpdateDenial.zone;
     }
     final String? nonce = await _readHostUpdateNonce(request);
     if (!_hostUpdateNonces.consume(nonce, peerKey)) {

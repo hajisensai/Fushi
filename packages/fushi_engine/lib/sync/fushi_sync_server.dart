@@ -4,11 +4,15 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/sync/ai_relay_routes.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
 import 'package:fushi_engine/sync/disc_share_routes.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
@@ -43,6 +47,7 @@ import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant_routes.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
@@ -241,6 +246,20 @@ bool _constantTimeEquals(Uint8List a, Uint8List b) {
   return result == 0;
 }
 
+/// 把 [file] 的字节流式交给响应体，流结束（传完 / 对端断开取消订阅）后删它所在的
+/// 临时目录。用 `async*` 的 `finally`：订阅被取消时同样执行。
+Stream<List<int>> _streamThenDeleteDir(File file) async* {
+  try {
+    yield* file.openRead();
+  } finally {
+    try {
+      await file.parent.delete(recursive: true);
+    } catch (_) {
+      // best-effort：临时目录清理失败不影响已发出的响应。
+    }
+  }
+}
+
 String? _extractVideoId(String reqPath, String suffix) {
   const String prefix = '/api/library/videos/';
   final String fullSuffix = '/$suffix';
@@ -319,6 +338,7 @@ class FushiSyncServer {
     FushiRemoteHistoryService? historyService,
     FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
+    ScreenOcrHost? screenOcr,
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
@@ -347,6 +367,7 @@ class FushiSyncServer {
        _historyService = historyService,
        _libraryService = libraryService,
        _mangaOcrJobs = mangaOcrJobs,
+       _screenOcr = screenOcr,
        _hostJobs = hostJobs,
        _downloads = downloads,
        _assistant = assistant == null ? null : HostAssistantSessions(assistant),
@@ -383,6 +404,9 @@ class FushiSyncServer {
   /// `mangaOcr` 字段）。null = 未接线（headless/单测/host 未启用），端点 404、
   /// capabilities 不带该字段——老 client / 老 host 双向兼容。
   final MangaOcrHostJobManager? _mangaOcrJobs;
+
+  /// 截屏识字（`/api/ocr/screen` + capabilities `screenOcrV1`）。null = host 不提供，端点 404。
+  final ScreenOcrHost? _screenOcr;
 
   /// 通用任务（ASR 等，设计 §3.4）。null = host 不提供，`/api/jobs` 404、能力位无 `jobs`。
   final HostJobManager? _hostJobs;
@@ -526,6 +550,30 @@ class FushiSyncServer {
   /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
   SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
 
+  /// 「互联主机」AI 提供商的主机侧（反馈 M8KvhMTHVS，`ai/ai_relay.dart`）：已配对设备把
+  /// 补全交给本机，用本机的提供商执行，key 不出本机。每个请求现取本机的 AI 设置；开关
+  /// 每个请求现读 [_prefs]（[readInterconnectAiRelayEnabled]）。null（旧调用方 / 单测）
+  /// → `/api/ai/relay/*` 404、能力位不声明 [kAiRelayCapability]，客户端据 404 报「主机
+  /// 版本太旧」。
+  AiSettingsSource Function()? aiRelaySettings;
+
+  /// 主机执行补全用的客户端（测试注入假上游）；null = 默认 [AiChatClient]。
+  AiChatClient Function()? aiRelayClientFactory;
+
+  AiRelayHostService? _aiRelayService;
+
+  AiRelayHostService? get _aiRelay {
+    final AiSettingsSource Function()? settings = aiRelaySettings;
+    if (settings == null) return null;
+    return _aiRelayService ??= AiRelayHostService(
+      settings: settings,
+      clientFactory: aiRelayClientFactory,
+    );
+  }
+
+  bool get _aiRelayAdvertised =>
+      aiRelaySettings != null && readInterconnectAiRelayEnabled(_prefs);
+
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
   /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
   /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
@@ -533,8 +581,9 @@ class FushiSyncServer {
   String? hostId;
 
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
-  /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
-  /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
+  /// 服务本体是引擎的 `VideoSubtitleBackfillService`（media/video/subtitle/），app 与
+  /// 无头服务端各自装配字幕来源后注入。null（单测 / 旧调用方）时该端点回 501，
+  /// 能力位 `videoSubtitleBackfill=false`。
   VideoSubtitleBackfillRunner? videoSubtitleBackfill;
 
   /// 图形字幕整轨回传（`GET /api/library/videos/<id>/graphicsubtitle`）用的抽取实现。
@@ -813,6 +862,7 @@ class FushiSyncServer {
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
+    await _screenOcr?.dispose();
     await _hostJobs?.disposeAll();
     await _assistant?.dispose();
   }
@@ -946,13 +996,28 @@ class FushiSyncServer {
       if (review == null) return shelf.Response.notFound('SRS review off');
       return handleSrsRemoteStoreRequest(review, request, method, reqPath);
     }
+    if (reqPath.startsWith(kAiRelayPathPrefix)) {
+      final AiRelayHostService? relay = _aiRelay;
+      if (relay == null) return shelf.Response.notFound('AI relay off');
+      return handleAiRelayRequest(
+        relay,
+        request,
+        method,
+        reqPath,
+        enabled: readInterconnectAiRelayEnabled(_prefs),
+      );
+    }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
       final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
+      final bool screenOcr = await _screenOcr?.isAvailable() ?? false;
+      final bool aiRelay = _aiRelayAdvertised;
       if (_videoRemoteService == null &&
           !_leaderboardLinkAvailable &&
-          !srsRemoteStore) {
+          !srsRemoteStore &&
+          !screenOcr &&
+          !aiRelay) {
         return response;
       }
       final Map<String, dynamic> capabilities =
@@ -964,6 +1029,8 @@ class FushiSyncServer {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
       if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
+      if (screenOcr) capabilities[kScreenOcrCapability] = true;
+      if (aiRelay) capabilities[kAiRelayCapability] = true;
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {
@@ -975,6 +1042,12 @@ class FushiSyncServer {
     }
     // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
     // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。
+    // 截屏识字（Steam Deck 游戏内识字等）：处理逻辑在 fushi_screen_ocr_host.dart。
+    if (reqPath == kScreenOcrPath) {
+      final ScreenOcrHost? screenOcr = _screenOcr;
+      if (screenOcr == null) return shelf.Response.notFound('Screen OCR off');
+      return screenOcr.handle(request);
+    }
     if (reqPath == '/api/ocr/job' || reqPath.startsWith('/api/ocr/job/')) {
       final MangaOcrHostJobManager? mangaOcr = _mangaOcrJobs;
       if (mangaOcr == null) return shelf.Response.notFound('Manga OCR off');

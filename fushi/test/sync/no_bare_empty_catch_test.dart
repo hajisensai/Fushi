@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Anti-recurrence guard. A bare empty `catch (...) {}` silently swallows an
 /// error and is exactly how this session's silent-failure bugs (HBK-AUDIT-163

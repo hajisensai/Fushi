@@ -1,7 +1,7 @@
 /// 契约 §2.4 逐字段合并优先级 + §1.3 custom 覆盖层的纯函数测试。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';

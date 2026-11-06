@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2577 源码守卫：「按作品归类 + 刮削」导入在手机上整机冻结 / 被系统杀掉，
 /// 根因是几段十万级数据的解析、建索引与打分全跑在 UI isolate 上。修复后这些
