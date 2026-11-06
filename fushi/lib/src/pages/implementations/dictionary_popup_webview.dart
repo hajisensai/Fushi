@@ -4060,7 +4060,7 @@ JSON.stringify((function(){
         child: webView,
       );
     }
-    // BUG-1451 键盘那一半 + BUG-4127：复制键到不了 WebView 的原生 copy——Windows 的
+    // BUG-1451 键盘那一半 + BUG-4130：复制键到不了 WebView 的原生 copy——Windows 的
     // WebView2 走合成模式，fork 只转发鼠标、**不转发键盘**；macOS 的 first responder
     // 始终是 FlutterView（BUG-2948 真机取证），菜单 Edit > Copy 的 `copy:` 到不了
     // WKWebView。但这一按键**一定**会到 Flutter（KeyEvent 沿焦点链向上冒泡），在这里
@@ -4085,7 +4085,7 @@ JSON.stringify((function(){
     );
   }
 
-  /// 桌面弹窗内的「复制选中文字」兼容层（BUG-1451 Windows Ctrl+C、BUG-4127 macOS ⌘C，
+  /// 桌面弹窗内的「复制选中文字」兼容层（BUG-1451 Windows Ctrl+C、BUG-4130 macOS ⌘C，
   /// 与 BUG-402 同根）。
   ///
   /// 判据复用阅读器正文那条**同一个纯谓词** [desktopShouldHandleCopyGesture]（Windows

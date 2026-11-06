@@ -130,7 +130,7 @@ bool readerWheelTickIsForward({
   return deltaPositive == swipeLeftIsForward(invert: invertSwipe, rtl: rtl);
 }
 
-/// 桌面阅读器 / 查词弹窗「复制选中文字」兼容层（BUG-402 Windows、BUG-4127 macOS）。
+/// 桌面阅读器 / 查词弹窗「复制选中文字」兼容层（BUG-402 Windows、BUG-4130 macOS）。
 ///
 /// 两个桌面平台的浏览器原生 `copy` 都收不到这一按键，只是断法不同：
 /// * Windows：WebView 走 WebView2 合成模式，fork 的 `flutter_inappwebview_windows`

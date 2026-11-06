@@ -5,7 +5,7 @@
 // 真实选区也照不到真实剪贴板。能在最强可落地层锁住的，是「实现必须保持这几条不变式」：
 //   ① 右键菜单的选区必须在**右键那一刻**取快照，不能在 `await showMenu` 之后才读；
 //   ② 空选区不得**静默**早退（必须有反馈），成功复制必须有反馈；
-//   ③ 桌面弹窗必须挂复制键兼容层（Windows Ctrl+C、macOS ⌘C，BUG-4127），且判据复用
+//   ③ 桌面弹窗必须挂复制键兼容层（Windows Ctrl+C、macOS ⌘C，BUG-4130），且判据复用
 //      与阅读器同一个纯谓词；这层不得被包进 Windows 专属分支。
 // 纯谓词本身的真值表已由 test/shortcuts/reader_desktop_copy_test.dart 覆盖，此处不重复。
 import 'dart:io';
@@ -93,7 +93,7 @@ void main() {
     });
   });
 
-  group('BUG-1451 / BUG-4127 ③ 桌面复制键兼容层', () {
+  group('BUG-1451 / BUG-4130 ③ 桌面复制键兼容层', () {
     test('弹窗挂了 onKeyEvent 复制兼容层', () {
       expect(
         code.contains('onKeyEvent: _handleDesktopCopyKey'),
@@ -104,7 +104,7 @@ void main() {
       );
     });
 
-    test('复制拦截层不在 Windows 专属分支里（macOS 也要挂，BUG-4127）', () {
+    test('复制拦截层不在 Windows 专属分支里（macOS 也要挂，BUG-4130）', () {
       // 旧版把 Focus(onKeyEvent: _handleDesktopCopyKey) 写在 `if (isWindowsPlatform)` 分支
       // 里，macOS 弹窗根本没有这层，⌘C 只能落到菜单 Edit > Copy → first responder
       // FlutterView（BUG-2948），WKWebView 收不到 copy:。平台判定只许留在谓词里。
@@ -139,7 +139,7 @@ void main() {
         body.contains('isWindows: isWindowsPlatform') &&
             body.contains('isMacOS: isMacOSPlatform'),
         isTrue,
-        reason: '谓词必须同时拿到 Windows 与 macOS 平台事实（BUG-4127：macOS ⌘C 也要接管）。',
+        reason: '谓词必须同时拿到 Windows 与 macOS 平台事实（BUG-4130：macOS ⌘C 也要接管）。',
       );
       expect(
         code.contains(

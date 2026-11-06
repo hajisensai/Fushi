@@ -171,7 +171,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
 
     final Set<ModifierKey> modifiers = _activeModifiers();
 
-    // BUG-402 / BUG-4127：桌面阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
+    // BUG-402 / BUG-4130：桌面阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
     // 转发鼠标不转发键盘，Ctrl+C 到不了 WebView2；macOS 上 first responder 始终是
     // FlutterView（BUG-2948 真机取证），菜单 Edit > Copy 的 `copy:` 到不了 WKWebView。
     // 两端都在应用层接管：取浏览器原生选区文本写系统剪贴板。仅 Windows 纯 Ctrl+C /

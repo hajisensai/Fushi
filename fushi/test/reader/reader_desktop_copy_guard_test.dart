@@ -25,13 +25,13 @@ String statementAt(String src, String anchor) {
   fail('锚点 $anchor 之后找不到同层分号（语句未收口？）');
 }
 
-/// BUG-402 / BUG-4127 源码守卫：阅读器桌面复制兼容层（Windows Ctrl+C、macOS ⌘C）
+/// BUG-402 / BUG-4130 源码守卫：阅读器桌面复制兼容层（Windows Ctrl+C、macOS ⌘C）
 /// 接线不得回退。
 ///
 /// 复制链路涉 WebView2 键盘转发 / macOS first responder（BUG-2948），widget 测试照
 /// 不到真实复制，故这里用源码扫描钉死三件事：① 键事件处理调用纯谓词
 /// desktopShouldHandleCopyGesture，且把 Windows 与 macOS 两个平台事实都传进去
-/// （BUG-4127：旧版只传 isWindows，macOS 的 ⌘C 永远到不了 WKWebView）；② 取的是浏览器原生 getSelection（window.getSelection），
+/// （BUG-4130：旧版只传 isWindows，macOS 的 ⌘C 永远到不了 WKWebView）；② 取的是浏览器原生 getSelection（window.getSelection），
 /// **不是** fushiSelection 查词选区；③ 命中后写系统剪贴板 Clipboard.setData。
 void main() {
   final File caret = File(
@@ -55,7 +55,7 @@ void main() {
       contains('isMacOS: isMacOSPlatform'),
       reason:
           'macOS 点正文后 first responder 通常仍是 FlutterView，⌘C 的 copy: 到不了 WKWebView'
-          '（BUG-4127 / BUG-2948），谓词必须拿到 isMacOSPlatform',
+          '（BUG-4130 / BUG-2948），谓词必须拿到 isMacOSPlatform',
     );
 
     // ② + ③ 经 helper 取原生选区写剪贴板。
