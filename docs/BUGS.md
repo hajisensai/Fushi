@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3723 条。点号进各自文件。
+> 共 3724 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4124](bugs/BUG-4124-ios-island-clipped-and-large-widget-overflow.md) | ✅ | ✅ | ios-island-clipped-and-large-widget-overflow |
 | [BUG-4123](bugs/BUG-4123-music-lookup-popup-cover-theme.md) | ✅ | ✅ | music-lookup-popup-cover-theme |
 | [BUG-4122](bugs/BUG-4122-srs-reposition-probe-delegated.md) | ✅ | ✅ | Fushi 复习下按词频重排新卡报 AnkiRepositionUnsupportedException：探测委派给了 Anki 后端 |
 | [BUG-4121](bugs/BUG-4121-mpv-cache-on-disk-without-cache-dir.md) | ✅ | ✅ | 每次开网络流 mpv 报 "Failed to create file cache" |
