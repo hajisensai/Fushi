@@ -2037,9 +2037,7 @@ class AppModel with ChangeNotifier {
       pause: engine.pause,
       settingEnabled: () => isDatabaseReady && prefsRepo.musicLyricsLookupPause,
     );
-    GlobalLookupController.instance.addHiddenListener(
-      lookupPause.lookupClosed,
-    );
+    GlobalLookupController.instance.addHiddenListener(lookupPause.lookupClosed);
     FloatingLyricLookupNotifier.instance.lookupClosed.addListener(
       lookupPause.lookupClosed,
     );
