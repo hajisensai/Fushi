@@ -353,7 +353,7 @@ class _VideoSubtitleGenerateSheetState
         .resumeDownload(language: language);
     if (asr != null) {
       setState(() => _asrDownload = _starting);
-      unawaited(_followAsr(asr));
+      unawaited(_followAsr(asr, language));
     } else {
       setState(() => _asrDownload = null);
     }
@@ -383,7 +383,7 @@ class _VideoSubtitleGenerateSheetState
         .resumeDownload(language: _language);
     if (asr != null) {
       _asrDownload = _starting;
-      unawaited(_followAsr(asr));
+      unawaited(_followAsr(asr, _language));
     }
     final Stream<ModelDownloadEvent>? moss = _service.mossPort.resumeEnsure();
     if (moss != null) {
@@ -466,20 +466,24 @@ class _VideoSubtitleGenerateSheetState
 
   Future<void> _refreshEstimate() async {
     if (_estimating) return;
+    final VideoSubtitleLanguage language = _language;
     setState(() => _estimating = true);
+    AppVideoSubtitleCostEstimate? estimate;
     try {
-      final AppVideoSubtitleCostEstimate estimate = await _service.estimateCost(
-        _target,
-        language: _language,
-      );
-      if (mounted) setState(() => _estimate = estimate);
+      estimate = await _service.estimateCost(_target, language: language);
     } catch (error, stack) {
       // 预估只是参考：读不出时长 / 缓存坏了就不显示，不拦用户（但留日志可查）。
       ErrorLogService.instance.log('video.subtitleEstimate', error, stack);
-      if (mounted) setState(() => _estimate = null);
-    } finally {
-      if (mounted) setState(() => _estimating = false);
     }
+    if (!mounted) return;
+    setState(() {
+      _estimating = false;
+      // 算的是发起时那门语言（任务目录、专名表、提示词都按语言分）；期间换了语言，
+      // 这份不属于当前选择，不显示。
+      if (language == _language) _estimate = estimate;
+    });
+    // 换语言时那次刷新被上面的 `_estimating` 挡掉了：按当前语言补算一次。
+    if (language != _language && _proofread) unawaited(_refreshEstimate());
   }
 
   static const ModelDownloadEvent _starting = ModelDownloadEvent(
@@ -493,20 +497,32 @@ class _VideoSubtitleGenerateSheetState
       _asrDownloadError = null;
       _asrDownload = _starting;
     });
-    unawaited(_followAsr(_service.asrModelPort.download(language: _language)));
+    final VideoSubtitleLanguage language = _language;
+    unawaited(
+      _followAsr(_service.asrModelPort.download(language: language), language),
+    );
   }
 
-  /// 跟一条识别模型下载的进度。弹层关掉只摘掉这个监听，下载本身继续。
-  Future<void> _followAsr(Stream<ModelDownloadEvent> download) async {
+  /// 跟一条 [language] 识别模型下载的进度。弹层关掉只摘掉这个监听，下载本身继续。
+  ///
+  /// 监听绑定发起时的语言：面板换了语言后这条下载属于别的模型包，它的进度 / 失败 /
+  /// 完成都不能写进当前语言的模型状态（换回来时 [_applyLanguage] 会重新接回）。
+  /// 退出 `await for` 只取消本监听，下载归 `sharedModelDownloads`，照常跑完。
+  Future<void> _followAsr(
+    Stream<ModelDownloadEvent> download,
+    VideoSubtitleLanguage language,
+  ) async {
     try {
       await for (final ModelDownloadEvent e in download) {
-        if (!mounted) return;
+        if (!mounted || language != _language) return;
         setState(() => _asrDownload = e);
       }
     } catch (error) {
-      if (mounted) setState(() => _asrDownloadError = '$error');
+      if (mounted && language == _language) {
+        setState(() => _asrDownloadError = '$error');
+      }
     }
-    if (!mounted) return;
+    if (!mounted || language != _language) return;
     setState(() => _asrDownload = null);
     await _refreshPlan();
   }

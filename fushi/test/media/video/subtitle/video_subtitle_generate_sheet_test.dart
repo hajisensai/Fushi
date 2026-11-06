@@ -81,6 +81,31 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   }) => running.isClosed ? null : running.stream;
 }
 
+/// 按语言分开的识别模型：日语那包正在下（之前那次弹层发起的），普通话没下也没在下。
+class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
+  final StreamController<ModelDownloadEvent> japanese =
+      StreamController<ModelDownloadEvent>.broadcast();
+
+  @override
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async => false;
+
+  @override
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => language == VideoSubtitleLanguage.japanese
+      ? japanese.stream
+      : const Stream<ModelDownloadEvent>.empty();
+
+  @override
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => language == VideoSubtitleLanguage.japanese && !japanese.isClosed
+      ? japanese.stream
+      : null;
+}
+
 void main() {
   late FushiDatabase db;
   late Directory tmp;
@@ -418,6 +443,58 @@ void main() {
       _FakePrefs(),
     );
     expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+  });
+
+  testWidgets('换了语言后，另一门语言那条下载的进度 / 失败不写进当前语言的模型状态', (
+    WidgetTester tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _PerLanguageAsr asr = _PerLanguageAsr();
+    // 只有中文音轨：面板先按日语接回日语那条下载，猜出普通话后切过去。
+    await pumpSheet(
+      tester,
+      buildService(
+        asrModelPort: asr,
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'chi'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+
+    final Finder button = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-model-download'),
+    );
+    expect(
+      tester.widget<FushiOutlinedButton>(button).onPressed,
+      isNotNull,
+      reason: '普通话模型没在下，下载钮可点',
+    );
+
+    asr.japanese.add(
+      const ModelDownloadEvent(
+        fileName: 'parakeet.onnx',
+        receivedBytes: 40,
+        totalBytes: 100,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      tester.widget<FushiOutlinedButton>(button).onPressed,
+      isNotNull,
+      reason: '日语那条的进度不属于普通话模型，不能把普通话的下载钮挡掉',
+    );
+
+    asr.japanese.addError(StateError('ja download failed'));
+    await asr.japanese.close();
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('ja download failed'), findsNothing);
   });
 
   AppVideoSubtitleTarget retarget({
