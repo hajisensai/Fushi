@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-4123：iOS 灵动岛 / 主屏小组件的封面与布局不变式。
+/// BUG-4124：iOS 灵动岛 / 主屏小组件的封面与布局不变式。
 ///
 /// 三处都是 SwiftUI 层「编得过、模拟器 / analyze 看不出、真机才露馅」的错：
 /// 1. Live Activity 的图片不能大于所在呈现区域，原图塞进灵动岛紧凑位只会画成一块灰

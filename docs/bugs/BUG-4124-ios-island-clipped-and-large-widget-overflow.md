@@ -1,4 +1,4 @@
-## BUG-4123 · ios-island-clipped-and-large-widget-overflow
+## BUG-4124 · ios-island-clipped-and-large-widget-overflow
 - **报告**：2026-11-06（用户：iPhone 灵动岛展开态显示不全、紧凑态封面是一块灰方块；主屏「继续」大号小组件封面铺满整块、文字叠在一起）
 - **真实性**：✅ 真 bug，三处根因：
   - 灵动岛紧凑态灰块：`fushi/apple/HomeWidgets/Extension/FushiLiveActivities.swift:191`（旧）`FushiPlatformImage.load(path)` 整张原图解码，Live Activity 的图片大于呈现区域时系统只画占位（展开态区域大才侥幸显示）。
