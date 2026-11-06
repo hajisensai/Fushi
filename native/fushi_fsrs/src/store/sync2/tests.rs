@@ -2284,6 +2284,21 @@ fn v26_upgrade_replays_cards_with_event_copies() {
     let want_r2 = log_json(&a, "r2");
     let want_s1 = log_json(&a, "s1");
 
+    // 对照：副本的 HLC 不同（EventKey 不成组，等于旧规则下把副本当独立有效日志再推进一次），r2 写回的 `res` 必须
+    // 与新规则的不同——否则这条测试在 EventKey 不再成组时也会绿。
+    let old_rule = Device::new("v26-old-rule");
+    let mut independent = review("r1-copy", "C", T0 + 10, 3, "learn");
+    independent["x"]["hlc"] = json!(format!("{}:0:dart", T0 + 11));
+    old_rule.apply(T0, vec![deck_entity(&deck)]);
+    old_rule.apply(T0 + 10, vec![review("r1", "C", T0 + 10, 3, "learn")]);
+    old_rule.apply(T0 + 11, vec![independent]);
+    old_rule.apply(T0 + DAY, vec![review("r2", "C", T0 + DAY, 3, "review")]);
+    assert_ne!(
+        log_json(&old_rule, "r2")["res"],
+        want_r2["res"],
+        "treating the copy as an independent log changes r2's result"
+    );
+
     // 模拟旧规则算出的存量行：r2（带副本的卡）与 s1（没有副本的卡）的 `res` 都改成别的值，版本退回 v25。
     let stale = |d: &Device, id: &str, v: &Value| {
         let mut j = v.clone();
@@ -2333,10 +2348,8 @@ fn v26_upgrade_replays_cards_with_event_copies() {
     let stored = &a.rows(&format!(
         "SELECT value FROM srs_meta WHERE key = 'sync2_digest/{P}'"
     ))[1][0];
-    assert!(
-        stored.contains(&format!("@{}", super::digest::VV_PREFIX)),
-        "{stored}"
-    );
+    assert!(stored.contains("@4:"), "{stored}");
+    assert!(!stored.contains("@3:"), "{stored}");
     // 可重放：再跑一遍什么也不改。
     let w = a.core.writer().unwrap();
     assert!(super::replay_event_copies(&w).unwrap().is_empty());

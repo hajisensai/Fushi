@@ -379,13 +379,13 @@ fn legacy_ctx_json(x: &Value) -> String {
 /// 所以升级时把可能带副本的卡按新规则重放一遍，结果与新代码从操作重新投影逐位相同。
 ///
 /// 只处理已启用同步 v2 的 profile（`sync2_self`；没启用的 profile 从不重放、结果就是作者原值）。候选按落库列粗筛：
-/// 同卡、同 kind（undo 不成组）、同发生时刻 / 评分 / 复习类型 / 来源的日志不止一条——`EventKey` 的这些分量都是列，
+/// 同卡、同 kind（undo 不成组）、同发生时刻 / 评分 / 是否评分类复习类型 / 来源的日志不止一条——`EventKey` 的这些分量都是列，
 /// HLC 与 ankiId 在 JSON 里不参与粗筛，所以候选是带副本的卡的超集；多出来的卡重放一遍也只是写回它本来就该有的值
 /// （重放是操作集合的纯函数）。摘要桶由 UPDATE 触发器随行增减。可重放：第二次重放写不出不同的行。返回改了投影行的卡。
 pub(crate) fn replay_event_copies(c: &Connection) -> Result<BTreeSet<String>, String> {
     let cards: BTreeSet<String> = c
         .prepare(
-            "SELECT DISTINCT srs_idt(card_id) AS card_id FROM (                SELECT card_id FROM srs_review_logs                WHERE kind <> 'undo' AND profile_uid IN (SELECT profile_uid FROM sync2_self)                GROUP BY profile_uid, card_id, kind, occurred_at, rating, review_type, origin HAVING COUNT(*) > 1)",
+            "SELECT DISTINCT srs_idt(card_id) AS card_id FROM (                SELECT card_id FROM srs_review_logs                WHERE kind <> 'undo' AND profile_uid IN (SELECT profile_uid FROM sync2_self)                GROUP BY profile_uid, card_id, kind, occurred_at, rating, review_type IN ('learn', 'review', 'relearn'), origin HAVING COUNT(*) > 1)",
         )
         .map_err(sql)?
         .query_map([], |r| r.get(0))
