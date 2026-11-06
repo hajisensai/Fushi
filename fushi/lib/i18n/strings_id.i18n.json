@@ -2974,6 +2974,7 @@
   "floating_ball_ocr_failed": "OCR layar gagal",
   "floating_ball_ocr_language_pack_missing": "Windows tidak memiliki pengenal teks untuk $language. Tambahkan bahasa tersebut (dengan Pengenalan karakter optik) di Pengaturan → Waktu & bahasa → Bahasa & wilayah",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "Model OCR sistem belum siap",
   "floating_ball_ocr_notification": "OCR layar sedang berlangsung",
   "floating_ball_ocr_pick_hint": "Ketuk teks untuk mencarinya",

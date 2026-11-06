@@ -2974,6 +2974,7 @@
   "floating_ball_ocr_failed": "Bildschirm-OCR fehlgeschlagen",
   "floating_ball_ocr_language_pack_missing": "Windows hat keine Texterkennung für $language. Füge diese Sprache (mit optischer Zeichenerkennung) unter Einstellungen → Zeit und Sprache → Sprache und Region hinzu",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "Das System-OCR-Modell ist noch nicht bereit",
   "floating_ball_ocr_notification": "Bildschirm-OCR läuft",
   "floating_ball_ocr_pick_hint": "Tippe auf Text, um ihn nachzuschlagen",

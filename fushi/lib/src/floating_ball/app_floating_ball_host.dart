@@ -42,6 +42,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ai/agent/ai_agent_ui_context.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/ocr/local_screen_ocr.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
@@ -67,6 +69,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
 /// 外部查词请求（App Intent / 深链）。app 未初始化时先存着，宿主就绪后取走。
 final ValueNotifier<String?> pendingExternalLookup = ValueNotifier<String?>(
@@ -257,6 +260,7 @@ bool floatingBallSystemActionAvailable(
   isIOS: Platform.isIOS,
   isDesktop: isDesktopSystemBallPlatform,
   lookupModuleEnabled: lookupModuleEnabled,
+  globalLookupSupported: GlobalLookupController.isSupported,
 );
 
 /// 桌面系统球动作落到的执行面：全局查词覆盖窗与主窗。宿主只决定「哪颗按钮走
@@ -290,12 +294,18 @@ class DesktopSystemBallActionTarget {
   /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
   Future<void> dismissLookup() => GlobalLookupChannel.hide();
 
-  /// 系统 OCR 识别一张截图（macOS Vision / Windows.Media.Ocr）；[language] 见
+  /// 识别一张截图：[engine] 为 null 时走系统 OCR（macOS Vision /
+  /// Windows.Media.Ocr）；Linux 没有系统 OCR，宿主传本机 OCR 模型
+  /// （[LocalScreenOcr]）。[language] 见
   /// [PreferencesRepository.screenOcrLanguage]。
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
     required String language,
-  }) => const MethodChannelSystemOcr().recognize(png, language: language);
+    SystemOcrPlatform? engine,
+  }) => (engine ?? const MethodChannelSystemOcr()).recognize(
+    png,
+    language: language,
+  );
 
   Future<void> bringMainWindowToFront() =>
       DesktopLookupService.instance.bringMainWindowToFront();
@@ -516,6 +526,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   @override
   void dispose() {
     if (identical(_current, this)) _current = null;
+    unawaited(_linuxScreenOcr?.dispose());
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_pictureInPictureSub?.cancel());
     _registry.removeListener(_onChanged);
@@ -1017,6 +1028,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     }
     final Uint8List? png = capture.png;
     final Rect? screen = capture.screen;
+    if (capture.error == DesktopScreenOcrCapture.cancelled) return;
     if (png == null || screen == null) {
       // 没截到图就没有冻结层可写字：提示只能在主窗里给。
       await target.bringMainWindowToFront();
@@ -1041,6 +1053,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final SystemOcrPageResult result = await target.recognize(
         png,
         language: language,
+        engine: Platform.isLinux ? _localScreenOcr() : null,
       );
       lines = result.lines;
       ErrorLogService.instance.logDiagnostic(
@@ -1051,11 +1064,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       );
       if (result.isEmpty) message = t.floating_ball_ocr_empty;
     } on SystemOcrUnavailableException catch (error) {
-      message = error.reason == kSystemOcrLanguageUnavailableReason
-          ? t.floating_ball_ocr_language_pack_missing(
-              language: contentLanguageLabelOf(language),
-            )
-          : t.floating_ball_ocr_failed;
+      message = switch (error.reason) {
+        kSystemOcrLanguageUnavailableReason =>
+          t.floating_ball_ocr_language_pack_missing(
+            language: contentLanguageLabelOf(language),
+          ),
+        // Linux：本机 OCR 模型还没下载（设置里下载）。
+        kSystemOcrModelUnavailableReason => t.floating_ball_ocr_model_missing,
+        _ => t.floating_ball_ocr_failed,
+      };
     } catch (error, stack) {
       ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
       message = t.floating_ball_ocr_failed;
@@ -1067,6 +1084,22 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       lines: <Rect>[for (final SystemOcrTextLine line in lines) line.rect],
       message: message,
     );
+  }
+
+  /// Linux 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着
+  /// 换（[mangaOcrServiceProvider] 按模型键重建），识别器随之重建。
+  LocalScreenOcr? _linuxScreenOcr;
+  MangaOcrService? _linuxScreenOcrService;
+
+  LocalScreenOcr _localScreenOcr() {
+    final MangaOcrService service = ref.read(mangaOcrServiceProvider);
+    final LocalScreenOcr? current = _linuxScreenOcr;
+    if (current != null && identical(service, _linuxScreenOcrService)) {
+      return current;
+    }
+    if (current != null) unawaited(current.dispose());
+    _linuxScreenOcrService = service;
+    return _linuxScreenOcr = LocalScreenOcr(service);
   }
 
   /// 冻结层上点了一下（截图像素）：点在字上 → 查从这个字起的后缀，卡锚在这个字
