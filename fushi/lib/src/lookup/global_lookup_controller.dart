@@ -761,7 +761,7 @@ class GlobalLookupController {
   /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
   /// hotkey_manager keys off the USB-HID [PhysicalKeyboardKey]; the registry
   /// stores a logical key + [ModifierKey] set. [InputBinding.physicalKey] reuses
-  /// the same logical→physical table the IME fallback uses (US-QWERTY). Returns
+  /// the same logical→physical table normalizeCapturedKey indexes (US-QWERTY). Returns
   /// null when the logical key has no physical mapping (e.g. game* / numpad keys
   /// that are not valid global hotkeys anyway).
   HotKey? _hotKeyFromBinding(InputBinding binding) {
