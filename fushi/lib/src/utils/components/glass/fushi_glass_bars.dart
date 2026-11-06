@@ -2373,7 +2373,7 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
         TabBarTheme.of(context).tabAlignment ??
         (_bar.isScrollable ? TabAlignment.start : TabAlignment.fill);
     final bool fill = !_bar.isScrollable && alignment == TabAlignment.fill;
-    // 铺满档（BUG-4130）：页签宽由 [FushiSegmentRow] 按共用分宽分配，不再
+    // 铺满档（BUG-4166）：页签宽由 [FushiSegmentRow] 按共用分宽分配，不再
     // 「各页签等分整行」让最长的页签先变省略号。调用方没给 labelPadding 时，
     // 页签自身只带最小内边距，首选内边距多出的部分作为 extras 交给分宽
     // （放不下时先收它）。

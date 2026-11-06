@@ -3824,7 +3824,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
       // MD3 与墨水屏都是 M3 Expressive 连接式按钮组：段宽走共用的
-      // [fushiSegmentWidths]（BUG-4130：墨水屏以前退回原生 SegmentedButton，
+      // [fushiSegmentWidths]（BUG-4166：墨水屏以前退回原生 SegmentedButton，
       // 各段等宽、放不下整体缩窄，最长段先被截断）。主题 segmentedButtonTheme
       // 里为墨水屏调的反色填充由连接式组照用，段边界由组补 outline 描边。
       return FushiConnectedButtonGroup<T>(
@@ -3949,7 +3949,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   ///
   /// 横排段宽走 [FushiSegmentRow]（[fushiSegmentWidths]，与主形态同一套退让：
   /// 等宽 → 按内容分宽 → 收内边距 → 只压最宽段），不再 `Expanded` 等分或按
-  /// 自然宽溢出（BUG-4130）。
+  /// 自然宽溢出（BUG-4166）。
   Widget _buildButtonRow(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool expanded = widget.expandedInsets != null;

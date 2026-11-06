@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-/// 分段选择器的段宽分配，全仓所有横排分段共用这一份（BUG-4130：只接了两条
+/// 分段选择器的段宽分配，全仓所有横排分段共用这一份（BUG-4166：只接了两条
 /// 路径，其余路径仍各写一份「等宽后整体等比缩窄」）：
 /// - MD3 胶囊分段 `FushiPillSegmentedButton`、MD3 / 墨水屏连接式按钮组
 ///   `FushiConnectedButtonGroup`、Apple 退回形态（多选 / 允许空选 / 富文本段）
@@ -89,7 +89,7 @@ double _lowerCapTo(List<double> values, double target) {
 /// 一排横向分段：段宽由 [fushiSegmentWidths] 按可用宽度分配，段间缝 [gap]，
 /// 行高取各段最高者、所有段钉成同高（某段折行时其它段一起长高）并竖直居中。
 ///
-/// 全仓横排分段的唯一排布实现（BUG-4130）。别再在别处写「各段取最宽段、
+/// 全仓横排分段的唯一排布实现（BUG-4166）。别再在别处写「各段取最宽段、
 /// 放不下整体等比缩窄」——那正是最长段先被截断的根因（守卫：
 /// `test/build/segmented_button_m3e_guard_test.dart`）。
 ///

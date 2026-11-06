@@ -732,7 +732,7 @@ class _GlassSheetBody extends StatelessWidget {
 ///
 /// 非 Apple 设计一律胶囊分段——包括 Cupertino 设计系统但 Apple 设计不生效
 /// （墨水屏）的情况：那里以前是原生 `CupertinoSlidingSegmentedControl`，各段
-/// 等宽、不走 `fushiSegmentWidths`，最长段先被截断（BUG-4130）。
+/// 等宽、不走 `fushiSegmentWidths`，最长段先被截断（BUG-4166）。
 bool adaptiveSegmentedUsesPill(BuildContext context) => !isGlassDesign(context);
 
 Widget adaptiveSegmentedButton<T extends Object>({

@@ -13,7 +13,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 反馈 GaI5uPQEbF（BUG-4130）：PR #2694 只把 MD3 胶囊分段与 Apple 分段接到
+/// 反馈 GaI5uPQEbF（BUG-4166）：PR #2694 只把 MD3 胶囊分段与 Apple 分段接到
 /// `fushiSegmentWidths`，其余分段路径仍是「等宽取最宽段，放不下整体等比缩窄」，
 /// 最长段先被截断 / 折行，短段里却空着：
 /// - MD3 `FushiSegmentedButton` = `FushiConnectedButtonGroup`；
