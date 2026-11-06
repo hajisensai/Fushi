@@ -65,6 +65,7 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -113,50 +114,76 @@ abstract interface class SrsRwkvBackend {
   Future<void> close();
 }
 
+/// 生产后端：每条命令记进 [SrsOpLedger]（`rwkv:<命令>`，BUG-4075 取证）。worker 在后台 isolate 跑原生
+/// runtime，命令本身不经 store，不记的话内存采样只看得见取数（`core:rwkv_replay`），看不见回放 / 重查
+/// 正在跑多久、跑了几遍——长时间运行的会出现在采样的 `busy=` 段。
 class _WorkerBackend implements SrsRwkvBackend {
   _WorkerBackend(this.worker);
   final RwkvWorker worker;
 
+  static Future<T> _t<T>(String op, Future<T> Function() body) =>
+      SrsOpLedger.track<T>('rwkv:$op', body);
+
   @override
-  Future<void> replay(RwkvRows rows) => worker.replay(rows);
+  Future<void> replay(RwkvRows rows) => SrsOpLedger.track<void>(
+    'rwkv:replay',
+    () => worker.replay(rows),
+    measure: (void _) => (rows.bytes.lengthInBytes, rows.length),
+  );
   @override
   Future<bool> append(RwkvRows rows, List<int> tags, List<int> ats) =>
-      worker.append(rows, tags, ats);
+      SrsOpLedger.track<bool>(
+        'rwkv:append',
+        () => worker.append(rows, tags, ats),
+        measure: (bool _) => (rows.bytes.lengthInBytes, rows.length),
+      );
   @override
-  Future<bool> unappend(int tag) => worker.unappend(tag);
+  Future<bool> unappend(int tag) => _t('unappend', () => worker.unappend(tag));
   @override
   Future<int?> rewindFrom(int atMs, int floorMs) =>
-      worker.rewindFrom(atMs, floorMs);
+      _t('rewind', () => worker.rewindFrom(atMs, floorMs));
   @override
-  Future<Float32List> query(RwkvRows rows) => worker.query(rows);
+  Future<Float32List> query(RwkvRows rows) => SrsOpLedger.track<Float32List>(
+    'rwkv:query',
+    () => worker.query(rows),
+    measure: (Float32List _) => (rows.bytes.lengthInBytes, rows.length),
+  );
   @override
-  Future<void> clearScores() => worker.clearScores();
+  Future<void> clearScores() => _t('clear_scores', worker.clearScores);
   @override
   Future<RwkvScoreLookup> lookupScores(
     Int64List cardIds,
     Uint64List versions,
-  ) => worker.lookupScores(cardIds, versions);
+  ) => _t('lookup_scores', () => worker.lookupScores(cardIds, versions));
   @override
   Future<Float32List> updateScores(
     RwkvRows rows,
     Uint64List versions,
     Int64List anchorsMs,
-  ) => worker.updateScores(rows, versions, anchorsMs);
+  ) => SrsOpLedger.track<Float32List>(
+    'rwkv:update_scores',
+    () => worker.updateScores(rows, versions, anchorsMs),
+    measure: (Float32List _) => (rows.bytes.lengthInBytes, rows.length),
+  );
   @override
   Future<int> requeryScores(int today, int nowMs) =>
-      worker.requeryScores(today, nowMs);
+      _t('requery_scores', () => worker.requeryScores(today, nowMs));
   @override
-  Future<int> removeScores(Int64List cardIds) => worker.removeScores(cardIds);
+  Future<int> removeScores(Int64List cardIds) =>
+      _t('remove_scores', () => worker.removeScores(cardIds));
   @override
-  Future<Uint8List> snapshot() => worker.snapshot();
+  Future<Uint8List> snapshot() => _t('snapshot', worker.snapshot);
   @override
-  Future<void> restore(Uint8List snapshot) => worker.restore(snapshot);
+  Future<void> restore(Uint8List snapshot) =>
+      _t('restore', () => worker.restore(snapshot));
   @override
-  Future<void> snapshotToFile(String path) => worker.snapshotToFile(path);
+  Future<void> snapshotToFile(String path) =>
+      _t('snapshot_to_file', () => worker.snapshotToFile(path));
   @override
-  Future<void> restoreFromFile(String path) => worker.restoreFromFile(path);
+  Future<void> restoreFromFile(String path) =>
+      _t('restore_from_file', () => worker.restoreFromFile(path));
   @override
-  Future<void> reset() => worker.reset();
+  Future<void> reset() => _t('reset', worker.reset);
   @override
   Future<void> close() => worker.close();
 }
@@ -202,6 +229,9 @@ typedef _NewLog = ({
   String? revokes,
 });
 
+/// [SrsRwkvService.journalSeed] 的缺省值（与原生撤销日志容量——约 600 条、32 MB——同量级）。
+const int kSrsRwkvJournalSeed = 500;
+
 /// [SrsRwkvService.requeryAfter] 的缺省值。
 const Duration kSrsRwkvRequeryAfter = Duration(minutes: 30);
 
@@ -212,6 +242,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     required this.snapshotDir,
     this.threads = 0,
     this.requeryAfter = kSrsRwkvRequeryAfter,
+    this.journalSeed = kSrsRwkvJournalSeed,
     Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
   }) : _open = openBackend ?? _openWorker,
@@ -228,6 +259,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
 
   /// 距上次整表重查满这么久，下一次排队前整表重查（见文件头）。
   final Duration requeryAfter;
+
+  /// 整块回放（全量重建 / 检查点 / 退回重放）时最后这么多条 append 进撤销日志，其余整块 replay。
+  final int journalSeed;
   final Future<SrsRwkvBackend> Function(File weights) _open;
   final void Function(String message) _log;
 
@@ -293,6 +327,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
   Stream<SrsRwkvStatus> get statusChanges => _status.stream;
 
   void _set(SrsRwkvStatus status) {
+    // 阶段切换记进账本（BUG-4075 取证：采样窗口里看得出 RWKV 是否卡在准备中、是否反复重建）。
+    if (status.phase != _current.phase) {
+      SrsOpLedger.mark('rwkv:${status.phase.name}');
+    }
     _current = status;
     if (!_status.isClosed) _status.add(status);
   }
@@ -643,19 +681,31 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _stateChangesSinceRequery = 0;
   }
 
-  /// 撤销日志的种子：全量回放 / 从检查点重来时，最后这么多条 append 进撤销日志（其余整块 replay，快），
-  /// 之后晚到的评分落在这一段里就能就地退回重放（[_rebase]）。与原生日志容量（约 600 条）同量级。
-  static const int _journalSeed = 500;
-
   /// 把 [replay] 的行回放进 [backend]（已在 [_serial] 里，调用方已按 reset / restore 设好 [_journalFloor]）：
-  /// 前面的按 65,536 条一块 replay，最后 [_journalSeed] 条 append 进撤销日志。
+  /// 见 [_replayThenAppend]。
   Future<void> _replayRows(
     SrsRwkvBackend backend,
     SrsRwkvReplay replay,
     void Function(int done, int total) onProgress,
+  ) => _replayThenAppend(
+    backend,
+    replay.rows,
+    replay.tags,
+    replay.ats,
+    onProgress,
+  );
+
+  /// 按时间顺序把 [rows]（[tags] / [ats] 与之一一对应）接到 [backend] 当前状态之后（已在 [_serial] 里）：
+  /// 前面的按 65,536 条一块 replay（原生侧成批并行，不进撤销日志，且清空已有撤销日志），最后
+  /// [journalSeed] 条 append 进撤销日志；整块 replay 过的行把 [_journalFloor] 推到它们的最后一条。
+  Future<void> _replayThenAppend(
+    SrsRwkvBackend backend,
+    RwkvRows rows,
+    List<int> tags,
+    List<int> ats,
+    void Function(int done, int total) onProgress,
   ) async {
-    final RwkvRows rows = replay.rows;
-    final int split = max(0, rows.length - _journalSeed);
+    final int split = max(0, rows.length - journalSeed);
     final Uint8List bytes = rows.bytes;
     onProgress(0, rows.length);
     const int block = 65536;
@@ -672,15 +722,15 @@ class SrsRwkvService implements SrsRwkvScheduling {
       );
       onProgress(end, rows.length);
     }
-    if (split > 0) _journalFloor = replay.ats[split - 1];
+    if (split > 0) _journalFloor = ats[split - 1];
     if (split < rows.length) {
       await _append(
         backend,
         RwkvRows.fromBytes(
           Uint8List.sublistView(bytes, split * kFrwkvReviewSize),
         ),
-        replay.tags.sublist(split),
-        replay.ats.sublist(split),
+        tags.sublist(split),
+        ats.sublist(split),
       );
       onProgress(rows.length, rows.length);
     }
@@ -769,7 +819,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
         rewound = n;
       }
       if (replay.rows.length > 0) {
-        await _append(backend, replay.rows, replay.tags, replay.ats);
+        // 与全量回放同一种拆法（BUG-4075）：分歧时刻之后可能有几万行（同步拉回另一台设备的整段历史），
+        // 前面的整块 replay（原生侧成批并行），只把最后 [journalSeed] 条 append 进撤销日志。以前整段
+        // 逐行 append：每行一条撤销记录，手机上一批跑好几分钟，撤销日志在途中涨到 GB 级 OOM。
+        await _replayRows(backend, replay, (int _, int _) {});
       }
       _replayed = now;
       _lastAt = replay.lastAt;
@@ -1056,7 +1109,16 @@ class SrsRwkvService implements SrsRwkvScheduling {
         if (pendingTags.isEmpty) return;
         final RwkvRows batch = RwkvRows(pending.length);
         pending.forEach(batch.addRows);
-        await _append(backend, batch, pendingTags, pendingAts);
+        // 与退回重放同一种拆法（BUG-4075）：同步拉回的新行可能有几万条（都严格晚于已回放的、各是其卡末尾的
+        // 评分，所以走得到这里），整段逐行 append 手机上要算好几分钟。前面的整块 replay，只把最后
+        // [journalSeed] 条 append 进撤销日志——replay 会清空撤销日志，这之后撤更早作答的撤销照旧走退回重放。
+        await _replayThenAppend(
+          backend,
+          batch,
+          pendingTags,
+          pendingAts,
+          (int _, int _) {},
+        );
         // 先记下：后面的撤回失败时，退回重放要从不晚于这些行的时刻退。
         _lastAt = max(_lastAt ?? pendingAts.last, pendingAts.last);
         pending = <RwkvRows>[];

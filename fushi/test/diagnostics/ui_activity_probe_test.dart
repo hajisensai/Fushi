@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -210,5 +211,176 @@ void main() {
     final String out = UiActivityProbe.probe()!;
     expect(out, contains('build=3 who=[_FooState._tick@foo.dart:12]'));
     UiActivityProbe.resetFrames();
+  });
+
+  group('要帧归因', () {
+    StackTrace st(String s) => StackTrace.fromString(s);
+    final StackTrace started = st(
+      '#0      FushiWidgetsFlutterBinding.scheduleFrameCallback (package:fushi/src/diagnostics/fushi_binding.dart:40:5)\n'
+      '#1      Ticker.scheduleTick (package:flutter/src/scheduler/ticker.dart:300:7)\n'
+      '#2      Ticker.start (package:flutter/src/scheduler/ticker.dart:180:7)\n'
+      '#3      AnimationController.repeat (package:flutter/src/animation/animation_controller.dart:700:5)\n'
+      '#4      _OrphanState._resume (package:fushi/src/foo/orphan.dart:77:9)\n',
+    );
+    final StackTrace frameworkOnly = st(
+      '#0      Ticker.scheduleTick (package:flutter/src/scheduler/ticker.dart:300:7)\n'
+      '#1      Ticker.muted= (package:flutter/src/scheduler/ticker.dart:120:7)\n'
+      '#2      TickerMode._update (package:flutter/src/widgets/ticker_provider.dart:90:5)\n',
+    );
+
+    void tick() {}
+
+    tearDown(UiActivityProbe.resetFrames);
+
+    test('调用点：先取应用栈帧，整栈是框架 / SDK 时记原始调用链（不含 @）', () {
+      expect(
+        frameRequestSiteOf(started.toString()),
+        '_OrphanState._resume@orphan.dart:77',
+      );
+      expect(
+        frameRequestSiteOf(frameworkOnly.toString()),
+        '~Ticker.scheduleTick(ticker.dart:300)<Ticker.muted=(ticker.dart:120)'
+        '<TickerMode._update(ticker_provider.dart:90)',
+      );
+      // #AaRXcVUaXv 的形态：整栈只有调度 / 渲染 / dart:ui，旧版记成 `?`。
+      expect(
+        frameRequestSiteOf(
+          '#0      FushiWidgetsFlutterBinding.scheduleFrame (package:fushi/src/diagnostics/fushi_binding.dart:60:7)\n'
+          '#1      SchedulerBinding.ensureVisualUpdate (package:flutter/src/scheduler/binding.dart:910:9)\n'
+          '#2      PipelineOwner.requestVisualUpdate (package:flutter/src/rendering/object.dart:1070:7)\n'
+          '#3      _invoke (dart:ui/hooks.dart:312:13)\n'
+          '#4      <asynchronous suspension>\n',
+        ),
+        '~SchedulerBinding.ensureVisualUpdate(binding.dart:910)'
+        '<PipelineOwner.requestVisualUpdate(object.dart:1070)'
+        '<_invoke(hooks.dart:312)<<asynchronous suspension>',
+      );
+      // 没有行号的帧也记。
+      expect(
+        frameRequestSiteOf('#0      _rootRun (dart:async/zone.dart)'),
+        '~_rootRun(zone.dart)',
+      );
+      expect(frameRequestSiteOf(''), '?');
+    });
+
+    testWidgets('逐帧续排的要帧按首次注册（启动）的调用点精确归账', (WidgetTester tester) async {
+      UiActivityProbe.resetFrames();
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: started,
+      );
+      UiActivityProbe.recordFrameRequest();
+      UiActivityProbe.endFrameCallbackRegistration();
+      for (int i = 0; i < 5; i++) {
+        // 续排时栈里只有框架：不用它，按回调身份查到启动点。
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: true,
+          stack: frameworkOnly,
+        );
+        UiActivityProbe.recordFrameRequest();
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+      // 后来的纯框架注册（解除静音）不把已知调用点覆盖掉。
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: frameworkOnly,
+      );
+      UiActivityProbe.recordFrameRequest();
+      UiActivityProbe.endFrameCallbackRegistration();
+      final String out = UiActivityProbe.probe()!;
+      expect(
+        out,
+        contains('req=7 fcb=[_OrphanState._resume@orphan.dart:77×7]'),
+      );
+      expect(out, isNot(contains('fvis=')));
+      expect(UiActivityProbe.probe(), isNot(contains('req=')));
+    });
+
+    testWidgets('3.47 Ticker 顺序（先要帧、后注册且不再要帧）：仍按启动点逐帧计入 fcb', (
+      WidgetTester tester,
+    ) async {
+      UiActivityProbe.resetFrames();
+      void step({required bool rescheduling, required StackTrace stack}) {
+        UiActivityProbe.recordFrameRequest(stack: frameworkOnly);
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: rescheduling,
+          stack: stack,
+        );
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+
+      step(rescheduling: false, stack: started);
+      for (int i = 0; i < 4; i++) {
+        step(rescheduling: true, stack: frameworkOnly);
+      }
+      final String out = UiActivityProbe.probe()!;
+      expect(
+        out,
+        contains('req=5 fcb=[_OrphanState._resume@orphan.dart:77×5]'),
+      );
+    });
+
+    testWidgets('被 TickerMode 关掉的子树里没静音的 ticker 也数，标 (hidden)', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: TickerMode(
+            enabled: false,
+            child: Column(children: <Widget>[_Spinner()]),
+          ),
+        ),
+      );
+      // 静音的不算：正常情况下关掉的子树里一个都数不到。
+      expect(scanUiActivity(tester.binding.rootElement).tickers, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('帧回调之外的要帧：每次计数，调用点按间隔节流', (WidgetTester tester) async {
+      UiActivityProbe.resetFrames();
+      final StackTrace paint = st(
+        '#0      SchedulerBinding.ensureVisualUpdate (package:flutter/src/scheduler/binding.dart:910:9)\n'
+        '#1      RenderObject.markNeedsPaint (package:flutter/src/rendering/object.dart:3300:7)\n'
+        '#2      _RenderLoop.paint (package:fushi/src/foo/loop.dart:42:5)\n',
+      );
+      UiActivityProbe.recordFrameRequest(stack: paint);
+      UiActivityProbe.recordFrameRequest(stack: paint);
+      UiActivityProbe.recordFrameRequest(stack: paint);
+      final String out = UiActivityProbe.probe()!;
+      expect(out, contains('req=3 fvis=[_RenderLoop.paint@loop.dart:42]'));
+    });
+
+    testWidgets('layer 普查：数出合成树里各类 layer', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: Opacity(
+            opacity: 0.5,
+            child: RepaintBoundary(child: ColoredBox(color: Color(0xFF00FF00))),
+          ),
+        ),
+      );
+      final Map<String, int> layers = countLayers(tester.binding.renderViews);
+      expect(layers['OpacityLayer'], 1);
+      expect(layers['PictureLayer'], greaterThanOrEqualTo(1));
+      expect(layers['TransformLayer'], greaterThanOrEqualTo(1));
+    });
+
+    testWidgets('已有 binding（测试 / integration_test 先建）时原样返回、不另建', (
+      WidgetTester tester,
+    ) async {
+      expect(
+        identical(
+          FushiWidgetsFlutterBinding.ensureInitialized(),
+          tester.binding,
+        ),
+        isTrue,
+      );
+    });
   });
 }

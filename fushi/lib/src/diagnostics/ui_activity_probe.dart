@@ -17,8 +17,22 @@
 //   markNeedsBuild 在一帧里第一次弄脏元素时都经它要帧），数窗口里「因重建而要帧」的次数，并按
 //   [kUiActivityStackSampleInterval] 节流抓调用栈、取第一个应用自己的栈帧记成 `函数@文件:行`。
 //   frames ≫ build = 出帧不是重建驱动（纹理 / 平台视图 / 纯重绘），who 直接点名谁在逐帧 setState。
+// - `req=N fcb=[site×n; …] fvis=[site×k; …]`：#w-MhvbxSFc 停在牌组列表 120 fps、build≈0、tick 空——
+//   build= 与 tick= 都绕开了的要帧来源只剩两类：① 不在元素树里的帧回调（State 已 dispose 后又被
+//   异步回调启动的「孤儿 ticker」、非 State 的 scheduleFrameCallback）；② render object 在帧外
+//   markNeedsPaint / markNeedsLayout。两类最终都经 [SchedulerBinding.scheduleFrame] 向引擎要帧，
+//   [FushiWidgetsFlutterBinding] 在那里拦一刀：`req` = 窗口里真正发出的要帧次数；
+//   `fcb` = 由帧回调发出的要帧，按**注册 / 启动该回调的调用点**精确计数（ticker 逐帧续排时栈里只有
+//   框架，所以在它第一次注册时记下调用点、之后按回调身份归账，孤儿 ticker 也逃不掉）；
+//   `fvis` = 其余要帧（render object 弄脏、重建、平台消息），按间隔节流抓栈取调用点。
+// - `layers=[PictureLayer×40 …]`：此刻合成树里各类 layer 的数量（每帧都要把整棵树重新光栅化，
+//   逐帧涨原生内存时看是哪类 layer：BackdropFilter / ShaderMask / Texture / PlatformView …）。
+
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart'
+    show ContainerLayer, Layer, RenderView, RendererBinding;
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -68,6 +82,83 @@ abstract final class UiActivityProbe {
     _buildSites.update(site, (int n) => n + 1, ifAbsent: () => 1);
   }
 
+  // ---- 要帧归因（由 [FushiWidgetsFlutterBinding] 喂；没换 binding 时全为空，不输出）----
+
+  static int _requests = 0;
+  static final Map<String, int> _callbackRequestSites = <String, int>{};
+  static final Map<String, int> _otherRequestSites = <String, int>{};
+  static final Stopwatch _sinceRequestStack = Stopwatch();
+
+  /// 帧回调 → 注册 / 启动它的调用点。Ticker 每次续排传的是同一个 `_tick` tear-off（同一接收者的
+  /// tear-off 相等），所以按 `==` 归账。按插入序淘汰最旧的，上限 [kUiActivityMaxCallbackSites]。
+  static final LinkedHashMap<Function, String> _callbackSites =
+      LinkedHashMap<Function, String>();
+
+  /// 正在 [beginFrameCallbackRegistration] 与 [endFrameCallbackRegistration] 之间：这期间的要帧
+  /// 归给这个调用点。
+  static String? _registeringSite;
+
+  /// 帧回调注册开始（[SchedulerBinding.scheduleFrameCallback] 入口）。首次注册（`rescheduling`
+  /// 为 false：Ticker.start / 解除静音、动图下一帧……）抓栈记下调用点；逐帧续排直接按回调身份查。
+  /// [stack] 只给测试用，生产传 null 取当前栈。
+  static void beginFrameCallbackRegistration(
+    Function callback, {
+    required bool rescheduling,
+    StackTrace? stack,
+  }) {
+    String? site = _callbackSites[callback];
+    if (rescheduling && site != null) {
+      // 还活着的回调挪到队尾，不被后来大量短命 ticker 挤出去（常驻的孤儿 ticker 正是要找的那个）。
+      _callbackSites
+        ..remove(callback)
+        ..[callback] = site;
+    } else {
+      final String fresh = frameRequestSiteOf(
+        (stack ?? StackTrace.current).toString(),
+      );
+      // 已有具体调用点时，不被后来的「全是框架」的注册（如 TickerMode 解除静音）覆盖成 `~`/`?`。
+      if (site == null || !_isVague(fresh)) {
+        _callbackSites.remove(callback);
+        _callbackSites[callback] = fresh;
+        if (_callbackSites.length > kUiActivityMaxCallbackSites) {
+          _callbackSites.remove(_callbackSites.keys.first);
+        }
+        site = fresh;
+      }
+    }
+    _registeringSite = site;
+    // 每次注册记一笔（#dPfBq8zQaI）：3.47 的 Ticker.scheduleTick **先** scheduleFrame、**后**
+    // scheduleFrameCallback(scheduleNewFrame: false)，要帧发生在注册之前，按「注册期间的要帧」
+    // 归账会全部漏掉。ticker 每帧续排注册一次，所以注册次数 = 它驱动的帧数。
+    _callbackRequestSites.update(site, (int n) => n + 1, ifAbsent: () => 1);
+  }
+
+  /// 帧回调注册结束。
+  static void endFrameCallbackRegistration() {
+    _registeringSite = null;
+  }
+
+  /// [SchedulerBinding.scheduleFrame] 真正要向引擎要一帧时调（已排过帧 / 帧被禁用时不调）。
+  /// [stack] 只给测试用。
+  static void recordFrameRequest({StackTrace? stack}) {
+    _requests++;
+    // 注册帧回调顺带要的帧已在注册时按调用点记过（fcb），这里不再抓栈。
+    if (_registeringSite != null) return;
+    if (_sinceRequestStack.isRunning &&
+        _sinceRequestStack.elapsed < kUiActivityStackSampleInterval) {
+      return;
+    }
+    _sinceRequestStack
+      ..reset()
+      ..start();
+    final String site = frameRequestSiteOf(
+      (stack ?? StackTrace.current).toString(),
+    );
+    _otherRequestSites.update(site, (int n) => n + 1, ifAbsent: () => 1);
+  }
+
+  static bool _isVague(String site) => site == '?' || site.startsWith('~');
+
   /// 测试收尾：清零计数。
   @visibleForTesting
   static void resetFrames() {
@@ -75,6 +166,14 @@ abstract final class UiActivityProbe {
     _builds = 0;
     _buildSites.clear();
     _sinceStack
+      ..stop()
+      ..reset();
+    _requests = 0;
+    _callbackRequestSites.clear();
+    _otherRequestSites.clear();
+    _callbackSites.clear();
+    _registeringSite = null;
+    _sinceRequestStack
       ..stop()
       ..reset();
   }
@@ -88,8 +187,21 @@ abstract final class UiActivityProbe {
     _builds = 0;
     final Map<String, int> sites = Map<String, int>.of(_buildSites);
     _buildSites.clear();
+    final int requests = _requests;
+    _requests = 0;
+    final Map<String, int> callbackRequests = Map<String, int>.of(
+      _callbackRequestSites,
+    );
+    _callbackRequestSites.clear();
+    final Map<String, int> otherRequests = Map<String, int>.of(
+      _otherRequestSites,
+    );
+    _otherRequestSites.clear();
     final UiActivitySnapshot snap = scanUiActivity(
       WidgetsBinding.instance.rootElement,
+    );
+    final Map<String, int> layers = countLayers(
+      RendererBinding.instance.renderViews,
     );
     final List<String> parts = <String>[
       if (_installed) 'frames=$frames',
@@ -99,6 +211,13 @@ abstract final class UiActivityProbe {
       if (_installed) 'build=$builds',
       if (sites.isNotEmpty)
         'who=[${describeTickerOwners(sites, max: kUiActivityMaxBuildSites, separator: '; ')}]',
+      if (requests > 0) 'req=$requests',
+      if (callbackRequests.isNotEmpty)
+        'fcb=[${describeTickerOwners(callbackRequests, max: kUiActivityMaxBuildSites, separator: '; ')}]',
+      if (otherRequests.isNotEmpty)
+        'fvis=[${describeTickerOwners(otherRequests, max: kUiActivityMaxBuildSites, separator: '; ')}]',
+      if (layers.isNotEmpty)
+        'layers=[${describeTickerOwners(layers, max: kUiActivityMaxLayerTypes)}]',
     ];
     return parts.isEmpty ? null : parts.join(' ');
   }
@@ -132,13 +251,92 @@ String buildSiteOf(String stack) {
         uri.startsWith('package:flutter_riverpod/') ||
         uri.startsWith('package:riverpod/') ||
         uri.startsWith('package:stack_trace/') ||
-        uri.endsWith('/ui_activity_probe.dart')) {
+        uri.endsWith('/ui_activity_probe.dart') ||
+        uri.endsWith('/fushi_binding.dart')) {
       continue;
     }
     final String file = uri.substring(uri.lastIndexOf('/') + 1);
     return '${m.group(1)}@$file:${m.group(3)}';
   }
   return '?';
+}
+
+/// 记住多少个帧回调的注册调用点（每个活着的 ticker / 动图各占一个）。
+const int kUiActivityMaxCallbackSites = 512;
+
+/// `layers=[…]` 最多列几类 layer。
+const int kUiActivityMaxLayerTypes = 10;
+
+/// 一次 layer 普查最多访问的 layer 数。
+const int kUiActivityMaxLayers = 50000;
+
+/// 要帧调用链最多记几帧。
+const int kUiActivityMaxChainFrames = 10;
+
+/// 要帧调用点：先取第一个应用栈帧（同 [buildSiteOf]）；整栈都是框架 / SDK 时，记**原始调用链**：
+/// 去掉探针与 binding 自身后栈顶最多 [kUiActivityMaxChainFrames] 帧，`~` 开头、`<` 相连，
+/// 每帧 `函数(文件:行)`（如 `~SchedulerBinding.scheduleFrame(binding.dart:957)<…`）。
+///
+/// #AaRXcVUaXv：上一版此时只挑「第一个非调度框架帧」，结果整栈都落在调度 / 渲染 / dart:ui 里的
+/// 那种要帧被记成 `?`，恰好丢掉了最关键的那条链。不用 `@` 连接：日志脱敏会把 `x@y:n` 当邮箱抹掉。
+/// 不符合 `#n 函数 (uri:行)` 格式的行（AOT 未符号化帧等）截断后原样记入。
+@visibleForTesting
+String frameRequestSiteOf(String stack) {
+  final String app = buildSiteOf(stack);
+  if (app != '?') return app;
+  final RegExp frame = RegExp(r'^#\d+\s+(.+?) \((.+?)(?::(\d+))?(?::\d+)?\)$');
+  final List<String> chain = <String>[];
+  for (final String raw in stack.split('\n')) {
+    final String line = raw.trim();
+    if (line.isEmpty) continue;
+    if (chain.length >= kUiActivityMaxChainFrames) break;
+    final RegExpMatch? m = frame.firstMatch(line);
+    if (m == null) {
+      final String text = line.replaceFirst(RegExp(r'^#\d+\s+'), '');
+      chain.add(text.length <= 60 ? text : text.substring(0, 60));
+      continue;
+    }
+    final String uri = m.group(2)!;
+    if (uri.endsWith('/ui_activity_probe.dart') ||
+        uri.endsWith('/fushi_binding.dart')) {
+      continue;
+    }
+    final String file = uri.substring(uri.lastIndexOf('/') + 1);
+    final String? lineNo = m.group(3);
+    chain.add('${m.group(1)}($file${lineNo == null ? '' : ':$lineNo'})');
+  }
+  return chain.isEmpty ? '?' : '~${chain.join('<')}';
+}
+
+/// 合成树里各类 layer 的数量（类型名 → 个数），走 [views] 的根 layer，最多 [maxLayers] 个。
+@visibleForTesting
+Map<String, int> countLayers(
+  Iterable<RenderView> views, {
+  int maxLayers = kUiActivityMaxLayers,
+}) {
+  final Map<String, int> counts = <String, int>{};
+  int visited = 0;
+  void visit(Layer layer) {
+    if (visited >= maxLayers) return;
+    visited++;
+    final String full = layer.runtimeType.toString();
+    final int generic = full.indexOf('<');
+    final String name = generic < 0 ? full : full.substring(0, generic);
+    counts.update(name, (int n) => n + 1, ifAbsent: () => 1);
+    if (layer is ContainerLayer) {
+      for (Layer? c = layer.firstChild; c != null; c = c.nextSibling) {
+        visit(c);
+      }
+    }
+  }
+
+  for (final RenderView view in views) {
+    // release 下拿合成树的唯一入口（debugLayer 只在 debug 有值）；只读、只数类型。
+    // ignore: invalid_use_of_protected_member
+    final Layer? root = view.layer;
+    if (root != null) visit(root);
+  }
+  return counts;
 }
 
 /// 从 [root] 先序走元素树，跳过 `TickerMode(enabled: false)` 的子树（里面的 ticker 被静音、不驱动出帧）：
@@ -159,25 +357,30 @@ UiActivitySnapshot scanUiActivity(
   final Map<String, int> tickers = <String, int>{};
   if (root == null) return (pages: pages, tickers: tickers);
   int visited = 0;
-  void visit(Element element) {
+  // [hidden]：在 `TickerMode(enabled: false)` 子树里。页面只收看得见的；ticker 照数（只数未静音的）
+  // ——被盖住的子树里若有没被静音的 ticker，它照样逐帧要帧，正是要点名的那种。
+  void visit(Element element, bool hidden) {
     if (visited >= maxElements) return;
     visited++;
     final Widget widget = element.widget;
-    if (widget is TickerMode && !widget.enabled) return;
+    final bool nowHidden = hidden || (widget is TickerMode && !widget.enabled);
     final String name = _typeName(widget);
-    if (name.endsWith('Page') && (pages.isEmpty || pages.last != name)) {
+    if (!nowHidden &&
+        name.endsWith('Page') &&
+        (pages.isEmpty || pages.last != name)) {
       pages.add(name);
     }
     if (element is StatefulElement) {
       final int active = _activeTickerCount(element.state);
       if (active > 0) {
-        tickers.update(name, (int n) => n + active, ifAbsent: () => active);
+        final String key = nowHidden ? '$name(hidden)' : name;
+        tickers.update(key, (int n) => n + active, ifAbsent: () => active);
       }
     }
-    element.visitChildElements(visit);
+    element.visitChildElements((Element child) => visit(child, nowHidden));
   }
 
-  visit(root);
+  visit(root, false);
   return (
     pages: pages.length <= maxPages
         ? pages
