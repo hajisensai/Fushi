@@ -1101,6 +1101,28 @@ void main() {
       );
     }
 
+    testWidgets('应用外球截屏识字语言跟随默认内容语言，改了就重发给原生', (WidgetTester tester) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await startSystemBall(tester);
+      Object? ocrLanguageOf(MethodCall call) =>
+          (call.arguments as Map<Object?, Object?>)['ocrLanguage'];
+      expect(ocrLanguageOf(starts().single), 'ja', reason: '没设默认内容语言时回落日语');
+
+      await tester.runAsync(() async {
+        await prefs.setDefaultContentLanguage('zh-Hans');
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(2));
+      expect(ocrLanguageOf(starts().last), 'zh-Hans');
+    });
+
     testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (
       WidgetTester tester,
     ) async {
@@ -1804,6 +1826,17 @@ void main() {
           expect(update['message'], isNull);
         });
 
+        testWidgets('默认内容语言没设时截屏识字用日语识别器', (WidgetTester tester) async {
+          await startOcr(tester);
+          expect(target.recognizeLanguages, <String>['ja']);
+        });
+
+        testWidgets('默认内容语言设成中文时截屏识字跟着用中文识别器', (WidgetTester tester) async {
+          await prefs.setDefaultContentLanguage('zh-Hans');
+          await startOcr(tester);
+          expect(target.recognizeLanguages, <String>['zh-Hans']);
+        });
+
         testWidgets('原生回带取帧诊断（HDR 显示器走 scRGB / 回落 GDI）时记进诊断日志', (
           WidgetTester tester,
         ) async {
@@ -1946,7 +1979,9 @@ void main() {
           expect(called('stopScreenOcr'), isFalse);
         });
 
-        testWidgets('没装日语识别器：冻结层提示去装语言，点任意处退出', (WidgetTester tester) async {
+        testWidgets('没装对应语言的识别器（默认日语）：冻结层提示去装语言，点任意处退出', (
+          WidgetTester tester,
+        ) async {
           mockCapture(tester, <String, Object?>{
             'png': png,
             'screen': <double>[0, 0, 1920, 1080],
@@ -1958,7 +1993,10 @@ void main() {
           await pumpHost(tester);
           await tapAction(tester, 'screen_ocr');
           final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
-          expect(update['message'], t.floating_ball_ocr_language_missing);
+          expect(
+            update['message'],
+            t.floating_ball_ocr_language_pack_missing(language: '日本語 (ja)'),
+          );
           expect(update['lines'], isEmpty);
           await fromNative(tester, 'screenOcrTap', <String, Object?>{
             'x': 10.0,
@@ -1983,6 +2021,26 @@ void main() {
           final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
           expect(update['message'], t.floating_ball_ocr_model_missing);
           expect(update['lines'], isEmpty);
+        });
+
+        testWidgets('默认内容语言是中文且没装中文识别器：提示里写的是中文', (WidgetTester tester) async {
+          await prefs.setDefaultContentLanguage('zh-Hans');
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrLanguageUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(
+            argsOf('updateScreenOcrOverlay')['message'],
+            t.floating_ball_ocr_language_pack_missing(
+              language: '简体中文 (zh-Hans)',
+            ),
+          );
         });
 
         testWidgets('没识别到字：冻结层上直接说', (WidgetTester tester) async {
@@ -2183,12 +2241,17 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         imageHeight: 1,
       );
 
+  /// 每次截屏识字交给系统 OCR 的语言（按调用顺序）。
+  final List<String> recognizeLanguages = <String>[];
+
   @override
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
+    required String language,
     SystemOcrPlatform? engine,
   }) async {
     log.add('recognize');
+    recognizeLanguages.add(language);
     return onRecognize(png);
   }
 

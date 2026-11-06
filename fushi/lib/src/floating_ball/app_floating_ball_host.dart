@@ -44,6 +44,7 @@ import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
 import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
@@ -58,6 +59,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart'
+    show contentLanguageLabelOf;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -67,10 +70,6 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-
-/// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
-/// 识别器同时认拉丁字母与汉字。
-const String kFloatingBallOcrLanguage = 'ja';
 
 /// 外部查词请求（App Intent / 深链）。app 未初始化时先存着，宿主就绪后取走。
 final ValueNotifier<String?> pendingExternalLookup = ValueNotifier<String?>(
@@ -297,13 +296,15 @@ class DesktopSystemBallActionTarget {
 
   /// 识别一张截图：[engine] 为 null 时走系统 OCR（macOS Vision /
   /// Windows.Media.Ocr）；Linux 没有系统 OCR，宿主传本机 OCR 模型
-  /// （[LocalScreenOcr]）。
+  /// （[LocalScreenOcr]）。[language] 见
+  /// [PreferencesRepository.screenOcrLanguage]。
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
+    required String language,
     SystemOcrPlatform? engine,
   }) => (engine ?? const MethodChannelSystemOcr()).recognize(
     png,
-    language: kFloatingBallOcrLanguage,
+    language: language,
   );
 
   Future<void> bringMainWindowToFront() =>
@@ -358,6 +359,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       FloatingBallSceneRegistry.instance;
 
   PreferencesRepository? _prefs;
+
+  /// 截屏识字送给系统 OCR 的语言（跟随默认内容语言，见
+  /// [PreferencesRepository.screenOcrLanguage]）；偏好还没接上时用回落值。
+  String get _ocrLanguage =>
+      _prefs?.screenOcrLanguage ?? kScreenOcrFallbackLanguage;
 
   /// 上一次下发给原生系统球的配置（模式 + 按钮 + 语言）；相同就不重复下发。
   String? _systemSignature;
@@ -669,13 +675,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final bool showOpenApp = prefs.floatingBallSystemOpenApp;
     final String tapAction = prefs.floatingBallTapAction.storageValue;
     final bool tintMascot = appLogoFollowsAccent.value;
-    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 「打开 Fushi」开关 / 点球动作
-    // 都进签名：切换界面语言、主题、换色开关，或这些偏好切换（配色可能完全没变）后
-    // 原生球也要换。
+    final String ocrLanguage = prefs.screenOcrLanguage;
+    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 「打开 Fushi」开关 / 点球动作 /
+    // 截屏识字语言都进签名：切换界面语言、主题、换色开关、默认内容语言，或这些
+    // 偏好切换（配色可能完全没变）后原生球也要换——Android 应用外截屏识字用的是
+    // 起球时下发的语言。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
         '${colors.values.join(',')}|$tintMascot|$animate|$showLabels|'
-        '$showOpenApp|$tapAction';
+        '$showOpenApp|$tapAction|$ocrLanguage';
     // 与「在途目标」比（没有在途请求时才是稳态签名）：A→B→A 时最后的 A 与在途
     // 的 B 不同，必须开新一代取代 B；在途期间同签名的重复同步则直接跳过。
     if (!force && signature == (_systemInFlightSignature ?? _systemSignature)) {
@@ -767,7 +775,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             showLabels: showLabels,
             showOpenApp: showOpenApp,
             tapAction: tapAction,
-            ocrLanguage: kFloatingBallOcrLanguage,
+            ocrLanguage: ocrLanguage,
             iconImages: iconImages,
             ballImage: ballImage,
             dock: desktop ? prefs.floatingBallSystemDock : null,
@@ -1040,9 +1048,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Stopwatch recognizeClock = Stopwatch()..start();
     String? message;
     List<SystemOcrTextLine> lines = const <SystemOcrTextLine>[];
+    final String language = _ocrLanguage;
     try {
       final SystemOcrPageResult result = await target.recognize(
         png,
+        language: language,
         engine: Platform.isLinux ? _localScreenOcr() : null,
       );
       lines = result.lines;
@@ -1056,7 +1066,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     } on SystemOcrUnavailableException catch (error) {
       message = switch (error.reason) {
         kSystemOcrLanguageUnavailableReason =>
-          t.floating_ball_ocr_language_missing,
+          t.floating_ball_ocr_language_pack_missing(
+            language: contentLanguageLabelOf(language),
+          ),
         // Linux：本机 OCR 模型还没下载（设置里下载）。
         kSystemOcrModelUnavailableReason => t.floating_ball_ocr_model_missing,
         _ => t.floating_ball_ocr_failed,
@@ -1250,9 +1262,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final BuildContext? ctx = _navigatorContext;
       if (ctx == null) return;
       pendingSystemOcrSetup.value = false;
-      unawaited(
-        showSystemOcrSetupDialog(ctx, language: kFloatingBallOcrLanguage),
-      );
+      unawaited(showSystemOcrSetupDialog(ctx, language: _ocrLanguage));
     });
   }
 
@@ -1456,7 +1466,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // 原生只藏得了原生球：Flutter 球要自己藏，等 screenOcrFinished 再放回来。
       setState(() => _capturing = true);
       final bool started = await FloatingBallChannel.startScreenOcr(
-        language: kFloatingBallOcrLanguage,
+        language: _ocrLanguage,
         labels: floatingBallNativeLabels(),
       );
       if (started) return;
@@ -1522,7 +1532,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     try {
       result = await const MethodChannelSystemOcr().recognize(
         bytes,
-        language: kFloatingBallOcrLanguage,
+        language: _ocrLanguage,
       );
     } on SystemOcrUnavailableException catch (error) {
       if (error.reason == kSystemOcrModelUnavailableReason) {

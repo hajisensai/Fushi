@@ -36,12 +36,17 @@ deps_changed=
 if [ "$(cat "$state/pub.key" 2>/dev/null || true)" != "$pub_key" ]; then
   echo "==> pub get"
   (cd fushi && flutter pub get --enforce-lockfile)
-  echo "==> pub cache patches"
-  bash ci/apply-patches.sh
   deps_changed=1
 else
   echo "==> dependencies unchanged"
 fi
+# Every prepare, not only when this checkout's pub.key moved: the pub cache
+# and the Flutter SDK are shared by every slot on this machine, so another
+# slot's snapshot (a branch with a different patch set) may have changed them
+# since this checkout last looked. The SDK step is stamped and a no-op when
+# the SDK is already this snapshot's state; the pub-cache overlay is a copy.
+echo "==> patches (pub cache + Flutter SDK)"
+bash ci/apply-patches.sh
 # fushi/lib/i18n/strings.g.dart is not tracked and `git clean` (no -x) keeps
 # the previous snapshot's copy: regenerate on every prepare. gen_i18n.dart is
 # stamped on the json / lockfile / SDK and the output's own hash, so an
