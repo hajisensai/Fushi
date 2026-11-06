@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -26,6 +27,35 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一批句子 → fushidicts 语料词元线格式（原样交给 fushi_corpus）。在后台 isolate 里调用。
 typedef CorpusTermsFn = Uint8List Function(List<String> sentences);
+
+/// 纯函数：词元线格式（每句 `u32 词数`，每词 `u32 起点 · u32 长度 · str 词典形`）里出现的
+/// 全部词典形，去重、保持首次出现的顺序。文本搜索把查询文本分词后用它取查询键。
+List<String> corpusTermKeys(Uint8List terms) {
+  final ByteData v = ByteData.sublistView(terms);
+  final List<String> out = <String>[];
+  final Set<String> seen = <String>{};
+  int at = 0;
+  int u32() {
+    final int x = v.getUint32(at, Endian.little);
+    at += 4;
+    return x;
+  }
+
+  while (at + 4 <= terms.length) {
+    final int count = u32();
+    for (int i = 0; i < count; i++) {
+      at += 8; // 起点 + 长度
+      final int n = u32();
+      final String lemma = utf8.decode(
+        Uint8List.sublistView(terms, at, at + n),
+        allowMalformed: true,
+      );
+      at += n;
+      if (lemma.isNotEmpty && seen.add(lemma)) out.add(lemma);
+    }
+  }
+  return out;
+}
 
 /// 词元归一：「我库里的例句」按**词典的词形还原**建倒排，归一口径就是当前装载的词典集合。
 ///
@@ -371,6 +401,56 @@ class LibraryCorpusService {
       return CorpusQueryResult.empty;
     }
   }
+
+  /// 按**一段文本**搜 [kind] 的句子（曲库「歌词命中」）：文本先用同一个词典归一分词，
+  /// 再要求句子含全部词（[FushiCorpusIndex.query] 的 `matchAll`），每份文档至多
+  /// [perDoc] 条、共至多 [limit] 条。归一与查询都在后台 isolate。关着 / 索引没打开 /
+  /// 没有词典（分不出词）时返回空。
+  Future<List<CorpusHit>> searchText(
+    String text, {
+    required CorpusSourceKind kind,
+    int limit = 20,
+    int perDoc = 1,
+  }) async {
+    final int? address = _address;
+    final String q = text.trim();
+    if (!enabled || address == null || q.isEmpty) return const <CorpusHit>[];
+    try {
+      final List<String>? keys = await _normalizer
+          .runInBackground<List<String>>(_queryKeysJob(q));
+      if (keys == null || keys.isEmpty) return const <CorpusHit>[];
+      final CorpusQueryResult r = await _inIsolate(
+        address,
+        _textQueryOp(keys, kind.code, limit, perDoc),
+      );
+      return <CorpusHit>[
+        for (final CorpusGroup g in r.groups)
+          if (g.kind == kind) ...g.items,
+      ];
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('corpus.searchText', error, stack);
+      return const <CorpusHit>[];
+    }
+  }
+
+  static List<String> Function(CorpusTermsFn terms) _queryKeysJob(
+    String text,
+  ) =>
+      (CorpusTermsFn terms) => corpusTermKeys(terms(<String>[text]));
+
+  static CorpusQueryResult Function(FushiCorpusIndex) _textQueryOp(
+    List<String> keys,
+    int kindCode,
+    int limit,
+    int perDoc,
+  ) =>
+      (FushiCorpusIndex i) => i.query(
+        keys,
+        perKind: limit,
+        perDoc: perDoc,
+        kinds: <CorpusSourceKind>[CorpusSourceKind.fromCode(kindCode)!],
+        matchAll: true,
+      );
 
   /// 统计（设置页显示）。
   Future<CorpusStats?> stats() async {
