@@ -22,6 +22,8 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -398,7 +400,15 @@ class HeadlessHost {
             ),
             // 互联查词 / 查词历史 / 词典媒体：装了词典引擎才接线。
             remoteLookupService: dictionaries.available
-                ? ServerRemoteLookupService(dictionaries)
+                ? ServerRemoteLookupService(
+                    dictionaries,
+                    scriptVariantsEnabled: () =>
+                        prefs.getPref(
+                          kLookupChineseScriptVariantsPrefKey,
+                          defaultValue: false,
+                        ) ==
+                        true,
+                  )
                 : null,
             historyService: dictionaries.available
                 ? ServerRemoteHistoryService(db)

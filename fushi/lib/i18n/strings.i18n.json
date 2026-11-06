@@ -4659,6 +4659,8 @@
   "lookup_audio_volume": "Lookup audio volume",
   "lookup_block_capture": "Block screen capture",
   "lookup_block_capture_hint": "Excludes the lookup popup window from screenshots, screen recording, and live streaming (Windows / macOS). Turn this off to let screenshots, recording, and streaming capture the lookup popup.",
+  "lookup_chinese_script_variants": "Match simplified and traditional Chinese",
+  "lookup_chinese_script_variants_hint": "When looking up Chinese, also find entries written in the other script (这个 ↔ 這個)",
   "lookup_dictionary_font_hint": "Fonts for dictionary popups, with a live Japanese preview",
   "lookup_dictionary_unified_style": "Unify dictionary styles",
   "lookup_dictionary_unified_style_hint": "Recolor imported dictionaries' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary's original colors.",

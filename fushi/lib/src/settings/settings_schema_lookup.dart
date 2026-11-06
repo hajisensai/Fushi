@@ -212,6 +212,25 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
+          // 中文查词简体 ↔ 繁體双向互查（查 这个 也出 這個 的词条）。开发者要求默认关：只查
+          // 原文字形。只在和中文沾边时露出（默认内容语言是中文 / 启用了中文词典 / 已经开着）。
+          SettingsSwitchItem(
+            id: 'lookup.chinese_script_variants',
+            title: t.lookup_chinese_script_variants,
+            subtitle: t.lookup_chinese_script_variants_hint,
+            icon: FushiIcons.language,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupChineseScriptVariantsRelevant,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupChineseScriptVariants,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupChineseScriptVariants(
+                value,
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
         ],
       ),
       // 「我库里的例句」（作品图谱 L4，D-L2 默认开）：开关 + 重建索引。
