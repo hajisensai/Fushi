@@ -1,5 +1,7 @@
 //! 单个音频文件的标签 + 音频属性（lofty）。lofty 不认的格式（TAK / TTA / DSF / DFF /
-//! MKA / CAF / W64 / WMA）退化成「扩展名定编码 + 文件名作标题」，DSF 另从头部读属性。
+//! MKA / CAF / W64 / WMA）退化成「扩展名定编码 + 文件名作标题」，DSF 另从头部读属性，
+//! 裸 AC-3 / E-AC-3 从帧头读属性（`ac3.rs`）。M4B 另读章节（`mp4_chapters.rs`），由扫描器
+//! 拆成 CUE 同款虚拟曲目。
 
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -8,17 +10,26 @@ use std::path::Path;
 use lofty::config::ParseOptions;
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::mp4::{Mp4Codec, Mp4File};
-use lofty::mpeg::MpegFile;
+use lofty::mpeg::{Layer, MpegFile};
 use lofty::picture::PictureType;
 use lofty::probe::Probe;
 use lofty::tag::{Accessor, ItemKey, Tag};
 
+use crate::ac3::{self, Ac3Kind};
 use crate::dsf;
+use crate::mp4_chapters::{self, Mp4Chapter};
 
 /// 曲库认的音频扩展名（小写，不带点）。
+///
+/// Dart 侧「是不是纯音频」的唯一判据 `kAudioExtensions`
+/// （`packages/fushi_engine/lib/media/media_extensions.dart`）= 本表去掉 `mp4` 再加点号，
+/// 守卫测试 `fushi/test/build/music_audio_extensions_rust_parity_guard_test.dart` 读本表
+/// 文本钉死同步。`mp4` 是两表唯一允许的差异：它首先是视频容器，视频来源里的 mp4 归视频
+/// 库；但音乐来源目录里的 mp4（只装音轨的 iTunes 购买曲目等）照收。
 pub const AUDIO_EXTENSIONS: &[&str] = &[
-    "flac", "m4a", "alac", "mp3", "ogg", "oga", "opus", "wav", "aiff", "aif", "aifc", "ape", "wv",
-    "tak", "tta", "mpc", "dsf", "dff", "aac", "mka", "caf", "w64", "wma", "mp4",
+    "flac", "m4a", "m4b", "alac", "mp3", "mp2", "mpa", "ogg", "oga", "opus", "wav", "aiff", "aif",
+    "aifc", "ape", "wv", "tak", "tta", "mpc", "dsf", "dff", "aac", "ac3", "eac3", "ec3", "mka",
+    "caf", "w64", "wma", "mp4",
 ];
 
 pub fn is_audio_extension(ext: &str) -> bool {
@@ -62,6 +73,9 @@ pub struct FileMeta {
     pub has_embedded_cover: bool,
     /// FLAC 内嵌 CUE 表（Vorbis 注释 `CUESHEET` 文本）。
     pub embedded_cuesheet: Option<String>,
+    /// M4B 章节（按起点升序）。只读 `.m4b`：`.m4a` 带章节的极少，且已在库的 m4a 一旦按
+    /// 章节拆轨，曲目 uid 会变、收藏与播放历史会断。
+    pub mp4_chapters: Vec<Mp4Chapter>,
 }
 
 fn clean(s: &str) -> Option<String> {
@@ -288,6 +302,29 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
         return Ok(meta);
     }
 
+    if matches!(ext.as_str(), "ac3" | "eac3" | "ec3") {
+        let f = File::open(path).map_err(|e| e.to_string())?;
+        let len = f.metadata().map_err(|e| e.to_string())?.len();
+        // 帧头对不上（坏文件 / 伪装扩展名）如实报错，与 lofty 解析失败同语义。
+        let info = ac3::probe(&mut BufReader::new(f), len)
+            .ok_or_else(|| "not an AC-3 / E-AC-3 stream".to_owned())?;
+        return Ok(FileMeta {
+            codec: Some(
+                match info.kind {
+                    Ac3Kind::Ac3 => "ac3",
+                    Ac3Kind::Eac3 => "eac3",
+                }
+                .into(),
+            ),
+            is_lossless: false,
+            duration_ms: Some(info.duration_ms),
+            sample_rate: Some(info.sample_rate as i64),
+            channels: Some(info.channels as i64),
+            bitrate_kbps: Some(info.bitrate_kbps),
+            ..Default::default()
+        });
+    }
+
     let probe = Probe::open(path)
         .map_err(|e| e.to_string())?
         .options(ParseOptions::new())
@@ -307,6 +344,28 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
     let tagged = probe.read().map_err(|e| e.to_string())?;
 
     let (mut codec, mut lossless) = codec_of(file_type);
+    let mut mp4_chapters: Vec<Mp4Chapter> = Vec::new();
+    if file_type == FileType::Mpeg {
+        // MPEG-1/2 音频的 Layer I / II（.mp2 / .mpa 广播与 VCD 音轨）lofty 统一归 Mpeg。
+        if let Ok(f) = File::open(path) {
+            let mut reader = BufReader::new(f);
+            if let Ok(mp) =
+                MpegFile::read_from(&mut reader, ParseOptions::new().read_cover_art(false))
+            {
+                codec = match mp.properties().layer() {
+                    Layer::Layer1 => "mp1",
+                    Layer::Layer2 => "mp2",
+                    Layer::Layer3 => "mp3",
+                };
+            }
+        }
+    }
+    if file_type == FileType::Mp4 && ext == "m4b" {
+        if let Ok(f) = File::open(path) {
+            let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+            mp4_chapters = mp4_chapters::read_chapters(&mut BufReader::new(f), len);
+        }
+    }
     if file_type == FileType::Mp4 {
         // MP4 里装的是 ALAC 还是 AAC 只有 mp4 专用属性知道。
         if let Ok(f) = File::open(path) {
@@ -335,6 +394,7 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
             .audio_bitrate()
             .or_else(|| props.overall_bitrate())
             .map(i64::from),
+        mp4_chapters,
         ..Default::default()
     };
     if !lossless {

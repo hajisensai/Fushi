@@ -81,6 +81,17 @@ total = 28 + len(fmt) + len(data_chunk)
 dsd = struct.pack('<4sQQQ', b'DSD ', 28, total, 0)
 open(sys.argv[1], 'wb').write(dsd + fmt + data_chunk)
 PYEOF
+# M4B 有声书（AAC 3 秒，3 个带标题的章节）：ipod muxer 同时写 QuickTime 章节轨与 Nero chpl。
+chapmeta="$(mktemp)"
+printf '%s
+' ';FFMETADATA1' 'title=Book Title Track' 'album=Book Title' 'artist=Narrator' ''   '[CHAPTER]' 'TIMEBASE=1/1000' 'START=0' 'END=1000' 'title=Opening' ''   '[CHAPTER]' 'TIMEBASE=1/1000' 'START=1000' 'END=2500' 'title=第二章' ''   '[CHAPTER]' 'TIMEBASE=1/1000' 'START=2500' 'END=3000' 'title=Ending' > "$chapmeta"
+ff -f lavfi -i "$(sine 3 300)" -i "$chapmeta" -map_metadata 1 -map_chapters 1 -ac 1   -c:a aac -b:a 16k -f ipod "$lib/Formats/chapters.m4b"
+rm -f "$chapmeta"
+# 裸 AC-3（5.1，192k）/ E-AC-3（立体声）基本流：编码器只收 32 / 44.1 / 48 kHz。
+ff -f lavfi -i "sine=frequency=500:sample_rate=48000:duration=1" -ac 6 -c:a ac3 -b:a 192k   "$lib/Formats/sample.ac3"
+ff -f lavfi -i "sine=frequency=600:sample_rate=48000:duration=1" -ac 2 -c:a eac3 -b:a 96k   "$lib/Formats/sample.eac3"
+# MPEG-1/2 Layer II。
+ff -f lavfi -i "sine=frequency=700:sample_rate=16000:duration=1" -ac 1 -c:a mp2 -b:a 32k   "$lib/Formats/layer2.mp2"
 # 非音频与隐藏文件：扫描器必须忽略。
 printf 'not audio' > "$lib/Formats/notes.txt"
 printf 'x' > "$lib/Formats/.hidden.flac"

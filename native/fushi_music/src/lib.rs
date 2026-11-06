@@ -13,11 +13,13 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+pub mod ac3;
 pub mod cd;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
 pub mod lyrics;
+pub mod mp4_chapters;
 #[cfg(feature = "plugin")]
 pub mod plugin;
 pub mod scan;
