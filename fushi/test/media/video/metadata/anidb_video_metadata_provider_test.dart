@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_work_identity.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_work_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
