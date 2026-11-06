@@ -104,7 +104,15 @@ void main() {
     test('开：主题样式带覆盖变量与规则、卡面挂宿主类名、随主题下发判定脚本', () {
       final SrsCardFaceDocument d = _doc(skin: true);
       final ColorScheme cs = _theme().colorScheme;
-      expect(d.themeCss, contains('--fushi-ds-bg:${_hex(cs.surface)};'));
+      // #slX_WVK_pe：卡面底透明（透出复习页背景 / 壁纸），不再铺不透明 surface。
+      expect(
+        d.themeCss,
+        contains(
+          'html:not(.$kSrsDesignSkinMeasuringClass) body.card.$kSrsDesignSkinClass,'
+          'html:not(.$kSrsDesignSkinMeasuringClass) body.card.$kSrsDesignSkinClass '
+          '#fushi-card-root.card{background:transparent!important;',
+        ),
+      );
       expect(d.themeCss, contains('--fushi-ds-fg:${_hex(cs.onSurface)};'));
       expect(
         d.themeCss,
@@ -114,7 +122,7 @@ void main() {
       expect(d.themeCss, contains('[data-fushi-ds~="panel"]'));
       expect(d.classes.split(' '), contains(kSrsDesignSkinClass));
       expect(d.hostScript, kSrsCardDesignSkinScript);
-      expect(d.shellHtml, contains('--fushi-ds-bg'));
+      expect(d.shellHtml, contains('--fushi-ds-fg'));
     });
 
     test('关：零注入（主题样式、类名、外壳 HTML、下发脚本都没有覆盖）', () {
@@ -170,7 +178,7 @@ void main() {
     test('深色：变量换成深色表面 / 前景', () {
       final SrsCardFaceDocument d = _doc(skin: true, dark: true);
       final ColorScheme cs = _theme(dark: true).colorScheme;
-      expect(d.themeCss, contains('--fushi-ds-bg:${_hex(cs.surface)};'));
+      expect(d.themeCss, contains('--fushi-ds-fg:${_hex(cs.onSurface)};'));
       expect(
         d.classes.split(' '),
         containsAll(<String>['nightMode', kSrsDesignSkinClass]),
@@ -205,7 +213,7 @@ void main() {
       sync.update(_doc(skin: true));
       await Future<void>.delayed(Duration.zero);
       expect(sent, hasLength(3));
-      expect(sent.last, contains('--fushi-ds-bg'));
+      expect(sent.last, contains('--fushi-ds-fg'));
       expect(sent.last, isNot(contains('__fushiSrsSetCard(')));
     });
 
