@@ -9,6 +9,7 @@ import 'package:flutter/services.dart'
     show Clipboard, KeyDownEvent, KeyEvent, SystemChannels;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/media_type.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
@@ -1986,10 +1987,17 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       onQueueOverwrite: (Map<String, String> fields) =>
                           onQueueOverwrite(_withSourceSentence(fields)),
                       onOpenInAnki: onOpenInAnki,
-                      onFavoriteEntry: onFavoriteEntry,
+                      // ☆ 与高级制卡的字段预填同读结果区语境（源文本条那一句），
+                      // 与上面制卡 / ✓ 的例句同源（[_resultLookupContext]）。
+                      onFavoriteEntry: (Map<String, String> fields) =>
+                          onFavoriteEntry(
+                            fields,
+                            lookupContext: _resultLookupContext,
+                          ),
                       onFavoriteCheck: onFavoriteCheck,
                       onOpenAdvancedMining: advancedMiningOpenerFor(
                         _resultWebViewKey,
+                        lookupContext: () => _resultLookupContext,
                       ),
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
                       onTopPullReleased: _clearSearchFromResultPull,
@@ -2200,16 +2208,23 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// BUG-3216：结果区制卡用的例句——源文本条上扫描高亮所在的那一句。
+  /// BUG-3216 / BUG-4130：结果区的查词语境——源文本条上扫描高亮所在的那一句。结果区
+  /// 的制卡、✓ 操作单（覆写 / 新增重复卡）、排队覆写、高级制卡字段预填、☆ 收藏全读
+  /// 这一份；没有可用的源文本（空 / 与查询串重复而隐藏）时为 null。只属于结果区：浮层
+  /// 里的词语境是被点处那一句（[miningFieldsForLayer]），所以不覆写宿主级的
+  /// [favoriteLookupContext]。
+  FavoriteLookupContext? get _resultLookupContext {
+    final String sentence = sourceLookupMiningSentence(
+      sourceText: _sourceLookupText,
+      highlight: _sourceHighlight,
+      stripRedundant: _sourceStripRedundant,
+    );
+    return sentence.isEmpty ? null : FavoriteLookupContext(sentence: sentence);
+  }
+
+  /// 结果区制卡字段：JS 没带例句时补上 [_resultLookupContext] 那一句。
   Map<String, String> _withSourceSentence(Map<String, String> fields) =>
-      withFallbackMiningSentence(
-        fields,
-        sourceLookupMiningSentence(
-          sourceText: _sourceLookupText,
-          highlight: _sourceHighlight,
-          stripRedundant: _sourceStripRedundant,
-        ),
-      );
+      withFallbackMiningSentence(fields, _resultLookupContext?.sentence ?? '');
 
   Future<int> _pushNestedPopup(
     String query,
