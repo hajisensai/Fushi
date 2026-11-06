@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';

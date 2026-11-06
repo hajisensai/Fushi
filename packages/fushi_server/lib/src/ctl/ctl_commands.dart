@@ -8,8 +8,8 @@
 /// ```
 /// fushi_server ctl status
 /// fushi_server ctl logs
-/// fushi_server ctl pairing [ls] | pairing revoke <peerId>
-/// fushi_server ctl libraries [ls] | libraries add <path> [--kind video|book] [--id x]
+/// fushi_server ctl pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off
+/// fushi_server ctl libraries [ls] | libraries add <path> [--kind video|book|manga|audiobook] [--id x]
 ///                                 | libraries rm <id> [--purge]
 /// fushi_server ctl scan [--prune | --no-prune]
 /// fushi_server ctl jobs [ls] | jobs rm <id>
@@ -72,7 +72,7 @@ ArgParser _buildBaseCtlParser() => ArgParser()
   ..addFlag('json', negatable: false, help: '原样输出服务端 JSON')
   ..addOption(
     'kind',
-    help: 'libraries add：库类型 video | book',
+    help: 'libraries add：库类型 video | book | manga | audiobook',
     defaultsTo: 'video',
   )
   ..addOption('id', help: 'libraries add：库 id（缺省自动生成）')
@@ -124,7 +124,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   运行状态
   logs [-f|--follow]                       最近日志（-f 持续跟随）
   pairing [ls] | revoke <peerId>           已配对设备 / 待确认 PIN
-  libraries [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
+  pairing owner <peerId> on|off            标记 / 取消「我的设备」（可跟随本机排行榜账户自动登录）
+  libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
   jobs [ls] | rm <id>                      通用任务（ASR 等）
   downloads [ls] | cancel|retry|rm <id> | subtitles <id>
@@ -592,8 +593,16 @@ _CtlRequest? _parseAction(
             'DELETE',
             '$_api/pairing/peers/${adminPathSegment(arg(0)!)}',
           );
+        case 'owner' when arg(0) != null && (arg(1) == 'on' || arg(1) == 'off'):
+          return _CtlRequest(
+            'PUT',
+            '$_api/pairing/peers/${adminPathSegment(arg(0)!)}/owner',
+            body: <String, Object?>{'owner': arg(1) == 'on'},
+          );
       }
-      return usage('pairing [ls] | pairing revoke <peerId>');
+      return usage(
+        'pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off',
+      );
 
     case 'libraries':
       switch (sub) {
@@ -621,7 +630,7 @@ _CtlRequest? _parseAction(
           );
       }
       return usage(
-        'libraries [ls] | libraries add <path> [--kind video|book] [--id x] | libraries rm <id> [--purge]',
+        'libraries [ls] | libraries add <path> [--kind video|book|manga|audiobook] [--id x] | libraries rm <id> [--purge]',
       );
 
     case 'scan':
