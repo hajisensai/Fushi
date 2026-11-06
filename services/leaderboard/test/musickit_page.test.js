@@ -1,10 +1,10 @@
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { call, makeEnv } from './harness.js';
 import { MUSICKIT_JS_URL, MUSICKIT_PAGE_CSP } from '../src/musickit_page.js';
 
 /** 在最小 window/document 替身里跑 bridge.js，配一个假 MusicKit。 */
-function runBridge(source, { tokenStatus = 200 } = {}) {
+function runBridge(source, { tokenStatus = 200, fetchImpl = null, configureImpl = null } = {}) {
   const posted = [];
   const listeners = {};
   const mediaSession = { metadata: { title: 'x' }, handlers: {}, setActionHandler(a, h) { this.handlers[a] = h; } };
@@ -49,6 +49,7 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
       Events: { playbackStateDidChange: 'playbackStateDidChange', mediaPlaybackError: 'mediaPlaybackError', nowPlayingItemDidChange: 'nowPlayingItemDidChange' },
       async configure(opts) {
         calls.push(['configure', opts]);
+        if (configureImpl) return configureImpl(opts);
         if (opts.storefrontId) instance.storefrontId = opts.storefrontId;
         return instance;
       },
@@ -65,8 +66,10 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
     URLSearchParams,
     setTimeout,
     clearTimeout,
+    AbortController,
     fetch: async (url, init) => {
       calls.push(['fetch', url, init]);
+      if (fetchImpl) return fetchImpl(url, init);
       return { ok: tokenStatus === 200, status: tokenStatus, json: async () => ({ token: 'dev-token', expiresAt: 1 }) };
     },
     Promise,
@@ -182,8 +185,66 @@ describe('MusicKit 托管页', () => {
     const r = await b.k.init();
     expect(r.ok).toBe(false);
     expect(r.error.message).toBe('token_http_503');
+    expect(r.error.stage).toBe('token');
+    expect(b.k.initStage()).toBe('token');
     expect(b.calls.filter((c) => c[0] === 'fetch').length).toBe(1);
     await b.k.init();
     expect(b.calls.filter((c) => c[0] === 'fetch').length).toBe(2);
+  });
+
+  // D69n21etZ1：连不上本服务时 init 失败要如实落在 token 段（Dart 据此报「连不上 Fushi 服务器」），
+  // 而不是挂到 Dart 侧总超时、被当成 DRM 无响应。
+  it('bridge.js：token 请求网络失败 → {ok:false, stage:"token"}，不进 configure', async () => {
+    const env = makeEnv();
+    const src = String((await call(env, 'GET', '/musickit/bridge.js')).data);
+    const b = runBridge(src, { fetchImpl: async () => { throw new TypeError('Failed to fetch'); } });
+    const r = await b.k.init();
+    expect(r.ok).toBe(false);
+    expect(r.error.stage).toBe('token');
+    expect(r.error.message).toBe('token_network: Failed to fetch');
+    expect(b.calls.some((c) => c[0] === 'configure')).toBe(false);
+  });
+
+  it('bridge.js：token 请求挂住被 abort → token_timeout；fetch 带了 signal', async () => {
+    const env = makeEnv();
+    const src = String((await call(env, 'GET', '/musickit/bridge.js')).data);
+    vi.useFakeTimers();
+    try {
+      const b = runBridge(src, {
+        fetchImpl: (_url, init) => new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+      });
+      const pending = b.k.init();
+      await vi.advanceTimersByTimeAsync(15000);
+      const r = await pending;
+      expect(r.ok).toBe(false);
+      expect(r.error.stage).toBe('token');
+      expect(r.error.message).toBe('token_timeout');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('bridge.js：configure 挂住时 initStage 停在 configure（Dart 超时才报 DRM）', async () => {
+    const env = makeEnv();
+    const src = String((await call(env, 'GET', '/musickit/bridge.js')).data);
+    const b = runBridge(src, { configureImpl: () => new Promise(() => {}) });
+    expect(b.k.initStage()).toBe('idle');
+    void b.k.init();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(b.k.initStage()).toBe('configure');
+  });
+
+  it('bridge.js：configure 抛错 → stage:"configure"；成功后 initStage 为 ready', async () => {
+    const env = makeEnv();
+    const src = String((await call(env, 'GET', '/musickit/bridge.js')).data);
+    const bad = runBridge(src, { configureImpl: async () => { throw Object.freeze({ name: 'MKError', message: 'DRM_UNSUPPORTED' }); } });
+    const r = await bad.k.init();
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatchObject({ name: 'MKError', message: 'DRM_UNSUPPORTED', stage: 'configure' });
+    const good = runBridge(src);
+    expect((await good.k.init()).ok).toBe(true);
+    expect(good.k.initStage()).toBe('ready');
   });
 });

@@ -18,6 +18,7 @@ pub mod cd;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
+pub mod legacy_text;
 pub mod lyrics;
 pub mod mp4_chapters;
 #[cfg(feature = "plugin")]

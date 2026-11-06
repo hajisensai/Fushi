@@ -13,11 +13,11 @@ use lofty::mp4::{Mp4Codec, Mp4File};
 use lofty::mpeg::{Layer, MpegFile};
 use lofty::picture::PictureType;
 use lofty::probe::Probe;
-use lofty::tag::{Accessor, ItemKey, Tag};
+use lofty::tag::{Accessor, ItemKey, Tag, TagType};
 
 use crate::ac3::{self, Ac3Kind};
-use crate::dsf;
 use crate::mp4_chapters::{self, Mp4Chapter};
+use crate::{dsf, legacy_text};
 
 /// 曲库认的音频扩展名（小写，不带点）。
 ///
@@ -274,6 +274,39 @@ fn codec_of_extension(ext: &str) -> Option<(&'static str, bool)> {
     })
 }
 
+/// ID3v1 与 ID3v2 是会带 ISO-8859-1 文本的标签类型（见 [legacy_text]）；其余（Vorbis
+/// 注释、MP4 ilst、APE）按规范只装 UTF-8 / UTF-16，不做本地编码探测。
+pub fn is_latin1_tag_type(t: TagType) -> bool {
+    matches!(t, TagType::Id3v1 | TagType::Id3v2)
+}
+
+/// 把一份 ID3 标签里所有文本字段合起来探测本地多字节编码并重解（见 [legacy_text]）。
+fn repair_legacy_text(meta: &mut FileMeta) {
+    let mut fields: Vec<&mut String> = Vec::new();
+    for v in [
+        &mut meta.title,
+        &mut meta.title_sort,
+        &mut meta.album,
+        &mut meta.album_sort,
+        &mut meta.album_artist,
+        &mut meta.genre,
+        &mut meta.catalog_no,
+    ] {
+        if let Some(s) = v.as_mut() {
+            fields.push(s);
+        }
+    }
+    for list in [
+        &mut meta.artists,
+        &mut meta.composers,
+        &mut meta.lyricists,
+        &mut meta.arrangers,
+    ] {
+        fields.extend(list.iter_mut());
+    }
+    legacy_text::repair_in_place(&mut fields);
+}
+
 /// 读一个文件的标签与属性。lofty 读不了的格式不报错，退化为扩展名推断（标题由调用方
 /// 用文件名补）；真正打不开（权限 / IO）才返回 Err。
 pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
@@ -456,6 +489,9 @@ pub fn read_meta_from<R: Read + Seek>(
     meta.embedded_cuesheet = tag
         .get_string(&ItemKey::Unknown("CUESHEET".into()))
         .and_then(clean);
+    if is_latin1_tag_type(tag.tag_type()) {
+        repair_legacy_text(&mut meta);
+    }
     meta.has_embedded_cover = tagged.tags().iter().any(|t| !t.pictures().is_empty());
     let cover = if want_cover { cover_of(&tagged) } else { None };
     Ok((meta, cover))
@@ -581,5 +617,112 @@ mod tests {
         assert_eq!(meta.rg_album_gain, Some(-1.25));
         assert!((meta.rg_track_gain.unwrap() + 10.0).abs() < 1e-9);
         assert_eq!(meta.rg_track_peak, Some(1.0));
+    }
+
+    /// 入库样本 MP3 的音频帧（去掉它自带的 ID3v2 / ID3v1），前面接手工构造的标签。
+    fn bare_mpeg_frames() -> Vec<u8> {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/library/Album A/02 Second Song.mp3");
+        let mut b = std::fs::read(fixture).unwrap();
+        if b.starts_with(b"ID3") {
+            let size = b[6..10]
+                .iter()
+                .fold(0usize, |acc, &x| (acc << 7) | usize::from(x & 0x7F));
+            b.drain(..10 + size);
+        }
+        if b.len() >= 128 && &b[b.len() - 128..b.len() - 125] == b"TAG" {
+            b.truncate(b.len() - 128);
+        }
+        b
+    }
+
+    /// ID3v2.3 文本帧，encoding = 0（ISO-8859-1），内容是给定的原始字节。
+    fn latin1_frame(id: &[u8; 4], raw: &[u8]) -> Vec<u8> {
+        let mut f = id.to_vec();
+        f.extend_from_slice(&((raw.len() + 1) as u32).to_be_bytes());
+        f.extend_from_slice(&[0, 0, 0]);
+        f.extend_from_slice(raw);
+        f
+    }
+
+    fn id3v23(frames: &[Vec<u8>]) -> Vec<u8> {
+        let body: Vec<u8> = frames.concat();
+        let n = body.len();
+        let mut out = b"ID3\x03\x00\x00".to_vec();
+        out.extend([
+            (n >> 21) as u8 & 0x7F,
+            (n >> 14) as u8 & 0x7F,
+            (n >> 7) as u8 & 0x7F,
+            n as u8 & 0x7F,
+        ]);
+        out.extend(body);
+        out
+    }
+
+    fn write_temp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("fushi_music_tags_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    }
+
+    fn sjis(s: &str) -> Vec<u8> {
+        let (b, _, e) = encoding_rs::SHIFT_JIS.encode(s);
+        assert!(!e);
+        b.into_owned()
+    }
+
+    #[test]
+    fn id3v2_latin1_frames_with_shift_jis_bytes_are_redecoded() {
+        let mut file = id3v23(&[
+            latin1_frame(b"TIT2", &sjis("act.2 夜に駆ける")),
+            latin1_frame(b"TPE1", &sjis("ヨルシカ")),
+            latin1_frame(b"TALB", &sjis("ドラマCD 第一巻")),
+        ]);
+        file.extend(bare_mpeg_frames());
+        let p = write_temp("sjis_v2.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("act.2 夜に駆ける"));
+        assert_eq!(meta.artists, vec!["ヨルシカ".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("ドラマCD 第一巻"));
+        // 写回 diff 预览读的「当前值」走同一判据。
+        let fields = crate::tag_write::read_fields(&p).unwrap();
+        assert!(fields.contains(&("title".to_owned(), "act.2 夜に駆ける".to_owned())));
+        assert!(fields.contains(&("artist".to_owned(), "ヨルシカ".to_owned())));
+    }
+
+    #[test]
+    fn id3v2_latin1_frames_with_real_latin1_text_stay_latin1() {
+        let mut file = id3v23(&[
+            latin1_frame(b"TIT2", b"Pok\xE9mon Th\xE9me"),
+            latin1_frame(b"TPE1", b"Mot\xF6rhead"),
+            latin1_frame(b"TALB", b"Gr\xF6\xDFe"),
+        ]);
+        file.extend(bare_mpeg_frames());
+        let p = write_temp("latin1_v2.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("Pokémon Théme"));
+        assert_eq!(meta.artists, vec!["Motörhead".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("Größe"));
+    }
+
+    #[test]
+    fn id3v1_with_shift_jis_bytes_is_redecoded() {
+        let mut v1 = vec![0u8; 128];
+        v1[..3].copy_from_slice(b"TAG");
+        let put =
+            |buf: &mut [u8], at: usize, raw: &[u8]| buf[at..at + raw.len()].copy_from_slice(raw);
+        put(&mut v1, 3, &sjis("夜に駆ける"));
+        put(&mut v1, 33, &sjis("ヨルシカ"));
+        put(&mut v1, 63, &sjis("だから僕は"));
+        v1[127] = 255;
+        let mut file = bare_mpeg_frames();
+        file.extend(v1);
+        let p = write_temp("sjis_v1.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("夜に駆ける"));
+        assert_eq!(meta.artists, vec!["ヨルシカ".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("だから僕は"));
     }
 }
