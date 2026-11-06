@@ -447,6 +447,9 @@ struct Work {
     item: Item,
     buf: SparseBuf,
     chunk: u64,
+    /// 上一次 NEED 之后还没喂过字节（调用方取数失败 / 交回空）：再 step 时这个文件记一条
+    /// 错误记录跳过，不原地反复要同一段。
+    awaiting: bool,
 }
 
 /// 一次 step 的结果。
@@ -488,6 +491,9 @@ impl RemoteScanner {
     pub fn feed(&mut self, offset: u64, data: &[u8]) -> bool {
         match self.current.as_mut() {
             Some(w) => {
+                if !data.is_empty() {
+                    w.awaiting = false;
+                }
                 w.buf.insert(offset, data);
                 true
             }
@@ -516,8 +522,21 @@ impl RemoteScanner {
                 break;
             }
             if let Some(mut work) = self.current.take() {
+                if work.awaiting {
+                    let path = work
+                        .item
+                        .audio()
+                        .map(|f| f.path.clone())
+                        .unwrap_or_default();
+                    self.ready.push_back(Record::Error {
+                        path,
+                        message: "no bytes were provided for the requested range".into(),
+                    });
+                    continue;
+                }
                 match attempt(&mut work) {
                     Attempt::Need(ranges) => {
+                        work.awaiting = true;
                         let path = work
                             .item
                             .audio()
@@ -537,7 +556,8 @@ impl RemoteScanner {
             };
             match self.start(item) {
                 Started::Records(records) => self.ready.extend(records),
-                Started::Fetch(work, ranges) => {
+                Started::Fetch(mut work, ranges) => {
+                    work.awaiting = true;
                     let path = work
                         .item
                         .audio()
@@ -580,6 +600,7 @@ impl RemoteScanner {
                 item,
                 buf: SparseBuf::default(),
                 chunk: MIN_CHUNK,
+                awaiting: false,
             }),
             ranges,
         )

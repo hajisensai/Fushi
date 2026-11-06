@@ -420,6 +420,31 @@ fn runaway_metadata_stops_at_the_fetch_cap() {
 }
 
 #[test]
+fn a_file_that_gets_no_bytes_becomes_an_error_record() {
+    let (listing, map) = listing_of(ROOT, PREFIX);
+    let real = file_fetcher(map);
+    let fetch = move |path: &str, off: u64, len: u64| -> Vec<u8> {
+        if path.ends_with("02 Second Song.mp3") {
+            Vec::new()
+        } else {
+            real(path, off, len)
+        }
+    };
+    let r = run(&listing, &fetch, None, 0);
+    let errors: Vec<String> = r
+        .records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Error { path, .. } => Some(rel(path)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(errors, vec!["Album A/02 Second Song.mp3"]);
+    assert_eq!(r.rounds[&format!("{PREFIX}/Album A/02 Second Song.mp3")], 1);
+    assert_eq!(tracks(&r.records).len(), 10);
+}
+
+#[test]
 fn bad_listing_is_rejected() {
     let mut h = std::ptr::null_mut();
     let garbage = [9u8, 0, 0, 0, 1];
