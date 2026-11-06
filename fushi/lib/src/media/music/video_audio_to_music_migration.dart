@@ -16,6 +16,11 @@
 /// - 观看记录 → 一条音乐播放记录（`music_play_events`：开始时刻 = 最后播放时刻，收听
 ///   时长 = 断点（看完则取曲长），看完 = 完整听完），曲目由此进「最近播放」。音乐没有
 ///   逐曲断点续播，断点本身无处可放。
+/// - 挂着的主字幕（多半是 ASR 转写，存在 app 的 `video_subtitles/` 里，删行会被回收）→
+///   这首的手动指定歌词（[MusicSubtitleAdopter]，音乐歌词认 SRT / ASS / VTT / LRC）。
+///   字幕搬不过去（读不到 / 解析失败）的行**不删**，下次启动再试；副字幕不搬。
+/// - 原始音频文件转交给音乐曲目：删行时进删除护栏（[VideoBookRepository.deleteVideoBooksAndReclaimAssets]
+///   的 `keepLocalFiles`），iOS 选择器副本也不回收，否则曲目指向的文件会被删掉。
 /// - 学习统计（`study_segments`，按 bookUid 键控）**不删、不改键**：删视频行不碰这张
 ///   事实表，历史时长照旧计在当时的视频面上；改键会让已同步到别的设备的段对不上。
 /// - 标签、书架条目、视频合集成员随视频行一起删（音乐库没有对应物）；被删空的音频专辑
@@ -34,6 +39,11 @@ import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';
+
+/// 把视频行挂的字幕文件 [subtitlePath] 定为曲目 [track] 的歌词；失败抛出（调用方据此
+/// 保留源行）。生产接 `MusicLyricsService.adoptSubtitleFile`。
+typedef MusicSubtitleAdopter =
+    Future<void> Function(MusicTrackRow track, String subtitlePath);
 
 /// 一次迁移的结果。
 class VideoAudioMigrationReport {
@@ -81,6 +91,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   MusicAudioIntake? intake,
   VideoBookRepository? repository,
   required bool Function(String path) fileExists,
+  required MusicSubtitleAdopter adoptSubtitle,
 }) async {
   final VideoBookRepository repo = repository ?? VideoBookRepository(db);
   final List<VideoBookRow> all = await repo.listAll();
@@ -134,11 +145,22 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     live = await _liveTracksByPath(db);
   }
 
-  // 3. 已在曲库的行：记播放记录，再从视频库删除。
-  final List<VideoBookRow> done = <VideoBookRow>[
-    for (final VideoBookRow r in rows)
-      if (live.containsKey(_key(r.videoPath))) r,
-  ];
+  // 3. 已在曲库的行：搬字幕（搬不过去的行留下）、记播放记录，再从视频库删除。
+  final List<VideoBookRow> done = <VideoBookRow>[];
+  for (final VideoBookRow r in rows) {
+    final MusicTrackRow? track = live[_key(r.videoPath)];
+    if (track == null) continue;
+    final String subtitle = (r.subtitleSource ?? '').trim();
+    if (subtitle.isNotEmpty && p.isAbsolute(subtitle) && fileExists(subtitle)) {
+      try {
+        await adoptSubtitle(track, subtitle);
+      } catch (e) {
+        errors.add('${r.videoPath}: subtitle $subtitle: $e');
+        continue;
+      }
+    }
+    done.add(r);
+  }
   int events = 0;
   for (final VideoBookRow r in done) {
     if (await _carryOverPlay(db, r, live[_key(r.videoPath)]!)) events++;
@@ -148,6 +170,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
       <String>[for (final VideoBookRow r in done) r.bookUid],
       scope: DeleteScope.keepLocalOnly,
       compactDatabase: false,
+      keepLocalFiles: <String>[for (final VideoBookRow r in done) r.videoPath],
     );
   }
   return VideoAudioMigrationReport(
