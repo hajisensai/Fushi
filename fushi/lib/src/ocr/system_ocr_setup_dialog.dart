@@ -38,7 +38,11 @@ enum SystemOcrSetupPhase {
   downloading,
   ready,
   failed,
-  playServicesResolvable,
+  playServicesMissing,
+  playServicesDisabled,
+  playServicesUpdateRequired,
+  playServicesUpdating,
+  playServicesInvalid,
   playServicesUnavailable,
 }
 
@@ -47,11 +51,38 @@ SystemOcrSetupPhase systemOcrSetupPhaseFor(SystemOcrModelStatus status) =>
     switch (status) {
       SystemOcrModelStatus.ready => SystemOcrSetupPhase.ready,
       SystemOcrModelStatus.missing => SystemOcrSetupPhase.missing,
-      SystemOcrModelStatus.playServicesResolvable =>
-        SystemOcrSetupPhase.playServicesResolvable,
+      SystemOcrModelStatus.playServicesMissing =>
+        SystemOcrSetupPhase.playServicesMissing,
+      SystemOcrModelStatus.playServicesDisabled =>
+        SystemOcrSetupPhase.playServicesDisabled,
+      SystemOcrModelStatus.playServicesUpdateRequired =>
+        SystemOcrSetupPhase.playServicesUpdateRequired,
+      SystemOcrModelStatus.playServicesUpdating =>
+        SystemOcrSetupPhase.playServicesUpdating,
+      SystemOcrModelStatus.playServicesInvalid =>
+        SystemOcrSetupPhase.playServicesInvalid,
       SystemOcrModelStatus.playServicesUnavailable =>
         SystemOcrSetupPhase.playServicesUnavailable,
     };
+
+/// 弹窗里给反馈人截图用的诊断行：原始码 + 本机 / 需要的 Play 服务版本（BUG-4130）。
+String systemOcrPlayServicesDiagnosticsText(
+  SystemOcrPlayServicesDiagnostics diagnostics,
+) {
+  final String? name = diagnostics.installedVersionName;
+  final int? code = diagnostics.installedVersionCode;
+  final String installed = switch ((name, code)) {
+    (final String n, final int c) => '$n ($c)',
+    (final String n, null) => n,
+    (null, final int c) => '$c',
+    (null, null) => t.ocr_system_model_play_services_version_not_found,
+  };
+  return t.ocr_system_model_play_services_diagnostics(
+    code: '${diagnostics.connectionResult}',
+    installed: installed,
+    required: '${diagnostics.requiredVersionCode}',
+  );
+}
 
 class SystemOcrSetupDialog extends StatefulWidget {
   const SystemOcrSetupDialog({
@@ -70,6 +101,7 @@ class SystemOcrSetupDialog extends StatefulWidget {
 class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
   SystemOcrSetupPhase _phase = SystemOcrSetupPhase.checking;
   String _error = '';
+  SystemOcrPlayServicesDiagnostics? _playServices;
 
   @override
   void initState() {
@@ -77,23 +109,30 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
     unawaited(_check());
   }
 
-  void _set(SystemOcrSetupPhase phase, [String error = '']) {
+  void _set(
+    SystemOcrSetupPhase phase, {
+    String error = '',
+    SystemOcrPlayServicesDiagnostics? playServices,
+  }) {
     if (!mounted) return;
     setState(() {
       _phase = phase;
       _error = error;
+      _playServices = playServices;
     });
   }
+
+  void _apply(SystemOcrModelReport report) => _set(
+    systemOcrSetupPhaseFor(report.status),
+    playServices: report.playServices,
+  );
 
   Future<void> _check() async {
     _set(SystemOcrSetupPhase.checking);
     try {
-      final SystemOcrModelStatus status = await widget.setup.modelStatus(
-        widget.language,
-      );
-      _set(systemOcrSetupPhaseFor(status));
+      _apply(await widget.setup.modelStatus(widget.language));
     } catch (error) {
-      _set(SystemOcrSetupPhase.failed, _describe(error));
+      _set(SystemOcrSetupPhase.failed, error: _describe(error));
     }
   }
 
@@ -102,15 +141,27 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
     try {
       await widget.setup.installModel(widget.language);
       _set(SystemOcrSetupPhase.ready);
+    } on SystemOcrPlayServicesException catch (error) {
+      _apply(error.report);
     } catch (error) {
-      _set(SystemOcrSetupPhase.failed, _describe(error));
+      _set(SystemOcrSetupPhase.failed, error: _describe(error));
     }
   }
 
-  Future<void> _fixPlayServices() async {
+  /// 安装 / 更新：系统对话框把用户带去 Play 商店。
+  Future<void> _resolvePlayServices() async {
     await widget.setup.resolvePlayServices();
     // 不管系统对话框怎么收场，以重新查到的状态为准。
     await _check();
+  }
+
+  /// 被停用：只能去 Play 服务的应用详情页启用；回来后由用户点「重新检查」。
+  Future<void> _openPlayServicesSettings() async {
+    try {
+      await widget.setup.openPlayServicesSettings();
+    } catch (error) {
+      _set(SystemOcrSetupPhase.failed, error: _describe(error));
+    }
   }
 
   static String _describe(Object error) => error is PlatformException
@@ -128,11 +179,33 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
       SystemOcrSetupPhase.downloading => t.ocr_system_model_downloading,
       SystemOcrSetupPhase.ready => t.ocr_system_model_ready,
       SystemOcrSetupPhase.failed => t.ocr_system_model_failed(error: _error),
-      SystemOcrSetupPhase.playServicesResolvable =>
-        t.ocr_system_model_play_services_resolvable,
+      SystemOcrSetupPhase.playServicesMissing =>
+        t.ocr_system_model_play_services_missing,
+      SystemOcrSetupPhase.playServicesDisabled =>
+        t.ocr_system_model_play_services_disabled,
+      SystemOcrSetupPhase.playServicesUpdateRequired =>
+        t.ocr_system_model_play_services_update_required,
+      SystemOcrSetupPhase.playServicesUpdating =>
+        t.ocr_system_model_play_services_updating,
+      SystemOcrSetupPhase.playServicesInvalid =>
+        t.ocr_system_model_play_services_invalid,
       SystemOcrSetupPhase.playServicesUnavailable =>
         t.ocr_system_model_play_services_unavailable,
     };
+    final SystemOcrPlayServicesDiagnostics? diagnostics = _playServices;
+    final Widget recheck = FushiFilledButton(
+      key: const ValueKey<String>('system_ocr_setup_recheck'),
+      onPressed: () => unawaited(_check()),
+      child: Text(t.ocr_system_model_recheck),
+    );
+    // 被停用时主按钮去设置页，回来后还得能重新查：放一个次要的「重新检查」。
+    final Widget? secondary = _phase == SystemOcrSetupPhase.playServicesDisabled
+        ? FushiTextButton(
+            key: const ValueKey<String>('system_ocr_setup_recheck'),
+            onPressed: () => unawaited(_check()),
+            child: Text(t.ocr_system_model_recheck),
+          )
+        : null;
     final Widget? primary = switch (_phase) {
       SystemOcrSetupPhase.missing => FushiFilledButton(
         key: const ValueKey<String>('system_ocr_setup_download'),
@@ -144,19 +217,34 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         onPressed: () => unawaited(_check()),
         child: Text(t.retry),
       ),
-      SystemOcrSetupPhase.playServicesResolvable => FushiFilledButton(
-        key: const ValueKey<String>('system_ocr_setup_fix_play_services'),
-        onPressed: () => unawaited(_fixPlayServices()),
-        child: Text(t.ocr_system_model_play_services_fix),
+      SystemOcrSetupPhase.playServicesMissing => FushiFilledButton(
+        key: const ValueKey<String>('system_ocr_setup_install_play_services'),
+        onPressed: () => unawaited(_resolvePlayServices()),
+        child: Text(t.ocr_system_model_play_services_install),
       ),
+      SystemOcrSetupPhase.playServicesUpdateRequired => FushiFilledButton(
+        key: const ValueKey<String>('system_ocr_setup_update_play_services'),
+        onPressed: () => unawaited(_resolvePlayServices()),
+        child: Text(t.ocr_system_model_play_services_update),
+      ),
+      SystemOcrSetupPhase.playServicesDisabled => FushiFilledButton(
+        key: const ValueKey<String>('system_ocr_setup_open_play_services'),
+        onPressed: () => unawaited(_openPlayServicesSettings()),
+        child: Text(t.ocr_system_model_play_services_open_settings),
+      ),
+      SystemOcrSetupPhase.playServicesUpdating => recheck,
       _ => null,
     };
     final _StatusTone tone = switch (_phase) {
       SystemOcrSetupPhase.ready => _StatusTone.success,
       SystemOcrSetupPhase.failed ||
+      SystemOcrSetupPhase.playServicesInvalid ||
       SystemOcrSetupPhase.playServicesUnavailable => _StatusTone.error,
       SystemOcrSetupPhase.missing ||
-      SystemOcrSetupPhase.playServicesResolvable => _StatusTone.attention,
+      SystemOcrSetupPhase.playServicesMissing ||
+      SystemOcrSetupPhase.playServicesDisabled ||
+      SystemOcrSetupPhase.playServicesUpdateRequired ||
+      SystemOcrSetupPhase.playServicesUpdating => _StatusTone.attention,
       _ => _StatusTone.neutral,
     };
     return FushiAlertDialog(
@@ -170,12 +258,27 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
                   : FushiHeroTone.neutral),
       ),
       title: Text(t.ocr_system_model_title),
-      content: _StatusBlock(tone: tone, busy: busy, message: message),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _StatusBlock(tone: tone, busy: busy, message: message),
+          if (diagnostics != null) ...<Widget>[
+            const SizedBox(height: 12),
+            SelectableText(
+              systemOcrPlayServicesDiagnosticsText(diagnostics),
+              key: const ValueKey<String>('system_ocr_setup_diagnostics'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
       actions: <Widget>[
         FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
+        if (secondary != null) secondary,
         if (primary != null) primary,
       ],
     );

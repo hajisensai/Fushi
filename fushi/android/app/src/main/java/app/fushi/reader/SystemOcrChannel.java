@@ -1,9 +1,17 @@
 package app.fushi.reader;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -63,12 +71,26 @@ public final class SystemOcrChannel {
     private static final String METHOD_MODEL_STATUS = "modelStatus";
     private static final String METHOD_INSTALL_MODEL = "installModel";
     private static final String METHOD_RESOLVE_PLAY_SERVICES = "resolvePlayServices";
+    private static final String METHOD_OPEN_PLAY_SERVICES_SETTINGS = "openPlayServicesSettings";
 
-    /** {@code modelStatus} 的回答（与 Dart 侧 {@code SystemOcrModelStatus} 一一对应）。 */
+    private static final String TAG = "FushiSystemOcr";
+
+    /**
+     * {@code modelStatus} 回答的 {@code status} 字段（Dart 侧 {@code parseSystemOcrModelReport}）。
+     *
+     * <p>Play 服务有问题时只报 {@link #STATUS_PLAY_SERVICES_PROBLEM} 加**原始**
+     * {@link ConnectionResult} 码与版本号，按码细分成哪种状态由 Dart 侧一个纯函数决定
+     * （BUG-4130）：以前在这里用 isUserResolvableError 二分成「可修 / 不可修」两个状态，
+     * 原始码丢了，用户 Play 服务已是最新也只能看到「缺失、被停用或版本过旧」。
+     */
     private static final String STATUS_READY = "ready";
     private static final String STATUS_MISSING = "missing";
-    private static final String STATUS_PLAY_SERVICES_RESOLVABLE = "play_services_resolvable";
-    private static final String STATUS_PLAY_SERVICES_UNAVAILABLE = "play_services_unavailable";
+    private static final String STATUS_PLAY_SERVICES_PROBLEM = "play_services_problem";
+    private static final String KEY_STATUS = "status";
+    private static final String KEY_CONNECTION_RESULT = "connectionResult";
+    private static final String KEY_INSTALLED_VERSION_CODE = "installedVersionCode";
+    private static final String KEY_INSTALLED_VERSION_NAME = "installedVersionName";
+    private static final String KEY_REQUIRED_VERSION_CODE = "requiredVersionCode";
     private static final String ARG_BYTES = "bytes";
     private static final String ARG_LANGUAGE = "language";
 
@@ -118,6 +140,9 @@ public final class SystemOcrChannel {
                                 .addOnSuccessListener(unused -> result.success(Boolean.TRUE))
                                 .addOnFailureListener(error -> result.success(Boolean.FALSE));
                         return;
+                    case METHOD_OPEN_PLAY_SERVICES_SETTINGS:
+                        handleOpenPlayServicesSettings(activity, result);
+                        return;
                     default:
                         result.notImplemented();
                 }
@@ -162,17 +187,68 @@ public final class SystemOcrChannel {
     }
 
     /**
-     * Play 服务不在 / 版本不对时的状态码；在位返回 null。模型由 Play 服务保管，它不在就
-     * 无从谈起下载，必须先把这件事告诉用户（能修的给修复入口，修不了的如实说）。
+     * Play 服务不在 / 版本不对时的诊断载荷；在位返回 null。模型由 Play 服务保管，它不在就
+     * 无从谈起下载，必须先把这件事告诉用户。
+     *
+     * <p>原样回传 {@link ConnectionResult} 码、本机 Play 服务 APK 的版本，以及本库要求的
+     * 最低版本 {@link GoogleApiAvailability#GOOGLE_PLAY_SERVICES_VERSION_CODE}（BUG-4130）：
+     * 报「版本过旧」而 Play 商店说已是最新时，只有两个版本号摆出来才看得懂是哪一边的事。
      */
     @Nullable
-    private static String playServicesProblem(@NonNull Activity activity) {
+    private static Map<String, Object> playServicesProblem(@NonNull Activity activity) {
         final GoogleApiAvailability gms = GoogleApiAvailability.getInstance();
         final int code = gms.isGooglePlayServicesAvailable(activity);
         if (code == ConnectionResult.SUCCESS) return null;
-        return gms.isUserResolvableError(code)
-                ? STATUS_PLAY_SERVICES_RESOLVABLE
-                : STATUS_PLAY_SERVICES_UNAVAILABLE;
+        final Map<String, Object> problem = new HashMap<>();
+        problem.put(KEY_STATUS, STATUS_PLAY_SERVICES_PROBLEM);
+        problem.put(KEY_CONNECTION_RESULT, code);
+        problem.put(KEY_REQUIRED_VERSION_CODE,
+                GoogleApiAvailability.GOOGLE_PLAY_SERVICES_VERSION_CODE);
+        Long installedCode = null;
+        String installedName = null;
+        try {
+            final PackageInfo info = activity.getPackageManager().getPackageInfo(
+                    GoogleApiAvailability.GOOGLE_PLAY_SERVICES_PACKAGE, 0);
+            installedCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode()
+                    : (long) info.versionCode;
+            installedName = info.versionName;
+        } catch (PackageManager.NameNotFoundException notFound) {
+            // 包管理器查不到 com.google.android.gms（没装，或对本 app 不可见）：版本留空，
+            // Dart 侧诊断行显示「查不到」——只陈述查询结果，不替它断言「未安装」。
+        }
+        problem.put(KEY_INSTALLED_VERSION_CODE, installedCode);
+        problem.put(KEY_INSTALLED_VERSION_NAME, installedName);
+        Log.w(TAG, "Google Play services unavailable for system OCR: "
+                + gms.getErrorString(code) + " (ConnectionResult " + code
+                + "), installed " + installedName + " (" + installedCode + ")"
+                + ", required " + GoogleApiAvailability.GOOGLE_PLAY_SERVICES_VERSION_CODE);
+        return problem;
+    }
+
+    /** 单字段状态载荷（Play 服务在位时的 ready / missing）。 */
+    private static Map<String, Object> statusPayload(@NonNull String status) {
+        final Map<String, Object> payload = new HashMap<>();
+        payload.put(KEY_STATUS, status);
+        return payload;
+    }
+
+    /**
+     * Play 服务被停用时，系统的「修复」对话框帮不上忙——只能去它的应用详情页点「启用」。
+     * 这里直接打开那一页；打不开就照实报错，由 Dart 侧显示出来。
+     */
+    private static void handleOpenPlayServicesSettings(
+            @NonNull Activity activity, @NonNull MethodChannel.Result result) {
+        final Intent intent = new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package",
+                        GoogleApiAvailability.GOOGLE_PLAY_SERVICES_PACKAGE, null));
+        try {
+            activity.startActivity(intent);
+            result.success(Boolean.TRUE);
+        } catch (ActivityNotFoundException error) {
+            result.error("SETTINGS_UNAVAILABLE", error.getMessage(), null);
+        }
     }
 
     /**
@@ -185,15 +261,15 @@ public final class SystemOcrChannel {
             @NonNull Activity activity,
             @Nullable String language,
             @NonNull MethodChannel.Result result) {
-        final String problem = playServicesProblem(activity);
+        final Map<String, Object> problem = playServicesProblem(activity);
         if (problem != null) {
             result.success(problem);
             return;
         }
         ModuleInstall.getClient(activity)
                 .areModulesAvailable(recognizerFor(language))
-                .addOnSuccessListener(response -> result.success(
-                        response.areModulesAvailable() ? STATUS_READY : STATUS_MISSING))
+                .addOnSuccessListener(response -> result.success(statusPayload(
+                        response.areModulesAvailable() ? STATUS_READY : STATUS_MISSING)))
                 .addOnFailureListener(error ->
                         result.error("STATUS_FAILED", error.getMessage(), null));
     }
@@ -208,9 +284,13 @@ public final class SystemOcrChannel {
             @NonNull Activity activity,
             @Nullable String language,
             @NonNull MethodChannel.Result result) {
-        final String problem = playServicesProblem(activity);
+        final Map<String, Object> problem = playServicesProblem(activity);
         if (problem != null) {
-            result.error("PLAY_SERVICES_UNAVAILABLE", problem, null);
+            // details 与 modelStatus 的载荷同形：Dart 侧据此切到对应的 Play 服务状态。
+            result.error("PLAY_SERVICES_UNAVAILABLE",
+                    "Google Play services ConnectionResult "
+                            + problem.get(KEY_CONNECTION_RESULT),
+                    problem);
             return;
         }
         final ModuleInstallClient client = ModuleInstall.getClient(activity);

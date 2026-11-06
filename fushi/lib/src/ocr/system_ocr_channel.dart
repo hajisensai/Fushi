@@ -109,6 +109,11 @@ abstract interface class SystemOcrPlatform {
 ///
 /// 只有 Android 会出现「未就绪」：ML Kit 模型由 Google Play 服务保管，安装时的
 /// 顺手下载不保证真取到。其它平台的系统 OCR 是系统组件，恒 [ready]。
+///
+/// Play 服务的问题按 `ConnectionResult` 码分开（BUG-4130，见
+/// [systemOcrStatusForConnectionResult]）：以前合成「可修 / 不可修」两档，Play 服务
+/// 已是最新的用户也只能看到「缺失、被停用或版本过旧」、被带去一个说「已是最新」的
+/// 商店页。
 enum SystemOcrModelStatus {
   /// 模型在，可以识别。
   ready,
@@ -116,33 +121,176 @@ enum SystemOcrModelStatus {
   /// Play 服务在，但还没取下这门语言的模型：可以立即请它下载。
   missing,
 
-  /// Play 服务缺失 / 停用 / 过旧，但系统能引导用户修好。
-  playServicesResolvable,
+  /// 本机没装 Play 服务（`SERVICE_MISSING`）。
+  playServicesMissing,
 
-  /// 本机没有可用的 Play 服务：系统 OCR 在这台设备上用不了。
-  playServicesUnavailable;
+  /// Play 服务被停用（`SERVICE_DISABLED`）：要去它的应用设置里启用。
+  playServicesDisabled,
 
-  /// 平台回答的线上值（与 Android `SystemOcrChannel.STATUS_*` 一一对应）。
-  static SystemOcrModelStatus? fromWire(Object? raw) => switch (raw) {
-    'ready' => ready,
-    'missing' => missing,
-    'play_services_resolvable' => playServicesResolvable,
-    'play_services_unavailable' => playServicesUnavailable,
-    _ => null,
-  };
+  /// Play 服务版本低于本库要求（`SERVICE_VERSION_UPDATE_REQUIRED`）。
+  playServicesUpdateRequired,
+
+  /// Play 服务正在更新（`SERVICE_UPDATING`）：等它更新完再查。
+  playServicesUpdating,
+
+  /// 装着的 Play 服务不是正版 / 已损坏（`SERVICE_INVALID`）。
+  playServicesInvalid,
+
+  /// 其它让 Play 服务用不了的情况：系统 OCR 在这台设备上用不了。
+  playServicesUnavailable,
+}
+
+/// `com.google.android.gms.common.ConnectionResult` 里与 Play 服务可用性有关的码。
+abstract final class PlayServicesConnectionResult {
+  static const int serviceMissing = 1;
+  static const int serviceVersionUpdateRequired = 2;
+  static const int serviceDisabled = 3;
+  static const int serviceInvalid = 9;
+  static const int serviceUpdating = 18;
+}
+
+/// `isGooglePlayServicesAvailable` 的原始码 → 状态。整个仓库只在这里做这一步映射
+/// （BUG-4130）：原生侧只回传原始码，不再自己二分。
+SystemOcrModelStatus systemOcrStatusForConnectionResult(int code) =>
+    switch (code) {
+      PlayServicesConnectionResult.serviceMissing =>
+        SystemOcrModelStatus.playServicesMissing,
+      PlayServicesConnectionResult.serviceVersionUpdateRequired =>
+        SystemOcrModelStatus.playServicesUpdateRequired,
+      PlayServicesConnectionResult.serviceDisabled =>
+        SystemOcrModelStatus.playServicesDisabled,
+      PlayServicesConnectionResult.serviceInvalid =>
+        SystemOcrModelStatus.playServicesInvalid,
+      PlayServicesConnectionResult.serviceUpdating =>
+        SystemOcrModelStatus.playServicesUpdating,
+      _ => SystemOcrModelStatus.playServicesUnavailable,
+    };
+
+/// Play 服务出问题时原生侧带回的诊断：原始码与两边的版本号，弹窗原样显示，
+/// 方便反馈人截图。
+class SystemOcrPlayServicesDiagnostics {
+  const SystemOcrPlayServicesDiagnostics({
+    required this.connectionResult,
+    required this.requiredVersionCode,
+    this.installedVersionCode,
+    this.installedVersionName,
+  });
+
+  /// `GoogleApiAvailability.isGooglePlayServicesAvailable` 的原始返回码。
+  final int connectionResult;
+
+  /// 本库要求的最低 Play 服务版本（`GOOGLE_PLAY_SERVICES_VERSION_CODE`）。
+  final int requiredVersionCode;
+
+  /// 本机 Play 服务 APK 的 versionCode；包管理器查不到该包时为 null。
+  final int? installedVersionCode;
+
+  /// 本机 Play 服务 APK 的 versionName（商店页上显示的那个）；查不到该包或
+  /// 包没有 versionName 时为 null。
+  final String? installedVersionName;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SystemOcrPlayServicesDiagnostics &&
+      other.connectionResult == connectionResult &&
+      other.requiredVersionCode == requiredVersionCode &&
+      other.installedVersionCode == installedVersionCode &&
+      other.installedVersionName == installedVersionName;
+
+  @override
+  int get hashCode => Object.hash(
+    connectionResult,
+    requiredVersionCode,
+    installedVersionCode,
+    installedVersionName,
+  );
+
+  @override
+  String toString() =>
+      'SystemOcrPlayServicesDiagnostics(code: $connectionResult, '
+      'installed: $installedVersionName ($installedVersionCode), '
+      'required: $requiredVersionCode)';
+}
+
+/// 一次模型状态查询的回答：状态，Play 服务有问题时再加诊断。
+class SystemOcrModelReport {
+  const SystemOcrModelReport(this.status, {this.playServices});
+
+  final SystemOcrModelStatus status;
+
+  /// 仅 Play 服务有问题时非空。
+  final SystemOcrPlayServicesDiagnostics? playServices;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SystemOcrModelReport &&
+      other.status == status &&
+      other.playServices == playServices;
+
+  @override
+  int get hashCode => Object.hash(status, playServices);
+
+  @override
+  String toString() => 'SystemOcrModelReport($status, $playServices)';
+}
+
+/// 解析 Android `SystemOcrChannel` 的 `modelStatus` 载荷（也是
+/// `PLAY_SERVICES_UNAVAILABLE` 错误的 details）。认不出就返回 null——调用方必须
+/// 报错，不能把看不懂的回答当成就绪。
+///
+/// 字段名是跨语言契约，改这里必须同步改 `SystemOcrChannel.KEY_*`。
+SystemOcrModelReport? parseSystemOcrModelReport(Object? raw) {
+  if (raw is! Map) return null;
+  switch (raw['status']) {
+    case 'ready':
+      return const SystemOcrModelReport(SystemOcrModelStatus.ready);
+    case 'missing':
+      return const SystemOcrModelReport(SystemOcrModelStatus.missing);
+    case 'play_services_problem':
+      final Object? code = raw['connectionResult'];
+      final Object? required = raw['requiredVersionCode'];
+      if (code is! int || required is! int) return null;
+      final Object? installedCode = raw['installedVersionCode'];
+      final Object? installedName = raw['installedVersionName'];
+      return SystemOcrModelReport(
+        systemOcrStatusForConnectionResult(code),
+        playServices: SystemOcrPlayServicesDiagnostics(
+          connectionResult: code,
+          requiredVersionCode: required,
+          installedVersionCode: installedCode is int ? installedCode : null,
+          installedVersionName: installedName is String ? installedName : null,
+        ),
+      );
+  }
+  return null;
+}
+
+/// 下载模型时发现 Play 服务有问题（原生 `PLAY_SERVICES_UNAVAILABLE`）：带着与
+/// `modelStatus` 同形的报告，弹窗据此切到对应状态，而不是只显示一句错误。
+class SystemOcrPlayServicesException implements Exception {
+  const SystemOcrPlayServicesException(this.report);
+
+  final SystemOcrModelReport report;
+
+  @override
+  String toString() => 'SystemOcrPlayServicesException($report)';
 }
 
 /// 系统 OCR 模型的查询与下载——识别报 [SystemOcrUnavailableException] 后，带用户
 /// 去把模型配好，而不是只丢一句「没就绪」（BUG-2906）。测试注 fake。
 abstract interface class SystemOcrModelSetup {
   /// 查 [language] 的模型是否在本机。只查询，不触发下载。
-  Future<SystemOcrModelStatus> modelStatus(String language);
+  Future<SystemOcrModelReport> modelStatus(String language);
 
-  /// 请系统立即下载 [language] 的模型，下完才返回；失败抛 [PlatformException]。
+  /// 请系统立即下载 [language] 的模型，下完才返回。Play 服务有问题时抛
+  /// [SystemOcrPlayServicesException]，其它失败抛 [PlatformException]。
   Future<void> installModel(String language);
 
-  /// 让系统引导用户修复 Play 服务（安装 / 启用 / 更新）。修好返回 true。
+  /// 让系统引导用户安装 / 更新 Play 服务（系统对话框 → Play 商店）。修好返回 true。
   Future<bool> resolvePlayServices();
+
+  /// 打开 Play 服务的应用详情页（被停用时去那里启用）。打不开抛 [PlatformException]。
+  Future<void> openPlayServicesSettings();
 }
 
 /// 生产实现：走平台通道。
@@ -209,25 +357,25 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
   }
 
   @override
-  Future<SystemOcrModelStatus> modelStatus(String language) async {
-    final String? raw;
+  Future<SystemOcrModelReport> modelStatus(String language) async {
+    final Object? raw;
     try {
-      raw = await _channel.invokeMethod<String>(
+      raw = await _channel.invokeMethod<Object?>(
         'modelStatus',
         <String, Object?>{'language': language},
       );
     } on MissingPluginException {
       // 只有 Android 实现了它：其它平台的系统 OCR 是系统组件，没有模型可缺。
-      return SystemOcrModelStatus.ready;
+      return const SystemOcrModelReport(SystemOcrModelStatus.ready);
     }
-    final SystemOcrModelStatus? status = SystemOcrModelStatus.fromWire(raw);
-    if (status == null) {
+    final SystemOcrModelReport? report = parseSystemOcrModelReport(raw);
+    if (report == null) {
       throw PlatformException(
         code: 'INVALID_STATUS',
         message: 'unknown system OCR model status: $raw',
       );
     }
-    return status;
+    return report;
   }
 
   @override
@@ -238,7 +386,20 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
       });
     } on MissingPluginException {
       return;
+    } on PlatformException catch (error) {
+      if (error.code == 'PLAY_SERVICES_UNAVAILABLE') {
+        final SystemOcrModelReport? report = parseSystemOcrModelReport(
+          error.details,
+        );
+        if (report != null) throw SystemOcrPlayServicesException(report);
+      }
+      rethrow;
     }
+  }
+
+  @override
+  Future<void> openPlayServicesSettings() async {
+    await _channel.invokeMethod<bool>('openPlayServicesSettings');
   }
 
   @override
