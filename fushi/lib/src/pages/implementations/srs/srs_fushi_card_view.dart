@@ -225,6 +225,7 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
     required this.face,
     required this.fields,
     required this.definitionsHtml,
+    this.blocks = FushiCardBlock.values,
     this.topInset = 0,
     this.bottomInset,
   });
@@ -237,6 +238,10 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
 
   /// 只含释义区的背面 HTML（引擎渲染）。
   final String definitionsHtml;
+
+  /// 背面区块布局：自上而下的区块顺序，删掉的区块不在里面（`SrsRenderedCard.fushiCardBlocks`，
+  /// 由模板认出，见 `fushiCardBackLayoutOf`）。
+  final List<FushiCardBlock> blocks;
 
   /// 卡面顶端被浮动页头盖住的高度（状态栏 + 页头）。卡面铺到页头底下，这段只作滚动
   /// 内边距：开头的内容从页头下沿开始，往下翻时滚进页头底下，页头收起后不留空带。
@@ -313,6 +318,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       srsFushiCardPlan(
         widget.fields,
         ref.read(srsCardAppearanceProvider),
+        blocks: widget.blocks,
       ).media.companionSentence,
     );
   }
@@ -407,7 +413,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   @override
   Widget build(BuildContext context) {
     final SrsCardAppearance a = ref.watch(srsCardAppearanceProvider);
-    _plan = srsFushiCardPlan(widget.fields, a);
+    _plan = srsFushiCardPlan(widget.fields, a, blocks: widget.blocks);
     final List<String> families = ref.watch(srsCardFontFamiliesProvider);
     final ThemeData base = Theme.of(context);
     final ColorScheme scheme = srsCardColorScheme(a, base.colorScheme);
@@ -762,15 +768,22 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 词条区：「发音键｜词条 + 读音行」。左栏统一网格——卡片 / 图片通栏，词条区与底部
   /// 元信息缩进一个卡片内边距，发音键与例句卡里的发音键落在同一条竖线上、后面的文字
   /// 也从同一个 x 起头。词条独占整行宽：手机上不再与右侧缩略图抢宽度（短词被折成两行）。
-  Widget _header(_SrsCardStyle s, BoxConstraints c) {
-    final List<String> audio = _plan.media.word;
+  ///
+  /// 区块布局里词条与读音不相邻时各自成块（[term] / [reading] 只画其一）；发音键属读音区块。
+  Widget _header(
+    _SrsCardStyle s,
+    BoxConstraints c, {
+    bool term = true,
+    bool reading = true,
+  }) {
+    final List<String> audio = reading ? _plan.media.word : const <String>[];
     final Widget main = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _term(s, c),
-        const SizedBox(height: 4),
-        _readingRow(s),
+        if (term) _term(s, c),
+        if (term && reading) const SizedBox(height: 4),
+        if (reading) _readingRow(s),
       ],
     );
     final Widget body = audio.isEmpty
@@ -801,7 +814,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             ],
           );
     return Padding(
-      key: const ValueKey<String>('srs-fushi-header'),
+      key: ValueKey<String>(
+        term && reading
+            ? 'srs-fushi-header'
+            : term
+            ? 'srs-fushi-header-term'
+            : 'srs-fushi-header-reading',
+      ),
       padding: EdgeInsets.symmetric(horizontal: s.pad),
       child: body,
     );
@@ -1052,33 +1071,76 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  List<Widget> _footer(_SrsCardStyle s) {
+  /// 词频明细 / 来源两种元信息行（区块不可见时 null）。
+  Widget? _metaRow(_SrsCardStyle s, FushiCardBlock block) {
+    if (!_plan.shows(block)) return null;
     final Map<String, String> f = widget.fields;
     final SrsCardLabels labels = srsCardLabels();
-    return <Widget>[
-      if (_plan.shows(FushiCardBlock.frequency))
-        _MetaRow(
-          key: const ValueKey<String>('srs-fushi-frequency'),
-          label: labels.frequency,
-          style: s,
-          // 明细按词典合并（同一词典的多个值合成一项，与查词弹窗分组一致）。
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: <Widget>[
-              for (final String item in srsFrequencyGroups(f['Frequency']!))
-                _Chip(text: item, style: s),
-            ],
-          ),
+    return switch (block) {
+      FushiCardBlock.frequency => _MetaRow(
+        key: const ValueKey<String>('srs-fushi-frequency'),
+        label: labels.frequency,
+        style: s,
+        // 明细按词典合并（同一词典的多个值合成一项，与查词弹窗分组一致）。
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: <Widget>[
+            for (final String item in srsFrequencyGroups(f['Frequency']!))
+              _Chip(text: item, style: s),
+          ],
         ),
-      if (_plan.shows(FushiCardBlock.source))
-        _MetaRow(
-          key: const ValueKey<String>('srs-fushi-source'),
-          label: labels.source,
-          style: s,
-          child: _sourceText(s, f['Source']!),
-        ),
-    ];
+      ),
+      FushiCardBlock.source => _MetaRow(
+        key: const ValueKey<String>('srs-fushi-source'),
+        label: labels.source,
+        style: s,
+        child: _sourceText(s, f['Source']!),
+      ),
+      _ => null,
+    };
+  }
+
+  /// 背面除释义区以外的区块，按区块布局顺序分成释义区之前 / 之后两段（释义区不在布局里或
+  /// 不可见时全在 before）。词条与读音相邻（词条在上）时合成一个标题区，否则各自成块。
+  /// [wrap] 给每块套版式相关的外边距（[first] = 整个背面的第一块）。
+  ({List<Widget> before, List<Widget> after}) _backBlocks(
+    _SrsCardStyle s,
+    BoxConstraints c, {
+    required Widget Function(FushiCardBlock block, Widget child, bool first)
+    wrap,
+  }) {
+    final List<FushiCardBlock> order = _plan.order;
+    final List<Widget> before = <Widget>[];
+    final List<Widget> after = <Widget>[];
+    bool pastDefs = false;
+    bool first = true;
+    for (int i = 0; i < order.length; i++) {
+      final FushiCardBlock b = order[i];
+      if (b == FushiCardBlock.definitions) {
+        pastDefs = true;
+        first = false;
+        continue;
+      }
+      final Widget? w = switch (b) {
+        FushiCardBlock.term =>
+          i + 1 < order.length && order[i + 1] == FushiCardBlock.reading
+              ? _header(s, c)
+              : _header(s, c, reading: false),
+        FushiCardBlock.reading =>
+          i > 0 && order[i - 1] == FushiCardBlock.term
+              ? null
+              : _header(s, c, term: false),
+        FushiCardBlock.picture => _picture(s),
+        FushiCardBlock.sentence => _sentence(s),
+        FushiCardBlock.frequency || FushiCardBlock.source => _metaRow(s, b),
+        FushiCardBlock.definitions => null,
+      };
+      if (w == null) continue;
+      (pastDefs ? after : before).add(wrap(b, w, first));
+      first = false;
+    }
+    return (before: before, after: after);
   }
 
   /// 来源：制卡时写进 MiscInfo 的 `fushi://source?...` 链接可点，跳回书 / 漫画 / 视频的
@@ -1239,44 +1301,28 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _SrsCardStyle s,
     BoxConstraints c,
   ) {
-    final Widget? picture = _picture(s);
-    final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: false);
     final double viewport = c.maxHeight.isFinite ? _viewport : 800;
     // 释义区在外层滚动里始终占满内容高度；超过纹理上限时平台视图只是其中一段窗口
     // （[SrsDefsScrollWindow]），外层是唯一的滚动所有者（BUG-4038）。
     final double defsHeight = _defsHeight ?? viewport * 0.6;
-    // 自上而下与宽版式左栏同序：词条 → 图片 / 视频（通栏）→ 例句 → 释义 → 元信息。
-    // 原生文字分成「标题区」与「页脚」两块选区，释义 WebView 夹在中间、不在任何选区里
+    // 自上而下按区块布局（默认：词条 → 图片 / 视频（通栏）→ 例句 → 释义 → 元信息），与宽版式
+    // 左栏同序。原生文字分成释义区之前 / 之后两块选区，释义 WebView 夹在中间、不在任何选区里
     // （见 [_selectable]）。
-    final List<Widget> head = <Widget>[
-      Padding(
-        padding: EdgeInsets.fromLTRB(s.pad, s.pad, s.pad, 0),
-        child: _header(s, c),
+    final ({List<Widget> before, List<Widget> after}) parts = _backBlocks(
+      s,
+      c,
+      wrap: (FushiCardBlock b, Widget w, bool first) => Padding(
+        // 标题区自带水平内边距（与宽版式左栏网格对齐），这里再缩进一个卡片内边距。
+        padding: EdgeInsets.fromLTRB(s.pad, first ? s.pad : 0, s.pad, 0),
+        child: b == FushiCardBlock.picture
+            // 放松外层 stretch 的紧约束：铺满时按栏宽定高，怪比例靠左按原比例显示。
+            ? Align(alignment: AlignmentDirectional.centerStart, child: w)
+            : w,
       ),
-      if (picture != null)
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: s.pad),
-          // 放松外层 stretch 的紧约束：铺满时按栏宽定高，怪比例靠左按原比例显示。
-          child: Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: picture,
-          ),
-        ),
-      if (sentence != null)
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: s.pad),
-          child: sentence,
-        ),
-    ];
-    final List<Widget> footer = <Widget>[
-      ..._footer(s).map(
-        (Widget w) => Padding(
-          padding: EdgeInsets.symmetric(horizontal: s.pad),
-          child: w,
-        ),
-      ),
-    ];
+    );
+    final List<Widget> head = parts.before;
+    final List<Widget> footer = parts.after;
     Widget column(List<Widget> items, int first) => Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1289,13 +1335,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       ],
     );
     final List<Widget> blocks = <Widget>[
-      KeyedSubtree(
-        key: const ValueKey<String>('srs-fushi-selection-head'),
-        child: _selectable(column(head, 0)),
-      ),
+      if (head.isNotEmpty)
+        KeyedSubtree(
+          key: const ValueKey<String>('srs-fushi-selection-head'),
+          child: _selectable(column(head, 0)),
+        ),
       if (defs != null)
         Padding(
-          padding: EdgeInsets.only(top: s.gap),
+          padding: EdgeInsets.only(top: head.isEmpty ? 0 : s.gap),
           child: FushiStaggeredEntrance(
             index: head.length,
             // WebView 自带 16px 页边距（外壳 body padding），这里不再加水平边距。
@@ -1341,15 +1388,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _SrsCardStyle s,
     BoxConstraints c,
   ) {
-    final Widget? picture = _picture(s);
-    final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: true);
-    final List<Widget> left = <Widget>[
-      _header(s, c),
-      ?picture,
-      ?sentence,
-      ..._footer(s),
-    ];
+    // 左栏：释义以外的区块按区块布局顺序；释义独占右栏。
+    final ({List<Widget> before, List<Widget> after}) parts = _backBlocks(
+      s,
+      c,
+      wrap: (FushiCardBlock b, Widget w, bool first) => w,
+    );
+    final List<Widget> left = <Widget>[...parts.before, ...parts.after];
     // 宽窗铺满：左栏按比例跟着窗口长（不再 460 封顶），释义栏吃剩下的——桌面最大化时
     // 两栏都更宽、一屏看到的内容更多，而不是居中留出两侧空白。
     final double leftWidth = (c.maxWidth * 0.4).clamp(300.0, 640.0);

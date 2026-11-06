@@ -14,6 +14,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardBlock;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -335,6 +336,9 @@ abstract final class SrsRemoteWire {
     'empty': r.isEmpty,
     'fields': r.fields,
     'defs': r.fushiCardDefinitions,
+    'blocks': <String>[
+      for (final FushiCardBlock b in r.fushiCardBlocks) b.name,
+    ],
   };
 
   static SrsRenderedCard? renderedFrom(Object? json) {
@@ -347,6 +351,13 @@ abstract final class SrsRemoteWire {
       isEmpty: m['empty'] == true,
       fields: (m['fields']! as Map).cast<String, String>(),
       fushiCardDefinitions: m['defs'] as String?,
+      // 旧对端不发 blocks：按默认顺序。认不得的区块名跳过。
+      fushiCardBlocks: m['blocks'] is List
+          ? <FushiCardBlock>[
+              for (final Object? n in m['blocks']! as List)
+                ?FushiCardBlock.values.asNameMap()[n],
+            ]
+          : FushiCardBlock.values,
     );
   }
 

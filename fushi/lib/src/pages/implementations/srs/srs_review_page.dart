@@ -821,6 +821,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
         ref.read(srsCardAppearanceProvider),
+        blocks: rendered.fushiCardBlocks,
       ).media;
       return (question: media.front, answer: media.back);
     }
@@ -2389,7 +2390,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       gestureArming: gestureArming,
       onEditSelection: inlineEdit ? _onEditSelection : null,
     );
-    // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
+    // 内置 Fushi 卡片（模板未改或只调了区块布局）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
     // 认得的 HTML / CSS 子集里就整面原生（[srsHtmlCardOf]），否则整面 WebView。
     final SrsHtmlCard? html = _htmlCardOf(rendered);
     final Widget built = html != null
@@ -2412,6 +2413,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               face: face,
               fields: rendered!.fields,
               definitionsHtml: rendered.fushiCardDefinitions!,
+              blocks: rendered.fushiCardBlocks,
               topInset: media.padding.top,
               bottomInset: _bottomBarInset,
             ),

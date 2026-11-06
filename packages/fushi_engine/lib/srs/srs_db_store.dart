@@ -201,6 +201,7 @@ class SrsRenderedCard {
     required this.isEmpty,
     this.fields = const <String, String>{},
     this.fushiCardDefinitions,
+    this.fushiCardBlocks = FushiCardBlock.values,
   });
 
   final String question;
@@ -211,10 +212,15 @@ class SrsRenderedCard {
   /// 笔记字段（按字段名）。
   final Map<String, String> fields;
 
-  /// 内置「Fushi 卡片」且模板 / 样式未被改动时：只含释义区的背面（见
-  /// [kFushiCardDefinitionsTemplate]），复习页据此走原生 + 释义 WebView 的混合渲染。
-  /// 其它类型、或用户改过模板的 Fushi 卡片为 null（整面 WebView，与 Anki 一致）。
+  /// 内置「Fushi 卡片」能原生画时（正面 / 样式没改，背面只调了区块布局，见
+  /// [srsFushiCardNative]）：只含释义区的背面（见 [kFushiCardDefinitionsTemplate]），复习页
+  /// 据此走原生 + 释义 WebView 的混合渲染。其它类型、或模板改到原生画不了的 Fushi 卡片为
+  /// null（整面 WebView，与 Anki 一致）。
   final String? fushiCardDefinitions;
+
+  /// 原生 Fushi 卡面背面的区块顺序（[fushiCardBackLayoutOf]；删掉的区块不在里面）。只在
+  /// [fushiCardDefinitions] 非 null 时有意义。
+  final List<FushiCardBlock> fushiCardBlocks;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -4573,7 +4579,7 @@ class SrsDbStore implements SrsSync2Host {
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
-    final String? definitions = srsFushiCardNativeDefinitions(
+    final SrsFushiCardNative? native = srsFushiCardNative(
       builtinKey: d.noteType.builtinKey,
       front: front,
       back: back,
@@ -4588,7 +4594,8 @@ class SrsDbStore implements SrsSync2Host {
       css: d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
-      fushiCardDefinitions: definitions,
+      fushiCardDefinitions: native?.definitions,
+      fushiCardBlocks: native?.blocks ?? FushiCardBlock.values,
     );
   }
 

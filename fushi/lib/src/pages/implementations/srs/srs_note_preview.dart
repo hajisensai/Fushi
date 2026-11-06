@@ -16,10 +16,11 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         AnkiCardSpecialFields,
         AnkiRenderedCard,
         AnkiTemplateError,
+        FushiCardBlock,
         templateIdsToNames;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
-    show srsFushiCardNativeDefinitions;
+    show SrsFushiCardNative, srsFushiCardNative;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -92,11 +93,17 @@ SrsTemplatePreview srsRenderNotePreview({
   );
 }
 
-/// 这张预览卡能否与复习页一样走原生混合渲染（内置 Fushi 卡片、模板未改、媒体原生画得全）；
-/// 能则返回 (按字段名的字段值, 释义区 HTML)，否则 null（整面 WebView）。判据与复习页同一处
-/// （[srsFushiCardNativeDefinitions]），编辑页看到的就是复习页那张卡。
-({Map<String, String> fieldsByName, String definitionsHtml})?
-srsNotePreviewNativeFushiCard({
+/// 预览卡走原生混合渲染要的东西：按字段名的字段值、释义区 HTML、背面区块布局。
+typedef SrsPreviewNativeFushiCard = ({
+  Map<String, String> fieldsByName,
+  String definitionsHtml,
+  List<FushiCardBlock> blocks,
+});
+
+/// 这张预览卡能否与复习页一样走原生混合渲染（内置 Fushi 卡片、正面 / 样式没改、背面只调了
+/// 区块布局、媒体原生画得全）；能则返回 [SrsPreviewNativeFushiCard]，否则 null（整面 WebView）。
+/// 判据与复习页同一处（[srsFushiCardNative]），编辑页看到的就是复习页那张卡。
+SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
   required SrsNoteTypeView type,
   required SrsTemplateDef template,
   required Map<String, String> valuesById,
@@ -112,9 +119,9 @@ srsNotePreviewNativeFushiCard({
   final int ord = type.templates.indexWhere(
     (SrsTemplateDef x) => x.id == template.id,
   );
-  final String? definitions;
+  final SrsFushiCardNative? native;
   try {
-    definitions = srsFushiCardNativeDefinitions(
+    native = srsFushiCardNative(
       builtinKey: type.builtinKey,
       front: templateIdsToNames(template.front, idToName),
       back: templateIdsToNames(template.back, idToName),
@@ -130,8 +137,12 @@ srsNotePreviewNativeFushiCard({
   } on AnkiTemplateError {
     return null;
   }
-  if (definitions == null) return null;
-  return (fieldsByName: fieldsByName, definitionsHtml: definitions);
+  if (native == null) return null;
+  return (
+    fieldsByName: fieldsByName,
+    definitionsHtml: native.definitions,
+    blocks: native.blocks,
+  );
 }
 
 /// 预览卡面的稳定宿主（笔记编辑 / 模板编辑 / 字段说明三处预览共用）。
@@ -141,7 +152,7 @@ srsNotePreviewNativeFushiCard({
 /// 的子组件、或按「模板 + 正反面」换 key，每改出一处半截模板 / 每翻一次面都销毁重建一次，
 /// 预览就一直在「空白一秒」。翻面 / 换卡由 [SrsWebCardFace] 原地换内容。
 ///
-/// [native] 非 null 时走与复习页同一个原生混合渲染（内置 Fushi 卡片、模板未改），不建
+/// [native] 非 null 时走与复习页同一个原生混合渲染（内置 Fushi 卡片、只调了区块布局），不建
 /// 整面 WebView；否则给了 [sides]（这张卡渲染出的正反两面）且两面都在原生认得的子集里时，
 /// 与复习页同一判据（[srsNativeHtmlCardFor]）走原生 HTML 卡面。[face] 为 null（还没有任何
 /// 能渲染的内容）时只画 [overlay]。
@@ -155,15 +166,14 @@ class SrsStablePreviewFace extends ConsumerWidget {
   });
 
   final SrsCardFace? face;
-  final ({Map<String, String> fieldsByName, String definitionsHtml})? native;
+  final SrsPreviewNativeFushiCard? native;
   final ({String question, String answer})? sides;
   final Widget? overlay;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final SrsCardFace? face = this.face;
-    final ({Map<String, String> fieldsByName, String definitionsHtml})? native =
-        this.native;
+    final SrsPreviewNativeFushiCard? native = this.native;
     final ({String question, String answer})? sides = this.sides;
     final SrsHtmlCard? html = face == null || native != null || sides == null
         ? null
@@ -182,6 +192,7 @@ class SrsStablePreviewFace extends ConsumerWidget {
             face: face,
             fields: native.fieldsByName,
             definitionsHtml: native.definitionsHtml,
+            blocks: native.blocks,
           )
         : html != null
         ? SrsHtmlCardView(
@@ -251,12 +262,12 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
   SrsTemplatePreview _preview = const SrsTemplatePreview();
 
   /// 非 null = 原生混合渲染（与复习页同一个 [SrsFushiCardView]）。
-  ({Map<String, String> fieldsByName, String definitionsHtml})? _native;
+  SrsPreviewNativeFushiCard? _native;
 
   /// 卡面上正显示的那张（最近一次能渲染的结果）：出错 / 为空时卡面不拆，盖层提示，
   /// 见 [SrsStablePreviewFace]。
   AnkiRenderedCard? _shown;
-  ({Map<String, String> fieldsByName, String definitionsHtml})? _shownNative;
+  SrsPreviewNativeFushiCard? _shownNative;
   Timer? _debounce;
   int _seq = 0;
   Listenable? _listening;

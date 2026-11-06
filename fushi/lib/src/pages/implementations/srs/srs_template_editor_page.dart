@@ -20,6 +20,8 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         AnkiRenderedCard,
         AnkiTemplateError,
         ankiResolveTypeAnswer,
+        fushiCardCssIsDefault,
+        fushiCardFrontIsDefault,
         renderAnkiCard,
         templateIdsToNames,
         templateNamesToIds;
@@ -39,9 +41,13 @@ import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
-    show SrsStablePreviewFace, srsNotePreviewNativeFushiCard;
+    show
+        SrsPreviewNativeFushiCard,
+        SrsStablePreviewFace,
+        srsNotePreviewNativeFushiCard;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart';
@@ -166,7 +172,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   /// 卡面上正显示的那张（最近一次能渲染的结果）：打字途中模板出错 / 为空时卡面不拆，
   /// 只盖一层提示，见 [SrsStablePreviewFace]。
   AnkiRenderedCard? _shown;
-  ({Map<String, String> fieldsByName, String definitionsHtml})? _shownNative;
+  SrsPreviewNativeFushiCard? _shownNative;
 
   /// AI 顺带写的字段说明（fieldId → 说明），保存模板时一起写入；放弃修改即丢弃。
   Map<String, String> _pendingDescriptions = const <String, String>{};
@@ -404,8 +410,9 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       final AnkiRenderedCard? card = _preview.card;
       if (card != null && !card.isEmpty) {
         _shown = card;
-        // 与内置代码逐字一致的 Fushi 卡片与复习页一样走原生混合渲染（不建整面 WebView，
-        // 判据在 srsNotePreviewNativeFushiCard 里）；一改就是复习时的模板渲染，预览跟着换。
+        // 正面 / 样式与内置一致、背面只调了区块布局的 Fushi 卡片与复习页一样走原生混合渲染
+        // （不建整面 WebView，判据在 srsNotePreviewNativeFushiCard 里）；改到原生画不了就是
+        // 复习时的模板渲染，预览跟着换。
         // 共享样式按载入时的类型比对，样式框改过就按模板渲染。
         final Map<String, String> nameToId = _nameToId;
         _shownNative = _css.text == type.css
@@ -873,20 +880,31 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           onSelectionChanged: (Set<bool> s) =>
               setState(() => _previewAnswer = s.first),
         ),
-        SrsVisualTemplatePanel(
-          // 换面时面板重建：展开中的块、AI 输入框按面各自独立。
-          key: ValueKey<String>('srs-visual-panel-$back'),
-          type: type,
-          back: back,
-          blocks: side.blocks,
-          edited: side.edited,
-          onChanged: (List<SrsVisualBlock> blocks) =>
-              _setVisualSide(back: back, blocks: blocks),
-          onGenerate: () =>
-              srsRunLogged('SrsTemplateEditor.generate', _generateVisual),
-          onAi: aiEnabled ? _runAi : null,
-          aiExplanation: _aiExplanation,
-        ),
+        // 内置 Fushi 卡片的背面：区块布局（拖动排序、勾选增删）。只动区块顺序，复习时仍走
+        // 原生 Fushi 卡面；通用可视化块会把背面重写成别的模板，原生卡面就画不了了。
+        if (back && type.builtinKey == kSrsBuiltinFushiCardKey)
+          SrsFushiBlockLayoutPanel(
+            back: _back.text,
+            frontAndCssDefault:
+                fushiCardFrontIsDefault(_front.text) &&
+                fushiCardCssIsDefault(_css.text),
+            onChanged: (String v) => _back.text = v,
+          )
+        else
+          SrsVisualTemplatePanel(
+            // 换面时面板重建：展开中的块、AI 输入框按面各自独立。
+            key: ValueKey<String>('srs-visual-panel-$back'),
+            type: type,
+            back: back,
+            blocks: side.blocks,
+            edited: side.edited,
+            onChanged: (List<SrsVisualBlock> blocks) =>
+                _setVisualSide(back: back, blocks: blocks),
+            onGenerate: () =>
+                srsRunLogged('SrsTemplateEditor.generate', _generateVisual),
+            onAi: aiEnabled ? _runAi : null,
+            aiExplanation: _aiExplanation,
+          ),
       ],
     );
   }

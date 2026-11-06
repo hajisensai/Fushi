@@ -52,9 +52,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// 一张卡能否走原生 HTML 卡面的统一判据（复习页、浏览预览、笔记 / 模板编辑预览共用，
 /// 保证预览与复习时长得一样）。null = 走整面 WebView。
 ///
-/// 内置 Fushi 卡片类型（[fushiCard]）一律不走这里：模板未改的走原生混合卡面
-/// （[SrsFushiCardView]），改过的仍要 WebView 外壳注入外观设置（`--fushi-srs-*` 变量、类名、
-/// 字体），原生 HTML 卡面不认这些。
+/// 内置 Fushi 卡片类型（[fushiCard]）一律不走这里：模板未改或只调了区块布局的走原生混合
+/// 卡面（[SrsFushiCardView]，见 `srsFushiCardNative`）；改到原生混合卡面画不了的（改了正面 /
+/// 样式 / 区块内部），模板本身带脚本、媒体查询与定位，原生 HTML 子集也画不了，仍走 WebView
+/// 外壳（它还要注入外观设置：`--fushi-srs-*` 变量、类名、字体）。
 SrsHtmlCard? srsNativeHtmlCardFor({
   required bool fushiCard,
   required String question,

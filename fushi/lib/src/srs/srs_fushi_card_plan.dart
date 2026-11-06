@@ -60,6 +60,7 @@ class SrsFushiCardPlan {
     required this.frontKind,
     required this.visible,
     required this.media,
+    this.order = FushiCardBlock.values,
   });
 
   /// 正面卡型。
@@ -68,6 +69,9 @@ class SrsFushiCardPlan {
   /// 背面会画出来的区块。
   final Set<FushiCardBlock> visible;
 
+  /// 背面画出来的区块，自上而下（模板区块布局里的顺序，只含 [visible]）。
+  final List<FushiCardBlock> order;
+
   /// 只来自 [visible] 区块的媒体：词条区的单词音频、图片区里的视频片段（图片区可见时）、
   /// 例句区的例句音频（例句区可见时）。听力卡正面那颗发音键见 [SrsFushiCardMedia.front]。
   final SrsFushiCardMedia media;
@@ -75,19 +79,24 @@ class SrsFushiCardPlan {
   bool shows(FushiCardBlock block) => visible.contains(block);
 }
 
-/// 从笔记字段（按字段名）与外观算出原生 Fushi 卡面的唯一计划（卡面绘制、自动播放、底栏重播、
-/// R 重播共用）。
+/// 从笔记字段（按字段名）、外观与背面区块布局（[blocks]，模板里的区块顺序，删掉的区块不在
+/// 里面；见 `fushiCardBackLayoutOf`）算出原生 Fushi 卡面的唯一计划（卡面绘制、自动播放、
+/// 底栏重播、R 重播共用）。
 SrsFushiCardPlan srsFushiCardPlan(
   Map<String, String> fields,
-  SrsCardAppearance appearance,
-) {
+  SrsCardAppearance appearance, {
+  List<FushiCardBlock> blocks = FushiCardBlock.values,
+}) {
   final SrsFushiFrontKind kind = srsFushiFrontKind(fields);
-  final Set<FushiCardBlock> visible = <FushiCardBlock>{
-    for (final FushiCardBlock b in FushiCardBlock.values)
+  final List<FushiCardBlock> order = <FushiCardBlock>[
+    for (final FushiCardBlock b in blocks.toSet())
       if (srsFushiBlockVisible(b, fields, appearance)) b,
-  };
-  // 单词音频画在词条区（词条区永远在）。
-  final List<String> word = srsAudioSources(fields['TermAudio'] ?? '');
+  ];
+  final Set<FushiCardBlock> visible = order.toSet();
+  // 单词音频画在读音行（模板里 TermAudio 属读音区块）：布局里删掉读音区块就没有它。
+  final List<String> word = visible.contains(FushiCardBlock.reading)
+      ? srsAudioSources(fields['TermAudio'] ?? '')
+      : const <String>[];
   // 片段只在图片区画出来时才存在：关了「显示图片」= 卡面上没有片段，也不出声。
   final String? clip = visible.contains(FushiCardBlock.picture)
       ? srsVideoSources(fields['Media'] ?? '').firstOrNull
@@ -107,6 +116,7 @@ SrsFushiCardPlan srsFushiCardPlan(
   return SrsFushiCardPlan(
     frontKind: kind,
     visible: visible,
+    order: List<FushiCardBlock>.unmodifiable(order),
     media: SrsFushiCardMedia(
       front: front,
       word: word,

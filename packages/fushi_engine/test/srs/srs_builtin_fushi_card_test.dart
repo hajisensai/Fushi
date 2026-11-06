@@ -290,6 +290,37 @@ void main() {
       );
       expect(lapis.fushiCardDefinitions, isNull);
 
+      expect(fushi.fushiCardBlocks, FushiCardBlock.values);
+
+      // 只调了背面区块布局（图片挪到释义后面、删掉来源）：仍走原生，按新顺序画。
+      final SrsNoteTypeView fushiType = (await a.noteType(
+        a.fushiCardNoteTypeId,
+      ))!;
+      const List<FushiCardBlock> layout = <FushiCardBlock>[
+        FushiCardBlock.term,
+        FushiCardBlock.reading,
+        FushiCardBlock.sentence,
+        FushiCardBlock.definitions,
+        FushiCardBlock.picture,
+        FushiCardBlock.frequency,
+      ];
+      await a.updateTemplate(
+        a.fushiCardNoteTypeId,
+        fushiType.templates.single.id,
+        back: templateNamesToIds(
+          fushiCardBackTemplateFor(layout),
+          <String, String>{
+            for (final SrsFieldDef f in fushiType.fields) f.name: f.id,
+          },
+        ),
+      );
+      final SrsRenderedCard moved = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(moved.fushiCardDefinitions, contains('to commute'));
+      expect(moved.fushiCardBlocks, layout);
+
       // 用户改过 Fushi 卡片的样式：回到整面 WebView（不再原生渲染）。
       await a.setCss(
         a.fushiCardNoteTypeId,

@@ -21,6 +21,8 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show FushiCardBlock, fushiCardBackLayoutOf, templateIdsToNames;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -485,6 +487,81 @@ void main() {
         find.byKey(const ValueKey<String>('srs-note-type-field-unused-Extra')),
         findsOneWidget,
       );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] Fushi 卡片背面区块布局：取消一个区块 → 预览仍是原生卡面 → 保存后模板认得新布局', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final SrsNoteTypeView fushi = (await _db(
+        tester,
+        () => store.noteType(store.fushiCardNoteTypeId),
+      ))!;
+      String fieldId(String name) =>
+          fushi.fields.firstWhere((SrsFieldDef f) => f.name == name).id;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: fushi.id,
+          fieldsById: <String, String>{
+            fieldId('Term'): '通う',
+            fieldId('MainDefinition'): '<ol><li>to commute</li></ol>',
+            fieldId('Source'): 'Book',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: store.fushiCardNoteTypeId,
+          templateId: fushi.templates.single.id,
+        ),
+      );
+      final Finder native = find.byKey(
+        const ValueKey<String>('srs-note-preview-native'),
+      );
+      expect(native, findsOneWidget);
+      // 可视化页切到背面：Fushi 卡片出区块布局，不出通用可视化块。
+      await tester.tap(find.text(t.srs_note_types_side_back).first);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-block-layout')),
+        findsOneWidget,
+      );
+      final Finder source = find.byKey(
+        const ValueKey<String>('srs-fushi-layout-source'),
+      );
+      await tester.ensureVisible(source);
+      await tester.tap(source);
+      await _settle(tester);
+      // 只动了区块：预览仍走原生 Fushi 卡面。
+      expect(native, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-layout-unrecognized')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_template_save')).first,
+      );
+      await _settle(tester);
+      final SrsNoteTypeView saved = (await _db(
+        tester,
+        () => store.noteType(store.fushiCardNoteTypeId),
+      ))!;
+      final String back = templateIdsToNames(
+        saved.templates.single.back,
+        <String, String>{
+          for (final SrsFieldDef f in saved.fields) f.id: f.name,
+        },
+      );
+      expect(fushiCardBackLayoutOf(back), <FushiCardBlock>[
+        for (final FushiCardBlock b in FushiCardBlock.values)
+          if (b != FushiCardBlock.source) b,
+      ]);
       await _unmount(tester);
     });
 

@@ -109,15 +109,21 @@ bool srsFushiCardMediaIsNative(Map<String, String> fields) {
   return true;
 }
 
-/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、模板与样式都没改、媒体原生画得全
-/// （[srsFushiCardMediaIsNative]）。能则返回只含释义区的背面 HTML（交给释义 WebView），
-/// 否则 null（整面 WebView）。
+/// 原生混合渲染要的两样东西：只含释义区的背面 HTML（交给释义 WebView）与背面区块顺序。
+typedef SrsFushiCardNative = ({
+  String definitions,
+  List<FushiCardBlock> blocks,
+});
+
+/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、正面与样式没改、背面只调了区块顺序或删了
+/// 区块（[fushiCardBackLayoutOf]：区块布局编辑、或在源码里整段挪位置）、媒体原生画得全
+/// （[srsFushiCardMediaIsNative]）。能则返回释义区 HTML 与区块顺序，否则 null（整面 WebView）。
 ///
 /// 复习页渲染（`SrsDbStore.renderCard`）与笔记编辑页的实时预览共用这一处判据：两边若各写
 /// 一份，编辑页预览会退回整面 WebView，与复习页画出来的不是同一张卡（片段 / 图片尺寸都不同）。
 ///
 /// [front] / [back] 是名字形式的模板；[fieldsByName] 已展开共享样式引用。
-String? srsFushiCardNativeDefinitions({
+SrsFushiCardNative? srsFushiCardNative({
   required String? builtinKey,
   required String front,
   required String back,
@@ -126,14 +132,14 @@ String? srsFushiCardNativeDefinitions({
   required int cardOrd,
   AnkiCardSpecialFields specials = const AnkiCardSpecialFields(),
 }) {
-  final bool native =
-      builtinKey == kSrsBuiltinFushiCardKey &&
-      front == FushiCardNoteType.template.front &&
-      back == FushiCardNoteType.template.back &&
-      css == FushiCardNoteType.template.css &&
-      srsFushiCardMediaIsNative(fieldsByName);
-  if (!native) return null;
-  return renderAnkiCard(
+  if (builtinKey != kSrsBuiltinFushiCardKey ||
+      !fushiCardFrontIsDefault(front) ||
+      !fushiCardCssIsDefault(css)) {
+    return null;
+  }
+  final List<FushiCardBlock>? blocks = fushiCardBackLayoutOf(back);
+  if (blocks == null || !srsFushiCardMediaIsNative(fieldsByName)) return null;
+  final String definitions = renderAnkiCard(
     questionTemplate: front,
     answerTemplate: kFushiCardDefinitionsTemplate,
     noteFields: fieldsByName,
@@ -141,4 +147,5 @@ String? srsFushiCardNativeDefinitions({
     isCloze: false,
     specials: specials,
   ).answer;
+  return (definitions: definitions, blocks: blocks);
 }

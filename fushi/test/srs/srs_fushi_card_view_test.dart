@@ -78,6 +78,7 @@ void main() {
     bool apple = false,
     double topInset = 0,
     SrsMediaStore? store,
+    List<FushiCardBlock> blocks = FushiCardBlock.values,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -124,6 +125,7 @@ void main() {
               ),
               fields: fields ?? _fields(),
               definitionsHtml: '<div class="fc-defs-only">defs</div>',
+              blocks: blocks,
               topInset: topInset,
             ),
           ),
@@ -214,6 +216,68 @@ void main() {
         previous = y;
       }
     });
+
+    for (final Size size in <Size>[
+      const Size(390, 844),
+      const Size(1200, 800),
+    ]) {
+      final String layout = size.width < 700 ? '窄屏' : '宽屏';
+      testWidgets('[$ds] $layout 背面按区块布局排：调序、删区块、词条与读音拆开', (
+        WidgetTester tester,
+      ) async {
+        const List<FushiCardBlock> blocks = <FushiCardBlock>[
+          FushiCardBlock.sentence,
+          FushiCardBlock.reading,
+          FushiCardBlock.definitions,
+          FushiCardBlock.term,
+          FushiCardBlock.picture,
+          FushiCardBlock.frequency,
+        ];
+        final Map<String, String> fields = _fields(<String, String>{
+          'Source': 'Book',
+        });
+        await pump(
+          tester,
+          answer: true,
+          apple: apple,
+          size: size,
+          fields: fields,
+          blocks: blocks,
+        );
+        // 删掉的来源区块不画（字段有内容也不画）。
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-source')),
+          findsNothing,
+        );
+        // 词条与读音不相邻：各自成块，发音键跟读音走。
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-header')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-header-term')),
+          findsOne,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-header-reading')),
+          findsOne,
+        );
+        final bool wide = size.width >= 700;
+        double previous = -1;
+        for (final FushiCardBlock b in blocks) {
+          if (!srsFushiBlockVisible(b, fields, const SrsCardAppearance())) {
+            continue;
+          }
+          // 宽屏释义独占右栏，左栏按其余区块的顺序。
+          if (wide && b == FushiCardBlock.definitions) continue;
+          final Finder f = find.byKey(ValueKey<String>(_blockKeys[b]!));
+          expect(f, findsOneWidget, reason: b.name);
+          final double y = tester.getTopLeft(f).dy;
+          expect(y, greaterThan(previous), reason: b.name);
+          previous = y;
+        }
+      });
+    }
 
     testWidgets('[$ds] 卡面原生样式取自当前设计系统的卡面令牌', (WidgetTester tester) async {
       await pump(tester, answer: true, apple: apple);
