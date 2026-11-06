@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show pendingMineCountProvider;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/platform_providers.dart'
+    show platformServicesProvider;
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
     show AnkiSectionRow;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -226,6 +228,7 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => app),
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
             pendingMineCountProvider.overrideWith(
               (Ref ref) => Stream<int>.value(pending),
             ),
