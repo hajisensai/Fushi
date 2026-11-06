@@ -203,6 +203,67 @@ fn single_file_root_scans_only_that_file() {
     );
 }
 
+/// 同一个文件从三种根进来（单文件、所在目录、上层递归目录，根都按 Dart 的归一写成
+/// 正斜杠）得到同一条路径、同一个 uid——uid 含路径原文，拼法不一会在曲库里出两行。
+#[test]
+fn one_file_has_one_path_and_uid_whatever_the_root() {
+    let upper = tracks(&scan_root(ROOT, 0, None));
+    let by_dir = tracks(&scan_root(&format!("{ROOT}/Album A"), 0, None));
+    let by_file = tracks(&scan_root(
+        &format!("{ROOT}/Album A/02 Second Song.mp3"),
+        0,
+        None,
+    ));
+    let pick = |ts: &[TrackRecord]| {
+        ts.iter()
+            .find(|t| t.path.ends_with("02 Second Song.mp3"))
+            .cloned()
+            .expect("track present")
+    };
+    let (a, b, c) = (pick(&upper), pick(&by_dir), pick(&by_file));
+    assert_eq!(a.path, b.path);
+    assert_eq!(a.path, c.path);
+    assert_eq!(a.track_uid, b.track_uid);
+    assert_eq!(a.track_uid, c.track_uid);
+    assert_eq!(a.album_uid, b.album_uid);
+    assert_eq!(a.folder_cover_path, c.folder_cover_path);
+    // 路径里只有平台分隔符。
+    let foreign = if cfg!(windows) { '/' } else { '\\' };
+    assert!(!a.path.contains(foreign), "{}", a.path);
+}
+
+/// 库里存着旧版本的混合分隔符写法（`root/Album A\x`）：「文件没动过」照样认得出，
+/// 不因为拼法变了把整库重新解析一遍。
+#[test]
+fn known_files_in_legacy_spelling_still_count_as_unchanged() {
+    let first = tracks(&scan_all(0, None));
+    let flac = first
+        .iter()
+        .find(|t| rel(&t.path) == "Album A/01 First Song.flac")
+        .unwrap();
+    let legacy = if cfg!(windows) {
+        format!("{ROOT}/Album A\\01 First Song.flac")
+    } else {
+        format!("{ROOT}//Album A/./01 First Song.flac")
+    };
+    assert_ne!(legacy, flac.path);
+    let mut w = Writer::new();
+    w.u32(1);
+    w.str(&legacy);
+    w.i64(flac.file_mtime_ms);
+    w.i64(flac.file_size);
+    let second = scan_all(0, Some(w.into_bytes()));
+    let unchanged: Vec<String> = second
+        .iter()
+        .flat_map(|(_, r)| r.iter())
+        .filter_map(|r| match r {
+            Record::Unchanged(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(unchanged, vec![flac.path.clone()]);
+}
+
 #[test]
 fn batches_respect_the_limit_and_are_order_stable() {
     let small = scan_all(2, None);

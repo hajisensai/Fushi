@@ -305,6 +305,9 @@ class BackupMergeEngine {
         await _mergePortableSettingsFromSource();
       }
       if (_adoptSourcePreferences) await _adoptMissingPreferences();
+      // 本机曲库并掉过重复曲目（v145）：合进来的歌单项 / 歌词 / 播放记录 / 收藏句可能
+      // 还挂着败者 uid（别的设备或旧备份），按别名表改指胜者。放在全部合并之后。
+      await _db.applyMusicTrackUidAliases();
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
     });
   }
@@ -2277,6 +2280,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'music_scrape_meta',
       'music_metadata_raw_snapshots',
       'music_locked_fields',
+      // v145：曲目 uid 别名（本机曲库合并重复行的记录），设备本地。
+      'music_track_uid_aliases',
       // v137：字幕书与远端音频的绑定。服务器配置 id 只在本机设置里有意义，合并进来
       // 只会造出指向不存在服务器的绑定。
       'remote_audio_bindings',

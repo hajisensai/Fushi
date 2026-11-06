@@ -26,6 +26,12 @@ class MusicTracks extends Table {
   /// 音频文件绝对路径（CUE 虚拟曲目指向整轨文件）。
   TextColumn get path => text()();
 
+  /// [path] 的比较键（schema v145，`musicTrackPathKey`）：同一个文件不管拼成哪种写法
+  /// （分隔符混用、Windows 大小写）都是同一个键。扫描落库按它认出「库里已有的同一首」
+  /// 沿用旧 uid，曲库里一个文件只有一行。设备本地（随 [path] 是本机路径），由
+  /// `writeMusicScanBatch` / 数据根迁移写，NULL 只出现在迁移回填之前。
+  TextColumn get pathKey => text().nullable()();
+
   /// CUE 虚拟曲目在整轨里的起止（毫秒）；普通文件为 NULL。[cueEndMs] 为 NULL 表示
   /// 播到文件尾（最后一轨）。
   IntColumn get cueStartMs => integer().nullable()();
@@ -84,6 +90,21 @@ class MusicTracks extends Table {
 
   @override
   Set<Column> get primaryKey => <Column>{trackUid};
+}
+
+/// 曲目 uid 别名（schema v145）：同一个文件在曲库里曾有两行（路径拼法不同，见
+/// [MusicTracks.pathKey]），合并时败者 uid → 胜者 uid 记在这里。曲目是设备本地的，但歌单 /
+/// 歌词 / 播放流随「音乐」备份类别走：别的设备或旧备份里仍是败者 uid 的行合入本机后，
+/// 由 `applyMusicTrackUidAliases` 按这张表改指胜者，不留悬空条目、不在歌单里重复。
+/// 设备本地（uid 含本机路径）。
+@DataClassName('MusicTrackUidAliasRow')
+class MusicTrackUidAliases extends Table {
+  TextColumn get aliasUid => text()();
+  TextColumn get trackUid => text()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{aliasUid};
 }
 
 /// 专辑（由曲目标签聚合：同一归一化（专辑艺人, 专辑名）是同一张专辑）。

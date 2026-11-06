@@ -246,6 +246,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     setState(() => _interconnectEnabled = value);
   }
 
+  /// 自动登记的音乐来源（v145）的 owner 视频来源 id → 显示名。
+  final Map<int, String> _autoOwnerLabels = <int, String>{};
+
   Future<void> _load() async {
     final List<SourceLibraryRow> rows = await _db.getMediaSourcesByKind(
       widget.mediaKind,
@@ -256,9 +259,19 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final Map<int, int> counts = await _loadCumulativeCounts(rows);
     final Map<int, VideoSourceScrapeRunRow> latestRuns =
         await _loadLatestScrapeRuns(rows);
+    final Map<int, String> ownerLabels = <int, String>{};
+    for (final SourceLibraryRow row in rows) {
+      final int? owner = row.autoOwnerSourceId;
+      if (owner == null || ownerLabels.containsKey(owner)) continue;
+      final SourceLibraryRow? ownerRow = await _db.getMediaSourceById(owner);
+      if (ownerRow != null) ownerLabels[owner] = ownerRow.label;
+    }
     if (!mounted) return;
     setState(() {
       _rows = rows;
+      _autoOwnerLabels
+        ..clear()
+        ..addAll(ownerLabels);
       _interconnectEnabled = interconnectEnabled;
       _cumulativeCount
         ..clear()
@@ -528,6 +541,14 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           icon: row.isPrivate ? FushiIcons.lock : FushiIcons.lockOpen,
           onTap: busy ? null : () => _openPrivacy(row),
         ),
+      // 视频来源自动登记的音乐来源：转成手动来源后，删视频来源时它也留着。
+      if (row.autoOwnerSourceId != null)
+        _SourceRowMenuAction(
+          key: ValueKey<String>('media_source_keep_as_own_${row.id}'),
+          label: t.media_source_keep_as_own,
+          icon: FushiIcons.folder,
+          onTap: busy ? null : () => _keepAsOwnSource(row),
+        ),
       _SourceRowMenuAction(
         key: ValueKey<String>('media_source_remove_${row.id}'),
         label: t.media_source_remove,
@@ -597,6 +618,17 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (_autoOwnerLabels[row.autoOwnerSourceId]
+                        case final String owner)
+                      Text(
+                        t.media_source_auto_added_from(source: owner),
+                        key: ValueKey<String>(
+                          'media_source_auto_owner_${row.id}',
+                        ),
+                        style: subStyle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     _buildStatusLine(theme, cs, subStyle, row),
                   ],
                 ),
@@ -1028,12 +1060,22 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
+    // 手动添加：撞上自动登记的音乐来源就转成手动来源、解除「不再登记」（与
+    // addLocalFolderAsSource 同一个函数，去重判据也同一个）。
+    await claimLocalSourceRootAsManual(
+      _db,
+      widget.mediaKind,
+      norm,
+      existing
+          .where((SourceLibraryRow r) => sameLocalSourceRoot(r, norm))
+          .firstOrNull,
+    );
     // 该根已是常驻来源（BUG-2368）：旧行为是播一条**只有路径**的 toast 就 return。
     // 用户视角就是「选完文件夹被静默弹回」——既不知道为什么，也没有任何进展。
     // 「这个文件夹我要它进库」在根已登记时的正确落地是**重扫那一行**，和
     // [importLocalFolderOnce] 撞同根时的处理逐字一致；提示语说清原因再重扫。
     for (final SourceLibraryRow row in existing) {
-      if (row.transport == 'local' && row.rootPath == norm) {
+      if (sameLocalSourceRoot(row, norm)) {
         FushiToast.show(
           msg: t.media_source_root_already_added(path: norm),
           severity: ToastSeverity.warning,
@@ -1564,6 +1606,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     await _load();
   }
 
+  /// 自动登记的音乐来源转成用户自己的来源（之后删 owner 视频来源它也留着）。
+  Future<void> _keepAsOwnSource(SourceLibraryRow row) async {
+    await _db.setMediaSourceAutoOwner(row.id, null);
+    await _load();
+  }
+
   Future<void> _remove(SourceLibraryRow row) async {
     // BUG-2755：视频来源可能还挂着下载订阅 / 未整理完的下载任务。FK 删来源时只会
     // 把它们的目标来源静默清空，订阅从此每轮失败、在途任务整理时报来源不存在，
@@ -1572,6 +1620,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         ? await _db.countVideoDownloadReferencesToSource(row.id)
         : (subscriptions: 0, pendingJobs: 0);
     final bool hasDownloadRefs = refs.subscriptions > 0 || refs.pendingJobs > 0;
+    // v145：视频来源自动登记的音乐来源会一并移除，确认框里说清有几个、几首。
+    final ({int sources, int tracks}) autoMusic = row.mediaKind == 'video'
+        ? await autoMusicSourcesRemovalPreview(_db, row.id)
+        : (sources: 0, tracks: 0);
     final List<MediaSourceRow> targets = hasDownloadRefs
         ? (await _appModel.getManagedVideoDownloadSources())
               .where((MediaSourceRow source) => source.id != row.id)
@@ -1586,6 +1638,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             pendingJobs: refs.pendingJobs,
             showDownloadMigration: hasDownloadRefs,
             targets: targets,
+            autoMusicSources: autoMusic.sources,
+            autoMusicTracks: autoMusic.tracks,
           ),
         );
     if (!mounted || choice == null) return;
@@ -1636,7 +1690,13 @@ class _SourceRemovalDialog extends StatefulWidget {
     required this.pendingJobs,
     required this.showDownloadMigration,
     required this.targets,
+    this.autoMusicSources = 0,
+    this.autoMusicTracks = 0,
   });
+
+  /// 这个视频来源自动登记、会一并移除的音乐来源数与它们的曲目数（v145）。
+  final int autoMusicSources;
+  final int autoMusicTracks;
 
   final int subscriptions;
   final int pendingJobs;
@@ -1660,6 +1720,16 @@ class _SourceRemovalDialogState extends State<_SourceRemovalDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(t.media_source_remove_keeps_media),
+          if (widget.autoMusicSources > 0) ...<Widget>[
+            const SizedBox(height: 16),
+            Text(
+              t.media_source_remove_auto_music_sources(
+                count: widget.autoMusicSources,
+                tracks: widget.autoMusicTracks,
+              ),
+              key: const ValueKey<String>('media-source-remove-auto-music'),
+            ),
+          ],
           if (widget.showDownloadMigration) ...<Widget>[
             const SizedBox(height: 16),
             Text(

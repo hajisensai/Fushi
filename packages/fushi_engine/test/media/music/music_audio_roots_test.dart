@@ -117,4 +117,52 @@ void main() {
       (rootPath: r'D:\Anime\Show\CDs', recursive: true),
     ]);
   });
+
+  group('ownedMusicRootsToRetire', () {
+    for (final ({p.Context ctx, String root, String Function(String) at}) c
+        in <({p.Context ctx, String root, String Function(String) at})>[
+          (ctx: p.posix, root: '/v', at: (String s) => '/v/$s'),
+          (
+            ctx: p.windows,
+            root: 'D:/Anime',
+            // 来源根按正斜杠归一，视频目录是平台反斜杠：两种写法要认成同一个。
+            at: (String s) => 'D:\\Anime\\${s.replaceAll('/', '\\')}',
+          ),
+        ]) {
+      test('${c.ctx.style}: positive evidence only', () {
+        String src(String s) => '${c.root}/$s';
+        final Map<int, OwnedMusicRootRetireReason> r = ownedMusicRootsToRetire(
+          videoRoot: c.root,
+          owned: <OwnedMusicRoot>[
+            (id: 1, rootPath: src('Gone'), recursive: true),
+            (id: 2, rootPath: src('Show'), recursive: false),
+            (id: 3, rootPath: src('Drama'), recursive: true),
+            (id: 4, rootPath: src('Box'), recursive: true),
+            (id: 5, rootPath: src('Kept'), recursive: true),
+            (id: 6, rootPath: '/elsewhere/x', recursive: true),
+            (id: 7, rootPath: src('Box/Inner'), recursive: true),
+            (id: 8, rootPath: src('Flat'), recursive: false),
+          ],
+          others: <MusicSourceRoot>[(rootPath: src('Drama'), recursive: true)],
+          videoMediaDirs: <String>[
+            c.at('Show'),
+            c.at('Box/Disc/BDMV'),
+            c.at('Flat/S1'),
+          ],
+          dirExists: (String d) => !d.contains('Gone'),
+          context: c.ctx,
+        );
+        expect(r, <int, OwnedMusicRootRetireReason>{
+          1: OwnedMusicRootRetireReason.missing,
+          2: OwnedMusicRootRetireReason.besideVideo,
+          3: OwnedMusicRootRetireReason.covered,
+          4: OwnedMusicRootRetireReason.videoInSubtree,
+          6: OwnedMusicRootRetireReason.outsideVideoRoot,
+        });
+        expect(r.containsKey(5), isFalse, reason: '只是这次没列到，目录还在');
+        expect(r.containsKey(7), isFalse, reason: 'Box 要撤，不能再拿它当 Inner 的覆盖');
+        expect(r.containsKey(8), isFalse, reason: '不递归来源只收自己这一层');
+      });
+    }
+  });
 }

@@ -1280,9 +1280,10 @@ class DataRootMigrator {
     for (final MusicTrackRow t in await db.select(db.musicTracks).get()) {
       final String newPath = docs.rebase(t.path);
       if (newPath == t.path) continue;
+      // 路径键跟着改（v145）：扫描落库按它认出「库里已有的同一个文件」。
       await db.customStatement(
-        'UPDATE music_tracks SET path = ? WHERE track_uid = ?',
-        <Object?>[newPath, t.trackUid],
+        'UPDATE music_tracks SET path = ?, path_key = ? WHERE track_uid = ?',
+        <Object?>[newPath, musicTrackPathKey(newPath), t.trackUid],
       );
     }
   }
