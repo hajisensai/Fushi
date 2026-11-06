@@ -1208,6 +1208,20 @@ SettingsDestination _buildInterconnectHostPage() {
               );
             },
           ),
+          // 「互联主机」AI 提供商（反馈 M8KvhMTHVS）：已配对设备把补全交给本机，用本机的
+          // 提供商执行，key 不出本机。默认开，与「AI 下视频 / AI 助手整场交给主机办」同一
+          // 口径（那两条已默认花本机 AI 额度）；对端不发请求就一次也不调。
+          SettingsSwitchItem(
+            id: 'interconnect.ai_relay_host',
+            title: t.interconnect_ai_relay_host_toggle,
+            subtitle: t.interconnect_ai_relay_host_toggle_desc,
+            icon: FushiIcons.ai,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.interconnectAiRelayEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setInterconnectAiRelayEnabled(value);
+            },
+          ),
           // 游戏串流「从库里启动」许可。默认关：开了就等于允许已配对设备在本机起
           // 游戏进程，必须是主机主人的显式意愿；端点另有 HTTPS + 已配对 peer token
           // 两道门。只在有本地游戏库的 Windows 上出现。

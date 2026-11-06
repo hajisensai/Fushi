@@ -4,11 +4,15 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/sync/ai_relay_routes.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
 import 'package:fushi_engine/sync/disc_share_routes.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
@@ -546,6 +550,30 @@ class FushiSyncServer {
   /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
   SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
 
+  /// 「互联主机」AI 提供商的主机侧（反馈 M8KvhMTHVS，`ai/ai_relay.dart`）：已配对设备把
+  /// 补全交给本机，用本机的提供商执行，key 不出本机。每个请求现取本机的 AI 设置；开关
+  /// 每个请求现读 [_prefs]（[readInterconnectAiRelayEnabled]）。null（旧调用方 / 单测）
+  /// → `/api/ai/relay/*` 404、能力位不声明 [kAiRelayCapability]，客户端据 404 报「主机
+  /// 版本太旧」。
+  AiSettingsSource Function()? aiRelaySettings;
+
+  /// 主机执行补全用的客户端（测试注入假上游）；null = 默认 [AiChatClient]。
+  AiChatClient Function()? aiRelayClientFactory;
+
+  AiRelayHostService? _aiRelayService;
+
+  AiRelayHostService? get _aiRelay {
+    final AiSettingsSource Function()? settings = aiRelaySettings;
+    if (settings == null) return null;
+    return _aiRelayService ??= AiRelayHostService(
+      settings: settings,
+      clientFactory: aiRelayClientFactory,
+    );
+  }
+
+  bool get _aiRelayAdvertised =>
+      aiRelaySettings != null && readInterconnectAiRelayEnabled(_prefs);
+
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
   /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
   /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
@@ -968,15 +996,28 @@ class FushiSyncServer {
       if (review == null) return shelf.Response.notFound('SRS review off');
       return handleSrsRemoteStoreRequest(review, request, method, reqPath);
     }
+    if (reqPath.startsWith(kAiRelayPathPrefix)) {
+      final AiRelayHostService? relay = _aiRelay;
+      if (relay == null) return shelf.Response.notFound('AI relay off');
+      return handleAiRelayRequest(
+        relay,
+        request,
+        method,
+        reqPath,
+        enabled: readInterconnectAiRelayEnabled(_prefs),
+      );
+    }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
       final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
       final bool screenOcr = await _screenOcr?.isAvailable() ?? false;
+      final bool aiRelay = _aiRelayAdvertised;
       if (_videoRemoteService == null &&
           !_leaderboardLinkAvailable &&
           !srsRemoteStore &&
-          !screenOcr) {
+          !screenOcr &&
+          !aiRelay) {
         return response;
       }
       final Map<String, dynamic> capabilities =
@@ -989,6 +1030,7 @@ class FushiSyncServer {
       }
       if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
       if (screenOcr) capabilities[kScreenOcrCapability] = true;
+      if (aiRelay) capabilities[kAiRelayCapability] = true;
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {

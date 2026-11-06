@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
@@ -115,6 +116,7 @@ class FushiSyncServerController extends ChangeNotifier {
     InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
     SrsRemoteStoreService? Function()? srsRemoteStore,
     PrefStore Function()? prefsStore,
+    AiSettingsSource Function()? aiRelaySettings,
     PlatformDeviceInfoService? deviceInfo,
   }) : _navigatorKey = navigatorKey,
        _database = database,
@@ -139,6 +141,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _leaderboardLinkHost = leaderboardLinkHost,
        _srsRemoteStore = srsRemoteStore,
        _prefsStore = prefsStore,
+       _aiRelaySettings = aiRelaySettings,
        // Headless/test construction without an injected service falls back to
        // the desktop (machine-hostname) source; production wires the real
        // per-platform service so mobile hosts advertise their model, not
@@ -198,6 +201,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
   final PrefStore Function()? _prefsStore;
+
+  /// 「互联主机」AI 提供商的主机侧：已配对设备用本机的 AI 提供商（key 不出本机）。
+  /// 开关由引擎按请求现读 [_prefsStore]。null（单测 / 老调用方）= 端点 404。
+  final AiSettingsSource Function()? _aiRelaySettings;
   final PlatformDeviceInfoService _deviceInfo;
 
   FushiSyncServer? _server;
@@ -858,7 +865,9 @@ class FushiSyncServerController extends ChangeNotifier {
           // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
           ..leaderboardLinkHost = _leaderboardLinkHost?.call()
           // 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）。
-          ..srsRemoteStoreProvider = _srsRemoteStore;
+          ..srsRemoteStoreProvider = _srsRemoteStore
+          // 「互联主机」AI 提供商（反馈 M8KvhMTHVS）：每个请求现取本机 AI 设置。
+          ..aiRelaySettings = _aiRelaySettings;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
