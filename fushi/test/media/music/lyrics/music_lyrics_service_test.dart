@@ -245,7 +245,7 @@ void main() {
   });
 
   test('chooseFileForTracks：视频行搬来的 SRT（ASR 转写）定为手动指定；已有手动指定不覆盖；'
-      '解析不出返回 null（BUG-4127）', () async {
+      '解析不出返回 null（BUG-4175）', () async {
     final File srt = File('${dir.path}${Platform.pathSeparator}speech-a.srt')
       ..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n沈むように\n');
     final MusicLyricsService s = service();

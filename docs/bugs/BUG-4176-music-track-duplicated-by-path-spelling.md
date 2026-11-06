@@ -1,4 +1,4 @@
-## BUG-4128 · 同一个音频文件在曲库里出现两次（路径拼法随扫描根而变）
+## BUG-4176 · 同一个音频文件在曲库里出现两次（路径拼法随扫描根而变）
 - **报告**：2026-11-06（PR #2977 回报，反馈 QAondMh4M5：视频来源里的纯音频自动登记成音乐来源后，先单独导入、又被上层来源扫到的同一个文件在曲库里有两行）
 - **真实性**：✅ 真 bug，#2977 之前就有（嵌套的手动音乐来源同样会出重复）。曲目 uid = 路径原文 + CUE 起点 + 音频指纹（`native/fushi_music/src/uid.rs` `track_uid`）。来源根经 `normalizeSourceRootPath` 统一成正斜杠（`D:/Music`），而 Rust 扫描器展开目录时用 `PathBuf::join` 拼平台分隔符（`scan.rs` `expand_dir` 的 `entry.path()`），`path_str` 原样交给 `track_uid`：同一个文件从「所在目录」「上层递归目录」「单文件」三种根进来分别拼成 `D:/Music/Album\x.flac`、`D:/Music\Album\x.flac`、`D:/Music/Album\x.flac`，uid 不同、行就不同。#2977 在单文件分支（`Scanner::open` 里 `dir.join(name)` 的特例）只对齐了「根正好是直接父目录」这一种。专辑 uid 在没有专辑艺人时含目录原文，同理会分裂。
 - **[x] ① 已修复** —

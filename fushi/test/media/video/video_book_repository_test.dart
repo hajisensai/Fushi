@@ -1117,7 +1117,7 @@ void main() {
       expect(File(copy).existsSync(), isTrue);
     });
 
-    test('keepLocalFiles 里的副本（已转交音乐库，BUG-4127）→ 保留', () async {
+    test('keepLocalFiles 里的副本（已转交音乐库，BUG-4175）→ 保留', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = VideoBookRepository(db);

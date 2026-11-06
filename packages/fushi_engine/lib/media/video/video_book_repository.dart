@@ -1221,7 +1221,7 @@ class VideoBookRepository {
           // 对得上（用户给 B.mkv 挂了 A.ja.srt），那也不能删。
           ...referencedLocalSubtitlePaths(survivors),
           // 调用方声明「这些文件已归别处所有」（纯音频搬进音乐库后曲目还指着它，
-          // BUG-4127）：iOS 选择器副本也不回收。
+          // BUG-4175）：iOS 选择器副本也不回收。
           for (final String path in keepLocalFiles) platformPathKey(path),
         };
         final List<String> videoCandidates = <String>[

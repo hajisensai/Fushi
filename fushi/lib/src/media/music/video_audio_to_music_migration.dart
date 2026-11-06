@@ -24,7 +24,7 @@
 ///   时长按那一首的起点折算；看完的记在最后一首（[pickMigratedTrack]）。
 /// - 字幕见末条（[_carryOverSubtitles]；拆成多首时按各曲区间切成曲内时间）。用户选过的
 ///   字幕带不走（读不到 / 解析失败）时：落在 app 的 `video_subtitles/`（导入副本，删行会
-///   被回收，BUG-4127）的那一行**不删**、下次启动再试；在别处的照常迁移（删行不碰那个
+///   被回收，BUG-4175）的那一行**不删**、下次启动再试；在别处的照常迁移（删行不碰那个
 ///   文件），只记一条错误。副字幕不搬。
 /// - 原始音频文件转交给音乐曲目：删行时进删除护栏（[VideoBookRepository.deleteVideoBooksAndReclaimAssets]
 ///   的 `keepLocalFiles`），iOS 选择器副本也不回收，否则曲目指向的文件会被删掉。
@@ -389,7 +389,7 @@ Future<({int wrote, bool keepRow})> _carryOverSubtitles(
     if (chose != null) {
       wrote += chose.length;
     } else if (p.isWithin(importedSubtitlesDir.path, selected)) {
-      // 导入副本：删行会把它回收（BUG-4127），带不走就这次不删、下次启动再试。
+      // 导入副本：删行会把它回收（BUG-4175），带不走就这次不删、下次启动再试。
       errors.add('subtitle not carried, row kept: $selected');
       return (wrote: wrote, keepRow: true);
     } else {

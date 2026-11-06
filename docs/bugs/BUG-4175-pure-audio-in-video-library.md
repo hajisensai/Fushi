@@ -1,4 +1,4 @@
-## BUG-4127 · 广播剧 CD 的 mp3/flac 出现在视频库：纯音频改归音乐库
+## BUG-4175 · 广播剧 CD 的 mp3/flac 出现在视频库：纯音频改归音乐库
 - **报告**：2026-11-06（反馈 QAondMh4M5：广播剧 CD 的 mp3 / flac 出现在视频库。用户拍板原话：「纯音频文件按『没有画面的视频』入库 改掉吧，现在有专门的音乐了，可以放到音乐那边了」）
 - **真实性**：✅ 按设计如此，现改设计。提交 `1e1a711a32`（PR #1850）让纯音频按「无画面视频」进视频库，入口共用一张表 `kVideoLibraryMediaExtensions = kVideoExtensions ∪ kAudioExtensions`（`packages/fushi_engine/lib/media/media_extensions.dart`）：
   - 来源扫描 `planScanFromFileList(includeAudioAsVideo: kind == video)`（`fushi/lib/src/media/source_library/source_library_scanner.dart`）把音频放进 `ScanPlan.videos`；

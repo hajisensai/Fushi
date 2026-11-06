@@ -607,7 +607,7 @@ void main() {
   });
 
   test('a picked subtitle that cannot be carried keeps the row only when '
-      'deleting it would reclaim the file (imported copy, BUG-4127)', () async {
+      'deleting it would reclaim the file (imported copy, BUG-4175)', () async {
     const String srt = '1\n00:00:01,000 --> 00:00:02,000\n沈むように\n';
     String file(String path, String content) {
       File(path)
