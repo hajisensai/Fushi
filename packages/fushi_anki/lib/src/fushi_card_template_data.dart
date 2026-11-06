@@ -9,8 +9,9 @@ const String kFushiCardFrontTemplate = r'''<!--
   外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
-  {{#FrequencyRank}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
+  {{#FrequencyRank}}<div class="fc-front-freq" data-fc-block="frequency"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
 
+  <div class="fc-front-prompt" data-fc-block="prompt">
   {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
   <div class="fc-front-term">
     <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
@@ -48,8 +49,9 @@ const String kFushiCardFrontTemplate = r'''<!--
     </div>
   </div>
   {{/IsAudioCard}}
+  </div>
 
-  {{#Hint}}<div class="fc-hint">{{Hint}}</div>{{/Hint}}
+  {{#Hint}}<div class="fc-hint" data-fc-block="hint">{{Hint}}</div>{{/Hint}}
 </div>
 
 <script>
@@ -86,19 +88,19 @@ const String kFushiCardBackTemplate = r'''<!--
   <div class="fc-aside">
     <header class="fc-head">
       <div class="fc-head-main">
-        <div class="fc-term">{{#TermFurigana}}{{furigana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{Term}}{{/TermFurigana}}</div>
-        <div class="fc-reading-row">
+        <div class="fc-term" data-fc-block="term">{{#TermFurigana}}{{furigana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{Term}}{{/TermFurigana}}</div>
+        <div class="fc-reading-row" data-fc-block="reading">
           <span class="fc-reading">{{#TermFurigana}}{{kana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{TermReading}}{{/TermFurigana}}</span>
           {{#PitchPosition}}<span class="fc-pitch-tags">{{PitchPosition}}</span>{{/PitchPosition}}
           {{#TermAudio}}<span class="fc-audio">{{TermAudio}}</span>{{/TermAudio}}
           {{#FrequencyRank}}<span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span>{{/FrequencyRank}}
         </div>
       </div>
-      {{#Media}}<figure class="fc-media {{Tags}}">{{Media}}</figure>{{/Media}}
+      {{#Media}}<figure class="fc-media {{Tags}}" data-fc-block="picture">{{Media}}</figure>{{/Media}}
     </header>
 
     {{#Sentence}}
-    <section class="fc-sentence-block">
+    <section class="fc-sentence-block" data-fc-block="sentence">
       <div class="fc-sentence-body">
         <div class="fc-sentence">{{furigana:Sentence}}</div>
         {{#SentenceTranslation}}<div class="fc-translation" lang="">{{SentenceTranslation}}</div>{{/SentenceTranslation}}
@@ -108,7 +110,7 @@ const String kFushiCardBackTemplate = r'''<!--
     {{/Sentence}}
   </div>
 
-  <section class="fc-defs">
+  <section class="fc-defs" data-fc-block="definitions">
     {{#LookupSelection}}<blockquote class="fc-selection">{{LookupSelection}}</blockquote>{{/LookupSelection}}
     {{#DefinitionMedia}}<div class="fc-def-media">{{DefinitionMedia}}</div>{{/DefinitionMedia}}
     {{#MainDefinition}}<div class="fc-gloss fc-gloss--main">{{MainDefinition}}</div>{{/MainDefinition}}
@@ -122,13 +124,13 @@ const String kFushiCardBackTemplate = r'''<!--
 
   <footer class="fc-foot">
     {{#Frequency}}
-    <section class="fc-meta-row fc-meta-row--freq">
+    <section class="fc-meta-row fc-meta-row--freq" data-fc-block="frequency">
       <span class="fc-meta-label fc-meta-label--freq"></span>
       <div class="fc-freq-list">{{Frequency}}</div>
     </section>
     {{/Frequency}}
     {{#Source}}
-    <section class="fc-meta-row fc-meta-row--source">
+    <section class="fc-meta-row fc-meta-row--source" data-fc-block="source">
       <span class="fc-meta-label fc-meta-label--source"></span>
       <div class="fc-source">{{Source}}</div>
     </section>
@@ -325,7 +327,8 @@ const String kFushiCardBackTemplate = r'''<!--
        点哪部开哪部，但没有主释义时第一部照样展开。
        只在这两个条件真的变了时重排，用户手动开合过的不被覆盖。 */
     function applyLayout() {
-      var expanded = hostHas("fushi-srs-gloss-expanded");
+      /* 宿主外观「全部释义默认展开」，或释义区块自己的选项（区块布局里设，导出到 Anki 同样生效）。 */
+    var expanded = hostHas("fushi-srs-gloss-expanded") || !!root.querySelector('[data-fc-opt-expand="1"]');
       var wide = isWide();
       root.classList.toggle("fc-layout-wide", wide);
       var aside = root.querySelector(".fc-aside");
@@ -1211,6 +1214,70 @@ const String kFushiCardStylingCss = r'''/*
 
 .fc-meta-label--freq::before { content: var(--fc-label-frequency); }
 .fc-meta-label--source::before { content: var(--fc-label-source); }
+/* 区块布局里改了标签文字的词频 / 来源：标签写在元素里，不再用默认标签。 */
+.fc-meta-label--custom::before { content: none; }
+
+/* ---------- 自定义区块（区块布局里加的「字段区块」「HTML 区块」） ----------
+   字段区块：一个字段 + 显示样式（正文 / 标签 / 引用卡片 / 小字）+ 可选标题。 */
+.fc-front-prompt {
+  display: contents;
+}
+
+.fc-field {
+  min-width: 0;
+}
+
+.fc-front .fc-field {
+  max-width: 34em;
+}
+
+.fc-field-title {
+  margin-bottom: 4px;
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.fc-field--body .fc-field-body {
+  font-size: var(--fc-size-body);
+  line-height: var(--fc-lh-body);
+}
+
+.fc-field--quote {
+  padding: calc(var(--fc-pad) - 2px) var(--fc-pad);
+  border-radius: var(--fc-radius);
+  background: var(--fc-surface-1);
+}
+
+.fc-field--quote .fc-field-body {
+  font-size: var(--fc-size-body);
+  line-height: var(--fc-lh-body);
+}
+
+.fc-field--tag .fc-field-body {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fc-surface-2);
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+}
+
+.fc-field--small .fc-field-body {
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fc-html {
+  min-width: 0;
+}
 
 .fc-freq-list ul {
   display: flex;

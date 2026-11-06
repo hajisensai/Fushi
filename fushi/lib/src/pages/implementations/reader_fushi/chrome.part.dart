@@ -4234,12 +4234,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
                       length: _cachedSelectionRange!.length,
                     )
                   : null);
-    debugPrint(
-      '[fushi-hl] toggleFavorite: '
-      'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
-      'cachedSentence=${_cachedSentenceRange != null} '
-      'cachedSelection=${_cachedSelectionRange != null}',
-    );
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
       appModel.database,
     );
