@@ -93,41 +93,20 @@ mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
 }
 
 /// Anki 设置页里的「待发卡片」入口行：显示张数，点进列表页。
-class PendingMinesEntryRow extends ConsumerStatefulWidget {
-  const PendingMinesEntryRow({super.key, this.hideWhenEmpty = false});
-
-  /// 队列为空时整行不显示（挖词目标 = Fushi 复习时：新卡不再进这个 Anki 队列，
-  /// 只剩切换前攒下的卡要处理）。
-  final bool hideWhenEmpty;
-
-  @override
-  ConsumerState<PendingMinesEntryRow> createState() =>
-      _PendingMinesEntryRowState();
-}
-
-class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
-    with _PendingMineQueueListener<PendingMinesEntryRow> {
-  int _count = 0;
+///
+/// 恒画一整行：空队列时要不要露出由放它的分组决定（[pendingMineCountProvider]），
+/// 行自己不缩成零尺寸——那样分段分组会把一个看不见的空行当组尾（#ZWr6B6u_RM）。
+class PendingMinesEntryRow extends ConsumerWidget {
+  const PendingMinesEntryRow({super.key});
 
   @override
-  Future<void> reload() async {
-    try {
-      final int n = await store.count();
-      if (mounted) setState(() => _count = n);
-    } catch (_) {
-      // 未初始化的最小宿主（widget 测试）没有库：当 0。
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.hideWhenEmpty && _count == 0) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
     return AdaptiveSettingsRow(
       icon: FushiIcons.cloudUpload,
       showIcon: true,
       title: t.anki_pending_mines_title,
       subtitle: t.anki_pending_mines_hint,
-      trailing: SettingsCountBadge(count: _count),
+      trailing: SettingsCountBadge(count: pendingMineCountOf(ref)),
       onTap: () => Navigator.of(context).push<void>(
         adaptivePageRoute<void>(
           context: context,
