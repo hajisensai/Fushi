@@ -64,6 +64,8 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/sync/ai_relay_routes.dart'
+    show kInterconnectAiRelayEnabledPref, readInterconnectAiRelayEnabled;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
@@ -1027,6 +1029,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setInterconnectTranscodeEnabled(bool enabled) async {
     await setPref(kInterconnectTranscodeEnabledPref, enabled);
+    notifyListeners();
+  }
+
+  /// 本机当 host 时是否允许已配对设备使用本机的 AI 提供商（「互联主机」提供商，
+  /// key 不出本机）。默认开；默认值与解码规则在引擎侧 [readInterconnectAiRelayEnabled]。
+  bool get interconnectAiRelayEnabled => readInterconnectAiRelayEnabled(this);
+
+  Future<void> setInterconnectAiRelayEnabled(bool enabled) async {
+    await setPref(kInterconnectAiRelayEnabledPref, enabled);
     notifyListeners();
   }
 

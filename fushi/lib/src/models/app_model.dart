@@ -139,6 +139,8 @@ import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/ai/ai_relay.dart' show aiRelayTransport;
+import 'package:fushi/src/ai/ai_interconnect_relay.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
@@ -1008,6 +1010,8 @@ class AppModel with ChangeNotifier {
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
+    // 「互联主机」AI 提供商：已配对设备把补全交给本机，用本机配的提供商执行。
+    aiRelaySettings: () => prefsRepo,
     // 已配对设备远程更新本机（反馈 Pp8XPyve0N）。同一个实例跨互联服务重启存活：
     // 在途下载的进度不因用户开关一次互联而丢。
     hostSelfUpdater: () => hostSelfUpdater,
@@ -4251,6 +4255,9 @@ class AppModel with ChangeNotifier {
       // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
       // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
       installCollectionAiOrderSettings(_prefsRepo);
+      // 「互联主机」AI 提供商的客户端出口：按 hostId 找已配对主机、经它的鉴权通道转发
+      // （弹窗进程不装：那边没有 AI 功能入口）。
+      aiRelayTransport = AppAiRelayTransport(SyncRepository(_database));
       // AI 整理库「导入后自动整理」（spec 2026-10-20 §10.2）：同一处装配，弹窗 /
       // 悬浮词典进程不经 initialise()，那边自动路径是 no-op。
       installLibraryOrganizeAutomatic(

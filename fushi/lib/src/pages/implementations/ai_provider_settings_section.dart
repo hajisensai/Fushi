@@ -29,7 +29,12 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/ai/ai_interconnect_relay.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/video_remote_targets.dart'
+    show InterconnectHostTarget;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -67,10 +72,34 @@ const Duration _kSaveDebounce = Duration(milliseconds: 600);
 /// `createAppHttpIoClient()`（统一出站装配点）；测试注入假客户端，不打真网。
 typedef AiChatClientFactory = AiChatClient Function();
 
+/// 「添加提供商 › 互联主机」列出可选主机的口子。默认按 [kAiRelayCapability] 探测
+/// 已配对主机（[probeAiRelayHostTargets]）；测试注入固定清单。
+typedef AiRelayHostProbe = Future<List<InterconnectHostTarget>> Function();
+
+/// 预设选择器里「互联主机」那一项的哨兵（不在 [kAiProviderPresets] 里：它没有地址
+/// 与协议，选中后改走选主机的流程）。
+const AiProviderPreset _kInterconnectPickerEntry = AiProviderPreset(
+  id: kAiInterconnectPresetId,
+  displayName: '',
+  protocol: AiWireProtocol.openAiCompatible,
+  baseUrl: '',
+);
+
 class AiProviderSettingsSection extends ConsumerStatefulWidget {
-  const AiProviderSettingsSection({super.key, this.clientFactory});
+  const AiProviderSettingsSection({
+    super.key,
+    this.clientFactory,
+    this.relayHostProbe,
+    this.relayTransport,
+  });
 
   final AiChatClientFactory? clientFactory;
+
+  /// null = 探测本机配对表里的主机。
+  final AiRelayHostProbe? relayHostProbe;
+
+  /// 拉主机提供商清单用的出口；null = 全局 [aiRelayTransport]。
+  final AiRelayTransport? relayTransport;
 
   @override
   ConsumerState<AiProviderSettingsSection> createState() =>
@@ -96,6 +125,10 @@ class _AiProviderSettingsSectionState
 
   /// 每家拉回来的模型名（key = draft.id）。
   final Map<String, List<String>> _models = <String, List<String>>{};
+
+  /// 互联主机提供商：拉回来的主机提供商清单（key = draft.id）。
+  final Map<String, AiRelayProviderList> _relayProviders =
+      <String, AiRelayProviderList>{};
 
   /// 「模型」字段的 controller（key = draft.id）。
   ///
@@ -344,9 +377,10 @@ class _AiProviderSettingsSectionState
     );
   }
 
-  /// 本地服务（Ollama / LM Studio）是电脑，其余是云端 API。
-  static IconData _presetIcon(_AiProviderDraft draft) =>
-      (aiProviderPresetById(draft.presetId)?.isLocal ?? false)
+  /// 互联主机是服务器图标，本地服务（Ollama / LM Studio）是电脑，其余是云端 API。
+  static IconData _presetIcon(_AiProviderDraft draft) => draft.relay != null
+      ? FushiIcons.server
+      : (aiProviderPresetById(draft.presetId)?.isLocal ?? false)
       ? FushiIcons.devices
       : FushiIcons.cloud;
 
@@ -418,6 +452,9 @@ class _AiProviderSettingsSectionState
   /// 一家提供商的编辑表单：启用 / 连接（名称、密钥、地址、模型）/ 请求方式
   /// （协议、推理、明文 HTTP）/ 自检，最后是删除。都是共享设置分组里的标准行。
   Widget _providerEditor(BuildContext pageContext, int index) {
+    if (_drafts[index].relay != null) {
+      return _relayProviderEditor(pageContext, index);
+    }
     final _AiProviderDraft draft = _drafts[index];
     final AiProviderConfig? config = draft.toConfig();
     final _ProbeState? probe = _probes[draft.id];
@@ -763,6 +800,338 @@ class _AiProviderSettingsSectionState
     );
   }
 
+  /// 互联主机提供商的编辑页：启用 / 名称 / 主机上的哪家提供商 / 测试连接 / 删除。
+  /// 地址、key、模型、协议、限频都在主机上，这里一个都不给填。
+  Widget _relayProviderEditor(BuildContext pageContext, int index) {
+    final _AiProviderDraft draft = _drafts[index];
+    final AiProviderConfig? config = draft.toConfig();
+    final _ProbeState? probe = _probes[draft.id];
+    final bool busy = probe?.running ?? false;
+    final double rowInset = FushiDesignTokens.of(
+      pageContext,
+    ).spacing.rowHorizontal;
+    return Column(
+      key: ValueKey<String>('ai-provider-${draft.id}-editor'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('ai-provider-$index-enabled'),
+              title: t.ai_provider_enabled,
+              subtitle: (config?.isUsable ?? false)
+                  ? t.ai_provider_ready
+                  : t.ai_provider_incomplete,
+              value: draft.enabled,
+              onChanged: (bool value) =>
+                  _update(index, draft.copyWith(enabled: value)),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.ai_provider_preset_interconnect,
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
+              child: _textField(
+                key: ValueKey<String>('ai-provider-$index-name'),
+                label: t.ai_provider_name,
+                initialValue: draft.name,
+                onChanged: (String value) =>
+                    _update(index, draft.copyWith(name: value)),
+              ),
+            ),
+            AdaptiveSettingsRow(
+              key: ValueKey<String>('ai-provider-$index-relay-provider'),
+              icon: FushiIcons.ai,
+              showIcon: true,
+              title: t.ai_relay_host_provider,
+              subtitle: _relayChoiceLabel(draft),
+              subtitleMaxLines: 2,
+              onTap: busy
+                  ? null
+                  : () => unawaited(_pickRelayProvider(pageContext, draft.id)),
+            ),
+          ],
+        ),
+        SettingsSectionFooter(t.ai_relay_editor_summary),
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsRow(
+              key: ValueKey<String>('ai-provider-$index-test'),
+              icon: FushiIcons.wifi,
+              showIcon: true,
+              title: t.ai_provider_test,
+              onTap: config == null || busy
+                  ? null
+                  : () => unawaited(_testConnection(draft)),
+              trailing: busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+            ),
+          ],
+        ),
+        if (probe != null && !probe.running)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: FushiInlineNotice(
+              key: ValueKey<String>('ai-provider-$index-probe-result'),
+              severity: probe.ok
+                  ? FushiNoticeSeverity.success
+                  : FushiNoticeSeverity.error,
+              message: probe.message,
+            ),
+          ),
+        Center(
+          child: FushiTextButton.icon(
+            key: ValueKey<String>('ai-provider-$index-delete'),
+            destructive: true,
+            onPressed: () {
+              Navigator.of(pageContext).pop();
+              _delete(index);
+            },
+            icon: const FushiIcon(FushiIcons.delete),
+            label: Text(t.ai_provider_delete),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 「主机上的提供商」当前选择的文案：主机默认 / 那家的名字，后跟模型名快照。
+  String _relayChoiceLabel(_AiProviderDraft draft) {
+    final AiRelayTarget relay = draft.relay!;
+    final AiRelayProviderList? list = _relayProviders[draft.id];
+    final String choice;
+    if (relay.providerId == null) {
+      final String? defaultName = list?.byId(list.defaultProviderId)?.name;
+      choice = defaultName == null
+          ? t.ai_relay_host_default
+          : t.ai_relay_host_default_with(name: defaultName);
+    } else {
+      choice = list?.byId(relay.providerId)?.name ?? relay.providerId!;
+    }
+    final String model = draft.model.trim();
+    return model.isEmpty ? choice : '$choice · $model';
+  }
+
+  _AiProviderDraft? _draftById(String id) =>
+      _drafts.where((_AiProviderDraft d) => d.id == id).firstOrNull;
+
+  /// 拉 [draftId] 指向的那台主机的提供商清单（失败落进自检结果框）。成功时按当前
+  /// 选择刷新能力快照（模型名 / 工具调用 / 收图），返回清单；失败返回 null。
+  Future<AiRelayProviderList?> _loadRelayProviders(String draftId) async {
+    final AiRelayTarget? relay = _draftById(draftId)?.relay;
+    if (relay == null) return null;
+    setState(() => _probes[draftId] = const _ProbeState.running());
+    try {
+      final AiRelayProviderList list = await fetchAiRelayProviders(
+        relay.hostId,
+        transport: widget.relayTransport,
+      );
+      if (!mounted) return null;
+      setState(() {
+        _relayProviders[draftId] = list;
+        _probes.remove(draftId);
+      });
+      final AiRelayTarget? now = _draftById(draftId)?.relay;
+      if (now != null) _applyRelayChoice(draftId, now.providerId, list);
+      return list;
+    } on AiChatFailure catch (failure) {
+      if (!mounted) return null;
+      setState(
+        () => _probes[draftId] = _ProbeState.done(
+          ok: false,
+          message: aiFailureText(failure.message),
+        ),
+      );
+      return null;
+    }
+  }
+
+  /// 把选择（null = 主机默认）连同那家的能力快照写回草稿。主机默认在清单里找不到时
+  /// 快照按最保守的取（不发工具、不附图），请求时主机会给出明确错误。
+  void _applyRelayChoice(
+    String draftId,
+    String? providerId,
+    AiRelayProviderList list,
+  ) {
+    final int index = _drafts.indexWhere(
+      (_AiProviderDraft d) => d.id == draftId,
+    );
+    if (index < 0) return;
+    final _AiProviderDraft draft = _drafts[index];
+    final AiRelayProviderInfo? info = list.byId(
+      providerId ?? list.defaultProviderId,
+    );
+    final _AiProviderDraft next = draft.copyWith(
+      relay: AiRelayTarget(hostId: draft.relay!.hostId, providerId: providerId),
+      model: info?.model ?? '',
+      toolCallingOverride: (info?.supportsTools ?? false)
+          ? AiToolCallingOverride.forceOn
+          : AiToolCallingOverride.forceOff,
+      acceptsImages: info?.acceptsImages ?? false,
+    );
+    final AiProviderConfig? before = draft.toConfig();
+    final AiProviderConfig? after = next.toConfig();
+    if (before != null &&
+        after != null &&
+        _encodeConfig(before) == _encodeConfig(after)) {
+      return;
+    }
+    _update(index, next);
+  }
+
+  /// 「主机上的提供商」：现拉主机清单，弹一列可选项（主机默认 + 每一家）。
+  Future<void> _pickRelayProvider(BuildContext anchor, String draftId) async {
+    final AiRelayProviderList? list = await _loadRelayProviders(draftId);
+    final _AiProviderDraft? draft = _draftById(draftId);
+    if (list == null || draft == null || !mounted || !anchor.mounted) return;
+    if (list.providers.isEmpty) {
+      setState(
+        () => _probes[draftId] = _ProbeState.done(
+          ok: false,
+          message: t.ai_relay_host_providers_empty(host: draft.displayName),
+        ),
+      );
+      return;
+    }
+    final String? defaultName = list.byId(list.defaultProviderId)?.name;
+    final (String?,)? picked = await showAppDialog<(String?,)>(
+      context: anchor,
+      builder: (BuildContext dialogContext) => FushiDialogFrame(
+        maxWidth: 480,
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: t.ai_relay_host_provider_pick(host: draft.displayName),
+          leadingIcon: FushiIcons.server,
+          scrollable: true,
+          bodyPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          body: FushiGroupedList(
+            key: const ValueKey<String>('ai-relay-provider-picker'),
+            children: <Widget>[
+              if (defaultName != null)
+                FushiListItem(
+                  key: const ValueKey<String>('ai-relay-provider-default'),
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.ai,
+                    tone: FushiCardTone.tertiary,
+                  ),
+                  title: Text(t.ai_relay_host_default_with(name: defaultName)),
+                  onTap: () => Navigator.of(dialogContext).pop((null,)),
+                ),
+              for (final AiRelayProviderInfo info in list.providers)
+                FushiListItem(
+                  key: ValueKey<String>('ai-relay-provider-${info.id}'),
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.cloud,
+                    tone: FushiCardTone.secondary,
+                  ),
+                  title: Text(info.name),
+                  subtitle: info.model.isEmpty
+                      ? null
+                      : Text(info.model, overflow: TextOverflow.ellipsis),
+                  onTap: () => Navigator.of(dialogContext).pop((info.id,)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    _applyRelayChoice(draftId, picked.$1, list);
+  }
+
+  /// 「添加提供商 › 互联主机」：探测开放了 AI 转发的已配对主机，选一台，建一条指向
+  /// 它默认提供商的条目，进编辑页并现拉它的提供商清单（能力快照随之刷新）。
+  Future<void> _addInterconnectHost() async {
+    final AppModel? appModel = _appModel;
+    if (appModel == null) return;
+    final Future<List<InterconnectHostTarget>> hosts =
+        widget.relayHostProbe?.call() ??
+        probeAiRelayHostTargets(SyncRepository(appModel.database));
+    final InterconnectHostTarget? host =
+        await showAppDialog<InterconnectHostTarget>(
+          context: context,
+          builder: (BuildContext dialogContext) => FushiDialogFrame(
+            maxWidth: 480,
+            scrollable: false,
+            child: FushiModalSheetFrame(
+              title: t.ai_relay_hosts_title,
+              leadingIcon: FushiIcons.server,
+              scrollable: true,
+              bodyPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              body: FutureBuilder<List<InterconnectHostTarget>>(
+                future: hosts,
+                builder:
+                    (
+                      BuildContext context,
+                      AsyncSnapshot<List<InterconnectHostTarget>> snapshot,
+                    ) => _relayHostList(dialogContext, snapshot),
+              ),
+            ),
+          ),
+        );
+    if (host == null || !mounted) return;
+    final String id = 'ai-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _drafts.add(_AiProviderDraft.interconnectHost(host, id: id));
+    });
+    unawaited(_saveValidDrafts());
+    unawaited(_openEditor(id));
+    unawaited(_loadRelayProviders(id));
+  }
+
+  /// 选主机弹窗的正文：探测中 / 一台都没有（说清楚要检查什么）/ 主机列表。
+  Widget _relayHostList(
+    BuildContext dialogContext,
+    AsyncSnapshot<List<InterconnectHostTarget>> snapshot,
+  ) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return Padding(
+        key: const ValueKey<String>('ai-relay-hosts-searching'),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: <Widget>[
+            const SizedBox.square(
+              dimension: 18,
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(t.ai_relay_hosts_searching)),
+          ],
+        ),
+      );
+    }
+    final List<InterconnectHostTarget> found =
+        snapshot.data ?? const <InterconnectHostTarget>[];
+    if (found.isEmpty) {
+      return FushiInlineNotice(
+        key: const ValueKey<String>('ai-relay-hosts-empty'),
+        severity: FushiNoticeSeverity.info,
+        message: t.ai_relay_hosts_empty,
+      );
+    }
+    return FushiGroupedList(
+      key: const ValueKey<String>('ai-relay-host-picker'),
+      children: <Widget>[
+        for (final InterconnectHostTarget target in found)
+          FushiListItem(
+            key: ValueKey<String>('ai-relay-host-${target.hostId}'),
+            leading: const FushiListLeadingIcon(
+              FushiIcons.server,
+              tone: FushiCardTone.tertiary,
+            ),
+            title: Text(target.displayName),
+            onTap: () => Navigator.of(dialogContext).pop(target),
+          ),
+      ],
+    );
+  }
+
   /// 第 [pos] 把 API Key 的输入框：框下是「末尾四位 · 状态」，框尾是启用开关与删除。
   ///
   /// 第一把沿用单 key 时代的 `ai-provider-<i>-api-key` 键（既有测试与焦点驱动脚本
@@ -1025,7 +1394,11 @@ class _AiProviderSettingsSectionState
   }
 
   Widget _featureRow(AiFeature feature) {
-    final List<AiProviderConfig> usable = _usableProviders();
+    // 云端语音转录要上传音频到转录端点，互联主机提供商只转发对话补全，不列。
+    final List<AiProviderConfig> usable = <AiProviderConfig>[
+      for (final AiProviderConfig c in _usableProviders())
+        if (feature != AiFeature.cloudTranscription || !c.isInterconnectHost) c,
+    ];
     final String? assigned = _assignments.providerIdFor(feature);
     // 显式指派的那家没配全 / 已停用 / 根本不在清单里：运行时 resolve 一律回 null、
     // 不退回默认，所以这里也不能把它显示成「跟随默认」——那等于告诉用户能用，实际
@@ -1267,6 +1640,20 @@ class _AiProviderSettingsSectionState
           body: FushiGroupedList(
             key: const ValueKey<String>('ai-provider-preset-picker'),
             children: <Widget>[
+              // 互联主机：用已配对设备上配的 AI，key 留在那台设备（反馈 M8KvhMTHVS）。
+              FushiListItem(
+                key: const ValueKey<String>(
+                  'ai-provider-preset-$kAiInterconnectPresetId',
+                ),
+                leading: const FushiListLeadingIcon(
+                  FushiIcons.server,
+                  tone: FushiCardTone.tertiary,
+                ),
+                title: Text(t.ai_provider_preset_interconnect),
+                subtitle: Text(t.ai_provider_preset_interconnect_summary),
+                onTap: () =>
+                    Navigator.of(dialogContext).pop(_kInterconnectPickerEntry),
+              ),
               for (final AiProviderPreset preset in kAiProviderPresets)
                 FushiListItem(
                   key: ValueKey<String>('ai-provider-preset-${preset.id}'),
@@ -1288,6 +1675,10 @@ class _AiProviderSettingsSectionState
       ),
     );
     if (preset == null || !mounted) return;
+    if (identical(preset, _kInterconnectPickerEntry)) {
+      await _addInterconnectHost();
+      return;
+    }
     final String id = 'ai-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _drafts.add(_AiProviderDraft.fromPreset(preset, id: id));
@@ -1344,7 +1735,8 @@ class _AiProviderSettingsSectionState
           message: t.ai_provider_models_fetched(count: fetched.length),
         );
       } else {
-        if (config.model.trim().isEmpty) {
+        // 互联主机提供商的模型在主机上：一律让主机对所选那家真发一次（ping）。
+        if (config.model.trim().isEmpty && !config.isInterconnectHost) {
           await client.listModels(config);
         } else {
           await client.ping(config);
@@ -1456,7 +1848,28 @@ class _AiProviderDraft {
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
     this.pricing = const AiModelPricing(),
     this.acceptsImages = false,
+    this.relay,
   });
+
+  /// 选了一台互联主机后的新草稿：先指向主机的默认提供商，编辑页再现拉清单细选。
+  factory _AiProviderDraft.interconnectHost(
+    InterconnectHostTarget host, {
+    required String id,
+  }) => _AiProviderDraft(
+    id: id,
+    presetId: kAiInterconnectPresetId,
+    name: host.displayName,
+    apiKeys: const <_AiKeyDraft>[],
+    baseUrl: kAiInterconnectPlaceholderBaseUrl.toString(),
+    model: '',
+    protocol: AiWireProtocol.openAiCompatible,
+    reasoningEffort: AiReasoningEffort.none,
+    enabled: true,
+    allowInsecureHttp: false,
+    requestsPerMinute: 0,
+    toolCallingOverride: AiToolCallingOverride.forceOff,
+    relay: AiRelayTarget(hostId: host.hostId),
+  );
 
   factory _AiProviderDraft.fromConfig(AiProviderConfig config) =>
       _AiProviderDraft(
@@ -1474,6 +1887,7 @@ class _AiProviderDraft {
         toolCallingOverride: config.toolCallingOverride,
         pricing: config.pricing,
         acceptsImages: config.acceptsImages,
+        relay: config.relay,
       );
 
   /// 选了一家预设后的新草稿。
@@ -1527,8 +1941,12 @@ class _AiProviderDraft {
   /// 所配模型能收图（见 [AiProviderConfig.acceptsImages]）。
   final bool acceptsImages;
 
-  String get presetDisplayName =>
-      aiProviderPresetById(presetId)?.displayName ?? presetId;
+  /// 非 null = 互联主机提供商（见 [AiProviderConfig.relay]）。
+  final AiRelayTarget? relay;
+
+  String get presetDisplayName => relay != null
+      ? t.ai_provider_preset_interconnect
+      : aiProviderPresetById(presetId)?.displayName ?? presetId;
 
   /// 列表行 / 编辑页标题：名称清空时回落到预设名，不显示一行空白。
   String get displayName => name.trim().isEmpty ? presetDisplayName : name;
@@ -1546,6 +1964,7 @@ class _AiProviderDraft {
     AiToolCallingOverride? toolCallingOverride,
     AiModelPricing? pricing,
     bool? acceptsImages,
+    AiRelayTarget? relay,
   }) => _AiProviderDraft(
     id: id,
     presetId: presetId,
@@ -1561,6 +1980,7 @@ class _AiProviderDraft {
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
     pricing: pricing ?? this.pricing,
     acceptsImages: acceptsImages ?? this.acceptsImages,
+    relay: relay ?? this.relay,
   );
 
   /// 有效即返回配置，否则 null。
@@ -1568,6 +1988,22 @@ class _AiProviderDraft {
   /// 校验完全交给 [AiProviderConfig] 的构造器——那里是地址合法性与明文 HTTP 放行
   /// 的唯一真相源。在 UI 再抄一份判据必然与它漂移。
   AiProviderConfig? toConfig() {
+    final AiRelayTarget? relay = this.relay;
+    if (relay != null) {
+      try {
+        return AiProviderConfig.interconnectHost(
+          id: id,
+          name: name,
+          relay: relay,
+          model: model,
+          enabled: enabled,
+          toolCallingOverride: toolCallingOverride,
+          acceptsImages: acceptsImages,
+        );
+      } on ArgumentError {
+        return null;
+      }
+    }
     final Uri? parsed = Uri.tryParse(baseUrl.trim());
     if (parsed == null) return null;
     try {
