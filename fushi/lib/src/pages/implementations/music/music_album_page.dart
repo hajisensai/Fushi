@@ -11,6 +11,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/disc/music_disc.dart';
 
+import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
+    show MusicSubtitleTargets;
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -24,6 +26,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -279,6 +282,28 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                       label: Text(t.music_shuffle_play),
                     ),
                   ),
+                  // 广播剧 CD 一类整张专辑：一键排队生成日语字幕（已有生成字幕的曲目跳过）。
+                  if (musicSubtitleGenerationAvailableForAny(<String>[
+                    for (final MusicTrackRow t in tracks) t.path,
+                  ]))
+                    FushiPressScale(
+                      child: FushiFilledButton.tonalIcon(
+                        size: FushiButtonSize.m,
+                        key: const ValueKey<String>(
+                          'music_album_generate_subtitles',
+                        ),
+                        onPressed: () => unawaited(
+                          openMusicSubtitleGenerateSheet(
+                            context: context,
+                            appModel: _app,
+                            resolve: (MusicSubtitleTargets targets) =>
+                                targets.forAlbum(album.albumUid),
+                          ),
+                        ),
+                        icon: const FushiIcon(FushiIcons.subtitles),
+                        label: Text(t.music_subtitle_generate_album),
+                      ),
+                    ),
                   if (disc != null) ...<Widget>[
                     FushiPressScale(
                       child: FushiFilledButton.tonalIcon(

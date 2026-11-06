@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
     show kMusicSearchDebounce;
 import 'package:fushi/src/models/audio_controller.dart';
@@ -440,6 +441,44 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+
+  // Feedback QAondMh4M5：专辑整张批量生成日语字幕；入口按本机转录能力 + 有本机文件门控。
+  // 每个用例只挂一次页面（ProviderScope 卸载会 dispose AppModel）。
+  for (final (String name, bool supported, bool localFiles, bool shown)
+      in <(String, bool, bool, bool)>[
+        ('本机能转录 + 本机文件：出', true, true, true),
+        ('本机不能转录：不出', false, true, false),
+        ('全是远端 / 插件曲目：不出', true, false, false),
+      ]) {
+    testWidgets('专辑页「为整张专辑生成字幕」：$name', (WidgetTester tester) async {
+      final bool Function() gate = musicSubtitleAsrSupported;
+      addTearDown(() => musicSubtitleAsrSupported = gate);
+      musicSubtitleAsrSupported = () => supported;
+      final FushiDatabase db = await _seed();
+      addTearDown(db.close);
+      final AppModel app = AppModel(testPlatformServices())
+        ..wireDatabaseForTesting(db)
+        ..wireMusicPluginManagerForTesting(_noPlugins());
+      final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(db);
+      final MusicAlbumRow album = snap.albums.single;
+      final List<MusicTrackRow> tracks = <MusicTrackRow>[
+        for (final MusicTrackRow r in snap.tracksOfAlbum(album.albumUid))
+          r.copyWith(
+            path: localFiles
+                ? '${Directory.systemTemp.path}${Platform.pathSeparator}'
+                      '${r.trackUid}.flac'
+                : 'https://example.invalid/${r.trackUid}.flac',
+          ),
+      ];
+      await _pump(tester, app, MusicAlbumPage(album: album, tracks: tracks));
+      expect(
+        find.byKey(const ValueKey<String>('music_album_generate_subtitles')),
+        shown ? findsOneWidget : findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('专辑页 MD3：封面不被悬浮顶栏盖住（反馈 yglXWr9DTq）', (WidgetTester tester) async {
     final FushiDatabase db = await _seed();

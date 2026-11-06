@@ -305,12 +305,14 @@ final class FushiCorpusIndex {
   }
 
   /// 按词典形 [keys] 查例句：每个模块至多 [perKind] 条、每份文档至多 [perDoc] 条
-  /// （0 = 不限），只查 [kinds]（默认全部）。
+  /// （0 = 不限），只查 [kinds]（默认全部）。[matchAll]：句子须含**全部** [keys]
+  /// （文本搜索：查询文本分词后逐词求交）；默认含任一（查词弹窗按一个词的各词形查）。
   CorpusQueryResult query(
     List<String> keys, {
     int perKind = 4,
     int perDoc = 2,
     Iterable<CorpusSourceKind> kinds = CorpusSourceKind.values,
+    bool matchAll = false,
   }) {
     if (keys.isEmpty) return CorpusQueryResult.empty;
     final _LeWriter w = _LeWriter()..u32(keys.length);
@@ -321,6 +323,8 @@ final class FushiCorpusIndex {
       ..u32(perKind)
       ..u32(perDoc)
       ..u32(CorpusSourceKind.maskOf(kinds));
+    // 可选尾字节：只在要求「全含」时写（缺省即旧口径）。
+    if (matchAll) w.u8(1);
     final Uint8List q = w.takeBytes();
     final String json = _bytesOut(
       'fcorp_query',

@@ -26,6 +26,7 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
 import 'package:fushi_engine/updates/update_feed_kind.dart';
@@ -352,7 +353,7 @@ import 'package:fushi/src/asr_host/asr_host.dart'
         resolveAppVideoSubtitleRecognizer;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
-    show videoSubtitleJobsRootUnder;
+    show isDefaultVideoSubtitlePipelineOutput, videoSubtitleJobsRootUnder;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -425,6 +426,8 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
 import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show defaultVideoSubtitleJobsRoot;
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
@@ -2164,6 +2167,13 @@ class AppModel with ChangeNotifier {
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
+    // 视频库字幕管线以前写在音频旁的 `<主名>.ja.srt`：有 asr 行时不当 sidecar。
+    isGeneratedSidecar: (String audioPath, String path) async =>
+        isDefaultVideoSubtitlePipelineOutput(
+          jobsRoot: await defaultVideoSubtitleJobsRoot(),
+          mediaPath: audioPath,
+          path: path,
+        ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
     pluginLyrics: isMusicPluginSourcesAvailable
         ? (String pluginId, String trackId) =>
@@ -3406,18 +3416,17 @@ class AppModel with ChangeNotifier {
           await migrateAudioOnlyVideoBooksToMusic(
             _database,
             fileExists: (String path) => File(path).existsSync(),
-            adoptSubtitle: (MusicTrackRow track, String subtitlePath) =>
-                musicLyrics.adoptSubtitleFile(
-                  trackUid: track.trackUid,
-                  path: subtitlePath,
-                  durationMs: track.durationMs,
-                ),
+            // 带走旧视频管线生成过 / 用户选过的字幕（音乐库「生成日语字幕」同一份歌词库）。
+            lyrics: musicLyrics,
+            subtitleJobsRoot: await defaultVideoSubtitleJobsRoot(),
+            importedSubtitlesDir: await VideoStorage.subtitlesDir(),
           );
       if (report.candidates == 0) return;
       debugPrint(
         '[Fushi] audio-only videos -> music: migrated ${report.migrated}/'
         '${report.candidates}, play events ${report.playEventsWritten}, '
-        'resume points ${report.resumePointsWritten}',
+        'resume points ${report.resumePointsWritten}, '
+        'subtitles ${report.subtitlesCarried}',
       );
       if (report.errors.isNotEmpty) {
         ErrorLogService.instance.log(

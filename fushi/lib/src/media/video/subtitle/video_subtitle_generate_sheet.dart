@@ -7,7 +7,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
@@ -261,17 +260,9 @@ class _VideoSubtitleGenerateSheetState
   Set<String> _existing = const <String>{};
 
   Future<void> _loadExisting() async {
-    if (!_target.wholeSeason) return;
-    final Set<String> existing = <String>{
-      for (final AppVideoSubtitleEpisode e in _target.episodes)
-        if (await File(
-          p.join(
-            p.dirname(e.videoPath),
-            '${p.basenameWithoutExtension(e.videoPath)}.ja.srt',
-          ),
-        ).exists())
-          e.videoPath,
-    };
+    final Set<String> existing = await _service.existingSubtitleEpisodes(
+      _target,
+    );
     if (!mounted) return;
     setState(() => _existing = existing);
   }
@@ -532,7 +523,9 @@ class _VideoSubtitleGenerateSheetState
     final AppVideoSubtitleJob? job = _job;
     return FushiModalSheetFrame(
       title: _target.wholeSeason
-          ? t.video_subtitle_ai_season_title
+          ? (_target.isMusic
+                ? t.music_subtitle_batch_title
+                : t.video_subtitle_ai_season_title)
           : t.video_subtitle_ai_title,
       leadingIcon: FushiIcons.subtitles,
       scrollable: true,
@@ -614,17 +607,23 @@ class _VideoSubtitleGenerateSheetState
     final List<Widget> lines = <Widget>[
       Text(_target.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       if (_target.wholeSeason)
-        _hint(
-          t.video_subtitle_ai_season_summary(
+        _hint(switch (_target.trackCounts) {
+          final ({int pending, int skipped}) c =>
+            t.music_subtitle_batch_summary(
+              n: c.pending + c.skipped,
+              skipped: c.skipped,
+            ),
+          null => t.video_subtitle_ai_season_summary(
             n: _target.episodes.length,
             skipped: _existing.length,
           ),
-          key: const ValueKey<String>('video-subtitle-ai-season-summary'),
-        ),
+        }, key: const ValueKey<String>('video-subtitle-ai-season-summary')),
       for (final AppVideoSubtitleUnavailable u in _target.unavailable)
         _hint(switch (u.reason) {
           AppVideoSubtitleUnavailableReason.remote =>
-            t.video_subtitle_ai_unavailable_remote(title: u.title),
+            _target.isMusic
+                ? t.music_subtitle_unavailable_remote(title: u.title)
+                : t.video_subtitle_ai_unavailable_remote(title: u.title),
           AppVideoSubtitleUnavailableReason.missingFile =>
             t.video_subtitle_ai_unavailable_missing(title: u.title),
         }),
@@ -930,6 +929,9 @@ class _VideoSubtitleGenerateSheetState
           : job.progress == null
           ? t.video_subtitle_ai_status_starting
           : videoSubtitleStageLabel(job.progress!.stage),
+    // 音乐按曲目计（一个导出文件可登记 CUE 整轨的多首，复用已有导出也算）。
+    AppVideoSubtitleJobStatus.succeeded when _target.isMusic =>
+      t.music_subtitle_status_done(n: job.registeredBookUids.length),
     AppVideoSubtitleJobStatus.succeeded => t.video_subtitle_ai_status_done(
       n:
           job.result?.episodes

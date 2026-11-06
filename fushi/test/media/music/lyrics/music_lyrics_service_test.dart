@@ -244,23 +244,25 @@ void main() {
     expect(back.timeline.offsetMs, 250);
   });
 
-  test('adoptSubtitleFile：视频行搬来的 SRT（ASR 转写）定为手动指定；已有手动指定不覆盖'
-      '（BUG-4127）', () async {
+  test('chooseFileForTracks：视频行搬来的 SRT（ASR 转写）定为手动指定；已有手动指定不覆盖；'
+      '解析不出返回 null（BUG-4127）', () async {
     final File srt = File('${dir.path}${Platform.pathSeparator}speech-a.srt')
       ..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n沈むように\n');
     final MusicLyricsService s = service();
-    await s.adoptSubtitleFile(
-      trackUid: 'uid-1',
-      path: srt.path,
-      durationMs: 261000,
-    );
+    const List<MusicLyricsFileTrack> one = <MusicLyricsFileTrack>[
+      (trackUid: 'uid-1', cueStartMs: null, cueEndMs: null, durationMs: 261000),
+    ];
+    expect(await s.chooseFileForTracks(srt.path, one), <String>['uid-1']);
     final MusicLyricsResolution user = (await s.resolve(track()))!;
     expect(user.source, MusicLyricsSource.user);
     expect(user.timeline.lines.single.text, '沈むように');
 
     srt.writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n別の\n');
-    await s.adoptSubtitleFile(trackUid: 'uid-1', path: srt.path);
+    expect(await s.chooseFileForTracks(srt.path, one), isEmpty);
     expect((await s.resolve(track()))!.timeline.lines.single.text, '沈むように');
+
+    srt.writeAsStringSync('');
+    expect(await s.chooseFileForTracks(srt.path, one), isNull);
   });
 
   test('缓存版本对不上时从 raw 重建', () async {

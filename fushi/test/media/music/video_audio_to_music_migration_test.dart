@@ -1,25 +1,45 @@
 // 反馈 QAondMh4M5：旧版按「无画面视频」入库的纯音频搬到音乐库（幂等、先入库后删行）。
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobId;
+import 'package:fushi_music/fushi_music.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
   late FushiDatabase db;
   late VideoBookRepository repo;
+  late Directory scratch;
+  late Directory jobsDir;
+  late Directory importedDir;
   final String root = p.join(p.rootPrefix(p.current), 'media');
   String at(List<String> parts) => p.joinAll(<String>[root, ...parts]);
 
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
+    scratch = Directory.systemTemp.createTempSync('va2m_');
+    jobsDir = Directory(p.join(scratch.path, 'jobs'));
+    importedDir = Directory(p.join(scratch.path, 'app', 'video_subtitles'));
   });
-  tearDown(() => db.close());
+  tearDown(() async {
+    await db.close();
+    scratch.deleteSync(recursive: true);
+  });
 
   Future<void> video(
     String uid,
@@ -43,8 +63,14 @@ void main() {
     ),
   );
 
-  Future<void> noSubtitle(MusicTrackRow t, String path) async =>
-      fail('no subtitle expected: $path');
+  MusicLyricsService lyricsService() => MusicLyricsService(
+    database: () => db,
+    lrclib: LrclibClient(transport: (Uri _) async => (status: 404, body: '')),
+    onlineEnabled: () => false,
+    readEmbedded: (String _, int? _) async => const <EmbeddedLyrics>[],
+    parse: (List<int> b, String h, int? d) async =>
+        FushiLyrics.parse(Uint8List.fromList(b), hint: h, durationMs: d),
+  );
 
   /// 音乐扫描替身：把路径写成在库曲目（Rust 拼法：正斜杠根 + 平台分隔符）。[cueStartMs]
   /// 非空 = 整轨 + CUE 拆出的虚拟曲目（uid 带上起点）。
@@ -157,7 +183,9 @@ void main() {
           db,
           intake: intake,
           fileExists: (String path) => !path.contains('Gone'),
-          adoptSubtitle: noSubtitle,
+          lyrics: lyricsService(),
+          subtitleJobsRoot: jobsDir,
+          importedSubtitlesDir: importedDir,
         );
 
     expect(registered, <({String rootPath, bool recursive})>[
@@ -205,7 +233,9 @@ void main() {
           db,
           intake: intake,
           fileExists: (String path) => !path.contains('Gone'),
-          adoptSubtitle: noSubtitle,
+          lyrics: lyricsService(),
+          subtitleJobsRoot: jobsDir,
+          importedSubtitlesDir: importedDir,
         );
     expect(second.candidates, 1);
     expect(second.migrated, 0);
@@ -247,7 +277,9 @@ void main() {
       db,
       intake: intake,
       fileExists: (_) => true,
-      adoptSubtitle: noSubtitle,
+      lyrics: lyricsService(),
+      subtitleJobsRoot: jobsDir,
+      importedSubtitlesDir: importedDir,
     );
 
     expect(r.migrated, 2);
@@ -273,33 +305,6 @@ void main() {
     );
     expect(discEvent.trackUid, track2);
     expect(discEvent.listenedMs, 900000);
-  });
-
-  test('a subtitle on a flac + cue disc goes to the first track (its '
-      'timeline starts at the file head)', () async {
-    final String disc = at(<String>['Drama', 'disc1.flac']);
-    final String sub = at(<String>['app', 'video_subtitles', 'disc1.srt']);
-    await video('v/disc', disc, subtitleSource: sub, lastPositionMs: 2100000);
-    final List<String> adoptedUids = <String>[];
-    final MusicAudioIntake intake = MusicAudioIntake(
-      db,
-      fileExists: (_) => true,
-      importFile: (String path, {bool recursive = false}) async {
-        // 故意倒序落库：挂哪一首不能依赖插入顺序。
-        await track(disc, durationMs: 1800000, cueStartMs: 1200000);
-        await track(disc, durationMs: 1200000, cueStartMs: 0);
-        return null;
-      },
-    );
-    final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
-      db,
-      intake: intake,
-      fileExists: (_) => true,
-      adoptSubtitle: (MusicTrackRow t, String path) async =>
-          adoptedUids.add(t.trackUid),
-    );
-    expect(r.migrated, 1);
-    expect(adoptedUids, <String>['uid:${p.canonicalize(disc)}#0']);
   });
 
   test(
@@ -368,6 +373,103 @@ void main() {
     },
   );
 
+  test('generated subtitles travel by path (whole-season runs never set '
+      'subtitleSource): own .ja.srt / .ja.asr.srt become asr rows, a picked '
+      'imported subtitle becomes the user choice, a foreign .ja.srt stays a '
+      'sidecar', () async {
+    final Directory tmp = Directory.systemTemp.createTempSync('va2m_sub_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final Directory jobs = Directory(p.join(tmp.path, 'jobs'));
+    const String srt =
+        '1\n00:00:01,000 --> 00:00:03,000\nお便りを読みます\n\n'
+        '2\n00:00:04,000 --> 00:00:06,000\n次のコーナー\n';
+    String file(String rel, [String content = 'x']) {
+      final File f = File(p.joinAll(<String>[tmp.path, ...rel.split('/')]))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(content);
+      return f.path;
+    }
+
+    // ① 整季生成写在音频旁、state.json 记了哈希；行上没有选择。
+    final String a1 = file('cd/drama1.mp3', 'audio-1');
+    final String s1 = file('cd/drama1.ja.srt', srt);
+    final File state = File(
+      p.join(jobs.path, videoSubtitleJobId(a1), 'state.json'),
+    )..createSync(recursive: true);
+    state.writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'exports': <String, String>{
+          s1: sha1.convert(utf8.encode(srt)).toString(),
+        },
+      }),
+    );
+    // ② 只有本管线会写的 .ja.asr.srt 退路名（任务目录已清掉也认）。
+    final String a2 = file('cd/drama2.mp3', 'audio-22');
+    file('cd/drama2.ja.asr.srt', srt);
+    // ③ 用户选过 app 文档目录里的导入字幕。
+    final String a3 = file('cd/drama3.mp3', 'audio-333');
+    final String imported = file('docs/subs/drama3.srt', srt);
+    // ④ 音频旁的 .ja.srt 不是本管线写的：留给 sidecar 规则，不写行。
+    final String a4 = file('cd/drama4.mp3', 'audio-4444');
+    file('cd/drama4.ja.srt', srt);
+
+    await video('v/1', a1);
+    await video('v/2', a2);
+    await repo.saveVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('v/3'),
+        title: const Value<String>('drama3'),
+        videoPath: Value<String>(a3),
+        importedAt: const Value<int>(1),
+        subtitleSource: Value<String?>(imported),
+      ),
+    );
+    await video('v/4', a4);
+    for (final String a in <String>[a1, a2, a3, a4]) {
+      await track(a);
+    }
+    final MusicLyricsService lyrics = MusicLyricsService(
+      database: () => db,
+      lrclib: LrclibClient(transport: (Uri _) async => (status: 404, body: '')),
+      onlineEnabled: () => false,
+      readEmbedded: (String _, int? _) async => const <EmbeddedLyrics>[],
+      parse: (List<int> b, String h, int? d) async =>
+          FushiLyrics.parse(Uint8List.fromList(b), hint: h, durationMs: d),
+    );
+    Future<VideoAudioMigrationReport> run() =>
+        migrateAudioOnlyVideoBooksToMusic(
+          db,
+          intake: MusicAudioIntake(
+            db,
+            fileExists: (_) => true,
+            importFile: (String path, {bool recursive = false}) async =>
+                fail('already tracked'),
+          ),
+          fileExists: (String path) => File(path).existsSync(),
+          lyrics: lyrics,
+          subtitleJobsRoot: jobs,
+          importedSubtitlesDir: Directory(p.join(tmp.path, 'docs')),
+        );
+
+    final VideoAudioMigrationReport r = await run();
+    expect(r.migrated, 4);
+    expect(r.subtitlesCarried, 3, reason: '${r.errors}');
+    expect(await videoUids(), isEmpty);
+    Future<List<(String, bool)>> rowsOf(String audio) async => <(String, bool)>[
+      for (final MusicLyricRow l
+          in await (db.select(db.musicLyrics)..where(
+                ($MusicLyricsTable t) =>
+                    t.trackUid.equals('uid:${p.canonicalize(audio)}'),
+              ))
+              .get())
+        (l.source, l.isUserEdited),
+    ];
+    expect(await rowsOf(a1), <(String, bool)>[(MusicLyricsSource.asr, false)]);
+    expect(await rowsOf(a2), <(String, bool)>[(MusicLyricsSource.asr, false)]);
+    expect(await rowsOf(a3), <(String, bool)>[(MusicLyricsSource.user, true)]);
+    expect(await rowsOf(a4), isEmpty);
+  });
+
   test('no legacy audio rows: nothing is scanned', () async {
     await video('v/ep01', at(<String>['Anime', 'ep01.mkv']));
     final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
@@ -384,7 +486,9 @@ void main() {
             fail('no audio'),
       ),
       fileExists: (_) => true,
-      adoptSubtitle: noSubtitle,
+      lyrics: lyricsService(),
+      subtitleJobsRoot: jobsDir,
+      importedSubtitlesDir: importedDir,
     );
     expect(r.candidates, 0);
     expect(await videoUids(), <String>['v/ep01']);
@@ -420,7 +524,9 @@ void main() {
             fail('covered, not imported once'),
       ),
       fileExists: (_) => true,
-      adoptSubtitle: noSubtitle,
+      lyrics: lyricsService(),
+      subtitleJobsRoot: jobsDir,
+      importedSubtitlesDir: importedDir,
     );
     expect(rescanned, <int>[mid]);
     expect(r.migrated, 1);
@@ -473,7 +579,9 @@ void main() {
       db,
       intake: intake,
       fileExists: (_) => true,
-      adoptSubtitle: noSubtitle,
+      lyrics: lyricsService(),
+      subtitleJobsRoot: jobsDir,
+      importedSubtitlesDir: importedDir,
     );
     expect(r.migrated, 3);
     expect(await videoUids(), isEmpty);
@@ -498,73 +606,138 @@ void main() {
     );
   });
 
-  test('attached subtitle (ASR transcript) is carried to the music lyrics '
-      'before the row is deleted; a subtitle that cannot be carried keeps '
-      'the row', () async {
-    final String a = at(<String>['Drama', 'a.mp3']);
-    final String b = at(<String>['Drama', 'b.mp3']);
-    final String subA = at(<String>['app', 'video_subtitles', 'speech-a.srt']);
-    final String subB = at(<String>['app', 'video_subtitles', 'speech-b.srt']);
-    await video('v/a', a, subtitleSource: subA);
-    await video('v/b', b, subtitleSource: subB);
-    final List<(String, String)> adopted = <(String, String)>[];
-    Future<void> adopt(MusicTrackRow t, String path) async {
-      if (path == subB) throw StateError('parse failed');
-      adopted.add((t.path, path));
+  test('a picked subtitle that cannot be carried keeps the row only when '
+      'deleting it would reclaim the file (imported copy, BUG-4127)', () async {
+    const String srt = '1\n00:00:01,000 --> 00:00:02,000\n沈むように\n';
+    String file(String path, String content) {
+      File(path)
+        ..createSync(recursive: true)
+        ..writeAsStringSync(content);
+      return path;
     }
 
-    final MusicAudioIntake intake = MusicAudioIntake(
-      db,
-      fileExists: (_) => true,
-      importFile: (String path, {bool recursive = false}) async {
-        await track(path);
-        return null;
-      },
-    );
+    final String a = file(p.join(scratch.path, 'cd', 'a.mp3'), 'a');
+    final String b = file(p.join(scratch.path, 'cd', 'b.mp3'), 'bb');
+    final String c = file(p.join(scratch.path, 'cd', 'c.mp3'), 'ccc');
+    // a：导入副本、能解析 → 手动指定，行照常删。
+    final String subA = file(p.join(importedDir.path, 'speech-a.srt'), srt);
+    // b：导入副本、解析不出 → 删行会回收它，这次不删。
+    final String subB = file(p.join(importedDir.path, 'speech-b.srt'), '');
+    // c：别处的文件、解析不出 → 删行不碰它，照常迁移、记一条错误。
+    final String subC = file(p.join(scratch.path, 'mine', 'c.srt'), '');
+    await video('v/a', a, subtitleSource: subA);
+    await video('v/b', b, subtitleSource: subB);
+    await video('v/c', c, subtitleSource: subC);
+    for (final String x in <String>[a, b, c]) {
+      await track(x);
+    }
     final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
       db,
-      intake: intake,
-      fileExists: (_) => true,
-      adoptSubtitle: adopt,
+      intake: MusicAudioIntake(
+        db,
+        fileExists: (_) => true,
+        importFile: (String path, {bool recursive = false}) async =>
+            fail('already tracked'),
+      ),
+      fileExists: (String path) => File(path).existsSync(),
+      lyrics: lyricsService(),
+      subtitleJobsRoot: jobsDir,
+      importedSubtitlesDir: importedDir,
     );
-    expect(adopted.map(((String, String) e) => e.$2), <String>[subA]);
-    expect(r.migrated, 1);
-    expect(r.errors.single, contains(subB));
+    expect(r.migrated, 2);
+    expect(r.subtitlesCarried, 1);
     expect(await videoUids(), <String>['v/b']);
+    expect(r.errors, hasLength(2));
+    expect(r.errors.where((String e) => e.contains(subB)), hasLength(1));
+    expect(r.errors.where((String e) => e.contains(subC)), hasLength(1));
+    final List<MusicLyricRow> rows = await db.select(db.musicLyrics).get();
+    expect(
+      rows.map((MusicLyricRow l) => (l.trackUid, l.source)).toList(),
+      <(String, String)>[('uid:${p.canonicalize(a)}', MusicLyricsSource.user)],
+    );
   });
 
-  test('a subtitle on a file split into chapters goes to the first chapter '
-      '(its timeline starts at the file head)', () async {
-    final String book = at(<String>['Books', 'novel.m4b']);
-    final String sub = at(<String>['app', 'video_subtitles', 'novel.srt']);
-    await video('v/book', book, subtitleSource: sub, lastPositionMs: 75000);
-    final List<String> adoptedUids = <String>[];
-    final MusicAudioIntake intake = MusicAudioIntake(
-      db,
-      fileExists: (_) => true,
-      importFile: (String path, {bool recursive = false}) async {
-        // 故意倒序落库：挂哪一首不能依赖插入顺序。
-        await segment(path, 'novel-2', startMs: 60000, durationMs: 30000);
-        await segment(
-          path,
-          'novel-1',
-          startMs: 0,
-          endMs: 60000,
-          durationMs: 60000,
+  test('a picked whole-file subtitle on a flac + cue disc is sliced into '
+      'each track (track-relative times); a track already chosen in the '
+      'music library is not overwritten', () async {
+    final String disc = p.join(scratch.path, 'cd', 'disc.flac');
+    File(disc)
+      ..createSync(recursive: true)
+      ..writeAsStringSync('disc');
+    final String sub = p.join(importedDir.path, 'disc.srt');
+    File(sub)
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+        '1\n00:00:01,000 --> 00:00:02,000\n一曲目\n\n'
+        '2\n00:01:05,000 --> 00:01:06,000\n二曲目\n\n'
+        '3\n00:02:05,000 --> 00:02:06,000\n三曲目\n',
+      );
+    await video('v/disc', disc, subtitleSource: sub);
+    Future<void> cue(String uid, int start, int? end) => db
+        .into(db.musicTracks)
+        .insert(
+          MusicTracksCompanion.insert(
+            trackUid: uid,
+            path: normalizeSourceRootPath(disc, transport: 'local'),
+            title: uid,
+            cueStartMs: Value<int?>(start),
+            cueEndMs: Value<int?>(end),
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
         );
-        return null;
-      },
+    await cue('t1', 0, 60000);
+    await cue('t2', 60000, 120000);
+    await cue('t3', 120000, null);
+    final MusicLyricsService lyrics = lyricsService();
+    // t3 用户在音乐库里已经选过歌词。
+    await lyrics.choose(
+      't3',
+      MusicLyricsCandidate(
+        source: MusicLyricsSource.user,
+        label: 'mine.lrc',
+        format: 'lrc',
+        raw: Uint8List.fromList(utf8.encode('[00:01.00]自分の')),
+        timeline: FushiLyrics.parse(
+          Uint8List.fromList(utf8.encode('[00:01.00]自分の')),
+          hint: 'lrc',
+        ),
+      ),
     );
     final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
       db,
-      intake: intake,
-      fileExists: (_) => true,
-      adoptSubtitle: (MusicTrackRow t, String path) async =>
-          adoptedUids.add(t.trackUid),
+      intake: MusicAudioIntake(
+        db,
+        fileExists: (_) => true,
+        importFile: (String path, {bool recursive = false}) async =>
+            fail('already tracked'),
+      ),
+      fileExists: (String path) => File(path).existsSync(),
+      lyrics: lyrics,
+      subtitleJobsRoot: jobsDir,
+      importedSubtitlesDir: importedDir,
     );
-    expect(r.migrated, 1);
-    expect(adoptedUids, <String>['novel-1']);
-    expect(await videoUids(), isEmpty);
+    expect(r.migrated, 1, reason: '${r.errors}');
+    expect(r.subtitlesCarried, 2);
+    Future<List<(int, String)>> linesOf(String uid) async {
+      final MusicLyricRow row =
+          await (db.select(db.musicLyrics)
+                ..where(($MusicLyricsTable l) => l.trackUid.equals(uid))
+                ..where(
+                  ($MusicLyricsTable l) =>
+                      l.source.equals(MusicLyricsSource.user),
+                ))
+              .getSingle();
+      return <(int, String)>[
+        for (final LyricLine l in decodeLyricTimeline(row.timelineCache!).lines)
+          (l.startMs, l.text),
+      ];
+    }
+
+    expect(await linesOf('t1'), <(int, String)>[(1000, '一曲目')]);
+    expect(await linesOf('t2'), <(int, String)>[(5000, '二曲目')]);
+    expect(await linesOf('t3'), <(int, String)>[(1000, '自分の')]);
   });
 
   group('pickMigratedTrack', () {

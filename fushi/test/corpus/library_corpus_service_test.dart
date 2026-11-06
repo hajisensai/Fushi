@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
@@ -14,6 +15,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_corpus/fushi_corpus.dart';
+import 'package:fushi_music/fushi_music.dart';
 
 /// 假词元：按空白切词，词典形 = 小写（模拟「Ran → run」一类归一就够了：这里测的是编排）。
 Uint8List fakeTerms(List<String> sentences) {
@@ -306,6 +308,108 @@ void main() {
     );
     await service.idle;
     expect((await service.query(<String>['run'])).isEmpty, isTrue);
+  });
+
+  group('曲库歌词文本搜索（searchText）', () {
+    Future<void> addTrack(String uid) => db
+        .into(db.musicTracks)
+        .insert(
+          MusicTracksCompanion.insert(
+            trackUid: uid,
+            path: '/m/$uid.flac',
+            title: 'Title $uid',
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
+        );
+
+    Future<void> addLyrics(
+      String uid,
+      String source,
+      String srt, {
+      int updatedAt = 1,
+    }) async {
+      final Uint8List raw = utf8.encode(srt);
+      final LyricTimeline t = FushiLyrics.parse(raw, hint: 'srt');
+      await db
+          .into(db.musicLyrics)
+          .insert(
+            MusicLyricsCompanion.insert(
+              trackUid: uid,
+              source: source,
+              format: 'srt',
+              raw: raw,
+              timelineCache: Value<Uint8List?>(encodeLyricTimeline(t)),
+              timelineVersion: Value<int>(FushiLyrics.parserVersion),
+              updatedAt: updatedAt,
+            ),
+          );
+    }
+
+    test('句子须含查询文本的全部词；命中带曲目与行时间', () async {
+      await addTrack('t1');
+      await addTrack('t2');
+      await addLyrics(
+        't1',
+        'asr',
+        '1\n00:00:01,000 --> 00:00:02,000\nthe dog ran home\n\n'
+            '2\n00:00:05,000 --> 00:00:06,000\nthe dog slept\n',
+      );
+      await addLyrics(
+        't2',
+        'asr',
+        '1\n00:00:03,000 --> 00:00:04,000\na cat ran away\n',
+      );
+      await settle();
+      final List<CorpusHit> hits = await service.searchText(
+        'Dog RAN',
+        kind: CorpusSourceKind.music,
+      );
+      expect(
+        hits.map((CorpusHit h) => (h.key, h.pos, h.text)),
+        <(String, int, String)>[('t1', 1000, 'the dog ran home')],
+      );
+      expect(
+        await service.searchText('nothing here', kind: CorpusSourceKind.music),
+        isEmpty,
+      );
+    });
+
+    test('同一首有 sidecar 与生成字幕：索引的是歌词页会显示的 sidecar', () async {
+      await addTrack('t1');
+      await addLyrics(
+        't1',
+        'sidecar',
+        '1\n00:00:01,000 --> 00:00:02,000\nfrom sidecar file\n',
+      );
+      await addLyrics(
+        't1',
+        'asr',
+        '1\n00:00:01,000 --> 00:00:02,000\nfrom generated asr\n',
+        updatedAt: 99,
+      );
+      await settle();
+      expect(
+        (await service.searchText(
+          'sidecar',
+          kind: CorpusSourceKind.music,
+        )).map((CorpusHit h) => h.text),
+        <String>['from sidecar file'],
+      );
+      expect(
+        await service.searchText('generated', kind: CorpusSourceKind.music),
+        isEmpty,
+        reason: '旧判据「最近更新的」会挑中 asr，与歌词页对不上',
+      );
+    });
+
+    test('corpusTermKeys：取出全部词典形、去重保序', () {
+      expect(
+        corpusTermKeys(fakeTerms(<String>['The dog the DOG ran'])),
+        <String>['the', 'dog', 'ran'],
+      );
+    });
   });
 
   test('关掉开关：查询回空、喂入不写', () async {

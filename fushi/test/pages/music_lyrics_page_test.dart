@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -23,6 +24,7 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -300,7 +302,19 @@ void main() {
     await app.musicSession.engine.pause();
   });
 
+  final bool Function() asrGate = musicSubtitleAsrSupported;
+
+  Future<void> settle(WidgetTester tester, {int rounds = 10}) async {
+    for (int i = 0; i < rounds; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
+
   tearDown(() async {
+    musicSubtitleAsrSupported = asrGate;
     musicLyricsClipExtractor = ffmpegClip;
     await db.close();
     dir.deleteSync(recursive: true);
@@ -521,6 +535,77 @@ void main() {
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
 
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 音乐库生成字幕（Feedback QAondMh4M5）：没歌词的本机曲目就地给「生成日语字幕」，入口按
+  // 本机转录能力（isAsrSupported）门控——不支持的平台不出入口，而不是点了才报错。
+  // 每个用例只挂一次页面：ProviderScope 卸载会 dispose AppModel，同一用例里再挂会用到已
+  // dispose 的模型。
+  for (final bool supported in <bool>[false, true]) {
+    testWidgets('没歌词：本机${supported ? '能' : '不能'}转录时'
+        '${supported ? '出' : '不出'}「生成日语字幕」入口', (WidgetTester tester) async {
+      File('${dir.path}${Platform.pathSeparator}song.lrc').deleteSync();
+      musicSubtitleAsrSupported = () => supported;
+      await pumpPage(tester);
+      expect(
+        find.byKey(const ValueKey<String>('music_lyrics_find')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('music_lyrics_generate')),
+        supported ? findsOneWidget : findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('生成字幕写进当前这首：打开着的歌词页立即重载显示', (WidgetTester tester) async {
+    File('${dir.path}${Platform.pathSeparator}song.lrc').deleteSync();
+    await pumpPage(tester);
+    expect(find.bySemanticsLabel('ドラマの台詞'), findsNothing);
+
+    final Uint8List srt = Uint8List.fromList(
+      utf8.encode('1\n00:00:02,000 --> 00:00:04,000\nドラマの台詞\n'),
+    );
+    await tester.runAsync(
+      () async => app.musicLyrics.saveGenerated(
+        'uid-1',
+        format: 'srt',
+        raw: srt,
+        timeline: FushiLyrics.parse(srt, hint: 'srt'),
+      ),
+    );
+    await settle(tester);
+    expect(find.bySemanticsLabel('ドラマの台詞'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('曲内搜索：搜到的行点一下跳到那一行的时间', (WidgetTester tester) async {
+    await pumpPage(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_search')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('music_lyrics_search_field')),
+        matching: find.byType(EditableText),
+      ),
+      '沈む',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await settle(tester);
+    final Finder hit = find.byKey(
+      const ValueKey<String>('music_lyrics_search_result_0'),
+    );
+    expect(hit, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music_lyrics_search_result_1')),
+      findsNothing,
+    );
+    backend.log.clear();
+    await tester.tap(hit);
+    await settle(tester, rounds: 3);
+    expect(backend.log, contains('seek:4000'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
