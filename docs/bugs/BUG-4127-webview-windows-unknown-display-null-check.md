@@ -1,4 +1,4 @@
-## BUG-4126 · Windows WebView build 读 FlutterView.display 空断言（视图 displayId 不在引擎显示器表里）
+## BUG-4127 · Windows WebView build 读 FlutterView.display 空断言（视图 displayId 不在引擎显示器表里）
 - **报告**：2026-11-06（闪退报告整批分诊：`eZMo2PT6c_`，Windows 11 26100，3.3.0-debug.23855 的历史日志段）。
 - **真实性**：✅ 真 bug（非致命，不是那份报告里进程退出的原因）。日志 18:11:09–18:16:43 连续 5 次 `FlutterError: building Instance of 'StatefulElement'`，`Null check operator used on a null value`：
   - `#0 FlutterView.display (dart:ui/window.dart:107)` ← `#1 _CustomPlatformViewState.build (flutter_inappwebview_windows/src/in_app_webview/custom_platform_view.dart:583)`。
