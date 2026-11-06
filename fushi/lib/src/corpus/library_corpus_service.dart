@@ -20,7 +20,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/corpus/corpus_documents.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart'
-    show parseStoredMusicLyrics;
+    show parseStoredMusicLyrics, preferredMusicLyricRow;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -614,13 +614,17 @@ class LibraryCorpusService {
     String normalizer,
   ) async {
     final List<MusicLyricRow> lyricRows = await db.select(db.musicLyrics).get();
-    final Map<String, MusicLyricRow> chosen = <String, MusicLyricRow>{};
+    final Map<String, List<MusicLyricRow>> byTrack =
+        <String, List<MusicLyricRow>>{};
     for (final MusicLyricRow row in lyricRows) {
-      final MusicLyricRow? current = chosen[row.trackUid];
-      chosen[row.trackUid] = current == null
-          ? row
-          : _preferLyricRow(current, row);
+      byTrack.putIfAbsent(row.trackUid, () => <MusicLyricRow>[]).add(row);
     }
+    // 与歌词页同一个判据（[preferredMusicLyricRow]）：搜到的行就是点进去显示的那份。
+    final Map<String, MusicLyricRow> chosen = <String, MusicLyricRow>{
+      for (final MapEntry<String, List<MusicLyricRow>> e in byTrack.entries)
+        if (preferredMusicLyricRow(e.value) case final MusicLyricRow row)
+          e.key: row,
+    };
     final Map<String, String> titles = <String, String>{
       for (final MusicTrackRow t in await db.select(db.musicTracks).get())
         t.trackUid: t.title,
@@ -667,12 +671,6 @@ class LibraryCorpusService {
         }),
       );
     }
-  }
-
-  /// 一首歌有多个歌词来源时取播放器会选的那一个的近似：用户编辑过的优先，其次最近更新的。
-  static MusicLyricRow _preferLyricRow(MusicLyricRow a, MusicLyricRow b) {
-    if (a.isUserEdited != b.isUserEdited) return a.isUserEdited ? a : b;
-    return b.updatedAt > a.updatedAt ? b : a;
   }
 
   static Future<LyricTimeline?> _timelineOf(MusicLyricRow row) async {

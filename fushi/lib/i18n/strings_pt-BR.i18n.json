@@ -5801,6 +5801,7 @@
   "music_lyrics_reset_source": "Use automatic source",
   "music_lyrics_search_online": "Search online lyrics",
   "music_lyrics_show_cover": "Show cover",
+  "music_lyrics_source_asr": "Generated subtitles (on-device ASR)",
   "music_lyrics_title": "Lyrics",
   "music_mv_audio_library": "Library audio",
   "music_mv_audio_mv": "MV audio",

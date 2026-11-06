@@ -5801,6 +5801,7 @@
   "music_lyrics_reset_source": "恢复自动来源",
   "music_lyrics_search_online": "搜索在线歌词",
   "music_lyrics_show_cover": "显示封面",
+  "music_lyrics_source_asr": "生成的字幕（本机 ASR）",
   "music_lyrics_title": "歌词",
   "music_mv_audio_library": "曲库音轨",
   "music_mv_audio_mv": "MV 原声",

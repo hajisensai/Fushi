@@ -131,6 +131,29 @@ Future<LyricTimeline> parseStoredMusicLyrics(
 /// 负缓存行的 format。
 const String kMusicLyricsNoneFormat = 'none';
 
+/// 纯函数：一首歌的多条 `music_lyrics` 行里，播放器（[MusicLyricsService.resolve]）会用
+/// 哪一条——用户手动指定的最高，其次按 [MusicLyricsSource.automaticRank]，同档取最近
+/// 更新的；负缓存行不算。歌词页与「我库里的例句」/ 曲库歌词搜索共用这一个判据，搜到的
+/// 行与点进去显示的歌词是同一份。没有可用行返回 null。
+///
+/// 只看库里的行：sidecar / 内嵌在 resolve 里每次重读文件，库里这两档是上次读到的缓存。
+MusicLyricRow? preferredMusicLyricRow(Iterable<MusicLyricRow> rows) {
+  MusicLyricRow? best;
+  for (final MusicLyricRow r in rows) {
+    if (r.format == kMusicLyricsNoneFormat) continue;
+    if (best == null || _prefers(r, best)) best = r;
+  }
+  return best;
+}
+
+bool _prefers(MusicLyricRow a, MusicLyricRow b) {
+  if (a.isUserEdited != b.isUserEdited) return a.isUserEdited;
+  final int ra = MusicLyricsSource.automaticRank(a.source);
+  final int rb = MusicLyricsSource.automaticRank(b.source);
+  if (ra != rb) return ra < rb;
+  return a.updatedAt > b.updatedAt;
+}
+
 /// 解析歌词所需的曲目信息。
 class MusicLyricsTrackRef {
   const MusicLyricsTrackRef({
@@ -447,6 +470,16 @@ class MusicLyricsService {
           rawAss: _assRawOf(emb.format, emb.raw),
         );
       }
+    }
+
+    // ③'' 本机生成的字幕（[MusicLyricsSource.asr]，只读库、不联网）：广播剧 CD 等
+    // 没有文件自带歌词的曲目，生成后就用它；CUE 虚拟曲目也有（按曲目区间切好入库）。
+    final MusicLyricRow? generated = rowOf(MusicLyricsSource.asr);
+    if (generated != null && generated.format != kMusicLyricsNoneFormat) {
+      return MusicLyricsResolution(
+        timeline: await _timelineOf(db, generated, track.durationMs),
+        source: MusicLyricsSource.asr,
+      );
     }
 
     // ③' 插件自带歌词（逐字歌词等）：缓存（含负缓存）→ 问插件。插件报错不吞成
@@ -854,8 +887,11 @@ class MusicLyricsService {
         if (r.format == kMusicLyricsNoneFormat) continue;
         // 插件来源的标签是插件 id；平台曲目自带歌词与歌词插件搜到的是两种来源，界面按
         // [MusicLyricsCandidate.source] 再标出是哪一种。
+        // 生成字幕的标签由界面按来源换成本地化名（`musicLyricsCandidateTitle`）。
         final String? label = r.source == MusicLyricsSource.lrclib
             ? 'LRCLIB'
+            : r.source == MusicLyricsSource.asr
+            ? 'ASR'
             : MusicLyricsSource.pluginIdOf(r.source) ??
                   MusicLyricsSource.lyricsPluginIdOf(r.source);
         if (label == null) continue;
@@ -935,6 +971,27 @@ class MusicLyricsService {
       timeline: t.copyWith(offsetMs: 0),
       isUserEdited: true,
       offsetMs: candidate.timeline.offsetMs,
+    );
+  }
+
+  /// 写入本机生成的字幕（[MusicLyricsSource.asr] 行）：重生成覆盖原文与时间轴，保留
+  /// 用户调过的整首偏移。不碰 `user` 行——用户手动指定过别的来源时仍显示那份，界面
+  /// 「重置来源」后回到生成字幕。时间轴不带注音（ASR 转写本来就没有 ruby）。
+  Future<void> saveGenerated(
+    String trackUid, {
+    required String format,
+    required Uint8List raw,
+    required LyricTimeline timeline,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    await _upsert(
+      db,
+      trackUid: trackUid,
+      source: MusicLyricsSource.asr,
+      format: format,
+      raw: raw,
+      timeline: timeline.copyWith(source: MusicLyricsSource.asr, offsetMs: 0),
     );
   }
 

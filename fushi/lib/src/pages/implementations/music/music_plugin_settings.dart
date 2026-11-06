@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// （`lyrics` 能力）还是歌词插件按标题 / 艺人搜到的（`lyricsSearch` 能力）——同一个插件
 /// 两种能力都有时，两份候选靠这个区分。
 String musicLyricsCandidateTitle(String source, String label) {
+  if (source == MusicLyricsSource.asr) return t.music_lyrics_source_asr;
   if (MusicLyricsSource.isPlugin(source)) {
     return '$label · ${musicPluginCapabilityLabel('lyrics')}';
   }
