@@ -1660,16 +1660,6 @@ class ReaderFushiSource extends ReaderMediaSource {
   bool get enableTouchSwipeToClose =>
       readStoredPreference<bool>('enable_swipe_to_close') ?? true;
 
-  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
-  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。唯一消费点是
-  /// [popupDismissAnimationDuration]。
-  bool get popupDismissAnimation =>
-      getPreference<bool>(key: 'popup_dismiss_animation', defaultValue: true);
-
-  Future<void> setPopupDismissAnimation(bool value) async {
-    await setPreference<bool>(key: 'popup_dismiss_animation', value: value);
-  }
-
   /// 滚动（连续）模式下，查词弹窗开着时继续滚动正文（横排纵向滚、竖排横向滚）
   /// 即关闭弹窗，并把这次滚动交给正文。默认开启；只在滚动模式生效。
   bool get dismissPopupOnScroll =>

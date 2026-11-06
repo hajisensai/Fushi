@@ -1113,26 +1113,6 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: 0.6,
           ),
-          // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
-          // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
-          // 就得连带吃下纯黑白主题。与上面两项同属查词弹窗滑关行为，紧邻摆放。
-          // 默认 true = 保持既有手感；墨水屏模式下无论本开关如何都已归零。
-          SettingsSwitchItem(
-            id: 'reading_controls.popup_dismiss_animation',
-            title: t.popup_dismiss_animation,
-            subtitle: t.popup_dismiss_animation_hint,
-            icon: Icons.animation_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 16),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.popupDismissAnimation,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setPopupDismissAnimation(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: true,
-          ),
           // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
           // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
           // （与 page_columns 只在翻页模式可见同理）。默认开启。

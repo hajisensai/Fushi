@@ -6752,8 +6752,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Max. Wörterbuchspalten (auto-fill)",
   "popup_dictionary_max_columns_hint": "Füllt automatisch bis zu dieser Anzahl Wörterbuchspalten pro Zeile; schmalere Bildschirme verwenden weniger",
-  "popup_dismiss_animation": "Schließ-Animation des Popups",
-  "popup_dismiss_animation_hint": "Beim Schließen eines Nachschlage-Popups per Wischen eine Ausblend-Animation abspielen. Ausschalten, um sofort zu schließen (im E-Ink-Modus immer aus).",
   "popup_font_size_decrease": "Wörterbuchtext verkleinern",
   "popup_font_size_increase": "Wörterbuchtext vergrößern",
   "popup_history_back": "Zurück",

@@ -6752,8 +6752,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "辞書の最大カラム数（自動調整）",
   "popup_dictionary_max_columns_hint": "1行あたり最大このカラム数まで自動配置します。画面が狭い場合は少なくなります",
-  "popup_dismiss_animation": "ポップアップを閉じるアニメーション",
-  "popup_dismiss_animation_hint": "スワイプで検索ポップアップを閉じるとき、スライドアウトのアニメーションを再生します。オフにすると即座に閉じます（E-Ink モードでは常にオフ）。",
   "popup_font_size_decrease": "辞書テキストを小さく",
   "popup_font_size_increase": "辞書テキストを大きく",
   "popup_history_back": "戻る",

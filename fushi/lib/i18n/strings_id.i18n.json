@@ -6752,8 +6752,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Kolom kamus maks (isi otomatis)",
   "popup_dictionary_max_columns_hint": "Isi otomatis hingga sebanyak ini kolom kamus per baris; layar lebih sempit menggunakan lebih sedikit",
-  "popup_dismiss_animation": "Animasi penutupan popup",
-  "popup_dismiss_animation_hint": "Putar animasi geser keluar saat popup pencarian ditutup dengan menggeser. Matikan untuk menutup instan (selalu mati dalam mode e-ink).",
   "popup_font_size_decrease": "Perkecil teks kamus",
   "popup_font_size_increase": "Perbesar teks kamus",
   "popup_history_back": "Kembali",

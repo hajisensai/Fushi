@@ -6752,8 +6752,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Số cột từ điển tối đa (tự động điền)",
   "popup_dictionary_max_columns_hint": "Tự động điền tối đa số cột từ điển này mỗi hàng; màn hình hẹp hơn sẽ dùng ít cột hơn",
-  "popup_dismiss_animation": "Hiệu ứng đóng cửa sổ bật lên",
-  "popup_dismiss_animation_hint": "Phát hiệu ứng trượt ra khi cửa sổ tra từ được đóng bằng thao tác vuốt. Tắt để đóng ngay (luôn tắt ở chế độ e-ink).",
   "popup_font_size_decrease": "Thu nhỏ chữ từ điển",
   "popup_font_size_increase": "Phóng to chữ từ điển",
   "popup_history_back": "Quay lại",
