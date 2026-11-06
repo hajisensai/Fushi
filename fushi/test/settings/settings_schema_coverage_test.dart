@@ -287,6 +287,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
   'interconnect/Transcode video for peers':
       'test/sync/fushi_sync_server_transcode_test.dart',
+  // 「互联主机」AI 转发（host 侧许可，默认开）。写 prefsRepo（changed=true），生效点在
+  // **HTTP 端点**：sync server 每次处理 `/api/capabilities` 与 `/api/ai/relay/*` 都现读
+  // 该偏好，关着就不声明 aiRelayV1、转发请求被拒。harness 里没有起 server，探不到。
+  "interconnect/Let paired devices use this device's AI":
+      'packages/fushi_engine/test/ai/ai_relay_host_test.dart（关掉后能力位消失、'
+      '转发请求被拒）',
   // 游戏串流「允许远程启动」（host 侧许可，默认关，只在 Windows 出现）。写
   // prefsRepo（changed=true），生效点在 **HTTP 端点**：app 把
   // `prefsRepo.gameStreamRemoteLaunchEnabled` 实时注入成 host 的

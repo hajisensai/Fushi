@@ -580,7 +580,8 @@ void main() {
       );
 
       expect(bytes, isNull);
-      expect(service.entries.single.audioBackend, 'game_resource');
+      // 没配上原件就没有 game_resource 来源：backend 只在真拿到资源时才写。
+      expect(service.entries.single.audioBackend, isNull);
       expect(
         service.entries.single.fallbackReason,
         'paired_voice_not_found_fallback_disabled',
