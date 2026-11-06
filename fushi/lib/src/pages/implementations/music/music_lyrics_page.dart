@@ -1704,6 +1704,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   }
 
   Future<void> _openSourceActions() async {
+    final MusicPlayItem? item = _engine.current;
     final int? choice = await showFushiChoiceDialog<int>(
       context: _themedContext,
       title: t.music_lyrics_title,
@@ -1725,7 +1726,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_lyrics_reset_source,
             icon: FushiIcons.undo,
           ),
-        if (_lyrics != null)
+        // 「导出到文件旁边」只对本机文件：网络来源 / 插件 / 服务器曲目没有可写的旁边。
+        if (_lyrics != null &&
+            item != null &&
+            musicLyricsTrackRefOf(item).isLocalFile)
           FushiChoiceOption<int>(
             value: 3,
             label: t.music_lyrics_export_ttml,

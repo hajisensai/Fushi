@@ -316,6 +316,26 @@ void main() {
       expect((await wb.preview('t1')).blockedReason, MusicTagBlocked.cueTrack);
     });
 
+    test('网络音乐来源的曲目不能写回（QAondMh4M5）', () async {
+      final int source = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'nas',
+          mediaKind: 'music',
+          transport: const Value<String>('sftp'),
+          rootPath: '/m',
+          createdAt: 1,
+        ),
+      );
+      await db.customStatement(
+        'UPDATE music_tracks SET path = ?, source_id = ? WHERE track_uid = ?',
+        <Object?>['sftp://nas:22/m/song.flac', source, 't1'],
+      );
+      expect(
+        (await MusicTagWriteback(database: db).preview('t1')).blockedReason,
+        MusicTagBlocked.remoteFile,
+      );
+    });
+
     test('真文件：只写勾选的字段，没勾的上锁（native/fushi_music）', () async {
       final Directory tmp = Directory.systemTemp.createTempSync('wb');
       addTearDown(() => tmp.deleteSync(recursive: true));

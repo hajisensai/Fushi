@@ -6047,6 +6047,7 @@
   "music_tag_writeback_failed": "Could not write tags",
   "music_tag_writeback_hint": "Unchecked fields keep their current value and won't be suggested again.",
   "music_tag_writeback_no_changes": "File tags already match",
+  "music_tag_writeback_remote": "Tags can't be written back to a file on a network source",
   "music_tag_writeback_unreadable": "Could not read this file's tags",
   "music_theme_song_detect": "Find in episodes",
   "music_theme_song_detect_done": "Found in $hits episodes",

@@ -43,8 +43,15 @@ MusicRemoteMediaResolver? musicRemoteMediaResolver;
 bool musicItemResolvesStream(MusicPlayItem? item) {
   if (item == null) return false;
   if (isMusicPluginPath(item.path)) return true;
-  if (item.sourceId == null) return false;
-  final String lower = item.path.toLowerCase();
+  return isMusicRemoteSourceTrack(sourceId: item.sourceId, path: item.path);
+}
+
+/// 曲库曲目属于网络音乐来源（有 [sourceId]、[path] 是 `sftp://` / http(s) 条目地址）：
+/// 本机没有这个文件——响度测量、同目录 sidecar、标签回写这类按本地文件工作的功能跳过它。
+/// 服务器曲库曲目（http 但没有 sourceId）不算。
+bool isMusicRemoteSourceTrack({required int? sourceId, required String path}) {
+  if (sourceId == null) return false;
+  final String lower = path.toLowerCase();
   return lower.startsWith('sftp://') ||
       lower.startsWith('https://') ||
       lower.startsWith('http://');

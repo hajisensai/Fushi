@@ -6047,6 +6047,7 @@
   "music_tag_writeback_failed": "写入标签失败",
   "music_tag_writeback_hint": "未勾选的字段保持原值，以后不再提议。",
   "music_tag_writeback_no_changes": "文件标签已经一致",
+  "music_tag_writeback_remote": "网络来源上的文件不能回写标签",
   "music_tag_writeback_unreadable": "读不了这个文件的标签",
   "music_theme_song_detect": "识别出现位置",
   "music_theme_song_detect_done": "在 $hits 集中找到",

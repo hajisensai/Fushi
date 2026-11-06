@@ -298,6 +298,44 @@ void main() {
     );
   });
 
+  test('网络来源曲目（sftp:// / https://）不读内嵌、不导出到文件旁边（QAondMh4M5）', () async {
+    final List<String> readEmbeddedFor = <String>[];
+    final MusicLyricsService s = MusicLyricsService(
+      database: () => db,
+      lrclib: LrclibClient(transport: lrclib.call),
+      onlineEnabled: () => false,
+      readEmbedded: (String path, int? _) async {
+        readEmbeddedFor.add(path);
+        return embedded;
+      },
+      parse: _parse,
+      now: () => now,
+    );
+    final LyricTimeline t = FushiLyrics.parse(
+      utf8.encode('[00:01.00]沈むように'),
+      hint: 'lrc',
+    );
+    for (final String path in <String>[
+      'sftp://nas:22/music/夜に駆ける.flac',
+      'https://dav.test/music/夜に駆ける.flac',
+    ]) {
+      final MusicLyricsTrackRef remote = MusicLyricsTrackRef(
+        trackUid: 'r',
+        path: path,
+        title: '夜に駆ける',
+      );
+      expect(remote.isLocalFile, isFalse);
+      expect(remote.readsLocalLyrics, isFalse);
+      expect(await s.resolve(remote), isNull);
+      await expectLater(
+        s.exportBesideAudio(remote, t, 'ttml'),
+        throwsA(isA<FileSystemException>()),
+      );
+    }
+    expect(readEmbeddedFor, isEmpty);
+    expect(track().isLocalFile, isTrue);
+  });
+
   test('LyricTimeline → AudioCue：偏移与 CUE 起点换回音频时间、跳过和声', () {
     final LyricTimeline t = FushiLyrics.parse(
       File(
