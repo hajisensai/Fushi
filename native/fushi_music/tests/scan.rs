@@ -192,6 +192,23 @@ fn single_file_root_scans_only_that_file() {
     assert_eq!(by_file[0].path, twin.path);
     assert_eq!(by_file[0].track_uid, twin.track_uid);
 
+    // 单文件导入 M4B 同样按章节拆成虚拟曲目，与目录扫描逐条一致。
+    let book = Path::new(ROOT).join("Formats").join("chapters.m4b");
+    let chapters = tracks(&scan_root(book.to_str().unwrap(), 0, None));
+    let in_dir: Vec<&TrackRecord> = whole
+        .iter()
+        .filter(|t| rel(&t.path) == "Formats/chapters.m4b")
+        .collect();
+    assert_eq!(chapters.len(), 3);
+    assert_eq!(
+        chapters.iter().map(line).collect::<Vec<_>>(),
+        in_dir.iter().map(|t| line(t)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        chapters.iter().map(|t| t.cue_start_ms).collect::<Vec<_>>(),
+        vec![Some(0), Some(1000), Some(2500)]
+    );
+
     // 不是曲库认的音频：空扫描，不报错。
     let cover = Path::new(ROOT).join("Album A").join("cover.png");
     let none = scan_root(cover.to_str().unwrap(), 0, None);

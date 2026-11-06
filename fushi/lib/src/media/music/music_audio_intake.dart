@@ -187,7 +187,9 @@ class MusicAudioIntake {
 
   /// 视频来源 [owner]（本地）扫描时扫到的纯音频 [audioPaths] 交给音乐库。
   /// [videoMediaDirs] 是本次被视频库认领的媒体所在目录（视频 / 播放列表文件的父目录、
-  /// 原盘根），用来判「与视频同目录」与「往上爬的边界」。
+  /// 原盘根），用来判「与视频同目录」与「往上爬的边界」；[videoFilePaths] 是其中的视频
+  /// 文件本身，用来认子目录里的外挂音轨（`Show/Audio/ep01.jpn.mka`，见
+  /// `music_audio_roots.dart` 规则 2b）。
   ///
   /// - 规划（[planMusicRootsForVideoSourceAudio]）：别的音乐来源（手动、别的视频来源
   ///   登记的）算覆盖；本视频来源自己登记过的不算（否则规划永远是空，也就没法对账）；
@@ -202,6 +204,7 @@ class MusicAudioIntake {
     required SourceLibraryRow owner,
     required List<String> audioPaths,
     required Iterable<String> videoMediaDirs,
+    Iterable<String> videoFilePaths = const <String>[],
     bool reconcile = false,
     bool oneShot = false,
   }) => _serial(
@@ -209,6 +212,7 @@ class MusicAudioIntake {
       owner: owner,
       audioPaths: audioPaths,
       videoMediaDirs: videoMediaDirs.toList(),
+      videoFilePaths: videoFilePaths.toList(),
       reconcile: reconcile && !oneShot,
       oneShot: oneShot,
     ),
@@ -218,6 +222,7 @@ class MusicAudioIntake {
     required SourceLibraryRow owner,
     required List<String> audioPaths,
     required List<String> videoMediaDirs,
+    required List<String> videoFilePaths,
     required bool reconcile,
     required bool oneShot,
   }) async {
@@ -238,6 +243,7 @@ class MusicAudioIntake {
       videoRoot: owner.rootPath,
       audioPaths: audio,
       videoMediaDirs: videoMediaDirs,
+      videoFilePaths: videoFilePaths,
       musicSources: <MusicSourceRoot>[
         for (final SourceLibraryRow s in music)
           if (s.autoOwnerSourceId != owner.id)
@@ -299,7 +305,10 @@ class MusicAudioIntake {
       registeredRoots: registered,
       retiredSourceIds: retired,
       updatedSourceIds: updated,
-      skippedPaths: plan.besideVideoAudioPaths,
+      skippedPaths: <String>[
+        ...plan.besideVideoAudioPaths,
+        ...plan.videoTrackAudioPaths,
+      ],
       errors: errors,
     );
   }

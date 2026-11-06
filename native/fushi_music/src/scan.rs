@@ -309,12 +309,7 @@ impl Scanner {
                     Ok(m) => m,
                     Err(message) => return vec![Record::Error { path: ps, message }],
                 };
-                if let Some(tracks) = embedded_cue_tracks(&path, &meta) {
-                    let sheet = meta
-                        .embedded_cuesheet
-                        .as_deref()
-                        .and_then(cue::parse)
-                        .unwrap_or_default();
+                if let Some((sheet, tracks)) = embedded_split_tracks(&path, &meta) {
                     return tracks
                         .iter()
                         .map(|t| {
@@ -432,20 +427,63 @@ fn resolve_cue_audio(name: &str, files: &[PathBuf]) -> Option<PathBuf> {
         .cloned()
 }
 
-/// FLAC 内嵌 CUE：先认 Vorbis 注释里的 `CUESHEET` 文本（有标题），没有再读元数据块里的
-/// 二进制 CUESHEET（只有起点）。只有一首、从 0 开始的不算拆轨（那就是普通单曲）。
-fn embedded_cue_tracks(path: &Path, meta: &FileMeta) -> Option<Vec<CueTrack>> {
+/// 一个文件自带的分轨信息拆成虚拟曲目（与外置 `.cue` 同一种记录：`cue_start_ms` /
+/// `cue_end_ms`，播放端按 EDL 分段播）。
+///
+/// - FLAC 内嵌 CUE：先认 Vorbis 注释里的 `CUESHEET` 文本（有标题），没有再读元数据块里
+///   的二进制 CUESHEET（只有起点）。只有一首、从 0 开始的不算拆轨（那就是普通单曲）。
+/// - M4B 章节（`tags::FileMeta::mp4_chapters`，只有 `.m4b` 会填）：两章以上才拆，每章
+///   一首，书名作专辑（没有专辑标签取标题，再没有取文件名）。起点落在曲长之外的章节
+///   丢掉（坏章节表），剩不到两章就按整文件一首。
+fn embedded_split_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<CueTrack>)> {
+    if !meta.mp4_chapters.is_empty() {
+        return m4b_chapter_tracks(path, meta);
+    }
     if meta.codec.as_deref() != Some("flac") {
         return None;
     }
-    let tracks = match meta.embedded_cuesheet.as_deref().and_then(cue::parse) {
-        Some(sheet) => sheet.files.into_iter().next().map(|f| f.tracks),
+    let sheet = meta.embedded_cuesheet.as_deref().and_then(cue::parse);
+    let tracks = match &sheet {
+        Some(sheet) => sheet.files.first().map(|f| f.tracks.clone()),
         None => read_flac_head(path).and_then(|h| cue::parse_flac_cuesheet_block(&h)),
     }?;
     if tracks.len() < 2 && tracks.first().map(|t| t.start_ms) == Some(0) {
         return None;
     }
-    Some(tracks)
+    Some((sheet.unwrap_or_default(), tracks))
+}
+
+fn m4b_chapter_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<CueTrack>)> {
+    let starts: Vec<&crate::mp4_chapters::Mp4Chapter> = meta
+        .mp4_chapters
+        .iter()
+        .filter(|c| c.start_ms >= 0 && meta.duration_ms.is_none_or(|d| c.start_ms < d))
+        .collect();
+    if starts.len() < 2 {
+        return None;
+    }
+    let tracks: Vec<CueTrack> = starts
+        .iter()
+        .enumerate()
+        .map(|(i, c)| CueTrack {
+            number: i as u32 + 1,
+            title: c.title.clone(),
+            // 第一章从文件头播：章节表首章不从 0 开始时，前面那段归第一章，不丢。
+            start_ms: if i == 0 { 0 } else { c.start_ms },
+            end_ms: starts.get(i + 1).map(|n| n.start_ms),
+            ..Default::default()
+        })
+        .collect();
+    let sheet = CueSheet {
+        title: meta
+            .album
+            .clone()
+            .or_else(|| meta.title.clone())
+            .or_else(|| Some(file_stem(path))),
+        performer: meta.album_artist.clone(),
+        ..Default::default()
+    };
+    Some((sheet, tracks))
 }
 
 fn read_flac_head(path: &Path) -> Option<Vec<u8>> {

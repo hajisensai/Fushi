@@ -9,6 +9,10 @@
 /// 2. **与视频同目录**：A 直接装着视频库媒体 → 不收。这类音频几乎都是那集视频的外挂
 ///    音轨 / 评论音轨（`ep01.mkv` 旁的 `ep01.flac`），不是专辑；而且音乐扫描认 `.mp4`，
 ///    在这样的目录登记音乐来源会把旁边的视频当曲目收进去。
+/// 2b. **外挂音轨子目录**：A 是某个视频所在目录的直接子目录（`Show/Audio/`），且文件名
+///    主干 = 那个视频的主干、或以「主干 + `.`」开头（`ep01.mkv` ↔ `Audio/ep01.jpn.mka`，
+///    与同目录外挂音轨同一命名约定）→ 不收。只看直接子目录、且纯数字主干（`01.mkv`）不
+///    参与匹配：`Show/CDs/01.flac` 这类专辑曲目与剧集同号很常见，不能被当成外挂音轨。
 /// 3. **视频在子目录**：A 本身没有视频、但子树里有（`Show/op.flac` + `Show/S1/ep01.mkv`）
 ///    → 登记 A，**不递归**：只收 A 下面的音频，不下钻到视频目录（递归来源还会把子树
 ///    里的 BD / DVD 原盘登记成音乐专辑）。
@@ -35,6 +39,7 @@ class MusicAudioRootPlan {
     required this.roots,
     required this.coveredAudioPaths,
     required this.besideVideoAudioPaths,
+    this.videoTrackAudioPaths = const <String>[],
   });
 
   /// 要新登记的音乐来源（按路径排序，去重，互不包含）。
@@ -45,14 +50,19 @@ class MusicAudioRootPlan {
 
   /// 与视频同目录、不收的音频（规则 2）。
   final List<String> besideVideoAudioPaths;
+
+  /// 视频所在目录的子目录里、与视频同名主干的外挂音轨，不收（规则 2b）。
+  final List<String> videoTrackAudioPaths;
 }
 
-/// 见文件头。[context] 默认宿主平台的 `path` 语义（Windows 大小写不敏感）。
+/// 见文件头。[videoFilePaths] 是视频库认领的视频文件本身（规则 2b 按文件名主干配外挂
+/// 音轨）；[context] 默认宿主平台的 `path` 语义（Windows 大小写不敏感）。
 MusicAudioRootPlan planMusicRootsForVideoSourceAudio({
   required String videoRoot,
   required Iterable<String> audioPaths,
   required Iterable<String> videoMediaDirs,
   required Iterable<MusicSourceRoot> musicSources,
+  Iterable<String> videoFilePaths = const <String>[],
   p.Context? context,
 }) {
   final p.Context ctx = context ?? p.context;
@@ -87,6 +97,22 @@ MusicAudioRootPlan planMusicRootsForVideoSourceAudio({
     addChain(s.rootPath);
   }
 
+  // 视频所在目录 → 其中视频的文件名主干（小写；纯数字主干不参与，见规则 2b）。
+  final Map<String, Set<String>> videoStemsByDir = <String, Set<String>>{};
+  for (final String video in videoFilePaths) {
+    final String stem = ctx.basenameWithoutExtension(video).toLowerCase();
+    if (stem.isEmpty || RegExp(r'^\d+$').hasMatch(stem)) continue;
+    videoStemsByDir
+        .putIfAbsent(key(ctx.dirname(ctx.normalize(video))), () => <String>{})
+        .add(stem);
+  }
+  bool isVideoTrack(String audio, String dir) {
+    final Set<String>? stems = videoStemsByDir[key(ctx.dirname(dir))];
+    if (stems == null) return false;
+    final String name = ctx.basenameWithoutExtension(audio).toLowerCase();
+    return stems.any((String v) => name == v || name.startsWith('$v.'));
+  }
+
   bool covered(String dir) => sources.any(
     (MusicSourceRoot s) =>
         ctx.equals(s.rootPath, dir) ||
@@ -95,6 +121,7 @@ MusicAudioRootPlan planMusicRootsForVideoSourceAudio({
 
   final List<String> coveredAudio = <String>[];
   final List<String> besideVideo = <String>[];
+  final List<String> videoTracks = <String>[];
   final Map<String, PlannedMusicRoot> planned = <String, PlannedMusicRoot>{};
   for (final String audio in audioPaths) {
     final String dir = ctx.dirname(ctx.normalize(audio));
@@ -104,6 +131,10 @@ MusicAudioRootPlan planMusicRootsForVideoSourceAudio({
     }
     if (directVideoDirs.contains(key(dir))) {
       besideVideo.add(audio);
+      continue;
+    }
+    if (isVideoTrack(audio, dir)) {
+      videoTracks.add(audio);
       continue;
     }
     if (blockers.contains(key(dir))) {
@@ -130,6 +161,7 @@ MusicAudioRootPlan planMusicRootsForVideoSourceAudio({
     roots: roots,
     coveredAudioPaths: coveredAudio,
     besideVideoAudioPaths: besideVideo,
+    videoTrackAudioPaths: videoTracks,
   );
 }
 

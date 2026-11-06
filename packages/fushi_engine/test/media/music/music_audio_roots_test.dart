@@ -10,11 +10,13 @@ void main() {
     String root = '/v',
     required List<String> audio,
     List<String> videoDirs = const <String>[],
+    List<String> videos = const <String>[],
     List<MusicSourceRoot> music = const <MusicSourceRoot>[],
   }) => planMusicRootsForVideoSourceAudio(
     videoRoot: root,
     audioPaths: audio,
-    videoMediaDirs: videoDirs,
+    videoMediaDirs: <String>[...videoDirs, ...videos.map(ctx.dirname)],
+    videoFilePaths: videos,
     musicSources: music,
     context: ctx,
   );
@@ -49,6 +51,40 @@ void main() {
     );
     expect(r.roots, isEmpty);
     expect(r.besideVideoAudioPaths, <String>['/v/Show/ep01.flac']);
+  });
+
+  test('dub / commentary tracks in an Audio/ subfolder are not music', () {
+    // 字幕组常见的外挂音轨布局：`ep01.mkv` 旁的 `Audio/ep01.<语言或用途>.mka`。
+    final MusicAudioRootPlan r = plan(
+      audio: <String>[
+        '/v/Show/Audio/[Grp] Show - 01.jpn.mka',
+        '/v/Show/Audio/[Grp] Show - 02.Commentary.MKA',
+        '/v/Show/Audio/[grp] show - 03.mka',
+      ],
+      videos: <String>[
+        '/v/Show/[Grp] Show - 01.mkv',
+        '/v/Show/[Grp] Show - 02.mkv',
+        '/v/Show/[Grp] Show - 03.mkv',
+      ],
+    );
+    expect(r.roots, isEmpty);
+    expect(r.videoTrackAudioPaths, hasLength(3));
+  });
+
+  test('album tracks numbered like episodes are still music', () {
+    // 纯数字主干不参与外挂音轨匹配；两层以下（CDs/<专辑>/）也不看。
+    final MusicAudioRootPlan r = plan(
+      audio: <String>[
+        '/v/Show/CDs/01.flac',
+        '/v/Show/CDs/OST/[Grp] Show - 01.flac',
+        '/v/Show/CDs/02 Title.flac',
+      ],
+      videos: <String>['/v/Show/01.mkv', '/v/Show/[Grp] Show - 01.mkv'],
+    );
+    expect(r.videoTrackAudioPaths, isEmpty);
+    expect(r.roots, <PlannedMusicRoot>[
+      (rootPath: '/v/Show/CDs', recursive: true),
+    ]);
   });
 
   test('audio in a folder whose subfolders hold videos: non-recursive', () {

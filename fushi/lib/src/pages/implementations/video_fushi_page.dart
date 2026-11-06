@@ -86,6 +86,7 @@ import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart' show FushiToastCapsule;
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
@@ -12155,30 +12156,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     debugPrint(
       '[fushi-drop] [video-playback] classified '
       'subtitles=${files.subtitles.length} audios=${files.audios.length} '
+      'pureAudios=${files.pureAudios.length} '
       'videos=${files.videos.length} books=${files.books.length} '
       'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length}',
     );
     final String? sub = firstSubtitlePath(paths);
-    if (sub != null) {
-      unawaited(_importExternalSubtitle(controller, sub));
-      return;
-    }
-    if (files.subtitles.isNotEmpty) {
-      debugPrint('[fushi-drop] [video-playback] intent=unsupportedSubtitle');
-      _showOsd(
-        t.video_subtitle_import_unsupported,
-        severity: ToastSeverity.error,
-      );
-      return;
-    }
-    if (files.audios.isNotEmpty && files.videos.isEmpty) {
-      debugPrint('[fushi-drop] [video-playback] intent=unsupportedAudio');
-      _showOsd(t.video_drop_audio_unsupported, severity: ToastSeverity.error);
-      return;
-    }
-    if (files.hasAny) {
-      debugPrint('[fushi-drop] [video-playback] intent=unsupportedSurface');
-      _showOsd(t.video_drop_subtitle_only, severity: ToastSeverity.error);
+    final PlaybackDropIntent intent = decidePlaybackDropIntent(
+      files: files,
+      hasImportableSubtitle: sub != null,
+    );
+    debugPrint('[fushi-drop] [video-playback] intent=${intent.name}');
+    switch (intent) {
+      case PlaybackDropIntent.importSubtitle:
+        unawaited(_importExternalSubtitle(controller, sub!));
+      case PlaybackDropIntent.unsupportedSubtitle:
+        _showOsd(
+          t.video_subtitle_import_unsupported,
+          severity: ToastSeverity.error,
+        );
+      case PlaybackDropIntent.unsupportedAudio:
+        _showOsd(t.video_drop_audio_unsupported, severity: ToastSeverity.error);
+      case PlaybackDropIntent.unsupportedSurface:
+        _showOsd(t.video_drop_subtitle_only, severity: ToastSeverity.error);
+      case PlaybackDropIntent.ignore:
+        break;
     }
   }
 

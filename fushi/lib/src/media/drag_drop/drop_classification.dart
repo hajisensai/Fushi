@@ -132,7 +132,10 @@ Set<String> dragImageArchiveProbeExtensionsFor({required bool preferManga}) =>
 /// Superseded by the supported set above; RAR/CBR/CB7 no longer enter here.
 const Set<String> kDragUnsupportedMangaExtensions = <String>{};
 
-/// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）。
+/// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）：
+/// 这是**有声书素材**的口径（书架挂书卡、`.mp4` 也算）。「是不是纯音频、要不要交给音乐
+/// 库」不看本表，看 [DroppedFiles.pureAudios]（[isAudioOnlyMediaPath]，范围更宽：有声书
+/// 播放器 just_audio 在 Android 上解不了的 ape / dsf / tta / wv / mka 也算纯音频）。
 const Set<String> kDragAudioExtensions = <String>{
   'mp3',
   'm4a',
@@ -173,6 +176,7 @@ class DroppedFiles {
     this.directories = const <String>[],
     this.torrents = const <String>[],
     this.blurayDiscs = const <String>[],
+    this.pureAudios = const <String>[],
   });
 
   final List<String> books;
@@ -242,11 +246,10 @@ class DroppedFiles {
   /// 拖入的纯音频（[isAudioOnlyMediaPath]；`.mp4` 首先是视频，不算）。
   ///
   /// 视频页拖入时交给音乐库（`MusicAudioIntake.importAudioFiles`，反馈
-  /// QAondMh4M5），不进视频库；书架表面仍把音频当有声书素材（挂到书卡），不走这里。
-  List<String> get pureAudios => <String>[
-    for (final String audio in audios)
-      if (isAudioOnlyMediaPath(audio)) audio,
-  ];
+  /// QAondMh4M5），不进视频库；书架表面仍把音频当有声书素材（挂到书卡，只看
+  /// [audios]），不走这里。与 [audios] 交叠但不是它的子集：`.ape` / `.dsf` 这类有声书
+  /// 播放器放不了的格式只在这里。
+  final List<String> pureAudios;
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
@@ -254,6 +257,7 @@ class DroppedFiles {
       videos.isNotEmpty ||
       subtitles.isNotEmpty ||
       audios.isNotEmpty ||
+      pureAudios.isNotEmpty ||
       playlists.isNotEmpty ||
       dictionaries.isNotEmpty ||
       urls.isNotEmpty ||
@@ -316,6 +320,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> videos = <String>[];
   final List<String> subtitles = <String>[];
   final List<String> audios = <String>[];
+  final List<String> pureAudios = <String>[];
   final List<String> playlists = <String>[];
   final List<String> dictionaries = <String>[];
   final List<String> urls = <String>[];
@@ -388,6 +393,10 @@ DroppedFiles classifyDroppedFiles(
       audios.add(path);
       matched = true;
     }
+    if (isAudioOnlyMediaPath(path)) {
+      pureAudios.add(path);
+      matched = true;
+    }
     if (kDragDictionaryExtensions.contains(ext)) {
       dictionaries.add(path);
       matched = true;
@@ -413,6 +422,7 @@ DroppedFiles classifyDroppedFiles(
     torrents: torrents,
     unknown: unknown,
     blurayDiscs: blurayDiscs.toList(),
+    pureAudios: pureAudios,
   );
 }
 

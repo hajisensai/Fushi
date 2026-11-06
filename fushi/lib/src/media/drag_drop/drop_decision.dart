@@ -141,3 +141,37 @@ DropIntent decideDropIntent({
       return DropIntent.ignore;
   }
 }
+
+/// 视频**播放页**（正在播某一集）拖放的意图。和库页的 [DropIntent] 分开：播放页只认
+/// 「给当前视频挂字幕」，其余一律就地提示，不建库、不要求拖到卡片。
+enum PlaybackDropIntent {
+  /// 受支持的字幕 → 导入到当前播放的视频。
+  importSubtitle,
+
+  /// 认得是字幕但格式导不了。
+  unsupportedSubtitle,
+
+  /// 只拖了音频（有声书表 [DroppedFiles.audios] 或纯音频 [DroppedFiles.pureAudios]，
+  /// 后者含 `.ape` / `.mka` / `.ac3` 这类只在音乐库认的格式）→ 「不支持音频」。
+  unsupportedAudio,
+
+  /// 其余认得出的文件 → 「只支持字幕」。
+  unsupportedSurface,
+  ignore,
+}
+
+/// 播放页拖放决策。纯函数。[hasImportableSubtitle] = 拖入路径里有当前播放器能导的字幕
+/// （`firstSubtitlePath`）。
+PlaybackDropIntent decidePlaybackDropIntent({
+  required DroppedFiles files,
+  required bool hasImportableSubtitle,
+}) {
+  if (hasImportableSubtitle) return PlaybackDropIntent.importSubtitle;
+  if (files.subtitles.isNotEmpty) return PlaybackDropIntent.unsupportedSubtitle;
+  if ((files.audios.isNotEmpty || files.pureAudios.isNotEmpty) &&
+      files.videos.isEmpty) {
+    return PlaybackDropIntent.unsupportedAudio;
+  }
+  if (files.hasAny) return PlaybackDropIntent.unsupportedSurface;
+  return PlaybackDropIntent.ignore;
+}
