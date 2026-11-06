@@ -21,7 +21,7 @@
 /// 出派生输入（笔记 guid、笔记类型 ankiNum、字段 / 模板 ankiNum 或名字、牌组全名、卡片的笔记 + 模板 + 序号）且用
 /// 旧 uid 验算吻合的，用同一条规则换成新 uid 算；还原不出来的用确定性兜底 `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。
 /// 复习日志：Anki 导入的原日志不看旧 ID、按新卡片套导入规则，其余（原生日志、undo、重放副本）按旧 ID 兜底（第 7 步，
-/// BUG-4217）。
+/// BUG-4217）；undo 撤销的日志本机还没收到时整个并入暂缓（[SrsProfileMergeDeferred]），等同步送到再并。
 /// 修改记录的写入者按 `merged-uuidV5(NS, profile-merge/<newUid>/writer/<最初的写入者>)~<最初的写入者>` 一一改名
 /// （dot / 因果上下文 / HLC 里的写入者一起改；[_mergedWriterNames]），记录之间的支配关系原样保留，修改记录 ID
 /// （由 dot 派生）也就与旧 profile 不相交。
@@ -137,6 +137,37 @@ class SrsProfileMergeResult {
   /// 复习日志里沿用目标已有 ID 的条数：目标里已有同一次复习（同卡片 / 种类 / 评分 / 发生时刻 / HLC），只是 ID 与
   /// 规则 / 兜底算出的不同（例如目标里是原生日志的原 UUIDv7）。
   final int aliasedIds;
+}
+
+/// 并入**暂缓**（不是失败）：旧 profile 里有 undo 撤销的日志既不在旧 profile 里、按旧 ID 兜底算出的 ID 也不在目标里
+/// （同步顺序不保证，undo 先到、它的目标还没到，BUG-4217）。这时这条 undo 的 `revokes` 只能按旧 ID 兜底，而有那条日志
+/// 的设备会按导入规则（`anki-revlog/<id>` / `anki-anchor/<时刻>`）或目标沿用（[_IdMap.alias]）给它另一个 ID——同一条
+/// undo（同 ID）两份内容，[_applyMissing] 按 ID 先到先得，被撤销的复习可能复活；读侧按内容身份合并（BUG-4218）也帮不上，
+/// 因为兜底 ID 下根本没有日志。所以在**任何写入之前**（第一次落库前；并入标记已写、媒体可能已按内容寻址拷过）中止，
+/// 旧 profile 一行不动、标记留着；调用方（[SrsDbProfileLinker] 的 `_resumePendingMerges`）跳过这次并入、按当前 uid 继续
+/// 同步，等同步把那条日志送进旧 profile（或把它按兜底 ID 并好的那份送进目标）后下一轮重跑。
+///
+/// 代价：那条日志永远不来（被撤销的日志所在的段已被清掉 / 来自别的集合）时，并入一直暂缓，这台设备一直留在旧 uid
+/// 上同步（不丢数据、同步不停，但两边的复习数据不互通），见 docs/bugs/BUG-4217。
+class SrsProfileMergeDeferred extends StateError {
+  SrsProfileMergeDeferred({
+    required this.oldUid,
+    required this.newUid,
+    required this.missingRevoked,
+  }) : super(
+         'profile merge $oldUid -> $newUid deferred: '
+         '${missingRevoked.length} log(s) revoked by an undo are neither in '
+         'the old profile nor in the target yet '
+         '(${missingRevoked.take(3).join(', ')}'
+         '${missingRevoked.length > 3 ? ', ...' : ''}); nothing written, '
+         'retried after sync delivers them',
+       );
+
+  final String oldUid;
+  final String newUid;
+
+  /// 被撤销、还没收到的日志的旧 ID（排序后）。
+  final List<String> missingRevoked;
 }
 
 /// 还没做完的并入（进程在中途退出）。调用方启动时对每一项用同样的参数再调一次 [srsMergeProfileUid]。
@@ -588,13 +619,15 @@ Future<_MergePlan> _plan(
   //       HLC、extra 记了 replayOf——它不是那次导入；套上规则就和已被 undo 撤销的原日志撞成同一个 ID，并入只留一份、
   //       undo 指过来，这次复习整条消失。
   //    b. 其余日志（原生日志、undo、重放副本）与 undo 的目标、不认识的事件一律按旧 ID 兜底
-  //       `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。**不能**按日志内容派生：undo 的目标不在本机旧 profile 里时只能
-  //       按旧 ID 兜底，而有这条日志的设备会按内容算出另一个 ID——同一条 undo（同 ID）在两台设备上撤销的是两个不同的
-  //       ID，[_applyMissing] 按 ID 跳过、先到先得，被撤销的复习可能复活、各设备分歧。按旧 ID 兜底时 undo 的 revokes
-  //       在每台设备上都一样。代价：链式合并 A→B→C 与直接合并 A→C 给同一条原生日志两个 ID，由读侧按内容身份合并成
-  //       一组（native/fushi_fsrs/src/history.rs `EventKey`，BUG-4218），撤销任一份即整组撤销。
+  //       `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。**不能**按日志内容派生：那样 undo 的目标不在本机旧 profile 里的
+  //       设备与有这条日志的设备算出两个 ID。代价：链式合并 A→B→C 与直接合并 A→C 给同一条原生日志两个 ID，由读侧按
+  //       内容身份合并成一组（native/fushi_fsrs/src/history.rs `EventKey`，BUG-4218），撤销任一份即整组撤销。
   //    c. 目标里已有同一条复习（映射后的卡片 + 种类 + 评分 + 发生时刻 + HLC 都相同）但 ID 与 a / b 算出的不同 → 沿用目标
   //       里的 ID（与修改记录的 [_Writers.alias] 同一思路，BUG-4011）；目标里同一身份有多条时取 ID 最小的那条。
+  //    d. undo 的 revokes 只有在**本机看得到它撤销的那条日志**时才与别的设备一致：a / c 都按日志内容（导入身份、目标里
+  //       的同一身份）给 ID，看不到内容就只能落到 b 的兜底，而有这条日志的设备给的是规则 ID / 目标 ID。所以 undo 的目标
+  //       既不在旧 profile 里、兜底 ID 也不在目标里（没有别的设备按兜底并过它）时整个并入暂缓
+  //       （[SrsProfileMergeDeferred]，在任何落库之前），等同步把它送到再重跑。
   //    a / b 之后两条旧日志映射到同一个新 ID 时只认「本来就是同一次复习」，见第 9 步。
   bool replayed(SrsReviewLog l) => l.extra.containsKey(srsReplayOfLogExtraKey);
   final List<SrsReviewLog> anki = <SrsReviewLog>[
@@ -637,6 +670,34 @@ Future<_MergePlan> _plan(
   for (final SrsReviewLog l in logs) {
     final String? existing = targetLogs[_logIdentity(ids[l.cardId]!, l)];
     if (existing != null) ids.alias(l.id, existing);
+  }
+  final Set<String> oldLogIds = <String>{
+    for (final SrsReviewLog l in logs) l.id.toLowerCase(),
+  };
+  final List<String> dangling = <String>{
+    for (final SrsReviewLog l in logs)
+      if (l.revokesId case final String r
+          when !oldLogIds.contains(r.toLowerCase()))
+        r.toLowerCase(),
+  }.toList()..sort();
+  if (dangling.isNotEmpty) {
+    final Set<String> landed = <String>{
+      for (final String id in await _presentIn(db, newUid, <String>[
+        for (final String r in dangling) ids[r]!,
+      ]))
+        id.toLowerCase(),
+    };
+    final List<String> missing = <String>[
+      for (final String r in dangling)
+        if (!landed.contains(ids[r]!.toLowerCase())) r,
+    ];
+    if (missing.isNotEmpty) {
+      throw SrsProfileMergeDeferred(
+        oldUid: oldUid,
+        newUid: newUid,
+        missingRevoked: missing,
+      );
+    }
   }
 
   // 8. 修改记录的写入者一一改名（合成的标签行写入者带笔记 ID，按 ID 映射改写）；目标集合里已经有同一批修改记录的

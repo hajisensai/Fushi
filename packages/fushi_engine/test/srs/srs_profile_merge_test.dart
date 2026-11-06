@@ -112,6 +112,9 @@ const String _kChainR1 = '019a3a0b-0000-7000-8000-0000000000f1';
 const String _kChainR2 = '019a3a0b-0000-7000-8000-0000000000f2';
 const String _kChainUndo = '019a3a0b-0000-7000-8000-0000000000f3';
 
+/// [seededChain] 的起始时刻（r2 在 +20、撤销它的 undo 在 +30）。
+const int _kChainT0 = 1792700000000;
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   late Directory root;
@@ -832,6 +835,27 @@ void main() {
     );
   });
 
+  // [seededChain] 的原生日志：评分（[revokes] = null）或撤销 [revokes] 的 undo。
+  SrsReviewLog chainLog(
+    String uid,
+    String card,
+    String id,
+    int at, {
+    String? revokes,
+  }) => SrsReviewLog(
+    id: id,
+    profileUid: uid,
+    cardId: card,
+    kind: revokes == null ? SrsLogKind.review : SrsLogKind.undo,
+    rating: revokes == null ? 3 : null,
+    revokesId: revokes,
+    hlc: Hlc(at, 0, 'phone#1'),
+    occurredAt: at,
+    timeSource: SrsTimeSource.wall,
+    origin: SrsLogOrigin.fushi,
+    reviewType: revokes == null ? 'review' : SrsReviewType.manual,
+  );
+
   // 一个旧 profile 里一张卡的三条原生日志（评分 r1、评分 r2、撤销 r2 的 undo）+ 三条同一写入者的修改记录。
   // [withRevoked] = false：r2 还没同步到这台设备，只有撤销它的 undo（同步顺序不保证）。
   Future<_Device> seededChain(
@@ -839,7 +863,7 @@ void main() {
     bool withRevoked = true,
   }) async {
     const String guid = 'anki-guid-chain';
-    const int t0 = 1792700000000;
+    const int t0 = _kChainT0;
     final _Device d = await _Device.open(deviceId);
     final String uid = d.store.profileUid;
     final String note = await d.store.createNote(
@@ -851,19 +875,8 @@ void main() {
       guid: guid,
     );
     final String card = (await d.store.cardsOfNote(note)).single.id;
-    SrsReviewLog native(String id, int at, {String? revokes}) => SrsReviewLog(
-      id: id,
-      profileUid: uid,
-      cardId: card,
-      kind: revokes == null ? SrsLogKind.review : SrsLogKind.undo,
-      rating: revokes == null ? 3 : null,
-      revokesId: revokes,
-      hlc: Hlc(at, 0, 'phone#1'),
-      occurredAt: at,
-      timeSource: SrsTimeSource.wall,
-      origin: SrsLogOrigin.fushi,
-      reviewType: revokes == null ? 'review' : SrsReviewType.manual,
-    );
+    SrsReviewLog native(String id, int at, {String? revokes}) =>
+        chainLog(uid, card, id, at, revokes: revokes);
     await d.store.applyRemote(<SrsEvent>[
       for (int i = 1; i <= 3; i++)
         SrsEditEvent(
@@ -958,6 +971,29 @@ void main() {
     expect(effectiveShape(h1), effectiveShape(h2));
     expect(h1.state, h2.state);
 
+    // 先只收到链式那份 r2（撤销它的 undo 还没到）：它与直接那份 r2 是同一次复习，读侧按内容身份归成一组，直接那份
+    // 已被撤销，整组都算撤销——r2 不会借链式那份 ID 复活。
+    final SrsReviewLog chainedR2 = h1.all.singleWhere(
+      (SrsReviewLog l) =>
+          l.kind == SrsLogKind.review && h1.revoked.contains(l.id),
+    );
+    expect(chainedR2.occurredAt, _kChainT0 + 20);
+    expect(
+      h2.all.map((SrsReviewLog l) => l.id),
+      isNot(contains(chainedR2.id)),
+      reason: 'the chained copy of r2 has its own id',
+    );
+    await direct.store.applyRemote(<SrsEvent>[SrsLogEvent(chainedR2)]);
+    final SrsCardHistory onlyR2 = await direct.store.history(card);
+    expect(onlyR2.all, hasLength(4));
+    expect(
+      onlyR2.effective.map((SrsReviewLog l) => l.id),
+      isNot(contains(chainedR2.id)),
+    );
+    expect(onlyR2.revoked, contains(chainedR2.id));
+    expect(effectiveShape(onlyR2), effectiveShape(h2));
+    expect(onlyR2.state, h2.state);
+
     // 两条路径的副本同步到一起（同一个目标集合里一次复习两个 ID）：读侧选出的有效历史与只有一条路径时相同，
     // 被撤销的那次复习两份都算撤销。
     await direct.store.applyRemote(<SrsEvent>[
@@ -973,37 +1009,269 @@ void main() {
     expect(union.state, h2.state);
   });
 
-  // 审查 PR #3004 发现的回归：原生日志一度按「新卡片 + HLC + 种类」派生，而 undo 的目标不在本机旧 profile 里时只能
-  // 按旧 ID 兜底——同一条 undo（同 ID）在有目标的设备上指向内容派生的 ID、在没有的设备上指向兜底 ID，[_applyMissing]
-  // 按 ID 先到先得，被撤销的复习可能复活、各设备分歧。日志一律按旧 ID 兜底后，两台设备写出的 undo 逐字段相同。
-  test('undo 的目标只在一台设备的旧 profile 里：两台设备并入后同一条 undo 撤销的是同一个 ID', () async {
+  // undo 的目标不在本机旧 profile 里（同步顺序不保证，undo 先到）：这台设备给不出与有目标的设备一致的 revokes——有
+  // 目标的设备按导入规则 / 目标沿用给 ID，看不到内容只能按旧 ID 兜底，同一条 undo（同 ID）两份内容、先到先得，被撤销
+  // 的复习可能复活（审查 PR #3004 先后发现的两个变体）。所以并入暂缓（SrsProfileMergeDeferred，任何落库之前），等同步
+  // 把那条日志送进旧 profile 后重跑；重跑后两台设备写出的 undo 逐字段相同。
+  Future<Map<String, SrsReviewLog>> logsOfCard(_Device d, String uid) async =>
+      <String, SrsReviewLog>{
+        for (final SrsReviewLog l in (await d.store.history(
+          await chainCardIn(d, uid),
+        )).all)
+          l.id.toLowerCase(): l,
+      };
+
+  String fallbackIn(String uid, String oldId) =>
+      uuidV5(srsNamespace, 'profile-merge/$uid/${oldId.toLowerCase()}');
+
+  Future<int> logRowsUnder(_Device d, String uid) async =>
+      (await d.srs.db
+              .customSelect(
+                'SELECT (SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = ?) + '
+                '(SELECT COUNT(*) FROM sync2_log_meta WHERE profile_uid = ?) AS c',
+                variables: <Variable<Object>>[
+                  Variable<String>(uid, srsIdType),
+                  Variable<String>(uid, srsIdType),
+                ],
+              )
+              .getSingle())
+          .read<int>('c');
+
+  /// [d] 并入 [newUid] 必须暂缓：抛 [SrsProfileMergeDeferred]（缺的正是 [missing]），profiles.uid、旧 uid 的行、目标下的
+  /// 日志都不动，并入标记留着。
+  Future<void> expectDeferred(_Device d, String newUid, String missing) async {
+    final String old = d.store.profileUid;
+    final int before = await d.rowsOf(old);
+    await expectLater(
+      srsMergeProfileUid(
+        d.db,
+        d.srs.db,
+        core: d.srs.core,
+        profileId: d.profileId,
+        oldUid: old,
+        newUid: newUid,
+        deviceId: d.deviceId,
+      ),
+      throwsA(
+        isA<SrsProfileMergeDeferred>()
+            .having(
+              (SrsProfileMergeDeferred e) => e.missingRevoked,
+              'missingRevoked',
+              <String>[missing.toLowerCase()],
+            )
+            .having(
+              (SrsProfileMergeDeferred e) => e.message,
+              'message',
+              contains('deferred'),
+            ),
+      ),
+    );
+    expect(await d.db.profileUidOf(d.profileId), old);
+    expect(await d.rowsOf(old), before, reason: 'old rows untouched');
+    expect(await logRowsUnder(d, newUid), 0, reason: 'nothing merged');
+    final List<SrsPendingProfileMerge> pending = await srsPendingProfileMerges(
+      d.srs.db,
+    );
+    expect(pending, hasLength(1));
+    expect(pending.single.oldUid, old);
+    expect(pending.single.newUid, newUid);
+  }
+
+  test('undo 的目标（原生日志）还没同步到：并入暂缓、什么都不写；目标到了再并，两台设备的 undo 逐字段相同', () async {
     const String c = '01900000-0000-7000-8000-0000000000e3';
     final _Device full = await seededChain('full');
     final _Device partial = await seededChain('partial', withRevoked: false);
     await mergeInto(full, c);
+    await expectDeferred(partial, c, _kChainR2);
+
+    // 同步把 r2 送进旧 profile（旧 uid 照常同步），重跑并入。
+    final String pOld = partial.store.profileUid;
+    final String pCard = (await partial.store.cardsOfNote(
+      SrsIds.note(pOld, 'anki-guid-chain'),
+    )).single.id;
+    await partial.store.applyRemote(<SrsEvent>[
+      SrsLogEvent(chainLog(pOld, pCard, _kChainR2, _kChainT0 + 20)),
+    ]);
+    await mergeInto(partial, c);
+    expect(await srsPendingProfileMerges(partial.srs.db), isEmpty);
+
+    final Map<String, SrsReviewLog> a = await logsOfCard(full, c);
+    final Map<String, SrsReviewLog> p = await logsOfCard(partial, c);
+    final SrsReviewLog undoFull = a[fallbackIn(c, _kChainUndo)]!;
+    final SrsReviewLog undoPartial = p[fallbackIn(c, _kChainUndo)]!;
+    expect(undoFull.revokesId, fallbackIn(c, _kChainR2));
+    expect(undoPartial.toJson(), undoFull.toJson());
+    for (final _Device d in <_Device>[full, partial]) {
+      final SrsCardHistory h = await d.store.history(await chainCardIn(d, c));
+      expect(h.revoked, contains(fallbackIn(c, _kChainR2)));
+      expect(h.effective, hasLength(1));
+    }
+  });
+
+  // 目标里已经有别的设备按兜底 ID 并好的那条日志（这台设备并入前先收了目标的数据）：本机算出的 revokes 正指向它，
+  // 不用等。
+  test('undo 的目标不在旧 profile 里、但已按兜底 ID 在目标里：不暂缓，undo 撤销的就是目标里那条', () async {
+    const String c = '01900000-0000-7000-8000-0000000000e4';
+    final _Device full = await seededChain('full');
+    final _Device partial = await seededChain('partial', withRevoked: false);
+    await mergeInto(full, c);
+    expect((await full.round(dir)).error, isNull);
+
+    await srsMergeProfileUid(
+      partial.db,
+      partial.srs.db,
+      core: partial.srs.core,
+      profileId: partial.profileId,
+      oldUid: partial.store.profileUid,
+      newUid: c,
+      deviceId: partial.deviceId,
+      pullTarget: (SrsDbStore t) async {
+        expect(
+          await srsSync2PullWithin(
+            t,
+            (SrsSync2Host h) async {
+              final SrsSync2Report r = await srsSync2PullOnly(
+                host: h,
+                location: SrsAssetLocationStore(store: dir, profileUid: c),
+                locationId: 'interconnect:host',
+                nowMs: () => t.now().$1,
+              );
+              expect(r.error, isNull);
+            },
+            budget: kSrsPullBeforeMergeBudget,
+            onError: (Object e, StackTrace s) => fail('$e'),
+          ),
+          isTrue,
+        );
+      },
+    );
+    await partial.reopen();
+    final SrsCardHistory h = await partial.store.history(
+      await chainCardIn(partial, c),
+    );
+    expect(h.revoked, contains(fallbackIn(c, _kChainR2)));
+    expect(
+      h.effective.map((SrsReviewLog l) => l.id),
+      isNot(contains(fallbackIn(c, _kChainR2))),
+    );
+  });
+
+  // 同一个变体落在 Anki 导入日志上：有目标的设备按导入规则给它 UUIDv5(新卡片, anki-revlog/<id>)，没有的设备若按旧 ID
+  // 兜底，同一条 undo 就撤销一个没有日志的 ID，导入的那次复习复活。暂缓后等目标到了再并，undo 撤销的是规则 ID。
+  test('undo 撤销的 Anki 导入 revlog 还没同步到：并入暂缓；到了以后两台设备的 undo 都撤销规则 ID', () async {
+    const String c = '01900000-0000-7000-8000-0000000000e5';
+    const int revlog = 1792403304283;
+    const String undoId = '019a3a0b-0000-7000-8000-0000000000f9';
+
+    Future<(_Device, String, SrsReviewLog)> seeded(
+      String deviceId, {
+      required bool withRevoked,
+    }) async {
+      final _Device d = await _Device.open(deviceId);
+      final String uid = d.store.profileUid;
+      final String note = await d.store.createNote(
+        noteTypeId: d.store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(uid, 'Expression'): '霧',
+          srsLapisFieldId(uid, 'MainDefinition'): 'fog',
+        },
+        guid: 'anki-guid-chain',
+      );
+      final String card = (await d.store.cardsOfNote(note)).single.id;
+      final SrsReviewLog imported = SrsReviewLog(
+        id: SrsIds.importedRevlog(card, revlog),
+        profileUid: uid,
+        cardId: card,
+        kind: SrsLogKind.review,
+        rating: 3,
+        hlc: srsImportedRevlogHlc(revlog),
+        occurredAt: revlog,
+        timeSource: SrsTimeSource.wall,
+        origin: SrsLogOrigin.anki,
+        reviewType: 'review',
+        ankiRevlogId: revlog,
+      );
+      await d.store.applyRemote(<SrsEvent>[
+        if (withRevoked) SrsLogEvent(imported),
+        SrsLogEvent(
+          chainLog(uid, card, undoId, revlog + 5000, revokes: imported.id),
+        ),
+      ]);
+      return (d, uid, imported);
+    }
+
+    final (_Device full, String _, SrsReviewLog _) = await seeded(
+      'full',
+      withRevoked: true,
+    );
+    final (_Device partial, String _, SrsReviewLog imported) = await seeded(
+      'partial',
+      withRevoked: false,
+    );
+    await mergeInto(full, c);
+    await expectDeferred(partial, c, imported.id);
+
+    await partial.store.applyRemote(<SrsEvent>[SrsLogEvent(imported)]);
     await mergeInto(partial, c);
 
-    Future<Map<String, SrsReviewLog>> logsById(_Device d) async =>
-        <String, SrsReviewLog>{
-          for (final SrsReviewLog l in (await d.store.history(
-            await chainCardIn(d, c),
-          )).all)
-            l.id.toLowerCase(): l,
-        };
-    final Map<String, SrsReviewLog> a = await logsById(full);
-    final Map<String, SrsReviewLog> p = await logsById(partial);
-    String fallback(String oldId) =>
-        uuidV5(srsNamespace, 'profile-merge/$c/${oldId.toLowerCase()}');
-    final SrsReviewLog undoFull = a[fallback(_kChainUndo)]!;
-    final SrsReviewLog undoPartial = p[fallback(_kChainUndo)]!;
-    expect(undoFull.revokesId, fallback(_kChainR2));
-    expect(undoPartial.revokesId, undoFull.revokesId);
+    final String newCard = await chainCardIn(full, c);
+    expect(await chainCardIn(partial, c), newCard);
+    final String rule = SrsIds.importedRevlog(newCard, revlog);
+    final Map<String, SrsReviewLog> a = await logsOfCard(full, c);
+    final Map<String, SrsReviewLog> p = await logsOfCard(partial, c);
+    final SrsReviewLog undoFull = a[fallbackIn(c, undoId)]!;
+    final SrsReviewLog undoPartial = p[fallbackIn(c, undoId)]!;
+    expect(undoFull.revokesId, rule);
     expect(undoPartial.toJson(), undoFull.toJson());
-    // 有目标的那台设备上，undo 撤销的正是并入后的那条复习。
-    expect(a.containsKey(fallback(_kChainR2)), isTrue);
+    for (final _Device d in <_Device>[full, partial]) {
+      final SrsCardHistory h = await d.store.history(newCard);
+      expect(h.revoked, contains(rule));
+      expect(h.effective, isEmpty, reason: 'the revoked import stays revoked');
+    }
+  });
+
+  // 暂缓经 link 层：不抛、不卡同步，日志里标成暂缓且同一批缺口只记一次；目标到了下一次 link 就把并入做完。
+  test('并入暂缓经 link：不抛、同步照跑、只记一次；目标日志到了下一轮做完并入', () async {
+    const String c = '01900000-0000-7000-8000-0000000000e6';
+    final _Device b = await seededChain('host', withRevoked: false);
+    final String bOld = b.store.profileUid;
+    await expectDeferred(b, c, _kChainR2);
+
+    final List<(String, Object)> errors = <(String, Object)>[];
+    final SrsDbProfileLinker linker = SrsDbProfileLinker(
+      db: b.db,
+      activeProfileId: () async => b.profileId,
+      reopenStore: () async => b.reopen(),
+      onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
+    );
+    for (int i = 1; i <= 2; i++) {
+      final SrsProfileLinkOutcome out = await linker.link(dir, b.store);
+      expect(out.store, same(b.store), reason: 'round $i keeps the old store');
+      expect(errors, hasLength(1), reason: 'the same gap is logged once');
+      expect(
+        errors.single.$1,
+        allOf(contains('deferred'), contains(bOld), contains(c)),
+      );
+      expect(errors.single.$2, isA<SrsProfileMergeDeferred>());
+      expect((await b.round(dir)).error, isNull, reason: 'sync still runs');
+    }
+    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+
+    final String card = (await b.store.cardsOfNote(
+      SrsIds.note(bOld, 'anki-guid-chain'),
+    )).single.id;
+    await b.store.applyRemote(<SrsEvent>[
+      SrsLogEvent(chainLog(bOld, card, _kChainR2, _kChainT0 + 20)),
+    ]);
+    final SrsProfileLinkOutcome out = await linker.link(dir, b.store);
+    expect(out.linked, isTrue);
+    expect(out.store.profileUid, c);
+    expect(errors, hasLength(1));
+    expect(await b.db.profileUidOf(b.profileId), c);
+    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
     expect(
-      (await full.store.history(await chainCardIn(full, c))).revoked,
-      contains(fallback(_kChainR2)),
+      (await out.store.history(await chainCardIn(b, c))).revoked,
+      contains(fallbackIn(c, _kChainR2)),
     );
   });
 

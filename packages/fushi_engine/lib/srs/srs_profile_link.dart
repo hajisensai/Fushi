@@ -488,6 +488,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
   final Map<String, String> _published = <String, String>{};
 
+  /// 已经记过的暂缓并入（`旧 uid->新 uid|缺的日志`）：同一批缺口每个进程只记一次（[_resumePendingMerges]）。
+  final Set<String> _deferredLogged = <String>{};
+
   Future<String> _nameOf(String uid) async {
     final QueryRow? row = await db
         .customSelect(
@@ -680,6 +683,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 都重跑、再抛，这台设备的整个复习同步就永久卡死。失败的并入保证旧 uid 的行一行不动（删旧行在核对通过的同一个事务里），
   /// 所以这一轮跳过它、经 [onError] 记下（ErrorLogService，带 profile / 旧 uid / 新 uid），按 profiles 表当前的 uid 继续
   /// 同步；标记留着，下一轮照样重跑（数据变了、或修了映射之后就能做完）。
+  ///
+  /// 暂缓（[SrsProfileMergeDeferred]：undo 撤销的日志还没同步到）走同一条路，但它不是失败：按当前（旧）uid 继续同步
+  /// 正是把那条日志送进来的途径；日志里标成 `deferred (not a failure)`，同一批缺口只记一次。
   Future<SrsDbStore?> _resumePendingMerges(
     SrsDbStore store,
     SyncAssetStore within,
@@ -702,6 +708,22 @@ class SrsDbProfileLinker implements SrsProfileLinker {
           mediaRoot: await mediaRoot?.call(),
           pullTarget: _pullTarget(within),
         );
+      } on SrsProfileMergeDeferred catch (e, stack) {
+        // 暂缓不是失败（undo 撤销的日志还没同步到，[SrsProfileMergeDeferred]）：什么都没写，下一轮重跑。同一批缺口
+        // 只记一次，不每轮往错误日志里刷；缺口变了（收到了一部分）再记。
+        final String key =
+            '${m.oldUid}->${m.newUid}|${e.missingRevoked.join(',')}';
+        if (_deferredLogged.add(key)) {
+          onError?.call(
+            'SrsProfileLinker.resumeMerge deferred (not a failure) profile '
+            '${m.profileId} ${m.oldUid} -> ${m.newUid}: waiting for '
+            '${e.missingRevoked.length} revoked log(s) to sync, keeps syncing '
+            'the current uid, retried next round',
+            e,
+            stack,
+          );
+        }
+        continue;
       } catch (e, stack) {
         onError?.call(
           'SrsProfileLinker.resumeMerge profile ${m.profileId} '
