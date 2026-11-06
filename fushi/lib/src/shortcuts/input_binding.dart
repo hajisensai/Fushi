@@ -238,20 +238,18 @@ class InputBinding {
     LogicalKeyboardKey.gameButtonMode: 'GameMode',
   };
 
-  // TODO-847 / BUG: Windows 微软 IME 激活时，Flutter 引擎把 KeyDownEvent 的
-  // logicalKey 改写成 LogicalKeyboardKey.process（输入法占用），导致 [==] 精确相等
-  // 永远失败、全表面快捷键失效。physicalKey（USB HID 扫描码）不受 IME 改写影响，
-  // 故 [FushiShortcutRegistry.resolveKeyboard] 仅在 key==process 时启用 physical
-  // 回退。这里把每个 binding 的逻辑键映射到对应物理键，供回退分支按物理键比对。
+  // 每个 binding 的逻辑键 → 对应物理键（USB HID）。两个消费者：全局热键
+  // （hotkey_manager 按物理键注册，见 global_lookup_controller `_hotKeyFromBinding`）
+  // 与反向索引 [_physicalToLogical]（[normalizeCapturedKey] 把表外逻辑键收拢回
+  // 物理键所在的表内键，BUG-2948）。
   //
-  // 覆盖与 [_knownKeys] 相同的非 game* 键集；缺键会让该键在 IME 下仍然失效，由
-  // input_binding_test 的 `_knownKeys⊇` 守卫防漏。
+  // 注意：这张表**不是** IME 回退。Windows 输入法吞键时引擎一个 KeyEvent 都不发
+  // （`keyboard_key_embedder_handler.cc` 对 VK_PROCESSKEY 直接 `callback(true)`），
+  // 物理键也拿不到；那条症状在平台边界由 `WindowsImeGuard` 解除 IME 关联修复
+  // （BUG-430/1450，2026-11-05 真机实测）。
   //
-  // 已知限制：physical↔logical 一一对应仅在 US-QWERTY 物理布局下成立。非美式物理
-  // 键盘（如 AZERTY/德语 QWERTZ）上字母/符号键的物理位与逻辑键不一致，回退可能错绑
-  // 到相邻键。因为回退仅在 key==process（IME 激活，本就全失效）时启用，所以最坏只
-  // 是“按某键触发了另一个快捷键”，不会比现状（全部失效）更糟；标记为 known
-  // limitation 而非根治，待引擎提供 IME 下稳定的逻辑键时清理。
+  // 覆盖与 [_knownKeys] 相同的非 game* 键集，由 input_binding_test 的 `_knownKeys⊇`
+  // 守卫防漏。physical↔logical 一一对应仅在 US-QWERTY 物理布局下成立。
   //
   // 不能用 const：PhysicalKeyboardKey/LogicalKeyboardKey 缺少 const Map key 所需的
   // primitive equality（同 [_knownKeys] 的 CFE 限制）。
@@ -355,21 +353,14 @@ class InputBinding {
   @visibleForTesting
   static int get physicalToLogicalLength => _physicalToLogical.length;
 
-  /// BUG-1422：把「快捷键录入」拿到的按键归一化成应当持久化的逻辑键。
+  /// 把「快捷键录入」与运行时解析拿到的按键归一化成应当比对 / 持久化的逻辑键。
+  /// 捕获侧与运行时（`FushiShortcutRegistry.resolveKeyboard`）共用这一条契约。
   ///
-  /// Windows 微软 IME 激活时引擎会把按下字母的 [KeyEvent.logicalKey] 改写成
-  /// [LogicalKeyboardKey.process]，而 USB-HID 的 [KeyEvent.physicalKey] 不受影响。
-  /// 运行时解析（`FushiShortcutRegistry.resolveKeyboard`）早就有这条物理键回退，
-  /// **录入侧却直接存 `event.logicalKey`**：于是 IME 下按物理 Z 存进去的是
-  /// `Process`（显示成一个没人认识的键，且运行时永远匹配不上），用户看到的就是
-  /// 「录不进去 / 录完没反应」。捕获侧与运行时必须共用同一条契约。
+  /// （BUG-1422 曾假设 Windows IME 把字母的逻辑键改写成 Web 专有的 `process` 键
+  /// 并在此按物理键还原；该值只存在于 Flutter Web，原生端不可达，见
+  /// `ime_process_key_reachability_guard_test.dart`，那条分支已删。）
   ///
-  /// 回退**只在 `logicalKey == process` 时启用**，与运行时判据逐字一致：引擎给出
-  /// 真实逻辑键时一律原样返回，非美式布局（AZERTY / QWERTZ）的字母语义不被物理位
-  /// 覆盖。表外的物理键（numpad、F13+、game*）保持 `process` 原样返回，由调用方的
-  /// 既有流程处理，不猜。
-  ///
-  /// BUG-2948：第二条归一——引擎给出的逻辑键**不在 [_knownKeys] 里**、而物理键在
+  /// BUG-2948：引擎给出的逻辑键**不在 [_knownKeys] 里**、而物理键在
   /// 覆盖表里时，按物理键取逻辑键。macOS 嵌入层对符号键按「当前修饰下产出的字符」
   /// 定逻辑键：Shift+/ 报 `question`、Shift+[ 报 `braceLeft`、Shift+= 报 `plus`
   /// （Mac 真机 NSEvent 实测；Windows 同一按键报 `slash` / `bracketLeft` /
@@ -383,16 +374,13 @@ class InputBinding {
     required LogicalKeyboardKey logicalKey,
     required PhysicalKeyboardKey physicalKey,
   }) {
-    if (logicalKey != LogicalKeyboardKey.process &&
-        _knownKeys.containsKey(logicalKey)) {
-      return logicalKey;
-    }
+    if (_knownKeys.containsKey(logicalKey)) return logicalKey;
     return _physicalToLogical[physicalKey] ?? logicalKey;
   }
 
   /// 本 binding 逻辑键对应的物理键（USB HID 扫描码）；不在覆盖表内（如 game* 键、
-  /// numpad、F13+）返回 null。仅供 IME 改写 logicalKey 时的物理键回退使用，绝不进入
-  /// [==] / [hashCode] / [serialize]（保持 Set 去重、冲突检测、JSON 兼容不变）。
+  /// numpad、F13+）返回 null。供全局热键注册使用，绝不进入 [==] / [hashCode] /
+  /// [serialize]（保持 Set 去重、冲突检测、JSON 兼容不变）。
   PhysicalKeyboardKey? get physicalKey => _logicalToPhysical[key];
 
   List<String> get _sortedModifierLabels =>

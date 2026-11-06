@@ -1,5 +1,4 @@
-import 'package:flutter/services.dart'
-    show LogicalKeyboardKey, PhysicalKeyboardKey;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -13,24 +12,17 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 /// 不覆写，交回默认解析（翻页仍可用方向键/PageDown；Shift+Space 仍后退翻页；
 /// Ctrl+Space 保留原义）。
 ///
-/// TODO-847：Windows 微软 IME 激活时 [key] 会被引擎改写成 [LogicalKeyboardKey.process]，
-/// 裸 Space 判定失效（有声书场景按 Space 不再播放/暂停）。当 `key == process &&
-/// physicalKey == PhysicalKeyboardKey.space` 时按物理键还原 Space 语义；文本框
-/// composing 时调用方传 [physicalKey] null 关闭回退。仅对 US-QWERTY 物理布局而言
-/// Space 物理键稳定（Space 在所有常见布局上物理位一致，故此键实际不受布局影响）。
+/// Windows 输入法激活时按键会被输入法吞掉（BUG-430/1450），那是平台边界上的事：
+/// 无文本焦点时 `WindowsImeGuard` 解除窗口 IME 关联，按键以正常逻辑键到达这里，
+/// 本函数不需要任何 IME 特例。
 ShortcutAction? resolveReaderSpaceOverride({
   required LogicalKeyboardKey key,
   required Set<ModifierKey> modifiers,
   required bool hasActiveAudiobook,
-  PhysicalKeyboardKey? physicalKey,
 }) {
   if (modifiers.isNotEmpty) return null;
   if (!hasActiveAudiobook) return null;
-  final bool isSpace =
-      key == LogicalKeyboardKey.space ||
-      (key == LogicalKeyboardKey.process &&
-          physicalKey == PhysicalKeyboardKey.space);
-  if (!isSpace) return null;
+  if (key != LogicalKeyboardKey.space) return null;
   return ShortcutAction.audiobookPlayPause;
 }
 
@@ -50,11 +42,6 @@ ShortcutAction? resolveReaderSpaceOverride({
 /// 这样无论 LTR 还是 RTL，开关都只把键盘左右键当前行为整体反过来（左↔右互换），
 /// 与 RTL 自动判定正交叠加，不影响手柄映射、字母快捷键或滑动手势。
 ///
-/// TODO-847：IME 改写 [key] 成 [LogicalKeyboardKey.process] 时裸左右键判定失效，
-/// 导致 RTL 书翻页方向反转（落回注册表的 Right=前进 写死映射）。当
-/// `key == process` 时用 [physicalKey] 还原 arrowLeft/arrowRight 语义；文本框
-/// composing 时调用方传 null 关闭回退。方向键物理位在常见布局一致，回退稳定。
-///
 /// TODO-992：本覆写只为「翻页绑定」做阅读方向校正，**必须尊重用户改键**。调用方传入
 /// 该裸键当前在阅读器 co-active 组（reader + audiobook scope）解析出的 [boundAction]：
 /// - 仍是翻页动作（[ShortcutAction.readerPageForward]/[ShortcutAction.readerPageBackward]）
@@ -69,18 +56,11 @@ ShortcutAction? resolveReaderArrowPageTurn({
   required bool rtl,
   required ShortcutAction? boundAction,
   bool reverse = false,
-  PhysicalKeyboardKey? physicalKey,
 }) {
   if (modifiers.isNotEmpty) return null;
   final bool leftIsForward = rtl ^ reverse;
-  final bool isLeft =
-      key == LogicalKeyboardKey.arrowLeft ||
-      (key == LogicalKeyboardKey.process &&
-          physicalKey == PhysicalKeyboardKey.arrowLeft);
-  final bool isRight =
-      key == LogicalKeyboardKey.arrowRight ||
-      (key == LogicalKeyboardKey.process &&
-          physicalKey == PhysicalKeyboardKey.arrowRight);
+  final bool isLeft = key == LogicalKeyboardKey.arrowLeft;
+  final bool isRight = key == LogicalKeyboardKey.arrowRight;
   // 阅读方向校正只接管「出厂的物理方向绑定」：左 = 后退、右 = 前进（见
   // shortcut_defaults.dart）。用户把该键改绑成别的动作、解绑，或改成**相反**的
   // 翻页方向，都是明确意图 → 不覆写，交回注册表解析真实绑定。此前只判「是不是
