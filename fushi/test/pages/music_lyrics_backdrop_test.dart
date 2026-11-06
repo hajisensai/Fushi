@@ -350,4 +350,25 @@ void main() {
       expect(renders, 1);
     });
   });
+
+  group('musicPixiPose', () {
+    test('same song gives the same pose, angles in [0, 2pi), bend is +-1', () {
+      final ({List<double> angles, double bend}) a = musicPixiPose(42);
+      final ({List<double> angles, double bend}) b = musicPixiPose(42);
+      expect(a.angles, b.angles);
+      expect(a.bend, b.bend);
+      expect(a.angles, hasLength(4));
+      for (final double angle in a.angles) {
+        expect(angle, inInclusiveRange(0, 2 * 3.141592653589793));
+      }
+      expect(<double>[1, -1], contains(a.bend));
+    });
+
+    test('different songs get different poses', () {
+      final Set<String> poses = <String>{
+        for (int seed = 0; seed < 8; seed++) musicPixiPose(seed).toString(),
+      };
+      expect(poses.length, greaterThan(1));
+    });
+  });
 }

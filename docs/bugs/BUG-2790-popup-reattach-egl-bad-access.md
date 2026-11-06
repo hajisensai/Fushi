@@ -12,3 +12,8 @@
 - **[x] ② 已加自动化测试** — `fushi/test/build/popup_engine_impeller_guard_test.dart`（源码守卫：`:popup` 引擎必须带 `--enable-impeller=false`，兼容层带根因注释）。
 - **备注**：取证命令：`adb logcat -d | grep -c "EGL Error"`，在上述第 3 步后 > 0 即复现。
 - **2026-10-24 后续（全线 Impeller）**：所有者拍板全 app 用 Impeller、不留 Skia 回退（音乐设计 D13），兼容层按记录里的清理条件撤掉：`:popup` 引擎不再带 `--enable-impeller=false`；`popupMain` 在 `runApp` 前把 `dictionaryPopupWebViewUsesHybridComposition` 置 false，热引擎里的查词 WebView 走 TLHC（`useHybridComposition: false`），raster 线程不并进 platform 线程，`~GPUSurfaceGLImpeller` 不清上下文的那条析构路径不再出现；主进程（引擎不 detach）保持 HC。守卫 `fushi/test/build/popup_engine_impeller_guard_test.dart` 改为钉这两侧。**未真机复验**（本机无 Android 设备）：需在三星 Tab S9 / 任一真机按「备注」的取证命令跑一遍（查一次词 → 关 → 再开 ×4，`EGL Error` 计数应为 0，且卡片能画出、能滑）。
+- **2026-11-05 真机复验（Impeller + TLHC，通过）**：小米平板 5（`21051182C`，Snapdragon 860 / Adreno 640，Android 17 / HyperOS，序列号 `43f8ed58`），用户装机包 `3.3.0-debug.23480`（versionCode 1002348000，11-05 01:52 安装，已含 10-24 的 c22f68d75af；只查词、未写任何设置）。流程：`logcat -c` → `am start -a android.intent.action.PROCESS_TEXT --es android.intent.extra.PROCESS_TEXT 食べる -n app.fushi.reader/.PopupDictFlutterActivity` 首开（建出词典 WebView）→ 返回键关窗（`dumpsys activity` 里 PopupDict 记录 0 条，`:popup` 进程 pid 22316 留着＝热引擎）→ 依次以 走る / 美しい / 勉強 / 考える 再开 ×4，每轮开窗后截图、在卡片区 `input swipe` 上滑再截图。结果：
+  - `adb logcat -d | grep -c "EGL Error"` 每轮都是 **0**，`Could not make the context current` 同为 0；
+  - 每轮都画出搜索栏与**新词**卡片（不是上一轮的残影），上滑前后卡片区（122,349)-(1479,1834) 像素有变化，能滑；
+  - `:popup` 日志 `Using the Impeller rendering backend (Vulkan)` 后紧跟 `(OpenGLES)`——该进程实际跑 Impeller GLES，正是原缺陷所在的后端，复验有效。
+  - 证据：`.codex-test/bug2790/`（`r1-open.png`～`r5-scrolled.png`、`r5-compare.png`、`logcat-all.txt`、`run.sh`）。悬浮球剪贴板查词打开的是同一个 `PopupDictFlutterActivity` + 同一热引擎，本轮只走了 PROCESS_TEXT 入口；原报告机三星 Tab S9 本轮不在手边、未测。

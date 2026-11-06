@@ -12,8 +12,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart'
+import 'package:fushi_engine/media/video/subtitle/download_subtitle_retry.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart'
     show subtitleSourceBlocksBackfill;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
