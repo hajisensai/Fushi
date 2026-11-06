@@ -106,6 +106,29 @@ void main() {
     final RegExp equalWidest = RegExp(
       r'List<double>\.filled\([^;]*widest|(?<![A-Za-z0-9_])_?equalExtents\b',
     );
+    // 最常见的手写等宽：循环生成段 / 页签，每个包一层 Expanded 等分整行（再配
+    // ellipsis 或 FittedBox 兜底）——最长段先被省略或单独缩字号。审查实例：
+    // 旧 MangaCropChoiceSegments、Apple 分段式页签 _FushiGlassTabBar 的铺满档。
+    final RegExp equalSplit = RegExp(
+      r'for\s*\([^\n]*\)\s*Expanded\(\s*child:\s*_?\w*(?:[sS]egment|[tT]ab)\w*\(',
+    );
+    // 自绘胶囊分段用的选中色只该出现在接了共用分宽的实现里：另写一份胶囊分段
+    // 却不走 FushiSegmentRow，就是又一套段宽分配。
+    final RegExp pillSegmentVisual = RegExp(
+      r'(?<![A-Za-z0-9_])fushiPillSegmentSelected(?:Fill|Foreground)\(',
+    );
+    for (final String sample in <String>[
+      'for (final MangaCropChoice choice in choices)\n'
+          '              Expanded(child: segment(choice)),',
+      'for (int i = 0; i < tabs.length; i++) Expanded(child: segment(i)),',
+      'for (final T v in values) Expanded(child: _buildTab(v)),',
+    ]) {
+      expect(
+        equalSplit.hasMatch(sample),
+        isTrue,
+        reason: 'equal-split guard must catch: $sample',
+      );
+    }
     final List<String> offenders = <String>[];
     for (final File file in files) {
       final String path = file.path.replaceAll(r'\', '/');
@@ -115,6 +138,15 @@ void main() {
       }
       if (path != allocator && equalWidest.hasMatch(source)) {
         offenders.add('$path: equal-width-then-shrink segment layout');
+      }
+      if (equalSplit.hasMatch(source)) {
+        offenders.add('$path: Expanded equal-split segment / tab row');
+      }
+      if (pillSegmentVisual.hasMatch(source) &&
+          !source.contains('FushiSegmentRow(')) {
+        offenders.add(
+          '$path: hand-rolled pill segments without FushiSegmentRow',
+        );
       }
     }
     expect(
@@ -132,6 +164,9 @@ void main() {
       'lib/src/utils/components/glass/fushi_expressive.dart':
           'FushiSegmentRow(',
       'lib/src/utils/components/glass/fushi_glass_toggles.dart':
+          'FushiSegmentRow(',
+      // Apple 分段式页签（_FushiGlassTabBar）的铺满档。
+      'lib/src/utils/components/glass/fushi_glass_bars.dart':
           'FushiSegmentRow(',
     };
     for (final MapEntry<String, String> e in wired.entries) {

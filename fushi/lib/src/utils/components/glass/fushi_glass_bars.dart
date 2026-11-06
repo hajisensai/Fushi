@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim, kFushiTopFadeExtent, kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -1811,6 +1812,10 @@ class FushiShellLargeTitleBar extends StatelessWidget {
 /// 算进去，否则判「放得下」的一档实际会把文字挤到渐隐截断。
 const double kFushiAppleTabContentInset = 6.0;
 
+/// Apple 文字页签的首选左右内边距；铺满档放不下时最多收到 [_kAppleTabMinPadding]。
+const double _kAppleTabPadding = 12.0;
+const double _kAppleTabMinPadding = 4.0;
+
 /// M3E 分段胶囊页签每侧吃掉的水平宽：轨道离边 12 + 轨道内 TabBar 内边距 4。
 /// 量页签宽度的调用方（`LibrarySectionTabs` 的铺满判据）必须扣掉两侧这一截。
 const double kFushiM3eTabTrackInset = 16.0;
@@ -2363,6 +2368,23 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
     // 选中下划线：调用方的 indicatorColor 优先，否则强调色（默认单色主题即
     // 黑 / 白）。圆角短条，宽度跟随文字。
     final Color indicator = _bar.indicatorColor ?? apple.accent;
+    final TabAlignment alignment =
+        _bar.tabAlignment ??
+        TabBarTheme.of(context).tabAlignment ??
+        (_bar.isScrollable ? TabAlignment.start : TabAlignment.fill);
+    final bool fill = !_bar.isScrollable && alignment == TabAlignment.fill;
+    // 铺满档（BUG-4127）：页签宽由 [FushiSegmentRow] 按共用分宽分配，不再
+    // 「各页签等分整行」让最长的页签先变省略号。调用方没给 labelPadding 时，
+    // 页签自身只带最小内边距，首选内边距多出的部分作为 extras 交给分宽
+    // （放不下时先收它）。
+    final EdgeInsetsGeometry tabPadding =
+        _bar.labelPadding ??
+        EdgeInsets.symmetric(
+          horizontal: fill ? _kAppleTabMinPadding : _kAppleTabPadding,
+        );
+    final double tabPaddingExtra = _bar.labelPadding == null && fill
+        ? 2 * (_kAppleTabPadding - _kAppleTabMinPadding)
+        : 0;
 
     Widget segment(int i) {
       final bool isSelected = i == selected;
@@ -2408,8 +2430,7 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
         selected: isSelected,
         indicator: indicator,
         height: height,
-        padding:
-            _bar.labelPadding ?? const EdgeInsets.symmetric(horizontal: 12),
+        padding: tabPadding,
         semanticLabel: _semanticLabelOf(tabs[i]),
         onTap: () => _select(i),
         child: content,
@@ -2454,10 +2475,6 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
       child: tabsRow,
     );
 
-    final TabAlignment alignment =
-        _bar.tabAlignment ??
-        TabBarTheme.of(context).tabAlignment ??
-        (_bar.isScrollable ? TabAlignment.start : TabAlignment.fill);
     Widget row;
     if (_bar.isScrollable) {
       // 桌面端默认 dragDevices 不含鼠标：可滚动的标签行鼠标也要拖得动。
@@ -2486,10 +2503,10 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
       );
     } else {
       row = slidingIndicator(
-        Row(
-          children: <Widget>[
-            for (int i = 0; i < tabs.length; i++) Expanded(child: segment(i)),
-          ],
+        FushiSegmentRow(
+          fill: true,
+          extras: List<double>.filled(tabs.length, tabPaddingExtra),
+          children: <Widget>[for (int i = 0; i < tabs.length; i++) segment(i)],
         ),
       );
     }

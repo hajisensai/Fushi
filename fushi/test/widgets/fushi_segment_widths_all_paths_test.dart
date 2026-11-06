@@ -1,10 +1,14 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:material_ui/material_ui.dart';
@@ -246,5 +250,109 @@ void main() {
     expect(glass, isFalse);
     expectLabelsWhole(tester, find.byType(Scaffold));
     expect(find.byType(FushiPillSegmentedButton<int>), findsOneWidget);
+  });
+
+  // 审查补漏（PR #2987）：Apple 分段式页签的铺满档以前「各页签 Expanded 等分
+  // 整行 + 单行省略号」，窄屏最长页签先变省略号。
+  testWidgets('Apple FushiTabBar 铺满档 420 宽下五个页签完整单行', (
+    WidgetTester tester,
+  ) async {
+    late bool glass;
+    await pump(
+      tester,
+      width: 420,
+      glassDesign: true,
+      builder: (BuildContext context) {
+        glass = isGlassDesign(context);
+        return DefaultTabController(
+          length: labels.length,
+          initialIndex: 1,
+          child: FushiTabBar(
+            tabs: <Widget>[for (final String l in labels) Tab(text: l)],
+          ),
+        );
+      },
+    );
+    expect(glass, isTrue);
+    expect(find.byType(TabBar), findsNothing);
+    expectLabelsWhole(tester, find.byType(FushiTabBar));
+    expect(
+      tester.getSize(find.byType(FushiTabBar)).width,
+      lessThanOrEqualTo(420),
+    );
+  });
+
+  testWidgets('Apple FushiTabBar 铺满档放得下时等宽撑满', (WidgetTester tester) async {
+    await pump(
+      tester,
+      width: 900,
+      glassDesign: true,
+      builder: (BuildContext context) => DefaultTabController(
+        length: labels.length,
+        child: FushiTabBar(
+          tabs: <Widget>[for (final String l in labels) Tab(text: l)],
+        ),
+      ),
+    );
+    final List<double> widths = <double>[
+      for (final String l in labels)
+        tester
+            .getSize(
+              find
+                  .ancestor(
+                    of: find.text(l),
+                    matching: find.byType(GestureDetector),
+                  )
+                  .first,
+            )
+            .width,
+    ];
+    for (final double w in widths) {
+      expect(w, closeTo(widths.first, 0.5));
+    }
+    // 整行（减去左右各 8 的页签栏内边距）被等分。
+    expect(widths.first * labels.length, closeTo(900 - 16, 0.5));
+  });
+
+  // 审查补漏（PR #2987）：漫画取景分段以前手写「Expanded 等分 + FittedBox
+  // 缩小」，最长段的字号被单独缩小。现在走共享胶囊分段的共用分宽。
+  testWidgets('漫画取景分段 600 宽下各段原字号完整单行、撑满整行', (WidgetTester tester) async {
+    const List<MangaCropChoice> choices = <MangaCropChoice>[
+      MangaCropChoice.wholePage,
+      MangaCropChoice.textArea,
+      MangaCropChoice.custom,
+      MangaCropChoice.none,
+    ];
+    await pump(
+      tester,
+      width: 600,
+      builder: (BuildContext context) => MangaCropChoiceSegments(
+        choices: choices,
+        selected: MangaCropChoice.textArea,
+        onSelected: (_) {},
+      ),
+    );
+    final Finder root = find.byType(MangaCropChoiceSegments);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(of: root, matching: find.byType(FittedBox)),
+      findsNothing,
+    );
+    for (final MangaCropChoice c in choices) {
+      final Finder text = find.descendant(
+        of: root,
+        matching: find.text(mangaCropChoiceLabel(c)),
+      );
+      final RenderParagraph p = tester.renderObject<RenderParagraph>(text);
+      expect(p.didExceedMaxLines, isFalse);
+      final double natural = p.getMaxIntrinsicWidth(double.infinity);
+      // 画出来的宽（含祖先变换）= 单行自然宽：没被压窄也没被缩小字号。
+      expect(tester.getRect(text).width, closeTo(natural, 0.5));
+      expect(
+        p.size.height,
+        closeTo(p.getMaxIntrinsicHeight(double.infinity), 0.5),
+      );
+    }
+    expect(tester.getSize(root).width, closeTo(600, 0.5));
   });
 }
