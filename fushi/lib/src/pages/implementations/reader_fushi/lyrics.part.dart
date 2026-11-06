@@ -1024,9 +1024,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final List<AudioCue> all = ctrl.allBookCuesSnapshot;
     final int start = _lyricsCueIndexOffset;
     final int end = start + _lyricsCueList.length;
-    if (end > all.length ||
-        !identical(all[start], _lyricsCueList.first) ||
-        !identical(all[end - 1], _lyricsCueList.last)) {
+    if (!lyricsWindowIsSliceOf<AudioCue>(
+      window: _lyricsCueList,
+      offset: start,
+      source: all,
+    )) {
       unawaited(_loadLyricsPage());
       return true;
     }
@@ -1100,6 +1102,20 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (!_lyricsCueWindowUsesAllBookCues &&
         controller.chapterCuesSnapshot.isNotEmpty &&
         !identical(controller.chapterCuesSnapshot, _lyricsCueList)) {
+      unawaited(_loadLyricsPage());
+      return;
+    }
+    // 整书 cue 窗口：已装的那段必须仍是控制器**当前**整书 cue 的同一段（元素身份）。
+    // reader 每装一章都重灌整书 cue（`_injectAudiobookBridge`），歌词模式下正文跟着
+    // 音频跨章——元素没换 → 窗口照常用，跨章不重载（BUG-4127，旧码装章后无条件整页
+    // 重载）；元素换了（重新对齐 / SRT 重建）→ 窗口下标已对不上，先重载，不下发错位
+    // 的 setCue。
+    if (_lyricsCueWindowUsesAllBookCues &&
+        !lyricsWindowIsSliceOf<AudioCue>(
+          window: _lyricsCueList,
+          offset: _lyricsCueIndexOffset,
+          source: controller.allBookCuesSnapshot,
+        )) {
       unawaited(_loadLyricsPage());
       return;
     }

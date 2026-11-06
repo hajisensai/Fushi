@@ -1419,6 +1419,11 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   void setAllBookCues(List<AudioCue> cues) {
     _sectionFirstCueCache.clear();
+    final int previousPlaybackIdx = _playbackAllBookIdx;
+    final AudioCue? playbackCue =
+        previousPlaybackIdx >= 0 && previousPlaybackIdx < _allBookCues.length
+        ? _allBookCues[previousPlaybackIdx]
+        : null;
     _allBookCues = List<AudioCue>.from(cues);
     final Map<int, int> idMap = <int, int>{};
     for (int i = 0; i < _allBookCues.length; i++) {
@@ -1426,7 +1431,20 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (id != null) idMap[id] = i;
     }
     _allBookCueIdToIndex = idMap;
-    _playbackAllBookIdx = -1;
+    // 播放所在句按身份映射进新列表（BUG-4127）。reader 每装一章都重灌同一份整书
+    // cue，跨章过渡期间（[_chapterTransition] 仍竖着）装章正好落在这里：旧码直接置
+    // -1，[lyricsCueAllBookIdx] 退回冻结的正文跟随句，歌词高亮往回跳一下、下一个
+    // tick 再跳回来。播放句仍在新列表里就保住它；不在（整书 cue 真换了）才等下一个
+    // 真实 tick。
+    if (playbackCue == null) {
+      _playbackAllBookIdx = -1;
+    } else if (playbackCue.id != null) {
+      _playbackAllBookIdx = idMap[playbackCue.id] ?? -1;
+    } else {
+      _playbackAllBookIdx = _allBookCues.indexWhere(
+        (AudioCue c) => _isSameCue(c, playbackCue),
+      );
+    }
     _rebuildFileDurations();
   }
 

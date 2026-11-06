@@ -90,3 +90,22 @@ LyricsWindowSlide? planLyricsWindowSlide({
     trimTail: over > 0 ? over : 0,
   );
 }
+
+/// 已装进歌词文档的窗口 [window]（整书下标从 [offset] 起）是不是**当前**整书 cue
+/// [source] 的同一段：首 / 末元素按对象身份比对。
+///
+/// 只能比元素身份、不能比列表身份：reader 每装一章都把同一份缓存的整书 cue 重灌给
+/// 控制器，`setAllBookCues` 每次 `List.from` 拷一份新列表，元素对象不变。元素换了
+/// （重新对齐 / SRT 重建）= 窗口里的下标已经对不上，只能整页重载；没换 = 窗口照常
+/// 可用，跨章不该重载（反馈 NSP86pcPHI / BUG-4127）。
+bool lyricsWindowIsSliceOf<T extends Object>({
+  required List<T> window,
+  required int offset,
+  required List<T> source,
+}) {
+  if (window.isEmpty || offset < 0) return false;
+  final int end = offset + window.length;
+  if (end > source.length) return false;
+  return identical(source[offset], window.first) &&
+      identical(source[end - 1], window.last);
+}
