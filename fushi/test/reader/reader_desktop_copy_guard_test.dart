@@ -54,7 +54,7 @@ void main() {
       call,
       contains('isMacOS: isMacOSPlatform'),
       reason:
-          'macOS 的 first responder 是 FlutterView，⌘C 的 copy: 到不了 WKWebView'
+          'macOS 点正文后 first responder 通常仍是 FlutterView，⌘C 的 copy: 到不了 WKWebView'
           '（BUG-4127 / BUG-2948），谓词必须拿到 isMacOSPlatform',
     );
 

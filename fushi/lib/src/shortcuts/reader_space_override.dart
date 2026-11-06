@@ -156,11 +156,14 @@ bool readerWheelTickIsForward({
 /// * Windows：WebView 走 WebView2 合成模式，fork 的 `flutter_inappwebview_windows`
 ///   只转发鼠标、不转发键盘给 WebView2，左键能建立原生选区，但 Ctrl+C / 右键复制
 ///   都到不了 WebView2（BUG-402）。
-/// * macOS：WKWebView **从来不是 first responder**——BUG-2948 真机取证「点击阅读器
-///   正文后 first responder 仍是 `FlutterView`」；机制见 BUG-2508（desktop_drop 的
-///   DropTarget 压在窗口最上层，点击由引擎转发给平台视图）与 BUG-3131（fork 不调
-///   `makeFirstResponder`）。Flutter 不处理 ⌘C 时，Runner 菜单 Edit > Copy 的
-///   `copy:` 发给 first responder = FlutterView，它不实现 `copy:`，WebKit 永远收不到。
+/// * macOS：点击阅读器正文后 first responder **通常仍是 `FlutterView`**——BUG-2948
+///   真机取证；机制见 BUG-2508（desktop_drop 的 DropTarget 压在窗口最上层，点击由
+///   引擎转发给平台视图）与 BUG-3131（fork 不调 `makeFirstResponder`）。此时 Flutter
+///   不处理 ⌘C，Runner 菜单 Edit > Copy 的 `copy:` 发给 first responder =
+///   FlutterView，它不实现 `copy:`，WebKit 收不到。例外：DOM 节点获焦时 WebKit 会把
+///   WKWebView 交成 first responder（BUG-2447 / BUG-3828，见 caret.part.dart
+///   `_handleKeyEvent` 注释），那时原生 copy 本身可用，⌘C 也到不了 Flutter，本谓词
+///   不会被调到，不会重复处理——两种情形下接管都成立。
 ///   旧注释「macOS 的 WebView 自带原生 copy」是没在 Mac 上验证过的错误前提。
 ///
 /// BUG-1451：查词弹窗（[DictionaryPopupWebView]）与阅读器正文**共用**本谓词——两者
