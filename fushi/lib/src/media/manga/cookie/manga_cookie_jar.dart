@@ -298,15 +298,29 @@ class MangaCookieJar {
   /// 域的登录 cookie 一起抹掉——那等于每发一次请求就登出一部分。
   ///
   /// 返回是否真的产生了变化：没变就不落盘，避免每个请求都写一次文件。
-  Future<bool> mergeFromRuntime(List<MangaCookie> incoming) async {
+  Future<bool> mergeFromRuntime(List<MangaCookie> incoming) =>
+      _mergeByKey(incoming, expiredDeletes: false);
+
+  /// 合并宿主自己发出的请求收到的 `Set-Cookie`（LNReader 出站桥）：同
+  /// [mergeFromRuntime] 按 (name, domain) 逐条覆盖，另外**已过期的条目表示删除**
+  /// ——站点用 `Max-Age=0` / 过去的 `Expires` 清掉一条 cookie（登出、换发前先清）
+  /// 时，jar 里的同名同域条目必须跟着消失（RFC 6265 §5.3 第 11 步），否则桥会把
+  /// 站点已经作废的值继续发回去。
+  ///
+  /// 调用方负责按 RFC 6265 §5.3 过滤 `Domain=`（只收覆盖请求 host 的）。
+  Future<bool> mergeResponseCookies(List<MangaCookie> incoming) =>
+      _mergeByKey(incoming, expiredDeletes: true);
+
+  Future<bool> _mergeByKey(
+    List<MangaCookie> incoming, {
+    required bool expiredDeletes,
+  }) async {
     await ensureLoaded();
     final int now = _clock();
-    final List<MangaCookie> fresh = incoming
-        .where(
-          (MangaCookie cookie) => cookie.isValid && !cookie.isExpiredAt(now),
-        )
+    final List<MangaCookie> valid = incoming
+        .where((MangaCookie cookie) => cookie.isValid)
         .toList(growable: false);
-    if (fresh.isEmpty) return false;
+    if (valid.isEmpty) return false;
 
     String keyOf(MangaCookie cookie) =>
         '${cookie.name} ${cookie.canonicalDomain}';
@@ -318,8 +332,12 @@ class MangaCookieJar {
     final Map<String, MangaCookie> before = Map<String, MangaCookie>.from(
       merged,
     );
-    for (final MangaCookie cookie in fresh) {
-      merged[keyOf(cookie)] = cookie;
+    for (final MangaCookie cookie in valid) {
+      if (!cookie.isExpiredAt(now)) {
+        merged[keyOf(cookie)] = cookie;
+      } else if (expiredDeletes) {
+        merged.remove(keyOf(cookie));
+      }
     }
     final bool changed =
         merged.length != before.length ||
@@ -351,7 +369,24 @@ class MangaCookieJar {
     await _persist();
   }
 
-  Future<void> _persist() async {
+  /// 上一次落盘；写入按顺序串行。
+  Future<void> _lastWrite = Future<void>.value();
+
+  /// 落盘当前快照。**串行**：多个写入并发时（出站桥的并发请求各带一批
+  /// `Set-Cookie`）若同时写同一个 `.tmp` 再各自 rename，内容会交错、后到的 rename
+  /// 找不到源文件而抛错。排在后面的写入取的是轮到它时的最新 [_cookies]，前一次
+  /// 写入失败只报给它自己的调用方，不连坐后面的写入。
+  Future<void> _persist() {
+    Future<void> write() => _writeSnapshot();
+    final Future<void> next = _lastWrite.then(
+      (void _) => write(),
+      onError: (Object _) => write(),
+    );
+    _lastWrite = next;
+    return next;
+  }
+
+  Future<void> _writeSnapshot() async {
     final File target = _file ??= await _resolveFile();
     await target.parent.create(recursive: true);
     final File staged = File('${target.path}.tmp');

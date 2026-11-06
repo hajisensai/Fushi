@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -37,17 +38,43 @@ Uri? lnReaderLoginTarget({
   return parsed;
 }
 
-/// 推一页登录页并等用户登录完；返回 true = 会话已写进小说源的 jar。
+/// 小说源的登录页：漫画源同一个 [MihonWebLoginPage]，jar 换成小说源自己的。
 ///
-/// 登录页用桥的 UA（[LnReaderFetchBridge.defaultUserAgent]）打开源站：站点把会话或
-/// `cf_clearance` 绑在 UA 上时，换了 UA 的请求不认这份会话。写完通知桥丢掉该站
-/// 登录前的进程内 cookie（[LnReaderCloudflare.siteSessionReplaced]）。
+/// - UA 用桥的 [LnReaderFetchBridge.defaultUserAgent]：站点把会话或
+///   `cf_clearance` 绑在 UA 上时，换了 UA 的请求不认这份会话。
+/// - 「从浏览器导入」只在有 Fushi 浏览器扩展的平台（桌面）给。
+///
+/// 写进 [jar] 即生效：[jar] 是出站桥唯一的 cookie 存储，登完（含「从浏览器导入」
+/// 后直接关页）下一个请求就带新会话，不依赖登录页怎么关。
+MihonWebLoginPage buildLnReaderWebLoginPage({
+  required LnReaderInstalledPlugin plugin,
+  required Uri target,
+  required MangaCookieJar jar,
+  required bool isDesktop,
+  @visibleForTesting Future<List<Cookie>> Function(WebUri url)? cookieReader,
+  @visibleForTesting Widget Function(BuildContext context)? webViewBuilder,
+  @visibleForTesting Future<WebViewEnvironment?> Function()? environmentFactory,
+}) => MihonWebLoginPage(
+  sourceName: plugin.name,
+  baseUrl: target,
+  jar: jar,
+  userAgent: LnReaderFetchBridge.defaultUserAgent,
+  browserImportAvailable: browserExtensionSupportedOn(isDesktop: isDesktop),
+  cookieReader: cookieReader,
+  webViewBuilder: webViewBuilder,
+  environmentFactory: environmentFactory,
+);
+
+/// 推一页登录页并等用户登录完；返回 true = 用户点了「完成」、会话已写进小说源
+/// 的 jar（调用方据此提示并重新加载）。
 Future<bool> openLnReaderWebLogin(
   BuildContext context, {
   required LnReaderManager manager,
   required LnReaderInstalledPlugin plugin,
-  @visibleForTesting
-  Widget Function(Uri target, MangaCookieJar jar)? pageBuilder,
+  @visibleForTesting bool? isDesktop,
+  @visibleForTesting Future<List<Cookie>> Function(WebUri url)? cookieReader,
+  @visibleForTesting Widget Function(BuildContext context)? webViewBuilder,
+  @visibleForTesting Future<WebViewEnvironment?> Function()? environmentFactory,
 }) async {
   final LnReaderCloudflare? cloudflare = manager.cloudflare;
   final Uri? target = lnReaderLoginTarget(
@@ -60,23 +87,19 @@ Future<bool> openLnReaderWebLogin(
       fullscreenDialog: true,
       // 路由层中和界面整体缩放，WebView 才按真实视口栅格化（BUG-2522）。
       builder: (BuildContext _) => FushiAppUiScaleNeutralizer(
-        child:
-            pageBuilder?.call(target, cloudflare.jar) ??
-            MihonWebLoginPage(
-              sourceName: plugin.name,
-              baseUrl: target,
-              jar: cloudflare.jar,
-              userAgent: LnReaderFetchBridge.defaultUserAgent,
-              browserImportAvailable: browserExtensionSupportedOn(
-                isDesktop: DesktopLookupService.isDesktop,
-              ),
-            ),
+        child: buildLnReaderWebLoginPage(
+          plugin: plugin,
+          target: target,
+          jar: cloudflare.jar,
+          isDesktop: isDesktop ?? DesktopLookupService.isDesktop,
+          cookieReader: cookieReader,
+          webViewBuilder: webViewBuilder,
+          environmentFactory: environmentFactory,
+        ),
       ),
     ),
   );
-  if (saved != true) return false;
-  cloudflare.siteSessionReplaced(target.host);
-  return true;
+  return saved == true;
 }
 
 /// 小说源「登录」：登录页 + 成功提示，源列表菜单与错误区按钮共用。

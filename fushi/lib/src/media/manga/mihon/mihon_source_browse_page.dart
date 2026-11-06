@@ -301,14 +301,18 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
   }) => Wrap(
     spacing: 8,
     runSpacing: 8,
+    // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
     children: <Widget>[
-      MihonCloudflareAction(
-        runtime: manager.runtime,
-        error: error,
-        onVerified: onVerified,
-      ),
-      // 真出错了才给登录（空结果不算）；漫画与视频源共用这一页。
-      if (error != null)
+      if (MihonCloudflareAction.shows(runtime: manager.runtime, error: error))
+        MihonCloudflareAction(
+          runtime: manager.runtime,
+          error: error,
+          onVerified: onVerified,
+        ),
+      // 真出错了才给登录（本页 verifyOnEmpty 为 false，空结果不走这里）；漫画与
+      // 视频源共用这一页。
+      if (error != null &&
+          mihonLoginTarget(runtime: manager.runtime, baseUrl: _baseUrl) != null)
         MihonLoginAction(
           runtime: manager.runtime,
           sourceName: title,

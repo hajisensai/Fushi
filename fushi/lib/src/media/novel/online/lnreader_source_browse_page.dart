@@ -197,14 +197,21 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
   }) => Wrap(
     spacing: 8,
     runSpacing: 8,
+    // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
     children: <Widget>[
-      LnReaderCloudflareAction(
-        cloudflare: manager.cloudflare,
-        pluginId: plugin.id,
-        onVerified: () => unawaited(onVerified()),
-      ),
-      // 真出错了才给登录（空结果不算：搜不到东西不该提示去登录）。
-      if (error != null)
+      if (LnReaderCloudflareAction.shows(manager.cloudflare, plugin.id))
+        LnReaderCloudflareAction(
+          cloudflare: manager.cloudflare,
+          pluginId: plugin.id,
+          onVerified: () => unawaited(onVerified()),
+        ),
+      // 出错与空结果都给登录（[verifyOnEmpty] 同理）：LNReader 插件撞上要登录的
+      // 站点时多半不抛错、只回空列表，区分不出「真没有」还是「没登录看不到」。
+      if (lnReaderLoginTarget(
+            cloudflare: manager.cloudflare,
+            site: plugin.site,
+          ) !=
+          null)
         LnReaderLoginAction(
           manager: manager,
           plugin: plugin,

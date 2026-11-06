@@ -1,11 +1,14 @@
 import 'dart:io';
 
+import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
+import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_installed_sources_section.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
@@ -14,8 +17,8 @@ import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 
 import 'fake_lnreader_runtime.dart';
 
-/// 小说源 app 内登录：登录页写的是小说源自己的 jar（出站桥读的那份），登完通知桥
-/// 丢掉登录前的会话；入口出现在源列表菜单与加载失败的错误区。
+/// 小说源 app 内登录：登录页写的是小说源自己的 jar（出站桥唯一的 cookie 存储，
+/// 写进去即生效）；入口出现在源列表菜单、加载失败与空结果的错误区。
 void main() {
   late Directory root;
   late FakeLnReaderRuntime runtime;
@@ -99,11 +102,13 @@ void main() {
     });
   });
 
-  /// 用 [openLnReaderWebLogin] 推一页替身登录页，替身记下收到的目标与 jar，
-  /// 点 [result] 对应按钮 pop。
-  Future<bool?> runLogin(WidgetTester tester, {required bool result}) async {
-    Uri? openedTarget;
-    MangaCookieJar? openedJar;
+  /// 用 [openLnReaderWebLogin] 推**真的** [MihonWebLoginPage]（只替掉平台 WebView
+  /// 与 CookieManager），返回 pop 结果的取值器。
+  Future<bool? Function()> openLogin(
+    WidgetTester tester, {
+    required bool isDesktop,
+    List<webview.Cookie> browserCookies = const <webview.Cookie>[],
+  }) async {
     bool? outcome;
     await pump(
       tester,
@@ -114,16 +119,11 @@ void main() {
               context,
               manager: manager,
               plugin: manager.installed.single,
-              pageBuilder: (Uri target, MangaCookieJar jar) {
-                openedTarget = target;
-                openedJar = jar;
-                return Builder(
-                  builder: (BuildContext page) => TextButton(
-                    onPressed: () => Navigator.of(page).pop(result),
-                    child: const Text('finish'),
-                  ),
-                );
-              },
+              isDesktop: isDesktop,
+              cookieReader: (webview.WebUri _) async => browserCookies,
+              environmentFactory: () async => null,
+              webViewBuilder: (_) =>
+                  const SizedBox(key: ValueKey<String>('stub-webview')),
             );
           },
           child: const Text('open'),
@@ -132,29 +132,79 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(openedTarget, Uri.parse('https://syosetu.example/'));
+    return () => outcome;
+  }
+
+  MihonWebLoginPage loginPage(WidgetTester tester) =>
+      tester.widget<MihonWebLoginPage>(find.byType(MihonWebLoginPage));
+
+  // 审查（PR #2986）：原先测试用 pageBuilder 整个替掉登录页，生产里传给
+  // MihonWebLoginPage 的 UA / jar / 导入开关删了测试照绿。现在断言真页的入参。
+  testWidgets('登录页用桥的 UA、写小说源的 jar；移动端不给「从浏览器导入」', (WidgetTester tester) async {
+    await openLogin(tester, isDesktop: false);
+    final MihonWebLoginPage page = loginPage(tester);
+    expect(page.userAgent, LnReaderFetchBridge.defaultUserAgent);
     expect(
-      identical(openedJar, cloudflare.jar),
+      identical(page.jar, cloudflare.jar),
       isTrue,
       reason: '登录页必须写出站桥读的那份 jar，否则登了也不生效',
     );
-    await tester.tap(find.text('finish'));
-    await tester.pumpAndSettle();
-    return outcome;
-  }
-
-  testWidgets('登录完成：返回 true 并通知桥丢掉该站登录前的会话', (WidgetTester tester) async {
-    final List<String> replaced = <String>[];
-    cloudflare.addSiteSessionListener(replaced.add);
-    expect(await runLogin(tester, result: true), isTrue);
-    expect(replaced, <String>['syosetu.example']);
+    expect(page.baseUrl, Uri.parse('https://syosetu.example/'));
+    expect(page.browserImportAvailable, isFalse);
+    expect(
+      find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+      findsNothing,
+    );
   });
 
-  testWidgets('关页取消：返回 false，不动桥的会话', (WidgetTester tester) async {
-    final List<String> replaced = <String>[];
-    cloudflare.addSiteSessionListener(replaced.add);
-    expect(await runLogin(tester, result: false), isFalse);
-    expect(replaced, isEmpty);
+  testWidgets('桌面给「从浏览器导入」', (WidgetTester tester) async {
+    await openLogin(tester, isDesktop: true);
+    expect(loginPage(tester).browserImportAvailable, isTrue);
+    expect(
+      find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('点「完成」：整站 cookie 写进小说源 jar 并返回 true', (
+    WidgetTester tester,
+  ) async {
+    final bool? Function() outcome = await openLogin(
+      tester,
+      isDesktop: false,
+      browserCookies: <webview.Cookie>[
+        webview.Cookie(
+          name: 'ses',
+          value: 'signed-in',
+          domain: '.syosetu.example',
+        ),
+      ],
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('mihon_login_done')));
+    final Stopwatch clock = Stopwatch()..start();
+    while (find.byType(MihonWebLoginPage).evaluate().isNotEmpty &&
+        clock.elapsed < const Duration(seconds: 10)) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(outcome(), isTrue);
+    expect(
+      cloudflare.jar
+          .cookiesFor(Uri.parse('https://syosetu.example/'))
+          .map((MangaCookie c) => '${c.name}=${c.value}'),
+      <String>['ses=signed-in'],
+    );
+  });
+
+  testWidgets('关页取消：返回 false', (WidgetTester tester) async {
+    final bool? Function() outcome = await openLogin(tester, isDesktop: false);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MihonWebLoginPage), findsNothing);
+    expect(outcome(), isFalse);
   });
 
   testWidgets('源列表「⋯」菜单有「登录」', (WidgetTester tester) async {
@@ -198,7 +248,20 @@ void main() {
     'novel_source_login_syosetu',
   );
 
-  testWidgets('浏览页加载失败时错误旁给「登录」，正常空结果不给', (WidgetTester tester) async {
+  /// 按钮所在 Wrap 的宽度等于按钮本身：没显示的 Cloudflare 按钮不该留下
+  /// `spacing` 空隙把登录按钮挤偏。
+  void expectLoginNotOffset(WidgetTester tester) {
+    final Finder wrap = find
+        .ancestor(of: find.byKey(loginKey), matching: find.byType(Wrap))
+        .first;
+    expect(
+      tester.getSize(wrap).width,
+      tester.getSize(find.byKey(loginKey)).width,
+      reason: '零尺寸的 Cloudflare 按钮仍占 spacing 时 Wrap 会比登录按钮宽 8',
+    );
+  }
+
+  testWidgets('浏览页加载失败时错误旁给「登录」，不被隐形的验证按钮挤偏', (WidgetTester tester) async {
     runtime.popularError = Exception('HTTP 401');
     await pump(
       tester,
@@ -209,9 +272,12 @@ void main() {
     );
     await untilCalled(tester, 'popular:1:false');
     expect(find.byKey(loginKey), findsOneWidget);
+    expectLoginNotOffset(tester);
   });
 
-  testWidgets('浏览页正常回空列表：不提示登录', (WidgetTester tester) async {
+  // 产品取舍（审查 #4）：插件撞上要登录的站多半只回空列表、不抛错（verifyOnEmpty
+  // 同理），区分不出「真没有」还是「没登录看不到」，空结果也给登录入口。
+  testWidgets('浏览页回空列表：同样给「登录」', (WidgetTester tester) async {
     await pump(
       tester,
       LnReaderSourceBrowsePage(
@@ -221,6 +287,7 @@ void main() {
     );
     await untilCalled(tester, 'popular:1:false');
     expect(find.text(t.novel_source_no_results), findsOneWidget);
-    expect(find.byKey(loginKey), findsNothing);
+    expect(find.byKey(loginKey), findsOneWidget);
+    expectLoginNotOffset(tester);
   });
 }

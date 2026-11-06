@@ -739,19 +739,25 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
+                  // 只放真要显示的按钮：零尺寸子项照样占 spacing。
                   children: <Widget>[
-                    MihonCloudflareAction(
+                    if (MihonCloudflareAction.shows(
                       runtime: widget.manager.runtime,
                       error: error,
-                      onVerified: _load,
-                    ),
+                    ))
+                      MihonCloudflareAction(
+                        runtime: widget.manager.runtime,
+                        error: error,
+                        onVerified: _load,
+                      ),
                     // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
-                    MihonLoginAction(
-                      runtime: widget.manager.runtime,
-                      sourceName: widget.sourceContext.source.name,
-                      baseUrl: widget.sourceContext.source.baseUrl,
-                      onLoggedIn: _load,
-                    ),
+                    if (_loginAvailable)
+                      MihonLoginAction(
+                        runtime: widget.manager.runtime,
+                        sourceName: widget.sourceContext.source.name,
+                        baseUrl: widget.sourceContext.source.baseUrl,
+                        onLoggedIn: _load,
+                      ),
                   ],
                 ),
               ],

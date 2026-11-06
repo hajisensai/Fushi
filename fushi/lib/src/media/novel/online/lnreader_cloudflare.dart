@@ -16,8 +16,11 @@ class LnReaderCloudflareChallenge {
   final String userAgent;
 }
 
-/// 小说在线源的站点会话状态：持久 cookie（Cloudflare 放行 + 用户在 app 里登录的
-/// 会话）+ 每插件待解的挑战。
+/// 小说在线源的站点会话状态：持久 cookie + 每插件待解的挑战。
+///
+/// [jar] 是小说源**唯一**的 cookie 存储：Cloudflare 放行、用户在 app 里登录的会话、
+/// 站点在响应里下发 / 轮转的会话 cookie（出站桥按 (name, domain) 并进来）都在这
+/// 一份里。登录页 / 解题页整站替换后，下一个请求自然带的就是新会话，不需要通知谁。
 ///
 /// 纯 Dart（不依赖 Flutter）：[LnReaderFetchBridge] 只依赖 `dart:io`，页面在调用
 /// 失败后来查 [challengeFor] 即可，不需要监听。
@@ -55,26 +58,6 @@ class LnReaderCloudflare {
   /// 用户在解题页完成验证后调用：挑战作废，下次请求带新 cookie 重试。
   void resolved(String pluginId) {
     _challenges.remove(pluginId);
-  }
-
-  final List<void Function(String siteHost)> _siteSessionListeners =
-      <void Function(String siteHost)>[];
-
-  /// 出站桥订阅「某站点的会话在 [jar] 里被整体换掉了」（见 [siteSessionReplaced]）。
-  void addSiteSessionListener(void Function(String siteHost) listener) {
-    _siteSessionListeners.add(listener);
-  }
-
-  /// 用户在登录页登完、[jar] 里 [siteHost] 这一站的 cookie 已被整站替换后调用。
-  ///
-  /// 桥会丢掉本次运行里从该站响应记下的进程内 cookie：那份是登录**前**的匿名会话，
-  /// 同名项会盖过 jar 里刚登进去的会话（[LnReaderFetchBridge] 合并时进程内优先），
-  /// 不丢就表现为「登录成功了，请求却还是未登录」。
-  void siteSessionReplaced(String siteHost) {
-    for (final void Function(String siteHost) listener
-        in List<void Function(String siteHost)>.of(_siteSessionListeners)) {
-      listener(siteHost);
-    }
   }
 }
 

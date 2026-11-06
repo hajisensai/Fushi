@@ -61,11 +61,14 @@ class LnReaderCloudflareAction extends StatelessWidget {
     onVerified();
   }
 
+  /// 该插件有没有待解挑战（= 这个按钮显不显示）。与别的按钮并排进 `Wrap` 时
+  /// 按它决定要不要放进去：零尺寸的子项照样占 `spacing`，会把旁边的按钮挤歪。
+  static bool shows(LnReaderCloudflare? cloudflare, String pluginId) =>
+      cloudflare?.challengeFor(pluginId) != null;
+
   @override
   Widget build(BuildContext context) {
-    if (cloudflare?.challengeFor(pluginId) == null) {
-      return const SizedBox.shrink();
-    }
+    if (!shows(cloudflare, pluginId)) return const SizedBox.shrink();
     return FushiFilledButton.tonalIcon(
       key: ValueKey<String>('novel_source_cloudflare_verify_$pluginId'),
       onPressed: () => _verify(context),

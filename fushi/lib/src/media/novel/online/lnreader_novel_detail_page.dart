@@ -631,14 +631,24 @@ class _LnReaderNovelDetailPageState
           Wrap(
             spacing: 8,
             runSpacing: 8,
+            // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
             children: <Widget>[
-              LnReaderCloudflareAction(
-                cloudflare: widget.manager.cloudflare,
-                pluginId: widget.plugin.id,
-                onVerified: () => unawaited(_load()),
-              ),
+              if (LnReaderCloudflareAction.shows(
+                widget.manager.cloudflare,
+                widget.plugin.id,
+              ))
+                LnReaderCloudflareAction(
+                  cloudflare: widget.manager.cloudflare,
+                  pluginId: widget.plugin.id,
+                  onVerified: () => unawaited(_load()),
+                ),
               // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
-              if (error != null)
+              if (error != null &&
+                  lnReaderLoginTarget(
+                        cloudflare: widget.manager.cloudflare,
+                        site: widget.plugin.site,
+                      ) !=
+                      null)
                 LnReaderLoginAction(
                   manager: widget.manager,
                   plugin: widget.plugin,

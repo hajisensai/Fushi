@@ -106,15 +106,16 @@ class LnReaderFetchBridge {
     this.maxBodyBytes = 32 * 1024 * 1024,
     this.isBlockedHost = isLnReaderBlockedHost,
     this.isBlockedAddress = isLnReaderBlockedAddress,
-    this.cloudflare,
-  }) : _clientFactory = clientFactory {
-    // 与 [cloudflare] 同生同灭（AppModel 里一起建），不需要退订。
-    cloudflare?.addSiteSessionListener(forgetSiteCookies);
-  }
+    required this.cloudflare,
+  }) : _clientFactory = clientFactory;
 
-  /// Cloudflare 放行 cookie 与待解挑战；null 时不带持久 cookie、不记挑战
-  /// （单测 / 无 UI 场景）。见 [LnReaderCloudflare]。
-  final LnReaderCloudflare? cloudflare;
+  /// 站点会话：持久 cookie jar（Cloudflare 放行、app 内登录、站点自己下发的
+  /// 会话 cookie **同一份**）与待解挑战。见 [LnReaderCloudflare]。
+  ///
+  /// 必填：桥收到的 `Set-Cookie` 直接并进这份 jar，不另存进程内副本——两份存储
+  /// 并存时，登录页 / 解题页整站换掉 jar 里的会话后，进程内那份登录前的匿名会话
+  /// 仍会按同名盖过它（「登录成功了，请求却还是未登录」）。
+  final LnReaderCloudflare cloudflare;
 
   final HttpClient Function() _clientFactory;
   HttpClient? _client;
@@ -131,11 +132,6 @@ class LnReaderFetchBridge {
 
   /// 主机拦截判据；生产恒为 [isLnReaderBlockedHost]，测试（本地回环服务器）注入。
   final bool Function(String host) isBlockedHost;
-
-  /// 进程内 cookie：部分站点首个页面下发会话 cookie、后续请求要带回。只在本
-  /// 运行时生命周期内有效，不落盘。键是 cookie 的 domain（去掉前导点）。
-  final Map<String, Map<String, String>> _cookies =
-      <String, Map<String, String>>{};
 
   /// LNReader app 默认带的桌面 Chrome UA；插件自己给了就用插件的。
   static const String defaultUserAgent =
@@ -205,8 +201,8 @@ class LnReaderFetchBridge {
     final bool pluginCookie = headers.containsKey('cookie');
     // 宿主脚本给每个请求标上发起的插件（挑战按插件记，页面才知道该给谁弹验证）。
     final String? pluginId = rawRequest['plugin']?.toString();
-    final LnReaderCloudflare? cloudflare = this.cloudflare;
-    await cloudflare?.jar.ensureLoadedBestEffort();
+    final LnReaderCloudflare cloudflare = this.cloudflare;
+    await cloudflare.jar.ensureLoadedBestEffort();
 
     // 🔴 重定向手动跟：HttpClient 自动跟随时，一个指向 127.0.0.1 的 302 就能绕过
     // 上面的回环拦截。每一跳都重新过 [isLnReaderBlockedHost]。
@@ -221,7 +217,7 @@ class LnReaderFetchBridge {
       );
       request.followRedirects = false;
       if (!pluginCookie) {
-        final String? cookie = _cookieHeaderFor(current);
+        final String? cookie = cloudflare.jar.cookieHeaderFor(current);
         if (cookie == null) {
           headers.remove('cookie');
         } else {
@@ -234,7 +230,7 @@ class LnReaderFetchBridge {
       });
       if (body != null) request.add(body);
       response = await request.close();
-      _rememberCookies(current, response);
+      await _rememberCookies(current, response);
       final String? location = response.headers.value(
         HttpHeaders.locationHeader,
       );
@@ -268,7 +264,7 @@ class LnReaderFetchBridge {
       }
     }
     final Uint8List bytes = buffer.takeBytes();
-    if (cloudflare != null && pluginId != null) {
+    if (pluginId != null) {
       if (isLnReaderCloudflareChallenge(
         statusCode: response.statusCode,
         headers: response.headers,
@@ -308,98 +304,100 @@ class LnReaderFetchBridge {
     return client;
   }
 
-  /// 按浏览器的宽松口径记下 `Set-Cookie`。
+  /// 按浏览器的宽松口径把 `Set-Cookie` 并进持久 jar（按 (name, domain) 覆盖，
+  /// 过期条目即删除，见 [MangaCookieJar.mergeResponseCookies]）。
   ///
   /// 不用 `response.cookies`：Dart 的 [Cookie] 严格按 RFC 6265 校验，值里有空格 /
   /// 逗号 / 引号的一条 cookie 就让它整体抛 FormatException，整个请求变成
   /// `{error}`——而浏览器和 LNReader app（OkHttp）都照收。这里逐条解析，只丢
   /// 真的解析不出名字的那条。
-  void _rememberCookies(Uri uri, HttpClientResponse response) {
-    for (final String raw
-        in response.headers[HttpHeaders.setCookieHeader] ?? const <String>[]) {
-      final List<String> parts = raw.split(';');
-      final int eq = parts.first.indexOf('=');
-      if (eq <= 0) continue;
-      final String name = parts.first.substring(0, eq).trim();
-      final String value = parts.first.substring(eq + 1).trim();
-      if (name.isEmpty) continue;
-      String domain = uri.host;
-      int? maxAge;
-      DateTime? expires;
-      for (final String attribute in parts.skip(1)) {
-        final int split = attribute.indexOf('=');
-        final String key =
-            (split < 0 ? attribute : attribute.substring(0, split))
-                .trim()
-                .toLowerCase();
-        final String argument = split < 0
-            ? ''
-            : attribute.substring(split + 1).trim();
-        switch (key) {
-          case 'domain' when argument.isNotEmpty:
-            domain = argument.replaceFirst(RegExp(r'^\.'), '');
-          case 'max-age':
-            maxAge = int.tryParse(argument) ?? maxAge;
-          case 'expires':
-            try {
-              expires = HttpDate.parse(argument);
-            } on Exception {
-              // 日期写坏了就当会话 cookie（浏览器同样忽略坏掉的 Expires）。
-            }
-        }
-      }
-      // RFC 6265 §5.3：两者都在时 Max-Age 优先。
-      final bool expired = maxAge != null
-          ? maxAge <= 0
-          : expires != null && expires.isBefore(DateTime.now());
-      final Map<String, String> jar = _cookies.putIfAbsent(
-        domain.toLowerCase(),
-        () => <String, String>{},
-      );
-      if (expired) {
-        jar.remove(name);
-      } else {
-        jar[name] = value;
-      }
+  Future<void> _rememberCookies(Uri uri, HttpClientResponse response) async {
+    final List<MangaCookie> incoming = <MangaCookie>[
+      for (final String raw
+          in response.headers[HttpHeaders.setCookieHeader] ?? const <String>[])
+        ?parseLnReaderSetCookie(raw, uri, nowMs: cloudflare.jar.nowMs),
+    ];
+    if (incoming.isEmpty) return;
+    try {
+      await cloudflare.jar.mergeResponseCookies(incoming);
+    } on FileSystemException {
+      // 只丢持久化：jar 先改内存再落盘，本次运行里新会话照样随请求发出；
+      // cookie 只是增强（同 [MangaCookieJar.ensureLoadedBestEffort] 的读路径
+      // 契约），写盘失败不该把一次成功的请求变成失败。
     }
-  }
-
-  /// 持久 jar（Cloudflare 放行等）打底，本次运行站点下发的会话 cookie 覆盖同名项。
-  String? _cookieHeaderFor(Uri uri) {
-    final String host = uri.host.toLowerCase();
-    final Map<String, String> merged = <String, String>{
-      for (final MangaCookie cookie
-          in cloudflare?.jar.cookiesFor(uri) ?? const <MangaCookie>[])
-        cookie.name: cookie.value,
-    };
-    _cookies.forEach((String domain, Map<String, String> jar) {
-      if (host == domain || host.endsWith('.$domain')) merged.addAll(jar);
-    });
-    if (merged.isEmpty) return null;
-    return merged.entries
-        .map((MapEntry<String, String> e) => '${e.key}=${e.value}')
-        .join('; ');
-  }
-
-  /// 丢掉进程内记下的、属于 [siteHost] 同一站点（本域、子域或父域）的 cookie。
-  ///
-  /// 用户在登录页登完后由 [LnReaderCloudflare.siteSessionReplaced] 触发：持久 jar
-  /// 里已是新会话，进程内那份是登录前的匿名会话，同名项会把新会话盖掉。
-  void forgetSiteCookies(String siteHost) {
-    final String site = siteHost.toLowerCase();
-    _cookies.removeWhere(
-      (String domain, Map<String, String> _) =>
-          domain == site ||
-          domain.endsWith('.$site') ||
-          site.endsWith('.$domain'),
-    );
   }
 
   void close() {
     _client?.close(force: true);
     _client = null;
-    _cookies.clear();
   }
+}
+
+/// 把一条 `Set-Cookie` 头按浏览器的宽松口径解析成 jar 条目；解析不出名字、或
+/// `Domain=` 不覆盖请求 host（RFC 6265 §5.3 第 6 步：站点不能替别的域种
+/// cookie）时返回 null。
+///
+/// 已过期（`Max-Age<=0` 或 `Expires` 在过去）的条目照样返回，`expiresAt` 落在
+/// 过去——它表示「删掉这条」，由 [MangaCookieJar.mergeResponseCookies] 执行。
+/// 没写 `Domain=` 的是 host-only（只发回这一个 host），与登录页从 WebView 导出的
+/// 条目同一口径，同名同域时互相覆盖。
+MangaCookie? parseLnReaderSetCookie(String raw, Uri uri, {required int nowMs}) {
+  final List<String> parts = raw.split(';');
+  final int eq = parts.first.indexOf('=');
+  if (eq <= 0) return null;
+  final String name = parts.first.substring(0, eq).trim();
+  final String value = parts.first.substring(eq + 1).trim();
+  if (name.isEmpty) return null;
+  final String host = MangaCookie.canonicalizeDomain(uri.host);
+  String? domainAttribute;
+  String path = '/';
+  bool secure = false;
+  int? maxAge;
+  DateTime? expires;
+  for (final String attribute in parts.skip(1)) {
+    final int split = attribute.indexOf('=');
+    final String key = (split < 0 ? attribute : attribute.substring(0, split))
+        .trim()
+        .toLowerCase();
+    final String argument = split < 0
+        ? ''
+        : attribute.substring(split + 1).trim();
+    switch (key) {
+      case 'domain' when argument.isNotEmpty:
+        domainAttribute = MangaCookie.canonicalizeDomain(argument);
+      case 'path' when argument.startsWith('/'):
+        path = argument;
+      case 'secure':
+        secure = true;
+      case 'max-age':
+        maxAge = int.tryParse(argument) ?? maxAge;
+      case 'expires':
+        try {
+          expires = HttpDate.parse(argument);
+        } on Exception {
+          // 日期写坏了就当会话 cookie（浏览器同样忽略坏掉的 Expires）。
+        }
+    }
+  }
+  if (domainAttribute != null &&
+      domainAttribute.isNotEmpty &&
+      !MangaCookie.hostMatchesDomain(host, domainAttribute)) {
+    return null;
+  }
+  final bool hostOnly = domainAttribute == null || domainAttribute.isEmpty;
+  // RFC 6265 §5.3：两者都在时 Max-Age 优先；Max-Age<=0 即刻过期。
+  final int? expiresAt = maxAge != null
+      ? (maxAge <= 0 ? 0 : nowMs + maxAge * 1000)
+      : expires?.millisecondsSinceEpoch;
+  return MangaCookie(
+    name: name,
+    value: value,
+    domain: hostOnly ? host : domainAttribute,
+    path: path,
+    secure: secure,
+    hostOnly: hostOnly,
+    expiresAt: expiresAt,
+  );
 }
 
 /// 封面 / 插图请求头：与插件页面请求同一套默认头打底（桌面 Chrome UA、

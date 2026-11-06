@@ -210,6 +210,45 @@ void main() {
     });
   });
 
+  group('mergeResponseCookies（LNReader 出站桥的 Set-Cookie）', () {
+    test('过期条目表示删除同名同域条目；mergeFromRuntime 仍只忽略它', () async {
+      final MihonCookieJar store = jar();
+      await store.replaceForHost('bookwalker.jp', <MangaCookie>[
+        cookie('session', value: 'old'),
+        cookie('remember', value: 'keep'),
+      ]);
+      final MangaCookie expired = cookie('session', value: '', expiresAt: 0);
+
+      expect(await store.mergeFromRuntime(<MangaCookie>[expired]), isFalse);
+      expect(store.cookiesForSite('bookwalker.jp'), hasLength(2));
+
+      expect(await store.mergeResponseCookies(<MangaCookie>[expired]), isTrue);
+      expect(
+        store.cookiesForSite('bookwalker.jp').map((MangaCookie c) => c.name),
+        <String>['remember'],
+      );
+      // 落盘的也是删除后的结果。
+      final MihonCookieJar reloaded = jar();
+      await reloaded.ensureLoaded();
+      expect(
+        reloaded.cookiesForSite('bookwalker.jp').map((MangaCookie c) => c.name),
+        <String>['remember'],
+      );
+    });
+
+    test('并发写入串行落盘：不抛错、最后的文件包含全部条目', () async {
+      final MihonCookieJar store = jar();
+      await store.ensureLoaded();
+      await Future.wait(<Future<bool>>[
+        for (int i = 0; i < 24; i++)
+          store.mergeResponseCookies(<MangaCookie>[cookie('c$i')]),
+      ]);
+      final MihonCookieJar reloaded = jar();
+      await reloaded.ensureLoaded();
+      expect(reloaded.cookiesForSite('bookwalker.jp'), hasLength(24));
+    });
+  });
+
   group('X-Fushi-Set-Cookie 线格式', () {
     test('往返保真，含非 ASCII 与分号（裸放 JSON 头会静默损坏的那些）', () {
       final List<MangaCookie> original = <MangaCookie>[
