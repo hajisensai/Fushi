@@ -237,6 +237,7 @@ class ServerConfig {
   final ServerAiConfig? ai;
 
   ServerConfig copyWith({
+    String? dataDir,
     int? port,
     String? bind,
     bool? tls,
@@ -269,7 +270,7 @@ class ServerConfig {
     ServerAiConfig? ai,
     bool clearAi = false,
   }) => ServerConfig(
-    dataDir: dataDir,
+    dataDir: dataDir ?? this.dataDir,
     port: port ?? this.port,
     bind: bind ?? this.bind,
     tls: tls ?? this.tls,

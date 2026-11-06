@@ -1738,7 +1738,8 @@ void main() {
         await store.createNote(
           noteTypeId: nt,
           fieldsById: <String, String>{
-            front: 'Q[sound:front.mp3]',
+            // 带卡片脚本 → 原生 HTML 卡面画不了，回退整面 WebView（本测试测的就是它）。
+            front: 'Q[sound:front.mp3]<script>void 0;</script>',
             back: 'A[sound:back.mp3]',
           },
         );

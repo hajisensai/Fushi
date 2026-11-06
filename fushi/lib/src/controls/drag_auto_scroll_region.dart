@@ -31,7 +31,7 @@ class DragAutoScrollRegion extends StatefulWidget {
 
   final Widget child;
 
-  /// 区外最近的竖向 Scrollable 是否参与自动滚动。
+  /// 区外的竖向 Scrollable（由近及远**整条链**）是否参与自动滚动。
   final bool includeAncestorScrollable;
 
   /// 指针距视口边缘多近（逻辑像素）时开始滚。
@@ -50,7 +50,12 @@ class DragAutoScrollRegion extends StatefulWidget {
 class DragAutoScrollRegionState extends State<DragAutoScrollRegion> {
   /// 区内注册的滚动视口，先注册的靠外；挑选时内层优先。
   final List<ScrollableState> _inner = <ScrollableState>[];
-  ScrollableState? _ancestor;
+
+  /// 区外的竖向 Scrollable，由近及远。必须是整条链而不是最近一个：设置渲染器把
+  /// 分组内容画成 `shrinkWrap` + 禁滚的 ListView，嵌在面板真正滚动的
+  /// SingleChildScrollView 里——只取最近一个会拿到那个滚不动的内层，外层永远不滚
+  /// （WJP1eLSfdx：播放器侧边栏「控制按钮」页，BUG-3985 修复在那里没生效）。
+  List<ScrollableState> _ancestors = const <ScrollableState>[];
   final Map<ScrollableState, EdgeDraggingAutoScroller> _scrollers =
       <ScrollableState, EdgeDraggingAutoScroller>{};
   ScrollableState? _active;
@@ -67,9 +72,7 @@ class DragAutoScrollRegionState extends State<DragAutoScrollRegion> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _ancestor = widget.includeAncestorScrollable
-        ? Scrollable.maybeOf(context, axis: Axis.vertical)
-        : null;
+    _ancestors = _resolveAncestors();
   }
 
   @override
@@ -77,10 +80,24 @@ class DragAutoScrollRegionState extends State<DragAutoScrollRegion> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.includeAncestorScrollable !=
         widget.includeAncestorScrollable) {
-      _ancestor = widget.includeAncestorScrollable
-          ? Scrollable.maybeOf(context, axis: Axis.vertical)
-          : null;
+      _ancestors = _resolveAncestors();
     }
+  }
+
+  List<ScrollableState> _resolveAncestors() {
+    if (!widget.includeAncestorScrollable) return const <ScrollableState>[];
+    final List<ScrollableState> chain = <ScrollableState>[];
+    ScrollableState? next = Scrollable.maybeOf(context, axis: Axis.vertical);
+    while (next != null) {
+      chain.add(next);
+      // 再往外只做查找、不登记依赖（依赖会记到别人的 element 上）；横向的跳过。
+      next = next.context.findAncestorStateOfType<ScrollableState>();
+      while (next != null &&
+          axisDirectionToAxis(next.axisDirection) != Axis.vertical) {
+        next = next.context.findAncestorStateOfType<ScrollableState>();
+      }
+    }
+    return chain;
   }
 
   @override
@@ -156,12 +173,13 @@ class DragAutoScrollRegionState extends State<DragAutoScrollRegion> {
   }
 
   /// 挑出该滚的视口：包含指针、指针在它的边缘带内、且朝那个方向还有可滚余量。
-  /// 内层优先，再看区外祖先。指针不在任何视口边缘带时返回 null（不滚）——这样
-  /// 从视口外（如固定在上方的调色板）开始拖时不会一拿起就把视口往回卷。
+  /// 内层优先，再由近及远看区外祖先（滚不动的会因没有可滚余量被跳过）。指针
+  /// 不在任何视口边缘带时返回 null（不滚）——这样从视口外（如固定在上方的
+  /// 调色板）开始拖时不会一拿起就把视口往回卷。
   ScrollableState? _pickScrollable(Offset globalPosition) {
     final List<ScrollableState> candidates = <ScrollableState>[
       ..._inner.reversed,
-      ?_ancestor,
+      ..._ancestors,
     ];
     for (final ScrollableState scrollable in candidates) {
       if (!scrollable.mounted) continue;
