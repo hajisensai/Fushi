@@ -492,6 +492,9 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// 由 [finalizeAlignedCues] 自行判定），命中 cue 的文本落库前换成正文原文。
 ///
 /// 入参均为已就位的本地绝对路径（[subtitlePath] 必给；[audioPaths] 可空）。
+/// [copyAudio] 为 false 时是引用导入（`AudiobookStorage.syncAudioFiles` 的
+/// `copy: false`）：音频留在原处、库里记原始绝对路径——服务端有声书库根用它，
+/// 不把整个库根再拷一份进数据目录。
 /// [autoWindow] / [searchWindow] / [similarityThreshold] 与对话框同名字段语义
 /// 一致。[onProgress] 替代 reportProgress，[messages] 注入步骤文案；二者皆可
 /// 省略（扫描器不需要 UI 进度）。返回 [AudiobookAlignmentResult]。
@@ -508,6 +511,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   String? author,
   required String subtitlePath,
   List<String> audioPaths = const <String>[],
+  bool copyAudio = true,
   bool autoWindow = true,
   int searchWindow = EpubSrtMatcher.defaultSearchWindow,
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
@@ -624,6 +628,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       await AudiobookStorage.syncAudioFiles(
         persistDir,
         audioPaths,
+        copy: copyAudio,
         onFile: (String name) {
           step(AudiobookAlignmentStep.persisting, detail: name);
           report(0.85, messages._copying(name));
