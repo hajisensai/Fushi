@@ -139,11 +139,37 @@ void main() {
       contains('--target-platform android-arm64'),
       reason: 'TODO-841: push/debug 通道只打 arm64-only 瘦身',
     );
+    // 2026-11-05（run 41955804997）：一次不带 target-platform 的 split-per-abi 会让三个
+    // gen_snapshot 同时跑，ubuntu-26.04 托管 runner 上被平台掐死。改成逐 ABI 串行，
+    // 但三个 ABI 一个都不能少，且每次只带一个 target-platform（不许退回并发的单次调用）。
     expect(
       splitReleaseBuild,
-      isNot(contains('--target-platform')),
-      reason: 'beta/formal 必须保留全 ABI，不得限制到单一 ABI',
+      contains('for platform in android-arm android-arm64 android-x64; do'),
+      reason: 'beta/formal 必须保留全 ABI：arm / arm64 / x64 三个都要出包',
     );
+    expect(
+      splitReleaseBuild,
+      contains(
+        'flutter --verbose build apk --split-per-abi --release '
+        r'--target-platform "$platform"',
+      ),
+      reason: '逐 ABI 串行：一次只编一个 gen_snapshot，避免三份 AOT 并发耗尽 runner',
+    );
+    expect(
+      'flutter --verbose build apk'.allMatches(splitReleaseBuild).length,
+      1,
+      reason: '只允许循环里那一条构建命令，不许再并存一次三 ABI 并发的调用',
+    );
+    for (final String abi in <String>['armeabi-v7a', 'arm64-v8a', 'x86_64']) {
+      expect(splitReleaseBuild, contains(abi), reason: '出包后必须核对 $abi 的 APK 在');
+    }
+    expect(
+      splitReleaseBuild,
+      contains('/proc/meminfo'),
+      reason: 'runner 被掐时 post 步骤不跑，内存采样必须实时打进本步日志',
+    );
+    expect(preBuildDiagnostics, contains('free -m'));
+    expect(preBuildDiagnostics, contains('df -h'));
 
     // BUG-3874：--target-platform 只过滤 libflutter/libapp，Flutter 插件不分包时又把
     // abiFilters 固定写回三个 ABI，调试包 459 MB 里 ~228 MB 是起不来的 v7a/x86_64。

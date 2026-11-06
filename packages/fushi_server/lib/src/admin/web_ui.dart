@@ -90,7 +90,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <table><thead><tr><th>id</th><th>路径</th><th>类型</th><th>状态</th><th></th></tr></thead><tbody id="libs"></tbody></table>
 <div class="row" style="margin-top:12px">
 <input type="text" id="lib-path" placeholder="/srv/media/anime" style="flex:1">
-<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option></select>
+<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option><option value="manga">manga (mokuro / cbz / cbr / cb7 / zip / rar / 页图目录)</option><option value="audiobook">audiobook (音频目录，可带 epub / 字幕)</option></select>
 <input type="text" id="lib-id" placeholder="id（可空）" style="min-width:120px">
 <button class="b" id="btn-lib-add">添加</button></div>
 <p class="small muted">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</p>

@@ -9,7 +9,9 @@
 // - 全平台：本模块自己的会话标记（`session_marker.json`）。启动时写入、每次生命周期
 //   变化同步覆写、正常退出（`exitApp` / `detached`）时标 clean；下次启动发现上次没
 //   标 clean，就记一条「上次未正常退出」+ 最后的生命周期状态与内存压力时刻——API < 30
-//   的 Android（没有 ApplicationExitInfo）靠的就是它。
+//   的 Android（没有 ApplicationExitInfo）靠的就是它。标记里还滚动保留最近几次内存采样
+//   （[PreviousExitLog.startMemorySampling]：进程 RSS + 各子系统探针），不在任何长活动
+//   里的前台内存耗尽闪退（BUG-4075 `Eg5thU2wox`）也留得下崩前的内存曲线。
 // - Android 11+：`ActivityManager.getHistoricalProcessExitReasons`（原生
 //   `ProcessExitChannel.java`）：reason / description / importance / pss / rss / 时间，
 //   native crash 与 ANR 附 trace 摘要；外加进程级 `onTrimMemory` 级别记录。
@@ -22,6 +24,7 @@
 // 隐私：所有摘要都过 [redactExitReportPaths]，把路径里的用户名换成 `<user>`；不带
 // 完整 dump / 完整 tombstone，只带有限长度的摘要。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -175,9 +178,13 @@ class PreviousSession {
     this.exitStage,
     this.terminatedBy,
     this.launchDetail,
+    this.memorySamples = const <String>[],
   });
 
   final int pid;
+
+  /// 上次进程最近几次内存采样（旧→新，[SessionMarker.recordMemorySample]）；旧版标记没有为空。
+  final List<String> memorySamples;
 
   /// 启动时原生给的界面取证（[LaunchPresence.detail]）；平台没回答为 null。
   final String? launchDetail;
@@ -241,6 +248,11 @@ class PreviousSession {
         exitStage: asString(decoded['exitStage']),
         terminatedBy: asString(decoded['terminatedBy']),
         launchDetail: asString(decoded['launchDetail']),
+        memorySamples: <String>[
+          if (decoded['memorySamples'] case final List<Object?> samples)
+            for (final Object? s in samples)
+              if (s is String && s.isNotEmpty) s,
+        ],
       );
     } on FormatException {
       return null;
@@ -252,6 +264,12 @@ class PreviousSession {
 /// audio_service 被系统媒体续播 / 媒体键 / 车机拉起；iOS 后台拉起）。收到第一个真实
 /// 生命周期（界面接上来）就被覆盖。见 [PreviousSession.diedInForeground]、BUG-4072。
 const String kSessionLifecycleHeadless = 'headless';
+
+/// 会话标记里滚动保留的内存采样次数：按 [kMemorySampleInterval] 约覆盖崩前 3 分钟。
+const int kSessionMemorySampleCount = 6;
+
+/// 内存采样间隔。
+const Duration kMemorySampleInterval = Duration(seconds: 30);
 
 /// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
 class SessionMarker {
@@ -273,6 +291,7 @@ class SessionMarker {
   String? _exitStage;
   String? _terminatedBy;
   String? _launchDetail;
+  final List<String> _memorySamples = <String>[];
 
   /// 读出上次会话（没有 / 损坏返回 null），然后写入本次会话的初始标记。
   ///
@@ -326,6 +345,16 @@ class SessionMarker {
     _write();
   }
 
+  /// 记一次内存采样（[PreviousExitLog.startMemorySampling]）：只留最近
+  /// [kSessionMemorySampleCount] 次，整份标记照常同步覆写。
+  void recordMemorySample(String sample) {
+    _memorySamples.add(sample);
+    while (_memorySamples.length > kSessionMemorySampleCount) {
+      _memorySamples.removeAt(0);
+    }
+    _write();
+  }
+
   /// 退出意图：退出链的**第一步**、在任何 await 之前同步调用。此后进程不论怎么没的
   /// （看门狗、安装器强杀、系统结束会话），下次启动都不会再判成「停在前台时没了」。
   /// 只记第一次的原因（链尾的 `exitApp` 再调一次是 no-op）。
@@ -371,6 +400,7 @@ class SessionMarker {
           'exitStage': _exitStage,
           'terminatedBy': _terminatedBy,
           'launchDetail': _launchDetail,
+          if (_memorySamples.isNotEmpty) 'memorySamples': _memorySamples,
         }),
         flush: true,
       );
@@ -412,6 +442,9 @@ ExitReportEntry? describeUncleanPreviousSession(
       ' memoryPressure=${previous.memoryPressureCount}x '
       'last@${_iso(previous.memoryPressureAt!)}',
     );
+  }
+  if (previous.memorySamples.isNotEmpty) {
+    b.write(' memory=[${previous.memorySamples.join('; ')}]');
   }
   if (!previous.initialised) b.write(' 启动初始化未完成');
   final String? exitReason = previous.exitReason;
@@ -1134,6 +1167,7 @@ class _ExitEvidenceObserver with WidgetsBindingObserver {
   @override
   void didHaveMemoryPressure() {
     marker.recordMemoryPressure(nowMs: DateTime.now().millisecondsSinceEpoch);
+    PreviousExitLog.sampleMemory(trigger: 'pressure');
     ErrorLogService.instance.logDiagnostic(
       kMemoryPressureSource,
       'system memory pressure; rss=${(ProcessInfo.currentRss / (1 << 20)).round()}MB '
@@ -1142,15 +1176,137 @@ class _ExitEvidenceObserver with WidgetsBindingObserver {
   }
 }
 
+/// 内存采样的子系统探针：返回一小段紧凑读数（如 `srs=1/1 …`），没有可报的返回 null。
+/// 每次采样同步调用，必须便宜（不做 I/O、不等锁）。
+typedef MemoryProbe = String? Function();
+
+/// 进程线程数探针（Android / Linux 读 `/proc/self/status` 的 `Threads:`）：`thr=95`；别的平台
+/// 或读不到返回 null。线程栈也吃地址空间与内存，看它随时间涨不涨。
+String? processThreadCountProbe() => Platform.isAndroid || Platform.isLinux
+    ? parseProcStatusThreads(_procStatus())
+    : null;
+
+String? _procStatus() {
+  try {
+    return File('/proc/self/status').readAsStringSync();
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// 进程常驻内存分项探针（Android / Linux 读 `/proc/self/status`）：`anon=…MB file=…MB shm=…MB`。
+///
+/// anon = 匿名页（Dart 堆、malloc、线程栈、部分 GPU 映射）；file = 文件映射页（so、srs.db 的 mmap
+/// 读——干净页，内存紧时可回收）；shm = 共享内存（ashmem / memfd）。BUG-4075：分清涨的是不是 srs.db
+/// 的 mmap 文件页。别的平台或读不到返回 null。
+String? processRssBreakdownProbe() => Platform.isAndroid || Platform.isLinux
+    ? parseProcStatusRssBreakdown(_procStatus())
+    : null;
+
+/// 从 `/proc/<pid>/status` 正文取 `RssAnon` / `RssFile` / `RssShmem`（kB），格式化为
+/// `anon=…MB file=…MB shm=…MB`；一项都没有返回 null，缺的项不写。
+@visibleForTesting
+String? parseProcStatusRssBreakdown(String? status) {
+  if (status == null) return null;
+  final List<String> parts = <String>[];
+  for (final (String key, String label) in const <(String, String)>[
+    ('RssAnon', 'anon'),
+    ('RssFile', 'file'),
+    ('RssShmem', 'shm'),
+  ]) {
+    final RegExpMatch? m = RegExp(
+      '^$key'
+      r':\s*(\d+)\s*kB',
+      multiLine: true,
+    ).firstMatch(status);
+    if (m != null) parts.add('$label=${int.parse(m.group(1)!) >> 10}MB');
+  }
+  return parts.isEmpty ? null : parts.join(' ');
+}
+
+/// 从 `/proc/<pid>/status` 正文取 `Threads:` 行，格式化为 `thr=<n>`；没有返回 null。
+@visibleForTesting
+String? parseProcStatusThreads(String? status) {
+  if (status == null) return null;
+  final RegExpMatch? m = RegExp(
+    r'^Threads:\s*(\d+)',
+    multiLine: true,
+  ).firstMatch(status);
+  return m == null ? null : 'thr=${m.group(1)}';
+}
+
+/// 一次内存采样的文本：`HH:mm:ss rss=…MB max=…MB [探针…] [(trigger)]`。探针抛异常时记
+/// `probe!` 而不是让采样失败（取证不能反过来变成崩溃源）。
+String describeMemorySample({
+  required DateTime now,
+  required int rssBytes,
+  required int maxRssBytes,
+  List<MemoryProbe> probes = const <MemoryProbe>[],
+  String? trigger,
+}) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  final StringBuffer b = StringBuffer()
+    ..write('${two(now.hour)}:${two(now.minute)}:${two(now.second)} ')
+    ..write('rss=${rssBytes >> 20}MB max=${maxRssBytes >> 20}MB');
+  for (final MemoryProbe probe in probes) {
+    String? reading;
+    try {
+      reading = probe();
+    } on Object {
+      reading = 'probe!';
+    }
+    if (reading != null && reading.isNotEmpty) b.write(' $reading');
+  }
+  if (trigger != null) b.write(' ($trigger)');
+  return b.toString();
+}
+
 /// 启动时调用一次（[ErrorLogService.init] 之后）。
 abstract final class PreviousExitLog {
   static SessionMarker? _marker;
   static _ExitEvidenceObserver? _observer;
   static PreviousSession? _previous;
   static PreviousExitVerdict? _verdict;
+  static Timer? _memoryTimer;
+  static List<MemoryProbe> _memoryProbes = const <MemoryProbe>[];
 
   /// 本次启动对上次退出的判定（[foldIntoErrorLog] 之后可读；没有异常退出为 null）。
   static PreviousExitVerdict? get verdict => _verdict;
+
+  /// 开始周期内存采样（[foldIntoErrorLog] 之后、生产启动时调一次；重复调用只换探针）：每
+  /// [kMemorySampleInterval] 把进程 RSS 与 [probes] 的读数写进会话标记，下次启动若上次没正常
+  /// 退出，「上次未正常退出」那条带上崩前最近几次采样。
+  static void startMemorySampling({
+    List<MemoryProbe> probes = const <MemoryProbe>[],
+  }) {
+    _memoryProbes = probes;
+    if (_marker == null || _memoryTimer != null) return;
+    sampleMemory(trigger: 'start');
+    _memoryTimer = Timer.periodic(kMemorySampleInterval, (_) => sampleMemory());
+  }
+
+  /// 停止周期采样（测试收尾用）。
+  @visibleForTesting
+  static void stopMemorySampling() {
+    _memoryTimer?.cancel();
+    _memoryTimer = null;
+    _memoryProbes = const <MemoryProbe>[];
+  }
+
+  /// 立即采一次（周期定时器、系统内存压力回调调用）。没开始记录会话时为空操作。
+  static void sampleMemory({String? trigger}) {
+    final SessionMarker? marker = _marker;
+    if (marker == null) return;
+    marker.recordMemorySample(
+      describeMemorySample(
+        now: DateTime.now(),
+        rssBytes: ProcessInfo.currentRss,
+        maxRssBytes: ProcessInfo.maxRss,
+        probes: _memoryProbes,
+        trigger: trigger,
+      ),
+    );
+  }
 
   /// 本次启动初始化完成（首页出来了）时调用：之后再没了不算「启动即闪退」。
   static void markInitialised() => _marker?.recordInitialised();

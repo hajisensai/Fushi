@@ -23,6 +23,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_core_workers.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
 /// srs.db 的 schema 归 Rust（store/schema.rs）：Drift 侧版本恒为 1，不做任何迁移。
 const int kSrsDriftSchemaVersion = 1;
@@ -127,7 +128,12 @@ DatabaseConnection srsDatabaseConnection(SrsCore core) {
   final SrsCoreWorkers workers = SrsCoreWorkers.of(libraryPath)
     ..setQueryConcurrency(core.readConcurrency);
   return DatabaseConnection(
-    SrsSplitExecutor(write: write, address: address, workers: workers),
+    SrsSplitExecutor(
+      // 写那一路（含事务 / 独占块里的全部语句）经账本拦截器；事务外的查询道在 [SrsSplitExecutor._select] 里记。
+      write: write.interceptWith(SrsLedgerInterceptor()),
+      address: address,
+      workers: workers,
+    ),
     // 表更新通知与原来同一个 store（写那一路的连接带的）。
     streamQueries: write.streamQueries,
   );
@@ -208,24 +214,45 @@ final class SrsSplitExecutor implements QueryExecutor {
     // 同步登记、同步提交：计数只覆盖 worker 那一段（结束时由池子在根 zone 里减）。之后改发写那一路的回退发生在
     // 调用方 zone 的 await 之后，由 [_write] 自己的关闭语义收尾，不算在这里。
     _inFlight++;
+    final int token = SrsOpLedger.begin(srsSqlLedgerName(statement));
     final Future<SrsQueryPage?> page = _workers.run(
       _address,
       _snapshotQueryJob(statement, args),
       lane: SrsCoreLane.query,
       onSettled: _settled,
     );
-    return _select(page, statement, args);
+    return _select(page, statement, args, token);
   }
 
   Future<List<Map<String, Object?>>> _select(
     Future<SrsQueryPage?> pending,
     String statement,
     List<Object?> args,
+    int ledgerToken,
   ) async {
-    final SrsQueryPage? page = await pending;
-    if (page == null) return _write.runSelect(statement, args);
+    final SrsQueryPage? page;
+    try {
+      page = await pending;
+    } on Object {
+      SrsOpLedger.end(ledgerToken);
+      rethrow;
+    }
+    if (page == null) {
+      // 改发写那一路：由那一路的账本拦截器记，这里不重复记。
+      SrsOpLedger.cancel(ledgerToken);
+      return _write.runSelect(statement, args);
+    }
     final (List<String> names, List<List<Object?>> rows) = page;
-    return QueryResult(names, rows).asMap.toList();
+    final List<Map<String, Object?>> out = QueryResult(
+      names,
+      rows,
+    ).asMap.toList();
+    SrsOpLedger.end(
+      ledgerToken,
+      bytes: srsRowsLedgerBytes(out),
+      rows: out.length,
+    );
+    return out;
   }
 
   @override
@@ -271,3 +298,64 @@ QueryExecutor srsInlineExecutor(SrsCore core) => DelegatedDatabase(
   SrsRustDelegate(core.address, core.libraryPath),
   isSequential: true,
 );
+
+/// 把 srs.db 上的每条 Drift 语句记进 [SrsOpLedger]（按 `sql:<动词> <表>` 归并）：SELECT 另记行数与
+/// 读回的字节（字符串按 UTF-16 码元数、BLOB 按长度），BUG-4075 取证用。事务 / 独占块里的语句也经这里。
+final class SrsLedgerInterceptor extends QueryInterceptor {
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) => SrsOpLedger.track(
+    srsSqlLedgerName(statement),
+    () => executor.runSelect(statement, args),
+    measure: (List<Map<String, Object?>> rows) =>
+        (srsRowsLedgerBytes(rows), rows.length),
+  );
+
+  @override
+  Future<int> runUpdate(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) => SrsOpLedger.track(
+    srsSqlLedgerName(statement),
+    () => executor.runUpdate(statement, args),
+  );
+
+  @override
+  Future<int> runInsert(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) => SrsOpLedger.track(
+    srsSqlLedgerName(statement),
+    () => executor.runInsert(statement, args),
+  );
+
+  @override
+  Future<int> runDelete(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) => SrsOpLedger.track(
+    srsSqlLedgerName(statement),
+    () => executor.runDelete(statement, args),
+  );
+}
+
+/// 一批查询结果读回的数据量（账本用）：字符串按 UTF-16 码元数、BLOB 按字节。
+int srsRowsLedgerBytes(List<Map<String, Object?>> rows) {
+  int bytes = 0;
+  for (final Map<String, Object?> r in rows) {
+    for (final Object? v in r.values) {
+      if (v is String) {
+        bytes += v.length;
+      } else if (v is Uint8List) {
+        bytes += v.length;
+      }
+    }
+  }
+  return bytes;
+}

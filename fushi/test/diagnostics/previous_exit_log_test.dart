@@ -61,6 +61,130 @@ void main() {
       expect(entry.text, contains('memoryPressure=1x'));
     });
 
+    test('内存采样只留最近 kSessionMemorySampleCount 次，随标记落盘、进未正常退出摘要（BUG-4075）', () {
+      final SessionMarker m = SessionMarker(markerFile(), pid: 21, version: 'v')
+        ..start(nowMs: 1);
+      m.recordLifecycle('resumed', nowMs: 2);
+      for (int i = 0; i < kSessionMemorySampleCount + 2; i++) {
+        m.recordMemorySample('s$i');
+      }
+
+      final PreviousSession? prev = SessionMarker(
+        markerFile(),
+        pid: 22,
+        version: 'v',
+      ).start(nowMs: 3);
+      expect(prev!.memorySamples, <String>[
+        for (int i = 2; i < kSessionMemorySampleCount + 2; i++) 's$i',
+      ]);
+      final ExitReportEntry entry = describeUncleanPreviousSession(prev)!;
+      expect(entry.text, contains('memory=[${prev.memorySamples.join('; ')}]'));
+
+      // 新会话从空环开始：上次的采样不串进这次。
+      final PreviousSession? third = SessionMarker(
+        markerFile(),
+        pid: 23,
+        version: 'v',
+      ).start(nowMs: 4);
+      expect(third!.memorySamples, isEmpty);
+      expect(
+        describeUncleanPreviousSession(third)!.text,
+        isNot(contains('memory=')),
+      );
+    });
+
+    test('旧版标记没有 memorySamples / 内容不合法时按空处理', () {
+      final PreviousSession? old = PreviousSession.tryParse(
+        jsonEncode(<String, Object?>{
+          'pid': 1,
+          'lifecycle': 'resumed',
+          'memorySamples': <Object?>[1, '', 'ok', null],
+        }),
+      );
+      expect(old!.memorySamples, <String>['ok']);
+      expect(
+        PreviousSession.tryParse(
+          jsonEncode(<String, Object?>{'pid': 1, 'memorySamples': 'x'}),
+        )!.memorySamples,
+        isEmpty,
+      );
+    });
+
+    test('采样文本：时刻、RSS、探针读数与触发原因；探针抛异常记 probe! 不中断', () {
+      final String line = describeMemorySample(
+        now: DateTime(2026, 11, 5, 9, 8, 7),
+        rssBytes: 1903 << 20,
+        maxRssBytes: 2070 << 20,
+        probes: <MemoryProbe>[
+          () => 'srs=1/2',
+          () => null,
+          () => throw StateError('boom'),
+        ],
+        trigger: 'pressure',
+      );
+      expect(line, '09:08:07 rss=1903MB max=2070MB srs=1/2 probe! (pressure)');
+      expect(
+        describeMemorySample(
+          now: DateTime(2026, 1, 1, 23, 59, 0),
+          rssBytes: 0,
+          maxRssBytes: 0,
+        ),
+        '23:59:00 rss=0MB max=0MB',
+      );
+    });
+
+    test('线程数探针：从 /proc/self/status 正文取 Threads 行', () {
+      expect(
+        parseProcStatusThreads('Name:\tapp\nThreads:\t95\nVmRSS:\t1 kB\n'),
+        'thr=95',
+      );
+      expect(parseProcStatusThreads('Name:\tapp\n'), isNull);
+      expect(parseProcStatusThreads(null), isNull);
+    });
+
+    test(
+      'RSS 分项探针：从 /proc/self/status 正文取 RssAnon / RssFile / RssShmem（BUG-4075）',
+      () {
+        expect(
+          parseProcStatusRssBreakdown(
+            'Name:\tapp\nVmRSS:\t3145728 kB\nRssAnon:\t2097152 kB\n'
+            'RssFile:\t1022976 kB\nRssShmem:\t25600 kB\nThreads:\t95\n',
+          ),
+          'anon=2048MB file=999MB shm=25MB',
+        );
+        // 缺的项不写。
+        expect(parseProcStatusRssBreakdown('RssAnon:\t1024 kB\n'), 'anon=1MB');
+        expect(parseProcStatusRssBreakdown('Name:\tapp\n'), isNull);
+        expect(parseProcStatusRssBreakdown(null), isNull);
+      },
+    );
+
+    test('startMemorySampling 立即采一次并写进本次会话标记；系统内存压力也采', () async {
+      await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+      );
+      addTearDown(PreviousExitLog.stopMemorySampling);
+      PreviousExitLog.startMemorySampling(
+        probes: <MemoryProbe>[() => 'probe=ok'],
+      );
+      PreviousExitLog.sampleMemory(trigger: 'pressure');
+
+      final PreviousSession? prev = PreviousSession.tryParse(
+        markerFile().readAsStringSync(),
+      );
+      expect(prev!.memorySamples, hasLength(2));
+      expect(
+        prev.memorySamples.first,
+        matches(RegExp(r'rss=\d+MB max=\d+MB probe=ok \(start\)$')),
+      );
+      expect(prev.memorySamples.last, endsWith('probe=ok (pressure)'));
+    });
+
     test('停在后台没了只算诊断；正常退出 / detached 不报', () {
       final SessionMarker a = SessionMarker(markerFile(), pid: 1, version: 'v')
         ..start(nowMs: 1);

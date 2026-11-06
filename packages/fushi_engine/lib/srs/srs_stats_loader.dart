@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 
@@ -62,6 +63,17 @@ class SrsStatsBundle {
 /// 读出当前 profile 的复习统计。[day] / [nowMs] 只给测试覆写（默认取 store 的口径与可信时钟）。每处理一批卡
 /// 让出一次事件循环，大集合不卡住界面。
 Future<SrsStatsBundle> loadSrsStats(
+  SrsDbStore store, {
+  SrsDayContext? day,
+  int? nowMs,
+}) => SrsOpLedger.track(
+  'dart:load_stats',
+  () => _loadSrsStats(store, day: day, nowMs: nowMs),
+  measure: (SrsStatsBundle b) =>
+      (0, b.data.cards.length + b.data.reviews.length),
+);
+
+Future<SrsStatsBundle> _loadSrsStats(
   SrsDbStore store, {
   SrsDayContext? day,
   int? nowMs,
