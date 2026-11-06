@@ -41,8 +41,8 @@ void main() {
           body: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Draggable<MediaRef>(
-                data: bookRef,
+              Draggable<LibraryCardDrag>(
+                data: LibraryCardDrag(mediaRef: bookRef),
                 feedback: const SizedBox(
                   key: ValueKey<String>('media_feedback'),
                   width: 40,
@@ -120,18 +120,18 @@ void main() {
     expect(dropped, bookRef, reason: '回调必须收到被拖条目的 (kind, entryKey)');
   });
 
-  testWidgets('onMediaDropped 非 null 时行头是 DragTarget<MediaRef>', (
+  testWidgets('onMediaDropped 非 null 时行头是 DragTarget<LibraryCardDrag>', (
     WidgetTester tester,
   ) async {
     await pump(tester, buildRow(onMediaDropped: (_) {}));
-    expect(find.byType(DragTarget<MediaRef>), findsOneWidget);
+    expect(find.byType(DragTarget<LibraryCardDrag>), findsOneWidget);
   });
 
   testWidgets('onMediaDropped 为 null 时行头不建 DragTarget（守卫调用点漏接线退回静默）', (
     WidgetTester tester,
   ) async {
     await pump(tester, buildRow(onMediaDropped: null));
-    expect(find.byType(DragTarget<MediaRef>), findsNothing);
+    expect(find.byType(DragTarget<LibraryCardDrag>), findsNothing);
   });
 
   testWidgets('两条拖放通道靠泛型分流：拖媒体卡不触发 onTagDropped', (WidgetTester tester) async {
@@ -342,10 +342,10 @@ void main() {
         WidgetTester tester,
       ) async {
         await pumpCard(tester, platform);
-        expect(find.byType(Draggable<MediaRef>), findsOneWidget);
+        expect(find.byType(Draggable<LibraryCardDrag>), findsOneWidget);
         // 必须**不是** LongPressDraggable：卡片长按已绑定上下文菜单，
         // 长按拖拽会被 InkWell.onLongPress 抢走，拖拽永远起不来。
-        expect(find.byType(LongPressDraggable<MediaRef>), findsNothing);
+        expect(find.byType(LongPressDraggable<LibraryCardDrag>), findsNothing);
       });
     }
 
@@ -358,7 +358,7 @@ void main() {
         WidgetTester tester,
       ) async {
         await pumpCard(tester, platform);
-        expect(find.byType(Draggable<MediaRef>), findsNothing);
+        expect(find.byType(Draggable<LibraryCardDrag>), findsNothing);
       });
     }
 
@@ -366,7 +366,7 @@ void main() {
       WidgetTester tester,
     ) async {
       await pumpCard(tester, TargetPlatform.windows, enabled: false);
-      expect(find.byType(Draggable<MediaRef>), findsNothing);
+      expect(find.byType(Draggable<LibraryCardDrag>), findsNothing);
     });
   });
 }
