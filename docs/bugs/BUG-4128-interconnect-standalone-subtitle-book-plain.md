@@ -1,4 +1,4 @@
-## BUG-4123 · 互联：独立字幕书（字幕 + 音频、无 EPUB）在对端只显示成一本没有音频的普通书
+## BUG-4128 · 互联：独立字幕书（字幕 + 音频、无 EPUB）在对端只显示成一本没有音频的普通书
 - **报告**：2026-11-05（fushi_server 有声书库根冒烟测试发现，PR #2939：库根里只有字幕 + 音频的文件夹扫描入库 `audiobooks +1`，`/api/library/audiobooks` 却是空的，`/api/library/books` 只列出一本 `hasAudiobook` 为假的 EPUB）
 - **真实性**：✅ 真 bug，app 当 host 同样中（导入函数是同一个）。根因是互联有声书协议还停在旧数据形态：
   - 独立字幕书由 `importStandaloneSubtitleBook`（`packages/fushi_engine/lib/media/audiobook/standalone_subtitle_book.dart`）导入时用 cue 生成一本正文 EPUB，`SrtBooks.bookKey` 指向它，不落 Audiobooks 行（至少 2026-06 起对话框就是这样，3bed24b474 只是把实现搬进引擎）。

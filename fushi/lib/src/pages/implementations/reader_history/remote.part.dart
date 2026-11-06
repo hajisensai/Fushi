@@ -109,7 +109,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 两架互斥，同一条目绝不重复出现。
       final List<RemoteBookInfo> withContent = _mangaOnly
           ? books.where(InterconnectMangaCatalog.isReadableRemoteManga).toList()
-          // BUG-4123：独立字幕书的正文不单独成卡——字幕书本身按 uid 出现在有声书
+          // BUG-4128：独立字幕书的正文不单独成卡——字幕书本身按 uid 出现在有声书
           // 占位里，下载时收端按 cue 再生成正文。
           : books
                 .where(
