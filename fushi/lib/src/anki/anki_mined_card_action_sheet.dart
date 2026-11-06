@@ -924,7 +924,8 @@ class _UnverifiedMinedCardDialogState
 }
 
 /// TODO-1007/1008：点 ✓ 的宿主侧编排收口（mixin / base_source_page 两条车道共用，
-/// 杜绝两份漂移）。据 [expression]/[reading] 反查 Anki 全部命中卡：
+/// 杜绝两份漂移）。「允许重复」开着时直接按新卡制（[mineNew]），下面的反查与选择都不走。
+/// 否则据 [expression]/[reading] 反查 Anki 全部命中卡：
 ///   - 无命中（探测后被删 / 已不在）→ 直接按新卡制（[mineNew]），相当于「+」。
 ///   - 有命中 → 弹 [showAnkiMinedCardActionSheet] 让用户选（覆写哪张 / 新增重复卡 /
 ///     查看·在 Anki 中打开）。
@@ -949,6 +950,10 @@ Future<AnkiCardMutationResult> runAnkiMinedCardAction({
   required Future<AnkiCardMutationResult> Function(int noteId) overwrite,
   LookupPopupHiddenRunner? runHidden,
 }) async {
+  // 反馈 E0sdqm4h-F：「允许重复」（[AnkiSettings.allowDupes]，设置说明即「添加卡片时跳过重复
+  // 检查」）开着时，点 ✓ 就是再制一张，不反查、不弹覆写 / 新增的选择框。✓ 仍照查重结果显示
+  // （告诉用户这词已有卡），只是不再拦住制卡。[mineNew] 本就带 allowDuplicate（BUG-2605）。
+  if ((await repo.loadSettings()).allowDupes) return mineNew();
   final matches = await repo.findMatchingNotes(expression, reading);
   if (matches.isEmpty) {
     // 探测时显示已制卡，但现在 Anki 里查不到（被删/dupes）——直接按新卡制，

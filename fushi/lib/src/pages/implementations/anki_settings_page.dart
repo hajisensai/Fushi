@@ -2654,13 +2654,13 @@ String _ankiHandlebarBaseLabel(String option) {
     case '{glossary}':
       return t.handlebar_glossary;
     case '{glossary-first}':
-      return t.handlebar_glossary_first;
+      return t.handlebar_glossary_first_dictionary;
     case '{glossary-first-2}':
-      return t.handlebar_glossary_first_n(count: 2);
+      return t.handlebar_glossary_first_n_dictionaries(count: 2);
     case '{glossary-first-3}':
-      return t.handlebar_glossary_first_n(count: 3);
+      return t.handlebar_glossary_first_n_dictionaries(count: 3);
     case '{selected-glossary}':
-      return t.handlebar_selected_glossary;
+      return t.handlebar_selected_glossary_dictionary;
     case '{popup-selection-text}':
       return t.handlebar_popup_selection_text;
     case '{popup-selection-html}':
