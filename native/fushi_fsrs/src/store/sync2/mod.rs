@@ -230,8 +230,29 @@ pub(crate) fn insert_op(
     chain: &Chain,
     now: i64,
 ) -> Result<(), String> {
-    let deps = intern_deps(conn, &op.deps.encode())?;
-    insert_op_at(conn, profile, op, chain, now, deps)
+    insert_op_cached(conn, profile, op, chain, now, &mut None)
+}
+
+/// [insert_op]，依赖向量的行号按 [deps] 记住上一条的（编码相同就不再查 `sync2_deps`）：本机一批写入的依赖向量
+/// 全都相同（本设备那一项恒为 0，见 [append_local]），以前每条操作都要 INSERT OR IGNORE + SELECT 各一次。
+pub(crate) fn insert_op_cached(
+    conn: &Connection,
+    profile: &str,
+    op: &Op,
+    chain: &Chain,
+    now: i64,
+    deps: &mut Option<(Vec<u8>, i64)>,
+) -> Result<(), String> {
+    let bytes = op.deps.encode();
+    let row = match deps {
+        Some((b, row)) if *b == bytes => *row,
+        _ => {
+            let row = intern_deps(conn, &bytes)?;
+            *deps = Some((bytes, row));
+            row
+        }
+    };
+    insert_op_at(conn, profile, op, chain, now, row)
 }
 
 /// [insert_op]，依赖向量已换成 `sync2_deps` 的行号 [deps]（收段通道追加时按会话缓存它，channel.rs `Append`）。
@@ -558,6 +579,10 @@ pub(crate) struct Touched {
     /// 这一次被彻底清除的实体 (kind, id)：Dart 侧要通知依赖它们的派生表（RWKV 分数表）。
     pub purged: BTreeSet<(String, String)>,
     pub diagnostics: Vec<String>,
+    /// 只在本机写入（[SrsCore::sync2_apply_local]）里打开：这一批里已查过「没有删除操作」的 (种类, 实体)，日志投影
+    /// 不再逐条重查（导入一张卡几十条日志，每条都对卡和笔记各问一次）。日志操作不会写删除，批里每投一条非日志
+    /// 操作就整个清空，所以记住的「没有」在下一条非日志操作之前一直成立。`None` = 不记（其它入口照旧逐条查）。
+    pub log_no_delete: Option<std::collections::HashSet<(&'static str, String)>>,
 }
 
 /// 落进投影的事件对 Dart 缓存 / 修订号的影响（规则与 Dart `SrsDbStore` 旧 `_absorbProjection` 逐条解析时
@@ -1286,11 +1311,34 @@ fn project_log(
             dedup::enqueue(conn, profile)?;
         }
     }
-    semantics::evaluate_holds(conn, profile, "card", &card, now, t)?;
+    log_holds(conn, profile, "card", &card, now, t)?;
     if let Some(n) = &l.note {
-        semantics::evaluate_holds(conn, profile, "note", &n.text(), now, t)?;
+        log_holds(conn, profile, "note", &n.text(), now, t)?;
     }
     Ok(())
+}
+
+/// 日志投影后的冲突扣住判定（[semantics::evaluate_holds]），带 [Touched::log_no_delete] 的批内记忆。
+fn log_holds(
+    conn: &Connection,
+    profile: &str,
+    kind: &'static str,
+    entity: &str,
+    now: i64,
+    t: &mut Touched,
+) -> Result<(), String> {
+    let Some(known) = t.log_no_delete.as_mut() else {
+        return semantics::evaluate_holds(conn, profile, kind, entity, now, t);
+    };
+    let key = (kind, entity.to_owned());
+    if known.contains(&key) {
+        return Ok(());
+    }
+    if !semantics::any_delete(conn, profile, kind, entity)? {
+        known.insert(key);
+        return Ok(());
+    }
+    semantics::evaluate_holds(conn, profile, kind, entity, now, t)
 }
 
 fn intent_code(i: &Intent) -> (i64, Option<i64>) {
@@ -1817,6 +1865,18 @@ pub(crate) fn append_local(
     body: &Body,
     now: i64,
 ) -> Result<Op, String> {
+    append_local_cached(conn, local, applied, body, now, &mut None)
+}
+
+/// [append_local]，依赖向量行号按 [deps] 在一批里复用（[insert_op_cached]）。
+pub(crate) fn append_local_cached(
+    conn: &Connection,
+    local: &mut Local,
+    applied: &mut Vv,
+    body: &Body,
+    now: i64,
+    deps_row: &mut Option<(Vec<u8>, i64)>,
+) -> Result<Op, String> {
     let seq = local.next_seq;
     let mut deps = applied.clone();
     deps.set(local.device, 0);
@@ -1833,7 +1893,7 @@ pub(crate) fn append_local(
         purged: false,
     };
     let chain = chain_next(&local.chain, &op);
-    insert_op(conn, &local.profile, &op, &chain, now)?;
+    insert_op_cached(conn, &local.profile, &op, &chain, now, deps_row)?;
     local.chain = chain;
     local.next_seq += 1;
     applied.set(local.device, seq);
@@ -1890,7 +1950,11 @@ impl SrsCore {
                 None => Local::create(c, profile, now)?,
             };
             let mut applied = applied_vv(c, profile)?;
-            let mut t = Touched::default();
+            let mut t = Touched {
+                log_no_delete: Some(Default::default()),
+                ..Touched::default()
+            };
+            let mut deps_row: Option<(Vec<u8>, i64)> = None;
             let mut landed = Vec::with_capacity(items.len());
             // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
             let mut tree: Option<config::DeckTree> = None;
@@ -1902,72 +1966,21 @@ impl SrsCore {
                     stamped,
                     it["server"].as_i64(),
                 )?;
-                let body = match body {
-                    // 本机新写的派生日志记下此刻的生效配置（重放按它算，改配置不追溯；replay.rs 文件头）。外来、已盖戳
-                    // 的日志保留它原有的（旧日志没有 = 按作者结果照抄）。
-                    Body::Log(mut l) if !stamped && !matches!(l.intent, Intent::Absolute) => {
-                        if tree.is_none() {
-                            tree = Some(config::DeckTree::load(c, profile)?);
-                        }
-                        stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
-                        Body::Log(l)
-                    }
-                    other => {
-                        if !matches!(other, Body::Log(_)) {
-                            tree = None;
-                        }
-                        other
-                    }
-                };
+                let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
                 let before = t.marks.landed;
-                // 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除。
-                let bodies = match &body {
-                    Body::Edit(e)
-                        if e.kind == EntKind::Note && e.key == "tags" && e.legacy.is_none() =>
-                    {
-                        let note = e.entity.text();
-                        let cur = semantics::current_tags(c, profile, &note)?;
-                        let want: Vec<String> = match serde_json::from_str::<Value>(&e.value) {
-                            Ok(Value::Array(xs)) => xs
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .map(str::to_owned)
-                                .collect(),
-                            _ => Vec::new(),
-                        };
-                        let mut out: Vec<Body> = Vec::new();
-                        for tag in want.iter().filter(|x| !cur.contains(x)) {
-                            out.push(Body::TagAdd {
-                                note: e.entity.clone(),
-                                tag: tag.clone(),
-                            });
-                        }
-                        for tag in cur.iter().filter(|x| !want.contains(x)) {
-                            out.push(Body::TagRemove {
-                                note: e.entity.clone(),
-                                tag: tag.clone(),
-                            });
-                        }
-                        // 显示顺序跟作者这一刻的列表走（只是提示，集合本身由上面的添加 / 观察删除决定）。
-                        let mut seen = std::collections::BTreeSet::new();
-                        let order: Vec<String> = want
-                            .iter()
-                            .filter(|t| seen.insert((*t).clone()))
-                            .cloned()
-                            .collect();
-                        if order != cur || !out.is_empty() {
-                            out.push(Body::TagOrder {
-                                note: e.entity.clone(),
-                                tags: order,
-                            });
-                        }
-                        out
-                    }
-                    _ => vec![body],
-                };
+                let bodies = expand_tags(c, profile, body)?;
                 for b in &bodies {
-                    let op = append_local(c, &mut local, &mut applied, b, now)?;
-                    project(c, profile, &op, now, true, &mut t)?;
+                    let op =
+                        append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
+                    if !matches!(b, Body::Log(_)) {
+                        // 非日志操作可能写下删除：批内「没有删除」的记忆作废（[Touched::log_no_delete]）。
+                        if let Some(k) = t.log_no_delete.as_mut() {
+                            k.clear();
+                        }
+                    }
+                    // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
+                    debug_assert_eq!(op.body().ok().as_ref(), Some(b));
+                    project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
                 }
                 landed.push(t.marks.landed > before);
             }
@@ -2302,6 +2315,8 @@ mod dedup_measure;
 #[cfg(test)]
 mod dedup_probe;
 #[cfg(test)]
+mod import_apply_bench;
+#[cfg(test)]
 mod ingest_mem_bench;
 #[cfg(test)]
 pub(crate) mod mem_bench;
@@ -2401,4 +2416,75 @@ impl SrsCore {
             }))
         })
     }
+}
+
+/// 本机新写的派生日志记下此刻的生效配置（重放按它算，改配置不追溯；replay.rs 文件头）。外来、已盖戳的日志保留它
+/// 原有的（旧日志没有 = 按作者结果照抄）。[tree] 是这一批缓存的牌组树：落过非日志操作（可能改了配置 / 归属）就作废重读。
+fn stamp_local_config(
+    c: &Connection,
+    profile: &str,
+    body: Body,
+    stamped: bool,
+    tree: &mut Option<config::DeckTree>,
+) -> Result<Body, String> {
+    match body {
+        Body::Log(mut l) if !stamped && !matches!(l.intent, Intent::Absolute) => {
+            if tree.is_none() {
+                *tree = Some(config::DeckTree::load(c, profile)?);
+            }
+            stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
+            Ok(Body::Log(l))
+        }
+        other => {
+            if !matches!(other, Body::Log(_)) {
+                *tree = None;
+            }
+            Ok(other)
+        }
+    }
+}
+
+/// 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除（再加一条显示顺序）；其余操作原样一条。
+fn expand_tags(c: &Connection, profile: &str, body: Body) -> Result<Vec<Body>, String> {
+    let e = match &body {
+        Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" && e.legacy.is_none() => e,
+        _ => return Ok(vec![body]),
+    };
+    let note = e.entity.text();
+    let cur = semantics::current_tags(c, profile, &note)?;
+    let want: Vec<String> = match serde_json::from_str::<Value>(&e.value) {
+        Ok(Value::Array(xs)) => xs
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut out: Vec<Body> = Vec::new();
+    for tag in want.iter().filter(|x| !cur.contains(x)) {
+        out.push(Body::TagAdd {
+            note: e.entity.clone(),
+            tag: tag.clone(),
+        });
+    }
+    for tag in cur.iter().filter(|x| !want.contains(x)) {
+        out.push(Body::TagRemove {
+            note: e.entity.clone(),
+            tag: tag.clone(),
+        });
+    }
+    // 显示顺序跟作者这一刻的列表走（只是提示，集合本身由上面的添加 / 观察删除决定）。
+    let mut seen = std::collections::BTreeSet::new();
+    let order: Vec<String> = want
+        .iter()
+        .filter(|t| seen.insert((*t).clone()))
+        .cloned()
+        .collect();
+    if order != cur || !out.is_empty() {
+        out.push(Body::TagOrder {
+            note: e.entity.clone(),
+            tags: order,
+        });
+    }
+    Ok(out)
 }
