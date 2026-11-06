@@ -57,6 +57,20 @@ String _methodBody(String source, String signature) {
   throw StateError('unterminated method body: $signature');
 }
 
+/// 视频卡长按菜单的完整源码：入口 [_showVideoMenu] 只负责弹出承载并订阅封面
+/// 探测落定（7d0501f7f4：菜单头部封面在探测落定后重取），面板本体在
+/// `_buildVideoMenuFrame`。守卫对两者合并后的源码断言，并要求入口确实委托给
+/// 面板本体，免得面板换了实现后这里仍在扫一个死方法。
+String _videoMenuBody(String src) {
+  final String entry = _methodBody(src, 'void _showVideoMenu(');
+  if (!entry.contains('_buildVideoMenuFrame(')) {
+    throw StateError(
+      '_showVideoMenu no longer delegates to _buildVideoMenuFrame',
+    );
+  }
+  return '$entry\n${_methodBody(src, 'Widget _buildVideoMenuFrame(')}';
+}
+
 void main() {
   final String homeVideoSrc = _read(
     'lib/src/pages/implementations/home_video_page.dart',
@@ -134,7 +148,7 @@ void main() {
     });
 
     test('长按面板复用封面背景 frame，不再用 bottom sheet', () {
-      final String menuBody = _methodBody(src, 'void _showVideoMenu(');
+      final String menuBody = _videoMenuBody(src);
 
       expect(
         menuBody.contains('showModalBottomSheet'),
@@ -152,7 +166,7 @@ void main() {
     });
 
     test('长按面板含五项管理动作且不含播放动作', () {
-      final String menuBody = _methodBody(src, 'void _showVideoMenu(');
+      final String menuBody = _videoMenuBody(src);
 
       expect(menuBody.contains('_editTags(book)'), isTrue);
       expect(menuBody.contains('_renameVideo(book)'), isTrue);
@@ -168,7 +182,7 @@ void main() {
     });
 
     test('字幕动作文案不展示格式限定词，但 picker 仍保留白名单', () {
-      final String menuBody = _methodBody(src, 'void _showVideoMenu(');
+      final String menuBody = _videoMenuBody(src);
       final String pickerBody = _methodBody(
         src,
         'Future<void> _pickSubtitle(VideoBookRow book)',

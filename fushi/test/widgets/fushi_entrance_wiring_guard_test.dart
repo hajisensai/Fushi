@@ -21,11 +21,17 @@ void main() {
           '三个分区共用一个 State，切分区必须重开进场窗口；首屏骨架换成真墙'
           '也要重开（BUG-3235），否则映射晚于窗口到达时真卡没有进场',
     );
+    // PR #2922（桌面直拖重排）起格子先包 [LibraryReorderCell]（经
+    // `_videoDragReorderCell`）再进场：进场包装仍在最外层，重排单元在其内。
+    // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
+    final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
     for (final String orientation in <String>['portrait', 'landscape']) {
       expect(
-        src,
+        flat,
         contains(
-          'child: cells[index].build(VideoCardOrientation.$orientation)',
+          'FushiStaggeredEntrance( index: index, '
+          'child: _videoDragReorderCell( dragReorderKeys, index, '
+          'cells[index].build(VideoCardOrientation.$orientation), ), ),',
         ),
         reason: '$orientation 网格格子应包在 FushiStaggeredEntrance 里',
       );
