@@ -203,20 +203,22 @@ void main() {
       final Directory tmp = Directory.systemTemp.createTempSync(
         'fushi_bug4127_',
       );
-      final File readerJs = File('${tmp.path}/reader_selection.js')
-        ..writeAsStringSync(ReaderSelectionScripts.source());
-      final File casesJson = File('${tmp.path}/cases.json')
-        ..writeAsStringSync(jsonEncode(cases));
-      try {
-        final ProcessResult result = await Process.run(
-          nodeExe,
-          <String>['test/media/manga/manga_latin_ocr_word_gap_bug4127_test.js'],
-          workingDirectory: Directory.current.path,
-          environment: <String, String>{
-            'FUSHI_READER_SELECTION_JS': readerJs.path,
-            'FUSHI_MANGA_OCR_CASES': casesJson.path,
-          },
+      // 用例与阅读器脚本拼在 harness 前面（见 .js 文件头）：脚本原样包进函数体，
+      // 每次点击在新的 fake DOM 上重新求值一遍。
+      final String harness = File(
+        'test/media/manga/manga_latin_ocr_word_gap_bug4127_test.js',
+      ).readAsStringSync();
+      final File program = File('${tmp.path}/bug4127_program.js')
+        ..writeAsStringSync(
+          'const MANGA_OCR_CASES = ${jsonEncode(cases)};\n'
+          'function loadReaderSelection(window, document, Node, NodeFilter, '
+          'CSS) {\n${ReaderSelectionScripts.source()}\n'
+          ';return window.fushiSelection;\n}\n$harness',
         );
+      try {
+        final ProcessResult result = await Process.run(nodeExe, <String>[
+          program.path,
+        ], workingDirectory: Directory.current.path);
         expect(
           result.exitCode,
           0,

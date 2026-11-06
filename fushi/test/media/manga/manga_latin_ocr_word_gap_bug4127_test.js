@@ -5,150 +5,139 @@
 //
 // 根因：叠加层把每个可见字渲染成一个绝对定位的 <span class="ocr-char">，OCR 区域不覆盖
 // 空格、各行直接拼接——DOM 正文成了 "BEENSOLONGSINCE…"。阅读器取词从被点的词一路扫过词界，
-// 查询串是 "BEENSOLONGSINCEILASTSENT"；引擎（word_scan.cpp）不在两个拉丁字母之间切，
-// 整串一个候选，查不到。修复：两个字格之间夹着空白或拉丁文行界时补一个纯空白文本节点，
-// 阅读器取词按 BUG-3453 的规则把它当词界。
+// 引擎（word_scan.cpp）不在两个拉丁字母之间切，整串一个候选，查不到。
 //
-// 本 harness 在最小 fake DOM 里真执行阅读器注入脚本 ReaderSelectionScripts.source()，
-// DOM 结构（字格 span / 纯空白文本节点的序列）来自真实的 mangaOcrBoxesHtml 输出——
-// 由 .dart wrapper 落成 JSON（FUSHI_MANGA_OCR_CASES），脚本路径经
-// FUSHI_READER_SELECTION_JS 传入。
+// 本文件不能单独运行：.dart wrapper（manga_latin_ocr_word_gap_bug4127_test.dart）在它前面
+// 拼上两样东西再交给 node——
+//   MANGA_OCR_CASES：真实 mangaOcrBoxesHtml 输出里 <p class="ocr-box"> 的子节点序列
+//     （{char} = 一个字格 span 的文字，{gap} = 字格之间的裸文本）与待点的字格；
+//   loadReaderSelection(window, document, Node, NodeFilter)：把阅读器注入脚本
+//     ReaderSelectionScripts.source() 原样包进函数体，返回 window.fushiSelection。
+
+/* global MANGA_OCR_CASES, loadReaderSelection */
 
 const assert = require('node:assert');
-const fs = require('node:fs');
-const vm = require('node:vm');
 
-function makeText(content, parent) {
-  return { nodeType: 3, textContent: content, nodeValue: content, parentElement: parent };
-}
+const NODE_TYPES = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
+const NODE_FILTER = { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 };
 
-function selectorTags(selector) {
-  return selector
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0 && !s.startsWith('.') && !s.startsWith('['));
-}
-
-function makeElement(tagName) {
-  return {
-    nodeType: 1,
-    tagName,
-    className: '',
-    parentElement: null,
-    childNodes: [],
-    get textContent() {
-      return this.childNodes.map((c) => c.textContent).join('');
-    },
-    closest(selector) {
-      const tags = selectorTags(selector);
-      let node = this;
-      while (node && node.nodeType === 1) {
-        if (tags.includes((node.tagName || '').toLowerCase())) return node;
-        node = node.parentElement;
-      }
-      return null;
-    },
-  };
-}
-
-function makeTreeWalker(root, filter) {
-  const out = [];
-  (function walk(node) {
-    for (const child of node.childNodes || []) {
-      if (child.nodeType === 3) {
-        if (!filter || filter.acceptNode(child) === 1) out.push(child);
-      } else if (child.nodeType === 1) {
-        walk(child);
-      }
-    }
-  })(root);
-  return {
-    currentNode: root,
-    nextNode() {
-      const from = out.indexOf(this.currentNode);
-      const next = out[from + 1] || null;
-      if (next) this.currentNode = next;
-      return next;
-    },
-    previousNode() {
-      const from = out.indexOf(this.currentNode);
-      const prev = from > 0 ? out[from - 1] : null;
-      if (prev) this.currentNode = prev;
-      return prev;
-    },
-  };
-}
-
-/// items：{char: 'B'} = 一个 ocr-char span 里的文本节点；{gap: ' '} = 直接挂在 <p> 下的
-/// 文本节点（字格之间的空白）。返回 { sel, chars }，chars 是各字格的文本节点。
-function build(src, items) {
-  const body = makeElement('body');
-  const p = makeElement('p');
-  p.parentElement = body;
-  body.childNodes = [p];
-  const chars = [];
-  for (const item of items) {
-    if (item.char !== undefined) {
-      const span = makeElement('span');
-      span.parentElement = p;
-      const t = makeText(item.char, span);
-      span.childNodes = [t];
-      p.childNodes.push(span);
-      chars.push(t);
-    } else {
-      p.childNodes.push(makeText(item.gap, p));
-    }
+class FakeText {
+  constructor(value, parentElement) {
+    this.nodeType = NODE_TYPES.TEXT_NODE;
+    this.nodeValue = value;
+    this.textContent = value;
+    this.parentElement = parentElement;
   }
-  const document = {
+}
+
+class FakeElement {
+  constructor(tagName, parentElement) {
+    this.nodeType = NODE_TYPES.ELEMENT_NODE;
+    this.tagName = tagName.toUpperCase();
+    this.parentElement = parentElement;
+    this.childNodes = [];
+  }
+
+  get textContent() {
+    return this.childNodes.map((child) => child.textContent).join('');
+  }
+
+  // 只认标签名选择器（类 / 属性选择器一律视为不匹配，与叠加层取词无关）。
+  closest(selector) {
+    const wanted = new Set(
+      selector.split(',').map((part) => part.trim().toUpperCase())
+        .filter((part) => /^[A-Z][A-Z0-9]*$/.test(part)));
+    for (let el = this; el; el = el.parentElement) {
+      if (wanted.has(el.tagName)) return el;
+    }
+    return null;
+  }
+}
+
+function textNodesUnder(root, filter) {
+  const found = [];
+  const visit = (node) => {
+    for (const child of node.childNodes) {
+      if (child instanceof FakeText) {
+        if (!filter || filter.acceptNode(child) === NODE_FILTER.FILTER_ACCEPT) found.push(child);
+      } else {
+        visit(child);
+      }
+    }
+  };
+  visit(root);
+  return found;
+}
+
+function fakeDocument(body) {
+  return {
     body,
-    createTreeWalker: (root, _whatToShow, filter) => makeTreeWalker(root, filter),
+    createTreeWalker(root, _whatToShow, filter) {
+      const nodes = textNodesUnder(root, filter);
+      return {
+        currentNode: root,
+        nextNode() {
+          const next = nodes[nodes.indexOf(this.currentNode) + 1] || null;
+          if (next) this.currentNode = next;
+          return next;
+        },
+        previousNode() {
+          const index = nodes.indexOf(this.currentNode);
+          const prev = index > 0 ? nodes[index - 1] : null;
+          if (prev) this.currentNode = prev;
+          return prev;
+        },
+      };
+    },
     caretPositionFromPoint: () => null,
     caretRangeFromPoint: () => null,
     elementFromPoint: () => null,
   };
+}
+
+/// 按生成器给的子节点序列搭 <body><p class="ocr-box">…</p></body>，返回字格文本节点。
+function mountOcrBox(items) {
+  const body = new FakeElement('body', null);
+  const box = new FakeElement('p', body);
+  body.childNodes.push(box);
+  const glyphs = [];
+  for (const item of items) {
+    if (item.char === undefined) {
+      box.childNodes.push(new FakeText(item.gap, box));
+      continue;
+    }
+    const span = new FakeElement('span', box);
+    const glyph = new FakeText(item.char, span);
+    span.childNodes.push(glyph);
+    box.childNodes.push(span);
+    glyphs.push(glyph);
+  }
+  return { body, glyphs };
+}
+
+function tap(items, glyphIndex) {
+  const { body, glyphs } = mountOcrBox(items);
   const window = {
     getComputedStyle: () => ({ display: 'inline', content: 'none' }),
     getSelection: () => ({ removeAllRanges() {} }),
     flutter_inappwebview: { callHandler: () => {} },
     scanNonJapaneseText: true,
   };
-  const sandbox = {
-    window,
-    document,
-    Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
-    NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
-    CSS: undefined,
-    console,
-  };
-  sandbox.globalThis = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(src, sandbox);
-  const sel = sandbox.window.fushiSelection;
-  sel.fireTextSelected = function () {
-    return this.selection ? this.selection.text : null;
-  };
-  return { sel, chars };
+  const selection = loadReaderSelection(window, fakeDocument(body), NODE_TYPES, NODE_FILTER);
+  // 只看取词串：payload 组装（几何 / 句子）与本 bug 无关。
+  selection.fireTextSelected = () => null;
+  selection.selection = null;
+  selection.selectFromPosition(glyphs[glyphIndex], 0, 24);
+  return selection.selection ? selection.selection.text : null;
 }
 
-const readerPath = process.env.FUSHI_READER_SELECTION_JS;
-const casesPath = process.env.FUSHI_MANGA_OCR_CASES;
-if (!readerPath || !casesPath) {
-  console.log('FUSHI_READER_SELECTION_JS / FUSHI_MANGA_OCR_CASES not provided');
-  process.exit(1);
-}
-const src = fs.readFileSync(readerPath, 'utf8');
-const blocks = JSON.parse(fs.readFileSync(casesPath, 'utf8'));
-
-let checked = 0;
-for (const block of blocks) {
-  for (const c of block.cases) {
-    const { sel, chars } = build(src, block.items);
-    sel.selection = null;
-    sel.selectFromPosition(chars[c.char], 0, 24);
-    const text = sel.selection ? sel.selection.text : null;
-    assert.strictEqual(text, c.expect, `${block.name}: 点第 ${c.char} 个字格`);
-    checked++;
+let executed = 0;
+for (const block of MANGA_OCR_CASES) {
+  for (const probe of block.cases) {
+    assert.strictEqual(tap(block.items, probe.char), probe.expect,
+      `${block.name}: tap glyph #${probe.char}`);
+    executed++;
   }
 }
-assert.ok(checked > 0, 'no cases executed');
-console.log(`all assertions passed (${checked})`);
+assert.ok(executed > 0, 'no cases executed');
+console.log(`all assertions passed (${executed})`);
