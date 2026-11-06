@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
@@ -247,6 +248,124 @@ void main() {
       await reloaded.ensureLoaded();
       expect(reloaded.cookiesForSite('bookwalker.jp'), hasLength(24));
     });
+
+    // 审查（PR #2986）：合并只比较值，同值续期（只推后 Expires / Max-Age）被当成
+    // 「无变化」丢掉，内存与磁盘都留着旧过期时刻，到点后会话 cookie 不再发出。
+    test('同值续期刷新过期时刻（内存与磁盘），旧时刻过后照样发出', () async {
+      final MihonCookieJar store = jar();
+      final int firstExpiry = now + 3600 * 1000;
+      await store.mergeResponseCookies(<MangaCookie>[
+        cookie('session', value: 'same', expiresAt: firstExpiry),
+      ]);
+      now += 3000 * 1000;
+      final bool changed = await store.mergeResponseCookies(<MangaCookie>[
+        cookie('session', value: 'same', expiresAt: now + 3600 * 1000),
+      ]);
+      expect(changed, isTrue, reason: '过期时刻变了就是变化');
+
+      now = firstExpiry + 1000;
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        'session=same',
+      );
+      final MihonCookieJar reloaded = jar();
+      await reloaded.ensureLoaded();
+      expect(
+        reloaded.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        'session=same',
+        reason: '续期也要落盘，否则重启后照样掉线',
+      );
+    });
+
+    test('全字段都没变就不写盘（连文件都不碰）', () async {
+      final MihonCookieJar store = jar();
+      final MangaCookie session = cookie(
+        'session',
+        value: 'same',
+        expiresAt: now + 3600 * 1000,
+      );
+      await store.mergeResponseCookies(<MangaCookie>[session]);
+      // 删掉文件：之后任何一次写入都会把它重新建出来。
+      file().deleteSync();
+
+      expect(await store.mergeResponseCookies(<MangaCookie>[session]), isFalse);
+      expect(await store.mergeFromRuntime(<MangaCookie>[session]), isFalse);
+      expect(file().existsSync(), isFalse);
+    });
+
+    // 审查（PR #2986）：加载时 IO 失败曾被当成「加载成功、空 jar」，紧接着第一次
+    // 合并就拿空快照覆盖掉磁盘上的登录 / cf_clearance。
+    test('加载遇 IO 失败不当成空 jar：写入失败、磁盘不被覆盖，下次重试加载后再合并', () async {
+      await jar().replaceForHost('bookwalker.jp', <MangaCookie>[
+        cookie('session', value: 'signed-in'),
+        cookie(kCloudflareClearanceCookie, value: 'cf'),
+      ]);
+      final _FlakyReadFile flaky = _FlakyReadFile(file(), failures: 1);
+      final MangaCookieJar store = MangaCookieJar.lazy(
+        () async => flaky,
+        clock: () => now,
+      );
+
+      await expectLater(
+        store.mergeResponseCookies(<MangaCookie>[cookie('fresh')]),
+        throwsA(isA<FileSystemException>()),
+      );
+      final MihonCookieJar onDisk = jar();
+      await onDisk.ensureLoaded();
+      expect(
+        onDisk.cookiesForSite('bookwalker.jp').map((MangaCookie c) => c.name),
+        unorderedEquals(<String>['session', kCloudflareClearanceCookie]),
+        reason: '加载失败后的写入不能覆盖磁盘上的登录态',
+      );
+
+      // 抖动过去：下一次调用重新加载，再在真实快照上合并。
+      expect(
+        await store.mergeResponseCookies(<MangaCookie>[cookie('fresh')]),
+        isTrue,
+      );
+      final MihonCookieJar reloaded = jar();
+      await reloaded.ensureLoaded();
+      expect(
+        reloaded.cookiesForSite('bookwalker.jp').map((MangaCookie c) => c.name),
+        unorderedEquals(<String>[
+          'session',
+          kCloudflareClearanceCookie,
+          'fresh',
+        ]),
+      );
+    });
+
+    test('加载 IO 失败时读路径照样按无 cookie 继续，不拦调用', () async {
+      await jar().replaceForHost('bookwalker.jp', <MangaCookie>[
+        cookie('session', value: 'signed-in'),
+      ]);
+      final MangaCookieJar store = MangaCookieJar.lazy(
+        () async => _FlakyReadFile(file(), failures: 1),
+        clock: () => now,
+      );
+      await store.ensureLoadedBestEffort();
+      expect(store.cookies, isEmpty);
+      await store.ensureLoadedBestEffort();
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        'session=signed-in',
+      );
+    });
+
+    test('内容坏掉（非 UTF-8）的文件仍当作空 jar，能被下一次写入覆盖', () async {
+      file().writeAsBytesSync(<int>[0xff, 0xfe, 0x00, 0x5b]);
+      final MihonCookieJar store = jar();
+      expect(
+        await store.mergeResponseCookies(<MangaCookie>[cookie('fresh')]),
+        isTrue,
+      );
+      final MihonCookieJar reloaded = jar();
+      await reloaded.ensureLoaded();
+      expect(
+        reloaded.cookiesForSite('bookwalker.jp').map((MangaCookie c) => c.name),
+        <String>['fresh'],
+      );
+    });
   });
 
   group('X-Fushi-Set-Cookie 线格式', () {
@@ -446,4 +565,44 @@ void main() {
       );
     });
   });
+}
+
+/// 前 [failures] 次读取抛 [FileSystemException]（权限抖动 / 文件被占用），之后
+/// 透传真实文件。读文件的两种入口都按同一份失败计数，读法换了用例照样成立。
+class _FlakyReadFile implements File {
+  _FlakyReadFile(this._real, {required int failures}) : _failures = failures;
+
+  final File _real;
+  int _failures;
+
+  void _maybeFail() {
+    if (_failures > 0) {
+      _failures--;
+      throw FileSystemException('locked by another process', path);
+    }
+  }
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Directory get parent => _real.parent;
+
+  @override
+  Future<bool> exists() => _real.exists();
+
+  @override
+  Future<Uint8List> readAsBytes() async {
+    _maybeFail();
+    return _real.readAsBytes();
+  }
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) async {
+    _maybeFail();
+    return _real.readAsString(encoding: encoding);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

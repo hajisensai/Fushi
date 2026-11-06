@@ -27,6 +27,13 @@ void main() {
         case '/login':
           response.cookies.add(Cookie('session', 'abc'));
           response.write('ok');
+        case '/renew':
+          // 同值续期：会话值不变，每次响应把 Max-Age 往后推。
+          response.headers.add(
+            HttpHeaders.setCookieHeader,
+            'session=steady; Max-Age=3600; Path=/',
+          );
+          response.write('ok');
         case '/logout':
           // 站点清 cookie 的标准写法：同名、Max-Age=0。
           response.headers.add(
@@ -263,6 +270,29 @@ void main() {
     await second.perform(<String, Object?>{'url': '$base/echo'});
     expect(seenHeaders.last.value('cookie'), 'session=abc');
     second.close();
+  });
+
+  // 审查（PR #2986）：jar 合并只比较值，同值续期被当成无变化丢掉，过了第一次
+  // 下发的 Max-Age 后会话不再发出——靠续期维持登录的站点中途掉线。
+  test('靠同值续期维持的会话不掉线：续期刷新过期时刻', () async {
+    final Directory dir = await Directory.systemTemp.createTemp('lnreader_cf');
+    addTearDown(() => dir.delete(recursive: true));
+    int now = DateTime.utc(2026, 11, 6).millisecondsSinceEpoch;
+    final LnReaderCloudflare cloudflare = LnReaderCloudflare(
+      MangaCookieJar(
+        File('${dir.path}${Platform.pathSeparator}cookies.json'),
+        clock: () => now,
+      ),
+    );
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{'url': '$base/renew'});
+    now += 3000 * 1000;
+    await fetch.perform(<String, Object?>{'url': '$base/renew'});
+    // 越过第一次下发的 Max-Age=3600，仍在续期后的有效期内。
+    now += 1000 * 1000;
+    await fetch.perform(<String, Object?>{'url': '$base/echo'});
+    expect(seenHeaders.last.value('cookie'), 'session=steady');
+    fetch.close();
   });
 
   test('站点用 Max-Age=0 清掉的 cookie 从 jar 里删除，不再发回', () async {

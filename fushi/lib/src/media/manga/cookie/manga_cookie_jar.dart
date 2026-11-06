@@ -59,6 +59,20 @@ class MangaCookie {
 
   bool isExpiredAt(int nowMs) => expiresAt != null && expiresAt! <= nowMs;
 
+  /// 与 [other] 的**全部**持久化字段都相同（值、域、路径、标志位、过期时刻）。
+  ///
+  /// 合并判「有没有变化」必须看全字段：只比值的话，服务端同值续期（同名同值、
+  /// 只把 `Expires` / `Max-Age` 往后推）会被当成无变化丢掉，jar 里留着旧的过期
+  /// 时刻，到点后 cookie 不再发出——会话凭空掉线。
+  bool sameAs(MangaCookie other) =>
+      name == other.name &&
+      value == other.value &&
+      canonicalDomain == other.canonicalDomain &&
+      path == other.path &&
+      secure == other.secure &&
+      hostOnly == other.hostOnly &&
+      expiresAt == other.expiresAt;
+
   /// 这条 cookie 该不该发给 [host]。
   ///
   /// host-only 的条目只认完全相等；其余按 RFC 6265 的域匹配。
@@ -150,11 +164,20 @@ class MangaCookieJar {
     }
   }
 
+  /// 加载磁盘快照。
+  ///
+  /// **只有内容本身坏了才当作空 jar**（编码 / JSON 解不开：再读一次也一样，下一次
+  /// 写入覆盖它是唯一出路）。IO 失败（权限抖动、文件被占用）一律抛出：此时磁盘上
+  /// 可能好好躺着登录态 / `cf_clearance`，把它当成「加载成功、没有 cookie」的话，
+  /// 紧接着任何一次写入（出站桥每个带 `Set-Cookie` 的响应都会写）都会拿空快照把
+  /// 它覆盖掉。抛出后 [ensureLoaded] 清掉备忘，写路径跟着失败、不落盘，下一次调用
+  /// 重新加载；读路径经 [ensureLoadedBestEffort] 按无 cookie 继续。
   Future<void> _load() async {
     final File target = _file ??= await _resolveFile();
     if (!await target.exists()) return;
+    final List<int> bytes = await target.readAsBytes();
     try {
-      final Object? decoded = jsonDecode(await target.readAsString());
+      final Object? decoded = jsonDecode(utf8.decode(bytes));
       if (decoded is! List<Object?>) return;
       _cookies = decoded
           .whereType<Map<Object?, Object?>>()
@@ -165,11 +188,7 @@ class MangaCookieJar {
           .where((MangaCookie cookie) => cookie.isValid)
           .toList(growable: false);
     } on FormatException {
-      // 坏文件 = 没 cookie；下一次写入会覆盖它。
-      _cookies = const <MangaCookie>[];
-    } on FileSystemException {
-      // 读不动的文件（编码坏 / 权限抖动）同样当作没 cookie，不拦调用：
-      // cookie 只是增强，拿不到就按无 cookie 请求。
+      // 坏文件（UTF-8 / JSON 解不开）= 没 cookie；下一次写入会覆盖它。
       _cookies = const <MangaCookie>[];
     }
   }
@@ -297,7 +316,8 @@ class MangaCookieJar {
   /// 一次请求**碰到的增量（会话续期、轮转 token），拿它整站替换会把同站其它
   /// 域的登录 cookie 一起抹掉——那等于每发一次请求就登出一部分。
   ///
-  /// 返回是否真的产生了变化：没变就不落盘，避免每个请求都写一次文件。
+  /// 返回是否真的产生了变化（任一字段，含过期时刻——同值续期也算）：没变就不
+  /// 落盘，避免每个请求都写一次文件。
   Future<bool> mergeFromRuntime(List<MangaCookie> incoming) =>
       _mergeByKey(incoming, expiredDeletes: false);
 
@@ -339,11 +359,12 @@ class MangaCookieJar {
         merged.remove(keyOf(cookie));
       }
     }
+    // 全字段比较：同值续期（只刷新过期时刻）也是变化，必须进内存并落盘。
     final bool changed =
         merged.length != before.length ||
         merged.entries.any(
           (MapEntry<String, MangaCookie> entry) =>
-              before[entry.key]?.value != entry.value.value,
+              !(before[entry.key]?.sameAs(entry.value) ?? false),
         );
     if (!changed) return false;
     _cookies = merged.values.toList(growable: false);
@@ -372,16 +393,28 @@ class MangaCookieJar {
   /// 上一次落盘；写入按顺序串行。
   Future<void> _lastWrite = Future<void>.value();
 
+  /// 已排队、**还没开始**的那次写入。
+  Future<void>? _queuedWrite;
+
   /// 落盘当前快照。**串行**：多个写入并发时（出站桥的并发请求各带一批
   /// `Set-Cookie`）若同时写同一个 `.tmp` 再各自 rename，内容会交错、后到的 rename
-  /// 找不到源文件而抛错。排在后面的写入取的是轮到它时的最新 [_cookies]，前一次
-  /// 写入失败只报给它自己的调用方，不连坐后面的写入。
+  /// 找不到源文件而抛错。前一次写入失败只报给它自己的调用方，不连坐后面的写入。
+  ///
+  /// **合并写**：写入取的是轮到它开始时的最新 [_cookies]，所以已有一次排队未开始
+  /// 的写入时，后来的变化直接搭它的车，不再各排一次——并发请求一批批回 `Set-Cookie`
+  /// 时，落盘次数最多「正在写的一次 + 排队的一次」，而不是每个响应一次。
   Future<void> _persist() {
-    Future<void> write() => _writeSnapshot();
-    final Future<void> next = _lastWrite.then(
-      (void _) => write(),
-      onError: (Object _) => write(),
-    );
+    final Future<void>? queued = _queuedWrite;
+    if (queued != null) return queued;
+    late final Future<void> next;
+    Future<void> write() {
+      // 开始写就出队：之后的变化不在本次快照里，必须另排一次。
+      if (identical(_queuedWrite, next)) _queuedWrite = null;
+      return _writeSnapshot();
+    }
+
+    next = _lastWrite.then((void _) => write(), onError: (Object _) => write());
+    _queuedWrite = next;
     _lastWrite = next;
     return next;
   }

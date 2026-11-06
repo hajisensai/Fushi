@@ -734,6 +734,27 @@ void main() {
         findsOneWidget,
         reason: '剧集取不到时错误旁边给登录入口',
       );
+      // 错误旁的动作行只放真要显示的按钮：不是 Cloudflare 挑战时不放解题按钮，
+      // 否则它的零尺寸占位照样吃一份 spacing，把登录按钮挤离行首。
+      final Finder actionRow = find
+          .ancestor(
+            of: find.byKey(const ValueKey<String>('mihon_source_login_action')),
+            matching: find.byType(Wrap),
+          )
+          .first;
+      final Wrap row = tester.widget<Wrap>(actionRow);
+      expect(row.spacing, 8);
+      expect(row.runSpacing, 8);
+      expect(row.children, hasLength(1), reason: '只有登录按钮一个子项');
+      expect(
+        tester.getTopLeft(find.byWidget(row.children.last)).dx,
+        tester.getTopLeft(actionRow).dx,
+        reason: '登录按钮贴行首，前面没有幽灵 spacing',
+      );
+      expect(
+        tester.getSize(find.byWidget(row.children.last)).width,
+        greaterThan(0),
+      );
       expect(
         find.byKey(const ValueKey<String>('anime_source_login')),
         findsOneWidget,

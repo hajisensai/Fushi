@@ -321,9 +321,11 @@ class LnReaderFetchBridge {
     try {
       await cloudflare.jar.mergeResponseCookies(incoming);
     } on FileSystemException {
-      // 只丢持久化：jar 先改内存再落盘，本次运行里新会话照样随请求发出；
       // cookie 只是增强（同 [MangaCookieJar.ensureLoadedBestEffort] 的读路径
-      // 契约），写盘失败不该把一次成功的请求变成失败。
+      // 契约），不该把一次成功的请求变成失败。两种来源：写盘失败——jar 先改
+      // 内存再落盘，本次运行里新会话照样随请求发出；加载失败——jar 拒绝在没读到
+      // 的磁盘快照上合并（否则会拿空快照覆盖登录态），这批增量丢掉，站点下一次
+      // 响应会再带，下一次调用重试加载。
     }
   }
 
