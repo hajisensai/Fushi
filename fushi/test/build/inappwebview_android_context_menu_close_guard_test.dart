@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Source guard for BUG-4127 (feedback 5Sj-bzv_rm): the vendored
+/// Source guard for BUG-4135 (feedback 5Sj-bzv_rm): the vendored
 /// `flutter_inappwebview_android` draws its own floating context menu (the
 /// dictionary popup's search / copy) after finishing the system ActionMode, and
 /// under Hybrid Composition upstream gives that menu no close path tied to the
