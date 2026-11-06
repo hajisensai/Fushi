@@ -96,7 +96,7 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
         !_hasVisiblePopup &&
         _controller != null) {
       _pausedForLookup = false;
-      unawaited(_controller!.play());
+      unawaited(_controller!.resumePlayback());
     }
   }
 
