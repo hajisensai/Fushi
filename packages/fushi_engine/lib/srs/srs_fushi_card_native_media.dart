@@ -109,15 +109,25 @@ bool srsFushiCardMediaIsNative(Map<String, String> fields) {
   return true;
 }
 
-/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、模板与样式都没改、媒体原生画得全
-/// （[srsFushiCardMediaIsNative]）。能则返回只含释义区的背面 HTML（交给释义 WebView），
-/// 否则 null（整面 WebView）。
+/// 原生混合渲染要的东西：只含释义区的背面 HTML（交给释义 WebView）与正面 / 背面的区块布局。
+/// 布局里的 HTML 区块（[FushiCardHtmlItem]）已按笔记字段展开，app 侧交给原生 HTML 渲染器。
+typedef SrsFushiCardNative = ({
+  String definitions,
+  List<FushiCardItem> front,
+  List<FushiCardItem> back,
+});
+
+/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、样式没改、正面与背面都认得出区块布局
+/// （[fushiCardLayoutOf]：调序 / 增删区块、改内置区块选项、字段区块、HTML 区块；骨架不动）、
+/// 媒体原生画得全（[srsFushiCardMediaIsNative]）。能则返回释义区 HTML 与正背面布局，否则
+/// null（整面 WebView）。HTML 区块原生画不画得了由 app 侧再判（画不了同样整面 WebView）。
 ///
 /// 复习页渲染（`SrsDbStore.renderCard`）与笔记编辑页的实时预览共用这一处判据：两边若各写
 /// 一份，编辑页预览会退回整面 WebView，与复习页画出来的不是同一张卡（片段 / 图片尺寸都不同）。
 ///
-/// [front] / [back] 是名字形式的模板；[fieldsByName] 已展开共享样式引用。
-String? srsFushiCardNativeDefinitions({
+/// [front] / [back] 是名字形式的模板；[fieldsByName] 已展开共享样式引用。同一笔记类型下
+/// 另加的模板（反向卡等）同样按它自己的正背面判定。
+SrsFushiCardNative? srsFushiCardNative({
   required String? builtinKey,
   required String front,
   required String back,
@@ -126,19 +136,55 @@ String? srsFushiCardNativeDefinitions({
   required int cardOrd,
   AnkiCardSpecialFields specials = const AnkiCardSpecialFields(),
 }) {
-  final bool native =
-      builtinKey == kSrsBuiltinFushiCardKey &&
-      front == FushiCardNoteType.template.front &&
-      back == FushiCardNoteType.template.back &&
-      css == FushiCardNoteType.template.css &&
-      srsFushiCardMediaIsNative(fieldsByName);
-  if (!native) return null;
-  return renderAnkiCard(
+  if (builtinKey != kSrsBuiltinFushiCardKey || !fushiCardCssIsDefault(css)) {
+    return null;
+  }
+  final List<FushiCardItem>? frontItems = fushiCardFrontLayoutOf(front);
+  final List<FushiCardItem>? backItems = fushiCardBackLayoutOf(back);
+  if (frontItems == null ||
+      backItems == null ||
+      !srsFushiCardMediaIsNative(fieldsByName)) {
+    return null;
+  }
+  final FushiCardBlockItem defs =
+      backItems
+          .whereType<FushiCardBlockItem>()
+          .where(
+            (FushiCardBlockItem x) => x.block == FushiCardBlock.definitions,
+          )
+          .firstOrNull ??
+      FushiCardBlockItem(FushiCardBlock.definitions);
+  final String definitions = renderAnkiCard(
     questionTemplate: front,
-    answerTemplate: kFushiCardDefinitionsTemplate,
+    answerTemplate: fushiCardDefinitionsTemplateFor(defs),
     noteFields: fieldsByName,
     cardOrd: cardOrd,
     isCloze: false,
     specials: specials,
   ).answer;
+  final Map<String, String> all = ankiFieldMapWithSpecials(
+    noteFields: fieldsByName,
+    cardOrd: cardOrd,
+    specials: specials,
+  );
+  List<FushiCardItem> resolve(List<FushiCardItem> items) =>
+      List<FushiCardItem>.unmodifiable(<FushiCardItem>[
+        for (final FushiCardItem x in items)
+          if (x is FushiCardHtmlItem)
+            FushiCardHtmlItem(
+              renderAnkiCardSide(
+                template: x.html,
+                fields: all,
+                cardOrd: cardOrd,
+              ),
+              wrapped: x.wrapped,
+            )
+          else
+            x,
+      ]);
+  return (
+    definitions: definitions,
+    front: resolve(frontItems),
+    back: resolve(backItems),
+  );
 }

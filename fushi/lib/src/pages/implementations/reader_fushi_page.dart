@@ -1777,6 +1777,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
+  /// 查词弹窗下的正文：歌词模式时是盖在书上的歌词 WebView，否则是书页 WebView。
+  @override
+  Object? get popupBodyWebViewId => _lyricsMode
+      ? _lyricsWebViewController?.getViewId()
+      : _controller?.getViewId();
+
   /// 订阅中的 app 主题通知器（dispose 时按同一实例退订）。
   ThemeNotifier? _observedThemeNotifier;
 
@@ -3289,8 +3295,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       );
     }
 
-    final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
-    debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
     _openTrace.mark('parsed');
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));
@@ -4076,13 +4080,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final bool widthChanged = repaginate.width;
     final bool heightChanged = repaginate.height;
     if (!widthChanged && !heightChanged) return;
-    // BUG-111: 诊断——窗口/缩放 settle 或 resize 后，把真实视口与已分页基线比对。
-    // 若 content-ready 后这里报 widthChanged，说明初始分页宽度偏窄、正在自动重排铺满。
-    debugPrint(
-      '[ReaderFushi] _syncPageSize w=$w h=$h '
-      'paginated=$_paginatedWidth x $_paginatedHeight '
-      'widthChanged=$widthChanged heightChanged=$heightChanged',
-    );
     _lastSyncedWidth = w;
     _lastSyncedHeight = h;
 
@@ -4911,16 +4908,6 @@ $liveConfigJs
     final List<FavoriteSentence> chapterFavs =
         await _favoriteSentencesForSection(_currentChapter);
     if (!mounted || _controller == null) return;
-    final int withOffsets = chapterFavs
-        .where((s) => s.normCharOffset != null)
-        .length;
-    final int total =
-        _favoriteSentencesForBookCache?.length ?? chapterFavs.length;
-    debugPrint(
-      '[fushi-hl] chapter=$_currentChapter '
-      'total=$total chapterFavs=${chapterFavs.length} '
-      'withOffsets=$withOffsets',
-    );
     if (chapterFavs.isNotEmpty) {
       await HighlightBridge.applyHighlights(
         _controller!,
