@@ -10,10 +10,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoBooksCompanion, VideoMetadataWorksCompanion;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
