@@ -97,6 +97,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/media/source_library/source_library_transports.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
@@ -116,6 +117,9 @@ import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 
+export 'package:fushi/src/media/source_library/source_library_transports.dart'
+    show kStreamableVideoSourceTransports;
+
 /// 书文件扩展名（小写、不带点）。
 ///
 /// `pdf` 在列：PDF 是 `EpubBooks.format` 的三种书身份之一，单本导入对话框一直认
@@ -126,15 +130,6 @@ const Set<String> kScanBookExtensions = <String>{'epub', 'pdf'};
 
 /// Subtitle whitelist shared with the video import dialog (no lrc).
 const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
-
-/// 视频域允许的网络传输：条目可原地流播（WebDAV / AList 条目就是 http(s) URL；
-/// SFTP 条目入库为 `sftp://` 稳定地址、起播时经回环中继按偏移读，见
-/// sftp_stream_source.dart）。FTP 不在其中：读不了区间，拖不了进度条。
-const Set<String> kStreamableVideoSourceTransports = <String>{
-  'sftp',
-  'webdav',
-  'alist',
-};
 
 /// 漫画 manifest 扩展名白名单（小写、不带点）。页图目录不靠扩展名代表整卷，
 /// 由 [planScanFromFileList] 按目录结构另行归组。
@@ -902,27 +897,12 @@ class SourceLibraryScanner {
     required Map<String, Object?> config,
     String? password,
     String? privateKey,
-  }) {
-    if (transport == 'local') {
-      return const LocalSourceFileSystem();
-    }
-    final int port =
-        (config['port'] as num?)?.toInt() ?? (transport == 'sftp' ? 22 : 21);
-    return NetworkSourceFileSystem(
-      NetworkSourceConfig(
-        transport: transport,
-        host: (config['host'] as String?) ?? '',
-        port: port,
-        username: (config['username'] as String?) ?? '',
-        password: (password != null && password.isNotEmpty) ? password : null,
-        privateKey: (privateKey != null && privateKey.isNotEmpty)
-            ? privateKey
-            : null,
-        useTls: (config['useTls'] as bool?) ?? false,
-        baseUrl: (config['baseUrl'] as String?),
-      ),
-    );
-  }
+  }) => buildSourceFileSystem(
+    transport: transport,
+    config: config,
+    password: password,
+    privateKey: privateKey,
+  );
 
   /// Scans one source library.
   ///

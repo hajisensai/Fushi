@@ -14,7 +14,7 @@ import 'package:fushi/src/media/alist/alist_stream_url_resolver.dart';
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
-import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/source_library/source_library_transports.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
@@ -79,7 +79,7 @@ Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
     final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
       db,
     ).readSecret(source.id);
-    final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
+    final SourceFileSystem fs = buildSourceFileSystem(
       transport: source.transport,
       config: cfg,
       password: secret.password,

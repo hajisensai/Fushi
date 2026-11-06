@@ -59,8 +59,7 @@ import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
-import 'package:fushi/src/media/source_library/source_library_scanner.dart'
-    show kStreamableVideoSourceTransports;
+import 'package:fushi/src/media/source_library/source_library_transports.dart';
 
 /// 一次迁移的结果。
 class VideoAudioMigrationReport {

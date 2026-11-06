@@ -31,7 +31,7 @@ import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show parseMusicPluginTrackPath;
-import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 
 /// 纯函数：这首曲目是不是本机能转写的文件（插件 URI / 服务器流 / 相对路径都不是）。

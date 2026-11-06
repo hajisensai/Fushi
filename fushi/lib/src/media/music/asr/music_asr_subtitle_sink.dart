@@ -21,7 +21,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 
 /// 一个音频文件下要写字幕的一首曲目（CUE 虚拟曲目带区间）。
