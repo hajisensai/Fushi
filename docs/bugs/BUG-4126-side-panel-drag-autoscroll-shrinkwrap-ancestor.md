@@ -1,0 +1,6 @@
+## BUG-4126 · side-panel-drag-autoscroll-shrinkwrap-ancestor
+- **报告**：2026-11-05（用户：应用内反馈 WJP1eLSfdx，重新提交自 Wn1SZdlyhl；Android 384x853，3.3.0-debug.23864）——播放器侧边栏「控制按钮」页编辑按钮布局，按钮往上拖时页面不滚，拖不到位；「反馈修复后还是一样」。
+- **真实性**：✅ 真 bug，BUG-3985 的修复在这个宿主里没生效。`fushi/lib/src/controls/drag_auto_scroll_region.dart` 原 :70-72 用 `Scrollable.maybeOf(context, axis: Axis.vertical)` 只取**最近一个**竖向祖先 Scrollable；侧边栏设置面板（`video_quick_settings_sheet.dart` 每页 `SingleChildScrollView`）里，设置渲染器把分组内容画成 `shrinkWrap` + `NeverScrollableScrollPhysics` 的 ListView（`fushi/lib/src/settings/material_settings_renderer.dart:405-421`）——最近的那个就是它：高度等于内容、滚动余量 0，`_pickScrollable` 永远判「滚不动」，真正滚动的外层 SingleChildScrollView 从没进候选。BUG-3985 的回归测试只把编辑器嵌在裸 ListView 里，没覆盖这个真实宿主，所以修复「测试绿、真机无效」。实测复现：853x384 下真实面板拖到顶边，`pixels` 一帧不动（新测试修复前 2/2 红）。
+- **[x] ① 已修复** — `DragAutoScrollRegion` 改为收集区外**整条**竖向祖先链（由近及远；第一个经 `Scrollable.maybeOf` 登记依赖，再往外 `findAncestorStateOfType` 只查找不登记、跳过横向的如 TabBarView），`_pickScrollable` 内层优先、再由近及远挑「含指针、在边缘带、该方向还能滚」的，滚不动的 shrinkWrap 层自然被跳过。阅读器 / 漫画 / 歌词 / 视频设置五个编辑器共用本组件，一并受益。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_side_panel_control_layout_autoscroll_test.dart`：真实 `VideoQuickSettingsSheet`（控制按钮页，触屏）853x384 下，横向起手 / 竖向起手两种真实指针手势把按钮拖到视口顶边，断言页面回滚、松手后停止。
+- **备注**：未在真机复测（本轮无 Android 真机）。
