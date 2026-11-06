@@ -20,8 +20,8 @@ constexpr double kMenuMinHitOpacity = 0.05;
 // Strips a circle is approximated by in input shapes (regions are rectangles).
 constexpr int kCircleStrips = 12;
 
-constexpr char kActionOpenApp[] = "open_app";
-constexpr char kActionClose[] = "close";
+using fb::kActionClose;
+using fb::kActionOpenApp;
 constexpr char kProfileIdKey[] = "fushi-profile-id";
 
 double NowMs() { return g_get_monotonic_time() / 1000.0; }
@@ -130,7 +130,8 @@ GdkMonitor* MonitorContaining(GdkDisplay* display, int x, int y) {
 FloatingBallWindow::FloatingBallWindow() = default;
 
 FloatingBallWindow::~FloatingBallWindow() {
-  Stop();
+  // App shutdown: no callbacks (Dart goes away with the engine).
+  Teardown();
   ClearPixbufCache();
 }
 
@@ -169,7 +170,7 @@ void FloatingBallWindow::ConnectScreenSignals() {
                                            G_CALLBACK(OnScreenChanged), this);
 }
 
-void FloatingBallWindow::DisconnectScreenSignals() {
+void FloatingBallWindow::DisconnectScreenSignals() noexcept {
   GdkScreen* screen = gdk_screen_get_default();
   if (monitors_changed_handler_ != 0) {
     g_signal_handler_disconnect(screen, monitors_changed_handler_);
@@ -179,21 +180,6 @@ void FloatingBallWindow::DisconnectScreenSignals() {
   }
   monitors_changed_handler_ = 0;
   size_changed_handler_ = 0;
-}
-
-std::vector<std::string> FloatingBallWindow::ButtonIds() const {
-  // Close and (unless turned off) Open Fushi on top, furthest from the ball;
-  // the user's actions below, the last one next to the ball.
-  std::vector<std::string> ids;
-  ids.emplace_back(kActionClose);
-  if (config_.show_open_app) ids.emplace_back(kActionOpenApp);
-  for (const std::string& id : config_.actions) {
-    if (id != kActionClose && id != kActionOpenApp &&
-        std::find(ids.begin(), ids.end(), id) == ids.end()) {
-      ids.push_back(id);
-    }
-  }
-  return ids;
 }
 
 std::string FloatingBallWindow::LabelFor(const std::string& id) const {
@@ -350,6 +336,16 @@ bool FloatingBallWindow::Start(const Config& config, bool dock_left,
 
 void FloatingBallWindow::Stop() {
   FinishProfileMenu(std::nullopt);
+  Teardown();
+}
+
+void FloatingBallWindow::Teardown() noexcept {
+  profile_menu_done_ = nullptr;
+  if (profile_menu_ != nullptr) {
+    GtkWidget* menu = profile_menu_;
+    profile_menu_ = nullptr;
+    gtk_widget_destroy(menu);
+  }
   CancelAnimations();
   pressing_ball_ = false;
   dragging_ = false;
@@ -511,11 +507,7 @@ void FloatingBallWindow::AnimateProgress(double target, int full_ms) {
     if (target <= 0.0) DestroyMenuWindow();
     return;
   }
-  progress_anim_.active = true;
-  progress_anim_.from = progress_;
-  progress_anim_.to = target;
-  progress_anim_.start_ms = NowMs();
-  progress_anim_.duration_ms = fb::ProgressDurationMs(full_ms, progress_, target);
+  progress_anim_.Start(progress_, target, full_ms, NowMs());
   EnsureAnimationTimer();
 }
 
@@ -526,7 +518,7 @@ void FloatingBallWindow::CollapseImmediately() {
   SetProgress(0);
 }
 
-void FloatingBallWindow::CancelAnimations() {
+void FloatingBallWindow::CancelAnimations() noexcept {
   progress_anim_.active = false;
   snap_anim_.active = false;
   if (timer_id_ != 0) {
@@ -562,36 +554,16 @@ gboolean FloatingBallWindow::OnAnimationTick(gpointer data) {
 
 bool FloatingBallWindow::Tick() {
   const double now = NowMs();
-  bool more = false;
   if (progress_anim_.active) {
-    const double f = std::clamp(
-        (now - progress_anim_.start_ms) / progress_anim_.duration_ms, 0.0, 1.0);
-    const double target = progress_anim_.to;
-    if (f >= 1.0) {
-      progress_anim_.active = false;
-      SetProgress(target);
-      // The button window goes only once the collapse has finished.
-      if (target <= 0.0) DestroyMenuWindow();
-    } else {
-      SetProgress(fb::Lerp(progress_anim_.from, target, f));
-      more = true;
-    }
+    SetProgress(progress_anim_.Sample(now));
+    // The button window goes only once the collapse has finished.
+    if (!progress_anim_.active && progress_anim_.to <= 0.0) DestroyMenuWindow();
   }
   if (snap_anim_.active) {
-    const double f = std::clamp(
-        (now - snap_anim_.start_ms) / static_cast<double>(fb::kSnapMs), 0.0,
-        1.0);
-    const double e = fb::EaseOutCubic(f);
-    ball_left_ = fb::Lerp(snap_anim_.from_left, snap_anim_.to_left, e);
-    ball_top_ = fb::Lerp(snap_anim_.from_top, snap_anim_.to_top, e);
+    snap_anim_.Sample(now, &ball_left_, &ball_top_);
     PlaceBall();
-    if (f >= 1.0) {
-      snap_anim_.active = false;
-    } else {
-      more = true;
-    }
   }
-  return more && ball_ != nullptr;
+  return (progress_anim_.active || snap_anim_.active) && ball_ != nullptr;
 }
 
 // ── button window ────────────────────────────────────────────────────────────
@@ -605,57 +577,15 @@ void FloatingBallWindow::EnsureMenuWindow() {
   const fb::Geometry g = CurrentGeometry();
   menu_ids_ = ButtonIds();
   menu_scale_ = scale_;
-  const double ball_cx = g.ExpandedBallLeft() + g.ball() / 2;
-  const double ball_cy = g.ExpandedBallTop() + g.ball() / 2;
-  const double peak = EaseOutBackPeakCached();
-  const double reach_radius = g.button() / 2 * fb::ButtonScale(peak) +
-                              fb::kMenuShadowPadDip * menu_scale_ +
-                              2.0 * menu_scale_;
-  double min_x = ball_cx - reach_radius;
-  double max_x = ball_cx + reach_radius;
-  double min_y = ball_cy - reach_radius;
-  double max_y = ball_cy + reach_radius;
-  std::vector<fb::Offset> offsets;
   PrepareMenuLabels(g);
-  const double label_near = g.button() / 2 + fb::kLabelGapDip * menu_scale_;
-  const double label_pad = fb::kMenuShadowPadDip * menu_scale_;
-  const double label_half_h = fb::kLabelHeightDip * menu_scale_ / 2 + label_pad;
-  auto include_label = [&](size_t index, double cx, double cy) {
-    if (index >= menu_labels_.size()) return;
-    const double w = menu_labels_[index].width;
-    const double a = dock_left_ ? cx + label_near : cx - label_near - w;
-    min_x = std::min(min_x, a - label_pad);
-    max_x = std::max(max_x, a + w + label_pad);
-    min_y = std::min(min_y, cy - label_half_h);
-    max_y = std::max(max_y, cy + label_half_h);
-  };
-  for (size_t i = 0; i < menu_ids_.size(); ++i) {
-    const fb::Offset off = g.ButtonOffset(static_cast<int>(i));
-    offsets.push_back(off);
-    const double far_x = ball_cx + off.dx * peak;
-    const double far_y = ball_cy + off.dy * peak;
-    min_x = std::min(min_x, far_x - reach_radius);
-    max_x = std::max(max_x, far_x + reach_radius);
-    min_y = std::min(min_y, far_y - reach_radius);
-    max_y = std::max(max_y, far_y + reach_radius);
-    include_label(i, ball_cx, ball_cy);
-    include_label(i, far_x, far_y);
-  }
-  menu_x_ = static_cast<int>(std::floor(min_x));
-  menu_y_ = static_cast<int>(std::floor(min_y));
-  menu_w_ = static_cast<int>(std::ceil(max_x)) - menu_x_;
-  menu_h_ = static_cast<int>(std::ceil(max_y)) - menu_y_;
-  menu_ball_cx_ = ball_cx - menu_x_;
-  menu_ball_cy_ = ball_cy - menu_y_;
-  menu_centers_.clear();
-  for (const fb::Offset& off : offsets) {
-    menu_centers_.push_back(
-        fb::Offset{menu_ball_cx_ + off.dx, menu_ball_cy_ + off.dy});
-  }
+  std::vector<double> label_widths;
+  for (const Label& label : menu_labels_) label_widths.push_back(label.width);
+  menu_layout_ =
+      fb::LayoutMenu(g, menu_scale_, EaseOutBackPeakCached(), label_widths);
   hovered_ = -1;
   pressed_ = -1;
 
-  menu_ = NewOverlayWindow(menu_w_, menu_h_);
+  menu_ = NewOverlayWindow(menu_layout_.width, menu_layout_.height);
   gtk_window_set_title(GTK_WINDOW(menu_), kMenuTitle);
   g_signal_connect(menu_, "draw", G_CALLBACK(OnMenuDraw), this);
   g_signal_connect(menu_, "button-press-event", G_CALLBACK(OnMenuPress), this);
@@ -667,14 +597,14 @@ void FloatingBallWindow::EnsureMenuWindow() {
   gtk_widget_set_has_tooltip(menu_, TRUE);
   g_signal_connect(menu_, "query-tooltip", G_CALLBACK(OnMenuQueryTooltip),
                    this);
-  gtk_window_move(GTK_WINDOW(menu_), menu_x_, menu_y_);
+  gtk_window_move(GTK_WINDOW(menu_), menu_layout_.x, menu_layout_.y);
   // Shaped and painted at the current progress (usually 0: all transparent)
   // before it is shown; the buttons then come out from under the ball.
   UpdateMenuInputShape();
   if (!Suppressed()) ShowWindows();
 }
 
-void FloatingBallWindow::DestroyMenuWindow() {
+void FloatingBallWindow::DestroyMenuWindow() noexcept {
   hovered_ = -1;
   pressed_ = -1;
   if (menu_ != nullptr) {
@@ -686,12 +616,12 @@ void FloatingBallWindow::DestroyMenuWindow() {
 
 bool FloatingBallWindow::ButtonCircle(int index, double* cx, double* cy,
                                       double* radius, double* opacity) const {
-  const int n = static_cast<int>(menu_centers_.size());
+  const int n = static_cast<int>(menu_layout_.centers.size());
   if (index < 0 || index >= n) return false;
   const double k = fb::ButtonProgress(progress_, index, n);
-  const fb::Offset& c = menu_centers_[index];
-  *cx = menu_ball_cx_ + (c.dx - menu_ball_cx_) * k;
-  *cy = menu_ball_cy_ + (c.dy - menu_ball_cy_) * k;
+  const fb::Offset& c = menu_layout_.centers[index];
+  *cx = fb::Lerp(menu_layout_.ball_cx, c.dx, k);
+  *cy = fb::Lerp(menu_layout_.ball_cy, c.dy, k);
   *radius = fb::kButtonDip * menu_scale_ / 2 * fb::ButtonScale(k);
   *opacity = fb::ButtonOpacity(k);
   return true;
@@ -718,7 +648,8 @@ bool FloatingBallWindow::LabelRect(int index, double* left, double* top,
 }
 
 int FloatingBallWindow::ButtonAt(double x, double y) const {
-  for (int i = static_cast<int>(menu_centers_.size()) - 1; i >= 0; --i) {
+  for (int i = static_cast<int>(menu_layout_.centers.size()) - 1; i >= 0;
+       --i) {
     double cx, cy, r, o;
     if (!ButtonCircle(i, &cx, &cy, &r, &o) || o < kMenuMinHitOpacity) continue;
     // Drawn at 40, hit at 48 (kReaderFloatingBallMinTouchTarget).
@@ -830,8 +761,8 @@ void FloatingBallWindow::BeginDrag() {
 }
 
 void FloatingBallWindow::DragTo(double root_x, double root_y) {
-  double left = drag_start_left_ + (root_x - down_x_);
-  double top = drag_start_top_ + (root_y - down_y_);
+  const double left = drag_start_left_ + (root_x - down_x_);
+  const double top = drag_start_top_ + (root_y - down_y_);
   // Viewport = work area of the monitor under the ball centre (dragging onto
   // another monitor makes that one the viewport).
   const double ball = BallPx();
@@ -841,12 +772,9 @@ void FloatingBallWindow::DragTo(double root_x, double root_y) {
   scale_ = screen.scale;
   const fb::Geometry as_left = GeometryFor(screen, true, fraction_);
   const fb::Geometry as_right = GeometryFor(screen, false, fraction_);
-  left = std::clamp(left, as_left.CollapsedBallLeft(),
-                    std::max(as_left.CollapsedBallLeft(),
-                             as_right.CollapsedBallLeft()));
-  top = std::clamp(top, as_left.MinTop(), as_left.MaxTop());
-  ball_left_ = left;
-  ball_top_ = top;
+  const fb::Offset clamped = fb::ClampDrag(as_left, as_right, left, top);
+  ball_left_ = clamped.dx;
+  ball_top_ = clamped.dy;
   PlaceBall();
 }
 
@@ -859,19 +787,16 @@ void FloatingBallWindow::EndDrag() {
   dock_left_ = g.DockLeftForBallLeft(ball_left_);
   fraction_ = g.FractionForTop(ball_top_);
   const fb::Geometry settled = CurrentGeometry();
-  snap_anim_.active = config_.animate;
-  snap_anim_.from_left = ball_left_;
-  snap_anim_.from_top = ball_top_;
-  snap_anim_.to_left = settled.CollapsedBallLeft();
-  snap_anim_.to_top = settled.BallTop();
-  snap_anim_.start_ms = NowMs();
-  if (!config_.animate) {
+  if (config_.animate) {
+    snap_anim_.Start(ball_left_, ball_top_, settled.CollapsedBallLeft(),
+                     settled.BallTop(), NowMs());
+    EnsureAnimationTimer();
+  } else {
     CancelAnimations();
-    ball_left_ = snap_anim_.to_left;
-    ball_top_ = snap_anim_.to_top;
+    ball_left_ = settled.CollapsedBallLeft();
+    ball_top_ = settled.BallTop();
   }
   PlaceBall();
-  if (config_.animate) EnsureAnimationTimer();
   if (on_position_) on_position_(dock_left_, fraction_);
 }
 
@@ -1172,7 +1097,7 @@ GdkPixbuf* FloatingBallWindow::PixbufFor(const std::string& key,
   return entry.pixbuf;
 }
 
-void FloatingBallWindow::ClearPixbufCache() {
+void FloatingBallWindow::ClearPixbufCache() noexcept {
   for (auto& [key, entry] : pixbufs_) g_clear_object(&entry.pixbuf);
   pixbufs_.clear();
 }

@@ -118,23 +118,6 @@ class FloatingBallWindow {
     bool tuck_right = true;
   };
 
-  struct ProgressAnimation {
-    bool active = false;
-    double from = 0;
-    double to = 0;
-    double start_ms = 0;
-    double duration_ms = 1;
-  };
-
-  struct SnapAnimation {
-    bool active = false;
-    double from_left = 0;
-    double from_top = 0;
-    double to_left = 0;
-    double to_top = 0;
-    double start_ms = 0;
-  };
-
   struct Label {
     std::string text;
     double width = 0;
@@ -167,9 +150,14 @@ class FloatingBallWindow {
 
   GtkWidget* NewOverlayWindow(int width, int height);
   void ConnectScreenSignals();
-  void DisconnectScreenSignals();
+  void DisconnectScreenSignals() noexcept;
+  // Destroys every window and drops a pending profile menu without answering it.
+  void Teardown() noexcept;
 
-  std::vector<std::string> ButtonIds() const;
+  std::vector<std::string> ButtonIds() const {
+    return fushi::floating_ball::ButtonIds(config_.show_open_app,
+                                           config_.actions);
+  }
   std::string LabelFor(const std::string& id) const;
 
   Screen ScreenFor(GdkMonitor* monitor, double probe_y) const;
@@ -186,13 +174,13 @@ class FloatingBallWindow {
   void SetExpanded(bool expand);
   void AnimateProgress(double target, int full_ms);
   void CollapseImmediately();
-  void CancelAnimations();
+  void CancelAnimations() noexcept;
   void SetProgress(double t);
   void EnsureAnimationTimer();
   bool Tick();
 
   void EnsureMenuWindow();
-  void DestroyMenuWindow();
+  void DestroyMenuWindow() noexcept;
   bool ButtonCircle(int index, double* cx, double* cy, double* radius,
                     double* opacity) const;
   bool LabelRect(int index, double* left, double* top, double* width,
@@ -213,7 +201,7 @@ class FloatingBallWindow {
   // Decoded, scaled image for |key| (cached per pixel size).
   GdkPixbuf* PixbufFor(const std::string& key, const std::vector<uint8_t>& png,
                        int px, bool crop_square);
-  void ClearPixbufCache();
+  void ClearPixbufCache() noexcept;
   PangoFontDescription* LabelFont() const;
 
   bool Suppressed() const { return hidden_for_capture_ || hidden_for_app_; }
@@ -242,8 +230,8 @@ class FloatingBallWindow {
 
   double progress_ = 0;
   bool expand_target_ = false;
-  ProgressAnimation progress_anim_;
-  SnapAnimation snap_anim_;
+  fushi::floating_ball::ProgressAnimation progress_anim_;
+  fushi::floating_ball::SnapAnimation snap_anim_;
   guint timer_id_ = 0;
 
   bool pressing_ball_ = false;
@@ -253,15 +241,10 @@ class FloatingBallWindow {
   double drag_start_left_ = 0;
   double drag_start_top_ = 0;
 
-  int menu_x_ = 0;
-  int menu_y_ = 0;
-  int menu_w_ = 0;
-  int menu_h_ = 0;
+  // Button window: bounding box, expanded ball centre and landing spots.
+  fushi::floating_ball::MenuLayout menu_layout_;
   std::vector<std::string> menu_ids_;
-  std::vector<fushi::floating_ball::Offset> menu_centers_;
   std::vector<Label> menu_labels_;
-  double menu_ball_cx_ = 0;
-  double menu_ball_cy_ = 0;
   double menu_scale_ = 1.0;
   int hovered_ = -1;
   int pressed_ = -1;
