@@ -20,8 +20,8 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         AnkiRenderedCard,
         AnkiTemplateError,
         ankiResolveTypeAnswer,
+        FushiCardSide,
         fushiCardCssIsDefault,
-        fushiCardFrontIsDefault,
         renderAnkiCard,
         templateIdsToNames,
         templateNamesToIds;
@@ -410,7 +410,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       final AnkiRenderedCard? card = _preview.card;
       if (card != null && !card.isEmpty) {
         _shown = card;
-        // 正面 / 样式与内置一致、背面只调了区块布局的 Fushi 卡片与复习页一样走原生混合渲染
+        // 样式与内置一致、正背面认得出区块布局的 Fushi 卡片与复习页一样走原生混合渲染
         // （不建整面 WebView，判据在 srsNotePreviewNativeFushiCard 里）；改到原生画不了就是
         // 复习时的模板渲染，预览跟着换。
         // 共享样式按载入时的类型比对，样式框改过就按模板渲染。
@@ -880,15 +880,18 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           onSelectionChanged: (Set<bool> s) =>
               setState(() => _previewAnswer = s.first),
         ),
-        // 内置 Fushi 卡片的背面：区块布局（拖动排序、勾选增删）。只动区块顺序，复习时仍走
-        // 原生 Fushi 卡面；通用可视化块会把背面重写成别的模板，原生卡面就画不了了。
-        if (back && type.builtinKey == kSrsBuiltinFushiCardKey)
+        // 内置 Fushi 卡片的正面 / 背面：区块布局（排序、增删、内置区块选项、字段区块、HTML
+        // 区块），写回这一面的模板，复习时仍走原生 Fushi 卡面；通用可视化块会把这一面重写成
+        // 别的模板，原生卡面就画不了了。
+        if (type.builtinKey == kSrsBuiltinFushiCardKey)
           SrsFushiBlockLayoutPanel(
-            back: _back.text,
-            frontAndCssDefault:
-                fushiCardFrontIsDefault(_front.text) &&
-                fushiCardCssIsDefault(_css.text),
-            onChanged: (String v) => _back.text = v,
+            side: back ? FushiCardSide.back : FushiCardSide.front,
+            template: back ? _back.text : _front.text,
+            cssDefault: fushiCardCssIsDefault(_css.text),
+            fieldNames: <String>[
+              for (final SrsFieldDef f in type.fields) f.name,
+            ],
+            onChanged: (String v) => (back ? _back : _front).text = v,
           )
         else
           SrsVisualTemplatePanel(

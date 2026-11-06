@@ -16,7 +16,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         AnkiCardSpecialFields,
         AnkiRenderedCard,
         AnkiTemplateError,
-        FushiCardBlock,
+        FushiCardItem,
         templateIdsToNames;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
@@ -31,6 +31,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
 import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
     show SrsHtmlCardView, srsNativeHtmlCardFor;
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardItemsNative;
 import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview, srsRenderTemplatePreview;
@@ -93,16 +95,18 @@ SrsTemplatePreview srsRenderNotePreview({
   );
 }
 
-/// 预览卡走原生混合渲染要的东西：按字段名的字段值、释义区 HTML、背面区块布局。
+/// 预览卡走原生混合渲染要的东西：按字段名的字段值、释义区 HTML、正背面区块布局。
 typedef SrsPreviewNativeFushiCard = ({
   Map<String, String> fieldsByName,
   String definitionsHtml,
-  List<FushiCardBlock> blocks,
+  List<FushiCardItem> front,
+  List<FushiCardItem> back,
 });
 
-/// 这张预览卡能否与复习页一样走原生混合渲染（内置 Fushi 卡片、正面 / 样式没改、背面只调了
-/// 区块布局、媒体原生画得全）；能则返回 [SrsPreviewNativeFushiCard]，否则 null（整面 WebView）。
-/// 判据与复习页同一处（[srsFushiCardNative]），编辑页看到的就是复习页那张卡。
+/// 这张预览卡能否与复习页一样走原生混合渲染（内置 Fushi 卡片、样式没改、正背面认得出区块
+/// 布局、媒体与自定义区块原生画得全）；能则返回 [SrsPreviewNativeFushiCard]，否则 null（整面
+/// WebView）。判据与复习页同一处（[srsFushiCardNative] + [srsFushiCardItemsNative]），编辑页
+/// 看到的就是复习页那张卡。
 SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
   required SrsNoteTypeView type,
   required SrsTemplateDef template,
@@ -137,11 +141,19 @@ SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
   } on AnkiTemplateError {
     return null;
   }
-  if (native == null) return null;
+  if (native == null ||
+      !srsFushiCardItemsNative(
+        front: native.front,
+        back: native.back,
+        fields: fieldsByName,
+      )) {
+    return null;
+  }
   return (
     fieldsByName: fieldsByName,
     definitionsHtml: native.definitions,
-    blocks: native.blocks,
+    front: native.front,
+    back: native.back,
   );
 }
 
@@ -192,7 +204,8 @@ class SrsStablePreviewFace extends ConsumerWidget {
             face: face,
             fields: native.fieldsByName,
             definitionsHtml: native.definitionsHtml,
-            blocks: native.blocks,
+            front: native.front,
+            back: native.back,
           )
         : html != null
         ? SrsHtmlCardView(

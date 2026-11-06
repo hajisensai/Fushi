@@ -23,6 +23,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
 import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
     show SrsHtmlCardView, srsNativeHtmlCardFor;
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -189,7 +191,14 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
       // 媒体原生画得全）走原生 + 释义 WebView 的混合卡面，其余整面 WebView。以前预览一律整面
       // WebView，Fushi 卡片在浏览预览里与复习时长得不一样（satv-DI70B）。
       // 非 Fushi 卡片两面都在原生认得的子集里时同复习页走原生 HTML 卡面（[srsNativeHtmlCardFor]）。
-      final String? definitions = rendered.fushiCardDefinitions;
+      // 自定义区块（字段 / HTML 区块）原生画不了时同样整面 WebView（[srsFushiCardRenderedNative]）。
+      final String? definitions =
+          srsFushiCardRenderedNative(
+            rendered,
+            languageCode: cardFace.languageCode,
+          )
+          ? rendered.fushiCardDefinitions
+          : null;
       final SrsHtmlCard? html = definitions != null
           ? null
           : srsNativeHtmlCardFor(
@@ -205,7 +214,8 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
               face: cardFace,
               fields: rendered.fields,
               definitionsHtml: definitions,
-              blocks: rendered.fushiCardBlocks,
+              front: rendered.fushiCardFront,
+              back: rendered.fushiCardBack,
             )
           : html != null
           ? SrsHtmlCardView(

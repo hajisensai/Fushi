@@ -78,6 +78,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
@@ -817,11 +819,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     SrsRenderedCard rendered, {
     bool layout = false,
   }) {
-    if (rendered.fushiCardDefinitions != null) {
+    if (_fushiNative(rendered)) {
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
         ref.read(srsCardAppearanceProvider),
-        blocks: rendered.fushiCardBlocks,
+        front: rendered.fushiCardFront,
+        back: rendered.fushiCardBack,
       ).media;
       return (question: media.front, answer: media.back);
     }
@@ -2195,7 +2198,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsNativeHtmlCardFor]，按内容记忆）；null =
   /// 不是这类卡或画不全（整面 WebView）。[detail] 缺省为当前卡（预取时传那张卡的）。
   SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered, [SrsCardDetail? detail]) {
-    if (rendered == null || rendered.fushiCardDefinitions != null) return null;
+    if (rendered == null || _fushiNative(rendered)) return null;
     return srsNativeHtmlCardFor(
       fushiCard:
           (detail ?? _detail)?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
@@ -2206,10 +2209,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
+  /// 内置 Fushi 卡片走原生混合卡面：引擎认得出区块布局、自定义区块（字段 / HTML 区块）原生
+  /// 画得全（[srsFushiCardRenderedNative]，按内容记忆）。否则整面 WebView。
+  bool _fushiNative(SrsRenderedCard? rendered) =>
+      rendered != null &&
+      srsFushiCardRenderedNative(
+        rendered,
+        languageCode: ref.read(appProvider).defaultContentLanguage,
+      );
+
   /// 卡面由 Flutter 原生画（Fushi 卡片混合渲染或原生 HTML 卡面）。
   bool _nativeFace(SrsRenderedCard? rendered) =>
       rendered != null &&
-      (rendered.fushiCardDefinitions != null || _htmlCardOf(rendered) != null);
+      (_fushiNative(rendered) || _htmlCardOf(rendered) != null);
 
   Widget _buildBody(BuildContext context) {
     // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
@@ -2402,7 +2414,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             bottomInset: _bottomBarInset,
             zoom: zoom,
           )
-        : rendered?.fushiCardDefinitions != null
+        : _fushiNative(rendered)
         ? MediaQuery(
             // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
             data: media.copyWith(
@@ -2413,7 +2425,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               face: face,
               fields: rendered!.fields,
               definitionsHtml: rendered.fushiCardDefinitions!,
-              blocks: rendered.fushiCardBlocks,
+              front: rendered.fushiCardFront,
+              back: rendered.fushiCardBack,
               topInset: media.padding.top,
               bottomInset: _bottomBarInset,
             ),

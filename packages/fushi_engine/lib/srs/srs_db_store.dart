@@ -201,7 +201,8 @@ class SrsRenderedCard {
     required this.isEmpty,
     this.fields = const <String, String>{},
     this.fushiCardDefinitions,
-    this.fushiCardBlocks = FushiCardBlock.values,
+    this.fushiCardFront = const <FushiCardItem>[],
+    this.fushiCardBack = const <FushiCardItem>[],
   });
 
   final String question;
@@ -212,15 +213,16 @@ class SrsRenderedCard {
   /// 笔记字段（按字段名）。
   final Map<String, String> fields;
 
-  /// 内置「Fushi 卡片」能原生画时（正面 / 样式没改，背面只调了区块布局，见
+  /// 内置「Fushi 卡片」能原生画时（样式没改、正背面认得出区块布局，见
   /// [srsFushiCardNative]）：只含释义区的背面（见 [kFushiCardDefinitionsTemplate]），复习页
   /// 据此走原生 + 释义 WebView 的混合渲染。其它类型、或模板改到原生画不了的 Fushi 卡片为
   /// null（整面 WebView，与 Anki 一致）。
   final String? fushiCardDefinitions;
 
-  /// 原生 Fushi 卡面背面的区块顺序（[fushiCardBackLayoutOf]；删掉的区块不在里面）。只在
-  /// [fushiCardDefinitions] 非 null 时有意义。
-  final List<FushiCardBlock> fushiCardBlocks;
+  /// 原生 Fushi 卡面正面 / 背面的区块布局（[fushiCardLayoutOf]，自上而下；删掉的区块不在
+  /// 里面；HTML 区块已按笔记字段展开）。只在 [fushiCardDefinitions] 非 null 时有意义。
+  final List<FushiCardItem> fushiCardFront;
+  final List<FushiCardItem> fushiCardBack;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -4595,7 +4597,8 @@ class SrsDbStore implements SrsSync2Host {
       isEmpty: r.isEmpty,
       fields: fields,
       fushiCardDefinitions: native?.definitions,
-      fushiCardBlocks: native?.blocks ?? FushiCardBlock.values,
+      fushiCardFront: native?.front ?? const <FushiCardItem>[],
+      fushiCardBack: native?.back ?? const <FushiCardItem>[],
     );
   }
 

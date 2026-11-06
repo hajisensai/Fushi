@@ -35,6 +35,8 @@ import 'package:fushi/src/srs/srs_card_appearance.dart'
 import 'package:fushi/src/srs/srs_card_design_skin.dart'
     show srsCardDesignSkinFont;
 import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show kSrsHtmlFragmentHostCss;
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
@@ -72,6 +74,93 @@ SrsHtmlCard? srsNativeHtmlCardFor({
         ? null
         : languageCode,
   );
+}
+
+/// 卡面上的链接：`fushi://` 来源链接跳回原处（[onSourceLink]），http(s) 外链系统浏览器打开，
+/// 其余不处理。
+void srsOpenCardLink(
+  String href,
+  void Function(CardSourceLink link)? onSourceLink,
+) {
+  final String h = href.trim();
+  if (h.toLowerCase().startsWith('fushi:')) {
+    final CardSourceLink? link = CardSourceLink.tryParse(h);
+    if (link != null) onSourceLink?.call(link);
+    return;
+  }
+  final String scheme = Uri.tryParse(h)?.scheme.toLowerCase() ?? '';
+  if (scheme == 'http' || scheme == 'https') {
+    unawaited(openDictionaryExternalLink(h));
+  }
+}
+
+/// 一段 HTML 片段的原生绘制（原生 Fushi 卡面里的字段区块 / HTML 区块，见
+/// srs_fushi_card_items.dart）：不带滚动、卡面手势与页边距，文字选区 / 取词由外层卡面提供；
+/// 「跟随设计系统」样式覆盖与整张原生 HTML 卡面同一套。
+class SrsHtmlFragmentView extends ConsumerWidget {
+  const SrsHtmlFragmentView({
+    super.key,
+    required this.source,
+    required this.cardKey,
+    required this.onPlay,
+    this.onSourceLink,
+  });
+
+  /// 片段解析好的 DOM（`srsHtmlFragmentProbe`）。
+  final SrsHtmlCardFace source;
+
+  /// 这一面卡的标识：片段里 `<details>` 的展开状态按它复位。
+  final String cardKey;
+
+  /// 片段里的 `[sound:]` 发音键（交给卡面的播放序列）。
+  final void Function(String name) onPlay;
+  final void Function(CardSourceLink link)? onSourceLink;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool dark = theme.brightness == Brightness.dark;
+    final SrsCardAppearance appearance = ref.watch(srsCardAppearanceProvider);
+    final SrsMediaStore? store = ref.watch(srsMediaStoreProvider).valueOrNull;
+    final SrsHtmlBlock root = source.layout(
+      dark: dark,
+      foreground: scheme.onSurface.toARGB32(),
+      hostCss: kSrsHtmlFragmentHostCss,
+    );
+    final SrsCardTokens tokens = SrsCardTokens.of(context);
+    final String? lang = source.languageCode;
+    final _Skin skin = _Skin(
+      on: appearance.designSkin,
+      dark: dark,
+      scheme: scheme,
+      tokens: tokens,
+      body: root.style,
+      languageCode: lang,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final MediaQueryData media = MediaQuery.of(context);
+        final _Painter painter = _Painter(
+          zoom: 1,
+          viewportW: media.size.width,
+          viewportH: media.size.height,
+          skin: skin,
+          store: store,
+          families: contentFontFamilies(
+            languageTag: lang,
+            platform: defaultTargetPlatform,
+            fallbackWhenUnknown: true,
+          ),
+          locale: lang == null || lang.isEmpty ? null : Locale(lang),
+          onPlay: onPlay,
+          onLink: (String href) => srsOpenCardLink(href, onSourceLink),
+          cardKey: cardKey,
+        );
+        return painter.block(root, c.maxWidth, root: true);
+      },
+    );
+  }
 }
 
 /// 原生画一面非 Fushi 卡片。
@@ -168,18 +257,8 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
     await ref.read(srsSoundPlayerProvider)(file.path);
   }
 
-  void _openLink(String href) {
-    final String h = href.trim();
-    if (h.toLowerCase().startsWith('fushi:')) {
-      final CardSourceLink? link = CardSourceLink.tryParse(h);
-      if (link != null) widget.face.onSourceLink?.call(link);
-      return;
-    }
-    final String scheme = Uri.tryParse(h)?.scheme.toLowerCase() ?? '';
-    if (scheme == 'http' || scheme == 'https') {
-      unawaited(openDictionaryExternalLink(h));
-    }
-  }
+  void _openLink(String href) =>
+      srsOpenCardLink(href, widget.face.onSourceLink);
 
   @override
   Widget build(BuildContext context) {
