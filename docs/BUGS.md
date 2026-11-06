@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3725 条。点号进各自文件。
+> 共 3726 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4126](bugs/BUG-4126-android-lyrics-mode-heat.md) | ✅ | ✅ | Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成 |
 | [BUG-4125](bugs/BUG-4125-video-home-continue-adaptive-cover.md) | ✅ | ✅ | 视频首页「继续观看」竖图被垫模糊塞进 16:9，大卡旁窄卡标题被挤没 |
 | [BUG-4124](bugs/BUG-4124-ios-island-clipped-and-large-widget-overflow.md) | ✅ | ✅ | ios-island-clipped-and-large-widget-overflow |
 | [BUG-4123](bugs/BUG-4123-music-lookup-popup-cover-theme.md) | ✅ | ✅ | music-lookup-popup-cover-theme |
@@ -61,11 +62,6 @@
 | [BUG-4104](bugs/BUG-4104-srs-rated-chip-lingers.md) | ✅ | ✅ | srs-rated-chip-lingers |
 | [BUG-4103](bugs/BUG-4103-source-jump-target-no-highlight.md) | ✅ | ✅ | 卡片来源回跳落点不高亮且回看横幅下正文底部被挡 |
 | [BUG-4102](bugs/BUG-4102-ios-metrickit-oversized-crash-drops-stack.md) | ✅ | ✅ | iOS 崩溃诊断调用树超 256 KB 时丢掉崩溃线程与机型 / 构建号 |
-> 共 3701 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4102](bugs/BUG-4102-android-lyrics-mode-heat.md) | ✅ | ✅ | Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成 |
 | [BUG-4101](bugs/BUG-4101-windows-webview-creation-error-controller-type.md) | ✅ | ✅ | Windows WebView2 创建失败时 sentinel 恢复链因控制器类型错 TypeError，PlatformException 再作为未捕获异常冒两次 |
 | [BUG-4100](bugs/BUG-4100-srs-browse-preview-kaishi-blank.md) | 🚧 | 🚧 | Kaishi（Anki 卡型）卡在浏览器预览中空白，根因未定位 |
 | [BUG-4099](bugs/BUG-4099-srs-passphrase-dialog-keyboard-overflow.md) | ✅ | ✅ | 复习数据位置「开启加密」口令弹窗键盘弹出后内容被裁 |

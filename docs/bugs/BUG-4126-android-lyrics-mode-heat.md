@@ -1,4 +1,4 @@
-## BUG-4102 · Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成
+## BUG-4126 · Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成
 - **报告**：2026-11-05（用户：小米平板 5 nabu，120 Hz，歌词模式播放时明显发热）
 - **真实性**：✅ 真 bug。真入口 profile APK（生产 `WidgetsFlutterBinding` + `app.main()`，只加请帧计数）实测：歌词模式播放中 Flutter 约 20～27 帧/秒、HWUI 87～99 帧/秒、GPU 42～47%、主线程 58～61%、GC 线程 45～50%；暂停时 Flutter 1 帧/秒、GPU 4%。请帧调用栈 4 s 采样：`Ticker._tick` 190 次几乎全部来自**被歌词覆盖层盖住的迷你播放条**的波浪进度条——
   - `fushi/lib/src/media/audiobook/audiobook_play_bar.dart:772`（base `df8bddcd161`）`FushiWavyLinearProgress(waving: c.isPlaying)`，其 `_RepeatingTicker`（`fushi/lib/src/utils/components/fushi_expressive_progress.dart:83-93`）播放中每个 vsync 都推进；

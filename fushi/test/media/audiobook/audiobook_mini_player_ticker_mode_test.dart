@@ -19,7 +19,7 @@ class _ScriptedController extends AudiobookPlayerController {
   Duration get totalDuration => const Duration(seconds: 100);
 }
 
-/// BUG-4102：歌词覆盖层在场时，阅读器层被 `TickerMode(enabled: false)` 包住；
+/// BUG-4126：歌词覆盖层在场时，阅读器层被 `TickerMode(enabled: false)` 包住；
 /// 被盖住的迷你条播放中也不能再请帧（波浪 ticker 静音、周期刷新计时器停），
 /// 退出后恢复的那一帧就要画出控制器现值。
 void main() {

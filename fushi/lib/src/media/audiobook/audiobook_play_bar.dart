@@ -557,7 +557,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
   }
 
   /// 只在播放中、且所在子树看得见（[TickerMode] 开）时跑周期刷新：暂停时进度不动，
-  /// 被盖住时刷了也没人看（BUG-4102），都不常驻计时器。
+  /// 被盖住时刷了也没人看（BUG-4126），都不常驻计时器。
   void _syncTicker() {
     final bool run = widget.controller.isPlaying && _tickerModeEnabled;
     if (run && _ticker == null) {

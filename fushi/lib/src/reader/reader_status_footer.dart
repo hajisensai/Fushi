@@ -430,7 +430,7 @@ class ReaderStatusFooter extends StatefulWidget {
 ///
 /// 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。计时器
 /// 只在所在子树看得见（[TickerMode] 开）时跑：被歌词覆盖层或别的路由盖住时停
-/// （BUG-4102）。恢复时 TickerMode 翻转让 [didChangeDependencies] 重跑、随后照常
+/// （BUG-4126）。恢复时 TickerMode 翻转让 [didChangeDependencies] 重跑、随后照常
 /// build，build 直接读 `sessionTotals()`，当帧就是现值。
 mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
   Timer? _ticker;

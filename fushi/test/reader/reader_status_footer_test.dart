@@ -339,7 +339,7 @@ void main() {
       );
     }
 
-    testWidgets('covered by TickerMode (lyrics overlay, BUG-4102) the clock '
+    testWidgets('covered by TickerMode (lyrics overlay, BUG-4126) the clock '
         'stops ticking and resumes with the live reading', (
       WidgetTester tester,
     ) async {

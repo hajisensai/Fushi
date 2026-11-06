@@ -567,7 +567,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 画在它上方，Flutter 每出一帧都要把整屏叠层（ImageReader）重新合成、主线程逐块
   /// `Bitmap.wrapHardwareBuffer`、Android 视图树整棵重绘。被盖住的有声书迷你条里
   /// 播放中的波浪进度（[FushiWavyLinearProgress] 逐 vsync repeat）原先一直在要帧，
-  /// 把歌词模式播放顶成逐 vsync 出帧、发热（BUG-4102）。
+  /// 把歌词模式播放顶成逐 vsync 出帧、发热（BUG-4126）。
   ///
   /// [slot] 给每层一个稳定 key：Stack 里有条件出现的孩子，不带 key 的同型包装会按
   /// 下标错配。覆盖层自身与查词弹层不经这里。
