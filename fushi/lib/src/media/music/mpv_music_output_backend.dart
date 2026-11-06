@@ -101,6 +101,25 @@ Map<String, String> musicCddaFileLocal({required int startMs, int? endMs}) =>
       'vid': 'no',
     };
 
+/// 纯函数：断点续播的起点（[startAt]，相对曲目起点）并进一首曲目的逐文件选项。
+///
+/// 已有 `start` 的（音频 CD / 光盘章节：`start` 是整盘时间轴上的本曲起点）在它上面加；
+/// 没有的（普通文件、CUE 的 EDL 段——EDL 每段时间轴从 0 起）直接写 `start`。[startAt]
+/// 不为正时原样返回。首开时用 `start`（播放器级 seek，会清设备缓冲）没有副作用：前面没有
+/// 前一首的尾巴要保（文件头「CUE 虚拟曲目走 EDL」说的是无缝切换，不是首开）。
+Map<String, String> musicFileLocalWithStart(
+  Map<String, String> fileLocal,
+  Duration startAt,
+) {
+  if (startAt <= Duration.zero) return fileLocal;
+  final double offset = startAt.inMicroseconds / Duration.microsecondsPerSecond;
+  final double? base = double.tryParse(fileLocal['start'] ?? '');
+  return <String, String>{
+    ...fileLocal,
+    'start': ((base ?? 0) + offset).toStringAsFixed(9),
+  };
+}
+
 /// CD 段尾的 `end` 值（见 [musicCddaFileLocal]）。
 String musicCddaEndOption(int endMs) =>
     (musicCddaSeconds(endMs) + kMusicEdlEndSlackSeconds).toStringAsFixed(9);
@@ -494,7 +513,23 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
         in (_fileLocalFor[item.trackUid] ?? const <String, String>{}).entries) {
       await native.setProperty('file-local-options/${e.key}', e.value);
     }
+    // 断点续播：只给这次 [openPair] 的「当前」那一项（播放列表第 0 项）用一次。单曲循环
+    // 预排的下一首是同一个对象、同一个 trackUid，所以不能记进按曲目键控的 [_fileLocalFor]。
+    final ({MusicPlayItem item, Duration at})? resume = _pendingStart;
+    if (resume != null && index == 0 && identical(resume.item, item)) {
+      _pendingStart = null;
+      final String? start = musicFileLocalWithStart(
+        _fileLocalFor[item.trackUid] ?? const <String, String>{},
+        resume.at,
+      )['start'];
+      if (start != null) {
+        await native.setProperty('file-local-options/start', start);
+      }
+    }
   }
+
+  /// [openPair] 的 `startAt`：等「当前」那一项加载时（[_onLoadHook]）下发一次后清掉。
+  ({MusicPlayItem item, Duration at})? _pendingStart;
 
   /// 曲目 → 逐文件选项（[resolveMusicMedia] 解析时记下，`on_load` 钩子取用）。
   final Map<String, Map<String, String>> _fileLocalFor =
@@ -578,8 +613,12 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
     _refetched.clear();
+    _pendingStart = startAt > Duration.zero
+        ? (item: current, at: startAt)
+        : null;
     await _open(current, next, play: play);
   }
 
@@ -1324,6 +1363,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   Future<void> stop() async {
     // 在途的打开 / 取流作废：回来后不再把文件交给 mpv。
     _openGen++;
+    _pendingStart = null;
     _nextGen++;
     _cancelNextRefresh();
     await _releaseAudioDevice();

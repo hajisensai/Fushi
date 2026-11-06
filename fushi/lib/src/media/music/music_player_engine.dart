@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
+import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 
 /// 队列从哪来：决定 ReplayGain 模式（专辑语境用 album gain 保留曲间响度差）。
 /// 循环模式：关（队尾停）/ 列表循环（队尾接回队首）/ 单曲循环（当前曲反复）。
@@ -220,6 +221,37 @@ class MusicAbLoop {
 /// 自动跳到下一首。
 const int kMusicMaxConsecutiveUnavailable = 3;
 
+/// 断点续播的起点「落地」容差：位置追上目标前这么多就算恢复成功（同视频 BUG-179 的
+/// 1.5 s）。
+const Duration kMusicResumeLandingSlack = Duration(milliseconds: 1500);
+
+/// 断点续播的恢复守护宽限：实际已经从别处（多半是开头）播了这么久还没追上目标 = 起点没落
+/// 地（不可 seek 的流上 mpv 的 `start` 静默失效），放弃守护、照实记新位置。按播放位置算，
+/// 不按事件条数 / 墙钟：卡在缓冲里不出声时什么都不丢。
+const Duration kMusicResumeGuardGrace = Duration(seconds: 10);
+
+/// 一首已开播的曲目被换下（换曲 / 无缝推进 / 停止 / 重开）那一刻的状态：断点结算用。
+@immutable
+class MusicTrackLeave {
+  const MusicTrackLeave({
+    required this.item,
+    required this.position,
+    required this.duration,
+    required this.restoring,
+  });
+
+  final MusicPlayItem item;
+
+  /// 换下前播到哪（相对曲目起点）。
+  final Duration position;
+
+  /// 换下前已知的曲长（后端报的优先）。
+  final Duration? duration;
+
+  /// 换下时断点恢复还没落地（[position] 是过渡值，不能当断点写）。
+  final bool restoring;
+}
+
 /// 构造输出后端的工厂（真 app 给 libmpv，测试给替身）。
 typedef MusicOutputBackendFactory = MusicOutputBackend Function();
 
@@ -274,18 +306,40 @@ class MusicPlayerEngine extends ChangeNotifier {
   bool _announced = false;
   Duration? _listenedBeforeStart;
 
-  /// 位置清零（换曲 / 停止 / 重开）：清零前先存下已开播那首播到哪。
+  /// [_announced] 那一首（通知开播时记下；自管队列就地换项后队列里那格可能已不是它）。
+  MusicPlayItem? _announcedItem;
+
+  /// 断点续播的起点（[_openCurrent] 按 [resolveStartPosition] 定的）还没落地：后端报的位置
+  /// 追上它（差 [kMusicResumeLandingSlack] 以内）、实际已播 [kMusicResumeGuardGrace]、或
+  /// 用户自己 [seek] 时清掉。期间的位置是过渡值（打开时的 0），不能当断点写。
+  Duration? _resumeTarget;
+
+  /// 位置清零（换曲 / 停止 / 重开）：清零前先存下已开播那首播到哪，并报 [onTrackLeft]。
   void _zeroPosition() {
     if (_announced) {
       _listenedBeforeStart = _position;
       _announced = false;
+      final MusicPlayItem? left = _announcedItem;
+      if (left != null) {
+        onTrackLeft?.call(
+          MusicTrackLeave(
+            item: left,
+            position: _position,
+            duration: _duration,
+            restoring: _resumeTarget != null,
+          ),
+        );
+      }
     }
+    _announcedItem = null;
+    _resumeTarget = null;
     _position = Duration.zero;
   }
 
   /// 通知开始播 [item]：之后的位置都记在它名下。
   void _announceStarted(MusicPlayItem item) {
     _announced = true;
+    _announcedItem = item;
     onTrackStarted?.call(item);
     // 只在这一次回调里有效：下一次开播前必有一次清零重新存。
     _listenedBeforeStart = null;
@@ -349,6 +403,26 @@ class MusicPlayerEngine extends ChangeNotifier {
 
   /// 每次真正开始播一首新曲（含无缝推进）时调用：播放流落库、媒体会话刷新。
   void Function(MusicPlayItem item)? onTrackStarted;
+
+  /// 已开播的曲目被换下时（同步）调用：断点结算（`MusicSession`）。
+  void Function(MusicTrackLeave leave)? onTrackLeft;
+
+  /// 断点续播：打开 [item] 时从哪开始放（[intent] 见 [EpisodeStartIntent]；判定在
+  /// `music_resume.dart`，读库在 `MusicSession`，引擎不碰数据库）。null = 一律从头。
+  /// 只在要出声的打开、后端能从曲内起播（[MusicBackendCapabilities.startAt]）且不是自管
+  /// 队列时调；无缝 / 交叉淡入推进到的下一首不经打开，一律从头。
+  Future<Duration> Function(MusicPlayItem item, EpisodeStartIntent intent)?
+  resolveStartPosition;
+
+  /// 正在开播的那一首（已通知 [onTrackStarted]、位置记在它名下）；打开中 / 停止后为 null。
+  MusicPlayItem? get startedItem => _announced ? _announcedItem : null;
+
+  /// 断点续播的起点还没落地（见 [_resumeTarget]）：此刻的 [position] 不能当断点写。
+  bool get restoringResume => _resumeTarget != null;
+
+  /// [item] 所属后端的能力（断点结算按换下那首判，不按此刻的当前曲）。
+  MusicBackendCapabilities capabilitiesFor(MusicPlayItem item) =>
+      _capabilitiesOf?.call(item) ?? MusicBackendCapabilities.full;
 
   /// 播放状态变成「在播」时调用：媒体会话仲裁（暂停有声书、认领通知）。
   VoidCallback? onWillPlay;
@@ -526,13 +600,15 @@ class MusicPlayerEngine extends ChangeNotifier {
   }
 
   /// 换一个队列，从 [startIndex] 开始播。[source] 是这个队列从哪张专辑 / 哪个歌单点开
-  /// 的（最近播放用；不传 = 来源未知）。
+  /// 的（最近播放用；不传 = 来源未知）。[resume] 为 false = 这一次从头放（「从头播放」，
+  /// 断点本身保留，放过开头后被新位置覆盖）。
   Future<void> playQueue(
     List<MusicPlayItem> items, {
     int startIndex = 0,
     MusicQueueContext context = MusicQueueContext.mixed,
     bool shuffle = false,
     MusicPlaySource? source,
+    bool resume = true,
   }) async {
     if (items.isEmpty) return;
     final int start = startIndex.clamp(0, items.length - 1);
@@ -555,14 +631,19 @@ class MusicPlayerEngine extends ChangeNotifier {
       _queue = List<MusicPlayItem>.of(items);
       _index = start;
     }
-    await _openCurrent(play: true);
+    await _openCurrent(
+      play: true,
+      startIntent: resume ? EpisodeStartIntent.listSelect : null,
+    );
   }
 
   /// 打开 [current]。[userInitiated] = 用户点的（换队列 / 切歌 / 跳转）：连续失败计数清零；
-  /// false = 拿不到流后的自动跳过。
+  /// false = 拿不到流后的自动跳过。[startIntent] = 断点续播按什么意图定起点（null = 从头，
+  /// 见 [resolveStartPosition]）。
   Future<void> _openCurrent({
     required bool play,
     bool userInitiated = true,
+    EpisodeStartIntent? startIntent,
   }) async {
     _restoreExternalRoot();
     final MusicPlayItem? item = current;
@@ -585,6 +666,22 @@ class MusicPlayerEngine extends ChangeNotifier {
     notifyListeners();
     if (play) onWillPlay?.call();
     try {
+      final Future<Duration> Function(MusicPlayItem, EpisodeStartIntent)?
+      resolver = resolveStartPosition;
+      Duration startAt = Duration.zero;
+      if (play &&
+          startIntent != null &&
+          resolver != null &&
+          !external &&
+          capabilities.startAt) {
+        startAt = await resolver(item, startIntent);
+        // 读断点期间用户又切了别的：这次作废（读到的断点不套到别的曲目上）。
+        if (gen != _openGen) return;
+      }
+      if (startAt > Duration.zero) {
+        _position = startAt;
+        _resumeTarget = startAt;
+      }
       await backend.applySettings(currentSettings);
       if (gen != _openGen) return;
       final bool crossfade = crossfadeToNext;
@@ -594,6 +691,7 @@ class MusicPlayerEngine extends ChangeNotifier {
         _stopAfterCurrent ? null : next,
         play: play,
         crossfadeNext: crossfade,
+        startAt: startAt,
       );
     } on MusicTrackOpenException catch (e) {
       if (gen != _openGen) return;
@@ -652,7 +750,13 @@ class MusicPlayerEngine extends ChangeNotifier {
           _index + 1 < _queue.length) {
         onTrackSkipped?.call(failed, failure);
         _index++;
-        unawaited(_openCurrent(play: true, userInitiated: false));
+        unawaited(
+          _openCurrent(
+            play: true,
+            userInitiated: false,
+            startIntent: EpisodeStartIntent.autoAdvance,
+          ),
+        );
         return;
       }
     }
@@ -673,8 +777,11 @@ class MusicPlayerEngine extends ChangeNotifier {
     }
     if (_ended || _needsReopen) {
       // 队列播完后后端已卸载文件、交还设备；或这一首打开 / 播放失败、后端里没有它：
-      // 从当前曲目开头重开（在线曲目随之重新取流）。
-      await _openCurrent(play: true);
+      // 重开当前曲目（在线曲目随之重新取流）；有没听完的断点就从断点接着放。
+      await _openCurrent(
+        play: true,
+        startIntent: EpisodeStartIntent.initialOpen,
+      );
       return;
     }
     onWillPlay?.call();
@@ -714,6 +821,8 @@ class MusicPlayerEngine extends ChangeNotifier {
     }
     await backend.seek(clamped);
     _position = clamped;
+    // 用户自己定了位置：断点恢复不用再等（守护挡的是过渡值，这已经是真值）。
+    _resumeTarget = null;
     notifyListeners();
   }
 
@@ -768,11 +877,14 @@ class MusicPlayerEngine extends ChangeNotifier {
       // 列表 / 单曲循环下，队尾「下一首」接回队首（单曲循环只管自然播完）。
       if (_repeat == MusicRepeatMode.off || _queue.isEmpty) return;
       _index = 0;
-      await _openCurrent(play: true);
+      await _openCurrent(
+        play: true,
+        startIntent: EpisodeStartIntent.manualNext,
+      );
       return;
     }
     _index++;
-    await _openCurrent(play: true);
+    await _openCurrent(play: true, startIntent: EpisodeStartIntent.manualNext);
   }
 
   /// 上一首 / 回到本曲开头。当前项由后端自管队列时无操作（后端不给回退）。
@@ -783,14 +895,17 @@ class MusicPlayerEngine extends ChangeNotifier {
       return;
     }
     _index--;
-    await _openCurrent(play: true);
+    await _openCurrent(
+      play: true,
+      startIntent: EpisodeStartIntent.manualPrevious,
+    );
   }
 
   /// 跳到队列第 [i] 首。
   Future<void> jumpTo(int i) async {
     if (i < 0 || i >= _queue.length) return;
     _index = i;
-    await _openCurrent(play: true);
+    await _openCurrent(play: true, startIntent: EpisodeStartIntent.listSelect);
   }
 
   /// 往队尾追加 [items]（电台式续播，见 `MusicQueueFeedRunner`）。当前是最后一首时更新预排的
@@ -803,7 +918,10 @@ class MusicPlayerEngine extends ChangeNotifier {
     _original = <MusicPlayItem>[..._original, ...items];
     if (wasLast && _ended && !_playing) {
       _index++;
-      await _openCurrent(play: true);
+      await _openCurrent(
+        play: true,
+        startIntent: EpisodeStartIntent.autoAdvance,
+      );
       return;
     }
     notifyListeners();
@@ -905,6 +1023,12 @@ class MusicPlayerEngine extends ChangeNotifier {
         // 真出声了：这一首拿到了流。
         if (position > Duration.zero) _consecutiveUnavailable = 0;
         _position = position;
+        final Duration? target = _resumeTarget;
+        if (target != null &&
+            (position >= target - kMusicResumeLandingSlack ||
+                position >= kMusicResumeGuardGrace)) {
+          _resumeTarget = null;
+        }
         if (duration != null && duration > Duration.zero) _duration = duration;
         notifyListeners();
       case MusicBackendPlaying(:final bool playing):

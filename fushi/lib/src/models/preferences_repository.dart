@@ -34,6 +34,7 @@ import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
@@ -5055,6 +5056,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicGapless(bool value) async {
     await setPref('music_gapless', value);
+    notifyListeners();
+  }
+
+  /// 音乐逐曲断点续播（music_resume.dart）。默认只给长曲目续播。
+  MusicResumeMode get musicResumeMode => MusicResumeMode.fromWire(
+    getPref('music_resume_mode', defaultValue: MusicResumeMode.longTracks.wire)
+        as String?,
+  );
+
+  Future<void> setMusicResumeMode(MusicResumeMode value) async {
+    await setPref('music_resume_mode', value.wire);
     notifyListeners();
   }
 

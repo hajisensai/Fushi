@@ -510,6 +510,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
+  // String（默认 'long_tracks'）：逐曲断点续播 off / long_tracks / all
+  // （MusicResumeMode.wire，music_resume.dart）。
+  'music_resume_mode',
   // String（默认 'auto'）：卡拉 OK 字幕页 ASS 歌词默认显示 auto / original / structured
   // （音乐 P3，设计 §6.3；MusicAssRenderPreference.prefValue）。
   'music_karaoke_ass_render',

@@ -1,6 +1,6 @@
 /// 进程级音乐会话（设计 §7.5）：持有 [MusicPlayerEngine]，接系统媒体会话（锁屏 /
 /// 通知 / 耳机键），与有声书互斥——同一时刻只有一方持有媒体会话，另一方暂停。
-/// 播放流（最近播放）也在这里落库。
+/// 播放流（最近播放）与逐曲断点（`music_resume.dart`）也在这里落库。
 library;
 
 import 'dart:async';
@@ -15,15 +15,24 @@ import 'package:fushi/src/media/music/music_history.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_queue_feed.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
 /// 一首播完算「听完」的容差。
 const Duration kMusicCompletionSlack = Duration(seconds: 2);
+
+/// 断点写入节流：在播时位置每变这么多才写一次（进程被杀最多丢这么多）。
+const Duration kMusicResumeWriteStep = Duration(seconds: 5);
+
+/// 断点写入节流：没在播（暂停 / 播完 / 暂停时拖动）时，位置变了这么多就写。
+const Duration kMusicResumeIdleWriteStep = Duration(seconds: 1);
 
 /// 播放失败的提示文字。
 String musicPlaybackFailureText(MusicBackendFailed failure) =>
@@ -51,10 +60,12 @@ class MusicSession extends ChangeNotifier {
     required bool Function() showMediaNotification,
     this.favorites,
     this.appleMusicFavorites,
+    MusicResumeMode Function()? resumeMode,
   }) : _audio = audio,
        _audiobook = audiobook,
        _database = database,
-       _showMediaNotification = showMediaNotification {
+       _showMediaNotification = showMediaNotification,
+       _resumeMode = resumeMode ?? (() => MusicResumeMode.longTracks) {
     engine
       // 独占 / 指定设备打不开、已自动退回：明确提示，不静默（设计 §14）。
       ..onOutputFallback = (MusicBackendOutputFallback f) {
@@ -73,6 +84,8 @@ class MusicSession extends ChangeNotifier {
       }
       ..onWillPlay = _onWillPlay
       ..onTrackStarted = _onTrackStarted
+      ..onTrackLeft = _onTrackLeft
+      ..resolveStartPosition = _resolveStartPosition
       ..addListener(_onEngineChanged);
     _audiobook.addListener(_onAudiobookChanged);
     favorites?.addListener(notifyListeners);
@@ -117,6 +130,9 @@ class MusicSession extends ChangeNotifier {
   final AudiobookSession _audiobook;
   final FushiDatabase? Function() _database;
   final bool Function() _showMediaNotification;
+
+  /// 断点续播模式（设置 `music_resume_mode`）。
+  final MusicResumeMode Function() _resumeMode;
   final List<StreamSubscription<Object?>> _subs =
       <StreamSubscription<Object?>>[];
 
@@ -327,6 +343,149 @@ class MusicSession extends ChangeNotifier {
 
   void _onEngineChanged() {
     _publishMediaSession();
+    _maybeWriteResumePoint();
+    notifyListeners();
+  }
+
+  // ── 逐曲断点续播（music_resume.dart）──
+
+  /// 断点写入串行队列：同一首的写与随后的读（再打开时）按提交顺序落库。
+  Future<void> _resumeWrites = Future<void>.value();
+
+  /// 测试用：等已提交的断点写全部落库。
+  @visibleForTesting
+  Future<void> get resumeWritesIdle => _resumeWrites;
+
+  /// 最近一次提交写入的（trackUid, 位置毫秒），节流用。
+  ({String uid, int ms})? _resumeWritten;
+
+  /// [item] 的断点记不记：后端能从曲内起播（Apple Music 不能）、不是自管队列（电台）、
+  /// 续播模式对这首曲长开着。
+  bool _resumeTracked(MusicPlayItem item, int? durationMs) {
+    final MusicBackendCapabilities caps = engine.capabilitiesFor(item);
+    if (!caps.startAt || caps.externalQueue) return false;
+    return musicResumeApplies(mode: _resumeMode(), durationMs: durationMs);
+  }
+
+  static int? _durationMsOf(MusicPlayItem item, Duration? reported) =>
+      reported != null && reported > Duration.zero
+      ? reported.inMilliseconds
+      : item.durationMs;
+
+  /// 引擎状态变了：当前曲的位置按节流写盘。在播时每 [kMusicResumeWriteStep]、没在播时
+  /// （暂停 / 播完 / 暂停时拖动——系统媒体控件、耳机、进度条都可能）每
+  /// [kMusicResumeIdleWriteStep]。打开中 / 断点恢复还没落地时不写（位置是过渡值）。
+  void _maybeWriteResumePoint() {
+    final MusicPlayItem? item = engine.startedItem;
+    if (item == null || engine.resolving || engine.restoringResume) return;
+    final int? durationMs = _durationMsOf(item, engine.duration);
+    if (!_resumeTracked(item, durationMs)) return;
+    final int ms = engine.position.inMilliseconds;
+    final ({String uid, int ms})? last = _resumeWritten;
+    // 刚打开、还一点没放（从头放的打开，如「从头播放」/「上一首」）：不急着删旧断点，
+    // 真放起来后被新位置覆盖；换下 / 退出时的结算照常按位置写。
+    if (ms == 0 && last?.uid != item.trackUid) return;
+    final Duration step = engine.isPlaying
+        ? kMusicResumeWriteStep
+        : kMusicResumeIdleWriteStep;
+    if (last != null &&
+        last.uid == item.trackUid &&
+        (ms - last.ms).abs() < step.inMilliseconds) {
+      return;
+    }
+    _queueResumeWrite(item.trackUid, ms, durationMs);
+  }
+
+  /// 一首被换下：按它换下前的位置结算（不节流）。恢复没落地时不写（库里还是原断点）。
+  void _onTrackLeft(MusicTrackLeave leave) {
+    if (leave.restoring) return;
+    final int? durationMs = _durationMsOf(leave.item, leave.duration);
+    if (!_resumeTracked(leave.item, durationMs)) return;
+    _queueResumeWrite(
+      leave.item.trackUid,
+      leave.position.inMilliseconds,
+      durationMs,
+    );
+  }
+
+  void _queueResumeWrite(String uid, int positionMs, int? durationMs) {
+    _resumeWritten = (uid: uid, ms: positionMs);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    _resumeWrites = _resumeWrites.then((_) async {
+      final FushiDatabase? db = _database();
+      if (db == null) return;
+      try {
+        if (musicResumePointIsFinished(
+          positionMs: positionMs,
+          durationMs: durationMs,
+        )) {
+          await db.deleteMusicResumePoint(uid);
+        } else {
+          await db.upsertMusicResumePoint(
+            uid,
+            positionMs: positionMs,
+            durationMs: durationMs,
+            updatedAt: now,
+          );
+        }
+      } on Object catch (e, st) {
+        // 一笔写失败（库正在关）不能断掉后面的写：记日志，队列继续。
+        ErrorLogService.instance.log('MusicSession.resumePoint', e, st);
+      }
+    });
+  }
+
+  /// 把当前曲此刻的位置写穿并等所有断点写落库：进后台（Android 后台播放可能被杀）与
+  /// 退出（`ExitFlushRegistry`）时调。
+  Future<void> flushResumePoint() async {
+    final MusicPlayItem? item = engine.startedItem;
+    if (item != null && !engine.resolving && !engine.restoringResume) {
+      final int? durationMs = _durationMsOf(item, engine.duration);
+      if (_resumeTracked(item, durationMs)) {
+        _queueResumeWrite(
+          item.trackUid,
+          engine.position.inMilliseconds,
+          durationMs,
+        );
+      }
+    }
+    await _resumeWrites;
+  }
+
+  /// 打开 [item] 时从哪开始放（引擎的 [MusicPlayerEngine.resolveStartPosition]）。先等
+  /// 在途的断点写落库：刚换下的同一首（切走又切回）要读到它刚写的位置。
+  Future<Duration> _resolveStartPosition(
+    MusicPlayItem item,
+    EpisodeStartIntent intent,
+  ) async {
+    final MusicResumeMode mode = _resumeMode();
+    if (!musicResumeApplies(mode: mode, durationMs: item.durationMs)) {
+      return Duration.zero;
+    }
+    await _resumeWrites;
+    final FushiDatabase? db = _database();
+    if (db == null) return Duration.zero;
+    final MusicResumePointRow? row;
+    try {
+      row = await db.getMusicResumePoint(item.trackUid);
+    } on Object catch (e, st) {
+      // 读不到断点不能挡住播放：从头放，记日志。
+      ErrorLogService.instance.log('MusicSession.resumePoint', e, st);
+      return Duration.zero;
+    }
+    return resolveMusicResumeStart(
+      mode: mode,
+      intent: intent,
+      savedPositionMs: row?.positionMs,
+      durationMs: item.durationMs ?? row?.durationMs,
+    );
+  }
+
+  /// 清掉 [trackUid] 的断点（曲目详情「清除播放位置」）。正在放的就是它时，从此刻起重新记。
+  Future<void> clearResumePoint(String trackUid) async {
+    if (_resumeWritten?.uid == trackUid) _resumeWritten = null;
+    await _resumeWrites;
+    await _database()?.deleteMusicResumePoint(trackUid);
     notifyListeners();
   }
 
@@ -370,11 +529,13 @@ class MusicSession extends ChangeNotifier {
     );
   }
 
-  /// 停止音乐并释放媒体会话。
+  /// 停止音乐并释放媒体会话。停止时的位置经 [MusicPlayerEngine.onTrackLeft] 结算断点，
+  /// 这里等它落库。
   Future<void> stop() async {
     final FushiDatabase? db = _database();
     if (db != null) await _finishPlayEvent(db);
     await engine.stop();
+    await _resumeWrites;
     if (_audio.sessionOwner.value == MediaSessionOwner.music) {
       _audio.audioHandler?.clearNotification();
       _audio.claimSession(MediaSessionOwner.none);

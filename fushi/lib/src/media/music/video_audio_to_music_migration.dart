@@ -14,8 +14,11 @@
 ///
 /// 能保留的保留：
 /// - 观看记录 → 一条音乐播放记录（`music_play_events`：开始时刻 = 最后播放时刻，收听
-///   时长 = 断点（看完则取曲长），看完 = 完整听完），曲目由此进「最近播放」。音乐没有
-///   逐曲断点续播，断点本身无处可放。
+///   时长 = 断点（看完则取曲长），看完 = 完整听完），曲目由此进「最近播放」。
+/// - 没看完的断点 → 音乐逐曲断点（`music_resume_points`，`music_resume.dart`），再打开从
+///   那里接着放。整轨 + CUE（广播剧 CD 常见）时视频行的断点是整个文件上的绝对位置：按它
+///   落在哪一轨的 `[cueStartMs, cueStartMs + durationMs)` 里找曲目，存相对那一轨起点的
+///   位置；播放记录也记在那一轨上。已在片尾区的（读取时也会从头放）不写。
 /// - 学习统计（`study_segments`，按 bookUid 键控）**不删、不改键**：删视频行不碰这张
 ///   事实表，历史时长照旧计在当时的视频面上；改键会让已同步到别的设备的段对不上。
 /// - 标签、书架条目、视频合集成员随视频行一起删（音乐库没有对应物）；被删空的音频专辑
@@ -34,6 +37,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
 
 /// 一次迁移的结果。
 class VideoAudioMigrationReport {
@@ -41,6 +45,7 @@ class VideoAudioMigrationReport {
     required this.candidates,
     required this.migrated,
     required this.playEventsWritten,
+    this.resumePointsWritten = 0,
     required this.errors,
   });
 
@@ -59,6 +64,9 @@ class VideoAudioMigrationReport {
 
   /// 写下的播放记录条数。
   final int playEventsWritten;
+
+  /// 带过来的断点条数。
+  final int resumePointsWritten;
 
   /// 交接时的扫描错误摘要。
   final List<String> errors;
@@ -123,7 +131,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   }
 
   // 2. 还不是在库曲目的：逐个交接（覆盖它的来源重扫 / 仅此一次导入）。
-  Map<String, MusicTrackRow> live = await _liveTracksByPath(db);
+  Map<String, List<MusicTrackRow>> live = await _liveTracksByPath(db);
   final List<String> pending = <String>[
     for (final VideoBookRow r in rows)
       if (!live.containsKey(_key(r.videoPath))) r.videoPath,
@@ -140,8 +148,15 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
       if (live.containsKey(_key(r.videoPath))) r,
   ];
   int events = 0;
+  int resumes = 0;
   for (final VideoBookRow r in done) {
-    if (await _carryOverPlay(db, r, live[_key(r.videoPath)]!)) events++;
+    final List<MusicTrackRow> tracks = live[_key(r.videoPath)]!;
+    final ({MusicTrackRow track, int relativeMs}) at = musicTrackAtFilePosition(
+      tracks,
+      r.lastPositionMs,
+    );
+    if (await _carryOverPlay(db, r, at.track, at.relativeMs)) events++;
+    if (await _carryOverResume(db, r, at.track, at.relativeMs)) resumes++;
   }
   if (done.isNotEmpty) {
     await repo.deleteVideoBooksAndReclaimAssets(
@@ -154,6 +169,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     candidates: rows.length,
     migrated: done.length,
     playEventsWritten: events,
+    resumePointsWritten: resumes,
     errors: errors,
   );
 }
@@ -162,19 +178,39 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
 /// （来源根按正斜杠归一、Rust 用平台分隔符拼文件名）。
 String _key(String path) => p.canonicalize(path);
 
-/// 在库曲目按路径（[_key]）索引。CUE 拆出的虚拟曲目共用一个路径，取起点最早的一首。
-Future<Map<String, MusicTrackRow>> _liveTracksByPath(FushiDatabase db) async {
-  final Map<String, MusicTrackRow> out = <String, MusicTrackRow>{};
+/// 在库曲目按路径（[_key]）索引。CUE 拆出的虚拟曲目共用一个路径，按起点升序排。
+Future<Map<String, List<MusicTrackRow>>> _liveTracksByPath(
+  FushiDatabase db,
+) async {
+  final Map<String, List<MusicTrackRow>> out = <String, List<MusicTrackRow>>{};
   for (final MusicTrackRow t in await (db.select(
     db.musicTracks,
   )..where(($MusicTracksTable t) => t.deletedAt.isNull())).get()) {
-    final String k = _key(t.path);
-    final MusicTrackRow? prev = out[k];
-    if (prev == null || (t.cueStartMs ?? 0) < (prev.cueStartMs ?? 0)) {
-      out[k] = t;
-    }
+    out.putIfAbsent(_key(t.path), () => <MusicTrackRow>[]).add(t);
+  }
+  for (final List<MusicTrackRow> l in out.values) {
+    l.sort(
+      (MusicTrackRow a, MusicTrackRow b) =>
+          (a.cueStartMs ?? 0).compareTo(b.cueStartMs ?? 0),
+    );
   }
   return out;
+}
+
+/// 纯函数：整个文件上的绝对位置 [fileMs] 落在 [tracks]（同一文件拆出的曲目，按起点
+/// 升序、非空）的哪一首里，以及相对那一首起点的位置。取起点 ≤ [fileMs] 的最后一首（CUE
+/// 曲目首尾相接；最后一轨常不知道终点）；[fileMs] 在第一轨之前（含 0）落在第一首、位置
+/// 夹到 0。普通单文件只有一首，原样返回。
+({MusicTrackRow track, int relativeMs}) musicTrackAtFilePosition(
+  List<MusicTrackRow> tracks,
+  int fileMs,
+) {
+  MusicTrackRow hit = tracks.first;
+  for (final MusicTrackRow t in tracks) {
+    if ((t.cueStartMs ?? 0) <= fileMs) hit = t;
+  }
+  final int rel = fileMs - (hit.cueStartMs ?? 0);
+  return (track: hit, relativeMs: rel < 0 ? 0 : rel);
 }
 
 /// 视频行的观看记录 → 一条音乐播放记录。没播放过不写；同一首同一时刻已有记录（上次
@@ -183,6 +219,7 @@ Future<bool> _carryOverPlay(
   FushiDatabase db,
   VideoBookRow row,
   MusicTrackRow track,
+  int relativeMs,
 ) async {
   final int? playedAt = row.lastPlayedAt;
   if (playedAt == null) return false;
@@ -201,10 +238,38 @@ Future<bool> _carryOverPlay(
   );
   await db.finishMusicPlayEvent(
     id,
-    listenedMs: completed
-        ? (track.durationMs ?? row.lastPositionMs)
-        : row.lastPositionMs,
+    listenedMs: completed ? (track.durationMs ?? relativeMs) : relativeMs,
     completed: completed,
+  );
+  return true;
+}
+
+/// 视频行没看完的断点 → 音乐逐曲断点（[track] 上、相对它起点的 [relativeMs]）。看完 /
+/// 没断点 / 已在片尾区不写；库里已有同一首更新（或同刻）的断点不覆盖——重跑幂等，也
+/// 不把用户在音乐库里听到的新位置倒退回去。返回是否写了。
+Future<bool> _carryOverResume(
+  FushiDatabase db,
+  VideoBookRow row,
+  MusicTrackRow track,
+  int relativeMs,
+) async {
+  if (row.completedAt != null || row.lastPositionMs <= 0) return false;
+  if (musicResumePointIsFinished(
+    positionMs: relativeMs,
+    durationMs: track.durationMs,
+  )) {
+    return false;
+  }
+  final int at = row.lastPlayedAt ?? 0;
+  final MusicResumePointRow? existing = await db.getMusicResumePoint(
+    track.trackUid,
+  );
+  if (existing != null && existing.updatedAt >= at) return false;
+  await db.upsertMusicResumePoint(
+    track.trackUid,
+    positionMs: relativeMs,
+    durationMs: track.durationMs,
+    updatedAt: at,
   );
   return true;
 }

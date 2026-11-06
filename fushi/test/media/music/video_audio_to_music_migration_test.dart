@@ -41,15 +41,19 @@ void main() {
     ),
   );
 
-  /// 音乐扫描替身：把路径写成在库曲目（Rust 拼法：正斜杠根 + 平台分隔符）。
-  Future<void> track(String path, {int? durationMs}) => db
+  /// 音乐扫描替身：把路径写成在库曲目（Rust 拼法：正斜杠根 + 平台分隔符）。[cueStartMs]
+  /// 非空 = 整轨 + CUE 拆出的虚拟曲目（uid 带上起点）。
+  Future<void> track(String path, {int? durationMs, int? cueStartMs}) => db
       .into(db.musicTracks)
       .insert(
         MusicTracksCompanion.insert(
-          trackUid: 'uid:${p.canonicalize(path)}',
+          trackUid:
+              'uid:${p.canonicalize(path)}'
+              '${cueStartMs == null ? '' : '#$cueStartMs'}',
           path: normalizeSourceRootPath(path, transport: 'local'),
           title: p.basenameWithoutExtension(path),
           durationMs: Value<int?>(durationMs),
+          cueStartMs: Value<int?>(cueStartMs),
           fileMtimeAt: 1,
           fileSize: 1,
           addedAt: 1,
@@ -152,6 +156,14 @@ void main() {
           .toList(),
       <(int, int, bool)>[(5000, 9000, true), (7000, 3000, false)],
     );
+    // 没看完的断点带进音乐逐曲断点；看完的（ost）不带。
+    expect(first.resumePointsWritten, 1);
+    final MusicResumePointRow? resume = await db.getMusicResumePoint(
+      'uid:${p.canonicalize(drama)}',
+    );
+    expect(resume?.positionMs, 3000);
+    expect(resume?.updatedAt, 7000);
+    expect(await db.getMusicResumePoint('uid:${p.canonicalize(ost)}'), isNull);
 
     // 第二次：搬过的行已删，只剩搬不动的 .m4b 再试一次，播放记录不重复。
     imported.clear();
@@ -165,6 +177,88 @@ void main() {
     expect(second.migrated, 0);
     expect(imported, <String>[broken]);
     expect(await db.select(db.musicPlayEvents).get(), hasLength(2));
+    expect(await db.select(db.musicResumePoints).get(), hasLength(1));
+  });
+
+  test('flac + cue disc: the whole-file position lands on the track it falls '
+      'in, stored relative to that track; a newer music position is not '
+      'rolled back', () async {
+    final String disc = at(<String>['Drama', 'disc1.flac']);
+    final String other = at(<String>['Drama', 'disc2.flac']);
+    // 第 2 轨从 20 分钟开始、长 30 分钟；断点在整盘 35 分钟 = 第 2 轨的 15 分钟。
+    await video('v/disc', disc, lastPlayedAt: 9000, lastPositionMs: 2100000);
+    await video('v/other', other, lastPlayedAt: 100, lastPositionMs: 60000);
+    final MusicAudioIntake intake = MusicAudioIntake(
+      db,
+      fileExists: (_) => true,
+      importFile: (String path) async {
+        if (path == disc) {
+          await track(disc, durationMs: 1200000, cueStartMs: 0);
+          await track(disc, durationMs: 1800000, cueStartMs: 1200000);
+          await track(disc, durationMs: 600000, cueStartMs: 3000000);
+        } else {
+          await track(other, durationMs: 600000);
+        }
+        return null;
+      },
+    );
+    // 用户已在音乐库里把 disc2 听到更新的位置（迁移被打断后重跑的情形）。
+    await db.upsertMusicResumePoint(
+      'uid:${p.canonicalize(other)}',
+      positionMs: 300000,
+      updatedAt: 200,
+    );
+
+    final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
+      db,
+      intake: intake,
+      fileExists: (_) => true,
+    );
+
+    expect(r.migrated, 2);
+    expect(r.resumePointsWritten, 1);
+    final String track2 = 'uid:${p.canonicalize(disc)}#1200000';
+    expect((await db.getMusicResumePoint(track2))?.positionMs, 900000);
+    expect(
+      await db.getMusicResumePoint('uid:${p.canonicalize(disc)}#0'),
+      isNull,
+    );
+    expect(
+      (await db.getMusicResumePoint(
+        'uid:${p.canonicalize(other)}',
+      ))?.positionMs,
+      300000,
+      reason: '音乐库里更新的位置不被视频库的旧断点倒退',
+    );
+    final List<MusicPlayEventRow> events = await db
+        .select(db.musicPlayEvents)
+        .get();
+    final MusicPlayEventRow discEvent = events.singleWhere(
+      (MusicPlayEventRow e) => e.startedAt == 9000,
+    );
+    expect(discEvent.trackUid, track2);
+    expect(discEvent.listenedMs, 900000);
+  });
+
+  test('musicTrackAtFilePosition picks the track the position falls in', () {
+    MusicTrackRow t(int start) => MusicTrackRow(
+      trackUid: 't$start',
+      path: '/a.flac',
+      isLossless: true,
+      title: 't',
+      hasEmbeddedCover: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      addedAt: 1,
+      cueStartMs: start,
+    );
+    final List<MusicTrackRow> tracks = <MusicTrackRow>[t(0), t(1000), t(5000)];
+    expect(musicTrackAtFilePosition(tracks, 0).track.trackUid, 't0');
+    expect(musicTrackAtFilePosition(tracks, 999).relativeMs, 999);
+    expect(musicTrackAtFilePosition(tracks, 1000).track.trackUid, 't1000');
+    expect(musicTrackAtFilePosition(tracks, 1000).relativeMs, 0);
+    expect(musicTrackAtFilePosition(tracks, 7000).track.trackUid, 't5000');
+    expect(musicTrackAtFilePosition(tracks, 7000).relativeMs, 2000);
   });
 
   test('no legacy audio rows: nothing is scanned', () async {

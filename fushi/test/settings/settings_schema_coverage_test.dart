@@ -88,6 +88,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 逐曲断点续播：行为型偏好（只影响之后打开的曲目从哪开始放，无渲染树效果）。
+  'music/Resume playback':
+      'test/media/music/music_resume_test.dart + test/media/music/music_resume_session_test.dart',
   'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
   // 交叉淡入：设置值 → 引擎判衔接（crossfadeNext）→ 双实例编排由 music_crossfade_test
   // 咬住；真 libmpv 上的样本级曲线 / 实时对齐在 music_crossfade_real_test。

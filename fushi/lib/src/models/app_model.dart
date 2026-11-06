@@ -426,6 +426,7 @@ import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
 import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
@@ -2002,6 +2003,9 @@ class AppModel with ChangeNotifier {
       audiobook: audiobookSession,
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
+      resumeMode: () => isDatabaseReady
+          ? prefsRepo.musicResumeMode
+          : MusicResumeMode.longTracks,
       // 歌曲收藏 = 平台账号的「喜欢」（插件 `like`）：首次被问到才拉喜欢集合。
       favorites: _musicFavorites = isMusicPluginSourcesAvailable
           ? MusicPluginFavorites(
@@ -2080,6 +2084,11 @@ class AppModel with ChangeNotifier {
     )..addListener(session.refreshMediaSession);
     session.mediaSessionLyricLine = () => live.mediaSessionLine;
     _musicLyricsLive = live;
+    // 逐曲断点写穿：退出（桌面关窗 / ⌘Q / detach 都经 ExitFlushRegistry.flushAll）与进
+    // 后台（Android 后台播放时进程随时可能被杀；AppLifecycleListener 不经 main.dart 里
+    // Android 的早返回）。会话是进程级的，两处登记不注销。
+    ExitFlushRegistry.instance.register(session.flushResumePoint);
+    AppLifecycleListener(onPause: () => unawaited(session.flushResumePoint()));
     _musicStudy = MusicStudyTracker(
       engine: engine,
       database: () => isDatabaseReady ? database : null,
@@ -2130,6 +2139,13 @@ class AppModel with ChangeNotifier {
   Future<void> setMusicGapless(bool value) async {
     await prefsRepo.setMusicGapless(value);
     await musicSession.engine.reapplySettings();
+  }
+
+  /// 逐曲断点续播模式（music_resume.dart）：只影响之后的打开，不打断当前曲。
+  MusicResumeMode get musicResumeMode => prefsRepo.musicResumeMode;
+  Future<void> setMusicResumeMode(MusicResumeMode value) async {
+    await prefsRepo.setMusicResumeMode(value);
+    notifyListeners();
   }
 
   bool get musicReplayGain => prefsRepo.musicReplayGain;
@@ -3388,7 +3404,8 @@ class AppModel with ChangeNotifier {
       if (report.candidates == 0) return;
       debugPrint(
         '[Fushi] audio-only videos -> music: migrated ${report.migrated}/'
-        '${report.candidates}, play events ${report.playEventsWritten}',
+        '${report.candidates}, play events ${report.playEventsWritten}, '
+        'resume points ${report.resumePointsWritten}',
       );
       if (report.errors.isNotEmpty) {
         ErrorLogService.instance.log(
