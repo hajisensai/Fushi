@@ -127,6 +127,56 @@ void main() {
       await p.dispose();
     });
 
+    // 反馈 Ia-GMxq2dQ：Netflix 跳转后站点卡在缓冲（黑屏），seek 在途时上报不回灌，进度条
+    // 只剩外推这一个来源——它不看缓冲态，于是照走十几秒，暂停才跳回跳转点。
+    test('seek 在途且页面报缓冲：进度条停在目标，不外推', () async {
+      final WebVideoPlatformPlayer p = WebVideoPlatformPlayer(
+        evaluate: (String s) async => s.contains('.seek(') ? 'bridge' : 'ok',
+      );
+      p.applySnapshot(_state(pos: 10000));
+      await p.seek(const Duration(seconds: 300));
+      p.applySnapshot(_state(pos: 10250), buffering: true);
+      expect(p.state.buffering, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      p.applySnapshot(_state(pos: 10250), buffering: true);
+      // 冻结在进缓冲那一刻（seek 到进缓冲之间只隔几毫秒的外推）。
+      final int frozen = p.state.position.inMilliseconds;
+      expect(frozen, inInclusiveRange(300000, 300100));
+      expect(p.debugSeekInFlight, isTrue);
+      // 缓冲结束：从冻结处接着走，不把缓冲期间的墙钟补进去。
+      p.applySnapshot(_state(pos: 10250));
+      expect(p.state.buffering, isFalse);
+      expect(p.state.position.inMilliseconds, frozen);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(
+        p.state.position.inMilliseconds,
+        inInclusiveRange(frozen + 100, frozen + 600),
+      );
+      await p.dispose();
+    });
+
+    test('非 seek 期间页面报缓冲：位置冻结在上报处', () async {
+      platform.applySnapshot(_state(pos: 50000), buffering: true);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(platform.state.position, const Duration(seconds: 50));
+    });
+
+    test('上报停了：外推最多走 kWebVideoMaxExtrapolation 就停', () async {
+      platform.applySnapshot(_state(pos: 10000));
+      await Future<void>.delayed(
+        kWebVideoMaxExtrapolation + const Duration(milliseconds: 400),
+      );
+      final int max = 10000 + kWebVideoMaxExtrapolation.inMilliseconds;
+      expect(platform.state.position.inMilliseconds, lessThanOrEqualTo(max));
+      expect(
+        platform.state.position.inMilliseconds,
+        greaterThanOrEqualTo(max - 150),
+      );
+      // 新上报一到照常跟随。
+      platform.applySnapshot(_state(pos: 12000));
+      expect(platform.state.position, const Duration(seconds: 12));
+    });
+
     test('seek 回执：只认最后一次；失败也结束在途，真实位置回灌', () async {
       final WebVideoPlatformPlayer p = WebVideoPlatformPlayer(
         evaluate: (String s) async => 'bridge',

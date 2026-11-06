@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3724 条。点号进各自文件。
+> 共 3726 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4126](bugs/BUG-4126-web-video-progress-extrapolates-while-stalled.md) | ✅ | ✅ | 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走 |
+| [BUG-4125](bugs/BUG-4125-web-video-study-chars-zero.md) | ✅ | ✅ | 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0 |
 | [BUG-4124](bugs/BUG-4124-web-page-flip-comic-not-detected.md) | ✅ | ✅ | 内置浏览器把 canvas / 跨页翻页式漫画试读页认不成漫画 |
 | [BUG-4123](bugs/BUG-4123-interconnect-host-update-lan-only.md) | ✅ | ✅ | 互联主机版本卡写「只能在局域网内让主机更新」，异地已配对设备被信任区门拒 |
 | [BUG-4122](bugs/BUG-4122-srs-reposition-probe-delegated.md) | ✅ | ✅ | Fushi 复习下按词频重排新卡报 AnkiRepositionUnsupportedException：探测委派给了 Anki 后端 |
