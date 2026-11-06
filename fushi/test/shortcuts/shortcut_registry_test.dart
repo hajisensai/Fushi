@@ -30,6 +30,18 @@ void main() {
       expect(result, ShortcutAction.readerPageForward);
     });
 
+    test('表内逻辑键不被错配的物理键改判（物理回退只收拢表外键）', () {
+      // escape 在表内且不绑 readerPageForward：即便顺手传了 pageDown 物理键，
+      // 物理回退也绝不能把它改判成 readerPageForward。
+      final result = registry.resolveKeyboard(
+        LogicalKeyboardKey.escape,
+        modifiers: {},
+        scope: ShortcutScope.reader,
+        physicalKey: PhysicalKeyboardKey.pageDown,
+      );
+      expect(result, isNot(ShortcutAction.readerPageForward));
+    });
+
     test('resolveKeyboard returns null for unbound key', () {
       final result = registry.resolveKeyboard(
         LogicalKeyboardKey.f12,
