@@ -178,6 +178,20 @@ fn single_file_root_scans_only_that_file() {
     assert_eq!(only[0].track_uid, from_dir.track_uid);
     assert_eq!(only[0].album_uid, from_dir.album_uid);
 
+    // 调用方按来源根的归一写法（正斜杠）给文件路径：与登记在它父目录上的来源（同样
+    // 正斜杠写法的根）扫到同一条曲目、同一个 uid。
+    let dir_root = format!("{ROOT}/Album A");
+    let by_dir = tracks(&scan_root(&dir_root, 0, None));
+    let slash_file = format!("{ROOT}/Album A/02 Second Song.mp3");
+    let by_file = tracks(&scan_root(&slash_file, 0, None));
+    let twin = by_dir
+        .iter()
+        .find(|t| t.path.ends_with("02 Second Song.mp3"))
+        .expect("parent-dir scan has the track");
+    assert_eq!(by_file.len(), 1);
+    assert_eq!(by_file[0].path, twin.path);
+    assert_eq!(by_file[0].track_uid, twin.track_uid);
+
     // 不是曲库认的音频：空扫描，不报错。
     let cover = Path::new(ROOT).join("Album A").join("cover.png");
     let none = scan_root(cover.to_str().unwrap(), 0, None);

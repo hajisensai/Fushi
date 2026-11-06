@@ -80,7 +80,8 @@ impl Scanner {
     /// 文件——曲库的单文件导入（视频页拖入的纯音频、旧版按「无画面视频」入库的存量
     /// 迁移，指名几首就只收这几首，不把同目录的别的文件一起拖进来）。目录封面照常取
     /// 同目录的 `cover.*` 等；同目录的 `.cue` 不认（FLAC 内嵌 CUESHEET 仍照常拆）；不是
-    /// 曲库认的音频扩展名时产出空扫描，与目录里的非音频文件同样被忽略。
+    /// 曲库认的音频扩展名时产出空扫描，与目录里的非音频文件同样被忽略。曲目路径按
+    /// 「扫父目录」的拼法给出，uid 与登记在父目录上的来源一致。
     pub fn open(root: &str, recursive: bool) -> Option<Self> {
         let root = PathBuf::from(root);
         let mut pending = VecDeque::new();
@@ -98,9 +99,15 @@ impl Scanner {
                             .collect()
                     })
                     .unwrap_or_default();
+                // 曲目 uid 含路径原文：按「扫它所在目录」的拼法重拼（父目录原样 + 平台分隔符
+                // + 文件名），与之后登记在这个目录上的来源扫到的是同一条曲目。
+                let path = match (root.parent(), root.file_name()) {
+                    (Some(dir), Some(name)) => dir.join(name),
+                    _ => root.clone(),
+                };
                 pending.push_back(Item::Audio {
                     folder_cover: find_folder_cover(&siblings),
-                    path: root,
+                    path,
                 });
             }
             Vec::new()
