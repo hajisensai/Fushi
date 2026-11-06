@@ -452,7 +452,9 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 ### 远程更新（`remote_update`）
 
 已配对的手机 / 桌面可以在「互联」里看到服务端版本并让它自己更新，端点与 app 当 host 时同一条
-（`/api/host/update`：只认已配对设备的专属 token、只收局域网、一次性 nonce、开关默认关）。
+（`/api/host/update`：只认已配对设备的专属 token、一次性 nonce、开关默认关；不限局域网，经公网 / P2P
+连进来的已配对设备同样可以触发）。远端能做的最多是让服务端装一次**官方发布仓的最新版**：来源、SHA-256、
+包内序号校验与失败还原都在服务端本地执行，与请求从哪条路进来无关。
 
 - **只对发布包可用**：包根目录的 `release.json`（`release-server.yml` 打包时写入版本、发布序号、
   通道）是版本身份；本机 `dart run` / 自己 `dart build cli` 出的 bundle 没有它，端点回
