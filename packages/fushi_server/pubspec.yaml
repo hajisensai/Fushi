@@ -48,12 +48,12 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
+      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
   fushi_asr_onnx_ffi:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_onnx_ffi
-      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
+      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
   # 服务端整机备份的 zip 读写（与 fushi_engine 同钉；条目内容走引擎 native_zip）。
   archive: ^3.6.1
   args: ^2.4.0
