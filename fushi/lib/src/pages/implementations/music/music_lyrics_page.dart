@@ -41,6 +41,8 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
+import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
+    show LyricsScript;
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
     show pickCdgCompanion;
@@ -795,7 +797,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiChoiceOption<MusicLyricsCandidate>(
             value: c,
             label: musicLyricsCandidateTitle(c.source, c.label),
-            subtitle: '${c.format} · ${c.timeline.timingQuality.dbName}',
+            subtitle: musicLyricsCandidateSubtitle(c, withTiming: true),
           ),
       ],
     );
@@ -825,7 +827,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiChoiceOption<MusicLyricsCandidate>(
             value: c,
             label: c.label,
-            subtitle: c.format,
+            subtitle: musicLyricsCandidateSubtitle(c),
           ),
       ],
     );
@@ -2271,4 +2273,25 @@ class _TitleBarScope extends StatelessWidget {
     // 窗口化时压着 resize 把手）。
     child: FushiTitleBarDragBandScope(child: child),
   );
+}
+
+/// 书写系统 → 界面名（选来源 / 在线搜索候选列表用来区分原文版与罗马音 / 翻译版）。
+String musicLyricsScriptLabel(LyricsScript script) => switch (script) {
+  LyricsScript.kana => t.music_lyrics_script_kana,
+  LyricsScript.han => t.music_lyrics_script_han,
+  LyricsScript.hangul => t.music_lyrics_script_hangul,
+  LyricsScript.latin => t.music_lyrics_script_latin,
+};
+
+/// 候选列表的副标题：格式（· 时间精度）· 正文书写系统（判不出时省略）。
+String musicLyricsCandidateSubtitle(
+  MusicLyricsCandidate c, {
+  bool withTiming = false,
+}) {
+  final LyricsScript? script = c.script;
+  return <String>[
+    c.format,
+    if (withTiming) c.timeline.timingQuality.dbName,
+    if (script != null) musicLyricsScriptLabel(script),
+  ].join(' · ');
 }
