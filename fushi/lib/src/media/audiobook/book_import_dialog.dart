@@ -1182,13 +1182,10 @@ class _BookImportDialogState extends State<BookImportDialog>
         );
         String? tail;
         if (_epubPath != null && _hasSubtitles) {
-          debugPrint('[fushi-import] → _importEpubWithAlignment');
           tail = await _importEpubWithAlignment(title: title);
         } else if (_hasSubtitles) {
-          debugPrint('[fushi-import] → _importSubtitleBook');
           await _importSubtitleBook(title: title, author: authorText);
         } else {
-          debugPrint('[fushi-import] → _importEpubOnly');
           await _importEpubOnly(title: title);
         }
 

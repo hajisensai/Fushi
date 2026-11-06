@@ -89,10 +89,26 @@ void main() {
       isTrue,
       reason: '同一条路由里被 Offstage/IndexedStack 保活的隐藏子树也必须被挡住',
     );
+    // onDragUpdated 的逐次日志是 bab87c6076（修 Windows 拖放导入失效）时留的取证，
+    // 那个问题已修；拖动中每次指针移动都打一条只会刷满反馈日志的 500 条环形缓冲。
+    // 现在只在进入 / 离开 / 放下三个边沿打，足够还原一次拖放走了哪条路径。
+    for (final String edge in <String>[
+      "'enter active=",
+      "'exit active=",
+      "'done active=",
+    ]) {
+      expect(
+        src.contains(edge),
+        isTrue,
+        reason:
+            'drag edge $edge must stay logged to diagnose Windows drop paths',
+      );
+    }
     expect(
-      src.contains('onDragUpdated'),
-      isTrue,
-      reason: 'hover/update logs are needed to diagnose Windows drop paths',
+      src.contains('onDragUpdated:'),
+      isFalse,
+      reason:
+          'per-move drag update logging floods the feedback log ring buffer',
     );
     expect(
       src.contains('[fushi-drop]'),
