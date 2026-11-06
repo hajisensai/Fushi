@@ -1003,6 +1003,66 @@ class MusicLyricsService {
     _generated.add(trackUid);
   }
 
+  /// [trackUids] 里已有生成字幕（`asr` 行，非负缓存）的曲目：批量生成跳过它们，存量迁移
+  /// 不覆盖。
+  Future<Set<String>> tracksWithGenerated(List<String> trackUids) async {
+    final FushiDatabase? db = _database();
+    if (db == null || trackUids.isEmpty) return const <String>{};
+    final List<MusicLyricRow> rows =
+        await (db.select(db.musicLyrics)..where(
+              ($MusicLyricsTable l) =>
+                  l.trackUid.isIn(trackUids) &
+                  l.source.equals(MusicLyricsSource.asr) &
+                  l.format.equals(kMusicLyricsNoneFormat).not(),
+            ))
+            .get();
+    return <String>{for (final MusicLyricRow r in rows) r.trackUid};
+  }
+
+  /// 这首有没有用户手动指定的歌词（`is_user_edited`）。
+  Future<bool> hasUserChoice(String trackUid) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return false;
+    return (await _rows(db, trackUid)).any((MusicLyricRow r) => r.isUserEdited);
+  }
+
+  /// 把一个字幕 / 歌词文件设成这首的手动指定（`user` 行，走 [choose] 同一写法）：存量
+  /// 迁移带走旧视频行上用户选过、又不在音频旁（sidecar 规则认不到）的字幕。读不了 /
+  /// 解析不了返回 false（调用方决定要不要重试）。
+  Future<bool> chooseFile(
+    String trackUid,
+    String path, {
+    int? durationMs,
+  }) async {
+    final Uint8List raw;
+    try {
+      raw = await File(path).readAsBytes();
+    } on FileSystemException {
+      return false;
+    }
+    final String name = File(path).uri.pathSegments.last;
+    final int dot = name.lastIndexOf('.');
+    final String ext = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+    final LyricTimeline t;
+    try {
+      t = await _parse(raw, ext, durationMs);
+    } on LyricsParseException {
+      return false;
+    }
+    if (t.lines.isEmpty) return false;
+    await choose(
+      trackUid,
+      MusicLyricsCandidate(
+        source: MusicLyricsSource.user,
+        label: name,
+        format: t.format,
+        raw: raw,
+        timeline: t,
+      ),
+    );
+    return true;
+  }
+
   /// 撤销手动指定，回到自动优先级。
   Future<void> clearUserEdit(String trackUid) async {
     final FushiDatabase? db = _database();

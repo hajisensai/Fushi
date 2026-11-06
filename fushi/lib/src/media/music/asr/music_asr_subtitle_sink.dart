@@ -56,10 +56,7 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
     required Map<String, List<MusicAsrTrackSlot>> slotsByPath,
     MusicAsrSubtitleParse? parse,
   }) : _slots = slotsByPath,
-       _parse =
-           parse ??
-           ((Uint8List b, String h, int? d) =>
-               FushiLyricsAsync.parse(b, hint: h, durationMs: d));
+       _parse = parse ?? _defaultParse;
 
   final Directory outRoot;
   final MusicLyricsService lyrics;
@@ -103,34 +100,51 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
     final String? output = result.outputPath;
     final List<MusicAsrTrackSlot> slots = slotsOf(episode.videoPath);
     if (output == null || slots.isEmpty) return const <String>[];
-    final Uint8List srt = await File(output).readAsBytes();
-    final LyricTimeline whole = await _parse(srt, 'srt', null);
-    final List<String> wrote = <String>[];
-    for (final MusicAsrTrackSlot slot in slots) {
-      final int? start = slot.cueStartMs;
-      if (start == null) {
-        await lyrics.saveGenerated(
-          slot.trackUid,
-          format: 'srt',
-          raw: srt,
-          timeline: whole,
-        );
-      } else {
-        final LyricTimeline cut = FushiLyrics.slice(
-          whole,
-          start,
-          slot.cueEndMs,
-        );
-        // 切片后的原文存 TTML（无损交换格式；导出不补注音）。
-        await lyrics.saveGenerated(
-          slot.trackUid,
-          format: 'ttml',
-          raw: FushiLyrics.export(cut, 'ttml'),
-          timeline: cut,
-        );
-      }
-      wrote.add(slot.trackUid);
-    }
-    return wrote;
+    return saveGeneratedSubtitleForTracks(
+      lyrics,
+      await File(output).readAsBytes(),
+      slots,
+      parse: _parse,
+    );
   }
 }
+
+/// 一份整文件的生成字幕（SRT）→ 这个文件下各曲目的 `asr` 歌词行：CUE 虚拟曲目按
+/// `[cueStartMs, cueEndMs)` 截取并平移（Rust `ffm_lyrics_slice`，原文存 TTML），普通曲目
+/// 整份照存 SRT。生成任务的落点与存量迁移（带走旧视频管线的产物）共用这一处。返回写了
+/// 的曲目。
+Future<List<String>> saveGeneratedSubtitleForTracks(
+  MusicLyricsService lyrics,
+  Uint8List srt,
+  List<MusicAsrTrackSlot> slots, {
+  MusicAsrSubtitleParse? parse,
+}) async {
+  if (slots.isEmpty) return const <String>[];
+  final LyricTimeline whole = await (parse ?? _defaultParse)(srt, 'srt', null);
+  final List<String> wrote = <String>[];
+  for (final MusicAsrTrackSlot slot in slots) {
+    final int? start = slot.cueStartMs;
+    if (start == null) {
+      await lyrics.saveGenerated(
+        slot.trackUid,
+        format: 'srt',
+        raw: srt,
+        timeline: whole,
+      );
+    } else {
+      final LyricTimeline cut = FushiLyrics.slice(whole, start, slot.cueEndMs);
+      // 切片后的原文存 TTML（无损交换格式；导出不补注音）。
+      await lyrics.saveGenerated(
+        slot.trackUid,
+        format: 'ttml',
+        raw: FushiLyrics.export(cut, 'ttml'),
+        timeline: cut,
+      );
+    }
+    wrote.add(slot.trackUid);
+  }
+  return wrote;
+}
+
+Future<LyricTimeline> _defaultParse(Uint8List b, String h, int? d) =>
+    FushiLyricsAsync.parse(b, hint: h, durationMs: d);

@@ -425,6 +425,8 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
 import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show defaultVideoSubtitleJobsRoot;
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
@@ -3384,11 +3386,15 @@ class AppModel with ChangeNotifier {
           await migrateAudioOnlyVideoBooksToMusic(
             _database,
             fileExists: (String path) => File(path).existsSync(),
+            // 带走旧视频管线生成过 / 用户选过的字幕（音乐库「生成日语字幕」同一份歌词库）。
+            lyrics: musicLyrics,
+            subtitleJobsRoot: await defaultVideoSubtitleJobsRoot(),
           );
       if (report.candidates == 0) return;
       debugPrint(
         '[Fushi] audio-only videos -> music: migrated ${report.migrated}/'
-        '${report.candidates}, play events ${report.playEventsWritten}',
+        '${report.candidates}, play events ${report.playEventsWritten}, '
+        'subtitles ${report.subtitlesCarried}',
       );
       if (report.errors.isNotEmpty) {
         ErrorLogService.instance.log(

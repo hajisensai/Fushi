@@ -237,6 +237,28 @@ String videoSubtitleJobId(String videoPath) {
       .toString();
 }
 
+/// [path] 是不是本管线按**默认布局**（后缀 `ja`、导出到媒体旁，即 app 视频库的口径）
+/// 给 [mediaPath] 写的字幕：与管线自己的「是不是我的产物」同一判据——任务目录
+/// `state.json` 记的内容哈希对得上，或是只有本管线会写的 `.ja.asr.srt` / `.ja.asr.ass`
+/// 退路名。给存量迁移按路径认产物用（纯音频旧视频行搬去音乐库时，带走生成过的字幕）。
+bool isDefaultVideoSubtitlePipelineOutput({
+  required Directory jobsRoot,
+  required String mediaPath,
+  required String path,
+}) {
+  final String asrSrt = p.join(
+    p.dirname(mediaPath),
+    '${p.basenameWithoutExtension(mediaPath)}.ja.asr.srt',
+  );
+  if (p.equals(path, asrSrt) ||
+      p.equals(path, p.setExtension(asrSrt, '.ass'))) {
+    return true;
+  }
+  return _JobState.load(
+    Directory(p.join(jobsRoot.path, videoSubtitleJobId(mediaPath))),
+  ).wrote(path);
+}
+
 /// 各阶段产物的文件名。
 abstract final class VideoSubtitleJobFiles {
   static String drafts(String recognizerId) => 'drafts.$recognizerId.json';

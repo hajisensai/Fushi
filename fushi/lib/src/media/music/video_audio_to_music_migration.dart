@@ -20,19 +20,31 @@
 ///   事实表，历史时长照旧计在当时的视频面上；改键会让已同步到别的设备的段对不上。
 /// - 标签、书架条目、视频合集成员随视频行一起删（音乐库没有对应物）；被删空的音频专辑
 ///   合集随之删除。
+/// - 生成过的字幕（[_carryOverSubtitles]，按**路径**认，不只看 `subtitleSource`——整季
+///   生成、或行上已有别的选择时，产物不会登记进 `subtitleSource`）：音频旁本管线写的
+///   `<主名>.ja.srt`（`state.json` 哈希对得上）/ `.ja.asr.srt` 转成该曲的 `asr` 歌词行，
+///   曲库歌词搜索立即可搜；用户在视频行上选过、又不在音频旁（app 文档目录里的导入 /
+///   Jimaku / OCR 字幕，sidecar 规则认不到）的字幕转成该曲的手动指定（`user` 行）。
+///   带走失败的行这次不删、下次再试。
 library;
+
+import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show isDefaultVideoSubtitlePipelineOutput;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 
 /// 一次迁移的结果。
@@ -42,6 +54,7 @@ class VideoAudioMigrationReport {
     required this.migrated,
     required this.playEventsWritten,
     required this.errors,
+    this.subtitlesCarried = 0,
   });
 
   static const VideoAudioMigrationReport none = VideoAudioMigrationReport(
@@ -50,6 +63,9 @@ class VideoAudioMigrationReport {
     playEventsWritten: 0,
     errors: <String>[],
   );
+
+  /// 带进音乐库的字幕条数（`asr` / `user` 歌词行）。
+  final int subtitlesCarried;
 
   /// 视频库里的本地纯音频行数（文件还在的）。
   final int candidates;
@@ -76,11 +92,14 @@ bool isLegacyAudioOnlyVideoBook(VideoBookRow row) =>
     p.isAbsolute(row.videoPath);
 
 /// 见文件头。[fileExists] 默认真文件系统；[intake] / [repository] 测试注入。
+/// [lyrics] + [subtitleJobsRoot]（视频字幕任务目录根）给了才带走生成过的字幕。
 Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   FushiDatabase db, {
   MusicAudioIntake? intake,
   VideoBookRepository? repository,
   required bool Function(String path) fileExists,
+  MusicLyricsService? lyrics,
+  Directory? subtitleJobsRoot,
 }) async {
   final VideoBookRepository repo = repository ?? VideoBookRepository(db);
   final List<VideoBookRow> all = await repo.listAll();
@@ -134,14 +153,30 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     live = await _liveTracksByPath(db);
   }
 
-  // 3. 已在曲库的行：记播放记录，再从视频库删除。
-  final List<VideoBookRow> done = <VideoBookRow>[
-    for (final VideoBookRow r in rows)
-      if (live.containsKey(_key(r.videoPath))) r,
-  ];
+  // 3. 已在曲库的行：带走字幕与播放记录，再从视频库删除。字幕带走失败的行这次不删。
+  final Map<String, List<MusicTrackRow>> tracksByPath =
+      await _liveTrackListsByPath(db);
+  final List<VideoBookRow> done = <VideoBookRow>[];
   int events = 0;
-  for (final VideoBookRow r in done) {
+  int carried = 0;
+  for (final VideoBookRow r in rows) {
+    if (!live.containsKey(_key(r.videoPath))) continue;
+    if (lyrics != null && subtitleJobsRoot != null) {
+      try {
+        carried += await _carryOverSubtitles(
+          r,
+          tracksByPath[_key(r.videoPath)]!,
+          lyrics: lyrics,
+          jobsRoot: subtitleJobsRoot,
+          errors: errors,
+        );
+      } on Object catch (e) {
+        errors.add('subtitle ${r.videoPath}: $e');
+        continue;
+      }
+    }
     if (await _carryOverPlay(db, r, live[_key(r.videoPath)]!)) events++;
+    done.add(r);
   }
   if (done.isNotEmpty) {
     await repo.deleteVideoBooksAndReclaimAssets(
@@ -155,7 +190,109 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     migrated: done.length,
     playEventsWritten: events,
     errors: errors,
+    subtitlesCarried: carried,
   );
+}
+
+/// 在库曲目按路径（[_key]）分组（CUE 拆出的虚拟曲目共用一个路径）。
+Future<Map<String, List<MusicTrackRow>>> _liveTrackListsByPath(
+  FushiDatabase db,
+) async {
+  final Map<String, List<MusicTrackRow>> out = <String, List<MusicTrackRow>>{};
+  for (final MusicTrackRow t in await (db.select(
+    db.musicTracks,
+  )..where(($MusicTracksTable t) => t.deletedAt.isNull())).get()) {
+    out.putIfAbsent(_key(t.path), () => <MusicTrackRow>[]).add(t);
+  }
+  return out;
+}
+
+/// 视频行生成 / 选过的字幕 → 音乐库歌词行（见文件头）。返回写了几条；读写库失败抛出
+/// （这一行这次不删）。
+///
+/// - 本管线产物（[isDefaultVideoSubtitlePipelineOutput]）：优先行上选着的那份，其次
+///   `<主名>.ja.srt`、`.ja.asr.srt`；带样式的 `.ass` 换成同名 SRT。写成 `asr` 行（CUE
+///   虚拟曲目按区间切），已有 `asr` 行的曲目不覆盖（迁移每次启动都跑，下次重跑不重写）。
+/// - 用户选过的别的字幕文件：不在音频旁（音频旁同主名的由 sidecar 规则直接显示）时写成
+///   `user` 行；只对单一整文件曲目做（CUE 镜像的整文件字幕时间轴对不上各曲）。
+Future<int> _carryOverSubtitles(
+  VideoBookRow row,
+  List<MusicTrackRow> tracks, {
+  required MusicLyricsService lyrics,
+  required Directory jobsRoot,
+  required List<String> errors,
+}) async {
+  final String audio = row.videoPath;
+  final String dir = p.dirname(audio);
+  final String stem = p.basenameWithoutExtension(audio);
+  bool own(String path) => isDefaultVideoSubtitlePipelineOutput(
+    jobsRoot: jobsRoot,
+    mediaPath: audio,
+    path: path,
+  );
+  String srtOf(String path) => p.extension(path).toLowerCase() == '.ass'
+      ? p.setExtension(path, '.srt')
+      : path;
+
+  final String? selected = row.subtitleSource?.trim().isEmpty ?? true
+      ? null
+      : row.subtitleSource!.trim();
+  final List<String> ownCandidates = <String>[
+    if (selected != null) srtOf(selected),
+    p.join(dir, '$stem.ja.srt'),
+    p.join(dir, '$stem.ja.asr.srt'),
+  ];
+  String? generated;
+  for (final String c in ownCandidates) {
+    if (await File(c).exists() && own(c)) {
+      generated = c;
+      break;
+    }
+  }
+  int wrote = 0;
+  if (generated != null) {
+    final Set<String> have = await lyrics.tracksWithGenerated(<String>[
+      for (final MusicTrackRow t in tracks) t.trackUid,
+    ]);
+    final List<MusicAsrTrackSlot> slots = <MusicAsrTrackSlot>[
+      for (final MusicTrackRow t in tracks)
+        if (!have.contains(t.trackUid))
+          MusicAsrTrackSlot(
+            trackUid: t.trackUid,
+            cueStartMs: t.cueStartMs,
+            cueEndMs: t.cueStartMs == null ? null : t.cueEndMs,
+          ),
+    ];
+    wrote += (await saveGeneratedSubtitleForTracks(
+      lyrics,
+      await File(generated).readAsBytes(),
+      slots,
+    )).length;
+  }
+  final bool besideAudio =
+      selected != null &&
+      p.equals(p.dirname(selected), dir) &&
+      p.basename(selected).toLowerCase().startsWith('${stem.toLowerCase()}.');
+  if (selected != null &&
+      !besideAudio &&
+      (generated == null || !p.equals(srtOf(selected), generated)) &&
+      tracks.length == 1 &&
+      tracks.single.cueStartMs == null &&
+      p.isAbsolute(selected) &&
+      await File(selected).exists() &&
+      !await lyrics.hasUserChoice(tracks.single.trackUid)) {
+    if (await lyrics.chooseFile(
+      tracks.single.trackUid,
+      selected,
+      durationMs: tracks.single.durationMs,
+    )) {
+      wrote++;
+    } else {
+      // 文件读不了 / 不是字幕：带不走也不该让这一行永远卡在视频库，记下来照常迁移。
+      errors.add('subtitle not readable: $selected');
+    }
+  }
+  return wrote;
 }
 
 /// 路径比较键：音乐扫描拼出的路径与视频行记的路径分隔符 / 大小写写法可能不同

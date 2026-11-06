@@ -27,7 +27,6 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show parseMusicPluginTrackPath;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
@@ -151,7 +150,7 @@ class MusicSubtitleTargets {
     required SubtitleWorkContext work,
   }) async {
     final Set<String> done = batch
-        ? await _tracksWithGenerated(<String>[
+        ? await lyrics.tracksWithGenerated(<String>[
             for (final MusicTrackRow r in rows) r.trackUid,
           ])
         : const <String>{};
@@ -220,18 +219,5 @@ class MusicSubtitleTargets {
       wholeSeason: batch,
       key: key,
     );
-  }
-
-  Future<Set<String>> _tracksWithGenerated(List<String> uids) async {
-    if (uids.isEmpty) return const <String>{};
-    final List<MusicLyricRow> rows =
-        await (database.select(database.musicLyrics)..where(
-              ($MusicLyricsTable l) =>
-                  l.trackUid.isIn(uids) &
-                  l.source.equals(MusicLyricsSource.asr) &
-                  l.format.equals(kMusicLyricsNoneFormat).not(),
-            ))
-            .get();
-    return <String>{for (final MusicLyricRow r in rows) r.trackUid};
   }
 }
