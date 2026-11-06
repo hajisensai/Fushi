@@ -1071,7 +1071,6 @@ class _HomePageState extends BasePageState<HomePage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (AppLifecycleState.resumed == state) {
-      debugPrint('Lifecycle Resumed');
       appModel.searchDictionary(
         searchTerm: JapaneseLanguage.instance.helloWorld,
         searchWithWildcards: false,
