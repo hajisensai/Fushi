@@ -33,16 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3753 条。点号进各自文件。
-> 共 3723 条。点号进各自文件。
+> 共 3754 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4123](bugs/BUG-4123-ios-manga-solo-title-shelf.md) | ✅ | ✅ | ios-manga-solo-title-shelf |
-> 共 3727 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4192](bugs/BUG-4192-ios-manga-solo-title-shelf.md) | ✅ | ✅ | ios-manga-solo-title-shelf |
 | [BUG-4191](bugs/BUG-4191-gal-attached-state-not-in-feedback-log.md) | ✅ | ✅ | attached 表面隐藏多久、为什么隐藏，反馈日志里查不到 |
 | [BUG-4190](bugs/BUG-4190-game-library-settings-submenu-offscreen.md) | ✅ | ✅ | 游戏库最右侧条目右键菜单里的「设置」子菜单打不开 |
 | [BUG-4189](bugs/BUG-4189-srs-design-skin-covers-wallpaper.md) | ✅ | ✅ | 复习卡面「跟随设计系统」铺不透明底色盖住壁纸，与 Fushi 卡片不一致 |
