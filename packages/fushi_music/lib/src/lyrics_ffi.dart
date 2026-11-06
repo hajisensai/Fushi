@@ -142,6 +142,25 @@ class EmbeddedLyrics {
   final LyricTimeline timeline;
 }
 
+typedef _SliceC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Int64,
+      Int64,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _SliceDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
 class _LyricsBindings {
   _LyricsBindings(this._lib) {
     try {
@@ -163,6 +182,9 @@ class _LyricsBindings {
       assRaw = _lib.library.lookupFunction<_Bin1C, _Bin1Dart>(
         'ffm_lyrics_ass_raw',
       );
+      slice = _lib.library.lookupFunction<_SliceC, _SliceDart>(
+        'ffm_lyrics_slice',
+      );
     } on ArgumentError catch (e) {
       throw _lib.missingSymbols('lyrics', e);
     }
@@ -175,6 +197,7 @@ class _LyricsBindings {
   late final _MergeDart merge;
   late final _Bin2Dart export;
   late final _Bin1Dart assRaw;
+  late final _SliceDart slice;
 
   static _LyricsBindings? _instance;
   static _LyricsBindings get instance =>
@@ -322,6 +345,21 @@ abstract final class FushiLyrics {
       throw StateError('ffm_lyrics_export($format) failed: ${r.status}');
     }
     return r.bytes;
+  }
+
+  /// 按 `[startMs, endMs)` 截取并平移成区间内时间（[endMs] null = 到结尾）：CUE 整轨
+  /// 一次转写出的字幕切给各曲目。与区间有交集的行保留并截断，不补任何字段。
+  static LyricTimeline slice(LyricTimeline timeline, int startMs, int? endMs) {
+    final _LyricsBindings b = _LyricsBindings.instance;
+    final Uint8List t = encodeLyricTimeline(timeline);
+    final ({int status, Uint8List bytes}) r = b.call(
+      (Arena a, Pointer<Pointer<Uint8>> out, Pointer<Size> len) =>
+          b.slice(_copyIn(t, a), t.length, startMs, endMs ?? -1, out, len),
+    );
+    if (r.status != FfmStatus.ok) {
+      throw StateError('ffm_lyrics_slice failed with status ${r.status}');
+    }
+    return decodeLyricTimeline(r.bytes);
   }
 }
 

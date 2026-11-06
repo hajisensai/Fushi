@@ -97,6 +97,26 @@ void main() {
     expect(FushiLyrics.parserVersion, greaterThanOrEqualTo(1));
   });
 
+  test('切片：CUE 区间截取并平移成曲内时间（一次 FFI）', () {
+    final LyricTimeline t = FushiLyrics.parse(
+      utf8.encode(
+        '1\n00:00:01,000 --> 00:00:03,000\n一曲目\n\n'
+        '2\n00:00:09,000 --> 00:00:12,000\n境目\n\n'
+        '3\n00:00:15,000 --> 00:00:17,000\n二曲目\n',
+      ),
+      hint: 'srt',
+    );
+    final LyricTimeline second = FushiLyrics.slice(t, 10000, null);
+    expect(
+      <(int, int, String)>[
+        for (final LyricLine l in second.lines) (l.startMs, l.endMs, l.text),
+      ],
+      <(int, int, String)>[(0, 2000, '境目'), (5000, 7000, '二曲目')],
+    );
+    expect(FushiLyrics.slice(t, 0, 10000).lines.length, 2);
+    expect(FushiLyrics.slice(t, 4000, 4000).lines, isEmpty);
+  });
+
   test('ASS 原样渲染准备：UTF-16 → UTF-8，PlayRes 缺省按 libass 补', () {
     const String script =
         '[Script Info]\nPlayResX: 1280\n\n[Events]\nFormat: Layer, Start, End, '

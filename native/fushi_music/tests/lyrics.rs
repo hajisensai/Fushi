@@ -413,3 +413,65 @@ fn merge_ruby_and_export_round_trip_through_ffi() {
     .unwrap();
     assert!(lrc.contains("[00:01.00]sinking\n[00:01.00]沉\n"), "{lrc}");
 }
+
+fn ffi_slice(t: &Timeline, start: i64, end: i64) -> Timeline {
+    let bytes = wire::encode(t);
+    let mut out: *mut u8 = std::ptr::null_mut();
+    let mut len = 0usize;
+    let code = unsafe {
+        ffi::ffm_lyrics_slice(bytes.as_ptr(), bytes.len(), start, end, &mut out, &mut len)
+    };
+    assert_eq!(code, status::OK);
+    wire::decode(&take(out, len)).expect("wire decodes")
+}
+
+#[test]
+fn slice_cuts_cue_ranges_and_shifts_to_track_time() {
+    let srt = "1\n00:00:01,000 --> 00:00:03,000\n一曲目のセリフ\n\n\
+               2\n00:00:09,000 --> 00:00:12,000\n境目をまたぐ\n\n\
+               3\n00:00:15,000 --> 00:00:17,000\n二曲目のセリフ\n";
+    let t = ffi_parse(srt.as_bytes(), "srt", -1).expect("srt parses");
+    assert_eq!(t.lines.len(), 3);
+
+    // 第一首 [0, 10s)：跨边界的第 2 行截到 10 s。
+    let a = ffi_slice(&t, 0, 10_000);
+    let a_lines: Vec<(i64, i64, String)> = a
+        .lines
+        .iter()
+        .map(|l| (l.start_ms, l.end_ms, l.text()))
+        .collect();
+    assert_eq!(
+        a_lines,
+        vec![
+            (1_000, 3_000, "一曲目のセリフ".to_owned()),
+            (9_000, 10_000, "境目をまたぐ".to_owned()),
+        ]
+    );
+
+    // 第二首 [10s, 结尾)：平移成曲内时间，跨边界行的前半截掉。
+    let b = ffi_slice(&t, 10_000, -1);
+    let b_lines: Vec<(i64, i64, String)> = b
+        .lines
+        .iter()
+        .map(|l| (l.start_ms, l.end_ms, l.text()))
+        .collect();
+    assert_eq!(
+        b_lines,
+        vec![
+            (0, 2_000, "境目をまたぐ".to_owned()),
+            (5_000, 7_000, "二曲目のセリフ".to_owned()),
+        ]
+    );
+    for l in &b.lines {
+        for s in &l.syllables {
+            assert!(s.start_ms >= 0 && s.end_ms <= 7_000);
+            assert!(s.ruby.is_none(), "切片不补注音");
+        }
+    }
+
+    // 空区间 / 反向区间：空时间轴，元数据照留。
+    let empty = ffi_slice(&t, 5_000, 5_000);
+    assert!(empty.lines.is_empty());
+    assert_eq!(empty.meta.format, t.meta.format);
+    assert!(ffi_slice(&t, 20_000, -1).lines.is_empty());
+}
