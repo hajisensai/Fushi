@@ -3406,6 +3406,12 @@ class AppModel with ChangeNotifier {
           await migrateAudioOnlyVideoBooksToMusic(
             _database,
             fileExists: (String path) => File(path).existsSync(),
+            adoptSubtitle: (MusicTrackRow track, String subtitlePath) =>
+                musicLyrics.adoptSubtitleFile(
+                  trackUid: track.trackUid,
+                  path: subtitlePath,
+                  durationMs: track.durationMs,
+                ),
           );
       if (report.candidates == 0) return;
       debugPrint(

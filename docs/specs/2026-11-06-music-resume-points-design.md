@@ -4,7 +4,7 @@
 
 ## 结论
 
-- **存哪**：`music_resume_points`（fushi_core Drift，schema v145），一首一行：`track_uid` 主键、`position_ms`（相对曲目起点）、`duration_ms`、`updated_at`。和播放流 `music_play_events` 同一身份，同在 Drift 库里。
+- **存哪**：`music_resume_points`（fushi_core Drift，schema v146），一首一行：`track_uid` 主键、`position_ms`（相对曲目起点）、`duration_ms`、`updated_at`。和播放流 `music_play_events` 同一身份，同在 Drift 库里。
   - 这里偏离了「Rust 胖核心」：音乐库的状态（曲库目录、播放流）全在 Drift，`native/fushi_music` 只负责扫描、标签、歌词、插件和 uid，没有任何存储。在 Rust 里另起一个存储，等于多出第二个音乐库存储，备份 / 迁移 / 软删都要再做一遍。这里只多一行持久化和一个纯函数判定，不新增 FFI。
 - **从哪开始放**：直接复用视频的 `EpisodeStartIntent` / `resolveEpisodeStart` / `isEpisodePositionNearEnd`（`video_episode_start_policy.dart`；BUG-3491 规定「选条目」和「定起点」共用同一套判据），音频只换一个参数：
   - 列表点开、跳转、「下一首」、失败后重开都续播；「上一首」换曲、无缝 / 交叉淡入推进、拿不到流时的自动跳过一律从头。

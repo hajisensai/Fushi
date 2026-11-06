@@ -7,6 +7,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -329,6 +330,138 @@ void main() {
     expect(
       (await db.listMusicTracks()).map((MusicTrackRow t) => t.trackUid),
       <String>['b'],
+    );
+  });
+
+  group('v145 auto-registered music sources follow their video source '
+      '(QAondMh4M5)', () {
+    final String base = p.join(p.rootPrefix(p.current), 'lib145');
+    String at(String rel) => p.join(base, rel);
+    String norm(String path) =>
+        normalizeSourceRootPath(path, transport: 'local');
+    late int video;
+
+    Future<int> music(String rel, {int? owner, bool recursive = true}) =>
+        db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: rel,
+            mediaKind: 'music',
+            rootPath: norm(at(rel)),
+            recursive: Value<bool>(recursive),
+            createdAt: 1,
+            autoOwnerSourceId: Value<int?>(owner),
+          ),
+        );
+    Future<void> track(String uid, String rel, int sourceId) => db
+        .into(db.musicTracks)
+        .insert(
+          MusicTracksCompanion.insert(
+            trackUid: uid,
+            sourceId: Value<int?>(sourceId),
+            path: at(rel),
+            title: uid,
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
+        );
+    Future<Map<String, MusicTrackRow>> tracks() async =>
+        <String, MusicTrackRow>{
+          for (final MusicTrackRow t in await db.select(db.musicTracks).get())
+            t.trackUid: t,
+        };
+
+    setUp(() async {
+      video = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Anime',
+          mediaKind: 'video',
+          rootPath: norm(at('Anime')),
+          createdAt: 1,
+        ),
+      );
+    });
+
+    test('removing the video source removes the music sources it added; '
+        'manual ones and their tracks stay; overlapping tracks move to the '
+        'manual source instead of being deleted', () async {
+      final int drama = await music('Anime/Drama', owner: video);
+      final int ost = await music('Anime/Show/OST', owner: video);
+      final int manual = await music('Anime/Show'); // 用户手动加的上层来源
+      final int unrelated = await music('Music');
+      await track('d', 'Anime/Drama/01.mp3', drama);
+      await track('o', 'Anime/Show/OST/01.flac', ost);
+      await track('m', 'Anime/Show/op.flac', manual);
+      await track('u', 'Music/x.flac', unrelated);
+
+      expect(await autoMusicSourcesRemovalPreview(db, video), (
+        sources: 2,
+        tracks: 2,
+      ));
+      await removeSourceLibrary(database: db, prefs: prefs, sourceId: video);
+
+      final List<int> left = <int>[
+        for (final MediaSourceRow r in await db.getMediaSourcesByKind('music'))
+          r.id,
+      ];
+      expect(left, unorderedEquals(<int>[manual, unrelated]));
+      final Map<String, MusicTrackRow> t = await tracks();
+      expect(t['d']!.deletedAt, isNotNull);
+      expect(t['o']!.deletedAt, isNull, reason: '仍在手动来源 Anime/Show 之下');
+      expect(t['o']!.sourceId, manual);
+      expect(t['m']!.deletedAt, isNull);
+      expect(t['u']!.deletedAt, isNull);
+      expect(
+        await db
+            .customSelect('SELECT 1 FROM music_auto_source_dismissals')
+            .get(),
+        isEmpty,
+        reason: '连带移除不是用户的「不要它」',
+      );
+    });
+
+    test(
+      'the user removing one auto source directly records a dismissal',
+      () async {
+        final int drama = await music('Anime/Drama', owner: video);
+        await removeSourceLibrary(database: db, prefs: prefs, sourceId: drama);
+        expect(await db.musicAutoSourceDismissalsOf(video), <String>[
+          norm(at('Anime/Drama')),
+        ]);
+      },
+    );
+
+    test(
+      'adding the same folder by hand takes the auto source over: it '
+      'survives removing the video source, and the dismissal is cleared',
+      () async {
+        final int drama = await music('Anime/Drama', owner: video);
+        await db.addMusicAutoSourceDismissal(video, norm(at('Anime/Other')));
+        final AddLocalFolderResult r = await addLocalFolderAsSource(
+          db: db,
+          mediaKind: 'music',
+          path: at('Anime/Drama'),
+        );
+        expect(r.outcome, AddLocalFolderOutcome.duplicate);
+        expect(r.sourceId, drama);
+        expect((await db.getMediaSourceById(drama))!.autoOwnerSourceId, isNull);
+
+        await addLocalFolderAsSource(
+          db: db,
+          mediaKind: 'music',
+          path: at('Anime/Other'),
+        ).catchError(
+          // 新行会立刻扫描；测试环境没有原生音乐库也无妨，这里只看「不再登记」被解除。
+          (Object _) => const AddLocalFolderResult(
+            outcome: AddLocalFolderOutcome.added,
+            rootPath: '',
+          ),
+        );
+        expect(await db.musicAutoSourceDismissalsOf(video), isEmpty);
+
+        await removeSourceLibrary(database: db, prefs: prefs, sourceId: video);
+        expect(await db.getMediaSourceById(drama), isNotNull);
+      },
     );
   });
 }

@@ -40,70 +40,92 @@ mixin _FushiDbMusic on _$FushiDatabase {
     }
   }
 
+  /// v145 的 path_key 索引。不进 [_ensureMusicIndexes]：早期迁移步（v130 / `from < 132`
+  /// 补跑）会在列还不存在时调用它（同 v81 uid 索引的做法）。
+  Future<void> _ensureMusicPathKeyIndex() => customStatement(
+    'CREATE INDEX IF NOT EXISTS idx_music_tracks_path_key '
+    'ON music_tracks (path_key)',
+  );
+
   /// 一个扫描批次整批 upsert（一个事务）。曲目重新出现时清掉软删标记；
   /// [MusicTracks.addedAt] 只在首次插入时写（冲突更新不覆盖入库时刻）。
   /// 一首曲目的署名整组替换：先删该曲目全部旧署名再插新的（标签里删掉的艺人要消失）。
-  Future<void> writeMusicScanBatch(MusicScanBatchWrite batch) =>
-      transaction(() async {
-        for (final MusicArtistsCompanion artist in batch.artists) {
-          await into(musicArtists).insert(
-            artist,
-            onConflict: DoUpdate<$MusicArtistsTable, MusicArtistRow>(
-              (_) => MusicArtistsCompanion(
-                name: artist.name,
-                sortName: artist.sortName,
-              ),
-            ),
-          );
-        }
-        for (final MusicAlbumsCompanion album in batch.albums) {
-          await into(musicAlbums).insert(
-            album,
-            onConflict: DoUpdate<$MusicAlbumsTable, MusicAlbumRow>(
-              (_) => MusicAlbumsCompanion(
-                title: album.title,
-                titleSort: album.titleSort,
-                albumArtistCredit: album.albumArtistCredit,
-                releaseDate: album.releaseDate,
-                catalogNo: album.catalogNo,
-                totalDiscs: album.totalDiscs,
-                coverPath: album.coverPath,
-                coverTrackUid: album.coverTrackUid,
-                mbReleaseId: album.mbReleaseId,
-                mbReleaseGroupId: album.mbReleaseGroupId,
-                updatedAt: album.updatedAt,
-              ),
-            ),
-          );
-        }
-        for (final MusicTracksCompanion track in batch.tracks) {
-          await into(musicTracks).insert(
-            track,
-            onConflict: DoUpdate<$MusicTracksTable, MusicTrackRow>(
-              (_) => track.copyWith(
-                addedAt: const Value<int>.absent(),
-                deletedAt: const Value<int?>(null),
-              ),
-            ),
-          );
-        }
-        final Set<String> creditedTracks = <String>{
-          for (final MusicTracksCompanion t in batch.tracks) t.trackUid.value,
-        };
-        if (creditedTracks.isNotEmpty) {
-          await (delete(musicTrackCredits)..where(
-                ($MusicTrackCreditsTable t) => t.trackUid.isIn(creditedTracks),
-              ))
-              .go();
-        }
-        for (final MusicTrackCreditsCompanion credit in batch.credits) {
-          await into(musicTrackCredits).insertOnConflictUpdate(credit);
-        }
-        // 标签里没有 MBID 的文件刚被按标签冲回 NULL：把识别身份（v133 刮削结论）重放上去。
-        if (creditedTracks.isNotEmpty) {
-          await _reapplyMusicScrapeOverlaySql(this, creditedTracks.toList());
-        }
-      });
+  ///
+  /// 落库前按 [MusicTracks.pathKey] 认出库里已有的同一个文件（`database_music_identity`）：
+  /// 传入 uid 不在库里、但库里有同一文件的行，就沿用那一行的 uid（与专辑），并把路径
+  /// 改写成这次扫到的拼法。返回 传入 uid → 实际落库 uid 的改写表（没改写的不在里面），
+  /// 扫描器据此记「本次见到的曲目」，否则沿用的旧行会在收尾时被当成消失软删。
+  Future<Map<String, String>> writeMusicScanBatch(
+    MusicScanBatchWrite incoming,
+  ) => transaction(() async {
+    final MusicScanUidRemap remap = await _remapScannedMusicTracks(
+      this,
+      incoming.tracks,
+    );
+    final MusicScanBatchWrite batch = _applyScanUidRemap(incoming, remap);
+    for (final MusicArtistsCompanion artist in batch.artists) {
+      await into(musicArtists).insert(
+        artist,
+        onConflict: DoUpdate<$MusicArtistsTable, MusicArtistRow>(
+          (_) => MusicArtistsCompanion(
+            name: artist.name,
+            sortName: artist.sortName,
+          ),
+        ),
+      );
+    }
+    for (final MusicAlbumsCompanion album in batch.albums) {
+      await into(musicAlbums).insert(
+        album,
+        onConflict: DoUpdate<$MusicAlbumsTable, MusicAlbumRow>(
+          (_) => MusicAlbumsCompanion(
+            title: album.title,
+            titleSort: album.titleSort,
+            albumArtistCredit: album.albumArtistCredit,
+            releaseDate: album.releaseDate,
+            catalogNo: album.catalogNo,
+            totalDiscs: album.totalDiscs,
+            coverPath: album.coverPath,
+            coverTrackUid: album.coverTrackUid,
+            mbReleaseId: album.mbReleaseId,
+            mbReleaseGroupId: album.mbReleaseGroupId,
+            updatedAt: album.updatedAt,
+          ),
+        ),
+      );
+    }
+    for (final MusicTracksCompanion raw in batch.tracks) {
+      final MusicTracksCompanion track = raw.copyWith(
+        pathKey: Value<String?>(musicTrackPathKey(raw.path.value)),
+      );
+      await into(musicTracks).insert(
+        track,
+        onConflict: DoUpdate<$MusicTracksTable, MusicTrackRow>(
+          (_) => track.copyWith(
+            addedAt: const Value<int>.absent(),
+            deletedAt: const Value<int?>(null),
+          ),
+        ),
+      );
+    }
+    final Set<String> creditedTracks = <String>{
+      for (final MusicTracksCompanion t in batch.tracks) t.trackUid.value,
+    };
+    if (creditedTracks.isNotEmpty) {
+      await (delete(musicTrackCredits)..where(
+            ($MusicTrackCreditsTable t) => t.trackUid.isIn(creditedTracks),
+          ))
+          .go();
+    }
+    for (final MusicTrackCreditsCompanion credit in batch.credits) {
+      await into(musicTrackCredits).insertOnConflictUpdate(credit);
+    }
+    // 标签里没有 MBID 的文件刚被按标签冲回 NULL：把识别身份（v133 刮削结论）重放上去。
+    if (creditedTracks.isNotEmpty) {
+      await _reapplyMusicScrapeOverlaySql(this, creditedTracks.toList());
+    }
+    return remap.tracks;
+  });
 
   /// 扫描收尾：来源 [sourceId] 下本次没见到的曲目（uid 不在 [seenTrackUids]）软删。
   /// 返回新软删的行数。
@@ -569,7 +591,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
         ),
       );
 
-  /// 一首曲目的断点（v145）；没有为 null。
+  /// 一首曲目的断点（v146）；没有为 null。
   Future<MusicResumePointRow?> getMusicResumePoint(String trackUid) =>
       (select(musicResumePoints)
             ..where(($MusicResumePointsTable t) => t.trackUid.equals(trackUid)))

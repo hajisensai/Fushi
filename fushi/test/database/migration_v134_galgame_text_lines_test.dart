@@ -42,7 +42,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 145);
+    expect(migrated.schemaVersion, 146);
     await addGame(migrated, 'g1');
     expect(
       await migrated
@@ -58,7 +58,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 145);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
     expect(tableExists(probe, 'galgame_text_lines'), isTrue);
     expect(
       probe

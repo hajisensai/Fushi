@@ -563,6 +563,71 @@ void main() {
     }
   });
 
+  test('v145：数据根内的曲目改写路径时路径键跟着改；音乐来源的 owner 与「不再登记」不受影响', () async {
+    final FushiDatabase db = FushiDatabase(oldSupport.path);
+    final int video = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'V',
+        mediaKind: 'video',
+        rootPath: 'E:/Anime',
+        createdAt: 1,
+      ),
+    );
+    final int auto = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'M',
+        mediaKind: 'music',
+        rootPath: 'E:/Anime/Drama',
+        createdAt: 1,
+        autoOwnerSourceId: Value<int?>(video),
+      ),
+    );
+    await db.addMusicAutoSourceDismissal(video, 'E:/Anime/Other');
+    final String oldTrack = p.join(oldDocs.path, 'audio_cd', 'Disc', '01.flac');
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          MusicTracksCompanion.insert(
+            trackUid: 'cd1',
+            path: oldTrack,
+            title: 'cd1',
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
+        ],
+        albums: const <MusicAlbumsCompanion>[],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    await db.close();
+
+    final String newDocs = p.join(tmp.path, 'NewDocs');
+    await const DataRootMigrator().rebaseDatabasePathsForTesting(
+      dbDirectory: oldSupport.path,
+      oldDocumentsRoot: oldDocs.path,
+      newDocumentsRoot: newDocs,
+      newSupportRoot: oldSupport.path,
+      documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
+    );
+
+    final FushiDatabase post = FushiDatabase(oldSupport.path);
+    try {
+      final MusicTrackRow t =
+          (await post.select(post.musicTracks).get()).single;
+      final String newTrack = p.join(newDocs, 'audio_cd', 'Disc', '01.flac');
+      expect(t.path, newTrack);
+      expect(t.pathKey, musicTrackPathKey(newTrack));
+      expect((await post.getMediaSourceById(auto))!.autoOwnerSourceId, video);
+      expect(await post.musicAutoSourceDismissalsOf(video), <String>[
+        'E:/Anime/Other',
+      ]);
+    } finally {
+      await post.close();
+    }
+  });
+
   test('③b 作用域谓词：首段不在白名单里的路径不参与改写', () {
     const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',

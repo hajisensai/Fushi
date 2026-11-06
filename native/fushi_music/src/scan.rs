@@ -6,7 +6,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 use std::time::UNIX_EPOCH;
 
 use crate::cue::{self, CueSheet, CueTrack};
@@ -54,6 +54,39 @@ fn path_str(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
+/// 曲目路径的唯一拼法（曲目 uid 含路径原文，同一个文件必须只有一种写法）。
+///
+/// 只做词法处理、不碰文件系统（不跟随符号链接 / junction，用户看到的路径不变）：
+/// 分隔符统一成平台分隔符（Windows 上 `D:/Music\Album` 与 `D:\Music\Album` 是同一个），
+/// 合并重复分隔符、去掉 `.` 段，Windows 盘符大写。`..` 原样保留（解析它要看文件系统）。
+/// 来源根经 Dart 归一成正斜杠，而目录展开用平台分隔符拼子路径，不统一的话同一个文件
+/// 从「它所在目录」「上层目录」「单文件」三种根进来会拼出三种写法、三个 uid。
+pub fn canonical_track_path(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::Prefix(pre) => match pre.kind() {
+                Prefix::Disk(d) => out.push(format!("{}:", (d as char).to_ascii_uppercase())),
+                Prefix::VerbatimDisk(d) => {
+                    out.push(format!(r"\\?\{}:", (d as char).to_ascii_uppercase()))
+                }
+                _ => out.push(pre.as_os_str()),
+            },
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        return p.to_path_buf();
+    }
+    out
+}
+
+/// [canonical_track_path] 的字符串形式。
+pub fn canonical_track_path_str(p: &str) -> String {
+    path_str(&canonical_track_path(Path::new(p)))
+}
+
 fn ext_lower(p: &Path) -> String {
     p.extension()
         .and_then(|e| e.to_str())
@@ -80,10 +113,11 @@ impl Scanner {
     /// 文件——曲库的单文件导入（视频页拖入的纯音频、旧版按「无画面视频」入库的存量
     /// 迁移，指名几首就只收这几首，不把同目录的别的文件一起拖进来）。目录封面照常取
     /// 同目录的 `cover.*` 等；同目录的 `.cue` 不认（FLAC 内嵌 CUESHEET 仍照常拆）；不是
-    /// 曲库认的音频扩展名时产出空扫描，与目录里的非音频文件同样被忽略。曲目路径按
-    /// 「扫父目录」的拼法给出，uid 与登记在父目录上的来源一致。
+    /// 曲库认的音频扩展名时产出空扫描，与目录里的非音频文件同样被忽略。根先经
+    /// [canonical_track_path] 统一拼法，单文件、父目录、上层目录三种根扫到的是同一条
+    /// 路径、同一个 uid。
     pub fn open(root: &str, recursive: bool) -> Option<Self> {
-        let root = PathBuf::from(root);
+        let root = canonical_track_path(Path::new(root));
         let mut pending = VecDeque::new();
         let dirs = if root.is_dir() {
             vec![root]
@@ -99,15 +133,9 @@ impl Scanner {
                             .collect()
                     })
                     .unwrap_or_default();
-                // 曲目 uid 含路径原文：按「扫它所在目录」的拼法重拼（父目录原样 + 平台分隔符
-                // + 文件名），与之后登记在这个目录上的来源扫到的是同一条曲目。
-                let path = match (root.parent(), root.file_name()) {
-                    (Some(dir), Some(name)) => dir.join(name),
-                    _ => root.clone(),
-                };
                 pending.push_back(Item::Audio {
                     folder_cover: find_folder_cover(&siblings),
-                    path,
+                    path: root.clone(),
                 });
             }
             Vec::new()
@@ -123,8 +151,13 @@ impl Scanner {
         })
     }
 
+    /// 调用方给的是库里存的路径原文，可能是旧版本的混合分隔符写法：先统一成
+    /// [canonical_track_path] 再比，否则「文件没动过」一条都对不上，整库重新解析。
     pub fn set_known(&mut self, known: KnownFiles) {
-        self.known = known;
+        self.known = known
+            .into_iter()
+            .map(|(path, v)| (canonical_track_path_str(&path), v))
+            .collect();
     }
 
     /// 下一批（编码好的批次字节）。
@@ -605,5 +638,40 @@ fn cue_track_record(
         folder_cover_path: folder_cover,
         cue_sheet_path,
         credits: credits_of(&file_meta_for_credits, &artists, album_artist.as_deref()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_track_path_str;
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_path_unifies_windows_spellings() {
+        let want = r"D:\Music\Album\x.flac";
+        for spelling in [
+            r"D:/Music\Album\x.flac",
+            r"D:/Music/Album\x.flac",
+            r"d:\Music\Album\.\x.flac",
+            "D:/Music/Album/x.flac",
+        ] {
+            assert_eq!(canonical_track_path_str(spelling), want, "{spelling}");
+        }
+        assert_eq!(
+            canonical_track_path_str(r"\server\share/Music\x.flac"),
+            r"\server\share\Music\x.flac"
+        );
+        // `..` 不解析（要看文件系统）。
+        assert_eq!(canonical_track_path_str(r"D:/a/../b"), r"D:\a\..\b");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn canonical_path_collapses_posix_spellings() {
+        assert_eq!(
+            canonical_track_path_str("/music//album/./x.flac"),
+            "/music/album/x.flac"
+        );
+        assert_eq!(canonical_track_path_str("/a/../b"), "/a/../b");
     }
 }

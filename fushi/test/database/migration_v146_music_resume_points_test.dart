@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v145：新表 `music_resume_points`（音乐逐曲断点续播，反馈 QAondMh4M5）。纯新增：
+/// v146：新表 `music_resume_points`（音乐逐曲断点续播，反馈 QAondMh4M5）。纯新增：
 /// 升级建表、不碰存量数据；建过的库幂等跳过。
 void main() {
   Future<String> createDbAt(Directory directory) async {
@@ -26,9 +26,9 @@ void main() {
       )
       .isNotEmpty;
 
-  test('v144 → v145：建出断点表，存量播放流原样，读写删可用', () async {
+  test('v145 → v146：建出断点表，存量播放流原样，读写删可用', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'musresumev145',
+      'musresumev146',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
@@ -39,7 +39,7 @@ void main() {
       'INSERT INTO music_play_events (track_uid, started_at) '
       "VALUES ('t1', 5)",
     );
-    raw.execute('PRAGMA user_version = 144');
+    raw.execute('PRAGMA user_version = 145');
     expect(hasTable(raw), isFalse);
     raw.dispose();
 
@@ -47,7 +47,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 145);
+    expect(migrated.schemaVersion, 146);
     await migrated.upsertMusicResumePoint(
       't1',
       positionMs: 1000,
@@ -79,13 +79,13 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 145);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
     expect(hasTable(probe), isTrue);
   });
 
-  test('v145 步幂等：表已在时跳过，已有行不丢', () async {
+  test('v146 步幂等：表已在时跳过，已有行不丢', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'musresumev145idem',
+      'musresumev146idem',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
@@ -98,7 +98,7 @@ void main() {
     await seeded.close();
 
     final sqlite.Database raw = sqlite.sqlite3.open(path);
-    raw.execute('PRAGMA user_version = 144');
+    raw.execute('PRAGMA user_version = 145');
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(
@@ -110,7 +110,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 145);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
   });
 
   test('listMusicResumePoints 按块查，超过 SQLite 变量上限也能一次拿齐', () async {

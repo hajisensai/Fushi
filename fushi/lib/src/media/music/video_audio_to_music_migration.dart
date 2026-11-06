@@ -19,6 +19,12 @@
 ///   那里接着放。整轨 + CUE（广播剧 CD 常见）时视频行的断点是整个文件上的绝对位置：按它
 ///   落在哪一轨的 `[cueStartMs, cueStartMs + durationMs)` 里找曲目，存相对那一轨起点的
 ///   位置；播放记录也记在那一轨上。已在片尾区的（读取时也会从头放）不写。
+/// - 挂着的主字幕（多半是 ASR 转写，存在 app 的 `video_subtitles/` 里，删行会被回收）→
+///   这首的手动指定歌词（[MusicSubtitleAdopter]，音乐歌词认 SRT / ASS / VTT / LRC）。
+///   字幕搬不过去（读不到 / 解析失败）的行**不删**，下次启动再试；副字幕不搬。
+///   一个文件拆成多首时字幕只挂在起点最早的那一首（字幕时间轴从文件头算，只与它对齐）。
+/// - 原始音频文件转交给音乐曲目：删行时进删除护栏（[VideoBookRepository.deleteVideoBooksAndReclaimAssets]
+///   的 `keepLocalFiles`），iOS 选择器副本也不回收，否则曲目指向的文件会被删掉。
 /// - 学习统计（`study_segments`，按 bookUid 键控）**不删、不改键**：删视频行不碰这张
 ///   事实表，历史时长照旧计在当时的视频面上；改键会让已同步到别的设备的段对不上。
 /// - 标签、书架条目、视频合集成员随视频行一起删（音乐库没有对应物）；被删空的音频专辑
@@ -38,6 +44,11 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
+
+/// 把视频行挂的字幕文件 [subtitlePath] 定为曲目 [track] 的歌词；失败抛出（调用方据此
+/// 保留源行）。生产接 `MusicLyricsService.adoptSubtitleFile`。
+typedef MusicSubtitleAdopter =
+    Future<void> Function(MusicTrackRow track, String subtitlePath);
 
 /// 一次迁移的结果。
 class VideoAudioMigrationReport {
@@ -89,6 +100,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   MusicAudioIntake? intake,
   VideoBookRepository? repository,
   required bool Function(String path) fileExists,
+  required MusicSubtitleAdopter adoptSubtitle,
 }) async {
   final VideoBookRepository repo = repository ?? VideoBookRepository(db);
   final List<VideoBookRow> all = await repo.listAll();
@@ -114,8 +126,9 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
         source.mediaKind != SourceLibraryKind.video.dbValue) {
       continue;
     }
+    // 只交来这几个旧行，不是视频根下的全貌：不对账（reconcile 默认 false）。
     final MusicAudioIntakeResult r = await hand.adoptVideoSourceAudio(
-      videoRoot: source.rootPath,
+      owner: source,
       audioPaths: <String>[
         for (final VideoBookRow row in e.value) row.videoPath,
       ],
@@ -142,11 +155,23 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     live = await _liveTracksByPath(db);
   }
 
-  // 3. 已在曲库的行：记播放记录，再从视频库删除。
-  final List<VideoBookRow> done = <VideoBookRow>[
-    for (final VideoBookRow r in rows)
-      if (live.containsKey(_key(r.videoPath))) r,
-  ];
+  // 3. 已在曲库的行：搬字幕（搬不过去的行留下）、记播放记录，再从视频库删除。
+  final List<VideoBookRow> done = <VideoBookRow>[];
+  for (final VideoBookRow r in rows) {
+    final List<MusicTrackRow>? tracks = live[_key(r.videoPath)];
+    if (tracks == null || tracks.isEmpty) continue;
+    final String subtitle = (r.subtitleSource ?? '').trim();
+    if (subtitle.isNotEmpty && p.isAbsolute(subtitle) && fileExists(subtitle)) {
+      try {
+        // 按起点升序：首项与文件头对齐，字幕时间轴从文件头算。
+        await adoptSubtitle(tracks.first, subtitle);
+      } catch (e) {
+        errors.add('${r.videoPath}: subtitle $subtitle: $e');
+        continue;
+      }
+    }
+    done.add(r);
+  }
   int events = 0;
   int resumes = 0;
   for (final VideoBookRow r in done) {
@@ -163,6 +188,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
       <String>[for (final VideoBookRow r in done) r.bookUid],
       scope: DeleteScope.keepLocalOnly,
       compactDatabase: false,
+      keepLocalFiles: <String>[for (final VideoBookRow r in done) r.videoPath],
     );
   }
   return VideoAudioMigrationReport(
@@ -174,9 +200,8 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   );
 }
 
-/// 路径比较键：音乐扫描拼出的路径与视频行记的路径分隔符 / 大小写写法可能不同
-/// （来源根按正斜杠归一、Rust 用平台分隔符拼文件名）。
-String _key(String path) => p.canonicalize(path);
+/// 路径比较键：曲库全仓只用 [musicTrackPathKey] 这一个定义（扫描落库认旧行用的也是它）。
+String _key(String path) => musicTrackPathKey(path);
 
 /// 在库曲目按路径（[_key]）索引。CUE 拆出的虚拟曲目共用一个路径，按起点升序排。
 Future<Map<String, List<MusicTrackRow>>> _liveTracksByPath(

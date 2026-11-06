@@ -249,6 +249,12 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
     '_stripOrphanUserDataTables',
   ),
   'media_sources': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v145：用户单独删掉的自动音乐来源（不再登记回来）。挂在 owner 视频来源上（FK
+  // cascade）：不含视频的导出裁掉视频来源时随之清空，见 backup_service 的
+  // media_sources 裁剪。
+  'music_auto_source_dismissals': BackupTableRule.rowLevel(
+    '随 media_sources FK cascade',
+  ),
 
   // ── 进度 ──
   'reader_positions': BackupTableRule.follows(<BackupCategory>{
@@ -382,6 +388,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_scrape_meta': BackupTableRule.deviceLocal(),
   'music_metadata_raw_snapshots': BackupTableRule.deviceLocal(),
   'music_locked_fields': BackupTableRule.deviceLocal(),
+  // v145：曲目 uid 别名，设备本地（见 _deviceLocalTables）。
+  'music_track_uid_aliases': BackupTableRule.deviceLocal(),
   'remote_audio_bindings': BackupTableRule.deviceLocal(),
 };
 
