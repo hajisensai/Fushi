@@ -1,4 +1,4 @@
-## BUG-4127 · 音乐库 / 有声书导入：ID3 Latin-1 帧里的日文旧编码显示成乱码
+## BUG-4144 · 音乐库 / 有声书导入：ID3 Latin-1 帧里的日文旧编码显示成乱码
 - **报告**：2026-11-05（用户：应用内反馈 #SIZTG3MNjt，Windows；音乐库导入日文广播剧 MP3 后标题 / 艺术家 / 专辑是 `Çà¤¤Í«¤Î¥Ê¥¤¥È`，有声书导入页作者栏同样）
 - **真实性**：✅ 真 bug。截图乱码逐字节还原为 EUC-JP（`¤` `¥` = 0xA4 / 0xA5 是 EUC-JP 平 / 片假名行首字节，末尾解出「…のナイト」）。ID3v1 与 ID3v2 `encoding = 0` 帧按规范是 ISO-8859-1，lofty 逐字节映成 U+0000..U+00FF；曲库扫描 `native/fushi_music/src/tags.rs:348` 起直接取 `tag.title()` 等入库，没有任何本地编码探测（同 crate 的 CUE / 歌词早有 Shift_JIS 回退，标签没有）。有声书导入页走 ffprobe（`fushi/lib/src/utils/misc/tts_channel.dart:434`），ffmpeg 同样按 Latin-1 转 UTF-8。
 - **[x] ① 已修复** — 新增 `native/fushi_music/src/legacy_text.rs`：整份 ID3 标签的文本字段合起来判（同一文件只会用一种编码）。只在字段全部落在 U+0000..U+00FF、且至少一个字段的高位字节形状不像真 Latin-1（真 Latin-1 的重音字母零散出现、至多两字母相邻，C1 区只以 CP1252 标点单独出现）时，才在 Shift_JIS → GBK → EUC-JP → Big5 里取零错误、无 PUA / 残留 Latin-1 字母、按假名 / 汉字计分最高的一个重解；假名只在日文编码加权（EUC-JP 与 GB2312 假名码位重合），GBK 扩展区字低分（防 Shift_JIS / Big5 被 GBK 宽松码位抢走）。`tags.rs`（曲库扫描）与 `tag_write.rs`（写回 diff 预览的当前值）在标签类型为 ID3v1 / ID3v2 时调用。有声书导入页改为先经音乐胖核心 `MusicTagFieldsIo.read`（同一判据），lofty 认不出的容器才交 ffprobe。提交 `0f56005619`、`3c060d3718`。

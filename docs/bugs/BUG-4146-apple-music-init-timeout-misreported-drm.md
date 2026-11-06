@@ -1,4 +1,4 @@
-## BUG-4129 · Apple Music 登录 init 超时一律报「系统 DRM 服务没有响应」
+## BUG-4146 · Apple Music 登录 init 超时一律报「系统 DRM 服务没有响应」
 - **报告**：2026-11-04（用户：应用内反馈 #D69n21etZ1，Android 小米 23116PN5BC，3.3.0-debug.23328；截图「这台设备上 Apple Music 没能启动：系统的 DRM 服务没有响应」）
 - **真实性**：✅ 真 bug（文案误报）。托管页 `fushiMusicKit.init()` 是三段：等 MusicKit JS 加载（自带 20 s 超时）→ `fetch('/v1/musickit/token')` 向 rank.fushi.moe 取开发者 token（`services/leaderboard/src/musickit_page.js:107`，**没有超时**）→ `MusicKit.configure`（拉 DRM）。Dart 侧只在外面包一个 40 s 总超时，超时一律给 DRM 文案（`fushi/lib/src/media/music/apple_music/apple_music_web_login_page.dart:201`）。反馈日志里该设备同一时段访问 rank.fushi.moe 反复 `HTTP connection timed out after 20s` / `Failed host lookup`，取 token 挂住同样会撞 40 s，却被报成 DRM。
 - **[x] ① 已修复** — 托管页记录 init 走到的段（`initStage()`：`musickit_js` / `token` / `configure` / `ready`），错误带 `stage`；取 token 加 15 s abort（`token_timeout` / `token_network: …`），先于总超时如实失败。Dart 侧 `appleMusicInitFailureText` 按段给文案：只有卡在 `configure` 才说 DRM，卡在取 token / 加载 MusicKit JS 报对应网络原因，读不到段名（旧版托管页）只说超时、不猜原因；诊断日志记 `init timeout at <stage>`。没有加重试、没有延长超时。提交 `8a80b95496`。
