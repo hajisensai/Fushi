@@ -6863,9 +6863,19 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final Color opaque = panelColor.withValues(alpha: 1);
+    // iOS / macOS：背衬一律是原生平台视图——能真模糊就是系统材质，透明度不被允许
+    // 就是原生实色面板。实底不能由 Flutter 画：嵌套层的 Flutter 实底画在父层 WebView
+    // 之后，iOS 引擎只在与父层重叠处合成它，压在正文上的部分整块透明（反馈
+    // hQpYQyWJNQ，见 [fushiNativePopupBackdropHostAvailable]）。
     if (fushiGlassOverPlatformView(context) &&
-        fushiNativePopupMaterialAvailableOf(context)) {
-      return _buildNativeMaterial(context, dark: dark);
+        fushiNativePopupBackdropHostAvailable(Theme.of(context))) {
+      return _buildNativeMaterial(
+        context,
+        dark: dark,
+        solidColor: fushiNativePopupMaterialAvailableOf(context)
+            ? null
+            : opaque,
+      );
     }
     // 查词面板压在**正文文字**上（阅读器 / 视频字幕 / 上一层查词卡），可读性优先：
     // - 采不到背后画面（iOS / macOS 背后是原生 WebView 平台视图；Android 的 WebView
@@ -6948,12 +6958,19 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
   /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]）：画进形状内会被材质
   ///   采样、把模糊整块压暗。它画在原生视图之前（同一 Stack 的更低层），不会给
   ///   平台视图挖 hit-test 忽略区（BUG-1692）。
-  Widget _buildNativeMaterial(BuildContext context, {required bool dark}) {
+  /// - [solidColor] 非 null（透明度不被允许）：原生侧不挂材质，画这块不透明实色面板。
+  Widget _buildNativeMaterial(
+    BuildContext context, {
+    required bool dark,
+    Color? solidColor,
+  }) {
     final Color appleDefault = appleColorsOf(
       context,
     ).secondaryGroupedBackground;
     // 嵌套层与第一层同一材质 / 色层（用户 2026-10-05 拍板）。
-    final Color? tint = md3
+    final Color? tint = solidColor != null
+        ? null
+        : md3
         ? panelColor.withValues(alpha: dark ? 0.42 : 0.38)
         : (panelColor.withValues(alpha: 1) == appleDefault.withValues(alpha: 1)
               ? null
@@ -6975,6 +6992,7 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
           borderRadius: borderRadius.topLeft.x,
           continuousCorners: !md3,
           tint: tint,
+          solidColor: solidColor,
         ),
       ],
     );

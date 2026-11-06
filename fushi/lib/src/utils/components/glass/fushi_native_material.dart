@@ -35,11 +35,7 @@ bool fushiNativePopupMaterialAvailable({
   required ThemeData theme,
   required bool highContrast,
 }) {
-  final TargetPlatform platform = theme.platform;
-  if (platform != TargetPlatform.iOS && platform != TargetPlatform.macOS) {
-    return false;
-  }
-  if (!debugNativeMaterialHostSupported()) return false;
+  if (!fushiNativePopupBackdropHostAvailable(theme)) return false;
   if (theme.extension<FushiEinkTheme>()?.einkMode ?? false) return false;
   if (highContrast) return false;
   final FushiGlassTheme? glass = theme.extension<FushiGlassTheme>();
@@ -47,6 +43,24 @@ bool fushiNativePopupMaterialAvailable({
     return glass!.material != FushiGlassMaterial.off;
   }
   return !SystemTransparency.reduceTransparency.value;
+}
+
+/// 查词浮层的背衬能否做成**原生平台视图**（[FushiNativeMaterialBackdrop]）：主题
+/// 平台是 iOS / macOS，且宿主进程真能挂原生视图（[debugNativeMaterialHostSupported]）。
+///
+/// 与「能不能真模糊」（[fushiNativePopupMaterialAvailable]）分开：透明度不被允许时
+/// 面板改画实底，但这块实底在这两端也必须是原生视图（[FushiNativeMaterialBackdrop]
+/// 的 `solidColor`），不能由 Flutter 画。iOS 引擎只把「画在第 N 个平台视图之后」的
+/// Flutter 内容合成进与第 N 个平台视图相交的 overlay，其余部分落进最底层的 Flutter
+/// 画布，被更早的平台视图（阅读器 WKWebView）整块盖住：嵌套查词层的 Flutter 实底画在
+/// 父层 WebView 之后，只在与父层重叠处可见，压在正文上的部分整块透明（反馈
+/// hQpYQyWJNQ；iOS 26.5 模拟器上用最小复现实测）。
+bool fushiNativePopupBackdropHostAvailable(ThemeData theme) {
+  final TargetPlatform platform = theme.platform;
+  if (platform != TargetPlatform.iOS && platform != TargetPlatform.macOS) {
+    return false;
+  }
+  return debugNativeMaterialHostSupported();
 }
 
 /// [fushiNativePopupMaterialAvailable] 的 BuildContext 版。
@@ -70,6 +84,9 @@ bool fushiNativePopupMaterialAvailableOf(BuildContext context) {
 ///
 /// [tint] 是叠在材质上的低 alpha 色层（MD3 用主色淡染的面板色；Apple 不传 =
 /// 纯系统材质）。参数变化时整视图重建（key 随参数变），平台视图本身很轻。
+///
+/// [solidColor] 非 null 时不挂系统材质，原生侧只画一块同圆角的实色面板（透明度不被
+/// 允许时的实底，见 [fushiNativePopupBackdropHostAvailable] 为何必须是原生视图）。
 class FushiNativeMaterialBackdrop extends StatelessWidget {
   const FushiNativeMaterialBackdrop({
     required this.dark,
@@ -77,11 +94,15 @@ class FushiNativeMaterialBackdrop extends StatelessWidget {
     super.key,
     this.tint,
     this.continuousCorners = false,
+    this.solidColor,
   });
 
   final bool dark;
   final double borderRadius;
   final Color? tint;
+
+  /// 实色面板（不透明）；null = 系统材质。
+  final Color? solidColor;
 
   /// Apple 设计系统用连续曲率圆角（superellipse），MD3 用普通圆弧。
   final bool continuousCorners;
@@ -91,6 +112,7 @@ class FushiNativeMaterialBackdrop extends StatelessWidget {
     'cornerRadius': borderRadius,
     'continuousCorners': continuousCorners,
     if (tint != null) 'tint': tint!.toARGB32(),
+    if (solidColor != null) 'solid': solidColor!.toARGB32(),
   };
 
   @override
@@ -98,7 +120,7 @@ class FushiNativeMaterialBackdrop extends StatelessWidget {
     final Map<String, Object?> params = _params;
     final Key viewKey = ValueKey<String>(
       'native-material:$dark:$borderRadius:$continuousCorners:'
-      '${tint?.toARGB32()}',
+      '${tint?.toARGB32()}:${solidColor?.toARGB32()}',
     );
     final Widget view = Theme.of(context).platform == TargetPlatform.macOS
         ? AppKitView(

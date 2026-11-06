@@ -26,6 +26,7 @@ void main() {
     // 默认钉 Windows：flutter test 默认平台是 Android，而 Android 阅读器 WebView 是
     // Hybrid Composition、查词面板恒不透明（fushiPopupBackdropSampleable）。
     TargetPlatform? platform = TargetPlatform.windows,
+    FushiGlassMaterial? material,
   }) {
     final ThemeData data = buildFushiThemeData(
       scheme: ColorScheme.fromSeed(
@@ -33,7 +34,9 @@ void main() {
         brightness: brightness,
       ),
       textTheme: Typography.material2021().black,
-      glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+      glass:
+          material ??
+          (glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off),
       glassDesign: glass,
     );
     return platform == null ? data : data.copyWith(platform: platform);
@@ -240,6 +243,98 @@ void main() {
       );
       expect(tinted.tint, isNotNull);
       expect(tinted.tint!.a, lessThan(0.88));
+    });
+
+    // 反馈 hQpYQyWJNQ：透明度不被允许时 iOS / macOS 的实底也必须是原生平台视图。
+    // Flutter 画的实底（ColoredBox）在嵌套层上会被 iOS 引擎的平台视图合成规则吞掉：
+    // 它画在父层 WebView 之后，只在与父层重叠处可见，压在阅读器正文上的部分整块透明
+    // （iOS 26.5 模拟器最小复现实测，截图与反馈一致）。断言背衬是带不透明 solidColor
+    // 的原生视图，且 surface 里没有任何 Flutter 画的不透明面板。
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+    ]) {
+      for (final ({String label, bool glass, bool reduce, bool highContrast}) c
+          in <({String label, bool glass, bool reduce, bool highContrast})>[
+            (
+              label: 'Apple 材质档 off',
+              glass: true,
+              reduce: false,
+              highContrast: false,
+            ),
+            (
+              label: 'MD3 系统降低透明度',
+              glass: false,
+              reduce: true,
+              highContrast: false,
+            ),
+            (
+              label: 'Apple 高对比度',
+              glass: true,
+              reduce: false,
+              highContrast: true,
+            ),
+          ]) {
+        testWidgets('${platform.name} ${c.label}：实底是原生视图，不是 Flutter 面板', (
+          WidgetTester tester,
+        ) async {
+          SystemTransparency.reduceTransparency.value = c.reduce;
+          await tester.pumpWidget(
+            host(
+              theme(
+                glass: c.glass,
+                brightness: Brightness.dark,
+                platform: platform,
+                material: c.glass && !c.highContrast
+                    ? FushiGlassMaterial.off
+                    : null,
+              ),
+              const FushiPopupSurface(
+                borderOnForeground: false,
+                child: SizedBox.expand(),
+              ),
+              highContrast: c.highContrast,
+            ),
+          );
+          tester.takeException();
+          final FushiNativeMaterialBackdrop b = tester
+              .widget<FushiNativeMaterialBackdrop>(
+                inSurface(FushiNativeMaterialBackdrop),
+              );
+          expect(b.solidColor, isNotNull, reason: '实底必须由原生视图画');
+          expect(b.solidColor!.a, 1.0);
+          expect(b.tint, isNull);
+          expect(
+            tester
+                .widgetList<ColoredBox>(inSurface(ColoredBox))
+                .where((ColoredBox box) => box.color.a == 1.0),
+            isEmpty,
+            reason: 'Flutter 画的实底在嵌套层压在正文上的部分会整块透明',
+          );
+          expect(inSurface(BackdropFilter), findsNothing);
+        });
+      }
+    }
+
+    testWidgets('材质可用时不带 solidColor（仍是真模糊）', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(
+          theme(glass: true, platform: TargetPlatform.iOS),
+          const FushiPopupSurface(
+            borderOnForeground: false,
+            child: SizedBox.expand(),
+          ),
+        ),
+      );
+      tester.takeException();
+      expect(
+        tester
+            .widget<FushiNativeMaterialBackdrop>(
+              inSurface(FushiNativeMaterialBackdrop),
+            )
+            .solidColor,
+        isNull,
+      );
     });
   });
 
