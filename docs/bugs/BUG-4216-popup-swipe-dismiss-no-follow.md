@@ -1,4 +1,4 @@
-## BUG-4130 · popup-swipe-dismiss-no-follow
+## BUG-4216 · popup-swipe-dismiss-no-follow
 - **报告**：2026-11-06（用户：视频查词框左右滑动关闭时「内容会横着滑」，应该禁止，正常左右滑就该直接关，这样看到很困惑；附 1.2 s 录屏）
 - **真实性**：✅ 真 bug（交互设计问题，Android 上观感尤其差）。逐帧看录屏：顶栏（A−/A+/↺/▶/复制/☆/×）、卡框、右下尺寸把手全程不动，只有 WebView 正文整体平移（各帧释义同一行宽度恒为 470px，是纯平移不是拉伸），先右移约 57px → 左移 → 回 0 → 右移 → 消失。往右平移不可能是网页横滚（scrollX 不会小于 0），设备 Chrome 实测 `body{overflow-x:hidden}` 也拦得住手指横拖，所以不是 popup.js / CSS 横向溢出。来源是正文横滑关闭的跟手位移 + 滑出补间：`fushi/lib/src/pages/implementations/dictionary_popup_layer.dart` `_BodySwipeDismissDetector`（旧 build 里 `Transform.translate(offset: Offset(_dragX, 0))` + `Opacity`，松手过阈值再补间滑出），顶栏 / 独立查词窗走的 `fushi/lib/src/lookup/swipe_dismiss_wrapper.dart` `SwipeDismissWrapper` 同款。Android 混合合成下这段平移只挪了原生 WebView，Flutter 画的顶栏与卡框原地不动，于是看起来是「正文在框里横着滚」。
 - **[x] ① 已修复** — 用户拍板「彻底去掉跟手」：两处滑关都改成拖动期间零位移、不挂 Transform / Opacity，抬手按累计 dx 过 `swipeDismissThreshold` 就当帧 `onDismiss`（与点 × 同一条关闭路径），没过什么都不做；判轴 / 多指作废 / 只认触摸（BUG-1242 / BUG-2770）逻辑不变。原「弹窗关闭动画」开关（`popup_dismiss_animation`，BUG-2418 / BUG-2439）没有动画可控了，连同 `popupDismissAnimationDuration` / `popupSwipeDismissIsInstant`、设置项与 2 个 i18n key 一并删除（持久化键冻结不动，旧值无害地留在库里）。
