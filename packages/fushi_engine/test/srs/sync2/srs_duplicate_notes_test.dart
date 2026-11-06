@@ -110,6 +110,28 @@ void main() {
     expect(await a.duplicateNoteGroups(), isEmpty);
   });
 
+  test('找重复组只读「不是重复」记录，不把组里笔记的字段正文读回来（BUG-4131）', () async {
+    final SrsDbStore a = await device('A');
+    // 几组重复笔记，每条都带字段修改记录；只有一组标了「不是重复」。
+    for (final String w in <String>['雪', '雨', '風', '空', '海']) {
+      await addNote(a, w, 'よみ$w');
+      await addNote(a, w, 'よみ$w');
+    }
+    final List<SrsDuplicateGroup> before = await a.duplicateNoteGroups();
+    expect(before, hasLength(5));
+    // 没有任何「不是重复」记录时一行都不该读。
+    expect(a.debugKeyPrefixRowsRead, 0);
+    await a.dismissDuplicates(before.first.noteIds);
+    final List<SrsDuplicateGroup> after = await a.duplicateNoteGroups();
+    expect(after, hasLength(4));
+    expect(
+      after.map((SrsDuplicateGroup g) => g.noteIds.toSet()),
+      isNot(contains(before.first.noteIds.toSet())),
+    );
+    // 读回的只有那一组两条笔记互相标的「不是重复」记录，与组里有多少笔记、字段多少无关。
+    expect(a.debugKeyPrefixRowsRead, 2);
+  });
+
   test('读音不同不算重复；不同笔记类型不能合并', () async {
     final SrsDbStore a = await device('A');
     await addNote(a, '上手', 'じょうず');
