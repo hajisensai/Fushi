@@ -5682,12 +5682,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         onLongPress: onLongPress,
       );
     }
+    // 「剧照」取图链的末端会回落到封面 / 远端海报（在线源、未刮削的远端条目
+    // 只有竖图）：方向不能按来源猜，交给解码后的真实宽高比定（与首页 dashboard
+    // 同一套 [FushiContinueEntry.orientationImage]）——横图是剧照叠层卡，竖图
+    // 是封面皮，不再把竖图垫模糊底塞进 16:9（用户 2026-11-05「左边空了一大块，
+    // 应该改成自适应」）。
+    if (still == null) {
+      return FushiContinueEntry(
+        key: hero.cardKey,
+        focusId: hero.focusId,
+        cover: _buildHomeHeroImage(null),
+        coverAspectRatio: 16 / 9,
+        title: hero.title,
+        eyebrow: subtitle,
+        metaIcon: hero.cloud ? FushiIcons.cloud : null,
+        subtitle: hero.subtitle,
+        progress: hero.progress,
+        onOpen: onOpen,
+        onLongPress: onLongPress,
+      );
+    }
     return FushiContinueEntry(
       key: hero.cardKey,
       focusId: hero.focusId,
-      cover: _buildHomeHeroImage(still),
+      cover: _buildHomePosterImage(still),
+      landscapeCover: _buildHomeHeroImage(still),
+      orientationImage: still,
       colorSource: still,
-      coverAspectRatio: 16 / 9,
+      material: ShelfCoverMaterial.glossyPoster,
       title: hero.title,
       eyebrow: subtitle,
       metaIcon: hero.cloud ? FushiIcons.cloud : null,

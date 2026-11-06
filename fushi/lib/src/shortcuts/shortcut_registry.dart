@@ -619,14 +619,12 @@ class FushiShortcutRegistry extends ChangeNotifier {
   /// 解析按下的键到 scope 内绑定的动作。正常路径走 [InputBinding.==] 精确相等
   /// （logicalKey + modifiers）。
   ///
-  /// TODO-847：Windows 微软 IME 激活时，Flutter 引擎把 KeyDownEvent 的 logicalKey
-  /// 改写成 [LogicalKeyboardKey.process]，精确相等永远失败、全表面快捷键失效。
-  /// physicalKey（USB HID 扫描码）不受 IME 改写，故仅当 `key == process &&
-  /// physicalKey != null` 时启用物理键回退分支：在 modifiers 完全相同的前提下按
-  /// binding 的 [InputBinding.physicalKey] 比对。调用方在文本框 composing 时应传
-  /// `physicalKey: null` 关闭回退，避免 IME 打字误触快捷键。
+  /// 精确匹配落空时，传入的 [physicalKey] 经 [InputBinding.normalizeCapturedKey]
+  /// 把表外逻辑键（BUG-2948：macOS 上 Shift+/ 报 `question`）收拢回表内键再比一次；
+  /// 调用方在文本框持焦时传 null 关闭回退。
   ///
-  /// 已知限制：物理回退仅对 US-QWERTY 物理布局正确（见 [InputBinding._logicalToPhysical]）。
+  /// 这里**没有** IME 特例：Windows 输入法吞键时引擎根本不发 KeyEvent，修在平台
+  /// 边界（`WindowsImeGuard`，BUG-430/1450）。物理回退仅对 US-QWERTY 物理布局正确。
   ShortcutAction? resolveKeyboard(
     LogicalKeyboardKey key, {
     required Set<ModifierKey> modifiers,
@@ -641,9 +639,8 @@ class FushiShortcutRegistry extends ChangeNotifier {
         if (kb == target) return action;
       }
     }
-    // 物理键回退：与录入侧同一契约 [InputBinding.normalizeCapturedKey]——IME 的
-    // `process`（TODO-847）与表外逻辑键（BUG-2948：macOS 上 Shift+/ 报 `question`）
-    // 都按物理键收拢回表内键再比一次。正常路径（上面精确相等）已先尝试，存量的
+    // 物理键回退：与录入侧同一契约 [InputBinding.normalizeCapturedKey]——表外逻辑键
+    // （BUG-2948：macOS 上 Shift+/ 报 `question`）按物理键收拢回表内键再比一次。正常路径（上面精确相等）已先尝试，存量的
     // `#<keyId>` 绑定不受影响。调用方在文本框 composing 时传 null 关闭回退。
     if (physicalKey != null) {
       final LogicalKeyboardKey normalized = InputBinding.normalizeCapturedKey(

@@ -1699,7 +1699,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<int>(key: 'wheel_page_turn_interval', value: value));
   }
 
-  /// 翻页动画效果（只在翻页模式生效；小说默认淡入淡出）。落盘 key 与
+  /// 翻页动画效果（只在翻页模式生效；小说默认卷页）。落盘 key 与
   /// [ReaderSettings.pageTurnAnimation] 同一个，`readerSettings` 为 null 的旁路
   /// entry point 走偏好表兜底。
   PageTurnAnimation get pageTurnAnimation =>
