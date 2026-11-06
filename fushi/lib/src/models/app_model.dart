@@ -435,6 +435,7 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -1973,6 +1974,9 @@ class AppModel with ChangeNotifier {
         ),
       );
     }
+    // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
+    // 这个进程级装配点里（交叉淡入的两个 mpv 实例共用一份连接）。
+    musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。

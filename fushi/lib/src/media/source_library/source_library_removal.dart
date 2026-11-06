@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -38,6 +39,8 @@ Future<void> removeSourceLibrary({
     disableVideoDownloadSubscriptions: disableVideoDownloadSubscriptions,
   );
   await SourceLibraryCredentialStore(database).deleteSecret(sourceId);
+  // 网络音乐来源起播用的解析器（SFTP 连接 / AList 客户端）随来源关掉。
+  musicRemoteMediaResolver?.forgetSource(sourceId);
   await SourceFolderAccess.instance.release(sourceId);
   if (prefs.videoDownloadTargetSourceId == sourceId) {
     await prefs.setVideoDownloadTargetSourceId(migrateVideoDownloadsTo);
