@@ -5,6 +5,8 @@
 
 #include <cassert>
 #include <cmath>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -128,5 +130,75 @@ int main() {
   assert(ProgressDurationMs(kExpandMs, 0, 1) == 280);
   assert(ProgressDurationMs(kCollapseMs, 0.5, 0) == 95);
   assert(ProgressDurationMs(kExpandMs, 1, 1) == 1);
+
+  // 按钮顺序：关闭、打开 Fushi 在最上，动作去重、不重复收录固定钮。
+  {
+    const std::vector<std::string> ids =
+        ButtonIds(true, {"lookup", "close", "sync", "lookup", "open_app"});
+    assert((ids == std::vector<std::string>{"close", "open_app", "lookup",
+                                            "sync"}));
+    assert((ButtonIds(false, {"sync"}) ==
+            std::vector<std::string>{"close", "sync"}));
+  }
+
+  // 进度动画：线性、反向按剩余路程缩短、到点停。
+  {
+    ProgressAnimation anim;
+    anim.Start(0.5, 0.0, kCollapseMs, 1000);
+    assert(Near(anim.duration_ms, 95));
+    assert(Near(anim.Sample(1000 + 47.5), 0.25));
+    assert(anim.active);
+    assert(Near(anim.Sample(1000 + 95), 0.0));
+    assert(!anim.active);
+  }
+
+  // 吸附动画：easeOutCubic，kSnapMs 后落到目标并停。
+  {
+    SnapAnimation snap;
+    snap.Start(100, 200, 0, 50, 0);
+    double left = 0;
+    double top = 0;
+    snap.Sample(kSnapMs / 2.0, &left, &top);
+    assert(snap.active);
+    assert(left < 50 && top < 125);  // easeOut：过半时间已走过半路程
+    snap.Sample(kSnapMs, &left, &top);
+    assert(!snap.active && Near(left, 0) && Near(top, 50));
+  }
+
+  // 拖动夹取：横向在左右收起位之间，纵向在活动范围里。
+  {
+    const Geometry as_left(Rect{0, 40, 400, 700}, true, 0.5, 3, 1.0);
+    const Geometry as_right(Rect{0, 40, 400, 700}, false, 0.5, 3, 1.0);
+    const Offset in = ClampDrag(as_left, as_right, 150, 300);
+    assert(Near(in.dx, 150) && Near(in.dy, 300));
+    const Offset out = ClampDrag(as_left, as_right, -500, 5000);
+    assert(Near(out.dx, -16.32) && Near(out.dy, 644));
+    assert(Near(ClampDrag(as_left, as_right, 5000, 0).dx, 368.32));
+  }
+
+  // 按钮窗布局：包围盒含球、每颗落点（含 easeOutBack 冲过头）与阴影边；落点在
+  // 窗内坐标里与 ButtonOffset 一致；左停靠的标签向右撑大包围盒。
+  {
+    const Geometry g(Rect{0, 40, 400, 700}, false, 0.5, 3, 1.0);
+    const MenuLayout plain = LayoutMenu(g, 1.0, peak, {});
+    assert(plain.centers.size() == 3);
+    const double ball_cx = g.ExpandedBallLeft() + g.ball() / 2;
+    const double ball_cy = g.ExpandedBallTop() + g.ball() / 2;
+    assert(Near(plain.x + plain.ball_cx, ball_cx));
+    assert(Near(plain.y + plain.ball_cy, ball_cy));
+    for (int i = 0; i < 3; ++i) {
+      assert(Near(plain.centers[i].dx - plain.ball_cx, g.ButtonOffset(i).dx));
+      assert(Near(plain.centers[i].dy - plain.ball_cy, g.ButtonOffset(i).dy));
+    }
+    const double reach = g.button() / 2 * ButtonScale(peak) + kMenuShadowPadDip + 2;
+    assert(plain.y <= ball_cy + g.ButtonOffset(0).dy * peak - reach);
+    assert(plain.x + plain.width >= ball_cx + reach);
+
+    const Geometry left(Rect{0, 40, 400, 700}, true, 0.5, 3, 1.0);
+    const MenuLayout without = LayoutMenu(left, 1.0, peak, {});
+    const MenuLayout with = LayoutMenu(left, 1.0, peak, {120, 80, 60});
+    assert(with.x == without.x);
+    assert(with.width > without.width + 100);
+  }
   return 0;
 }

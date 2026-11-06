@@ -18,10 +18,23 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 @visibleForTesting
 bool? debugDesktopSystemBallPlatformOverride;
 
-/// Windows / macOS：应用外悬浮球是 runner 自绘的置顶窗口（与应用内球同时在）。
+/// Windows / macOS / Linux (X11)：应用外悬浮球是 runner 自绘的置顶窗口（与应用内球
+/// 同时在）。Linux 只在 X11 会话里有：Wayland 不让程序摆放自己的窗口。
 bool get isDesktopSystemBallPlatform =>
     debugDesktopSystemBallPlatformOverride ??
-    (Platform.isWindows || Platform.isMacOS);
+    (Platform.isWindows ||
+        Platform.isMacOS ||
+        (Platform.isLinux && linuxSessionIsX11(Platform.environment)));
+
+/// Whether GTK on Linux talks to an X server: forced with `GDK_BACKEND=x11`, or
+/// an X display without a Wayland one (a Plasma X11 session, the Steam Deck's
+/// default desktop). GTK prefers Wayland whenever `WAYLAND_DISPLAY` is set.
+bool linuxSessionIsX11(Map<String, String> environment) {
+  final String backend = environment['GDK_BACKEND'] ?? '';
+  if (backend.isNotEmpty) return backend.split(',').first.trim() == 'x11';
+  return (environment['WAYLAND_DISPLAY'] ?? '').isEmpty &&
+      (environment['DISPLAY'] ?? '').isNotEmpty;
+}
 
 /// 应用外（系统级）悬浮球此刻是否该给应用内球让位（隐藏）。两颗球同时出现在
 /// Fushi 里是重复入口（群反馈：歌词页右侧并排两颗球），所以：
@@ -78,7 +91,7 @@ enum FloatingBallScope {
   final String storageValue;
 
   /// 本平台有没有应用外悬浮球：Android（悬浮窗服务）与 Windows / macOS（原生
-  /// 置顶窗口）有；iOS 不允许应用外悬浮，Linux 没有实现。
+  /// 置顶窗口）有，Linux 只在 X11 会话里有；iOS 不允许应用外悬浮。
   static bool systemBallSupported({
     required bool isAndroid,
     bool isDesktop = false,
@@ -268,12 +281,17 @@ enum FloatingBallGlobalAction {
   /// 查词页）、「应用外查词」与「截屏识字」（都用全局查词覆盖窗）都挂在这个模块
   /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
   /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
+  ///
+  /// [globalLookupSupported]：这台桌面有没有全局查词覆盖窗（Linux 只在 X11 且
+  /// 带了 `fushi_lookup_card` 时有）。「应用外查词」与「截屏识字」的结果都在那张卡
+  /// 上，没有它就不出现。
   bool availableIn(
     FloatingBallScope scope, {
     required bool isAndroid,
     required bool isIOS,
     required bool isDesktop,
     required bool lookupModuleEnabled,
+    bool globalLookupSupported = true,
   }) {
     if (scope == FloatingBallScope.system &&
         this == FloatingBallGlobalAction.feedback) {
@@ -281,9 +299,10 @@ enum FloatingBallGlobalAction {
     }
     if (scope == FloatingBallScope.system && isDesktop) {
       return switch (this) {
-        FloatingBallGlobalAction.lookup ||
+        FloatingBallGlobalAction.lookup => lookupModuleEnabled,
         FloatingBallGlobalAction.popupLookup ||
-        FloatingBallGlobalAction.screenOcr => lookupModuleEnabled,
+        FloatingBallGlobalAction.screenOcr =>
+          lookupModuleEnabled && globalLookupSupported,
         FloatingBallGlobalAction.clipboard => true,
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,
