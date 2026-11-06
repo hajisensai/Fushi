@@ -398,4 +398,20 @@ abstract final class FushiLyricsAsync {
 
   static Future<AssRawScript> assRaw(Uint8List bytes) =>
       Isolate.run(() => prepareAssRawScript(bytes));
+
+  /// 一份整文件时间轴按多段区间切（[FushiLyrics.slice]），每段同时导出 TTML
+  /// （[FushiLyrics.export]）：CUE 整轨的字幕切给各曲目。整批一次 isolate，结果与
+  /// [ranges] 一一对应。
+  static Future<List<({LyricTimeline timeline, Uint8List ttml})>> sliceAll(
+    LyricTimeline timeline,
+    List<({int startMs, int? endMs})> ranges,
+  ) => Isolate.run(() {
+    final List<({LyricTimeline timeline, Uint8List ttml})> out =
+        <({LyricTimeline timeline, Uint8List ttml})>[];
+    for (final ({int startMs, int? endMs}) r in ranges) {
+      final LyricTimeline cut = FushiLyrics.slice(timeline, r.startMs, r.endMs);
+      out.add((timeline: cut, ttml: FushiLyrics.export(cut, 'ttml')));
+    }
+    return out;
+  });
 }

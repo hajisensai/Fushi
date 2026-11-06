@@ -77,6 +77,9 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
       Directory(p.join(outRoot.path, videoSubtitleJobId(mediaPath)));
 
   @override
+  bool get registersSkippedExisting => true;
+
+  @override
   bool get usesStyleReference => false;
 
   @override
@@ -121,10 +124,22 @@ Future<List<String>> saveGeneratedSubtitleForTracks(
 }) async {
   if (slots.isEmpty) return const <String>[];
   final LyricTimeline whole = await (parse ?? _defaultParse)(srt, 'srt', null);
+  // CUE 各曲的切片 + TTML 导出整批放后台 isolate（整轨字幕上千行、曲目十几首，逐首在
+  // UI isolate 上跨 FFI 会卡帧）。
+  final List<MusicAsrTrackSlot> cue = <MusicAsrTrackSlot>[
+    for (final MusicAsrTrackSlot slot in slots)
+      if (slot.cueStartMs != null) slot,
+  ];
+  final List<({LyricTimeline timeline, Uint8List ttml})> cuts = cue.isEmpty
+      ? const <({LyricTimeline timeline, Uint8List ttml})>[]
+      : await FushiLyricsAsync.sliceAll(whole, <({int startMs, int? endMs})>[
+          for (final MusicAsrTrackSlot slot in cue)
+            (startMs: slot.cueStartMs!, endMs: slot.cueEndMs),
+        ]);
   final List<String> wrote = <String>[];
+  int at = 0;
   for (final MusicAsrTrackSlot slot in slots) {
-    final int? start = slot.cueStartMs;
-    if (start == null) {
+    if (slot.cueStartMs == null) {
       await lyrics.saveGenerated(
         slot.trackUid,
         format: 'srt',
@@ -132,13 +147,13 @@ Future<List<String>> saveGeneratedSubtitleForTracks(
         timeline: whole,
       );
     } else {
-      final LyricTimeline cut = FushiLyrics.slice(whole, start, slot.cueEndMs);
+      final ({LyricTimeline timeline, Uint8List ttml}) cut = cuts[at++];
       // 切片后的原文存 TTML（无损交换格式；导出不补注音）。
       await lyrics.saveGenerated(
         slot.trackUid,
         format: 'ttml',
-        raw: FushiLyrics.export(cut, 'ttml'),
-        timeline: cut,
+        raw: cut.ttml,
+        timeline: cut.timeline,
       );
     }
     wrote.add(slot.trackUid);

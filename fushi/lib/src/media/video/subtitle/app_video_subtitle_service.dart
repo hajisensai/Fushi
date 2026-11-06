@@ -184,10 +184,15 @@ class AppVideoSubtitleTarget {
     this.collectionId,
     this.bookUid,
     this.sink,
+    this.trackCounts,
     bool? wholeSeason,
     String? key,
   }) : _wholeSeason = wholeSeason,
        _key = key;
+
+  /// 音乐目标按**曲目**计数（[episodes] 是去重后的文件，CUE 整轨一个文件多首）：要写
+  /// 字幕的曲目数与已有生成字幕、跳过的曲目数。视频目标为 null（按集计）。
+  final ({int pending, int skipped})? trackCounts;
 
   final String title;
   final SubtitleWorkContext work;
@@ -257,6 +262,12 @@ abstract interface class AppSubtitleOutputSink {
   /// 除媒体旁 / 内嵌之外，这一集还登记在库里的人工字幕（证据）。
   Future<List<String>> extraEvidenceFiles(AppVideoSubtitleEpisode episode);
 
+  /// 批量时导出位置已有字幕（管线跳过转写）的那一集也要登记：音乐的登记是按曲目的
+  /// （CUE 整轨一个文件多首），文件已转写过、曲目却还没有 `asr` 行（单曲入口只写了一首、
+  /// 整轨新增了曲目）时，直接用已有的导出文件补登，否则这些曲目永远登记不上。视频的
+  /// 「已有字幕」可能是用户自己的文件，不替它登记。
+  bool get registersSkippedExisting;
+
   /// 一集导出成功后登记产物；返回这次真正登记了的身份（视频条目 / 曲目）。
   Future<List<String>> register(
     AppVideoSubtitleEpisode episode,
@@ -275,6 +286,9 @@ class VideoBookSubtitleSink implements AppSubtitleOutputSink {
 
   @override
   Directory? exportDirFor(String mediaPath) => null;
+
+  @override
+  bool get registersSkippedExisting => false;
 
   @override
   bool get usesStyleReference => true;
@@ -1321,7 +1335,11 @@ class AppVideoSubtitleService {
             '${r.videoPath}: $styledError',
           );
         }
-        if (!r.exported) continue;
+        final bool reuse =
+            sink.registersSkippedExisting &&
+            r.status == VideoSubtitleEpisodeStatus.skippedExistingSubtitle &&
+            r.outputPath != null;
+        if (!r.exported && !reuse) continue;
         final AppVideoSubtitleEpisode? episode = target.episodes
             .where((AppVideoSubtitleEpisode e) => e.videoPath == r.videoPath)
             .firstOrNull;

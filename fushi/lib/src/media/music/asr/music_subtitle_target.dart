@@ -11,7 +11,9 @@
 /// - 插件 / 服务器 / Apple Music 等不是本机文件的曲目 → 不可处理（remote）；文件不在 →
 ///   missingFile；
 /// - 批量（专辑 / 来源）时已有生成字幕（`asr` 行）的曲目跳过，整个文件的曲目都有了就不
-///   排这个文件；单曲入口总是重新生成（覆盖）；
+///   排这个文件；文件已转写导出过、只是还有曲目没登记的，管线跳过转写、由落点直接用已有
+///   导出补登（[AppSubtitleOutputSink.registersSkippedExisting]）；单曲入口总是重新生成
+///   （覆盖）；面板按曲目计数（[AppVideoSubtitleTarget.trackCounts]）；
 /// - 作品上下文（专名表的键）：专辑 `album:<albumUid>`，同一张广播剧 CD 各轨共用一张表。
 library;
 
@@ -35,6 +37,9 @@ import 'package:fushi/src/storage/app_paths.dart';
 /// 纯函数：这首曲目是不是本机能转写的文件（插件 URI / 服务器流 / 相对路径都不是）。
 bool isMusicTrackLocallyTranscribable(String path) =>
     parseMusicPluginTrackPath(path) == null && isLocalVideoFilePath(path);
+
+/// 解析批量目标时一次并发问几个文件在不在。
+const int _kExistsBatch = 16;
 
 class MusicSubtitleTargets {
   MusicSubtitleTargets({
@@ -164,6 +169,27 @@ class MusicSubtitleTargets {
         <AppVideoSubtitleUnavailable>[];
     final Map<String, List<MusicAsrTrackSlot>> slots =
         <String, List<MusicAsrTrackSlot>>{};
+    // 存在性 async 判（音乐常在网络盘上，BUG-3756 同理），整个来源几千个文件时逐个等
+    // 太慢：按批并发问，结果按路径取。
+    final List<String> probe = <String>[
+      for (final MapEntry<String, List<MusicTrackRow>> e in byPath.entries)
+        if (isMusicTrackLocallyTranscribable(e.key) &&
+            e.value.any((MusicTrackRow r) => !done.contains(r.trackUid)))
+          e.key,
+    ];
+    final Set<String> present = <String>{};
+    for (int i = 0; i < probe.length; i += _kExistsBatch) {
+      final List<String> batch = probe.sublist(
+        i,
+        i + _kExistsBatch > probe.length ? probe.length : i + _kExistsBatch,
+      );
+      final List<bool> ok = await Future.wait(<Future<bool>>[
+        for (final String path in batch) _fileExists(path),
+      ]);
+      for (int j = 0; j < batch.length; j++) {
+        if (ok[j]) present.add(batch[j]);
+      }
+    }
     for (final MapEntry<String, List<MusicTrackRow>> e in byPath.entries) {
       final String path = e.key;
       final List<MusicTrackRow> pending = <MusicTrackRow>[
@@ -184,8 +210,7 @@ class MusicSubtitleTargets {
         );
         continue;
       }
-      // 存在性 async 判：音乐常在网络盘上（BUG-3756 同理）。
-      if (!await _fileExists(path)) {
+      if (!present.contains(path)) {
         unavailable.add(
           AppVideoSubtitleUnavailable(
             title: episodeTitle,
@@ -211,6 +236,15 @@ class MusicSubtitleTargets {
       work: work,
       episodes: episodes,
       unavailable: unavailable,
+      trackCounts: (
+        pending: <MusicAsrTrackSlot>[
+          for (final List<MusicAsrTrackSlot> s in slots.values) ...s,
+        ].length,
+        skipped: <MusicTrackRow>[
+          for (final MusicTrackRow r in rows)
+            if (done.contains(r.trackUid)) r,
+        ].length,
+      ),
       sink: MusicAsrSubtitleSink(
         outRoot: await _outRoot(),
         lyrics: lyrics,

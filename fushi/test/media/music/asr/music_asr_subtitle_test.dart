@@ -256,6 +256,44 @@ void main() {
     expect(estimate.basis, AppVideoSubtitleEstimateBasis.nothing);
   });
 
+  test('CUE 单曲入口只登记那一首；之后专辑批量不重转写，用已有导出给其余曲目补登；面板与'
+      '结束按曲目计数', () async {
+    final String image = audio('cd/image.flac');
+    await addTrack('c1', image, trackNo: 1, cueStartMs: 0, cueEndMs: 6500);
+    await addTrack('c2', image, trackNo: 2, cueStartMs: 6500);
+    final AppVideoSubtitleService svc = service();
+    final AppVideoSubtitleJob single = svc.start(
+      await targets().forTrack('c1'),
+      const AppVideoSubtitleOptions(),
+    );
+    await single.done;
+    expect(single.registeredBookUids, <String>['c1']);
+    expect(await asrRow('c2'), isNull);
+
+    final AppVideoSubtitleTarget batch = await targets().forAlbum('alb');
+    expect(batch.videoPaths, <String>[image]);
+    expect(batch.trackCounts, (pending: 1, skipped: 1));
+    final AppVideoSubtitleJob job = svc.start(
+      batch,
+      const AppVideoSubtitleOptions(),
+    );
+    await job.done;
+    expect(
+      job.status,
+      AppVideoSubtitleJobStatus.succeeded,
+      reason: '${job.errorMessage}',
+    );
+    expect(recognizer.calls, <String>['image.flac'], reason: '已导出的整轨不再转写');
+    expect(job.registeredBookUids, <String>['c2']);
+    final LyricTimeline t2 = decodeLyricTimeline(
+      (await asrRow('c2'))!.timelineCache!,
+    );
+    expect(<(int, String)>[
+      for (final LyricLine l in t2.lines) (l.startMs, l.text),
+    ], isNotEmpty);
+    expect(t2.lines.first.startMs, lessThan(6500), reason: '按曲内时间平移过');
+  });
+
   test('同名 01.flac 各进各的导出目录（不互判「已有同名字幕」）', () async {
     final String a = audio('disc1/01.flac', bytes: 30);
     final String b = audio('disc2/01.flac', bytes: 31);

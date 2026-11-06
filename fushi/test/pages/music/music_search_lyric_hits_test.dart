@@ -135,6 +135,43 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('来源过滤排除本地后歌词命中清掉，放回本地后重取（查询词没变）', (WidgetTester tester) async {
+    int calls = 0;
+    Future<List<CorpusHit>> search(String q) async {
+      calls++;
+      return <CorpusHit>[_hit('uid-7', 65000, '台詞がここに')];
+    }
+
+    Widget overview(bool local) => MusicSearchOverview(
+      query: '台詞',
+      sources: const <MusicPluginManifest>[],
+      local: MusicSearchLocalItems.none,
+      localActions: _noLocalActions(),
+      onSeeAll: (_) {},
+      searchLyrics: local ? search : null,
+    );
+    final Finder section = find.byKey(
+      const ValueKey<String>('music-search-lyric-hits'),
+    );
+
+    await _pump(tester, overview(true));
+    await _settleSearch(tester);
+    expect(section, findsOneWidget);
+    expect(calls, 1);
+
+    await _pump(tester, overview(false));
+    await tester.pumpAndSettle();
+    expect(section, findsNothing);
+
+    await _pump(tester, overview(true));
+    await tester.pumpAndSettle();
+    expect(section, findsOneWidget);
+    expect(calls, 2);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   test('歌词命中只留仍在曲库里的曲目', () {
     final List<CorpusHit> hits = <CorpusHit>[
       _hit('live', 0, 'a'),

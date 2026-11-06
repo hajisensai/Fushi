@@ -607,18 +607,17 @@ class _VideoSubtitleGenerateSheetState
     final List<Widget> lines = <Widget>[
       Text(_target.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       if (_target.wholeSeason)
-        _hint(
-          _target.isMusic
-              ? t.music_subtitle_batch_summary(
-                  n: _target.episodes.length,
-                  skipped: _existing.length,
-                )
-              : t.video_subtitle_ai_season_summary(
-                  n: _target.episodes.length,
-                  skipped: _existing.length,
-                ),
-          key: const ValueKey<String>('video-subtitle-ai-season-summary'),
-        ),
+        _hint(switch (_target.trackCounts) {
+          final ({int pending, int skipped}) c =>
+            t.music_subtitle_batch_summary(
+              n: c.pending + c.skipped,
+              skipped: c.skipped,
+            ),
+          null => t.video_subtitle_ai_season_summary(
+            n: _target.episodes.length,
+            skipped: _existing.length,
+          ),
+        }, key: const ValueKey<String>('video-subtitle-ai-season-summary')),
       for (final AppVideoSubtitleUnavailable u in _target.unavailable)
         _hint(switch (u.reason) {
           AppVideoSubtitleUnavailableReason.remote =>
@@ -930,6 +929,9 @@ class _VideoSubtitleGenerateSheetState
           : job.progress == null
           ? t.video_subtitle_ai_status_starting
           : videoSubtitleStageLabel(job.progress!.stage),
+    // 音乐按曲目计（一个导出文件可登记 CUE 整轨的多首，复用已有导出也算）。
+    AppVideoSubtitleJobStatus.succeeded when _target.isMusic =>
+      t.music_subtitle_status_done(n: job.registeredBookUids.length),
     AppVideoSubtitleJobStatus.succeeded => t.video_subtitle_ai_status_done(
       n:
           job.result?.episodes

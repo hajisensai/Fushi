@@ -6040,6 +6040,7 @@
   "music_subtitle_generate": "Generate Japanese subtitles",
   "music_subtitle_generate_album": "Generate subtitles for this album",
   "music_subtitle_generate_source": "Generate subtitles for this source",
+  "music_subtitle_status_done": "Done: subtitles written for ${n} tracks",
   "music_subtitle_unavailable_remote": "${title}: not a local file, skipped",
   "music_tag_field_album": "Album",
   "music_tag_field_album_artist": "Album artist",

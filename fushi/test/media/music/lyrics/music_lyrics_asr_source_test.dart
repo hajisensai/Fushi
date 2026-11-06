@@ -79,9 +79,9 @@ void main() {
     expect(r!.timeline.lines.first.text, 'こんばんは、今夜もお便りを読みます');
     expect(lrclibCalls, isEmpty);
     expect(
-      r.timeline.lines.expand((LyricLine l) => l.syllables).map(
-        (LyricSyllable y) => y.ruby,
-      ),
+      r.timeline.lines
+          .expand((LyricLine l) => l.syllables)
+          .map((LyricSyllable y) => y.ruby),
       everyElement(isNull),
       reason: '生成字幕不带注音',
     );
@@ -95,6 +95,49 @@ void main() {
     ).writeAsStringSync('[00:01.00]歌詞ファイル');
     final MusicLyricsResolution? r = await s.resolve(track());
     expect(r?.source, MusicLyricsSource.sidecar);
+  });
+
+  test('本机字幕管线以前写在音频旁的 .ja.srt：有 asr 行时不当 sidecar（重新生成后显示新稿，'
+      '缓存的旧 sidecar 行删掉）；没有 asr 行时照常当 sidecar；别人的 .ja.srt 不受影响', () async {
+    final String own = '${dir.path}${Platform.pathSeparator}01 第1話.ja.srt';
+    File(own).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n旧い転写\n');
+    final List<(String, String)> asked = <(String, String)>[];
+    MusicLyricsService withCheck(bool Function(String path) mine) =>
+        MusicLyricsService(
+          database: () => db,
+          lrclib: LrclibClient(
+            transport: (Uri uri) async => (status: 404, body: ''),
+          ),
+          onlineEnabled: () => false,
+          readEmbedded: (String _, int? _) async => const <EmbeddedLyrics>[],
+          parse: _parse,
+          now: () => now,
+          isGeneratedSidecar: (String audioPath, String path) async {
+            asked.add((audioPath, path));
+            return mine(path);
+          },
+        );
+
+    final MusicLyricsService s = withCheck((String path) => path == own);
+    // 还没有 asr 行：旧产物照常当 sidecar 显示（有总比没有好），也不去问判据。
+    expect((await s.resolve(track()))?.source, MusicLyricsSource.sidecar);
+    expect(asked, isEmpty);
+
+    // 在音乐库里重新生成之后：显示新稿，缓存的 sidecar 行删掉（语料跟着改用 asr）。
+    await saveAsr(s);
+    final MusicLyricsResolution? r = await s.resolve(track());
+    expect(r?.source, MusicLyricsSource.asr);
+    expect(r!.timeline.lines.first.text, 'こんばんは、今夜もお便りを読みます');
+    expect(asked, <(String, String)>[(audio(), own)]);
+    final List<MusicLyricRow> rows = await db.select(db.musicLyrics).get();
+    expect(
+      rows.map((MusicLyricRow l) => l.source),
+      isNot(contains(MusicLyricsSource.sidecar)),
+    );
+
+    // 不是本管线写的 .ja.srt（判据说不是）：仍是 sidecar，高于生成字幕。
+    final MusicLyricsService other = withCheck((String _) => false);
+    expect((await other.resolve(track()))?.source, MusicLyricsSource.sidecar);
   });
 
   test('选来源面板列出生成字幕；手动选别的之后重置回到生成字幕', () async {

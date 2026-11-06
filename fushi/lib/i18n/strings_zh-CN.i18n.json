@@ -6040,6 +6040,7 @@
   "music_subtitle_generate": "生成日语字幕",
   "music_subtitle_generate_album": "为本专辑生成字幕",
   "music_subtitle_generate_source": "为此来源生成字幕",
+  "music_subtitle_status_done": "完成：已为 ${n} 首写入字幕",
   "music_subtitle_unavailable_remote": "${title}：不是本机文件，跳过",
   "music_tag_field_album": "专辑",
   "music_tag_field_album_artist": "专辑艺人",

@@ -97,7 +97,7 @@ void main() {
     expect(FushiLyrics.parserVersion, greaterThanOrEqualTo(1));
   });
 
-  test('切片：CUE 区间截取并平移成曲内时间（一次 FFI）', () {
+  test('切片：CUE 区间截取并平移成曲内时间（一次 FFI）', () async {
     final LyricTimeline t = FushiLyrics.parse(
       utf8.encode(
         '1\n00:00:01,000 --> 00:00:03,000\n一曲目\n\n'
@@ -115,6 +115,23 @@ void main() {
     );
     expect(FushiLyrics.slice(t, 0, 10000).lines.length, 2);
     expect(FushiLyrics.slice(t, 4000, 4000).lines, isEmpty);
+
+    // 后台 isolate 批量版：与逐段同步调用结果一致，并附 TTML 导出。
+    final List<({LyricTimeline timeline, Uint8List ttml})> all =
+        await FushiLyricsAsync.sliceAll(t, <({int startMs, int? endMs})>[
+          (startMs: 10000, endMs: null),
+          (startMs: 4000, endMs: 4000),
+        ]);
+    expect(all, hasLength(2));
+    expect(
+      <(int, int, String)>[
+        for (final LyricLine l in all.first.timeline.lines)
+          (l.startMs, l.endMs, l.text),
+      ],
+      <(int, int, String)>[(0, 2000, '境目'), (5000, 7000, '二曲目')],
+    );
+    expect(FushiLyrics.parse(all.first.ttml, hint: 'ttml').lines.length, 2);
+    expect(all.last.timeline.lines, isEmpty);
   });
 
   test('ASS 原样渲染准备：UTF-16 → UTF-8，PlayRes 缺省按 libass 补', () {

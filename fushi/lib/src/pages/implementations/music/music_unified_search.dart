@@ -1485,6 +1485,20 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
     } else if (_armed) {
       // 来源过滤放宽后补取新出现的插件（已取过的保留）。
       _fetchMissing();
+      // 来源过滤换了「含不含本地」：歌词命中跟着重取 / 清掉（闭包每次 build 都是新的，
+      // 只看有没有）。
+      if ((old.searchLyrics == null) != (widget.searchLyrics == null)) {
+        // 作废在途的那次；这里正处在重建里，不 setState，取数排到下一个微任务。
+        _lyricGeneration++;
+        if (widget.searchLyrics == null) {
+          _lyricHits = const <CorpusHit>[];
+        } else {
+          _lyricHits = null;
+          scheduleMicrotask(() {
+            if (mounted) unawaited(_fetchLyrics());
+          });
+        }
+      }
     }
   }
 
