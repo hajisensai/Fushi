@@ -78,19 +78,22 @@ Future<void> main(List<String> args) async {
     stderr.writeln(sdk.error);
     exit(2);
   }
-  final List<String> command = withDefaultTestConcurrency(sdk.command);
-  final HeavyNeed classified = classifyHeavyCommand(command);
+  final List<String> asTyped = withDefaultTestConcurrency(sdk.command);
+  final HeavyNeed classified = classifyHeavyCommand(asTyped);
+  final _TestPlan? testPlan = classified.kind == HeavyKind.test
+      ? _testPlan(asTyped)
+      : null;
+  // What runs here: a flutter test whose files never reach dart:ui runs as
+  // `dart test` (one VM, no flutter_tools; heavy_budget.dart
+  // dartTestCommandFor). The other machines still get the command as typed.
+  final List<String> command = testPlan?.local ?? asTyped;
   final int? capOverride = _intArg(own, '--cap-mb=');
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,
     capMb: capOverride ?? classified.capMb,
     // An explicit --cap-mb books what it asks for; a test books from what it
     // compiles (heavy_budget.dart testBookMb).
-    bookMb:
-        capOverride ??
-        (classified.kind == HeavyKind.test
-            ? _testBooking(command)
-            : classified.bookMb),
+    bookMb: capOverride ?? testPlan?.bookMb ?? classified.bookMb,
     worktreeExclusive: classified.worktreeExclusive,
     light: classified.light,
   );
@@ -400,18 +403,23 @@ void _status() {
   }
 }
 
-/// What a test [command] books: its import closure and tester count
-/// (heavy_budget.dart testBookMb). Whole-directory runs, unreadable targets
-/// and a failing closure walk book the ceiling.
-int _testBooking(List<String> command) {
+/// How a test command runs here and what it books.
+typedef _TestPlan = ({int bookMb, List<String> local});
+
+/// What a test [command] books (its import closure and tester count,
+/// heavy_budget.dart testBookMb) and the command that runs here: `dart test`
+/// when every target's closure stays off dart:ui, else [command] itself.
+/// Whole-directory runs, unreadable targets and a failing closure walk book
+/// the ceiling and run as typed.
+_TestPlan _testPlan(List<String> command) {
   final List<String>? targets = testTargetsOf(command);
-  int? closure;
+  TestClosure? closure;
   if (targets != null) {
     try {
-      closure = testClosureFiles(
+      closure = testClosureOf(
         Directory.current.path,
         targets,
-        edgeCache: File('${heavyStateDir().path}/closure-edges.json'),
+        edgeCache: File('${heavyStateDir().path}/closure-edges-v2.json'),
       );
     } on Object catch (e) {
       stderr.writeln(
@@ -419,19 +427,35 @@ int _testBooking(List<String> command) {
       );
     }
   }
-  final int concurrency = testConcurrencyOf(command) ?? kDefaultTestConcurrency;
-  final int testers = targets == null
-      ? concurrency
-      : (targets.length < concurrency ? targets.length : concurrency);
   final String exe = command.first
       .replaceAll(r'\', '/')
       .split('/')
       .last
       .toLowerCase();
-  return testBookMb(
-    closureFiles: closure,
-    testers: testers,
-    flutter: !exe.startsWith('dart'),
+  List<String> local = command;
+  bool flutter = !exe.startsWith('dart');
+  if (flutter && closure != null && !closure.needsFlutter) {
+    final List<String>? dart = dartTestCommandFor(command);
+    if (dart != null) {
+      stderr.writeln(
+        'heavy: no target reaches dart:ui; running it as dart test '
+        '(one VM, no flutter_tools)',
+      );
+      local = dart;
+      flutter = false;
+    }
+  }
+  final int concurrency = testConcurrencyOf(command) ?? kDefaultTestConcurrency;
+  final int testers = targets == null
+      ? concurrency
+      : (targets.length < concurrency ? targets.length : concurrency);
+  return (
+    bookMb: testBookMb(
+      closureFiles: closure?.files,
+      testers: testers,
+      flutter: flutter,
+    ),
+    local: local,
   );
 }
 

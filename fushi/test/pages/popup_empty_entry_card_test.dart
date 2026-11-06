@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-833: 隐藏词典过滤后正文为空的词条不得渲染成「标题+频率徽章但正文空白」的壳卡。
 ///

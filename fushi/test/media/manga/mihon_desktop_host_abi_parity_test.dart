@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：桌面 sidecar 与 Android 宿主提供给 Mihon 扩展的 ABI 版本必须一致。
 ///

@@ -177,6 +177,7 @@ Get-CimInstance Win32_Process |
 | `test/lookup/popup_static_revision_dedup_guard_test.dart` | `lib` 全树 | 每个 `buildStackRenderScript` 调用方必须 commit 版本并接 `staticSettingsRequired` 回补 |
 | `test/models/preference_keys_guard_test.dart` | `lib` + `../packages/*/lib` | `getPref*`/`setPref*` 的字面量键必须在 `kKnownPreferenceKeys` 里 |
 | `test/pages/legacy_video_scrape_surface_guard_test.dart` | `lib` 全树 | legacy 在线刮削（TMDB 直连 / 候选链 / 弹窗）不得复活 |
+| `test/build/pure_dart_test_import_guard_test.dart` | `test/` 全树（沿 import 闭包） | 闭包碰不到 `dart:ui` 的测试必须用 `package:test`、不 import flutter_test（本机 `heavy.dart` 据此改走 `dart test`；自带 `>1000` 规模下界） |
 | `test/pages/library_view_labels_unique_test.dart` | `lib` 全树 | 库页壳的视图标签全仓唯一（新壳自动入网） |
 | `test/pages/open_in_anki_wiring_static_test.dart` | `lib` 全树 + `packages/fushi_anki/lib` | 「按词打开 Anki」只有登记的三条车道，禁第二处自制反查拼装（BUG-2051） |
 | `test/shortcuts/video_pointer_channel_reachability_test.dart` | `lib` 全树 | 视频指针通道的每条腿都得有真宿主接住（两处 `expectScanScale`） |
@@ -237,6 +238,7 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/tools/outbound_http_discipline_guard_test.dart \
   test/utils/share_entry_point_guard_test.dart \
   test/dictionary/parked_realm_host_registration_guard_test.dart \
+  test/build/pure_dart_test_import_guard_test.dart \
   test/lookup/popup_static_revision_dedup_guard_test.dart \
   test/models/preference_keys_guard_test.dart \
   test/pages/legacy_video_scrape_surface_guard_test.dart \

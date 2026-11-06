@@ -13,7 +13,7 @@
 // 滚动能成立的前提：排版必须从 text_rect_.top 起画，滚动才等于平移绘制原点。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String src = File(

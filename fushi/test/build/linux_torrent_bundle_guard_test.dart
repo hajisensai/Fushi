@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Linux 桌面包随包内置 torrent 引擎的两端契约：
 ///  * runner CMake 把 `native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so`

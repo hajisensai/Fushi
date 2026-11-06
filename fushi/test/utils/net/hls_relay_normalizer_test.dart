@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 
 /// BUG-2609：中继对视频源扩展流的两项归一化（伪装分片剥前缀 / 播放列表改写）的

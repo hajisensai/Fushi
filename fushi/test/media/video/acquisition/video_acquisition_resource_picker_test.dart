@@ -1,5 +1,5 @@
 // AI 下视频：资源选择层的确定性规则（画质过滤 / 订阅可行性 / 下载选集）。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';

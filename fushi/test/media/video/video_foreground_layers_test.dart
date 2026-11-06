@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_foreground_layers.dart';
 
 /// BUG-1862：视频页「返回上一级」的逐级退出层序。

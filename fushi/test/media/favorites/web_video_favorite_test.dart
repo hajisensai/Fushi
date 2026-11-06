@@ -2,7 +2,7 @@
 // 收藏夹能跳回原网页的时间点。钉住：URL 规范化（收藏身份）、跳回地址生成（按站点带时间
 // 参数 / 不支持的站点只开原网页）、扩展请求体解析、切换 / 只读读写真库。
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';

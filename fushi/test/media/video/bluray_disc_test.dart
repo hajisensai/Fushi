@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:path/path.dart' as p;

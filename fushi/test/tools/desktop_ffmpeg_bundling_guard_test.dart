@@ -19,7 +19,7 @@
 // iOS/Android 不在此列：移动端走 KitFfmpegBackend（进程内 FFmpegKitNext）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 const List<String> _desktopPlatforms = <String>['windows', 'macos', 'linux'];
 

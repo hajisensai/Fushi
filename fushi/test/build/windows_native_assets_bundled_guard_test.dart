@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2419 守卫：Windows bundle 必须带上 native assets（具体地说：`pdfium.dll`），
 /// 且 PDFium 不可加载时必须**报错而不是挂死**。

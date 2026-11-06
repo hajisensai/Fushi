@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1908：galgame 浮窗里制卡失败**完全没有提示**（用户 2026-08-28：
 /// 「gal制卡报错没有明显提示」）。

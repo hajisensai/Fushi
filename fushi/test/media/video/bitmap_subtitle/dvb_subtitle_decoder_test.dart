@@ -2,7 +2,7 @@
 // 像素串与默认映射表，page_time_out 与清屏集给结束时间，同内容重发并成一条。
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/dvb_subtitle_decoder.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/dvd_subtitle_decoder.dart'

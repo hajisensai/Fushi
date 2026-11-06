@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-815）：桌面「数据位置未响应」逃生屏 + 显式用默认位置启动的接线不被回退。
 ///

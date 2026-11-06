@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1028 / BUG-481: a native double-click that establishes a text selection
 /// must NOT hijack single-tap lookup, and must NOT block the furigana whole-page

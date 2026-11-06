@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1128 回归守卫（源码扫描）：图片章嵌正文（方案 A）开启后，被吸收的单图片章
 /// 不得在任何导航路径被当独立页加载——否则它自己的单图页（第 1 份）+ 宿主正文顶部

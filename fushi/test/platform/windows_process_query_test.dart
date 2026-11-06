@@ -9,7 +9,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 
 /// 当前进程 exe 的 basename，如 `flutter_tester.exe`。

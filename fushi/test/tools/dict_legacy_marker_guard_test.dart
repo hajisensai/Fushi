@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// fushidicts 查询侧必须继续认存量的 `.hoshidicts_1` 完成标记。
 ///

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_video_subtitle_recognizer.dart';

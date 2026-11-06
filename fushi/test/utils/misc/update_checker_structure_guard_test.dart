@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-584 结构守卫：update_checker.dart 已拆成 barrel library + 5 个 part 文件
 /// （`part of 'update_checker.dart';`）。这套守卫固化拆分后的不变式，防止后续改动

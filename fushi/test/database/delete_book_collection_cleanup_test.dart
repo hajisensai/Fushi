@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v83 顺手修的历史缺口守卫（data-layer-stage2-plan.md §7.7）：

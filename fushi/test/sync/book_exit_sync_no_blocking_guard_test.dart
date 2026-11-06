@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-132 诉求B 源码守卫：退出书同步必须 fire-and-forget 不阻塞 UI，且不弹打断式
 /// 「同步成功」SnackBar（用户报的「退出书后必须等同步成功条才能离开」=卡手）。

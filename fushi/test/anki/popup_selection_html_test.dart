@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// `{popup-selection-html}`（反馈 aBgKMjhfut / BUG-4049 方案 B）的 popup.js 行为守卫：
 /// node 真执行 popup.js 抽出的 snapshotSelectionHtml / serializeSelectionHtml /

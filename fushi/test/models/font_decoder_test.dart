@@ -1,7 +1,7 @@
 import 'dart:io' show zlib;
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/models/font_decoder.dart';
 
 /// One table for the test WOFF encoder.

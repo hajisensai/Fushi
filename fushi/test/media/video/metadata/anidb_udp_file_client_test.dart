@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 
 const String _hash = '0123456789abcdef0123456789abcdef';

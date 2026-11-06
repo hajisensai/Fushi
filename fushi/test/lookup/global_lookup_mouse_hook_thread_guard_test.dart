@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1048 的静态守卫：全局查词浮窗的 `WH_MOUSE_LL` 必须装在**专用线程**上。
 ///

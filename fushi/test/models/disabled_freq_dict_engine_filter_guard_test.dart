@@ -26,7 +26,7 @@
 // restarting and confirm the frequency tag is gone) is still required.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   late String src;

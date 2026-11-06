@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 查词弹窗「渲染尾巴」行为守卫（Node 真执行 popup.js，见同名 .js）。
 ///

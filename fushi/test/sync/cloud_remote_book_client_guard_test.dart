@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（TODO-665 阶段1）：CloudRemoteBookClient 的契约纪律。
 ///

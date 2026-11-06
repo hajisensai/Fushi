@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // 守卫：lib/ 下新代码禁止直接构造 Material / Cupertino 交互控件（按钮 / 开关 /
 // 复选 / 单选 / 滑块 / chip / 分段 / 进度 / FAB），一律走设计系统包装

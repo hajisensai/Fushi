@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：阅读器与视频两张「快速设置」sheet 的外壳骨架已抽到共享
 /// `FushiMasterDetailSettingsSheet`（TODO-583，零行为变化）。锁住下沉的骨架字符串

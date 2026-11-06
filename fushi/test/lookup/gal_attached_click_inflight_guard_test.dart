@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2674 / BUG-2675: a glyph click waits ~200 ms for the injected shield to
 /// acknowledge its down. A sync inside that window used to treat the pending

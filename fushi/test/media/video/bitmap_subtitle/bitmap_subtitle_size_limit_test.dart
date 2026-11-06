@@ -2,7 +2,7 @@
 // kBitmapSubtitleMaxDimension 时当损坏数据丢掉，不按 65535×65535 去分配 4 GB 平面。
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/dvb_subtitle_decoder.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';

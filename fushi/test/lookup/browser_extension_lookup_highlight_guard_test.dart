@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1150 守卫：浏览器扩展查词「弹窗钉在被查词旁 + 高亮词」（yomitan 式）源码扫描。
 /// 不依赖真机/真浏览器，守住实现不被回退到「贴鼠标坐标、无高亮」。两份扩展镜像

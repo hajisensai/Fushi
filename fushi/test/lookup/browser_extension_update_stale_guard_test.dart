@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1079 守卫（源码扫描）：扩展自更新失败不再永久静默，且版本感知双向闭环。
 ///

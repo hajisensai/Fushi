@@ -11,7 +11,7 @@
 // 这里用 MockClient 离线重现「watch page 降级」这一外部状态，驱动真实兜底链。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;

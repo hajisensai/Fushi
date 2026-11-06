@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-108 + BUG-363 (TODO-643): in the dictionary popup, furigana (<ruby>'s
 // <rt>) inside a glossary body must reserve vertical room so it never overlaps

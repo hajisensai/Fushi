@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1366：手机拖选选区菜单补「导出片段」守卫（自绘拖选 TODO-1317/BUG-624 的遗留缺口）。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1239 源码守卫：自定义应用图标选图必须走 `file_picker`，不得用
 /// `image_picker`。

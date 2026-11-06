@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 
 /// 互联「制卡到服务端」转发载体的序列化守卫。核心不变式：

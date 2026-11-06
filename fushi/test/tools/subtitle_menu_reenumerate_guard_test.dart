@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Guards the BUG-939 fix: opening the video "字幕" (subtitle track) category must
 /// NOT re-run the ffprobe enumeration (`_subtitleSourcesForMenu`) every time, and

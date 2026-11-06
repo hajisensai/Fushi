@@ -2,7 +2,7 @@
 // 重复 / 缺失补齐 / 坏 JSON 恒等）、三种提示词含全部候选下标、请求函数只喂前 30 条。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

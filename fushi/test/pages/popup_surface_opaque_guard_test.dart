@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码扫描守卫（BUG-818）：独立查词浮窗（`lib/popup_main.dart` 宿主 `PopupDictionaryPage`）
 /// 跑在**完全透明的浮动窗**里（圆角+阴影靠内部卡片画），窗内唯一背景是 `_buildCard` 的

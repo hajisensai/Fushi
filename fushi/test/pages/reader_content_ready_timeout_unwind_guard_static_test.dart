@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-868 源码守卫：打开 EPUB 偶发「看似打开、翻页永久失效、进度不保存」。
 ///

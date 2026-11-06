@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/utils/misc/directory_bytes.dart';
 import 'package:path/path.dart' as p;
 

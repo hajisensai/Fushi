@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 

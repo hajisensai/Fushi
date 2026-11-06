@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1742 接线守卫：VN 模式下**非 sasayaki 书**的有声书自动跟随。
 ///

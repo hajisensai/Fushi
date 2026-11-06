@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2260 守卫：Netflix 年龄分级/内容提示 overlay（左上角 "RATED 13+ / 暴力, 自杀"）的
 /// DOM 已改为

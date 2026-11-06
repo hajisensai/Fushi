@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 查词弹窗 M3 Expressive 设计令牌守卫（用户 2026-10-05：Material 一律 M3E）。
 ///

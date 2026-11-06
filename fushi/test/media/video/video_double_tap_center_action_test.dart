@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
 
 /// 双击落空（中带；或「双击快退快进」关闭时画面任意位置）的分流判据。

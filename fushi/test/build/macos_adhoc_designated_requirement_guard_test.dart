@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// ad-hoc 签名的 macOS 包默认指定要求是 cdhash，每次构建都变，TCC（辅助功能）
 /// 授权因此每次更新都失效——全局查词要重新授权。发布工作流必须在所有 bundle 改动

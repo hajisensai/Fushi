@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3913 源码守卫：Windows WebView 的共享目标纹理与 WGC 帧池按容量分配。
 ///

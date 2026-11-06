@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 

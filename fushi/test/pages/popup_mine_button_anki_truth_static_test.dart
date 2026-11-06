@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-186 (TODO-084/087): the popup mine button's "已制卡 ✓ / 可制卡 +" state is
 // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.

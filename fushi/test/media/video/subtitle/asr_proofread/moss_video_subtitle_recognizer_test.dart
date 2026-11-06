@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart' show SubtitleCue;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_video_subtitle_recognizer.dart';

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-744: 查词音频「要等一会才出来」= 真实串行 IO 叠加。这一组源码守卫钉住
 /// 三处复用优化，防止回归到「每次都重新建」的慢路径：

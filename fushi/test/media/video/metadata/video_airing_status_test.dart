@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 

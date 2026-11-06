@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Guards the Windows runner display-recovery fix (TODO-689): repaint the window
 /// when a monitor powers on or the display topology changes, so the app does not
