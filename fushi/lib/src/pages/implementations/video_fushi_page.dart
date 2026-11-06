@@ -2389,10 +2389,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _webAudioUserChosen = false;
 
   /// 待恢复的重放前状态（[VideoFushiPage.webReturnState]）；逐拍对齐，见 `_applyWebPendingRestore`。
-  WebMineReturnState? _webPendingRestore;
-  DateTime? _webPendingRestoreDeadline;
-  DateTime? _webLastRestoreActionAt;
-  bool _webRestoreNavigated = false;
+  WebMineRestoreTracker? _webPendingRestore;
   String? _webAudioAutoVideoKey;
 
   /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。

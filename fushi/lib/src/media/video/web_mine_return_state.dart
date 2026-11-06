@@ -107,3 +107,98 @@ bool webMineRestoreDone(WebMineRestorePlan plan) =>
     plan.selectTextTrack == null &&
     plan.selectAudioTrack == null &&
     plan.seekMs == null;
+
+/// 每项恢复动作（选字幕轨 / 选音轨 / seek）最多下发几次：首发 + 一次补发。
+const int kWebMineRestoreMaxAttempts = 2;
+
+/// 同一项动作补发前至少等多久：Netflix 的 seek 回执最长 4 s（bridge 超时），站点轨切换也要
+/// 几拍才报回来。比这更快就补发，等于对一个还在途的重定位再叠一次。
+const Duration kWebMineRestoreRetryGap = Duration(seconds: 4);
+
+/// 整轮恢复的期限：过了还没对齐就放弃（用户已经在自己操作了）。
+const Duration kWebMineRestoreDeadline = Duration(seconds: 30);
+
+/// 一轮恢复的进度：把 [planWebMineRestore] 的结果按「每项最多 [kWebMineRestoreMaxAttempts]
+/// 次、补发间隔 [kWebMineRestoreRetryGap]、导航只一次」过滤成这一拍真正要下发的动作。
+///
+/// 以前两处宿主各自「每秒对齐一次、最长 30 s」：位置差超过容差就每秒再 seek 一次、轨每秒重选
+/// 一次。对 Netflix 来说就是一串叠在一起的重定位 / 切轨，正常网页客户端不会这样操作。
+class WebMineRestoreTracker {
+  WebMineRestoreTracker(this.want, {required DateTime now})
+    : _deadline = now.add(kWebMineRestoreDeadline);
+
+  final WebMineReturnState want;
+  final DateTime _deadline;
+  bool _navigated = false;
+  final Map<String, ({int count, DateTime at})> _sent =
+      <String, ({int count, DateTime at})>{};
+
+  /// 已经观察到对齐过的项：之后不再为它出动作。否则 seek 落地后站点自动续播、轨又迟迟没报回
+  /// 来时，位置漂出容差会再触发一次 seek，把用户拉回去。
+  final Set<String> _settled = <String>{};
+
+  /// 这一拍要下发的动作；返回 null = 这轮恢复结束（已对齐 / 过期 / 剩下的动作都用完次数），
+  /// 调用方丢掉本对象。
+  WebMineRestorePlan? step(WebVideoPlaybackState state, DateTime now) {
+    if (now.isAfter(_deadline)) return null;
+    if (!state.hasVideo) return _idle;
+    final WebMineRestorePlan plan = planWebMineRestore(want, state);
+    if (webMineRestoreDone(plan)) return null;
+    final String? href = plan.navigateHref;
+    if (href != null) {
+      if (_navigated) return _idle; // 等导航后的新一集报上来
+      _navigated = true;
+      return (
+        navigateHref: href,
+        selectTextTrack: null,
+        selectAudioTrack: null,
+        seekMs: null,
+      );
+    }
+    // seek：位置已知且在容差内即对齐；轨：发过之后计划里不再有它即对齐（没发过时计划为空
+    // 可能只是轨清单还没加载，不算）。
+    if (plan.seekMs == null && state.positionMs != null) _settled.add('seek');
+    if (plan.selectTextTrack == null && _sent.containsKey('text')) {
+      _settled.add('text');
+    }
+    if (plan.selectAudioTrack == null && _sent.containsKey('audio')) {
+      _settled.add('audio');
+    }
+    bool exhausted = true;
+    bool allow(String key, Object? value) {
+      if (value == null || _settled.contains(key)) return false;
+      final ({int count, DateTime at})? prev = _sent[key];
+      if (prev != null && prev.count >= kWebMineRestoreMaxAttempts) {
+        return false;
+      }
+      exhausted = false;
+      if (prev != null && now.difference(prev.at) < kWebMineRestoreRetryGap) {
+        return false;
+      }
+      _sent[key] = (count: (prev?.count ?? 0) + 1, at: now);
+      return true;
+    }
+
+    final String? text = allow('text', plan.selectTextTrack)
+        ? plan.selectTextTrack
+        : null;
+    final String? audio = allow('audio', plan.selectAudioTrack)
+        ? plan.selectAudioTrack
+        : null;
+    final int? seek = allow('seek', plan.seekMs) ? plan.seekMs : null;
+    if (exhausted) return null;
+    return (
+      navigateHref: null,
+      selectTextTrack: text,
+      selectAudioTrack: audio,
+      seekMs: seek,
+    );
+  }
+
+  static const WebMineRestorePlan _idle = (
+    navigateHref: null,
+    selectTextTrack: null,
+    selectAudioTrack: null,
+    seekMs: null,
+  );
+}
