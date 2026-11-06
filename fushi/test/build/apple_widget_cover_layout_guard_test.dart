@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4124：iOS 灵动岛 / 主屏小组件的封面与布局不变式。
 ///
