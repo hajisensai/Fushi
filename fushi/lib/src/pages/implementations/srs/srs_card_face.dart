@@ -33,6 +33,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show isValidFontData, kReaderWebViewCreationFailedSentinel;
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
@@ -1863,8 +1864,11 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
 }
 
 class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
-    implements SrsCardLookupSurface {
+    implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   InAppWebViewController? _controller;
+
+  @override
+  Object? get popupBodyWebViewId => _controller?.getViewId();
 
   /// 卡面查词（[SrsCardLookupScope] 给出；null = 这面卡不取词，如外观页预览、正面预热的
   /// 释义 WebView）。
@@ -2505,6 +2509,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                 _interceptCustomScheme(request),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
+          _lookup?.bodyWebViewChanged(this);
           _sync.detach();
           _noteViewCreated();
           assert(() {

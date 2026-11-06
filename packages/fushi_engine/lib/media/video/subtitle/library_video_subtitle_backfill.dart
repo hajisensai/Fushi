@@ -25,9 +25,9 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart'
+import 'package:fushi_engine/media/video/subtitle/scraped_subtitle_targets.dart'
     show identityMediaReference;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 
 /// 给 [videoId] 补一条字幕。视频不存在返回 null。
 ///

@@ -194,4 +194,32 @@ void main() {
     expect(layout.logicalWidth, 2048);
     expect(layout.logicalHeight, 1152);
   });
+
+  group('largestDisplayCapacity（不经 FlutterView.display，反馈 eZMo2PT6c_）', () {
+    test('多块显示器：宽高各取最大，物理像素取整', () {
+      expect(
+        largestDisplayCapacity(<({double width, double height})>[
+          (width: 1920, height: 1080),
+          (width: 2559.6, height: 1439.4),
+          (width: 1080, height: 1920),
+        ]),
+        (width: 2560, height: 1920),
+      );
+    });
+
+    test('引擎一块显示器都没报：0 = 无上限，扩容只取整不封顶', () {
+      const TextureCapacity none = (width: 0, height: 0);
+      expect(
+        largestDisplayCapacity(const <({double width, double height})>[]),
+        none,
+      );
+      final TextureCapacity grown = nextTextureCapacity(
+        current: (width: 1000, height: 800),
+        needed: (width: 1200, height: 900),
+        display: none,
+      );
+      expect(grown.width, greaterThanOrEqualTo(1500));
+      expect(grown.height, greaterThanOrEqualTo(1200));
+    });
+  });
 }
