@@ -117,6 +117,10 @@ void main() {
             'DELETE',
             '/api/admin/pairing/peers/peer%201',
           ),
+          <String>['pairing', 'owner', 'peer 1', 'on']: (
+            'PUT',
+            '/api/admin/pairing/peers/peer%201/owner',
+          ),
           <String>['libraries', 'ls']: ('GET', '/api/admin/libraries'),
           <String>['jobs', 'rm', 'j1']: ('DELETE', '/api/admin/jobs/j1'),
           <String>['downloads']: ('GET', '/api/admin/downloads'),
