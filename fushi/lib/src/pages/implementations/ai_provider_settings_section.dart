@@ -1723,7 +1723,9 @@ class _AiProviderSettingsSectionState
     // 裸 `http.Client()` 既绕过应用代理与连接超时（用户在代理环境下会遇到
     // 「浏览正常、点测试连接却失败」这种自相矛盾的结果），也会被
     // `test/tools/outbound_http_discipline_guard_test.dart` 判红。
-    final AiChatClient client = widget.clientFactory?.call() ?? AiChatClient();
+    final AiChatClient client =
+        widget.clientFactory?.call() ??
+        AiChatClient(relayTransport: widget.relayTransport);
     _ProbeState result;
     List<String>? models;
     try {
