@@ -3847,7 +3847,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     )) {
       return;
     }
-    unawaited(_controller?.play());
+    unawaited(_controller?.resumePlayback());
   }
 
   /// 进程退出统一 flush（TODO-086/BUG-191）。把当前播放位置写穿（[flushPosition]
@@ -7872,7 +7872,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       caretHoldsPause: _videoCaretActive,
     )) {
       _pausedForLookup = false;
-      unawaited(_controller?.play());
+      unawaited(_controller?.resumePlayback());
     }
     // 浮层栈全空 = 查词结束，键盘所有权回到视频。浮层 WebView（原生控件）/遮罩
     // 夺走的焦点不会自动归还；这里与「恢复播放」共用同一个关栈汇聚点，覆盖点遮罩 /

@@ -5384,9 +5384,36 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   /// 开始播放（未 load 时 no-op 安全）。
+  ///
+  /// 这是**用户显式播放**（播放键 / 空格 / 遥控「播放」/「从这里继续观看」）：媒体已
+  /// 自然播完时照常执行——media_kit 的 `play()` 在 `completed` 态会先 seek 回 0 再播，
+  /// 那正是「播完再按播放 = 重看」的预期。本页替临时暂停续播走 [resumePlayback]。
   Future<void> play() async {
     _notePlaybackIntent(true);
     await _player?.play();
+  }
+
+  /// 媒体是否停在自然播完处：EOF 之后、还没被 seek / 换片拉离结尾
+  /// （media_kit `state.completed`；seek 与新开片都会把它清回 false）。
+  ///
+  /// 自动连播的「N 秒后播放下一集」倒计时只在这个状态里起（[setOnCompleted] 的回调），
+  /// 所以倒计时期间它恒为 true（倒计时中用户自己 seek 回去则不再是「播完」）。
+  bool get isAtNaturalEnd => _player?.state.completed ?? false;
+
+  /// **自动续播**：把本页替某个临时状态停下的播放续上（查词浮层关闭、选词光标退出、
+  /// 回前台、编辑对话框关闭）。与 [play] 分开语义——这些路径恢复的是「暂停前那段播放」，
+  /// 不是用户此刻按下的播放。
+  ///
+  /// 媒体已自然播完（[isAtNaturalEnd]，含下一集倒计时期间）时不执行、返回 false：那段
+  /// 播放已经播完，没有可续的东西；而底层 `play()` 在 completed 态会 seek 回 0，把当前
+  /// 视频从头重播（反馈 ji9GSMzD4E）。暂停指令是 fire-and-forget 的，片尾最后一刻起的
+  /// 查词会出现「暂停还没落地 EOF 先到」，回头的续播就撞上这个状态。
+  ///
+  /// 返回是否真的下发了播放。未 load 时 no-op 安全（返回 false）。
+  Future<bool> resumePlayback() async {
+    if (_player == null || isAtNaturalEnd) return false;
+    await play();
+    return true;
   }
 
   /// 暂停（未 load 时 no-op 安全）。

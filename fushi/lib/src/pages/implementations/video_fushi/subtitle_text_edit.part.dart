@@ -70,7 +70,7 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
       await _saveCueTextOverride(cue, edited);
     }
     if (wasPlaying && mounted && identical(_controller, controller)) {
-      await controller.play();
+      await controller.resumePlayback();
     }
   }
 
