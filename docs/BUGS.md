@@ -33,17 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3756 条。点号进各自文件。
-> 共 3727 条。点号进各自文件。
+> 共 3757 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4127](bugs/BUG-4127-music-desktop-lyric-fixed-two-lines.md) | ✅ | ✅ | Music desktop lyric always shows two lines; ignores Sentences shown |
-| [BUG-4127](bugs/BUG-4127-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
-> 共 3729 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4157](bugs/BUG-4157-music-desktop-lyric-fixed-two-lines.md) | ✅ | ✅ | Music desktop lyric always shows two lines; ignores Sentences shown |
 | [BUG-4156](bugs/BUG-4156-movie-pack-main-by-title.md) | ✅ | ✅ | movie-pack-main-by-title |
 | [BUG-4155](bugs/BUG-4155-video-secondary-forced-anchor-overlaps-pos.md) | ✅ | ✅ | 副字幕被强制置顶后与同轨顶部定位字幕叠字、控制条显隐时一个动一个不动 |
 | [BUG-4154](bugs/BUG-4154-background-tasks-sheet-edge-and-srs-stats-narrow.md) | ✅ | ✅ | 后台任务弹层行贴边 / 复习页窄屏统计卡并排挤压 |
