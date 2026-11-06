@@ -5,7 +5,8 @@
 // 真实选区也照不到真实剪贴板。能在最强可落地层锁住的，是「实现必须保持这几条不变式」：
 //   ① 右键菜单的选区必须在**右键那一刻**取快照，不能在 `await showMenu` 之后才读；
 //   ② 空选区不得**静默**早退（必须有反馈），成功复制必须有反馈；
-//   ③ Windows 弹窗必须挂 Ctrl+C 兼容层，且判据复用与阅读器同一个纯谓词。
+//   ③ 桌面弹窗必须挂复制键兼容层（Windows Ctrl+C、macOS ⌘C，BUG-4127），且判据复用
+//      与阅读器同一个纯谓词；这层不得被包进 Windows 专属分支。
 // 纯谓词本身的真值表已由 test/shortcuts/reader_desktop_copy_test.dart 覆盖，此处不重复。
 import 'dart:io';
 
@@ -92,7 +93,7 @@ void main() {
     });
   });
 
-  group('BUG-1451 ③ Windows Ctrl+C 兼容层', () {
+  group('BUG-1451 / BUG-4127 ③ 桌面复制键兼容层', () {
     test('弹窗挂了 onKeyEvent 复制兼容层', () {
       expect(
         code.contains('onKeyEvent: _handleDesktopCopyKey'),
@@ -103,11 +104,42 @@ void main() {
       );
     });
 
-    test('判据复用与阅读器同一个纯谓词，不另起一套键位', () {
+    test('复制拦截层不在 Windows 专属分支里（macOS 也要挂，BUG-4127）', () {
+      // 旧版把 Focus(onKeyEvent: _handleDesktopCopyKey) 写在 `if (isWindowsPlatform)` 分支
+      // 里，macOS 弹窗根本没有这层，⌘C 只能落到菜单 Edit > Copy → first responder
+      // FlutterView（BUG-2948），WKWebView 收不到 copy:。平台判定只许留在谓词里。
+      final int guardedIdx = code.indexOf('final Widget guardedWebView = ');
       expect(
-        code.contains('readerShouldHandleDesktopCopy('),
+        guardedIdx,
+        greaterThan(0),
+        reason: 'guardedWebView 必须是单一赋值（不再按平台分支各写一份）',
+      );
+      final int end = code.indexOf('return LayoutBuilder(', guardedIdx);
+      expect(end, greaterThan(guardedIdx));
+      final String guarded = code.substring(guardedIdx, end);
+      expect(guarded.contains('onKeyEvent: _handleDesktopCopyKey'), isTrue);
+      expect(
+        guarded.contains('isWindowsPlatform'),
+        isFalse,
+        reason: '复制拦截层不得按 isWindowsPlatform 包裹，平台判定只在谓词里做一次',
+      );
+    });
+
+    test('判据复用与阅读器同一个纯谓词，不另起一套键位', () {
+      final String body = methodBody(
+        code,
+        'KeyEventResult _handleDesktopCopyKey',
+      );
+      expect(
+        body.contains('desktopShouldHandleCopyGesture('),
         isTrue,
         reason: '两条复制路径断在同一平台事实上，判据必须同源，否则会漂开。',
+      );
+      expect(
+        body.contains('isWindows: isWindowsPlatform') &&
+            body.contains('isMacOS: isMacOSPlatform'),
+        isTrue,
+        reason: '谓词必须同时拿到 Windows 与 macOS 平台事实（BUG-4127：macOS ⌘C 也要接管）。',
       );
       expect(
         code.contains(
@@ -136,10 +168,11 @@ void main() {
         LogicalKeyboardKey key,
         Set<ModifierKey> mods, {
         bool isWindows = true,
-      }) => readerShouldHandleDesktopCopy(
+      }) => desktopShouldHandleCopyGesture(
         key: key,
         modifiers: mods,
         isWindows: isWindows,
+        isMacOS: false,
       );
 
       expect(
@@ -160,7 +193,7 @@ void main() {
         }),
         isFalse,
       );
-      // 非 Windows 的原生 WebView 自带 copy，接管会双重处理。
+      // Linux / 移动端不接管（macOS 走 ⌘C，见 reader_desktop_copy_test.dart）。
       expect(
         hit(LogicalKeyboardKey.keyC, <ModifierKey>{
           ModifierKey.ctrl,

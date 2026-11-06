@@ -39,7 +39,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
-    show readerShouldHandleDesktopCopy;
+    show desktopShouldHandleCopyGesture;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
@@ -4048,38 +4048,35 @@ JSON.stringify((function(){
 
     // TODO-896 症状②：Windows 上原生 WebView2 菜单已禁（hideDefaultSystemContextMenuItems
     // = isWindowsPlatform），右键改由 Flutter 层 [showMenu] 接管，锚点经 BUG-261 范式映射到
-    // appUiScale 空间。非 Windows 平台不包 GestureDetector，保持原生菜单行为不变。
+    // appUiScale 空间。非 Windows 平台不包 ContextMenuTrigger，保持原生菜单行为不变。
     // [HitTestBehavior.translucent] 让右键之外的所有指针事件照常落到 WebView（不抢左键
     // 框选 / 滚动 / 点击）。
-    final Widget guardedWebView;
+    Widget menuWrappedWebView = webView;
     if (isWindowsPlatform) {
-      guardedWebView = KeyedSubtree(
-        key: _deathGuard.rebuildKey,
-        child: Focus(
-          // BUG-1451 键盘那一半（BUG-402 当年只修了阅读器正文，弹窗漏修）：Windows 的
-          // WebView2 走合成模式，fork 只转发鼠标、**不转发键盘**，所以弹窗里按 Ctrl+C
-          // 永远到不了 WebView2、浏览器原生 copy 永不触发。但这一按键**一定**会到
-          // Flutter（平台视图的 FocusNode 是本节点的后代，KeyEvent 沿焦点链向上冒泡），
-          // 在这里接住即可。`canRequestFocus:false` + `skipTraversal`：只做拦截，不参与
-          // 遍历、不抢焦点，与 BUG-1347 那层宿主键桥同范式、互不干扰（它只转发宿主
-          // 动作 token，不含 Ctrl+C）。
-          canRequestFocus: false,
-          skipTraversal: true,
-          onKeyEvent: _handleDesktopCopyKey,
-          child: ContextMenuTrigger(
-            // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-            onInvoke: (Offset position) =>
-                _showWindowsContextMenu(context, position),
-            child: webView,
-          ),
-        ),
-      );
-    } else {
-      guardedWebView = KeyedSubtree(
-        key: _deathGuard.rebuildKey,
+      menuWrappedWebView = ContextMenuTrigger(
+        // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+        onInvoke: (Offset position) =>
+            _showWindowsContextMenu(context, position),
         child: webView,
       );
     }
+    // BUG-1451 键盘那一半 + BUG-4127：复制键到不了 WebView 的原生 copy——Windows 的
+    // WebView2 走合成模式，fork 只转发鼠标、**不转发键盘**；macOS 的 first responder
+    // 始终是 FlutterView（BUG-2948 真机取证），菜单 Edit > Copy 的 `copy:` 到不了
+    // WKWebView。但这一按键**一定**会到 Flutter（KeyEvent 沿焦点链向上冒泡），在这里
+    // 接住即可。是否接管全由平台谓词 [desktopShouldHandleCopyGesture] 决定，所以本层
+    // 不按平台包裹：其它平台谓词恒 false、原样冒泡。`canRequestFocus:false` +
+    // `skipTraversal`：只做拦截，不参与遍历、不抢焦点，与 BUG-1347 那层宿主键桥同范式、
+    // 互不干扰（它只转发宿主动作 token，不含复制键）。
+    final Widget guardedWebView = KeyedSubtree(
+      key: _deathGuard.rebuildKey,
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleDesktopCopyKey,
+        child: menuWrappedWebView,
+      ),
+    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         _capturePopupLayout(constraints);
@@ -4088,20 +4085,22 @@ JSON.stringify((function(){
     );
   }
 
-  /// Windows 弹窗内的「Ctrl+C 复制选中文字」兼容层（BUG-1451，BUG-402 同根）。
+  /// 桌面弹窗内的「复制选中文字」兼容层（BUG-1451 Windows Ctrl+C、BUG-4127 macOS ⌘C，
+  /// 与 BUG-402 同根）。
   ///
-  /// 判据复用阅读器正文那条**同一个纯谓词** [readerShouldHandleDesktopCopy]（Windows +
-  /// 仅 Ctrl + 键 C），两条复制路径不会漂开。未命中一律返回 [KeyEventResult.ignored]
+  /// 判据复用阅读器正文那条**同一个纯谓词** [desktopShouldHandleCopyGesture]（Windows
+  /// 仅 Ctrl / macOS 仅 ⌘ + 键 C），两条复制路径不会漂开。未命中一律返回 [KeyEventResult.ignored]
   /// 继续冒泡——弹窗内的制卡（Ctrl+Enter）、切词条、宿主的关词典键全部不受影响。
   ///
   /// 取的是**浏览器原生选区**（[_selectedTextAcrossFrames] 穿透同源 iframe），刻意不碰
   /// `window.fushiSelection`——那是查词高亮的另一套坐标/状态（BUG-368/402 注释）。
   KeyEventResult _handleDesktopCopyKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (!readerShouldHandleDesktopCopy(
+    if (!desktopShouldHandleCopyGesture(
       key: event.logicalKey,
       modifiers: activeModifierKeys(),
       isWindows: isWindowsPlatform,
+      isMacOS: isMacOSPlatform,
     )) {
       return KeyEventResult.ignored;
     }
