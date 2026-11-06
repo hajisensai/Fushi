@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show asrAudioProfileForJob, parseAsrAudioProfile;
+import 'package:fushi_server/src/self_update/server_self_updater.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
@@ -359,13 +360,20 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   if (!Platform.isWindows) {
     sigterm = ProcessSignal.sigterm.watch().listen(onSignal);
   }
-  await stop.future;
-  stdout.writeln('正在停止…');
+  bool selfUpdated = false;
+  await Future.any(<Future<void>>[
+    stop.future,
+    host.selfUpdateInstalled.then((_) => selfUpdated = true),
+  ]);
+  stdout.writeln(
+    selfUpdated ? '已装好新版服务端，正在停止以便服务管理器重启…' : '正在停止…',
+  );
   await sigint.cancel();
   await sigterm?.cancel();
   await admin?.stop();
   await host.stop();
-  return 0;
+  // 远程更新装完：非零退出码让 systemd（Restart=on-failure）/ 服务管理器拉起新版。
+  return selfUpdated ? kExitSelfUpdated : 0;
 }
 
 Future<void> _scanInBackground(AdminContext ctx) async {

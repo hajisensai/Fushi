@@ -139,6 +139,16 @@ void main() {
     expect((await json(res))['error'], 'https_required');
   });
 
+  test('远程自更新：端点接线（capabilities 报 hostUpdate），共享 token 被拒', () async {
+    final Map<String, dynamic> caps = await json(
+      await send('GET', '/api/capabilities'),
+    );
+    expect(caps['hostUpdate'], isTrue);
+    final HttpClientResponse res = await send('GET', '/api/host/update');
+    expect(res.statusCode, 403);
+    expect((await json(res))['error'], 'peer_token_required');
+  });
+
   test('游戏串流：路由回 game_stream_off，capabilities 报 gameStream: false', () async {
     final HttpClientResponse res = await send(
       'POST',

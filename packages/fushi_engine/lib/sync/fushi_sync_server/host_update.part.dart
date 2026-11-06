@@ -3,7 +3,7 @@ part of '../fushi_sync_server.dart';
 /// 远程更新域（反馈 Pp8XPyve0N）：`GET/POST /api/host/update`。
 ///
 /// 门禁顺序（每一道拒绝都带 `{"error": code}`，client 据此说清原因）：
-///   1. 装配方没接 [FushiSyncServer.hostSelfUpdater] → 404（老 host / 无头服务端）；
+///   1. 装配方没接 [FushiSyncServer.hostSelfUpdater] → 404（老 host）；
 ///   2. 必须是已配对 peer 的专属 token（共享 token 不收）→ 403 peer_token_required；
 ///   3. GET：回状态 + 给这个 peer 签一个一次性 nonce；
 ///   4. POST：平台门 → 用户开关 → 信任区（P2P / 公网拒）→ nonce 核销 → 交给

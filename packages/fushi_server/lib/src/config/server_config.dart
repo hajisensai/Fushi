@@ -105,6 +105,7 @@ class ServerConfig {
     this.scanScrape = true,
     this.profileTransfer = false,
     this.leaderboardLink = true,
+    this.remoteUpdate = false,
     this.tmdbApiKey,
     this.ai,
   });
@@ -222,6 +223,12 @@ class ServerConfig {
   /// 运行期现读，WebUI 改完即生效。
   final bool leaderboardLink;
 
+  /// 允许已配对设备经互联 `/api/host/update` 让本机下载并安装新版服务端（与 app 的
+  /// 「允许已配对设备远程更新本机」同一条默认：关）。只在发布包里可用（见
+  /// `self_update/`）；装完进程以退出码 75 退出，由 systemd / 服务管理器拉起新版。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool remoteUpdate;
+
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
   final String? tmdbApiKey;
@@ -266,6 +273,7 @@ class ServerConfig {
     bool? scanScrape,
     bool? profileTransfer,
     bool? leaderboardLink,
+    bool? remoteUpdate,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
@@ -299,6 +307,7 @@ class ServerConfig {
     scanScrape: scanScrape ?? this.scanScrape,
     profileTransfer: profileTransfer ?? this.profileTransfer,
     leaderboardLink: leaderboardLink ?? this.leaderboardLink,
+    remoteUpdate: remoteUpdate ?? this.remoteUpdate,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
   );
@@ -368,6 +377,7 @@ class ServerConfig {
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
       leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
+      remoteUpdate: _bool(map['remote_update']) ?? base.remoteUpdate,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
     );
@@ -416,6 +426,7 @@ class ServerConfig {
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
     b.writeln('leaderboard_link: $leaderboardLink');
+    b.writeln('remote_update: $remoteUpdate');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     }
