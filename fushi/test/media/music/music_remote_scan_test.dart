@@ -6,10 +6,12 @@ import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:path/path.dart' as p;
@@ -96,6 +98,7 @@ class _FixtureRemoteFs implements SourceFileSystem, SourceByteReader {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late FushiDatabase db;
   late Directory covers;
   late _FixtureRemoteFs fs;
@@ -104,6 +107,18 @@ void main() {
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     covers = Directory.systemTemp.createTempSync('music_remote_covers_');
+    // 经 SourceLibraryScanner 的路径用默认封面目录（AppPaths 文档根）。
+    AppPaths.debugResetDocumentsLayoutCache();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async => switch (call.method) {
+            'getApplicationDocumentsDirectory' => p.join(covers.path, 'docs'),
+            'getTemporaryDirectory' => p.join(covers.path, 'tmp'),
+            'getApplicationSupportDirectory' => p.join(covers.path, 'support'),
+            _ => null,
+          },
+        );
     fs = _FixtureRemoteFs(_fixtureLibrary());
     sourceId = await db.insertMediaSource(
       MediaSourcesCompanion.insert(
@@ -116,6 +131,12 @@ void main() {
     );
   });
   tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
+    AppPaths.debugResetDocumentsLayoutCache();
     await db.close();
     covers.deleteSync(recursive: true);
   });

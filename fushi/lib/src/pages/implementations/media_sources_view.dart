@@ -17,7 +17,8 @@
 // - 'manga'：SFTP/FTP/WebDAV/AList（整卷下载后导入，重扫有标题预检不重下载）；
 // - 'video'：SFTP / WebDAV / AList（条目按流媒体书原地入库播放：AList 起播前
 //   经 fs/get 换签名直链，SFTP 起播时登记进回环中继按偏移读，见
-//   sftp_stream_source.dart；FTP 没有按偏移读、拖不了进度条，扫描器也会拒绝）。
+//   sftp_stream_source.dart；FTP 没有按偏移读、拖不了进度条，扫描器也会拒绝）；
+// - 'music'：与视频同一组 SFTP / WebDAV / AList（标签按区间读、起播期取流）。
 // WebDAV 的 rootPath 即完整集合 URL（scheme/host/端口/路径都在里面），无需单独存
 // host/port（见 NetworkSourceFileSystem）。
 
@@ -182,10 +183,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 本域可选的网络传输：书/漫画四 transport 全通（远端文件下载后导入）；
   /// 视频是 SFTP、WebDAV 与 AList/OpenList（条目原地流播——AList 起播前经 fs/get
   /// 换签名直链，SFTP 经回环中继按偏移读；FTP 读不了区间，扫描器会拒）。
-  /// 音乐只认本地文件夹（扫描器对非 local 来源直接报错，见 `_scanMusicSource`）。
+  /// 音乐与视频同一组（反馈 QAondMh4M5）：远程扫描按区间读标签、起播期取流，FTP 读不了区间。
   List<String> get _networkTransports => switch (widget.mediaKind) {
-    'video' => const <String>['sftp', 'webdav', 'alist'],
-    'music' => const <String>[],
+    'video' || 'music' => const <String>['sftp', 'webdav', 'alist'],
     _ => const <String>['sftp', 'ftp', 'webdav', 'alist'],
   };
 
