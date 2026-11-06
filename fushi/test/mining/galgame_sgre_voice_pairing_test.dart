@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 
-/// BUG-4127（反馈 3drXfc4GFk，STEINS;GATE RE:BOOT）：SGRE 的 xWMA 资源语音由 native
+/// BUG-4130（反馈 3drXfc4GFk，STEINS;GATE RE:BOOT）：SGRE 的 xWMA 资源语音由 native
 /// 按场景页绑定事件 ID（`fushi_textseq<seq>`），宿主走事件 ID 精确层配对；无标记资源
 /// 仍只在原来的 [T-330, T-130] 窗内匹配——不为 SGRE 放宽时间窗（BUG-1605 教训）。
 void main() {

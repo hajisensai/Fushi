@@ -546,7 +546,7 @@ void TestGameStreamRemoteKeys() {
          deferred == 8);
 }
 
-// BUG-4127 — SGRE publishes a line only once the typewriter has revealed it,
+// BUG-4130 — SGRE publishes a line only once the typewriter has revealed it,
 // while its voice starts with the page. The page start (first glyph) is the
 // text timestamp, and a voice is named after the page it played on.
 void TestScenarioPageVoiceBinding() {
@@ -631,7 +631,7 @@ void TestScenarioPageVoiceBinding() {
   assert(decision.state == VoiceResourcePairState::kUnselected);
 }
 
-// BUG-4127 review — a page whose line was fully revealed before a voice
+// BUG-4130 review — a page whose line was fully revealed before a voice
 // started never owns that voice, so the next line's voice (its text fading in
 // later than the lead) is not handed to the line still on screen; a voice that
 // started while a page was being typed (every case the host's old

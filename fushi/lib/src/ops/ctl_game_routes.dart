@@ -1515,7 +1515,7 @@ class _GameCtl {
             excluded: snap.state.excludedAudioSourcePtrs.contains(t.sourcePtr),
           ),
       ],
-      // BUG-4127 审查：只有真配上原件（matched / encoded）的行才这样描述；还在匹配
+      // BUG-4130 审查：只有真配上原件（matched / encoded）的行才这样描述；还在匹配
       // 或没配上的行没有任何资源字节。
       if (line.hasResourceAudio) 'note': '这句语音来自游戏资源直提，PCM 轨与它无关',
     };

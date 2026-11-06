@@ -1421,9 +1421,9 @@ void main() {
       );
     });
 
-    // BUG-4127 审查：「来自游戏资源直提」只描述真配上原件的行；还在匹配 / 没配上
+    // BUG-4130 审查：「来自游戏资源直提」只描述真配上原件的行；还在匹配 / 没配上
     // 但留着 backend 字样的行（折叠进来的旧事件、旧写法）不能被说成有资源原件。
-    test('BUG-4127 逐句音轨 note 只给已配上原件的行', () async {
+    test('BUG-4130 逐句音轨 note 只给已配上原件的行', () async {
       final _FakeHost host = engineHost(
         lines: <TexthookerLineEntry>[
           _line(

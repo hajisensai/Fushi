@@ -627,11 +627,11 @@ void main() {
     });
   }
 
-  // BUG-4127（反馈 3drXfc4GFk）：还在「匹配中」的行没有任何资源字节。即使它带着
+  // BUG-4130（反馈 3drXfc4GFk）：还在「匹配中」的行没有任何资源字节。即使它带着
   // backend=game_resource（修复前的待配对写法 / 折叠进来的旧事件），「本句音轨」面板
   // 也必须报状态「Matching」，不能报 game_resource；资源弹窗（带播放键）只给真配上
   // 原件的行。
-  test('BUG-4127 only a paired game resource counts as resource audio', () {
+  test('BUG-4130 only a paired game resource counts as resource audio', () {
     final TexthookerService service = TexthookerService.test();
     final TexthookerLineEntry line = service.appendLine('配対待ち')!;
     service.updateLineAudio(
@@ -663,7 +663,7 @@ void main() {
     expect(texthookerLineAudioSummary(row), 'game_resource');
   });
 
-  testWidgets('BUG-4127 pending line panel shows Matching, not game_resource', (
+  testWidgets('BUG-4130 pending line panel shows Matching, not game_resource', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 850));
@@ -693,9 +693,9 @@ void main() {
     expect(find.byTooltip("Play this line's audio"), findsNothing);
   });
 
-  // BUG-4127 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
+  // BUG-4130 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
   // 「无原件」标，不是红色「未匹配 / 无音频」故障标。
-  testWidgets('BUG-4127 resource-not-paired line shows a neutral tag', (
+  testWidgets('BUG-4130 resource-not-paired line shows a neutral tag', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 850));

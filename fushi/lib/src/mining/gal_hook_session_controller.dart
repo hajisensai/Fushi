@@ -3915,7 +3915,7 @@ class GalHookSessionController extends ChangeNotifier {
         _textService.updateLineAudio(
           lineId,
           status: TexthookerLineAudioStatus.missing,
-          // BUG-4127 审查：没配上原件就没有 game_resource 来源，backend 只在真拿到
+          // BUG-4130 审查：没配上原件就没有 game_resource 来源，backend 只在真拿到
           // 资源时才写（操作目录 / UI 都按它描述「来自游戏资源直提」）。
           fallbackReason: 'paired_voice_not_found_fallback_disabled',
         );
@@ -5736,7 +5736,7 @@ class GalHookSessionController extends ChangeNotifier {
             eventOwnedOnly: line.eventOwnedVoice,
           );
           _trimCache(_pendingResourceMatches);
-          // BUG-4127：还没配上的行不是 game_resource——backend 只在真的拿到资源
+          // BUG-4130：还没配上的行不是 game_resource——backend 只在真的拿到资源
           // （有 resourceId）时才写。以前这里先写了 backend，UI 就凭它弹出带播放键的
           // 资源弹窗、面板显示 game_resource，点了却没有声音。折叠进来的行若还带着
           // 上一条事件的 resourceId，也一并清掉：那个资源属于旧事件。
@@ -6433,7 +6433,7 @@ class GalHookSessionController extends ChangeNotifier {
               textEventId: pending.value.textEventId,
             );
       if (resourceId == null) {
-        // BUG-4127：「匹配中」必须有终态。后面已经有一句开始的时刻超出本句的配对
+        // BUG-4130：「匹配中」必须有终态。后面已经有一句开始的时刻超出本句的配对
         // 容差（带标资源 ±[kGalVoicePairingWindowMs]，无标记窗更窄），说明播放已经
         // 走过了这句的配对范围，再等也只是一直显示「匹配中」（无配音的旁白句在资源
         // 模式下尤其如此）。只把行状态收束成 missing，不撤出待匹配集合：资源晚落盘

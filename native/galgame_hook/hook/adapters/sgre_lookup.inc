@@ -157,7 +157,7 @@ uint32_t g_sgre_last_text_units = 0;
 // Text-lane seq of the last published exact line (duplicates keep it).
 uint64_t g_sgre_last_text_seq = 0;
 wchar_t g_sgre_last_text[kSgreLookupMaxTextUnits] = {};
-// Scenario-page identity for the exact lane (BUG-4127). Guarded by g_text_cs:
+// Scenario-page identity for the exact lane (BUG-4130). Guarded by g_text_cs:
 // the draw callback observes pages, the HookWorker binds voice resources.
 fushi_voice_hook::SgreScenarioPageTracker g_sgre_scenario_pages;
 static_assert(kSgreLookupMaxTextUnits <=
@@ -1422,7 +1422,7 @@ void ResetSgreExactTextDedup() {
 }
 
 // Records which scenario page this frame belongs to and returns the tick its
-// first glyph appeared (the line's text timestamp, BUG-4127).
+// first glyph appeared (the line's text timestamp, BUG-4130).
 uint64_t ObserveSgreScenarioPage(const SgreLookupCapture& snapshot) {
   if (!g_text_cs_ready || snapshot.text_units == 0) return 0;
   EnterCriticalSection(&g_text_cs);
@@ -1489,7 +1489,7 @@ uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
     write.hook_code = kSgreTextHookCode;
     // The line appeared when its first glyph did; that is also when its voice
     // starts. Publishing the reveal-complete tick put the text seconds after
-    // the voice on a slow typewriter (BUG-4127).
+    // the voice on a slow typewriter (BUG-4130).
     write.timestamp_ms = first_glyph_tick;
     const uint64_t published = fushi_voice_hook::WriteTextLaneEvent(
         g_header, fushi_voice_hook::kNativeThreadPreviewStart,

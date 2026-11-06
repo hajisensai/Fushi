@@ -273,7 +273,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
     if (line.hasResourceAudio) {
-      // BUG-4127：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
+      // BUG-4130：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
       // 行没有任何资源字节，弹这个带播放键的窗口只会让用户点了没声音。
       // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
       // -1.0、"这句时刻没有声音"）。列 PCM 轨只会被读成「音频没抓到」，所以这里
@@ -3670,7 +3670,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     const SizedBox(height: 10),
                     _MetadataRow(
                       label: t.game_health_audio,
-                      // BUG-4127：匹配中 / 未匹配的行报状态，不报 backend。
+                      // BUG-4130：匹配中 / 未匹配的行报状态，不报 backend。
                       value: texthookerLineAudioSummary(line),
                     ),
                     if (line.audioDurationMs != null)
@@ -4293,7 +4293,7 @@ class _TexthookerLine extends ConsumerWidget {
             colors: colors,
             onCharTap: onCharTap,
           ),
-          // BUG-4127：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
+          // BUG-4130：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
           // 不报来源（否则一句还没配上的台词会顶着 game_resource 字样）。
           if ((line.hasAudio && line.audioBackend != null) ||
               line.audioResourceId != null ||

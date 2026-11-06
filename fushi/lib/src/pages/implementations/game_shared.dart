@@ -130,7 +130,7 @@ String texthookerLineAudioStatusLabel(TexthookerLineAudioStatus status) =>
       TexthookerLineAudioStatus.unavailable => t.game_line_audio_unavailable,
     };
 
-/// 行音频摘要（「本句音轨」面板、选中句条共用，BUG-4127）：有音频时报来源
+/// 行音频摘要（「本句音轨」面板、选中句条共用，BUG-4130）：有音频时报来源
 /// （backend），没有音频时报状态（匹配中 / 未匹配 / 不可用）。「匹配中」的行即使
 /// 留着 backend 字样（折叠进来的旧事件），也没有任何可播放的字节。
 String texthookerLineAudioSummary(TexthookerLineEntry line) =>
