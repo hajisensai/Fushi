@@ -7940,7 +7940,8 @@ class AppModel with ChangeNotifier {
     return routeTranscribeAudiobookPlan(
       plan,
       asrSupported: isAsrSupported,
-      transcribeWithoutContent: prefsRepo.audiobookAutoTranscribe,
+      autoTranscribe: prefsRepo.audiobookAutoTranscribe,
+      transcribeWithoutContent: prefsRepo.audiobookAutoTranscribeWithoutText,
       contentAlreadyInLibrary: (String contentPath) =>
           isDuplicateDiscoveryAudiobookContent(database, contentPath),
       matchMaterials: (List<String> audioPaths, String title) =>
@@ -9917,6 +9918,11 @@ class AppModel with ChangeNotifier {
   bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
   Future<void> setAudiobookAutoTranscribe({required bool value}) =>
       prefsRepo.setAudiobookAutoTranscribe(value: value);
+
+  bool get audiobookAutoTranscribeWithoutText =>
+      prefsRepo.audiobookAutoTranscribeWithoutText;
+  Future<void> setAudiobookAutoTranscribeWithoutText({required bool value}) =>
+      prefsRepo.setAudiobookAutoTranscribeWithoutText(value: value);
 
   // ── player streams & audio handler (delegated to AudioController) ───
 

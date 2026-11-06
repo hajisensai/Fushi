@@ -6000,13 +6000,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 只有音频的有声书下载完成后是否自动转录入库（默认关：正常流程是先有
-  /// EPUB 再配有声书一起转录，下载时没有正文就自动转录会产出质量差的字幕书）。
+  /// 总开关：没有字幕的有声书下载完成后是否自动转录入库（默认开）。关 = 一律
+  /// 不自动转录（不下语音模型、不跑长时间推理），带不带正文都停在「缺字幕」。
   bool get audiobookAutoTranscribe =>
-      getPref('audiobook_auto_transcribe', defaultValue: false) as bool;
+      getPref('audiobook_auto_transcribe', defaultValue: true) as bool;
 
   Future<void> setAudiobookAutoTranscribe({required bool value}) async {
     await setPref('audiobook_auto_transcribe', value);
+    notifyListeners();
+  }
+
+  /// 子开关：下载里没有正文（EPUB / 文本）时也转录成独立字幕书（默认关：没有
+  /// 正文时字幕书质量差，正常流程是有 EPUB 后搭配转录对齐）。只在总开关
+  /// [audiobookAutoTranscribe] 开时生效。
+  bool get audiobookAutoTranscribeWithoutText =>
+      getPref('audiobook_auto_transcribe_without_text', defaultValue: false)
+          as bool;
+
+  Future<void> setAudiobookAutoTranscribeWithoutText({
+    required bool value,
+  }) async {
+    await setPref('audiobook_auto_transcribe_without_text', value);
     notifyListeners();
   }
 

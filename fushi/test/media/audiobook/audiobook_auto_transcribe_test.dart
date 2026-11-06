@@ -16,6 +16,7 @@ class _Calls {
 Future<DiscoveryImportOutcome> _route(
   TranscribeAudiobookPlan plan, {
   bool asrSupported = true,
+  bool autoTranscribe = true,
   required bool withoutContent,
   AudiobookMaterialMatch match = const AudiobookMaterialMatch(),
   Set<String> contentInLibrary = const <String>{},
@@ -23,6 +24,7 @@ Future<DiscoveryImportOutcome> _route(
 }) => routeTranscribeAudiobookPlan(
   plan,
   asrSupported: asrSupported,
+  autoTranscribe: autoTranscribe,
   transcribeWithoutContent: withoutContent,
   contentAlreadyInLibrary: (String path) async =>
       contentInLibrary.contains(path),
@@ -114,7 +116,42 @@ void main() {
       ),
     );
 
-    test('包里带 EPUB、开关关(默认) → 照样排转录,转完对齐', () async {
+    test('总开关关 → 有没有正文、子开关开不开都挡下,不排转录', () async {
+      for (final TranscribeAudiobookPlan plan in <TranscribeAudiobookPlan>[
+        audioOnly,
+        withEpub,
+      ]) {
+        for (final bool withoutContent in <bool>[true, false]) {
+          final _Calls calls = _Calls();
+          await expectLater(
+            _route(
+              plan,
+              autoTranscribe: false,
+              withoutContent: withoutContent,
+              calls: calls,
+            ),
+            blockedBy(DiscoveryImportBlocker.audiobookMissingSubtitle),
+          );
+          expect(calls.enqueued, isEmpty);
+          expect(calls.imported, isEmpty);
+        }
+      }
+    });
+
+    test('总开关关但素材库配齐字幕 → 照样立刻入库(不跑转录)', () async {
+      final _Calls calls = _Calls();
+      final DiscoveryImportOutcome outcome = await _route(
+        audioOnly,
+        autoTranscribe: false,
+        withoutContent: false,
+        match: const AudiobookMaterialMatch(subtitlePath: '/m/b.srt'),
+        calls: calls,
+      );
+      expect(outcome.importedCount, 1);
+      expect(calls.enqueued, isEmpty);
+    });
+
+    test('包里带 EPUB、总开关开、子开关关(默认) → 排转录,转完对齐', () async {
       final _Calls calls = _Calls();
       final DiscoveryImportOutcome outcome = await _route(
         withEpub,
@@ -126,7 +163,7 @@ void main() {
       expect(calls.imported, isEmpty);
     });
 
-    test('素材库身份键配到正文、开关关 → 照样带正文排转录', () async {
+    test('素材库身份键配到正文、子开关关 → 照样带正文排转录', () async {
       final _Calls calls = _Calls();
       await _route(
         audioOnly,
@@ -137,7 +174,7 @@ void main() {
       expect(calls.enqueued.single, startsWith('Book|/m/b.epub|'));
     });
 
-    test('没有正文、开关关 → 不生成独立字幕书,以缺字幕挡下', () async {
+    test('没有正文、子开关关 → 不生成独立字幕书,以缺字幕挡下', () async {
       final _Calls calls = _Calls();
       // 素材库只有标题猜的弱匹配正文:不算正文,同样挡下。
       await expectLater(
@@ -156,7 +193,7 @@ void main() {
       expect(calls.imported, isEmpty);
     });
 
-    test('本机不支持 ASR → 有没有正文、开关开不开都挡下', () async {
+    test('本机不支持 ASR → 有没有正文、子开关开不开都挡下', () async {
       for (final TranscribeAudiobookPlan plan in <TranscribeAudiobookPlan>[
         audioOnly,
         withEpub,
@@ -190,7 +227,7 @@ void main() {
       expect(calls.enqueued, isEmpty);
     });
 
-    test('没有正文、开关开 → 排转录(独立字幕书),结果 deferred', () async {
+    test('没有正文、两个开关都开 → 排转录(独立字幕书),结果 deferred', () async {
       final _Calls calls = _Calls();
       final DiscoveryImportOutcome outcome = await _route(
         audioOnly,
@@ -206,7 +243,7 @@ void main() {
       expect(calls.imported, isEmpty);
     });
 
-    test('没有正文、开关关且配不到 → 与改前同一原因码挡下', () async {
+    test('没有正文、子开关关且配不到 → 与改前同一原因码挡下', () async {
       final _Calls calls = _Calls();
       await expectLater(
         _route(audioOnly, withoutContent: false, calls: calls),
@@ -221,7 +258,7 @@ void main() {
       expect(calls.enqueued, isEmpty);
     });
 
-    test('素材库身份键命中字幕 → 立刻入库,不跑转录(开关关也一样)', () async {
+    test('素材库身份键命中字幕 → 立刻入库,不跑转录(子开关关也一样)', () async {
       for (final bool enabled in <bool>[true, false]) {
         final _Calls calls = _Calls();
         final DiscoveryImportOutcome outcome = await _route(

@@ -129,10 +129,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'asr_transcribe_language',
   'audio_source_configs',
   'audio_sources',
-  // bool：只有音频（没有字幕）的有声书下载完成后，自动用设备端语音模型转录
-  // 并入库（有正文对齐、没有成独立字幕书）。默认关（2026-11-06：没正文时
-  // 转录质量差，正常流程是有 EPUB 后搭配转录）；关 = 任务停在「缺字幕」，用户手动配对。见 media/audiobook/audiobook_auto_transcribe.dart。
+  // bool：总开关。没有字幕的有声书下载完成后，自动用设备端语音模型转录并入库
+  // （有正文转完对齐）。默认开；关 = 一律不自动转录（不下模型、不跑推理），
+  // 任务停在「缺字幕」，用户手动配对。见 media/audiobook/audiobook_auto_transcribe.dart。
   'audiobook_auto_transcribe',
+  // bool：子开关。总开关开时，下载里没有正文（EPUB / 文本）也转录成独立字幕书。
+  // 默认关（2026-11-06：没正文时转录质量差，正常流程是有 EPUB 后搭配转录）；
+  // 关 = 没有正文的任务停在「缺字幕」。
+  'audiobook_auto_transcribe_without_text',
   'audiobook_background_play',
   // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
   // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
