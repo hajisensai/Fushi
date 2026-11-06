@@ -3289,8 +3289,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       );
     }
 
-    final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
-    debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
     _openTrace.mark('parsed');
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));

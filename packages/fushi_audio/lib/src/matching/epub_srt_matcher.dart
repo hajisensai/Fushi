@@ -413,16 +413,6 @@ class EpubSrtMatcher {
       'totalNormLen=$totalLen cues=${cues.length} startCursor=${raw.startCursor} '
       'window=$window threshold=$similarityThreshold',
     );
-    for (int si = 0; si < sections.length; si++) {
-      final int s0 = idx.sectionNormStarts[si];
-      final int s1 = (si + 1 < sections.length)
-          ? idx.sectionNormStarts[si + 1]
-          : totalLen;
-      fushiDebugPrint(
-        '[sentenceAudioHighlight] matcher.section[$si] href="${sections[si].href}" '
-        'normStart=$s0 normLen=${s1 - s0}',
-      );
-    }
     for (final (int ci, int from, int to, int support) in raw.recoveries) {
       fushiDebugPrint(
         '[sentenceAudioHighlight] matcher.recover cursor=$from -> $to '
