@@ -350,6 +350,12 @@ void FloatingBallWindow::Teardown() noexcept {
     profile_menu_ = nullptr;
     gtk_widget_destroy(menu);
   }
+  // After the destroy above: destroying an open menu deactivates it, which
+  // queues the idle.
+  if (profile_menu_idle_ != 0) {
+    g_source_remove(profile_menu_idle_);
+    profile_menu_idle_ = 0;
+  }
   CancelAnimations();
   pressing_ball_ = false;
   dragging_ = false;
@@ -441,9 +447,12 @@ void FloatingBallWindow::ShowProfileMenu(std::vector<ProfileMenuItem> items,
   // the next idle, once the item had its say.
   g_signal_connect(
       menu, "deactivate", G_CALLBACK(+[](GtkMenuShell*, gpointer data) {
-        g_idle_add(
+        auto* self = static_cast<FloatingBallWindow*>(data);
+        if (self->profile_menu_idle_ != 0) return;
+        self->profile_menu_idle_ = g_idle_add(
             [](gpointer data) -> gboolean {
               auto* self = static_cast<FloatingBallWindow*>(data);
+              self->profile_menu_idle_ = 0;
               if (self->profile_menu_done_) {
                 self->FinishProfileMenu(self->profile_menu_selected_);
               }
