@@ -1945,7 +1945,7 @@ void main() {
       final Offset start = tester.getCenter(chip);
       final TestGesture gesture = await tester.startGesture(start);
       // 终点每步按目标**当前**位置重算：拖进面板滚动视口的边缘带时页面会自动滚
-      // （BUG-4126），目标跟着移动，开拖前算好的坐标会落空。
+      // （BUG-4129），目标跟着移动，开拖前算好的坐标会落空。
       for (int step = 1; step <= 8; step++) {
         await gesture.moveTo(
           Offset.lerp(start, tester.getCenter(target), step / 8)!,
