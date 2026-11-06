@@ -33,16 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3752 条。点号进各自文件。
-> 共 3723 条。点号进各自文件。
+> 共 3753 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4123](bugs/BUG-4123-ios-manga-solo-title-shelf.md) | ✅ | ✅ | ios-manga-solo-title-shelf |
-> 共 3727 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4153](bugs/BUG-4153-ios-manga-solo-title-shelf.md) | ✅ | ✅ | ios-manga-solo-title-shelf |
 | [BUG-4152](bugs/BUG-4152-gal-attached-state-not-in-feedback-log.md) | ✅ | ✅ | attached 表面隐藏多久、为什么隐藏，反馈日志里查不到 |
 | [BUG-4151](bugs/BUG-4151-game-library-settings-submenu-offscreen.md) | ✅ | ✅ | 游戏库最右侧条目右键菜单里的「设置」子菜单打不开 |
 | [BUG-4150](bugs/BUG-4150-manga-rtl-slider-readout-direction.md) | ✅ | ✅ | 漫画右开本底部进度栏当前页 / 总页数与已读高亮方向反了 |
