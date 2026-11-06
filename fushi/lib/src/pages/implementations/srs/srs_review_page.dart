@@ -78,6 +78,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart'
     show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;

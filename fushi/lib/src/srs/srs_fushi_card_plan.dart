@@ -22,9 +22,9 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         kFushiOptAudio;
 
 import 'package:fushi/src/srs/srs_card_appearance.dart';
-import 'package:fushi/src/srs/srs_card_autoplay.dart' show SrsFushiCardMedia;
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart'
     show srsAudioSources, srsFieldFilled, srsVideoSources;
+import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 
 /// 区块的原生可见性（外观开关 + 字段是否有内容），与模板条件段同一判据。
 bool srsFushiBlockVisible(
