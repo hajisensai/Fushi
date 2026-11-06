@@ -4595,9 +4595,6 @@ class VideoPlayerController extends ChangeNotifier
     if (idx != _currentCueIndex) {
       _currentCueIndex = idx;
       _currentCue = _cues[idx];
-      debugPrint(
-        '[video-cue] idx=$idx pos=${posMs}ms text="${_cues[idx].text}"',
-      );
       changed = true;
     }
     if (changed) notifyListeners();
