@@ -763,9 +763,56 @@ class AdapterStructureTest(unittest.TestCase):
             source, "void CaptureSgreLookupDrawState(void* text_surface)"
         )
         gate = capture.index("IsSgreScenarioLineFullyRevealed(")
-        publish_text = capture.index("PublishSgreExactText(snapshot, text_surface)")
+        publish_text = capture.index(
+            "PublishSgreExactText(snapshot, text_surface, first_glyph_tick)"
+        )
         self.assertLess(gate, publish_text)
         self.assertEqual(capture.count("PublishSgreExactText("), 1)
+
+        # BUG-4130 — 每一帧（含打字前缀）都要先记场景页，发布时的文本时间戳是该页
+        # 首个字形出现的时刻，不是整句显示完的时刻；语音按页绑定 textseq 靠的就是它。
+        observe = capture.index("ObserveSgreScenarioPage(snapshot)")
+        self.assertLess(observe, gate)
+        publish_fn = self._function_body(
+            source, "uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,"
+        )
+        self.assertIn("write.timestamp_ms = first_glyph_tick;", publish_fn)
+        self.assertIn(
+            "g_sgre_scenario_pages.MarkPublished(published, GetTickCount64());",
+            publish_fn,
+        )
+
+        # BUG-4130 — 资源语音必须按场景页绑定 textseq 再落盘，等待由 HookWorker
+        # 每轮推进、有界收束；绕过绑定直接按播放时刻写无标记文件就回到了这条 bug。
+        adapter = (
+            ROOT / "hook" / "adapters" / "sgre_adapter.inc"
+        ).read_text(encoding="utf-8")
+        handle = self._function_body(
+            adapter, "bool HandleSgreCompressedResource("
+        )
+        self.assertIn("TryPublishSgreVoice(&voice", handle)
+        self.assertNotIn("WriteVoiceOggAt(", handle)
+        try_publish = self._function_body(
+            adapter, "bool TryPublishSgreVoice(SgrePendingVoice* voice"
+        )
+        self.assertIn("ResolveSgreVoicePage(", try_publish)
+        self.assertIn("voice->voice_tick, text_event_id);", try_publish)
+        # BUG-4130 审查 — 等页的语音不能被丢：队列满淘汰最旧一条、adapter 收尾都按
+        # 当下已知的页做最终裁决再落盘（所属页已发布仍带 textseq），不直接 clear。
+        self.assertIn("/*final_pass=*/true);", handle)
+        shutdown = self._member_body(adapter, "void shutdown() override")
+        self.assertIn("FlushSgrePendingVoices();", shutdown)
+        self.assertNotIn("g_sgre_pending_voices.clear()", shutdown)
+        flush = self._function_body(adapter, "void FlushSgrePendingVoices()")
+        self.assertLess(
+            flush.index("TryPublishSgreVoice(&voice, /*final_pass=*/true);"),
+            flush.index("g_sgre_pending_voices.clear();"),
+        )
+        pump = self._member_body(adapter, "void ProcessPendingEvents()")
+        self.assertLess(
+            pump.index("ProcessSgrePendingVoices();"),
+            pump.index("if (!probe() || !g_sgre_anchors_resolved) return;"),
+        )
 
         # BUG-2087 审查缺陷 D — 两个高亮窗都是 WS_EX_TOPMOST。悬浮分支靠 game_point
         # 自带前台判据，词高亮分支必须显式带上同一个 game_foreground，否则卡片弹出后

@@ -3478,6 +3478,8 @@
   "game_line_audio_matched": "Áudio pronto",
   "game_line_audio_missing": "Sem áudio",
   "game_line_audio_no_voice": "Sem voz",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "Clipe muito longo",
   "game_line_audio_overlong_hint": "Muito mais longo que uma única linha; pode incluir BGM ou outro áudio mixado",
   "game_line_audio_pending": "Combinando",

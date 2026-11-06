@@ -3478,6 +3478,8 @@
   "game_line_audio_matched": "音频就绪",
   "game_line_audio_missing": "无音频",
   "game_line_audio_no_voice": "无配音",
+  "game_line_audio_not_paired": "无原件",
+  "game_line_audio_not_paired_hint": "配对时间窗内没有找到这句的游戏语音资源：可能这句本来没有配音，也可能资源没抓到。",
   "game_line_audio_overlong": "超长片段",
   "game_line_audio_overlong_hint": "远超单句时长，可能混入 BGM 或其它混音",
   "game_line_audio_pending": "匹配中",
