@@ -39,6 +39,8 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_reference_loader.dart'
+    show loadSubtitleStyleReference;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
     show SubtitleLyricsFinder, buildSubtitleLyricsFinder;
@@ -122,18 +124,22 @@ AppVideoSubtitleService appVideoSubtitleService(AppModel appModel) =>
       settings: PrefsVideoSubtitleSettings(appModel.prefsRepo),
     );
 
-/// 一集。
+/// 一集（视频库的一集，或音乐库的一个音频文件）。
 @immutable
 class AppVideoSubtitleEpisode {
   const AppVideoSubtitleEpisode({
-    required this.bookUid,
+    this.bookUid,
     required this.videoPath,
     required this.title,
     this.registersSubtitleSource = true,
     this.replacesSubtitleSelection = false,
   });
 
-  final String bookUid;
+  /// 视频库条目（`video_books.book_uid`）；音乐目标为 null（曲目归属由
+  /// [AppSubtitleOutputSink] 按 [videoPath] 自己记）。
+  final String? bookUid;
+
+  /// 要转写的本地媒体文件（视频或音频；字段名沿用视频时代）。
   final String videoPath;
   final String title;
 
@@ -155,17 +161,19 @@ enum AppVideoSubtitleUnavailableReason { remote, missingFile }
 @immutable
 class AppVideoSubtitleUnavailable {
   const AppVideoSubtitleUnavailable({
-    required this.bookUid,
+    this.bookUid,
     required this.title,
     required this.reason,
   });
 
-  final String bookUid;
+  /// 视频库条目；音乐目标为 null。
+  final String? bookUid;
   final String title;
   final AppVideoSubtitleUnavailableReason reason;
 }
 
-/// 一次生成的目标：单集（视频页 / CLI 的 bookUid）或整季（合集）。
+/// 一次生成的目标：单集（视频页 / CLI 的 bookUid）、整季（合集），或音乐库的曲目 /
+/// 专辑 / 来源（[sink] 是音乐库的落点）。
 @immutable
 class AppVideoSubtitleTarget {
   const AppVideoSubtitleTarget({
@@ -175,7 +183,11 @@ class AppVideoSubtitleTarget {
     this.unavailable = const <AppVideoSubtitleUnavailable>[],
     this.collectionId,
     this.bookUid,
-  });
+    this.sink,
+    bool? wholeSeason,
+    String? key,
+  }) : _wholeSeason = wholeSeason,
+       _key = key;
 
   final String title;
   final SubtitleWorkContext work;
@@ -188,20 +200,165 @@ class AppVideoSubtitleTarget {
   /// 单集目标的条目（整季为 null）。
   final String? bookUid;
 
-  /// 整季：已有 `<视频名>.ja.srt` 的集由管线直接跳过。
-  bool get wholeSeason => collectionId != null;
+  /// 产物落点；null = 视频库（[VideoBookSubtitleSink]，登记 `video_books.subtitleSource`）。
+  final AppSubtitleOutputSink? sink;
+
+  final bool? _wholeSeason;
+  final String? _key;
+
+  /// 批量（整季 / 整张专辑 / 整个来源）：已有导出字幕的集由管线直接跳过，并做跨集
+  /// 一致性。显式给了就用给的；视频默认按「是不是合集目标」。
+  bool get wholeSeason => _wholeSeason ?? collectionId != null;
 
   /// 进程内去重键（同一目标只能有一个任务）。
-  String get key => collectionId != null
+  String get key =>
+      _key ??
+      (collectionId != null
+          ? 'collection:$collectionId'
+          : 'book:$bookUid:${episodes.map((AppVideoSubtitleEpisode e) => e.videoPath).join('|')}');
+
+  /// 给 CLI / 结果 JSON 看的目标名。
+  String get describe => collectionId != null
       ? 'collection:$collectionId'
-      : 'book:$bookUid:${episodes.map((AppVideoSubtitleEpisode e) => e.videoPath).join('|')}';
+      : bookUid != null
+      ? 'book:$bookUid'
+      : key;
 
   List<String> get videoPaths => <String>[
     for (final AppVideoSubtitleEpisode e in episodes) e.videoPath,
   ];
 
-  /// 作品身份没有刮削数据：UI 提示「建议先刮削」。
-  bool get missingScrapedData => !work.hasScrapedData;
+  /// 作品身份没有刮削数据：UI 提示「建议先刮削」（只对视频有意义）。
+  bool get missingScrapedData => !isMusic && !work.hasScrapedData;
+
+  /// 音乐库目标（曲目 / 专辑 / 来源）。
+  bool get isMusic => sink?.domain == AppSubtitleTargetDomain.music;
+}
+
+/// 生成目标属于哪个库。
+enum AppSubtitleTargetDomain { video, music }
+
+/// 生成产物落到哪个库：导出目录、证据、样式参考、远控镜像、登记都经它（视频库与
+/// 音乐库共用同一个服务与管线，只有这里不同）。
+abstract interface class AppSubtitleOutputSink {
+  /// 落点属于哪个库（面板文案：「整季 / 集」还是「批量 / 首」）。
+  AppSubtitleTargetDomain get domain;
+
+  /// 字幕导出目录；null = 媒体文件旁（视频播放页的 sidecar 探测直接加载）。
+  Directory? exportDirFor(String mediaPath);
+
+  /// 是否按媒体旁已有的 ASS 另出一份带样式的 ASS（只对视频有意义）。
+  bool get usesStyleReference;
+
+  /// 远控镜像（`video job`）的种类与主体。
+  VideoRemoteJobKind get mirrorKind;
+  String mirrorSubject(AppVideoSubtitleTarget target);
+
+  /// 除媒体旁 / 内嵌之外，这一集还登记在库里的人工字幕（证据）。
+  Future<List<String>> extraEvidenceFiles(AppVideoSubtitleEpisode episode);
+
+  /// 一集导出成功后登记产物；返回这次真正登记了的身份（视频条目 / 曲目）。
+  Future<List<String>> register(
+    AppVideoSubtitleEpisode episode,
+    VideoSubtitleEpisodeResult result,
+  );
+}
+
+/// 视频库落点：产物写在视频旁，登记进 `video_books.subtitleSource`。
+class VideoBookSubtitleSink implements AppSubtitleOutputSink {
+  const VideoBookSubtitleSink(this.database);
+
+  final FushiDatabase database;
+
+  @override
+  AppSubtitleTargetDomain get domain => AppSubtitleTargetDomain.video;
+
+  @override
+  Directory? exportDirFor(String mediaPath) => null;
+
+  @override
+  bool get usesStyleReference => true;
+
+  @override
+  VideoRemoteJobKind get mirrorKind => VideoRemoteJobKind.subtitleGenerate;
+
+  @override
+  String mirrorSubject(AppVideoSubtitleTarget target) =>
+      target.bookUid ?? 'collection:${target.collectionId}';
+
+  /// 生产证据：这一集在库里登记的导入字幕（手动导入、Jimaku 下载、播放时图形字幕
+  /// OCR 出的 SRT 都住在 app 文档目录里，扫视频目录扫不到）。
+  @override
+  Future<List<String>> extraEvidenceFiles(
+    AppVideoSubtitleEpisode episode,
+  ) async {
+    final String? bookUid = episode.bookUid;
+    if (bookUid == null) return const <String>[];
+    final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
+    final String? source = row?.subtitleSource;
+    return source != null && isImportedExternalSubtitlePath(source)
+        ? <String>[source]
+        : const <String>[];
+  }
+
+  @override
+  Future<List<String>> register(
+    AppVideoSubtitleEpisode episode,
+    VideoSubtitleEpisodeResult r,
+  ) async {
+    // 有按参考样式导出的 ASS 就登记它（颜色 / 位置才显示得出来）。
+    final String? output = r.styledOutputPath ?? r.outputPath;
+    final String? bookUid = episode.bookUid;
+    if (output == null || bookUid == null || !episode.registersSubtitleSource) {
+      return const <String>[];
+    }
+    final bool wrote = await _registerSubtitleSource(
+      bookUid,
+      output,
+      replace: episode.replacesSubtitleSelection,
+      supersedes: <String>{
+        // 带样式的 ASS 取代同次导出的 SRT；
+        if (r.styledOutputPath != null && r.outputPath != null) r.outputPath!,
+        // 本轮删掉的旧 ASS（参考没了 / ASS 阶段失败 / 落点换了）：库里还选着
+        // 它就切到本轮产物，不然播放器继续找一个已不存在的过期字幕。
+        ...r.removedOutputPaths,
+      },
+    );
+    return wrote ? <String>[bookUid] : const <String>[];
+  }
+
+  /// 条目还没有字幕选择（null / 空）时把 [output] 登记成它的外挂字幕。用户选过的
+  /// 字幕与显式关闭（`off:` 哨兵）都不覆盖——除非 [replace]（视频页单集入口，见
+  /// [AppVideoSubtitleEpisode.replacesSubtitleSelection]）。替换时连同库里缓存的旧
+  /// 字幕 cue 一起清掉（与播放页选字幕同一事务写法）：单视频重进时先读 cue 缓存，
+  /// 留着旧源的 cue，外挂档案解析失败时会把旧字幕当成新选择显示出来。返回是否写了。
+  ///
+  /// [supersedes]：被 [output] 取代的本管线产物——同次导出的 SRT（有带样式的 ASS
+  /// 时），以及本轮删掉的旧 ASS。条目当前选的正是其中之一（上一次生成登记的）时，
+  /// 换成 [output] 不算覆盖用户的选择。
+  Future<bool> _registerSubtitleSource(
+    String bookUid,
+    String output, {
+    bool replace = false,
+    Set<String> supersedes = const <String>{},
+  }) async {
+    final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
+    if (row == null) return false;
+    final String? current = row.subtitleSource;
+    final VideoBookRepository repo = VideoBookRepository(database);
+    if (replace || (current != null && supersedes.contains(current))) {
+      if (current == output) return false;
+      await repo.saveSubtitleSelection(
+        bookUid: bookUid,
+        subtitleSource: output,
+        cues: const <AudioCue>[],
+      );
+      return true;
+    }
+    if (current != null && current.trim().isNotEmpty) return false;
+    await repo.updateSubtitleSource(bookUid, output);
+    return true;
+  }
 }
 
 /// 一次生成的选项。
@@ -329,7 +486,8 @@ class AppVideoSubtitleJob extends ChangeNotifier {
   /// 实际用的识别器 id（`drafts.<id>.json`）。
   String? recognizerId;
 
-  /// 已登记进 `video_books.subtitleSource` 的条目。
+  /// 产物已登记的身份：视频是写进 `video_books.subtitleSource` 的条目，音乐是写了
+  /// `asr` 歌词行的曲目（[AppSubtitleOutputSink.register] 的返回）。
   final List<String> registeredBookUids = <String>[];
 
   bool get isRunning => status == AppVideoSubtitleJobStatus.running;
@@ -388,9 +546,7 @@ class AppVideoSubtitleJob extends ChangeNotifier {
   Map<String, Object?> resultJson() {
     final VideoSubtitlePipelineResult? r = result;
     return <String, Object?>{
-      'target': target.collectionId != null
-          ? 'collection:${target.collectionId}'
-          : 'book:${target.bookUid}',
+      'target': target.describe,
       'workKey': target.work.workKey,
       'options': options.toJson(),
       if (recognizerId != null) 'recognizer': recognizerId,
@@ -418,7 +574,7 @@ class AppVideoSubtitleJob extends ChangeNotifier {
         'unavailable': <Map<String, Object?>>[
           for (final AppVideoSubtitleUnavailable u in target.unavailable)
             <String, Object?>{
-              'bookUid': u.bookUid,
+              if (u.bookUid != null) 'bookUid': u.bookUid,
               'title': u.title,
               'reason': u.reason.name,
             },
@@ -557,8 +713,8 @@ class AppVideoSubtitleService {
   _lyricsFinder;
   final int Function() _nowMs;
 
-  /// 生产证据来源：视频旁 / 内嵌字幕之外，再加这一集在库里登记的导入字幕（手动导入、
-  /// Jimaku 下载、播放时图形字幕 OCR 出的 SRT 都住在 app 文档目录里，扫视频目录扫不到）。
+  /// 生产证据来源：媒体旁 / 内嵌字幕之外，再加落点在库里登记的人工字幕
+  /// （[AppSubtitleOutputSink.extraEvidenceFiles]）。
   SubtitleEvidenceSource _defaultEvidenceSource(
     AppVideoSubtitleTarget target,
   ) => SubtitleEvidenceCollector(
@@ -567,15 +723,14 @@ class AppVideoSubtitleService {
           .where((AppVideoSubtitleEpisode e) => e.videoPath == videoPath)
           .firstOrNull;
       if (episode == null) return const <String>[];
-      final VideoBookRow? row = await database.getVideoBookByBookUid(
-        episode.bookUid,
-      );
-      final String? source = row?.subtitleSource;
-      return source != null && isImportedExternalSubtitlePath(source)
-          ? <String>[source]
-          : const <String>[];
+      return _sinkOf(target).extraEvidenceFiles(episode);
     },
   );
+
+  late final VideoBookSubtitleSink _videoSink = VideoBookSubtitleSink(database);
+
+  AppSubtitleOutputSink _sinkOf(AppVideoSubtitleTarget target) =>
+      target.sink ?? _videoSink;
 
   AppVideoSubtitleSettings get _settings => settings;
 
@@ -883,7 +1038,7 @@ class AppVideoSubtitleService {
     for (final AppVideoSubtitleEpisode e in target.episodes) {
       // 视频旁的字幕在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。
       if (target.wholeSeason &&
-          await File(_subtitlePathFor(e.videoPath)).exists()) {
+          await File(subtitlePathFor(target, e.videoPath)).exists()) {
         continue;
       }
       final Directory dir = Directory(
@@ -937,10 +1092,26 @@ class AppVideoSubtitleService {
     );
   }
 
-  String _subtitlePathFor(String videoPath) => p.join(
-    p.dirname(videoPath),
-    '${p.basenameWithoutExtension(videoPath)}.ja.srt',
-  );
+  /// 一集的目标字幕路径（`<导出目录>/<媒体名>.ja.srt`，导出目录见
+  /// [AppSubtitleOutputSink.exportDirFor]）：与管线 `subtitlePathFor` 同一口径。
+  String subtitlePathFor(AppVideoSubtitleTarget target, String mediaPath) =>
+      p.join(
+        _sinkOf(target).exportDirFor(mediaPath)?.path ?? p.dirname(mediaPath),
+        '${p.basenameWithoutExtension(mediaPath)}.ja.srt',
+      );
+
+  /// 批量目标里已有导出字幕、管线会跳过的集（面板显示「跳过 N 集」）。非批量目标
+  /// 返回空集。存在性一律 async 判（字幕可能在网络盘上，BUG-3756）。
+  Future<Set<String>> existingSubtitleEpisodes(
+    AppVideoSubtitleTarget target,
+  ) async {
+    if (!target.wholeSeason) return const <String>{};
+    return <String>{
+      for (final AppVideoSubtitleEpisode e in target.episodes)
+        if (await File(subtitlePathFor(target, e.videoPath)).exists())
+          e.videoPath,
+    };
+  }
 
   /// 任务目录里任一识别器的字幕稿（先按 `state.json` 记的识别器，再按文件名找）。
   List<SubtitleDraftCue>? _cachedDrafts(Directory root, String videoPath) {
@@ -1032,10 +1203,11 @@ class AppVideoSubtitleService {
       options: options,
       consistencyOnly: consistencyOnly,
     );
+    final AppSubtitleOutputSink sink = _sinkOf(target);
     job.mirror = _jobRegistry.register(
       VideoRemoteJob(
-        kind: VideoRemoteJobKind.subtitleGenerate,
-        bookUid: target.bookUid ?? 'collection:${target.collectionId}',
+        kind: sink.mirrorKind,
+        bookUid: sink.mirrorSubject(target),
       ),
     )..onCancel = job.cancel;
     _active = job;
@@ -1110,9 +1282,15 @@ class AppVideoSubtitleService {
           regenerateGlossary: job.options.regenerateGlossary,
         );
       }
+      final AppSubtitleOutputSink sink = _sinkOf(target);
       final VideoSubtitlePipeline pipeline = VideoSubtitlePipeline(
         recognizer: choice.recognizer,
         jobsRoot: root,
+        exportDirFor: sink.exportDirFor,
+        // 样式参考只对视频有意义（音乐的产物只取 SRT 入歌词库）。
+        styleReference: sink.usesStyleReference
+            ? loadSubtitleStyleReference
+            : null,
         ai: aiConfig,
         probeDurationMs: _probeDurationMs,
         evidence: _evidenceSource == null
@@ -1143,28 +1321,12 @@ class AppVideoSubtitleService {
             '${r.videoPath}: $styledError',
           );
         }
-        // 有按参考样式导出的 ASS 就登记它（颜色 / 位置才显示得出来）。
-        final String? output = r.styledOutputPath ?? r.outputPath;
-        if (!r.exported || output == null) continue;
+        if (!r.exported) continue;
         final AppVideoSubtitleEpisode? episode = target.episodes
             .where((AppVideoSubtitleEpisode e) => e.videoPath == r.videoPath)
             .firstOrNull;
-        if (episode == null || !episode.registersSubtitleSource) continue;
-        if (await _registerSubtitleSource(
-          episode.bookUid,
-          output,
-          replace: episode.replacesSubtitleSelection,
-          supersedes: <String>{
-            // 带样式的 ASS 取代同次导出的 SRT；
-            if (r.styledOutputPath != null && r.outputPath != null)
-              r.outputPath!,
-            // 本轮删掉的旧 ASS（参考没了 / ASS 阶段失败 / 落点换了）：库里还选着
-            // 它就切到本轮产物，不然播放器继续找一个已不存在的过期字幕。
-            ...r.removedOutputPaths,
-          },
-        )) {
-          job.registeredBookUids.add(episode.bookUid);
-        }
+        if (episode == null) continue;
+        job.registeredBookUids.addAll(await sink.register(episode, r));
       }
       job._finish(AppVideoSubtitleJobStatus.succeeded);
     } on SubtitlePipelineCancelled {
@@ -1203,38 +1365,5 @@ class AppVideoSubtitleService {
     } on FormatException {
       return null;
     }
-  }
-
-  /// 条目还没有字幕选择（null / 空）时把 [output] 登记成它的外挂字幕。用户选过的
-  /// 字幕与显式关闭（`off:` 哨兵）都不覆盖——除非 [replace]（视频页单集入口，见
-  /// [AppVideoSubtitleEpisode.replacesSubtitleSelection]）。替换时连同库里缓存的旧
-  /// 字幕 cue 一起清掉（与播放页选字幕同一事务写法）：单视频重进时先读 cue 缓存，
-  /// 留着旧源的 cue，外挂档案解析失败时会把旧字幕当成新选择显示出来。返回是否写了。
-  ///
-  /// [supersedes]：被 [output] 取代的本管线产物——同次导出的 SRT（有带样式的 ASS
-  /// 时），以及本轮删掉的旧 ASS。条目当前选的正是其中之一（上一次生成登记的）时，
-  /// 换成 [output] 不算覆盖用户的选择。
-  Future<bool> _registerSubtitleSource(
-    String bookUid,
-    String output, {
-    bool replace = false,
-    Set<String> supersedes = const <String>{},
-  }) async {
-    final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
-    if (row == null) return false;
-    final String? current = row.subtitleSource;
-    final VideoBookRepository repo = VideoBookRepository(database);
-    if (replace || (current != null && supersedes.contains(current))) {
-      if (current == output) return false;
-      await repo.saveSubtitleSelection(
-        bookUid: bookUid,
-        subtitleSource: output,
-        cues: const <AudioCue>[],
-      );
-      return true;
-    }
-    if (current != null && current.trim().isNotEmpty) return false;
-    await repo.updateSubtitleSource(bookUid, output);
-    return true;
   }
 }
