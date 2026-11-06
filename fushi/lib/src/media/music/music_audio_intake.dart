@@ -10,8 +10,11 @@
 /// - 指名的几个文件（[importAudioFiles]）：已被音乐来源覆盖的，重扫那个来源；其余逐个
 ///   「仅此一次」导入（Rust 扫描器接受单文件根，只收这一个文件），不登记常驻来源。
 ///
-/// 只收本地文件：音乐来源只支持本地目录（`_scanMusicSource`），网络视频来源里的纯音频
-/// 不进视频库、也进不了音乐库。
+/// - 网络视频来源（SFTP / WebDAV / AList）里的纯音频（[adoptRemoteVideoSourceAudio]）：同一套
+///   规划规则（`p.url` 路径语义，条目与视频行同一命名空间），登记**同一台服务器上的**
+///   常驻网络音乐来源（连接参数照抄视频来源、凭据复制一份到新来源名下），之后由音乐来源
+///   自己的远程扫描对账。已被同一台服务器上的音乐来源覆盖的目录不重复登记——两个来源
+///   重叠时同一首曲目（uid 含路径）会在两次扫描间来回换 `sourceId`、被对方软删。
 library;
 
 import 'dart:io';
@@ -23,12 +26,26 @@ import 'package:fushi_engine/media/music/music_audio_roots.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:drift/drift.dart' show Value;
+
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
+import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 
 /// 登记一个常驻音乐来源并扫描（真 app = [addLocalFolderAsSource]）。返回扫描错误摘要。
 typedef MusicSourceRegistrar =
     Future<String?> Function({
+      required String rootPath,
+      required bool recursive,
+    });
+
+/// 在视频来源 [videoSource] 所在的服务器上登记一个常驻网络音乐来源并扫描（真 app =
+/// [MusicAudioIntake] 内部：照抄连接参数、复制凭据）。[rootPath] 是传输原生的来源根
+/// （SFTP 远端路径 / WebDAV·AList 地址）。返回扫描错误摘要。
+typedef RemoteMusicSourceRegistrar =
+    Future<String?> Function({
+      required SourceLibraryRow videoSource,
       required String rootPath,
       required bool recursive,
     });
@@ -79,8 +96,10 @@ class MusicAudioIntake {
     MusicSourceRegistrar? registerSource,
     MusicFileImporter? importFile,
     MusicSourceRescanner? rescanSource,
+    RemoteMusicSourceRegistrar? registerRemoteSource,
     bool Function(String path)? fileExists,
   }) : _registerSource = registerSource,
+       _registerRemoteSource = registerRemoteSource,
        _importFile = importFile,
        _rescanSource = rescanSource,
        _fileExists = fileExists ?? ((String path) => File(path).existsSync());
@@ -99,7 +118,63 @@ class MusicAudioIntake {
   final MusicSourceRegistrar? _registerSource;
   final MusicFileImporter? _importFile;
   final MusicSourceRescanner? _rescanSource;
+  final RemoteMusicSourceRegistrar? _registerRemoteSource;
   final bool Function(String path) _fileExists;
+
+  Future<String?> _registerRemote({
+    required SourceLibraryRow videoSource,
+    required String rootPath,
+    required bool recursive,
+  }) async {
+    final RemoteMusicSourceRegistrar? injected = _registerRemoteSource;
+    if (injected != null) {
+      return injected(
+        videoSource: videoSource,
+        rootPath: rootPath,
+        recursive: recursive,
+      );
+    }
+    final String root = normalizeSourceRootPath(
+      rootPath,
+      transport: videoSource.transport,
+    );
+    final List<SourceLibraryRow> existing = await _db.getMediaSourcesByKind(
+      SourceLibraryKind.music.dbValue,
+    );
+    final int sortOrder = existing.isEmpty
+        ? 0
+        : existing
+                  .map((SourceLibraryRow r) => r.sortOrder)
+                  .reduce((int a, int b) => a > b ? a : b) +
+              1;
+    final int id = await _db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: Value(
+          defaultLabelFromRoot(root, transport: videoSource.transport),
+        ),
+        mediaKind: Value(SourceLibraryKind.music.dbValue),
+        transport: Value(videoSource.transport),
+        rootPath: Value(root),
+        configJson: Value(videoSource.configJson),
+        recursive: Value(recursive),
+        sortOrder: Value(sortOrder),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    // 凭据红线不变：只活在凭据存储里，按新来源 id 另存一份（不进 configJson）。
+    final SourceLibraryCredentialStore secrets = SourceLibraryCredentialStore(
+      _db,
+    );
+    final SourceLibrarySecret secret = await secrets.readSecret(videoSource.id);
+    await secrets.saveSecret(
+      id,
+      password: secret.password,
+      privateKey: secret.privateKey,
+    );
+    final SourceLibraryRow? fresh = await _db.getMediaSourceById(id);
+    if (fresh == null) return null;
+    return (await SourceLibraryScanner(_db).scan(fresh)).error;
+  }
 
   Future<String?> _register({
     required String rootPath,
@@ -194,6 +269,73 @@ class MusicAudioIntake {
     );
   }
 
+  /// 网络视频来源 [videoSource] 扫描时扫到的纯音频交给音乐库。[scanRoot] / [audioPaths] /
+  /// [videoMediaDirs] 都是库内命名空间的地址（SFTP 为 `sftp://…`，与视频行同一口径）。
+  Future<MusicAudioIntakeResult> adoptRemoteVideoSourceAudio({
+    required SourceLibraryRow videoSource,
+    required String scanRoot,
+    required List<String> audioPaths,
+    required Iterable<String> videoMediaDirs,
+  }) => _serial(
+    () => _adoptRemote(
+      videoSource: videoSource,
+      scanRoot: scanRoot,
+      audioPaths: audioPaths,
+      videoMediaDirs: videoMediaDirs.toList(),
+    ),
+  );
+
+  Future<MusicAudioIntakeResult> _adoptRemote({
+    required SourceLibraryRow videoSource,
+    required String scanRoot,
+    required List<String> audioPaths,
+    required List<String> videoMediaDirs,
+  }) async {
+    final List<String> audio = <String>[
+      for (final String a in audioPaths)
+        if (isAudioOnlyMediaPath(a)) a,
+    ];
+    if (audio.isEmpty) return const MusicAudioIntakeResult();
+    final Map<String, Object?> cfg = decodeSourceConfig(videoSource.configJson);
+    final String? sftpRoot = videoSource.transport == 'sftp'
+        ? sftpSourceUrlRootForConfig(cfg)
+        : null;
+    String namespaced(String nativeRoot) =>
+        sftpRoot == null ? nativeRoot : sftpSourceUrlOf(nativeRoot, sftpRoot);
+    String native(String namespacedRoot) => sftpRoot == null
+        ? namespacedRoot
+        : (sftpRemotePathOf(namespacedRoot, sftpRoot) ?? namespacedRoot);
+    final List<MusicSourceRoot> sameServer = <MusicSourceRoot>[
+      for (final SourceLibraryRow s in await _db.getMediaSourcesByKind(
+        SourceLibraryKind.music.dbValue,
+      ))
+        if (s.transport == videoSource.transport &&
+            sameRemoteServer(decodeSourceConfig(s.configJson), cfg))
+          (rootPath: namespaced(s.rootPath), recursive: s.recursive),
+    ];
+    final MusicAudioRootPlan plan = planMusicRootsForVideoSourceAudio(
+      videoRoot: scanRoot,
+      audioPaths: audio,
+      videoMediaDirs: videoMediaDirs,
+      musicSources: sameServer,
+      context: p.url,
+    );
+    final List<String> errors = <String>[];
+    for (final PlannedMusicRoot root in plan.roots) {
+      final String? error = await _registerRemote(
+        videoSource: videoSource,
+        rootPath: native(root.rootPath),
+        recursive: root.recursive,
+      );
+      if (error != null) errors.add('${root.rootPath}: $error');
+    }
+    return MusicAudioIntakeResult(
+      registeredRoots: plan.roots,
+      skippedPaths: plan.besideVideoAudioPaths,
+      errors: errors,
+    );
+  }
+
   /// 指名的几个纯音频文件（视频页拖入、旧版存量迁移）收进曲库。
   ///
   /// 已被本地音乐来源覆盖（根 = 所在目录，或递归来源包含它）的，重扫覆盖它的来源——
@@ -245,4 +387,16 @@ class MusicAudioIntake {
       errors: errors,
     );
   }
+}
+
+/// 两个网络来源的连接参数指向同一台服务器、同一个账号（AList 看站点根，其余看主机 /
+/// 端口）：它们的条目地址同一命名空间，目录覆盖判断才有意义。
+bool sameRemoteServer(Map<String, Object?> a, Map<String, Object?> b) {
+  String str(Map<String, Object?> m, String k) =>
+      ((m[k] as String?) ?? '').trim().toLowerCase();
+  int? port(Map<String, Object?> m) => (m['port'] as num?)?.toInt();
+  return str(a, 'host') == str(b, 'host') &&
+      port(a) == port(b) &&
+      str(a, 'baseUrl') == str(b, 'baseUrl') &&
+      ((a['username'] as String?) ?? '') == ((b['username'] as String?) ?? '');
 }

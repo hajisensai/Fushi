@@ -40,7 +40,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart';
-import 'package:fushi_music/fushi_music.dart' show MusicScanRootError;
+import 'package:fushi_music/fushi_music.dart'
+    show FushiMusicUnavailableError, MusicScanRootError;
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -970,14 +971,18 @@ class SourceLibraryScanner {
   }
 
   /// 音乐来源：不走通用文件清单 + ScanPlan——目录遍历与标签 / CUE 解析都在 Rust 胖核心
-  /// （native/fushi_music）里，由 [MusicLibraryScanner] 接管。只支持本地目录（Rust 直接
-  /// 读文件系统）；网络来源如实报错。原生库缺失是部署缺陷，照常抛出不吞。
-  Future<SourceScanSummary> _scanMusicSource(SourceLibraryRow source) async {
+  /// （native/fushi_music）里，由 [MusicLibraryScanner] 接管。本地目录由 Rust 直接读；
+  /// SFTP / WebDAV / AList 来源（反馈 QAondMh4M5）由这里经来源访问层列目录、按区间取字节，
+  /// 分类与解析仍在 Rust（[MusicLibraryScanner.scanRemoteSource]）。SFTP 条目换进与视频行
+  /// 同一个 `sftp://` 命名空间（播放期经 [resolveSourceStreamUrlResolver] 的回环中继起播）。
+  /// FTP 读不了区间，如实报错。原生库缺失是部署缺陷，照常抛出不吞。
+  Future<SourceScanSummary> _scanMusicSource(
+    SourceLibraryRow source, {
+    SourceFileSystem? fs,
+  }) async {
     int mediaCount = 0;
     String? scanError;
-    if (source.transport != 'local') {
-      scanError = 'Music sources support local folders only';
-    } else {
+    if (source.transport == 'local') {
       try {
         final MusicScanSummary summary = await MusicLibraryScanner(_db)
             .scanSource(
@@ -992,6 +997,46 @@ class SourceLibraryScanner {
       } on MusicScanRootError catch (e) {
         scanError = e.toString();
       }
+    } else if (!kStreamableVideoSourceTransports.contains(source.transport)) {
+      scanError = 'Network music sources support SFTP/WebDAV/AList only';
+    } else {
+      final SourceFileSystem transportFs =
+          fs ?? await _resolveFileSystem(source);
+      try {
+        final ({SourceFileSystem files, String scanRoot}) ns =
+            _streamNamespaceOf(source, transportFs);
+        final SourceFileSystem files = ns.files;
+        if (files is! SourceByteReader) {
+          throw StateError(
+            '${files.runtimeType} cannot read byte ranges for music tags',
+          );
+        }
+        final MusicScanSummary summary = await MusicLibraryScanner(_db)
+            .scanRemoteSource(
+              sourceId: source.id,
+              rootPath: ns.scanRoot,
+              entries: await files.listFiles(
+                source.rootPath,
+                recursive: source.recursive,
+              ),
+              bytes: files as SourceByteReader,
+            );
+        mediaCount = summary.trackCount;
+        scanError = summary.errorSummary;
+      } on FushiMusicUnavailableError {
+        rethrow;
+      } catch (e, stack) {
+        // 列目录 / 取字节失败（断网、认证）：整次扫描没跑完，记进来源行，不软删曲目。
+        scanError = e.toString();
+        debugPrint(
+          'SourceLibraryScanner: remote music scan failed for source '
+          '${source.id} (${source.rootPath}): $e\n$stack',
+        );
+      } finally {
+        if (transportFs is NetworkSourceFileSystem) {
+          await transportFs.close();
+        }
+      }
     }
     await _db.updateMediaSourceScanResult(
       id: source.id,
@@ -1005,6 +1050,25 @@ class SourceLibraryScanner {
       discoveredPaths: const <String>[],
       importedMediaCount: mediaCount,
       error: scanError,
+    );
+  }
+
+  /// 网络来源条目的库内命名空间（视频与音乐同一口径）：SFTP 换进 `sftp://` 稳定地址
+  /// （[SftpUrlNamespaceFileSystem]），WebDAV / AList 条目本身就是 http(s) 地址。
+  /// [scanRoot] 是与条目同一命名空间的来源根。
+  ({SourceFileSystem files, String scanRoot}) _streamNamespaceOf(
+    SourceLibraryRow source,
+    SourceFileSystem transportFs,
+  ) {
+    if (transportFs.isLocal || source.transport != 'sftp') {
+      return (files: transportFs, scanRoot: source.rootPath);
+    }
+    final String urlRoot = sftpSourceUrlRootForConfig(
+      decodeSourceConfig(source.configJson),
+    );
+    return (
+      files: SftpUrlNamespaceFileSystem(transportFs, urlRoot: urlRoot),
+      scanRoot: sftpSourceUrlOf(source.rootPath, urlRoot),
     );
   }
 
@@ -1036,7 +1100,7 @@ class SourceLibraryScanner {
       );
     }
     if (source.mediaKind == SourceLibraryKind.music.dbValue) {
-      return _scanMusicSource(source);
+      return _scanMusicSource(source, fs: fs);
     }
     final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
@@ -1077,19 +1141,13 @@ class SourceLibraryScanner {
           'Network video sources support SFTP/WebDAV/AList only',
         );
       }
-      final String? sftpUrlRoot =
-          !transportFs.isLocal &&
-              kind == SourceLibraryKind.video &&
-              source.transport == 'sftp'
-          ? sftpSourceUrlRootForConfig(decodeSourceConfig(source.configJson))
-          : null;
-      final SourceFileSystem files = sftpUrlRoot == null
-          ? transportFs
-          : SftpUrlNamespaceFileSystem(transportFs, urlRoot: sftpUrlRoot);
       // 扫描根与条目同一命名空间：作品归组按「相对扫描根」算目录。
-      final String scanRoot = sftpUrlRoot == null
-          ? source.rootPath
-          : sftpSourceUrlOf(source.rootPath, sftpUrlRoot);
+      final ({SourceFileSystem files, String scanRoot}) ns =
+          kind == SourceLibraryKind.video
+          ? _streamNamespaceOf(source, transportFs)
+          : (files: transportFs, scanRoot: source.rootPath);
+      final SourceFileSystem files = ns.files;
+      final String scanRoot = ns.scanRoot;
       final List<SourceFileEntry> entries = excludeSourceIncomingEntries(
         await files.listFiles(source.rootPath, recursive: source.recursive),
         sourceRoot: source.rootPath,
@@ -1207,27 +1265,36 @@ class SourceLibraryScanner {
           if (source.videoGroupingMode != 'folder') {
             await VideoSourceMetadataIndexer(_db).index(source);
           }
-          // 纯音频交给音乐库（反馈 QAondMh4M5）。音乐来源只支持本地目录，网络来源里
-          // 的纯音频两边都不收。登记失败（根不可读等）记进本来源的部分失败，视频照常。
-          if (files.isLocal && plan.pureAudioPaths.isNotEmpty) {
-            final MusicAudioIntakeResult music = await _musicIntake
-                .adoptVideoSourceAudio(
-                  videoRoot: source.rootPath,
-                  audioPaths: plan.pureAudioPaths,
-                  videoMediaDirs: <String>[
-                    for (final ScanVideoItem item in plan.videos)
-                      p.dirname(item.videoPath),
-                    for (final ScanPlaylistItem item in plan.playlists)
-                      p.dirname(item.playlistPath),
-                    for (final ScanBlurayDiscItem item in plan.blurayDiscs)
-                      item.discRootPath,
-                    // DVD 盘根是目录；`.iso` 镜像是文件，算它所在目录。
-                    for (final ScanDvdDiscItem item in plan.dvdDiscs)
-                      p.extension(item.discRootPath).toLowerCase() == '.iso'
-                          ? p.dirname(item.discRootPath)
-                          : item.discRootPath,
-                  ],
-                );
+          // 纯音频交给音乐库（反馈 QAondMh4M5）：本地登记本地音乐来源，网络来源登记同一台
+          // 服务器上的网络音乐来源（条目与视频行同一命名空间，路径按 `p.url` 语义）。登记
+          // 失败（根不可读等）记进本来源的部分失败，视频照常。
+          if (plan.pureAudioPaths.isNotEmpty) {
+            final p.Context ctx = files.isLocal ? p.context : p.url;
+            final List<String> videoMediaDirs = <String>[
+              for (final ScanVideoItem item in plan.videos)
+                ctx.dirname(item.videoPath),
+              for (final ScanPlaylistItem item in plan.playlists)
+                ctx.dirname(item.playlistPath),
+              for (final ScanBlurayDiscItem item in plan.blurayDiscs)
+                item.discRootPath,
+              // DVD 盘根是目录；`.iso` 镜像是文件，算它所在目录。
+              for (final ScanDvdDiscItem item in plan.dvdDiscs)
+                ctx.extension(item.discRootPath).toLowerCase() == '.iso'
+                    ? ctx.dirname(item.discRootPath)
+                    : item.discRootPath,
+            ];
+            final MusicAudioIntakeResult music = files.isLocal
+                ? await _musicIntake.adoptVideoSourceAudio(
+                    videoRoot: source.rootPath,
+                    audioPaths: plan.pureAudioPaths,
+                    videoMediaDirs: videoMediaDirs,
+                  )
+                : await _musicIntake.adoptRemoteVideoSourceAudio(
+                    videoSource: source,
+                    scanRoot: scanRoot,
+                    audioPaths: plan.pureAudioPaths,
+                    videoMediaDirs: videoMediaDirs,
+                  );
             if (music.errors.isNotEmpty) {
               final String note =
                   'Music library could not scan ${music.errors.length} '
