@@ -2296,6 +2296,7 @@
   "dictionary_font_size": "Dimensione carattere dizionario",
   "dictionary_font_size_zoom_hint": "Ctrl + rotella del mouse ingrandisce il contenuto del popup",
   "dictionary_pitch_source_count": "Accento · $count",
+  "dictionary_popup_no_results_term": "No results for “${term}”",
   "dictionary_section_frequency": "Dizionari di frequenza",
   "dictionary_section_kanji": "Dizionari di kanji",
   "dictionary_section_pitch": "Dizionari di intonazione",

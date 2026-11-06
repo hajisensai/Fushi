@@ -2296,6 +2296,7 @@
   "dictionary_font_size": "辞書のフォントサイズ",
   "dictionary_font_size_zoom_hint": "Ctrl + スクロールホイールでポップアップの内容を拡大縮小",
   "dictionary_pitch_source_count": "アクセント · $count",
+  "dictionary_popup_no_results_term": "No results for “${term}”",
   "dictionary_section_frequency": "頻度辞書",
   "dictionary_section_kanji": "漢字辞書",
   "dictionary_section_pitch": "ピッチ辞書",

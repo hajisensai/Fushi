@@ -2296,6 +2296,7 @@
   "dictionary_font_size": "Cỡ chữ từ điển",
   "dictionary_font_size_zoom_hint": "Ctrl + cuộn chuột để phóng to nội dung popup",
   "dictionary_pitch_source_count": "Trọng âm · $count",
+  "dictionary_popup_no_results_term": "No results for “${term}”",
   "dictionary_section_frequency": "Từ điển tần suất",
   "dictionary_section_kanji": "Từ điển Kanji",
   "dictionary_section_pitch": "Từ điển thanh điệu",
