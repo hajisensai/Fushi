@@ -9,7 +9,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-/// BUG-4127（反馈 vXYKPudf7U）：英文漫画（全大写对白）OCR 后点词，查词浮层「未找到搜索
+/// BUG-4170（反馈 vXYKPudf7U）：英文漫画（全大写对白）OCR 后点词，查词浮层「未找到搜索
 /// 结果」，同一个词在查词页查得到；只有紧跟标点的词（`WELL?`）查得到。
 ///
 /// 根因：叠加层按字格逐字输出 `<span class="ocr-char">`，OCR 区域不覆盖空格、各行直接
@@ -80,7 +80,7 @@ void main() {
     return at;
   }
 
-  group('BUG-4127 overlay word gaps', () {
+  group('BUG-4170 overlay word gaps', () {
     test('拉丁文：词间与行界补纯空白节点，日文不补', () {
       final List<Map<String, String>> english = itemsOf(
         htmlOf(blockOf(<String>['IT IS BEEN SO', 'LONG SINCE'])),
@@ -223,7 +223,7 @@ void main() {
           result.exitCode,
           0,
           reason:
-              'BUG-4127 behavior test failed.\n'
+              'BUG-4170 behavior test failed.\n'
               'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
         );
         expect(result.stdout.toString(), contains('all assertions passed (7)'));
@@ -233,7 +233,7 @@ void main() {
     });
   });
 
-  group('BUG-4127 empty state names the term', () {
+  group('BUG-4170 empty state names the term', () {
     test('有查询词时空态写明查的词，空串退回通用文案', () {
       LocaleSettings.setLocale(AppLocale.en);
       expect(dictionaryPopupNoResultsMessage('BEENSO'), contains('BEENSO'));

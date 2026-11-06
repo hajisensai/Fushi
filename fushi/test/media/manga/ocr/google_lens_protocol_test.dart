@@ -270,7 +270,7 @@ void main() {
     expect(result.single.sentence, 'Hello world');
   });
 
-  // BUG-4127（反馈 vXYKPudf7U）：段落只有一行 sentence，拉丁文行界必须补空格，
+  // BUG-4170（反馈 vXYKPudf7U）：段落只有一行 sentence，拉丁文行界必须补空格，
   // 否则「SO / LONG」粘成 SOLONG，下游取词与查词都认不出词界。
   test('English multi-line paragraph joins lines with a word space', () {
     final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
