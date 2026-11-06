@@ -4211,23 +4211,40 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   // ── 长按菜单 ──────────────────────────────────────────────────────
 
-  /// 长按菜单封面块的模糊垫底图源（[MediaItemDialogFrame.coverBackdrop]）：与
-  /// [_buildCover] 同一判据——文件不存在时为 null，菜单退回纯色 letterbox。
-  ImageProvider? _coverBackdropFor(String? coverPath) {
-    // 存在性读异步记忆表（BUG-3756）；还在探测时不画垫底（菜单退回纯色 letterbox）。
-    if (_coverExists.lookupOptional(coverPath) != true) return null;
-    return FileImage(File(coverPath!));
+  /// 长按菜单头部的封面块：画 [image]（与打开菜单的那张卡同一个图源），没有图源
+  /// 或解码失败时退回胶片占位。槽位是菜单的小封面卡，contain 完整显示、空带走
+  /// [_coverBacking] 衬底（与 [_buildCover] 的非 poster 槽位同形）。
+  Widget _menuCoverFor(ImageProvider? image) {
+    if (image == null) return ShelfCoverPlaceholder(icon: FushiIcons.video);
+    return _coverBacking(
+      Image(
+        image: image,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) =>
+            ShelfCoverPlaceholder(icon: FushiIcons.video),
+      ),
+    );
   }
 
   /// 长按视频卡：打开与书架书籍一致的封面背景动作面板。播放仍由卡片点击负责。
-  void _showVideoMenu(VideoBookRow book) {
+  ///
+  /// [cover] / [title] 由打开菜单的那张卡传入、必须是它自己正在画的图源与标题
+  /// （反馈 Lf32nO2gRK：首页行卡画刮削海报 + 作品名，菜单此前另走一条只认自身
+  /// coverPath + 原始文件名的判据，头部就成了胶片占位 + 文件名）。各分区卡片的
+  /// 取图 / 取名口径不同（首页行卡与「系列」刮削优先，「全部视频」按文件），菜单
+  /// 不另立判据，跟卡走。
+  void _showVideoMenu(
+    VideoBookRow book, {
+    required ImageProvider? cover,
+    required String title,
+  }) {
     showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
-        cover: _buildCover(book),
-        coverBackdrop: _coverBackdropFor(book.coverPath),
+        cover: _menuCoverFor(cover),
+        coverBackdrop: cover,
         coverMaterial: ShelfCoverMaterial.glossyPoster,
-        title: book.title,
+        title: title,
         showLaunchAction: false,
         // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
         // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
@@ -4244,7 +4261,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                     context: context,
                     repo: widget.repo,
                     discs: discs,
-                    cover: _coverBackdropFor(book.coverPath),
+                    cover: cover,
                   ),
                 );
               },
@@ -6396,12 +6413,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final int? episodeNumber = episodeCount > 1
         ? book.currentEpisode + 1
         : null;
+    final String title = _metadataWorkByBook[book.bookUid]?.title ?? book.title;
+    final ImageProvider? poster = _bookPosterProvider(book);
     return _HomeHeroData(
       cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
       focusId: FushiFocusId('home-video-continue-${book.bookUid}'),
-      title: _metadataWorkByBook[book.bookUid]?.title ?? book.title,
+      title: title,
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
-      poster: _bookPosterProvider(book),
+      poster: poster,
       image: ({required bool overlay}) =>
           _episodeStillProvider(book) ??
           _mediaImageProvider(
@@ -6421,7 +6440,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               episodeCount: episodeCount,
             ),
       onPlay: () => unawaited(_open(book)),
-      onLongPress: () => _showVideoMenu(book),
+      onLongPress: () => _showVideoMenu(book, cover: poster, title: title),
     );
   }
 
@@ -6526,14 +6545,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final int? cid =
         _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
     final bool playlist = playlistEpisodeCount(book.playlistJson) > 1;
+    final ImageProvider? poster = _bookPosterProvider(book);
+    final String title = _metadataWorkByBook[book.bookUid]?.title ?? book.title;
     return _buildRowMediaCard(
       cardKey: ValueKey<String>('home_video_recent_${book.bookUid}'),
       focusId: FushiFocusId('home-video-recent-${book.bookUid}'),
-      cover: _bookPosterProvider(book),
-      title: _metadataWorkByBook[book.bookUid]?.title ?? book.title,
+      cover: poster,
+      title: title,
       cardWidth: cardWidth,
       onTap: () => _open(book, playlistCollectionId: cid),
-      onLongPress: () => _showVideoMenu(book),
+      onLongPress: () => _showVideoMenu(book, cover: poster, title: title),
       tags: _videoBookTagChips(book.bookUid),
       secondaryText: playlist
           ? t.video_home_recent_episode_number(n: book.currentEpisode + 1)
@@ -7033,6 +7054,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final bool selected =
         _selectionMode && _selectedUids.contains(book.bookUid);
     final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
+    // 列表行画的是自身封面 + 原始标题（见下方 [_buildCover] / Text），菜单同源。
+    void openMenu() => _showVideoMenu(
+      book,
+      cover: _localCoverProvider(book),
+      title: book.title,
+    );
 
     final Widget row = FushiCard(
       key: ValueKey<String>('home_video_list_${book.bookUid}'),
@@ -7041,8 +7068,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       selected: selected,
       onTap: () =>
           _dispatchCardTap(selectionKey: book.bookUid, open: () => _open(book)),
-      onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
-      onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
+      onLongPress: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? null : openMenu,
       child: SizedBox(
         height: 96,
         // 2026-10 体验优化：窄屏收小封面槽（[videoListRowCoverWidth]），行高
@@ -7110,7 +7137,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               if (!_selectionMode)
                 FushiIconButtonControl(
                   tooltip: t.common_more_actions,
-                  onPressed: () => _showVideoMenu(book),
+                  onPressed: openMenu,
                   icon: const FushiIcon(Icons.more_horiz),
                 ),
               const SizedBox(width: 6),
@@ -10387,6 +10414,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final String displayTitle = widget.section == VideoLibrarySection.series
         ? (_metadataWorkByBook[book.bookUid]?.title ?? book.title)
         : book.title;
+    // 菜单头部与本卡同源：[coverOverride] 在前，否则是下方 [_buildCover] 画的自身封面。
+    void openMenu() => _showVideoMenu(
+      book,
+      cover: coverOverride ?? _localCoverProvider(book),
+      title: displayTitle,
+    );
     final List<_VideoTagChip> tags = _videoBookTagChips(book.bookUid);
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     // TODO-1346：视频观看进度分数（null=无可展示进度 → 不画进度条）。
@@ -10416,8 +10449,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // onSecondaryTap，故桌面右键本地视频卡无反应（BUG-758）。
       // 未进入选择态时，触屏与桌面长按都保留管理菜单；显式进入选择态后才摘掉
       // 卡片长按识别器，让祖先 SelectionDragArea 接管扫选。
-      onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
-      onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
+      onLongPress: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? null : openMenu,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
