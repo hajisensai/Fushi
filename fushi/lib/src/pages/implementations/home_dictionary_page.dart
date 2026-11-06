@@ -1982,8 +1982,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       // 调 minedCardAction，这里没接 → 桥回空结果、静默无反应，以前
                       // 制的那张没句子的卡永远覆写不了。☆ / ↗ / 高级制卡同样漏接。
                       // 与浮层各层（DictionaryPageMixin.buildNestedPopupLayer）同一套。
-                      onMinedCardAction: (Map<String, String> fields) =>
-                          onMinedCardAction(_withSourceSentence(fields)),
+                      onMinedCardAction:
+                          (
+                            Map<String, String> fields, {
+                            bool openChooser = false,
+                          }) => onMinedCardAction(
+                            _withSourceSentence(fields),
+                            openChooser: openChooser,
+                          ),
                       onQueueOverwrite: (Map<String, String> fields) =>
                           onQueueOverwrite(_withSourceSentence(fields)),
                       onOpenInAnki: onOpenInAnki,
