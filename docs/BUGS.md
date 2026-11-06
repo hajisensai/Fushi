@@ -33,17 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3753 条。点号进各自文件。
-> 共 3727 条。点号进各自文件。
+> 共 3754 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4127](bugs/BUG-4127-background-tasks-sheet-edge-and-srs-stats-narrow.md) | ✅ | ✅ | 后台任务弹层行贴边 / 复习页窄屏统计卡并排挤压 |
-| [BUG-4127](bugs/BUG-4127-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
-> 共 3729 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4154](bugs/BUG-4154-background-tasks-sheet-edge-and-srs-stats-narrow.md) | ✅ | ✅ | 后台任务弹层行贴边 / 复习页窄屏统计卡并排挤压 |
 | [BUG-4153](bugs/BUG-4153-ios-manga-solo-title-shelf.md) | ✅ | ✅ | ios-manga-solo-title-shelf |
 | [BUG-4152](bugs/BUG-4152-gal-attached-state-not-in-feedback-log.md) | ✅ | ✅ | attached 表面隐藏多久、为什么隐藏，反馈日志里查不到 |
 | [BUG-4151](bugs/BUG-4151-game-library-settings-submenu-offscreen.md) | ✅ | ✅ | 游戏库最右侧条目右键菜单里的「设置」子菜单打不开 |
