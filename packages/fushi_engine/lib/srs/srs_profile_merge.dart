@@ -20,13 +20,15 @@
 /// 所以这里按「**假如这份数据一直就在新 uid 下创建**」重算每个按 uid 派生的 ID：能从不可变的来源身份还原
 /// 出派生输入（笔记 guid、笔记类型 ankiNum、字段 / 模板 ankiNum 或名字、牌组全名、卡片的笔记 + 模板 + 序号）且用
 /// 旧 uid 验算吻合的，用同一条规则换成新 uid 算；还原不出来的用确定性兜底 `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。
-/// 复习日志不看旧 ID：Anki 导入的原日志按新卡片套导入规则，其余按「新卡片 + HLC + 种类」派生（第 7 步，BUG-4217）。
+/// 复习日志：Anki 导入的原日志不看旧 ID、按新卡片套导入规则，其余（原生日志、undo、重放副本）按旧 ID 兜底（第 7 步，
+/// BUG-4217）。
 /// 修改记录的写入者按 `merged-uuidV5(NS, profile-merge/<newUid>/writer/<最初的写入者>)~<最初的写入者>` 一一改名
 /// （dot / 因果上下文 / HLC 里的写入者一起改；[_mergedWriterNames]），记录之间的支配关系原样保留，修改记录 ID
 /// （由 dot 派生）也就与旧 profile 不相交。
 ///
-/// 全部映射只依赖 (旧 ID 或日志内容, newUid)：重跑得到同一批 ID（幂等）；两台设备各自把同一个旧 profile 并入同一个
-/// 新 uid，也得到同一批 ID，合并后是同一行而不是两份。复习日志与写入者还与合并路径无关（A→B→C 与 A→C 相同）。
+/// 全部映射只依赖 (旧 ID 或导入身份, newUid)：重跑得到同一批 ID（幂等）；两台设备各自把同一个旧 profile 并入同一个
+/// 新 uid，也得到同一批 ID，合并后是同一行而不是两份。写入者名字与合并路径无关（A→B→C 与 A→C 相同）；原生日志的
+/// 兜底 ID 与路径有关（链式合并得到另一个 ID），同一事件的多 ID 副本由读侧按内容身份合并（BUG-4218）。
 ///
 /// ## 怎么落进同步
 ///
@@ -576,21 +578,22 @@ Future<_MergePlan> _plan(
     for (final SrsReviewLog l in logs) l.cardId,
   ]);
 
-  // 7. 复习日志（BUG-4217）。一条复习的新 ID 只能取决于「这是哪一次复习」（不可变内容），不能取决于它在旧 profile 里
-  //    碰巧叫什么，也不能取决于合并走了哪条路径：同一次复习可能经两条路径进到目标集合（两台设备各自导入过同一份 Anki、
-  //    旧 profile 本身是更早一次并入的结果、A→B→C 链式合并与另一台设备 A→C 直接合并、目标里早就有原生日志的原 ID），
-  //    只要两条路径算出的 ID 不同，同步按 ID 认身份，就会把一次复习落成两条，间隔 0 天的同评分重复样本直接把 FSRS
-  //    优化的 log loss 从 0.6 推到 1.6。所以：
+  // 7. 复习日志（BUG-4217）。同一次复习可能经两条路径进到目标集合（两台设备各自导入过同一份 Anki、旧 profile 本身是
+  //    更早一次并入的结果、目标里早就有原生日志的原 ID），两条路径算出的 ID 不同，同步按 ID 认身份，一次复习就落成
+  //    两条，间隔 0 天的同评分重复样本把 FSRS 优化的 log loss 从 0.6 推到 1.6。所以：
   //    a. **自身身份就是那次 Anki 导入**的日志按导入规则重算，不再验证旧 ID：revlog（origin = anki、HLC =
   //       [srsImportedRevlogHlc]、没有 replayOf）→ UUIDv5(新卡片, anki-revlog/<id>)；锚点（importAnchor、origin = anki、
   //       HLC = [srsImportAnchorHlc]、没有 replayOf）→ UUIDv5(新卡片, anki-anchor/<时刻>)。恢复备份写出的重放副本
   //       （packages/fushi_srs/lib/src/restore_plan.dart `_replayOf`）照抄了 ankiRevlogId / 种类 / 发生时刻，只换了 ID 与
   //       HLC、extra 记了 replayOf——它不是那次导入；套上规则就和已被 undo 撤销的原日志撞成同一个 ID，并入只留一份、
   //       undo 指过来，这次复习整条消失。
-  //    b. 其余日志（原生日志、undo、重放副本）→ UUIDv5(新卡片, profile-merge-log/<HLC>/<种类>)。日志的 HLC 在合并中原样
-  //       保留（日志不改写入者），一个 HLC 只属于一个事件，所以与路径无关：链式与直接合并得到同一个 ID。
-  //    c. 旧 profile 里没有的日志 ID（undo 的目标不在本地）与不认识的事件仍按旧 ID 兜底（没有内容可派生）。
-  //    d. 目标里已有同一条复习（映射后的卡片 + 种类 + 评分 + 发生时刻 + HLC 都相同）但 ID 与 a / b 算出的不同 → 沿用目标
+  //    b. 其余日志（原生日志、undo、重放副本）与 undo 的目标、不认识的事件一律按旧 ID 兜底
+  //       `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。**不能**按日志内容派生：undo 的目标不在本机旧 profile 里时只能
+  //       按旧 ID 兜底，而有这条日志的设备会按内容算出另一个 ID——同一条 undo（同 ID）在两台设备上撤销的是两个不同的
+  //       ID，[_applyMissing] 按 ID 跳过、先到先得，被撤销的复习可能复活、各设备分歧。按旧 ID 兜底时 undo 的 revokes
+  //       在每台设备上都一样。代价：链式合并 A→B→C 与直接合并 A→C 给同一条原生日志两个 ID，由读侧按内容身份合并成
+  //       一组（native/fushi_fsrs/src/history.rs `EventKey`，BUG-4218），撤销任一份即整组撤销。
+  //    c. 目标里已有同一条复习（映射后的卡片 + 种类 + 评分 + 发生时刻 + HLC 都相同）但 ID 与 a / b 算出的不同 → 沿用目标
   //       里的 ID（与修改记录的 [_Writers.alias] 同一思路，BUG-4011）；目标里同一身份有多条时取 ID 最小的那条。
   //    a / b 之后两条旧日志映射到同一个新 ID 时只认「本来就是同一次复习」，见第 9 步。
   bool replayed(SrsReviewLog l) => l.extra.containsKey(srsReplayOfLogExtraKey);
@@ -623,20 +626,11 @@ Future<_MergePlan> _plan(
   for (int i = 0; i < anchors.length; i++) {
     ids.exactly(anchors[i].id, newAnchors[i]);
   }
-  final List<SrsReviewLog> others = <SrsReviewLog>[
-    for (final SrsReviewLog l in logs)
-      if (!ids.has(l.id)) l,
-  ];
-  final List<String> newOthers = uuidV5Batch(<(String, String)>[
-    for (final SrsReviewLog l in others)
-      (ids[l.cardId]!, 'profile-merge-log/${l.hlc.encode()}/${l.kind}'),
-  ]);
-  for (int i = 0; i < others.length; i++) {
-    ids.derived(others[i].id, newOthers[i]);
-  }
   ids.fallbackAll(<String>[
-    for (final SrsReviewLog l in logs)
+    for (final SrsReviewLog l in logs) ...<String>[
+      l.id,
       if (l.revokesId != null) l.revokesId!,
+    ],
     for (final SrsUnknownEvent u in unknown) u.id,
   ]);
   final Map<String, String> targetLogs = await _logIdsByIdentity(db, newUid);
@@ -789,14 +783,6 @@ class _IdMap {
     if (_m.containsKey(k)) return;
     _m[k] = newId;
     exact++;
-  }
-
-  /// [oldId] 按不可变内容派生成 [newId]（还原不出原派生输入的兜底，算进 [fallback]）。
-  void derived(String oldId, String newId) {
-    final String k = oldId.toLowerCase();
-    if (_m.containsKey(k)) return;
-    _m[k] = newId;
-    fallback++;
   }
 
   /// [oldId] 改映射到 [newId]（目标里已有的同一条记录），与原映射相同时不算。

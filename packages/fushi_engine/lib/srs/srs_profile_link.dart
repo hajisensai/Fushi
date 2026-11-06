@@ -674,6 +674,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   }
 
   /// 当前 profile 有没做完的并入（[srsPendingProfileMerges]）：做完并按新身份重开 store；没有返回 null。
+  ///
+  /// 并入本身失败（例如计划阶段的身份断言 `StateError`：两条不同的旧日志 / 两个旧写入者会映射成同一个新 ID，BUG-4217）
+  /// 时**不往外抛**：并入标记在 [srsMergeProfileUid] 一开头就写进了 srs.db，失败不删，这里抛出去的话之后每一次 [link]
+  /// 都重跑、再抛，这台设备的整个复习同步就永久卡死。失败的并入保证旧 uid 的行一行不动（删旧行在核对通过的同一个事务里），
+  /// 所以这一轮跳过它、经 [onError] 记下（ErrorLogService，带 profile / 旧 uid / 新 uid），按 profiles 表当前的 uid 继续
+  /// 同步；标记留着，下一轮照样重跑（数据变了、或修了映射之后就能做完）。
   Future<SrsDbStore?> _resumePendingMerges(
     SrsDbStore store,
     SyncAssetStore within,
@@ -684,21 +690,35 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       store.db,
     )) {
       if (m.profileId != profileId) continue;
-      await srsMergeProfileUid(
-        db,
-        store.db,
-        core: store.core,
-        profileId: m.profileId,
-        oldUid: m.oldUid,
-        newUid: m.newUid,
-        deviceId: store.deviceId,
-        mediaRoot: await mediaRoot?.call(),
-        pullTarget: _pullTarget(within),
-      );
+      try {
+        await srsMergeProfileUid(
+          db,
+          store.db,
+          core: store.core,
+          profileId: m.profileId,
+          oldUid: m.oldUid,
+          newUid: m.newUid,
+          deviceId: store.deviceId,
+          mediaRoot: await mediaRoot?.call(),
+          pullTarget: _pullTarget(within),
+        );
+      } catch (e, stack) {
+        onError?.call(
+          'SrsProfileLinker.resumeMerge profile ${m.profileId} '
+          '${m.oldUid} -> ${m.newUid} (marker kept, retried next round)',
+          e,
+          stack,
+        );
+        continue;
+      }
       await _addToMetaSet(store, kSrsRetiredProfileUidsKey, m.oldUid);
       resumed = true;
     }
-    if (!resumed) return null;
+    // 并入在改完主库 uid 之后才失败（第二遍并入 / 核对），而手里的 store 还是旧 uid 的：按 profiles 表的新 uid 重开，
+    // 否则这一轮会接着同步一个本机已经不再指向的 profile。
+    if (!resumed && await db.profileUidOf(profileId) == store.profileUid) {
+      return null;
+    }
     final SrsDbStore? reopened = await reopenStore();
     if (reopened == null) {
       throw StateError('store did not reopen after resuming a profile merge');
