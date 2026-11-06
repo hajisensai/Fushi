@@ -120,8 +120,9 @@ fn tracks(batches: &[(bool, Vec<Record>)]) -> Vec<TrackRecord> {
 }
 
 #[test]
-fn abi_version_is_one() {
-    assert_eq!(ffm_abi_version(), 1);
+fn abi_version_is_two() {
+    // 2：批次格式加了远程曲目的内嵌封面记录（kind 3）与远程扫描游标。
+    assert_eq!(ffm_abi_version(), 2);
 }
 
 #[test]

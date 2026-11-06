@@ -20,6 +20,7 @@ pub mod fingerprint;
 pub mod lyrics;
 #[cfg(feature = "plugin")]
 pub mod plugin;
+pub mod remote;
 pub mod scan;
 pub mod tag_write;
 pub mod tags;
@@ -28,7 +29,7 @@ pub mod wire;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
 /// 批次二进制格式（[wire::BATCH_FORMAT_VERSION]）变化也必须升这里。
-pub const ABI_VERSION: i32 = 1;
+pub const ABI_VERSION: i32 = 2;
 
 /// 各导出函数共用的返回码。
 pub mod status {
@@ -180,6 +181,122 @@ pub unsafe extern "C" fn ffm_scan_next(
 /// `handle` 来自 [ffm_scan_open]，只能关一次。
 #[no_mangle]
 pub unsafe extern "C" fn ffm_scan_close(handle: *mut scan::Scanner) {
+    if !handle.is_null() {
+        let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(handle))));
+    }
+}
+
+/// 打开一个**远程**扫描游标（SFTP / WebDAV / AList 来源，见 [remote]）：`listing` 是 Dart 列好的
+/// 文件清单 + `.cue` 原始字节（[remote::parse_listing]）。成功时写 `out_handle`（用
+/// [ffm_remote_scan_close] 释放）；清单格式不对返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// `listing_ptr` 指向 `listing_len` 字节；`out_handle` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_remote_scan_open(
+    listing_ptr: *const u8,
+    listing_len: usize,
+    out_handle: *mut *mut remote::RemoteScanner,
+) -> i32 {
+    guard(|| {
+        if out_handle.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(bytes) = slice_arg(listing_ptr, listing_len) else {
+            return status::NULL_ARGUMENT;
+        };
+        match remote::parse_listing(bytes) {
+            Some(listing) => {
+                *out_handle = Box::into_raw(Box::new(remote::RemoteScanner::new(&listing)));
+                status::OK
+            }
+            None => status::BAD_INPUT,
+        }
+    })
+}
+
+/// 远程游标的已知文件清单（格式同 [ffm_scan_set_known]）。必须在第一次 step 之前调用。
+///
+/// # Safety
+/// `handle` 来自 [ffm_remote_scan_open] 且未关闭；`ptr` 指向 `len` 字节。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_remote_scan_set_known(
+    handle: *mut remote::RemoteScanner,
+    ptr: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        if handle.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(bytes) = slice_arg(ptr, len) else {
+            return status::NULL_ARGUMENT;
+        };
+        match wire::parse_known_files(bytes) {
+            Some(known) => {
+                (*handle).set_known(known);
+                status::OK
+            }
+            None => status::BAD_INPUT,
+        }
+    })
+}
+
+/// 推进远程游标：交回 NEED（当前文件缺哪些字节区间）或一批记录，线格式见
+/// [remote::encode_step]。批次的 `done` 为 1 表示扫描结束。
+///
+/// # Safety
+/// `handle` 来自 [ffm_remote_scan_open] 且未关闭；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_remote_scan_step(
+    handle: *mut remote::RemoteScanner,
+    max_records: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if handle.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let step = (*handle).step(max_records as usize);
+        hand_over_bytes(remote::encode_step(&step), out_ptr, out_len);
+        status::OK
+    })
+}
+
+/// 喂当前 NEED 文件 `[offset, offset+len)` 的字节。没有进行中的文件返回
+/// [status::INVALID_ARGUMENT]。
+///
+/// # Safety
+/// `handle` 来自 [ffm_remote_scan_open] 且未关闭；`ptr` 指向 `len` 字节。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_remote_scan_feed(
+    handle: *mut remote::RemoteScanner,
+    offset: i64,
+    ptr: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        if handle.is_null() || offset < 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let Some(bytes) = slice_arg(ptr, len) else {
+            return status::NULL_ARGUMENT;
+        };
+        if (*handle).feed(offset as u64, bytes) {
+            status::OK
+        } else {
+            status::INVALID_ARGUMENT
+        }
+    })
+}
+
+/// 关闭远程游标。
+///
+/// # Safety
+/// `handle` 来自 [ffm_remote_scan_open]，只能关一次。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_remote_scan_close(handle: *mut remote::RemoteScanner) {
     if !handle.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(handle))));
     }
