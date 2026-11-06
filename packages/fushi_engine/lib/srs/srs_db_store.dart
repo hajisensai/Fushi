@@ -753,6 +753,9 @@ class SrsDbStore implements SrsSync2Host {
       await db.customStatement(
         'PRAGMA wal_autocheckpoint = $_bulkWalAutocheckpointPages',
       );
+      // 批与批之间写连接留着页缓存（上限按可用内存自适应，native/fushi_fsrs/src/store/mem_budget.rs）：大库上每批都要
+      // 往同一批散列键索引页里插，以前每批结束收回到 8 MB、下一批从盘上重读。
+      await _bulkCache(true);
     }
     try {
       return await body();
@@ -763,12 +766,25 @@ class SrsDbStore implements SrsSync2Host {
         try {
           await _walCheckpoint();
         } finally {
-          await db.customStatement(
-            'PRAGMA wal_autocheckpoint = ${state.restore}',
-          );
+          try {
+            await _bulkCache(false);
+          } finally {
+            await db.customStatement(
+              'PRAGMA wal_autocheckpoint = ${state.restore}',
+            );
+          }
         }
       }
     }
+  }
+
+  /// 批量写入开始 / 结束：内核据此在写连接放回时留着 / 收回页缓存（`bulk_cache`，只置标志、不拿写锁）。收回发生在
+  /// 下一次写连接放回时（紧接着的 `PRAGMA wal_autocheckpoint` 就是一次）。
+  Future<void> _bulkCache(bool on) async {
+    await _coreSync2(core.address, core.libraryPath, <String, Object?>{
+      'op': 'bulk_cache',
+      'on': on,
+    }, const <Uint8List>[]);
   }
 
   /// 大批量写入期间的 WAL 自动 checkpoint 阈值（页，缺省页大小 4 KB 下约 64 MB）：远大于一个导入批次的

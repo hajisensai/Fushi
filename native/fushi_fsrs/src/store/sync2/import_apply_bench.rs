@@ -54,6 +54,15 @@ fn import_apply_bench() {
             .exec(&format!("PRAGMA wal_autocheckpoint = {pages}"), &[], true)
             .unwrap();
     }
+    // 写连接页缓存：`SRS_BENCH_CACHE_KIB=<n>` 钉死上限（缺省按可用内存自适应，store/mem_budget.rs）；
+    // `SRS_BENCH_HOLD=1` 按 Dart `bulkWrites` 那样批间留着页缓存（缺省每批结束收回到 8 MB）。
+    if let Ok(kib) = std::env::var("SRS_BENCH_CACHE_KIB") {
+        a.core
+            .exec(&format!("PRAGMA cache_size = -{kib}"), &[], true)
+            .unwrap();
+    }
+    a.core
+        .set_bulk_holds_cache(std::env::var("SRS_BENCH_HOLD").is_ok());
     if std::env::var("SRS_BENCH_NODIGEST").is_ok() {
         a.core
             .exec("DROP TRIGGER sync2_dg_srs_review_logs_ins", &[], false)
