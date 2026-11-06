@@ -18,7 +18,7 @@ use crate::wire::{self, Credit, KnownFiles, Record, TrackRecord};
 pub const MAX_BATCH: usize = 256;
 
 /// 目录封面候选名（不含扩展名，小写），按优先级。
-const COVER_STEMS: &[&str] = &["cover", "folder", "front", "album", "albumart"];
+pub(crate) const COVER_STEMS: &[&str] = &["cover", "folder", "front", "album", "albumart"];
 const COVER_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp"];
 
 enum Item {
@@ -310,11 +310,12 @@ impl Scanner {
                     Err(message) => return vec![Record::Error { path: ps, message }],
                 };
                 if let Some((sheet, tracks)) = embedded_split_tracks(&path, &meta) {
+                    let loc = Loc::of_path(&path);
                     return tracks
                         .iter()
                         .map(|t| {
                             Record::Track(Box::new(cue_track_record(
-                                &path,
+                                &loc,
                                 &meta,
                                 &sheet,
                                 t,
@@ -327,7 +328,7 @@ impl Scanner {
                         .collect();
                 }
                 vec![Record::Track(Box::new(plain_record(
-                    &path,
+                    &Loc::of_path(&path),
                     &meta,
                     mtime,
                     size,
@@ -363,12 +364,13 @@ impl Scanner {
                     Err(message) => return vec![Record::Error { path: ps, message }],
                 };
                 let cue_ps = path_str(&cue_path);
+                let loc = Loc::of_path(&audio);
                 sheet.files[file_index]
                     .tracks
                     .iter()
                     .map(|t| {
                         Record::Track(Box::new(cue_track_record(
-                            &audio,
+                            &loc,
                             &meta,
                             &sheet,
                             t,
@@ -392,11 +394,19 @@ fn item_path(i: &Item) -> &Path {
 }
 
 fn find_folder_cover(files: &[PathBuf]) -> Option<String> {
+    choose_folder_cover(files, |f| (file_stem(f), ext_lower(f))).map(|f| path_str(f))
+}
+
+/// 目录封面挑选（本地 [PathBuf] 与远程 URL 串共用）：`parts` 给出（主名, 小写扩展名）。
+pub(crate) fn choose_folder_cover<T>(
+    files: &[T],
+    parts: impl Fn(&T) -> (String, String),
+) -> Option<&T> {
     for stem in COVER_STEMS {
         for f in files {
-            let ext = ext_lower(f);
-            if COVER_EXTS.contains(&ext.as_str()) && file_stem(f).eq_ignore_ascii_case(stem) {
-                return Some(path_str(f));
+            let (s, ext) = parts(f);
+            if COVER_EXTS.contains(&ext.as_str()) && s.eq_ignore_ascii_case(stem) {
+                return Some(f);
             }
         }
     }
@@ -406,25 +416,45 @@ fn find_folder_cover(files: &[PathBuf]) -> Option<String> {
 /// CUE 的 FILE 名 → 目录里实际的音频文件。原名找不到时按同名换扩展名找（CUE 写
 /// `x.wav`、实际转成了 `x.flac` 是最常见的情况）；大小写不敏感。
 fn resolve_cue_audio(name: &str, files: &[PathBuf]) -> Option<PathBuf> {
-    let base = Path::new(name)
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())?;
-    if let Some(f) = files.iter().find(|f| {
-        f.file_name()
-            .map(|n| n.to_string_lossy().eq_ignore_ascii_case(&base))
-            .unwrap_or(false)
-    }) {
-        if tags::is_audio_extension(&ext_lower(f)) {
-            return Some(f.clone());
+    choose_cue_audio(name, files, |f| {
+        (
+            f.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            file_stem(f),
+            ext_lower(f),
+        )
+    })
+    .cloned()
+}
+
+/// [resolve_cue_audio] 的通用版：`parts` 给出（文件名, 主名, 小写扩展名）。
+pub(crate) fn choose_cue_audio<'a, T>(
+    name: &str,
+    files: &'a [T],
+    parts: impl Fn(&T) -> (String, String, String),
+) -> Option<&'a T> {
+    // CUE 的 FILE 可能带 Windows 或 POSIX 目录前缀，只认最后一段。
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name).to_owned();
+    if base.is_empty() {
+        return None;
+    }
+    if let Some(f) = files
+        .iter()
+        .find(|f| parts(f).0.eq_ignore_ascii_case(&base))
+    {
+        if tags::is_audio_extension(&parts(f).2) {
+            return Some(f);
         }
     }
-    let stem = file_stem(Path::new(&base));
-    files
-        .iter()
-        .find(|f| {
-            file_stem(f).eq_ignore_ascii_case(&stem) && tags::is_audio_extension(&ext_lower(f))
-        })
-        .cloned()
+    let stem = match base.rfind('.') {
+        Some(i) if i > 0 => base[..i].to_owned(),
+        _ => base.clone(),
+    };
+    files.iter().find(|f| {
+        let (_, s, ext) = parts(f);
+        s.eq_ignore_ascii_case(&stem) && tags::is_audio_extension(&ext)
+    })
 }
 
 /// 一个文件自带的分轨信息拆成虚拟曲目（与外置 `.cue` 同一种记录：`cue_start_ms` /
@@ -436,8 +466,18 @@ fn resolve_cue_audio(name: &str, files: &[PathBuf]) -> Option<PathBuf> {
 ///   一首，书名作专辑（没有专辑标签取标题，再没有取文件名）。起点落在曲长之外的章节
 ///   丢掉（坏章节表），剩不到两章就按整文件一首。
 fn embedded_split_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<CueTrack>)> {
+    embedded_split_tracks_with(&file_stem(path), meta, || read_flac_head(path))
+}
+
+/// [embedded_split_tracks] 的通用版：[stem] 是文件主名（M4B 没有书名时作专辑），
+/// `flac_head` 按需给出含 CUESHEET 块的 FLAC 头字节（本地读文件头，远程由稀疏缓冲拼出）。
+pub(crate) fn embedded_split_tracks_with(
+    stem: &str,
+    meta: &FileMeta,
+    flac_head: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<(CueSheet, Vec<CueTrack>)> {
     if !meta.mp4_chapters.is_empty() {
-        return m4b_chapter_tracks(path, meta);
+        return m4b_chapter_tracks(stem, meta);
     }
     if meta.codec.as_deref() != Some("flac") {
         return None;
@@ -445,7 +485,7 @@ fn embedded_split_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<
     let sheet = meta.embedded_cuesheet.as_deref().and_then(cue::parse);
     let tracks = match &sheet {
         Some(sheet) => sheet.files.first().map(|f| f.tracks.clone()),
-        None => read_flac_head(path).and_then(|h| cue::parse_flac_cuesheet_block(&h)),
+        None => flac_head().and_then(|h| cue::parse_flac_cuesheet_block(&h)),
     }?;
     if tracks.len() < 2 && tracks.first().map(|t| t.start_ms) == Some(0) {
         return None;
@@ -453,7 +493,7 @@ fn embedded_split_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<
     Some((sheet.unwrap_or_default(), tracks))
 }
 
-fn m4b_chapter_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<CueTrack>)> {
+fn m4b_chapter_tracks(stem: &str, meta: &FileMeta) -> Option<(CueSheet, Vec<CueTrack>)> {
     let starts: Vec<&crate::mp4_chapters::Mp4Chapter> = meta
         .mp4_chapters
         .iter()
@@ -479,7 +519,7 @@ fn m4b_chapter_tracks(path: &Path, meta: &FileMeta) -> Option<(CueSheet, Vec<Cue
             .album
             .clone()
             .or_else(|| meta.title.clone())
-            .or_else(|| Some(file_stem(path))),
+            .or_else(|| Some(stem.to_owned())),
         performer: meta.album_artist.clone(),
         ..Default::default()
     };
@@ -529,7 +569,7 @@ fn credits_of(meta: &FileMeta, artists: &[String], album_artist: Option<&str>) -
     out
 }
 
-fn fingerprint(meta: &FileMeta) -> AudioFingerprint {
+pub(crate) fn fingerprint(meta: &FileMeta) -> AudioFingerprint {
     AudioFingerprint {
         duration_ms: meta.duration_ms,
         sample_rate: meta.sample_rate,
@@ -541,18 +581,36 @@ fn dir_of(path: &Path) -> String {
     path.parent().map(path_str).unwrap_or_default()
 }
 
-fn plain_record(
-    path: &Path,
+/// 一首曲目所在文件的（路径原文, 主名, 所在目录）：本地 [Path] 与远程 URL 串共用
+/// 同一套记录构造，uid / 专辑 uid 规则只写一次。
+pub(crate) struct Loc {
+    pub path: String,
+    pub stem: String,
+    pub dir: String,
+}
+
+impl Loc {
+    fn of_path(p: &Path) -> Self {
+        Self {
+            path: path_str(p),
+            stem: file_stem(p),
+            dir: dir_of(p),
+        }
+    }
+}
+
+pub(crate) fn plain_record(
+    loc: &Loc,
     meta: &FileMeta,
     mtime: i64,
     size: i64,
     folder_cover: Option<String>,
 ) -> TrackRecord {
-    let ps = path_str(path);
+    let ps = loc.path.clone();
     let album_uid = meta
         .album
         .as_deref()
-        .map(|a| uid::album_uid(a, meta.album_artist.as_deref(), &dir_of(path)));
+        .map(|a| uid::album_uid(a, meta.album_artist.as_deref(), &loc.dir));
     TrackRecord {
         track_uid: uid::track_uid(&ps, None, fingerprint(meta)),
         path: ps,
@@ -565,7 +623,7 @@ fn plain_record(
         channels: meta.channels,
         bitrate_kbps: meta.bitrate_kbps,
         is_lossless: meta.is_lossless,
-        title: meta.title.clone().unwrap_or_else(|| file_stem(path)),
+        title: meta.title.clone().unwrap_or_else(|| loc.stem.clone()),
         title_sort: meta.title_sort.clone(),
         artist_credit: (!meta.artists.is_empty()).then(|| meta.artists.join(" / ")),
         album_title: meta.album.clone(),
@@ -597,8 +655,8 @@ fn plain_record(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn cue_track_record(
-    audio: &Path,
+pub(crate) fn cue_track_record(
+    loc: &Loc,
     meta: &FileMeta,
     sheet: &CueSheet,
     t: &CueTrack,
@@ -607,7 +665,7 @@ fn cue_track_record(
     folder_cover: Option<String>,
     cue_sheet_path: Option<String>,
 ) -> TrackRecord {
-    let ps = path_str(audio);
+    let ps = loc.path.clone();
     let artists: Vec<String> = match t.performer.clone().or_else(|| sheet.performer.clone()) {
         Some(p) => vec![p],
         None => meta.artists.clone(),
@@ -619,7 +677,7 @@ fn cue_track_record(
         .or_else(|| meta.album_artist.clone());
     let album_uid = album
         .as_deref()
-        .map(|a| uid::album_uid(a, album_artist.as_deref(), &dir_of(audio)));
+        .map(|a| uid::album_uid(a, album_artist.as_deref(), &loc.dir));
     let duration = match t.end_ms {
         Some(end) => Some(end - t.start_ms),
         None => meta.duration_ms.map(|d| (d - t.start_ms).max(0)),

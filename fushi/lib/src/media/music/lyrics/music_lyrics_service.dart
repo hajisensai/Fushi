@@ -180,8 +180,14 @@ class MusicLyricsTrackRef {
 
   /// 这一首认不认同目录 sidecar / 文件内嵌歌词：CUE 虚拟曲目（那些属于整张镜像）与在线音源
   /// 插件曲目（[path] 是 `fushi-plugin` URI，不是本地文件）都不认。解析与选来源面板共用。
-  bool get readsLocalLyrics =>
-      !isCueTrack && parseMusicPluginTrackPath(path) == null;
+  bool get readsLocalLyrics => !isCueTrack && isLocalFile;
+
+  /// [path] 是本机文件路径：不是任何 `scheme://` 地址（插件 `fushi-music-plugin://`、
+  /// 服务器曲库 / 网络音乐来源的 http(s) / `sftp://` 条目、`cdda://`）。只有本机文件才有
+  /// 同目录 sidecar、内嵌标签可读，也才能「导出到文件旁边」（反馈 QAondMh4M5）。
+  bool get isLocalFile => !_uriScheme.hasMatch(path);
+
+  static final RegExp _uriScheme = RegExp(r'^[A-Za-z][A-Za-z0-9+.\-]+://');
 }
 
 /// 解析结果：生效的时间轴（已带该来源的偏移）+ 它来自哪个来源。
@@ -1208,6 +1214,11 @@ class MusicLyricsService {
     String format, {
     bool overwrite = false,
   }) async {
+    // 不是本机文件（网络来源 / 插件 / 服务器曲目）就没有「文件旁边」：明确拒绝，不往
+    // 当前目录下写一个用地址拼出来的相对路径。界面对这类曲目不给入口。
+    if (!track.isLocalFile) {
+      throw FileSystemException('not a local audio file', track.path);
+    }
     final File audio = File(track.path);
     final String name = audio.uri.pathSegments.last;
     final int dot = name.lastIndexOf('.');

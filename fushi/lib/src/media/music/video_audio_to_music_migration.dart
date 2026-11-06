@@ -9,6 +9,8 @@
 /// 入库走 [MusicAudioIntake]（与视频来源扫描、视频页拖放同一条交接）：
 /// - 属于本地视频来源的行：按 `music_audio_roots.dart` 的规则登记常驻音乐来源（判
 ///   「与视频同目录」用同来源里其余非音频视频行所在目录）；
+/// - 属于网络视频来源（SFTP / WebDAV / AList）的行：登记同一台服务器上的网络音乐来源
+///   （[MusicAudioIntake.adoptRemoteVideoSourceAudio]），曲目按条目地址原样认；
 /// - 其余（手动导入、与视频同目录、网络来源已不在的）：已被音乐来源覆盖的重扫该来源，
 ///   否则逐个「仅此一次」导入。
 ///
@@ -57,6 +59,8 @@ import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show kStreamableVideoSourceTransports;
 
 /// 一次迁移的结果。
 class VideoAudioMigrationReport {
@@ -99,12 +103,26 @@ class VideoAudioMigrationReport {
 }
 
 /// 纯函数：这一行是不是要搬的旧版「无画面视频」——本地纯音频单文件（多集合集行的
-/// `videoPath` 只是其中一集，不在此列；网络流没有本地文件，音乐库收不了）。
+/// `videoPath` 只是其中一集，不在此列；网络来源的行见 [isLegacyRemoteAudioOnlyVideoBook]）。
 bool isLegacyAudioOnlyVideoBook(VideoBookRow row) =>
     isAudioOnlyMediaPath(row.videoPath) &&
     (row.playlistJson ?? '').trim().isEmpty &&
     !isNetworkOnlyVideoPath(row.videoPath) &&
     p.isAbsolute(row.videoPath);
+
+/// 纯函数：这一行是不是要搬的旧版网络来源纯音频（反馈 QAondMh4M5）——属于某个来源、
+/// 路径是网络来源条目地址（`sftp://` 稳定地址 / WebDAV·AList 的 http(s) 地址）的纯音频
+/// 单文件。番剧源 / 媒体服务器 / 手动贴的 URL 没有 sourceId，不在此列：音乐库没有对应的
+/// 网络来源可以收它们。
+bool isLegacyRemoteAudioOnlyVideoBook(VideoBookRow row) {
+  if (row.sourceId == null) return false;
+  if (!isAudioOnlyMediaPath(row.videoPath)) return false;
+  if ((row.playlistJson ?? '').trim().isNotEmpty) return false;
+  final String lower = row.videoPath.toLowerCase();
+  return lower.startsWith('sftp://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('http://');
+}
 
 /// 见文件头。[fileExists] 默认真文件系统；[intake] / [repository] 测试注入。
 /// [lyrics] 是字幕的落点，[subtitleJobsRoot] 是视频字幕任务目录根（认本管线产物），
@@ -125,7 +143,13 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     for (final VideoBookRow r in all)
       if (isLegacyAudioOnlyVideoBook(r) && fileExists(r.videoPath)) r,
   ];
-  if (rows.isEmpty) return VideoAudioMigrationReport.none;
+  final List<VideoBookRow> remoteRows = <VideoBookRow>[
+    for (final VideoBookRow r in all)
+      if (isLegacyRemoteAudioOnlyVideoBook(r)) r,
+  ];
+  if (rows.isEmpty && remoteRows.isEmpty) {
+    return VideoAudioMigrationReport.none;
+  }
   final MusicAudioIntake hand =
       intake ?? MusicAudioIntake(db, fileExists: fileExists);
   final List<String> errors = <String>[];
@@ -167,6 +191,42 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     errors.addAll(r.errors);
   }
 
+  // 1b. 网络视频来源（SFTP / WebDAV / AList）的行：登记同一台服务器上的网络音乐来源并
+  // 扫描；已被同服务器音乐来源覆盖的，重扫覆盖它的来源。条目地址与视频行同一命名空间。
+  // 与视频同目录的（外挂音轨）不收、留在视频库；连不上的下次启动再试。
+  final Map<int, List<VideoBookRow>> remoteBySource =
+      <int, List<VideoBookRow>>{};
+  for (final VideoBookRow r in remoteRows) {
+    remoteBySource.putIfAbsent(r.sourceId!, () => <VideoBookRow>[]).add(r);
+  }
+  for (final MapEntry<int, List<VideoBookRow>> e in remoteBySource.entries) {
+    final SourceLibraryRow? source = await db.getMediaSourceById(e.key);
+    if (source == null ||
+        !kStreamableVideoSourceTransports.contains(source.transport) ||
+        source.mediaKind != SourceLibraryKind.video.dbValue) {
+      continue;
+    }
+    final MusicAudioIntakeResult r = await hand.adoptRemoteVideoSourceAudio(
+      videoSource: source,
+      scanRoot: remoteSourceNamespacedRoot(source),
+      audioPaths: <String>[
+        for (final VideoBookRow row in e.value) row.videoPath,
+      ],
+      videoMediaDirs: <String>{
+        for (final VideoBookRow other in all)
+          if (other.sourceId == e.key && !isAudioOnlyMediaPath(other.videoPath))
+            p.url.dirname(other.videoPath),
+      },
+      videoFilePaths: <String>[
+        for (final VideoBookRow other in all)
+          if (other.sourceId == e.key && !isAudioOnlyMediaPath(other.videoPath))
+            other.videoPath,
+      ],
+      rescanCoveringSources: true,
+    );
+    errors.addAll(r.errors);
+  }
+
   // 2. 还不是在库曲目的：逐个交接（覆盖它的来源重扫 / 仅此一次导入）。
   Map<String, List<MusicTrackRow>> live = await _liveTracksByPath(db);
   final List<String> pending = <String>[
@@ -178,14 +238,23 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     errors.addAll(r.errors);
     live = await _liveTracksByPath(db);
   }
+  // 网络来源曲目按地址**原样**比（不 canonicalize：URL 区分大小写，`p.canonicalize`
+  // 在 Windows 上还会把 `/` 换成 `\`）。
+  final Map<String, List<MusicTrackRow>> remoteLive = remoteRows.isEmpty
+      ? const <String, List<MusicTrackRow>>{}
+      : await _liveTracksByPath(db, key: (String path) => path);
+  List<MusicTrackRow>? tracksOf(VideoBookRow r) =>
+      isLegacyRemoteAudioOnlyVideoBook(r)
+      ? remoteLive[r.videoPath]
+      : live[_key(r.videoPath)];
 
   // 3. 已在曲库的行：带走字幕与播放记录，再从视频库删除。字幕带走失败的行这次不删。
   final List<VideoBookRow> done = <VideoBookRow>[];
   int events = 0;
   int resumes = 0;
   int carried = 0;
-  for (final VideoBookRow r in rows) {
-    final List<MusicTrackRow>? tracks = live[_key(r.videoPath)];
+  for (final VideoBookRow r in <VideoBookRow>[...rows, ...remoteRows]) {
+    final List<MusicTrackRow>? tracks = tracksOf(r);
     if (tracks == null || tracks.isEmpty) continue;
     try {
       final ({int wrote, bool keepRow}) sub = await _carryOverSubtitles(
@@ -218,11 +287,14 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
       <String>[for (final VideoBookRow r in done) r.bookUid],
       scope: DeleteScope.keepLocalOnly,
       compactDatabase: false,
-      keepLocalFiles: <String>[for (final VideoBookRow r in done) r.videoPath],
+      keepLocalFiles: <String>[
+        for (final VideoBookRow r in done)
+          if (!isLegacyRemoteAudioOnlyVideoBook(r)) r.videoPath,
+      ],
     );
   }
   return VideoAudioMigrationReport(
-    candidates: rows.length,
+    candidates: rows.length + remoteRows.length,
     migrated: done.length,
     playEventsWritten: events,
     resumePointsWritten: resumes,
@@ -335,13 +407,14 @@ String _key(String path) => musicTrackPathKey(path);
 /// 在库曲目按路径（[_key]）索引。CUE / M4B 章节拆出的虚拟曲目共用一个路径，全部保留、
 /// 按起点升序。
 Future<Map<String, List<MusicTrackRow>>> _liveTracksByPath(
-  FushiDatabase db,
-) async {
+  FushiDatabase db, {
+  String Function(String path) key = _key,
+}) async {
   final Map<String, List<MusicTrackRow>> out = <String, List<MusicTrackRow>>{};
   for (final MusicTrackRow t in await (db.select(
     db.musicTracks,
   )..where(($MusicTracksTable t) => t.deletedAt.isNull())).get()) {
-    out.putIfAbsent(_key(t.path), () => <MusicTrackRow>[]).add(t);
+    out.putIfAbsent(key(t.path), () => <MusicTrackRow>[]).add(t);
   }
   for (final List<MusicTrackRow> tracks in out.values) {
     tracks.sort(

@@ -36,6 +36,7 @@ class MusicPlayItem {
     this.rgAlbumPeak,
     this.artistRefs = const <MusicPlayArtistRef>[],
     this.sourceAlbumId,
+    this.sourceId,
   });
 
   final String trackUid;
@@ -48,6 +49,10 @@ class MusicPlayItem {
 
   /// 来源侧的专辑 id（插件曲目）；本地曲目用 [albumUid]。
   final String? sourceAlbumId;
+
+  /// 曲库曲目所属的音乐来源（`music_tracks.source_id`）。网络音乐来源的曲目起播时按它的
+  /// transport 取流（`music_remote_media.dart`）；服务器曲库 / 插件 / 单文件导入为 null。
+  final int? sourceId;
 
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
   final int? startMs;

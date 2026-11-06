@@ -19,6 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
+import 'package:fushi/src/media/music/music_remote_media.dart';
 
 /// ReplayGain 2.0 参考响度（LUFS）。
 const double kReplayGain2ReferenceLufs = -18;
@@ -230,6 +231,11 @@ class MusicLoudnessScanner extends ChangeNotifier {
     // 音频 CD 曲目：FFmpeg 没有 cdda 协议，光驱里的盘也随时会换——不测，按 0 dB 播
     // （记成已扫描、增益为空，信号路径面板照实显示没有 ReplayGain）。
     if (isMusicCddaPath(track.path)) return null;
+    // 网络音乐来源的曲目（反馈 QAondMh4M5）：FFmpeg 拿不到 SFTP 连接 / WebDAV 认证 /
+    // AList 临期直链，测了只会每首失败一次——同样记成已扫描、按 0 dB 播。
+    if (isMusicRemoteSourceTrack(sourceId: track.sourceId, path: track.path)) {
+      return null;
+    }
     final FfmpegRunResult r = await _ffmpeg().run(
       musicEbur128Args(track),
       _perTrackTimeout,
