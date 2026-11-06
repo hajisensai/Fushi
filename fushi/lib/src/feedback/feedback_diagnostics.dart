@@ -15,6 +15,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/feedback/feedback_gal_lookup_log.dart';
 import 'package:fushi/src/feedback/feedback_log_redaction.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -321,8 +322,23 @@ String collectFeedbackLogText({required bool includeDebugLog}) {
       ..writeln('==== debug log ====')
       ..writeln(DebugLogService.instance.getFullLog());
   }
+  // 游戏内查词的状态时间线只写在 hibiki_glookup.log（Windows 才有游戏 Hook）。与调试
+  // 日志同一道用户开关；闪退报告不带。
+  final List<String> galLines = includeDebugLog && galLookupLogSupported()
+      ? readGalLookupDiagnosticLines()
+      : const <String>[];
+  if (galLines.isNotEmpty) {
+    buf
+      ..writeln()
+      ..writeln('==== game lookup diagnostics ====')
+      ..writeAll(galLines, '\n')
+      ..writeln();
+  }
   return redactFeedbackLog(buf.toString());
 }
+
+/// 游戏 Hook / 游戏内查词只做 Windows。
+bool galLookupLogSupported() => Platform.isWindows;
 
 /// 把日志文本压成 gzip，保证不超过 [maxBytes]（服务端上限）：超了就只留**末尾**
 /// （最近的记录最有用）、逐次减半重压。截断时在开头注明。

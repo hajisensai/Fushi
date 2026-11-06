@@ -37,6 +37,10 @@ String _logPath() =>
 
 File _resolveLogFile() => _logFile ??= File(_logPath());
 
+/// 查词诊断日志文件（Dart glog 与 runner NativeGlog 共写的那一份）。反馈附日志时
+/// 从这里摘结构化诊断行（见 `feedback_gal_lookup_log.dart`）。
+File glookupLogFile() => _resolveLogFile();
+
 /// 测试用：把日志指到别的文件，并让下一次写入立即检查大小。
 void debugSetGlookupLogFile(File? file) {
   _logFile = file;

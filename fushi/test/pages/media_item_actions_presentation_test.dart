@@ -374,6 +374,59 @@ void main() {
       },
     );
 
+    // 反馈 DnG4jZW57v：游戏库最右一列的条目右键，「设置」子菜单打不开。子菜单翻到
+    // 左侧时被推到了屏幕左边外面——它的项建出来了，只是不在屏上。
+    Future<void> expectSubmenuOnScreen(
+      WidgetTester tester, {
+      required Size screen,
+      required Offset anchor,
+    }) async {
+      await open(tester, screen: screen, anchor: anchor);
+      final Rect panel = menuPanel(tester);
+      await tester.tap(find.text(t.item_actions_group_settings));
+      await tester.pumpAndSettle();
+      final Rect first = tester.getRect(find.text('Content language'));
+      final Rect last = tester.getRect(find.text('Edit CSS'));
+      final Rect row = tester.getRect(find.text(t.item_actions_group_settings));
+      for (final Rect r in <Rect>[first, last]) {
+        expect(r.left, greaterThanOrEqualTo(0));
+        expect(r.right, lessThanOrEqualTo(screen.width));
+        expect(r.top, greaterThanOrEqualTo(0));
+        expect(r.bottom, lessThanOrEqualTo(screen.height));
+      }
+      // 翻到主菜单左侧、紧贴主菜单，而不是飞到别处。
+      expect(last.right, lessThanOrEqualTo(panel.left));
+      expect(last.right, greaterThan(panel.left - 80));
+      // 与「设置」行同一高度带。
+      expect(
+        first.top <= row.bottom && last.bottom >= row.top,
+        isTrue,
+        reason: 'submenu $first..$last must sit beside row $row',
+      );
+      await tester.tap(find.text('Edit CSS'));
+      await tester.pumpAndSettle();
+      expect(fired, <String>['Edit CSS']);
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('near the right edge the settings submenu flips left and '
+        'stays on screen', (WidgetTester tester) async {
+      await expectSubmenuOnScreen(
+        tester,
+        screen: const Size(1280, 800),
+        anchor: const Offset(1270, 40),
+      );
+    });
+
+    testWidgets('near the bottom-right corner the settings submenu grows '
+        'upward and stays on screen', (WidgetTester tester) async {
+      await expectSubmenuOnScreen(
+        tester,
+        screen: const Size(1280, 800),
+        anchor: const Offset(1270, 795),
+      );
+    });
+
     testWidgets('the entrance grows out of the pointer corner, not the screen '
         'corner', (WidgetTester tester) async {
       fired = <String>[];
