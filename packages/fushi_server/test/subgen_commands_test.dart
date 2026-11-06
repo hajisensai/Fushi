@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_complete
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
@@ -80,6 +81,7 @@ void main() {
   late _Recognizer recognizer;
   final List<(VideoSubtitleSegmenterMode, MossBackendPreference, String?)>
   asked = <(VideoSubtitleSegmenterMode, MossBackendPreference, String?)>[];
+  final List<VideoSubtitleLanguage> askedLanguages = <VideoSubtitleLanguage>[];
 
   setUp(() async {
     h = await CommandHarness.create();
@@ -95,6 +97,7 @@ void main() {
     ).writeAsBytesSync(<int>[1, 2, 3]);
     recognizer = _Recognizer();
     asked.clear();
+    askedLanguages.clear();
   });
   tearDown(() => h.dispose());
 
@@ -107,8 +110,10 @@ void main() {
             MossBackendPreference backend, {
             String? mossCli,
             String? mossModel,
+            VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
           }) async {
             asked.add((mode, backend, mossCli));
+            askedLanguages.add(language);
             return VideoSubtitleRecognizerChoice(recognizer: recognizer);
           },
       probeDurationMs: (String _) async => 1440000,
@@ -285,6 +290,51 @@ void main() {
     // 整季跳过看的是 out-dir：那里没有 Show - 02.ja.srt，所以也处理了。
     expect(recognizer.seen, hasLength(3));
     expect(h.out.toString(), contains('exported'));
+  });
+
+  test('--language：缺省日语；zh 时后缀跟着变成 zh，--suffix 仍可覆盖', () {
+    final ArgParser parser = ArgParser();
+    module().register(parser);
+    SubgenOptions parse(List<String> args) => parseSubgenOptions(
+      parser.parse(<String>['subgen', season.path, ...args]).command!,
+    );
+    expect(parse(<String>[]).language, VideoSubtitleLanguage.japanese);
+    expect(parse(<String>[]).suffix, 'ja');
+    expect(
+      parse(<String>['--language', 'zh']).language,
+      VideoSubtitleLanguage.mandarin,
+    );
+    expect(parse(<String>['--language', 'zh']).suffix, 'zh');
+    expect(
+      parse(<String>['--language', 'zh', '--suffix', 'zh-Hans']).suffix,
+      'zh-Hans',
+    );
+    expect(
+      () => parser.parse(<String>['subgen', 'x', '--language', 'ko']),
+      throwsFormatException,
+    );
+  });
+
+  test('--language zh：按普通话识别、写 .zh.srt（已有 .ja.srt 不算已有字幕）', () async {
+    final String outDir = p.join(h.tmp.path, 'out-zh');
+    expect(
+      await h.run(module(), <String>[
+        'subgen',
+        season.path,
+        '--no-ai',
+        '--language',
+        'zh',
+        '--out-dir',
+        outDir,
+      ]),
+      0,
+      reason: '${h.err}',
+    );
+    expect(askedLanguages.toSet(), <VideoSubtitleLanguage>{
+      VideoSubtitleLanguage.mandarin,
+    });
+    expect(File(p.join(outDir, 'Show - 01.zh.srt')).existsSync(), isTrue);
+    expect(File(p.join(outDir, 'Show - 01.ja.srt')).existsSync(), isFalse);
   });
 
   test('--glossary 坏文件 = 数据错误（65），在识别任何一集之前就退出', () async {

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fushi Lens</title>
+  <link rel="stylesheet" href="lens.css">
+</head>
+<body>
+  <div id="stage">
+    <img id="frame" alt="">
+    <div id="boxes"></div>
+  </div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="popup-box" hidden>
+    <iframe id="popup" title="Fushi dictionary" src="popup/nested-popup.html"></iframe>
+  </div>
+  <div id="hints" aria-hidden="true">
+    <span><b>✥</b> line / character</span>
+    <span><b>A</b> look up</span>
+    <span><b>X</b> mine</span>
+    <span><b>Y</b> area</span>
+    <span><b>B</b> back</span>
+  </div>
+  <script src="lens.js"></script>
+</body>
+</html>

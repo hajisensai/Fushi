@@ -1,0 +1,135 @@
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #eee;
+  font: 15px/1.4 system-ui, sans-serif;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+}
+
+#frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: brightness(0.82);
+}
+
+#boxes {
+  position: absolute;
+  pointer-events: none;
+}
+
+.line {
+  position: absolute;
+  border-radius: 4px;
+  outline: 1px solid rgba(255, 255, 255, 0.35);
+  transition: outline-color 120ms ease, background-color 120ms ease;
+}
+
+.line.current {
+  outline: 2px solid #8ab4ff;
+  background: rgba(138, 180, 255, 0.12);
+}
+
+/* Drawing the reading area: a finger drag draws, the browser must not pan. */
+.area-mode,
+.area-mode body {
+  touch-action: none;
+}
+
+/* Reading area for this game: only this part of the screen is read. */
+.area {
+  position: absolute;
+  border-radius: 6px;
+  outline: 1px dashed rgba(138, 180, 255, 0.45);
+}
+
+.area.editing {
+  outline: 2px dashed #8ab4ff;
+  background: rgba(138, 180, 255, 0.1);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+
+.glyph {
+  position: absolute;
+  border-radius: 3px;
+  background: rgba(255, 214, 102, 0.45);
+  transition: left 90ms ease, top 90ms ease, width 90ms ease, height 90ms ease;
+}
+
+.glyph.match {
+  background: rgba(255, 214, 102, 0.22);
+}
+
+#status {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.85);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.in-steam #status {
+  top: 56px;
+}
+
+#status.shown {
+  opacity: 1;
+}
+
+#popup-box {
+  position: absolute;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(24, 24, 28, 0.96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+#popup-box[hidden] {
+  display: block;
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+#popup {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+#hints {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  display: flex;
+  gap: 14px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.7);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+#hints b {
+  display: inline-block;
+  min-width: 1.3em;
+  text-align: center;
+  color: #8ab4ff;
+}

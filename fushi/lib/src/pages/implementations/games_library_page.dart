@@ -36,6 +36,8 @@ import 'package:fushi/src/media/collections/collection_drag.dart'
     show
         CollectionAddOutcome,
         CollectionDropTarget,
+        LibraryDragReorderScope,
+        LibraryReorderCell,
         MediaCardDraggable,
         addMediaRefToCollection;
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
@@ -294,11 +296,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   /// 手动序，拖动从用户眼前的顺序开始。
   void _startReorder() {
     if (!mounted) return;
-    if (_view.sortField != GalgameSortField.manual) {
-      _setManualOrder(_sortedUnitKeys);
-      _setView(_view.copyWith(sortField: GalgameSortField.manual));
-    }
+    _adoptManualSort();
     setState(() => _reordering = true);
+  }
+
+  /// 排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成手动序（排序模式
+  /// 与桌面直拖共用）。
+  void _adoptManualSort() {
+    if (_view.sortField == GalgameSortField.manual) return;
+    _setManualOrder(_sortedUnitKeys);
+    _setView(_view.copyWith(sortField: GalgameSortField.manual));
+  }
+
+  /// 桌面常态网格的直拖重排（[LibraryDragReorderScope]）：任何排序下都可拖，拖一次
+  /// 即把当前显示顺序连同这次移动存为手动序（与合集详情页同一语义）。
+  void _onGameDragReorder(List<String> visible, int from, int to) {
+    _adoptManualSort();
+    _onGameReorder(visible, from, to);
   }
 
   void _endReorder() => setState(() => _reordering = false);
@@ -1820,12 +1834,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
         );
     if (!_listLayout) {
       return <Widget>[
-        SliverGrid.builder(
-          gridDelegate: gridDelegate,
-          itemCount: groups.length,
-          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
-            index: i,
-            child: _buildGroupCard(groups[i]),
+        // 桌面直拖：卡与卡之间 = 重排，合集卡正中 = 放进合集（懒构建不变）。
+        // 与合集详情页 `canReorder` 同一口径：搜索 / 筛选下不直拖重排（只剩拖进合集）。
+        LibraryDragReorderScope(
+          enabled: !_view.hasActiveFilter && _view.search.trim().isEmpty,
+          onReorder: (int from, int to) =>
+              _onGameDragReorder(unitKeys, from, to),
+          child: SliverGrid.builder(
+            gridDelegate: gridDelegate,
+            itemCount: groups.length,
+            itemBuilder: (BuildContext context, int i) =>
+                FushiStaggeredEntrance(
+                  index: i,
+                  child: LibraryReorderCell(
+                    index: i,
+                    child: _buildGroupCard(groups[i]),
+                  ),
+                ),
           ),
         ),
       ];

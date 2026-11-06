@@ -250,7 +250,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         FushiListTileControl(
           key: const ValueKey<String>('video-subtitle-ai-generate'),
           leading: const FushiIcon(FushiIcons.ai),
-          title: Text(t.video_subtitle_ai_title),
+          title: Text(t.video_subtitle_ai_generate_title),
           subtitle: Text(t.video_subtitle_ai_entry_hint),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
@@ -3001,7 +3001,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final String? output = result.outputPath;
     if (!result.exported || output == null) {
       _showOsd(
-        videoSubtitleEpisodeStatusLabel(result),
+        videoSubtitleEpisodeStatusLabel(result, language: job.options.language),
         severity: ToastSeverity.warning,
       );
       return;

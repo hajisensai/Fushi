@@ -8,7 +8,9 @@
 /// 与那两个编辑器唯一的结构差别在预览：它们用 WebView 渲染样式，这里渲染的是
 /// [GalTextProcessPipeline.run] 的**逐步留痕**——每一步吃进什么、吐出什么、有没有把整行
 /// 清空，是用户判断「这条规则该不该留」的唯一依据。预览与 hook 热路径共用同一份
-/// [applyGalTextProcessStep]，预览结果与真实入库文本不可能分叉。
+/// [applyGalTextProcessStep]；样例行由调用方给出产出当前字幕的那份原文（见
+/// `texthooker_page.dart` 的 `_selectedThreadSample`），同一输入过同一管线，预览结果与
+/// 真实入库文本不会分叉（BUG-4029）。
 library;
 
 import 'dart:async';

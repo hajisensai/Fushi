@@ -580,14 +580,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 手动序，拖动从用户眼前的顺序开始。
   void _startReorder() {
     if (!mounted) return;
-    if (_sortMode != ShelfSortMode.manual) {
-      _setManualOrder(_sortedUnitKeys);
-    }
-    setState(() {
-      _reordering = true;
-      _sortMode = ShelfSortMode.manual;
-    });
+    _adoptManualSort();
+    setState(() => _reordering = true);
+  }
+
+  /// 排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成手动序（排序模式
+  /// 与桌面直拖共用：拖动从用户眼前的顺序开始）。
+  void _adoptManualSort() {
+    if (_sortMode == ShelfSortMode.manual) return;
+    _setManualOrder(_sortedUnitKeys);
+    setState(() => _sortMode = ShelfSortMode.manual);
     unawaited(appModel.prefsRepo.setShelfSortModeName(_sortMode.name));
+  }
+
+  /// 桌面常态网格的直拖重排（[LibraryDragReorderScope]）：任何排序下都可拖，拖一次
+  /// 即把当前显示顺序连同这次移动存为手动序（与合集详情页同一语义）。
+  void _onShelfDragReorder(List<String> visible, int from, int to) {
+    _adoptManualSort();
+    _onShelfReorder(visible, from, to);
   }
 
   void _endReorder() => setState(() => _reordering = false);
@@ -2262,6 +2272,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           in shelfGroups)
                         sortKeys[g]!.tieKey,
                     ],
+                    // 与合集详情页 `canReorder` 同一口径：多选 / 搜索 / 筛选下不直拖
+                    // 重排（只剩拖进合集），排序模式另走拖排网格。
+                    dragReorderable:
+                        !_selectionMode && !hasActiveFilter && !searching,
                   ),
               ],
             ),
@@ -2288,6 +2302,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     Map<String, String> epubCoverUrisByBookKey,
     BoxConstraints constraints, {
     required List<String> unitKeys,
+    required bool dragReorderable,
   }) {
     // 书卡自带约 12 的内边距：网格再左右各缩 gap（8），封面外缘落在页边 20
     // 上，与顶栏胶囊、「继续阅读」hero 同一条竖线（2026-10-30 窄屏截图里书格
@@ -2337,15 +2352,27 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         padding: EdgeInsets.symmetric(horizontal: gridInset),
         sliver: ShelfCoverMaterialScope(
           material: ShelfCoverMaterial.glossyBook,
-          child: SliverGrid.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: cardLayout.columns,
-              childAspectRatio: kShelfBookCardAspectRatio,
-            ),
-            itemCount: groups.length,
-            itemBuilder: (_, int i) => FushiStaggeredEntrance(
-              index: i,
-              child: _buildShelfGroupCard(groups[i], epubCoverUrisByBookKey),
+          // 桌面直拖：卡与卡之间 = 重排，合集卡正中 = 放进合集（懒构建不变）。
+          child: LibraryDragReorderScope(
+            enabled: dragReorderable,
+            onReorder: (int from, int to) =>
+                _onShelfDragReorder(unitKeys, from, to),
+            child: SliverGrid.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cardLayout.columns,
+                childAspectRatio: kShelfBookCardAspectRatio,
+              ),
+              itemCount: groups.length,
+              itemBuilder: (_, int i) => FushiStaggeredEntrance(
+                index: i,
+                child: LibraryReorderCell(
+                  index: i,
+                  child: _buildShelfGroupCard(
+                    groups[i],
+                    epubCoverUrisByBookKey,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

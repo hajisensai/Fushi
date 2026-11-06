@@ -1,6 +1,7 @@
-/// 生成日语字幕要用的两类本机模型在 app 层的接缝：
+/// 生成字幕要用的两类本机模型在 app 层的接缝：
 ///
-/// - [VideoSubtitleAsrModelPort]：视频用的日语识别模型（`mixedAudio` 包，Parakeet）；
+/// - [VideoSubtitleAsrModelPort]：视频用的识别模型（`mixedAudio` 包；日语 Parakeet、
+///   普通话 X-ASR zipformer，按 [VideoSubtitleLanguage] 选）；
 /// - [VideoSubtitleMossPort]：MOSS（audio.cpp 运行库 + MOSS-Transcribe-Diarize 权重）。
 ///
 /// 视频页面板、设置页与桌面 CLI 都经它们读状态 / 触发下载；生产实现只转调
@@ -17,6 +18,7 @@ import 'package:fushi_asr_core/asr_core.dart'
         AsrTranscribePlan,
         AsrTranscriptionService,
         ModelDownloadEvent;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
     show MossBackendPreference;
 
@@ -32,18 +34,24 @@ import 'package:fushi/src/asr_host/asr_host.dart'
 import 'package:fushi/src/asr_host/shared_model_downloads.dart'
     show asrDownloadKeyFor, kMossDownloadKey, sharedModelDownloads;
 
-/// 视频用的日语识别模型：是否已下载 + 下载。
+/// 视频用的识别模型（按 [VideoSubtitleLanguage]）：是否已下载 + 下载。
 abstract interface class VideoSubtitleAsrModelPort {
-  Future<bool> isReady();
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  });
 
   /// 下载缺失的模型文件；事件流结束 = 下载完。失败以异常结束流。
   ///
   /// 下载归全应用单飞登记表（`sharedModelDownloads`），不归调用页面：取消订阅
   /// （关弹层）不停下载；已在下载时再调只是挂上去看进度，不另起第二条写者。
-  Stream<ModelDownloadEvent> download();
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  });
 
   /// 接回进行中的下载（别处 / 之前那次弹层发起的）；没在下载时为 null。
-  Stream<ModelDownloadEvent>? resumeDownload();
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  });
 }
 
 /// 生产实现：与视频页「语音转写」同一个 `mixedAudio` 转录服务装配。
@@ -53,29 +61,40 @@ class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
   static AsrTranscriptionService _service() =>
       createAsrTranscriptionService(audioProfile: AsrAudioProfile.mixedAudio);
 
-  static Future<AsrTranscribePlan> _plan(AsrTranscriptionService service) =>
-      service.plan(
-        language: AsrLanguage.japanese,
-        preference: AsrAccelerationPreference.auto,
-      );
+  static Future<AsrTranscribePlan> _plan(
+    AsrTranscriptionService service,
+    AsrLanguage language,
+  ) => service.plan(
+    language: language,
+    preference: AsrAccelerationPreference.auto,
+  );
 
   @override
-  Future<bool> isReady() async => (await _plan(_service())).modelReady;
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async => (await _plan(_service(), language.asrLanguage)).modelReady;
 
-  static String get _key =>
-      asrDownloadKeyFor(AsrLanguage.japanese, AsrAudioProfile.mixedAudio);
-
-  @override
-  Stream<ModelDownloadEvent> download() =>
-      sharedModelDownloads.join(_key, _downloadMissing);
+  static String _key(VideoSubtitleLanguage language) =>
+      asrDownloadKeyFor(language.asrLanguage, AsrAudioProfile.mixedAudio);
 
   @override
-  Stream<ModelDownloadEvent>? resumeDownload() =>
-      sharedModelDownloads.attach(_key);
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => sharedModelDownloads.join(
+    _key(language),
+    () => _downloadMissing(language.asrLanguage),
+  );
 
-  static Stream<ModelDownloadEvent> _downloadMissing() async* {
+  @override
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => sharedModelDownloads.attach(_key(language));
+
+  static Stream<ModelDownloadEvent> _downloadMissing(
+    AsrLanguage language,
+  ) async* {
     final AsrTranscriptionService service = _service();
-    final AsrTranscribePlan plan = await _plan(service);
+    final AsrTranscribePlan plan = await _plan(service, language);
     if (plan.modelReady) return;
     yield* service.downloadModel(
       language: plan.language,

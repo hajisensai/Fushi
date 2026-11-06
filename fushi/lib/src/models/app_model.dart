@@ -345,6 +345,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show
         MossBackendPreference,
+        VideoSubtitleLanguage,
         VideoSubtitleSegmenterMode,
         appMossProvisionStatus,
         createAsrTranscriptionService,
@@ -971,9 +972,11 @@ class AppModel with ChangeNotifier {
                 (
                   VideoSubtitleSegmenterMode mode,
                   MossBackendPreference mossBackend,
+                  VideoSubtitleLanguage language,
                 ) => resolveAppVideoSubtitleRecognizer(
                   mode: mode,
                   mossBackend: mossBackend,
+                  language: language,
                 ),
             pipelineJobsRoot: videoSubtitleJobsRootUnder(
               await AppPaths.supportRootDirectory(),

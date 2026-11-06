@@ -8,6 +8,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 |---|---|---|
 | 媒体库 host（视频 / 书 / 漫画 / 有声书 / 词典包） | `/api/library/*`（冻结面） | 服务端扫描本机目录入库，客户端浏览、拉流、同步进度 |
 | 漫画整卷 OCR | `/api/manga_ocr/*` | 客户端上传卷，服务端跑 ONNX 检测+识别，回传 mokuro |
+| 截屏识字 | `POST /api/ocr/screen[?region=x,y,w,h]`（能力位 `screenOcrV1`） | body 是一帧截图（JPEG / PNG / WebP），返回逐行文字、行框与逐字框（截图像素坐标）；整帧当文字图走 PP 行检测 + 逐行识别，常驻会话空闲 5 分钟释放。给 Steam Deck 游戏内识字等用，模型同上（`ocr models pull`） |
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（用户添加的 BT 站 / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |

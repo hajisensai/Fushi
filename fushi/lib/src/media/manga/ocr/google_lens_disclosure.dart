@@ -14,6 +14,11 @@ const String kGoogleLensDisclosurePreferenceKey =
 const String kVideoGoogleLensDisclosurePreferenceKey =
     'video_google_lens_disclosure_version';
 
+/// 互联设备截屏（Steam Deck 上的 Fushi Lens 读游戏画面）上传同意的设备本地键。与漫画 /
+/// 视频分开：用户同意过发漫画页 / 视频帧，不等于同意发整块游戏屏幕。
+const String kGameGoogleLensDisclosurePreferenceKey =
+    'game_google_lens_disclosure_version';
+
 typedef GoogleLensDisclosureGate = Future<bool> Function(BuildContext context);
 
 /// 要上传给 Google Lens 的是什么。决定同意框文案与同意记录的键。
@@ -22,7 +27,10 @@ enum GoogleLensDisclosureScene {
   mangaPages(kGoogleLensDisclosurePreferenceKey),
 
   /// 视频画面（暂停帧识别、图片字幕整轨转文字）。
-  videoFrames(kVideoGoogleLensDisclosurePreferenceKey);
+  videoFrames(kVideoGoogleLensDisclosurePreferenceKey),
+
+  /// 互联设备发来的游戏截屏（`/api/ocr/screen`）。
+  gameScreens(kGameGoogleLensDisclosurePreferenceKey);
 
   const GoogleLensDisclosureScene(this.preferenceKey);
 
@@ -34,12 +42,15 @@ enum GoogleLensDisclosureScene {
       t.manga_google_lens_disclosure_title,
     GoogleLensDisclosureScene.videoFrames =>
       t.video_google_lens_disclosure_title,
+    GoogleLensDisclosureScene.gameScreens =>
+      t.game_google_lens_disclosure_title,
   };
 
   String get body => switch (this) {
     GoogleLensDisclosureScene.mangaPages => t.manga_google_lens_disclosure_body,
     GoogleLensDisclosureScene.videoFrames =>
       t.video_google_lens_disclosure_body,
+    GoogleLensDisclosureScene.gameScreens => t.game_google_lens_disclosure_body,
   };
 }
 
