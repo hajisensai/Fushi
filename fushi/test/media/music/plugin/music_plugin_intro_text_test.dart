@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_intro_text.dart';
 
 /// 网易云外文艺人简介的真实形状（Polyphia，2026-11-06 用户截图）：开头一张百科信息框

@@ -510,9 +510,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
-  // String（默认 'long_tracks'）：逐曲断点续播 off / long_tracks / all
-  // （MusicResumeMode.wire，music_resume.dart）。
-  'music_resume_mode',
   // String（默认 'auto'）：卡拉 OK 字幕页 ASS 歌词默认显示 auto / original / structured
   // （音乐 P3，设计 §6.3；MusicAssRenderPreference.prefValue）。
   'music_karaoke_ass_render',
@@ -545,6 +542,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
+  // String（默认 'long_tracks'）：逐曲断点续播 off / long_tracks / all
+  // （MusicResumeMode.wire，music_resume.dart）。
+  'music_resume_mode',
   // String（JSON 数组，serverId）：混排进本地曲库的服务器（服务器曲库 P5，显式 opt-in）。
   // 服务器配置本身设备本地，这份也设备本地（deviceLocalPrefKeys）。
   'music_server_library_mix',

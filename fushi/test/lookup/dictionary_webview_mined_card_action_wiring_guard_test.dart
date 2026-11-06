@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 反馈 -xJWu33WgJ / pcBy9h7D3_：查词页结果区点 ✓（这个词以前就制过卡）静默无反应。
 ///

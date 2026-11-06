@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 
 /// 守卫：Dart 侧「是不是纯音频」的唯一判据 [kAudioExtensions]（media_extensions.dart）=
