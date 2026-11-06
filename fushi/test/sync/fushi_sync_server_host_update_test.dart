@@ -213,13 +213,24 @@ void main() {
     expect(denialOf(resp), HostUpdateDenial.unsupported);
   });
 
-  test('P2P tunnel zone may read status but not trigger', () async {
+  // 反馈 d639PMD5mS：已配对设备从异地（P2P 隧道 / 公网）也能让主机更新，不再按
+  // 信任区拒；鉴权仍是专属 token + 主机开关 + 一次性 nonce。
+  test('P2P tunnel peer with its own token can trigger the update', () async {
     await startServer();
     final int p2pPort = await server.startP2pListener();
     final String nonce = await issueNonce(peerToken, port: p2pPort);
     final http.Response resp = await trigger(peerToken, nonce, port: p2pPort);
-    expect(resp.statusCode, 403);
-    expect(denialOf(resp), HostUpdateDenial.zone);
+    expect(resp.statusCode, 200);
+    expect(updater.starts, 1);
+  });
+
+  test('P2P tunnel peer is still bound by the host switch', () async {
+    await startServer();
+    final int p2pPort = await server.startP2pListener();
+    updater.allowed = false;
+    final String nonce = await issueNonce(peerToken, port: p2pPort);
+    final http.Response off = await trigger(peerToken, nonce, port: p2pPort);
+    expect(denialOf(off), HostUpdateDenial.disabled);
     expect(updater.starts, 0);
   });
 

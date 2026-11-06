@@ -34,6 +34,20 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3743 条。点号进各自文件。
+> 共 3730 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4130](bugs/BUG-4130-web-video-progress-extrapolates-while-stalled.md) | ✅ | ✅ | 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走 |
+| [BUG-4129](bugs/BUG-4129-web-video-study-chars-zero.md) | ✅ | ✅ | 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0 |
+| [BUG-4128](bugs/BUG-4128-web-page-flip-comic-not-detected.md) | ✅ | ✅ | 内置浏览器把 canvas / 跨页翻页式漫画试读页认不成漫画 |
+| [BUG-4127](bugs/BUG-4127-interconnect-host-update-lan-only.md) | ✅ | ✅ | 互联主机版本卡写「只能在局域网内让主机更新」，异地已配对设备被信任区门拒 |
+> 共 3727 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4127](bugs/BUG-4127-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
+> 共 3729 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|

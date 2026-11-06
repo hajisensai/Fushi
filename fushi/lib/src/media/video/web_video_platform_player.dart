@@ -3,7 +3,10 @@
 // [ExternallyRenderedPlatformPlayer]——VideoController 不为它建纹理、不要 mpv 句柄。
 //
 // 状态：页面 glue 每 ~250 ms 上报一次（[applySnapshot]），播放中按倍速外推位置，
-// 进度条不一跳一跳。动作：play / pause / seek / rate / volume / 音轨 转成页面 JS 命令
+// 进度条不一跳一跳。外推只填两次上报之间的空隙：页面报缓冲（seeking / readyState 不足）时
+// 冻结，离最近一次权威位置最多外推 [kWebVideoMaxExtrapolation]——站点卡住、上报停了、或
+// seek 迟迟不落地时，进度条不再自己往前走（反馈 Ia-GMxq2dQ：Netflix 跳转后黑屏卡住，
+// 进度条照走十几秒，一暂停才跳回跳转点）。动作：play / pause / seek / rate / volume / 音轨 转成页面 JS 命令
 // （[evaluate]），先乐观更新状态让按钮即时响应。
 //
 // 乐观状态与上报的冲突用**确定的在途状态**裁决，不用计时器：
@@ -15,6 +18,7 @@
 //   回报失败（[applyCommandFailed]）立即结束。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -26,6 +30,11 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 上报位置离 seek 目标（按在途期间的播放外推）多近算「已落地」。
 const Duration kWebVideoSeekLandingTolerance = Duration(milliseconds: 1500);
+
+/// 离最近一次权威位置（上报 / seek 目标 / 播放态切换）最多外推多远（墙钟）。上报周期
+/// ~250 ms，正常播放时外推从不超过它；超过 = 页面没在报新位置（卡住 / 节流 / seek 没落地），
+/// 这时站点的真实位置未知，不能凭空让进度条前进。
+const Duration kWebVideoMaxExtrapolation = Duration(seconds: 1);
 
 /// glue 命令的结果码里表示「已发出」的那些（seek 的回执随后由 seekDone 送达）。
 const Set<String> _kSeekSent = <String>{'bridge', 'direct'};
@@ -107,6 +116,16 @@ class WebVideoPlatformPlayer extends PlatformPlayer
       _pendingPlaying = null;
     }
     _lastVideoKey = s.videoKey;
+    if (state.buffering != buffering) {
+      // 缓冲进出都从此刻显示的位置重新起算：进缓冲冻结在这里，出缓冲从这里接着走，
+      // 不把缓冲期间的墙钟补进进度（seek 在途时上报不回灌，这是唯一的位置来源）。
+      _anchor = _extrapolatedPosition();
+      _sinceAnchor
+        ..reset()
+        ..start();
+      state = state.copyWith(buffering: buffering);
+      _add(bufferingController, buffering);
+    }
     _frameCaptureSupported =
         s.hasVideo && webVideoFrameCaptureSupported(s.href);
     final Duration reported = Duration(milliseconds: s.positionMs ?? 0);
@@ -145,10 +164,6 @@ class WebVideoPlatformPlayer extends PlatformPlayer
         _add(volumeController, v);
       }
     }
-    if (state.buffering != buffering) {
-      state = state.copyWith(buffering: buffering);
-      _add(bufferingController, buffering);
-    }
     _setSize(s.videoWidth, s.videoHeight);
     _applySiteAudioTracks(s.siteAudioTracks, s.siteAudioTrackCurrent);
     final Duration position = state.position;
@@ -184,10 +199,12 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   }
 
   Duration _extrapolatedPosition() {
-    if (!state.playing) return _anchor;
-    final int ms =
-        _anchor.inMilliseconds +
-        (_sinceAnchor.elapsedMilliseconds * state.rate).round();
+    if (!state.playing || state.buffering) return _anchor;
+    final int elapsedMs = math.min(
+      _sinceAnchor.elapsedMilliseconds,
+      kWebVideoMaxExtrapolation.inMilliseconds,
+    );
+    final int ms = _anchor.inMilliseconds + (elapsedMs * state.rate).round();
     final Duration p = Duration(milliseconds: ms);
     return state.duration > Duration.zero && p > state.duration
         ? state.duration
@@ -245,7 +262,10 @@ class WebVideoPlatformPlayer extends PlatformPlayer
 
   void _extrapolate() {
     if (_disposed || !state.playing) return;
-    _setPosition(_extrapolatedPosition());
+    final Duration next = _extrapolatedPosition();
+    // 冻结（缓冲 / 外推到顶）时不重复推同一个位置。
+    if (next == state.position) return;
+    _setPosition(next);
   }
 
   void _setSize(int w, int h) {
