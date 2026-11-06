@@ -15,13 +15,15 @@ class _Calls {
 
 Future<DiscoveryImportOutcome> _route(
   TranscribeAudiobookPlan plan, {
-  required bool enabled,
+  bool asrSupported = true,
+  required bool withoutContent,
   AudiobookMaterialMatch match = const AudiobookMaterialMatch(),
   Set<String> contentInLibrary = const <String>{},
   required _Calls calls,
 }) => routeTranscribeAudiobookPlan(
   plan,
-  autoTranscribeEnabled: enabled,
+  asrSupported: asrSupported,
+  transcribeWithoutContent: withoutContent,
   contentAlreadyInLibrary: (String path) async =>
       contentInLibrary.contains(path),
   matchMaterials: (List<String> audio, String title) async => match,
@@ -99,11 +101,100 @@ void main() {
       audioPaths: <String>['/dl/Book/01.mp3', '/dl/Book/02.mp3'],
     );
 
-    test('开关开、素材库配不到 → 排转录,结果 deferred', () async {
+    const TranscribeAudiobookPlan withEpub = TranscribeAudiobookPlan(
+      audioPaths: <String>['/dl/Book/01.mp3'],
+      contentPath: '/dl/Book/book.epub',
+    );
+
+    Matcher blockedBy(DiscoveryImportBlocker blocker) => throwsA(
+      isA<DiscoveryImportBlockedException>().having(
+        (DiscoveryImportBlockedException e) => e.blocker,
+        'blocker',
+        blocker,
+      ),
+    );
+
+    test('包里带 EPUB、开关关(默认) → 照样排转录,转完对齐', () async {
+      final _Calls calls = _Calls();
+      final DiscoveryImportOutcome outcome = await _route(
+        withEpub,
+        withoutContent: false,
+        calls: calls,
+      );
+      expect(outcome.deferred, isTrue);
+      expect(calls.enqueued, <String>['01|/dl/Book/book.epub|/dl/Book/01.mp3']);
+      expect(calls.imported, isEmpty);
+    });
+
+    test('素材库身份键配到正文、开关关 → 照样带正文排转录', () async {
+      final _Calls calls = _Calls();
+      await _route(
+        audioOnly,
+        withoutContent: false,
+        match: const AudiobookMaterialMatch(contentPath: '/m/b.epub'),
+        calls: calls,
+      );
+      expect(calls.enqueued.single, startsWith('Book|/m/b.epub|'));
+    });
+
+    test('没有正文、开关关 → 不生成独立字幕书,以缺字幕挡下', () async {
+      final _Calls calls = _Calls();
+      // 素材库只有标题猜的弱匹配正文:不算正文,同样挡下。
+      await expectLater(
+        _route(
+          audioOnly,
+          withoutContent: false,
+          match: const AudiobookMaterialMatch(
+            contentPath: '/m/guess.epub',
+            contentIsWeakMatch: true,
+          ),
+          calls: calls,
+        ),
+        blockedBy(DiscoveryImportBlocker.audiobookMissingSubtitle),
+      );
+      expect(calls.enqueued, isEmpty);
+      expect(calls.imported, isEmpty);
+    });
+
+    test('本机不支持 ASR → 有没有正文、开关开不开都挡下', () async {
+      for (final TranscribeAudiobookPlan plan in <TranscribeAudiobookPlan>[
+        audioOnly,
+        withEpub,
+      ]) {
+        for (final bool withoutContent in <bool>[true, false]) {
+          final _Calls calls = _Calls();
+          await expectLater(
+            _route(
+              plan,
+              asrSupported: false,
+              withoutContent: withoutContent,
+              calls: calls,
+            ),
+            blockedBy(DiscoveryImportBlocker.audiobookMissingSubtitle),
+          );
+          expect(calls.enqueued, isEmpty);
+        }
+      }
+    });
+
+    test('本机不支持 ASR 但素材库配齐字幕 → 照样立刻入库', () async {
       final _Calls calls = _Calls();
       final DiscoveryImportOutcome outcome = await _route(
         audioOnly,
-        enabled: true,
+        asrSupported: false,
+        withoutContent: false,
+        match: const AudiobookMaterialMatch(subtitlePath: '/m/b.srt'),
+        calls: calls,
+      );
+      expect(outcome.importedCount, 1);
+      expect(calls.enqueued, isEmpty);
+    });
+
+    test('没有正文、开关开 → 排转录(独立字幕书),结果 deferred', () async {
+      final _Calls calls = _Calls();
+      final DiscoveryImportOutcome outcome = await _route(
+        audioOnly,
+        withoutContent: true,
         calls: calls,
       );
       expect(outcome.deferred, isTrue);
@@ -115,10 +206,10 @@ void main() {
       expect(calls.imported, isEmpty);
     });
 
-    test('开关关(或无 ASR)且配不到 → 与改前同一原因码挡下', () async {
+    test('没有正文、开关关且配不到 → 与改前同一原因码挡下', () async {
       final _Calls calls = _Calls();
       await expectLater(
-        _route(audioOnly, enabled: false, calls: calls),
+        _route(audioOnly, withoutContent: false, calls: calls),
         throwsA(
           isA<DiscoveryImportBlockedException>().having(
             (DiscoveryImportBlockedException e) => e.blocker,
@@ -135,7 +226,7 @@ void main() {
         final _Calls calls = _Calls();
         final DiscoveryImportOutcome outcome = await _route(
           audioOnly,
-          enabled: enabled,
+          withoutContent: enabled,
           match: const AudiobookMaterialMatch(subtitlePath: '/m/b.srt'),
           calls: calls,
         );
@@ -152,7 +243,7 @@ void main() {
       final _Calls calls = _Calls();
       await _route(
         audioOnly,
-        enabled: true,
+        withoutContent: true,
         match: const AudiobookMaterialMatch(
           subtitlePath: '/m/b.srt',
           contentPath: '/m/b.epub',
@@ -169,7 +260,7 @@ void main() {
       final _Calls calls = _Calls();
       await _route(
         audioOnly,
-        enabled: true,
+        withoutContent: true,
         match: const AudiobookMaterialMatch(
           subtitlePath: '/m/guess.srt',
           subtitleIsWeakMatch: true,
@@ -186,7 +277,7 @@ void main() {
       final _Calls calls = _Calls();
       await _route(
         audioOnly,
-        enabled: true,
+        withoutContent: true,
         match: const AudiobookMaterialMatch(contentPath: '/m/b.epub'),
         calls: calls,
       );
@@ -205,7 +296,7 @@ void main() {
               audioPaths: <String>['/dl/Book/01.mp3'],
               contentPath: '/dl/Book/book.epub',
             ),
-            enabled: true,
+            withoutContent: true,
             match: match,
             contentInLibrary: const <String>{'/dl/Book/book.epub'},
             calls: calls,
@@ -236,7 +327,7 @@ void main() {
           audioPaths: <String>['/dl/Book/01.mp3'],
           contentPath: '/dl/Book/book.epub',
         ),
-        enabled: true,
+        withoutContent: true,
         match: const AudiobookMaterialMatch(contentPath: '/m/other.epub'),
         calls: calls,
       );

@@ -5,8 +5,10 @@
 ///   已经在下一本几百 MB 的有声书，模型是同一次自动化的必要部分。
 /// - [routeTranscribeAudiobookPlan]：导入执行器的 `transcribeAudiobook` 端口。
 ///   先查有声书素材库（有现成字幕就直接入库，不白跑几个小时转录），配不到
-///   再排进转录队列；开关关掉或本机没有 ASR 时与改前一样以
-///   `audiobookMissingSubtitle` 挡下。
+///   再排进转录队列：有正文（包里自带或素材库身份键命中）就转录后对齐，只要
+///   本机支持 ASR 就排；没有正文只能生成独立字幕书，质量差，要用户打开
+///   「下载后自动转录」开关才排。本机没有 ASR、或没有正文且开关关时与改前
+///   一样以 `audiobookMissingSubtitle` 挡下。
 library;
 
 import 'dart:async';
@@ -201,7 +203,10 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
 
 /// 导入执行器 `transcribeAudiobook` 端口的实现（依赖经参数注入，可单测）。
 ///
-/// - [autoTranscribeEnabled]：开关开 **且** 本机支持 ASR。
+/// - [asrSupported]：本机支持设备端 ASR。不支持时一律不排转录。
+/// - [transcribeWithoutContent]：用户开关 `audiobook_auto_transcribe`（默认
+///   关）。只管「没有正文」这一支——没有 EPUB / 文本时转录只能落成独立字幕书，
+///   质量差；带正文的下载转完对齐是正常流程，不受它影响。
 /// - [contentAlreadyInLibrary]：正文会不会撞上库里的同名书。撞上就以
 ///   `audiobookBookAlreadyInLibrary` 挡下（同齐料包的既有口径，UI 告诉用户去
 ///   那本书里手动导入有声书），而不是先跑几个小时转录再在入库那一步失败。
@@ -210,7 +215,8 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
 /// - [enqueue]：排进转录后入库队列。
 Future<DiscoveryImportOutcome> routeTranscribeAudiobookPlan(
   TranscribeAudiobookPlan plan, {
-  required bool autoTranscribeEnabled,
+  required bool asrSupported,
+  required bool transcribeWithoutContent,
   required Future<bool> Function(String contentPath) contentAlreadyInLibrary,
   required Future<AudiobookMaterialMatch> Function(
     List<String> audioPaths,
@@ -261,7 +267,8 @@ Future<DiscoveryImportOutcome> routeTranscribeAudiobookPlan(
       summary: key,
     );
   }
-  if (!autoTranscribeEnabled) {
+  // 有正文 → 转完对齐（正常流程）；没有正文 → 只有用户明确要独立字幕书才转。
+  if (!asrSupported || (content == null && !transcribeWithoutContent)) {
     throw const DiscoveryImportBlockedException(
       DiscoveryImportBlocker.audiobookMissingSubtitle,
     );

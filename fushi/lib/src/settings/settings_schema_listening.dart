@@ -120,8 +120,10 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
-        // 只有音频的有声书下载完成后自动转录入库（默认开）。本机没有设备端
-        // ASR 的平台这条开关没有意义，不显示。
+        // 没有正文（EPUB / 文本）的有声书下载完成后也自动转录成独立字幕书
+        // （默认关：没有正文时字幕书质量差）。带正文的下载只要本机有 ASR 就
+        // 自动转录对齐，不受这条开关影响（见 routeTranscribeAudiobookPlan）。
+        // 本机没有设备端 ASR 的平台这条开关没有意义，不显示。
         SettingsSwitchItem(
           id: 'listening.audiobook_auto_transcribe',
           title: t.audiobook_auto_transcribe,

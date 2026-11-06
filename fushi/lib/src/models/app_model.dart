@@ -7901,10 +7901,6 @@ class AppModel with ChangeNotifier {
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
 
-  /// 本机是否在有声书下载后自动转录：用户开关 + 设备端 ASR 可用。
-  bool get audiobookAutoTranscribeActive =>
-      prefsRepo.audiobookAutoTranscribe && isAsrSupported;
-
   /// 有声书「转录后入库」队列（懒建，app 生命周期常驻；落盘在数据库目录旁，
   /// 重启后未完成的任务从断点续跑）。
   AudiobookTranscribeImportQueue get audiobookTranscribeImportQueue =>
@@ -7943,7 +7939,8 @@ class AppModel with ChangeNotifier {
     final SrtBookRepository srtBookRepo = SrtBookRepository(database);
     return routeTranscribeAudiobookPlan(
       plan,
-      autoTranscribeEnabled: audiobookAutoTranscribeActive,
+      asrSupported: isAsrSupported,
+      transcribeWithoutContent: prefsRepo.audiobookAutoTranscribe,
       contentAlreadyInLibrary: (String contentPath) =>
           isDuplicateDiscoveryAudiobookContent(database, contentPath),
       matchMaterials: (List<String> audioPaths, String title) =>
