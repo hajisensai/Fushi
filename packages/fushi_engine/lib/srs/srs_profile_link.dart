@@ -57,6 +57,8 @@ class SrsRemoteProfile {
     this.names = const <String>{},
     this.hasNotes,
     this.updatedAt,
+    this.devices = const <String>[],
+    this.noteCount,
   });
 
   /// 显示名：说明文件里报的第一个名字，没有时用 uid。
@@ -75,6 +77,12 @@ class SrsRemoteProfile {
 
   /// 有没有写入者报告过「有用户笔记」；没有任何说明文件时为 null（未知）。
   final bool? hasNotes;
+
+  /// 各写入者说明文件里报的设备人读名（昵称或型号，按出现顺序去重；旧版本不报时为空）。让用户分辨候选用。
+  final List<String> devices;
+
+  /// 各写入者报的用户笔记数里最大的那个（同一 profile 各设备看到的是同一份笔记，取最新最全的一份）；没人报时为 null。
+  final int? noteCount;
 }
 
 /// 关联决定。
@@ -200,6 +208,8 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     final Set<String> names = <String>{};
     bool? hasNotes;
     int? updatedAt;
+    final List<String> devices = <String>[];
+    int? noteCount;
     Future<void> readInfo(String folder) async {
       final (Map<String, Object?>?, int?) read = await _readInfo(
         store,
@@ -214,6 +224,14 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       if (name is String && name.isNotEmpty) names.add(name);
       final Object? notes = info['hasNotes'];
       if (notes is bool) hasNotes = (hasNotes ?? false) || notes;
+      final Object? device = info['device'];
+      if (device is String && device.isNotEmpty && !devices.contains(device)) {
+        devices.add(device);
+      }
+      final Object? count = info['notes'];
+      if (count is int && (noteCount == null || count > noteCount!)) {
+        noteCount = count;
+      }
     }
 
     for (final AssetEntry w in await store.listChildren(p.id)) {
@@ -242,6 +260,8 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         names: names,
         hasNotes: hasNotes,
         updatedAt: updatedAt,
+        devices: devices,
+        noteCount: noteCount,
       ),
     );
   }
@@ -287,6 +307,8 @@ Future<void> srsPublishProfileInfo(
   required String writerId,
   required String name,
   required bool hasNotes,
+  String? device,
+  int? noteCount,
   Directory? tempDir,
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
@@ -303,7 +325,14 @@ Future<void> srsPublishProfileInfo(
   try {
     final File f = File('${dir.path}${Platform.pathSeparator}info');
     await f.writeAsString(
-      jsonEncode(<String, Object?>{'v': 1, 'name': name, 'hasNotes': hasNotes}),
+      // `device` / `notes`（反馈 dOv8AdJ6yV）是附加键：旧读者只认 name / hasNotes，忽略它们。
+      jsonEncode(<String, Object?>{
+        'v': 1,
+        'name': name,
+        'hasNotes': hasNotes,
+        'device': ?device,
+        'notes': ?noteCount,
+      }),
       flush: true,
     );
     await store.putAsset(writer, kSrsProfileInfoName, f);
@@ -374,6 +403,7 @@ class SrsProfileLinkOutcome {
     this.store, {
     this.choose,
     this.localHasNotes = false,
+    this.localNoteCount = 0,
     this.linked = false,
   });
 
@@ -387,6 +417,9 @@ class SrsProfileLinkOutcome {
 
   /// 判定时本机 profile 有没有用户笔记（有 = 选定后要并入，而不是直接改用）。
   final bool localHasNotes;
+
+  /// 判定时本机 profile 的用户笔记数（只在 [choose] 非 null 时数，给用户对比本机与候选）。
+  final int localNoteCount;
 }
 
 /// 同步前的 profile 关联与同步后的说明文件发布（铁律 E，见文件头）。
@@ -550,6 +583,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
           store,
           choose: candidates,
           localHasNotes: localHasNotes,
+          localNoteCount: await store.userNoteCount(),
         );
       case SrsProfileLinkAdopt(:final String uid):
         // 那个 uid 已是本机另一个 profile（profiles.uid 唯一）：用户切过去就能同步，不动。
@@ -740,10 +774,17 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     String directoryKey,
   ) async {
     final String name = await _nameOf(store.profileUid);
-    final bool hasNotes = await store.hasUserNotes();
     final String? device = store.sync2Device;
     if (device == null) return;
-    final String sig = '${store.profileUid}|$device|$name|$hasNotes';
+    final int noteCount = await store.userNoteCount();
+    final bool hasNotes = noteCount > 0;
+    // 设备人读名（昵称或型号，devices.rs）：别的设备遇到 profile 冲突时靠它认出这份数据是哪台设备的。
+    final Object? label = (await store.sync2DeviceInfo())['name'];
+    final String? deviceLabel = label is String && label.isNotEmpty
+        ? label
+        : null;
+    final String sig =
+        '${store.profileUid}|$device|$name|$noteCount|${deviceLabel ?? ''}';
     if (_published[directoryKey] == sig) return;
     await srsPublishProfileInfo(
       backend,
@@ -751,6 +792,8 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       writerId: device,
       name: name,
       hasNotes: hasNotes,
+      device: deviceLabel,
+      noteCount: noteCount,
     );
     _published[directoryKey] = sig;
   }
