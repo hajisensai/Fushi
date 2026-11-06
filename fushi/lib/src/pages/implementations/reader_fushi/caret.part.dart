@@ -171,20 +171,27 @@ extension _ReaderCaret on _ReaderFushiPageState {
 
     final Set<ModifierKey> modifiers = _activeModifiers();
 
-    // BUG-402：桌面 Windows 阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
-    // 转发鼠标不转发键盘，Ctrl+C 到不了 WebView2 触发不了原生 copy；这里在应用层
-    // 接管：取浏览器原生选区文本写系统剪贴板。仅 Windows + 纯 Ctrl+C 命中（谓词
-    // readerShouldHandleDesktopCopy），其余键/平台一律不进，default 行为不变。
-    if (readerShouldHandleDesktopCopy(
+    // BUG-402 / BUG-4130：桌面阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
+    // 转发鼠标不转发键盘，Ctrl+C 到不了 WebView2；macOS 上点正文后 first responder
+    // 通常仍是 FlutterView（BUG-2948 真机取证；DOM 获焦时例外，那时 ⌘C 不进 Flutter、
+    // 原生 copy 自己可用），菜单 Edit > Copy 的 `copy:` 到不了 WKWebView。
+    // 两端都在应用层接管：取浏览器原生选区文本写系统剪贴板。仅 Windows 纯 Ctrl+C /
+    // macOS 纯 ⌘C 命中（谓词 desktopShouldHandleCopyGesture），其余键/平台一律不进，
+    // default 行为不变。放在快捷键解析之前：两张默认表都没有 Ctrl+C / ⌘C 绑定。
+    //
+    // 这里不只管正文：macOS 上 Flutter 焦点从不跟随点击进入平台视图（BUG-3131），
+    // 在词典弹窗 / 歌词覆盖层里拖选后按 ⌘C，按键同样落在本节点。取哪一面的选区由
+    // _copyNativeSelectionToClipboard 按可见层叠顺序决定（BUG-4130）。
+    if (desktopShouldHandleCopyGesture(
       key: event.logicalKey,
       modifiers: modifiers,
       isWindows: isWindowsPlatform,
+      isMacOS: isMacOSPlatform,
     )) {
-      // 已确认是 Windows 纯 Ctrl+C（我们专属的手势），且有 WebView：接管这条
-      // 复制路径并吞键。空选区在 _copyNativeSelectionToClipboard 内静默跳过
-      // （不覆盖剪贴板），但仍吞键——Windows 阅读器 Ctrl+C 没有其它合法语义。
-      // 无 WebView 时不吞键，交回默认解析（不存在的边界情况下也不破坏行为）。
-      if (_controller != null) {
+      // 已确认是本平台的纯复制手势，且有 WebView：接管这条复制路径并吞键。全部可见面
+      // 都没有选区时静默跳过（不覆盖剪贴板），但仍吞键——阅读器的复制键没有其它合法
+      // 语义。无 WebView 时不吞键，交回默认解析。
+      if (_controller != null || _lyricsController != null) {
         unawaited(_copyNativeSelectionToClipboard());
         return KeyEventResult.handled;
       }
@@ -382,25 +389,49 @@ extension _ReaderCaret on _ReaderFushiPageState {
     return KeyEventResult.handled;
   }
 
-  /// BUG-402：取浏览器原生选区文本（[ReaderSelectionScripts.nativeSelectionText...]）
-  /// 写入系统剪贴板。空选区不写（不覆盖剪贴板已有内容）。WebView 半销毁时
-  /// evaluateJavascript 会抛 PlatformException，吞掉即可（复制是尽力而为）。
+  /// BUG-402 / BUG-4130：桌面复制键落地——按**可见层叠顺序**找第一个有原生选区的
+  /// WebView，把它的选区写系统剪贴板（[copyFromTopmostSurfaceWithSelection]）。
+  ///
+  /// 候选自顶向下：可见词典弹窗各层（最上层在前，弹窗自己负责穿透 iframe 取选区与
+  /// 复制提示）→ 阅读面。阅读面在歌词覆盖层显示时是歌词 WebView（[_lyricsController]，
+  /// 正文被盖住，它残留的原生选区不是用户看得见的那份，不进候选），否则是正文
+  /// [_controller]——与光标 / 查词按 `_caretOnLyrics` 在两个 controller 间切换同一事实，
+  /// 只是这里看的是「哪一面在屏上」而不是光标在哪。
+  /// 全部为空不写（不覆盖剪贴板已有内容）。
   Future<void> _copyNativeSelectionToClipboard() async {
-    final InAppWebViewController? controller = _controller;
-    if (controller == null) return;
+    final InAppWebViewController? readingSurface = _lyricsOverlayShown
+        ? _lyricsController
+        : _controller;
+    await copyFromTopmostSurfaceWithSelection(<Future<bool> Function()>[
+      for (final DictionaryPopupWebViewState popup
+          in _caretVisiblePopupStatesTopDown)
+        popup.copyNativeSelectionForHost,
+      if (readingSurface != null)
+        () => _copyWebViewNativeSelection(readingSurface),
+    ]);
+  }
+
+  /// 取 [controller] 文档的浏览器原生选区（[ReaderSelectionScripts.nativeSelectionTextInvocation]）
+  /// 写入系统剪贴板，返回是否写了。空选区返回 false。WebView 半销毁时
+  /// evaluateJavascript 会抛 PlatformException，按「这一面没有可复制的选区」处理
+  /// （复制是尽力而为，WebView 正在拆不是需要上报的错误）。
+  Future<bool> _copyWebViewNativeSelection(
+    InAppWebViewController controller,
+  ) async {
     Object? raw;
     try {
       raw = await controller.evaluateJavascript(
         source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
       );
     } catch (_) {
-      return;
+      return false;
     }
     final String text = ReaderSelectionScripts.nativeSelectionTextFromResult(
       raw,
     );
-    if (text.isEmpty) return;
+    if (text.isEmpty) return false;
     await Clipboard.setData(ClipboardData(text: text));
+    return true;
   }
 
   void _clearGamepadAHold() {

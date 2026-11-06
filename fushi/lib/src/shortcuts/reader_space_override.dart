@@ -130,31 +130,66 @@ bool readerWheelTickIsForward({
   return deltaPositive == swipeLeftIsForward(invert: invertSwipe, rtl: rtl);
 }
 
-/// 桌面 Windows 阅读器「Ctrl+C 复制选中文字」止血兼容层（BUG-402）。
+/// 桌面阅读器 / 查词弹窗「复制选中文字」兼容层（BUG-402 Windows、BUG-4130 macOS）。
 ///
-/// 根因：Windows 端 WebView 走 WebView2 合成模式，fork 的
-/// `flutter_inappwebview_windows` 只转发鼠标、不转发键盘事件给 WebView2，
-/// 所以浏览器原生 `copy` 永远触发不了——左键能选中文字（原生选区可建立），
-/// 但 Ctrl+C / 右键复制都到不了 WebView2。移动端与 macOS 的 WebView 自带原生
-/// copy，**不需要**也**不应该**被这个应用层快捷键覆盖（否则会双重处理）。
+/// 两个桌面平台的浏览器原生 `copy` 都收不到这一按键，只是断法不同：
+/// * Windows：WebView 走 WebView2 合成模式，fork 的 `flutter_inappwebview_windows`
+///   只转发鼠标、不转发键盘给 WebView2，左键能建立原生选区，但 Ctrl+C / 右键复制
+///   都到不了 WebView2（BUG-402）。
+/// * macOS：点击阅读器正文后 first responder **通常仍是 `FlutterView`**——BUG-2948
+///   真机取证；机制见 BUG-2508（desktop_drop 的 DropTarget 压在窗口最上层，点击由
+///   引擎转发给平台视图）与 BUG-3131（fork 不调 `makeFirstResponder`）。此时 Flutter
+///   不处理 ⌘C，Runner 菜单 Edit > Copy 的 `copy:` 发给 first responder =
+///   FlutterView，它不实现 `copy:`，WebKit 收不到。例外：DOM 节点获焦时 WebKit 会把
+///   WKWebView 交成 first responder（BUG-2447 / BUG-3828，见 caret.part.dart
+///   `_handleKeyEvent` 注释），那时原生 copy 本身可用，⌘C 也到不了 Flutter，本谓词
+///   不会被调到，不会重复处理——两种情形下接管都成立。
+///   旧注释「macOS 的 WebView 自带原生 copy」是没在 Mac 上验证过的错误前提。
 ///
 /// BUG-1451：查词弹窗（[DictionaryPopupWebView]）与阅读器正文**共用**本谓词——两者
-/// 断在同一个平台事实上（fork 不转发键盘），判据必须同源，否则改一处另一处会漂开。
-/// 名字保留 `reader` 前缀只为不破坏既有测试/守卫引用，语义是「桌面该接管的复制手势」。
+/// 断在同一个平台事实上，判据必须同源，否则改一处另一处会漂开。
 ///
-/// 本谓词只判定「这是不是 Windows 该接管的复制手势」：必须是
-/// Windows + 仅 Ctrl 修饰（无 Shift/Alt/Meta，避开 Ctrl+Shift+C 等其它组合）
-/// + 键是 C。命中后由调用方取 `window.getSelection()`（浏览器原生选区，**不是**
-/// `window.fushiSelection` 查词选区）的文本写入系统剪贴板。其余一律返回 false，
-/// 交回默认处理，不吞键、不改任何现有行为。
-bool readerShouldHandleDesktopCopy({
+/// 本谓词只判定「这是不是本平台该接管的复制手势」：键必须是 C，修饰键必须**恰好**
+/// 是本平台的主修饰键——Windows 只认 {Ctrl}、macOS 只认 {Meta}（⌘）；混入
+/// Shift / Alt / 另一主修饰键的组合（Ctrl+Shift+C、⌘⇧C 等）一律不接管。命中后由
+/// 调用方取 `window.getSelection()`（浏览器原生选区，**不是** `window.fushiSelection`
+/// 查词选区）的文本写入系统剪贴板。Linux / 移动端与其余组合一律返回 false，交回
+/// 默认处理，不吞键。
+bool desktopShouldHandleCopyGesture({
   required LogicalKeyboardKey key,
   required Set<ModifierKey> modifiers,
   required bool isWindows,
+  required bool isMacOS,
 }) {
-  if (!isWindows) return false;
   if (key != LogicalKeyboardKey.keyC) return false;
-  return modifiers.length == 1 && modifiers.contains(ModifierKey.ctrl);
+  final ModifierKey primary;
+  if (isWindows) {
+    primary = ModifierKey.ctrl;
+  } else if (isMacOS) {
+    primary = ModifierKey.meta;
+  } else {
+    return false;
+  }
+  return modifiers.length == 1 && modifiers.contains(primary);
+}
+
+/// 桌面复制键命中后「复制哪一个 WebView 的原生选区」（BUG-4130）。
+///
+/// 阅读器页同时挂着几个各自持有独立原生选区的 WebView：正文、有声书歌词覆盖层、
+/// 词典弹窗栈的每一层。复制键（macOS 上 Flutter 焦点从不跟随点击进入平台视图——
+/// `AppKitView` 只在引擎回调 `onFocus` 时抢焦点，macOS 引擎不发；见 BUG-3131）
+/// 一律落在阅读器的 `_focusNode` 上，由阅读器统一分派。判据是**可见层叠顺序**：
+/// [surfacesTopDown] 按自顶向下给出每个可见面的「有选区就复制并返回 true，空选区
+/// 返回 false」尝试，第一个复制成功的面胜出、后面的不再读。这样弹窗里拖选时不会被
+/// 正文残留的旧原生选区（Shift 悬停查词不清选区）抢走；歌词覆盖层显示时正文被盖住，
+/// 调用方不把正文放进候选。全部为空返回 false（调用方不覆盖剪贴板）。
+Future<bool> copyFromTopmostSurfaceWithSelection(
+  Iterable<Future<bool> Function()> surfacesTopDown,
+) async {
+  for (final Future<bool> Function() tryCopy in surfacesTopDown) {
+    if (await tryCopy()) return true;
+  }
+  return false;
 }
 
 /// TODO-1370：长按方向键连续切句。判断一个已解析出的阅读器/有声书快捷动作是否应随
