@@ -122,8 +122,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   /// 按钮直接把面板开在对应分类。
   late String? _subPage = widget.initialCategory;
 
-  /// 用户在面板内切过分类：此后切换时内容错峰进场（首次打开不放）。
-  bool _categorySwitched = false;
+  /// 面板首帧已出：此后**新挂载**的分类页错峰进场（首次打开那一页不放，由面板
+  /// 外壳的滑入承担动效）。只在帧后置位、不 setState：进场与否由每页挂载时
+  /// [_CategoryPageEntrance] 定一次。以前是切页**落定后** setState 翻开关，已经滑进
+  /// 来、看得见的那页再被整页重播一次进场——首次从「播放」切「画质增强」时列表
+  /// 闪一下重建（Zc-iEbsImS）。
+  bool _firstFrameShown = false;
 
   /// 页签与下方分页共用的 controller（与阅读器「阅读设置」侧板同一形态）：点页签
   /// 与左右横滑切页走同一条路，横滑时指示条跟手。分组不止一个时才有。
@@ -166,6 +170,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _firstFrameShown = true,
+    );
     // TODO-1350：直接开在「字幕」分类（如「字幕轨」按钮驱动 initialCategory=='subtitle'）时，
     // 挂载即触发一次字幕源加载回调（延后到帧后，避免在 initState 阶段同步触发父页 setState）。
     if (widget.initialCategory == 'subtitle') {
@@ -211,10 +218,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   /// （TODO-1350），统一两个入口，避免「切到字幕分类却没加载字幕轨」的入口遗漏。
   void _selectSubPage(String id) {
     final bool enteringSubtitle = id == 'subtitle' && _subPage != 'subtitle';
-    setState(() {
-      _subPage = id;
-      _categorySwitched = true;
-    });
+    setState(() => _subPage = id);
     if (enteringSubtitle) {
       widget.host.onSubtitleCategoryShown?.call();
     }
@@ -326,9 +330,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           // 行首图标着色（M3E 色调色块，随分组错开），与面板着色方案一起
           // 让设置页不再是一片灰。
           child: SettingsTonalIconsScope(
-            child: FushiEntranceScope(
-              enabled: _categorySwitched,
-              replayKey: id,
+            child: _CategoryPageEntrance(
+              animate: _firstFrameShown,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -618,4 +621,25 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     final VideoGroup? group = _groupFor(page);
     return group == null ? '' : _groupTitle(group);
   }
+}
+
+/// 一个分类页的进场窗口：是否错峰进场在**本页挂载时**定一次，之后不再变——
+/// [FushiEntranceScope.enabled] 一翻就会把已可见的内容整页重播（Zc-iEbsImS）。
+class _CategoryPageEntrance extends StatefulWidget {
+  const _CategoryPageEntrance({required this.animate, required this.child});
+
+  /// 挂载那一刻是否放进场；后续 rebuild 传入的新值被忽略。
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_CategoryPageEntrance> createState() => _CategoryPageEntranceState();
+}
+
+class _CategoryPageEntranceState extends State<_CategoryPageEntrance> {
+  late final bool _animate = widget.animate;
+
+  @override
+  Widget build(BuildContext context) =>
+      FushiEntranceScope(enabled: _animate, child: widget.child);
 }

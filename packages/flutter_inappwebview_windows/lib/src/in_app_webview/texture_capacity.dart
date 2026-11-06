@@ -4,6 +4,27 @@ import 'dart:math' as math;
 /// 只占左上角 `ceil(布局尺寸 × 栅格倍率)` 那一块。
 typedef TextureCapacity = ({int width, int height});
 
+/// 喂 [nextTextureCapacity] 的显示器上限：所有已知显示器里最大的那块（物理像素，
+/// 宽高各取最大）；一块都不知道时为 0（= 无上限）。
+///
+/// 不用 `View.of(context).display`：Windows 引擎给视图的 displayId 不保证在
+/// `PlatformDispatcher.displays` 里（显示器热插拔 / 睡眠唤醒 / 远程桌面后，视图所在
+/// 显示器的句柄可能还没进引擎的显示器表），那个 getter 在 release 下对查不到的 id
+/// 直接 `!` 空断言，build 抛 `Null check operator used on a null value`、WebView 变红
+/// 屏（反馈 eZMo2PT6c_，`custom_platform_view.dart` build 里）。上限只用来给扩容封顶，
+/// 取最大那块的语义也成立：窗口拖到哪块屏上，容量都够、扩容次数仍有界。
+TextureCapacity largestDisplayCapacity(
+  Iterable<({double width, double height})> sizes,
+) {
+  int width = 0;
+  int height = 0;
+  for (final ({double width, double height}) s in sizes) {
+    width = math.max(width, s.width.round());
+    height = math.max(height, s.height.round());
+  }
+  return (width: width, height: height);
+}
+
 /// 扩容时的取整步长（物理像素）。吸收滚动条出现 / 消失、DPI 取整、侧栏开合这类几十
 /// 像素的来回抖动：扩过一次容之后，同一档内改尺寸不重新分配任何显存。首份分配不取整
 /// （见 [nextTextureCapacity]）。
