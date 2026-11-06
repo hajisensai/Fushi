@@ -165,7 +165,7 @@ ServerReleaseCandidate? _candidateOf(String tag, Map asset, String suffix) {
   final RegExpMatch? m = _assetName.firstMatch(name);
   if (m == null || m.group(2) != suffix) return null;
   final Uri? uri = Uri.tryParse(url);
-  if (uri == null || uri.scheme != 'https') return null;
+  if (uri == null || !isServerReleaseDownloadUrl(uri)) return null;
   final Object? size = asset['size'];
   return ServerReleaseCandidate(
     tag: tag,
@@ -176,6 +176,17 @@ ServerReleaseCandidate? _candidateOf(String tag, Map asset, String suffix) {
     size: size is int && size > 0 ? size : null,
   );
 }
+
+/// 下载地址必须是 [kServerReleaseRepo] 自己的 release 资产
+/// （`https://github.com/<repo>/releases/download/...`）。校验值与地址出自同一份
+/// release JSON，挡不住「JSON 指去别处」；把来源钉死在发布仓上，被改写的地址
+/// 连下载都不会发生。
+bool isServerReleaseDownloadUrl(Uri uri) =>
+    uri.scheme == 'https' &&
+    uri.host == 'github.com' &&
+    !uri.hasPort &&
+    uri.path.startsWith('/$kServerReleaseRepo/releases/download/') &&
+    !uri.pathSegments.contains('..');
 
 /// `sha256:<hex>` / `<hex>` → 小写 hex；不是 64 位 hex → null。
 String? normalizeSha256Digest(Object? raw) {

@@ -34,6 +34,7 @@ Map<String, Object?> _release(
   bool draft = false,
   String suffix = _suffix,
   String? digest,
+  String? url,
 }) => <String, Object?>{
   'tag_name': tag,
   'prerelease': prerelease,
@@ -41,7 +42,10 @@ Map<String, Object?> _release(
   'assets': <Object?>[
     <String, Object?>{
       'name': 'fushi_server-0.1.0-$seq$suffix',
-      'browser_download_url': 'https://example.test/$seq$suffix',
+      'browser_download_url':
+          url ??
+          'https://github.com/$kServerReleaseRepo/releases/download/$tag/'
+              'fushi_server-0.1.0-$seq$suffix',
       'size': 3,
       'digest': digest ?? 'sha256:${'a' * 64}',
     },
@@ -133,6 +137,26 @@ void main() {
         assetSuffix: _suffix,
       );
       expect(c!.sha256, isNull);
+    });
+
+    test('下载地址不是本发布仓的 release 资产 → 不算候选', () {
+      for (final String url in <String>[
+        'https://example.test/fushi_server-0.1.0-120-linux-x64.tar.gz',
+        'http://github.com/hajisensai/fushi-server/releases/download/v/x',
+        'https://github.com/someone/fushi-server/releases/download/v/x',
+        'https://github.com:8443/hajisensai/fushi-server/releases/download/v/x',
+        'https://github.com/hajisensai/fushi-server/releases/download/../../evil/x',
+      ]) {
+        expect(
+          pickServerUpdate(
+            releasesJson: _release('v0.1.0-beta.120', 120, url: url),
+            current: _beta,
+            assetSuffix: _suffix,
+          ),
+          isNull,
+          reason: url,
+        );
+      }
     });
   });
 
