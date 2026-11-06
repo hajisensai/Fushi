@@ -106,8 +106,9 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
         source.mediaKind != SourceLibraryKind.video.dbValue) {
       continue;
     }
+    // 只交来这几个旧行，不是视频根下的全貌：不对账（reconcile 默认 false）。
     final MusicAudioIntakeResult r = await hand.adoptVideoSourceAudio(
-      videoRoot: source.rootPath,
+      owner: source,
       audioPaths: <String>[
         for (final VideoBookRow row in e.value) row.videoPath,
       ],
@@ -158,9 +159,8 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   );
 }
 
-/// 路径比较键：音乐扫描拼出的路径与视频行记的路径分隔符 / 大小写写法可能不同
-/// （来源根按正斜杠归一、Rust 用平台分隔符拼文件名）。
-String _key(String path) => p.canonicalize(path);
+/// 路径比较键：曲库全仓只用 [musicTrackPathKey] 这一个定义（扫描落库认旧行用的也是它）。
+String _key(String path) => musicTrackPathKey(path);
 
 /// 在库曲目按路径（[_key]）索引。CUE 拆出的虚拟曲目共用一个路径，取起点最早的一首。
 Future<Map<String, MusicTrackRow>> _liveTracksByPath(FushiDatabase db) async {
