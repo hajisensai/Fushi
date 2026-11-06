@@ -70,6 +70,11 @@
 | [BUG-4130](bugs/BUG-4130-video-jump-back-double-button.md) | ✅ | ✅ | 视频顶栏「返回」跳转按钮在圆胶囊里叠出方块，像两颗按钮 |
 | [BUG-4129](bugs/BUG-4129-side-panel-drag-autoscroll-shrinkwrap-ancestor.md) | ✅ | ✅ | side-panel-drag-autoscroll-shrinkwrap-ancestor |
 | [BUG-4128](bugs/BUG-4128-asr-video-model-variant-flips-on-gpu-budget.md) | 🚧 | 🚧 | asr-video-model-variant-flips-on-gpu-budget |
+> 共 3728 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4130](bugs/BUG-4130-android-play-services-status-collapsed.md) | ✅ | ✅ | 安卓系统 OCR 把 Play 服务所有异常码合成「缺失/停用/过旧」一句，丢掉原始码，给不出准确失败原因 |
 | [BUG-4127](bugs/BUG-4127-webview-windows-unknown-display-null-check.md) | 🚧 | 🚧 | Windows WebView build 读 FlutterView.display 空断言（视图 displayId 不在引擎显示器表里） |
 | [BUG-4126](bugs/BUG-4126-android-lyrics-mode-heat.md) | ✅ | ✅ | Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成 |
 | [BUG-4125](bugs/BUG-4125-video-home-continue-adaptive-cover.md) | ✅ | ✅ | 视频首页「继续观看」竖图被垫模糊塞进 16:9，大卡旁窄卡标题被挤没 |
