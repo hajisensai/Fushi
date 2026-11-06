@@ -17,6 +17,8 @@
 //   native crash 与 ANR 附 trace 摘要；外加进程级 `onTrimMemory` 级别记录。
 // - Windows：`crash_dump.cpp` 的未处理异常过滤器在写 minidump 的同时追加一行
 //   `crash_summary.log`（异常码、模块+偏移、线程、x64 栈前若干帧）。不上传 minidump。
+//   过滤器接不到的死法（`__fastfail` / 堆损坏 / 栈溢出）与卡死被结束，从「应用程序」
+//   事件日志按 pid 读 Windows 错误报告（Application Error 1000 / Application Hang 1002）。
 // - macOS：`~/Library/Logs/DiagnosticReports/<进程名>-*.ips`（系统崩溃报告）。
 // - iOS：MetricKit `MXCrashDiagnostic`（`AppDelegate.swift` 订阅，JSON 落
 //   `Documents/metrickit/`）。
@@ -76,13 +78,14 @@ String _iso(int ms) =>
 /// 同一次启动收到多份证据时取最靠前的那种——平台给的明确原因（崩溃 / ANR / 内存 /
 /// 用户强停）压过会话标记的推断（[unexpected] / [backgroundReclaim]）。
 enum PreviousExitKind {
-  /// 原生层崩溃：Android `CRASH_NATIVE`、Windows 未处理异常（`crash_summary.log`）。
+  /// 原生层崩溃：Android `CRASH_NATIVE`、Windows 未处理异常（`crash_summary.log`）
+  /// 或 Windows 错误报告 Application Error 1000。
   nativeCrash,
 
   /// 崩溃：Android `CRASH` / `INITIALIZATION_FAILURE`、macOS `.ips`、iOS MetricKit。
   crash,
 
-  /// 应用无响应被系统结束（Android `ANR`）。
+  /// 应用无响应被结束（Android `ANR`、Windows 错误报告 Application Hang 1002）。
   anr,
 
   /// 被系统按内存 / 资源回收（Android `LOW_MEMORY` / `EXCESSIVE_RESOURCE_USAGE`）。
@@ -779,6 +782,224 @@ List<ExitReportEntry> formatWindowsCrashSummary(String content) {
   ];
 }
 
+/// 日志 source：Windows 错误报告（事件日志 Application Error 1000 / Application Hang 1002）。
+const String kWindowsErrorReportSource = 'Process.windowsErrorReport';
+
+/// 查询 Windows「应用程序」事件日志：入参是 wevtutil 的 XPath 过滤式，返回
+/// `wevtutil qe ... /f:xml` 的原文；查不了（工具缺失 / 失败 / 超时）返回 null。
+typedef WindowsEventQuery = Future<String?> Function(String xpath);
+
+/// wevtutil 没在这么久内返回就放弃（事件日志服务卡住时不拖住启动取证）。
+const Duration kWindowsEventQueryTimeout = Duration(seconds: 5);
+
+/// 一条 Windows 错误报告事件（`Application Error` 1000 = 崩溃，`Application Hang`
+/// 1002 = 卡死后被结束）。
+@immutable
+class WindowsErrorEvent {
+  const WindowsErrorEvent({
+    required this.eventId,
+    required this.timeCreated,
+    required this.data,
+  });
+
+  final int eventId;
+
+  /// 事件 `TimeCreated/@SystemTime` 原文（UTC ISO-8601）。
+  final String timeCreated;
+
+  /// `EventData/Data[@Name]` → 值。
+  final Map<String, String> data;
+
+  /// 出事进程 pid（事件里是 `0x…` 十六进制）。
+  int? get processId {
+    final String? raw = data['ProcessId']?.trim().toLowerCase();
+    if (raw == null || raw.isEmpty) return null;
+    return raw.startsWith('0x')
+        ? int.tryParse(raw.substring(2), radix: 16)
+        : int.tryParse(raw);
+  }
+}
+
+/// 上次进程的 Windows 错误报告事件查询式：只要这个 exe 的 1000 / 1002，且不早于
+/// [sinceMs]（上次进程启动时刻，再放宽 1 分钟）。pid 在解析后比对（事件里 pid 是
+/// 十六进制字符串，XPath 里按字符串比大小写与前导零都不可靠）。
+String windowsErrorReportXPath({
+  required String exeName,
+  required int sinceMs,
+  required int nowMs,
+}) {
+  final int windowMs = math.max(0, nowMs - sinceMs) + 60 * 1000;
+  final String safeExe = exeName.replaceAll("'", '');
+  return "*[System[Provider[@Name='Application Error' or "
+      "@Name='Application Hang'] and (EventID=1000 or EventID=1002) and "
+      'TimeCreated[timediff(@SystemTime) <= $windowMs]]] and '
+      "*[EventData[Data='$safeExe']]";
+}
+
+String _xmlUnescape(String s) => s
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&amp;', '&');
+
+/// 解析 `wevtutil qe ... /f:xml` 的输出（若干个顶层 `<Event>`，没有根元素）。
+List<WindowsErrorEvent> parseWindowsErrorEvents(String xml) {
+  final List<WindowsErrorEvent> out = <WindowsErrorEvent>[];
+  for (final RegExpMatch ev in RegExp(
+    r'<Event\b[\s\S]*?</Event>',
+  ).allMatches(xml)) {
+    final String body = ev.group(0)!;
+    final int? id = int.tryParse(
+      RegExp(r'<EventID\b[^>]*>(\d+)</EventID>').firstMatch(body)?.group(1) ??
+          '',
+    );
+    if (id == null) continue;
+    final String time =
+        RegExp(
+          r'''<TimeCreated\s+SystemTime=['"]([^'"]+)['"]''',
+        ).firstMatch(body)?.group(1) ??
+        '';
+    final Map<String, String> data = <String, String>{
+      for (final RegExpMatch d in RegExp(
+        r'''<Data\s+Name=['"]([^'"]+)['"]\s*(?:/>|>([\s\S]*?)</Data>)''',
+      ).allMatches(body))
+        d.group(1)!: _xmlUnescape(d.group(2) ?? ''),
+    };
+    out.add(WindowsErrorEvent(eventId: id, timeCreated: time, data: data));
+  }
+  return out;
+}
+
+/// 常见 NTSTATUS 异常码的说明（只收分诊里真会遇到的）。
+String? windowsExceptionName(String code) =>
+    switch (code.trim().toLowerCase().replaceFirst('0x', '')) {
+      'c0000005' => '访问冲突',
+      'c0000409' =>
+        '__fastfail / 栈缓冲区溢出：CRT abort、Rust panic=abort、/GS、CFG 都走这里，'
+            '绕过未处理异常过滤器',
+      'c00000fd' => '栈溢出',
+      'c0000374' => '堆损坏',
+      'c000041d' => '用户回调里的未处理异常',
+      'c0000602' => 'fail fast',
+      'e06d7363' => '未捕获的 C++ 异常',
+      '80000003' => '断点',
+      _ => null,
+    };
+
+/// 把 pid 对得上上次进程的错误报告事件转成证据：1000 → [PreviousExitKind.nativeCrash]，
+/// 1002 → [PreviousExitKind.anr]（窗口卡死后被用户在「未响应」里关掉或被系统结束）。
+///
+/// 为什么要它（BUG-4076）：`crash_dump.cpp` 只装了 `SetUnhandledExceptionFilter`，
+/// `__fastfail`（0xc0000409：CRT `abort()`、Rust `panic=abort`、`/GS`）、堆损坏、
+/// 栈溢出这些不经过滤器的死法在 `crash_summary.log` 里一行都没有，卡死被结束也不是
+/// 异常；桌面「意外退出」报告因此全都没有原生证据。Windows 错误报告照样把它们记进
+/// 事件日志，下次启动按 pid 读回来。
+List<ExitReportEntry> formatWindowsErrorEvents(
+  List<WindowsErrorEvent> events, {
+  required PreviousSession previous,
+}) {
+  final Iterable<WindowsErrorEvent> mine = events
+      .where((WindowsErrorEvent e) => e.processId == previous.pid)
+      .take(kExitReportMaxPerSource);
+  final String tail =
+      'lastLifecycle=${previous.lifecycle}@${_iso(previous.lifecycleAt)}';
+  final List<ExitReportEntry> out = <ExitReportEntry>[];
+  for (final WindowsErrorEvent e in mine) {
+    final Map<String, String> d = e.data;
+    if (e.eventId == 1000) {
+      final String code = d['ExceptionCode'] ?? '?';
+      final String? name = windowsExceptionName(code);
+      out.add(
+        ExitReportEntry(
+          kWindowsErrorReportSource,
+          _cap(
+            redactExitReportPaths(
+              '上次进程被 Windows 错误报告记为崩溃（Application Error 1000）：'
+              'pid=${previous.pid} at=${e.timeCreated} exception=0x$code'
+              '${name == null ? '' : '（$name）'} '
+              'module=${d['ModuleName'] ?? '?'}+0x${d['FaultingOffset'] ?? '?'} '
+              'moduleVersion=${d['ModuleVersion'] ?? '?'} '
+              'moduleTimeStamp=${d['ModuleTimeStamp'] ?? '?'} '
+              'appVersion=${d['AppVersion'] ?? '?'} $tail',
+            ),
+          ),
+          severe: true,
+          kind: PreviousExitKind.nativeCrash,
+          foreground: previous.diedInForeground,
+          duringStartup: !previous.initialised,
+          atMs: previous.lifecycleAt,
+        ),
+      );
+    } else if (e.eventId == 1002) {
+      out.add(
+        ExitReportEntry(
+          kWindowsErrorReportSource,
+          _cap(
+            '上次进程卡死后被结束（Application Hang 1002）：pid=${previous.pid} '
+            'at=${e.timeCreated} hangType=${d['HangType'] ?? '?'} '
+            'appVersion=${d['AppVersion'] ?? '?'} $tail',
+          ),
+          severe: true,
+          kind: PreviousExitKind.anr,
+          foreground: previous.diedInForeground,
+          duringStartup: !previous.initialised,
+          atMs: previous.lifecycleAt,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
+/// 生产实现：`wevtutil qe Application /q:<xpath> /f:xml /rd:true /c:20`。标准用户就能
+/// 读「应用程序」日志，不需要管理员。
+Future<String?> queryWindowsEventLog(String xpath) async {
+  final Process proc;
+  try {
+    proc = await Process.start('wevtutil', <String>[
+      'qe',
+      'Application',
+      '/q:$xpath',
+      '/f:xml',
+      '/rd:true',
+      '/c:20',
+    ]);
+  } on ProcessException catch (e) {
+    ErrorLogService.instance.logDiagnostic(
+      kWindowsErrorReportSource,
+      'wevtutil unavailable: $e',
+    );
+    return null;
+  }
+  unawaited(proc.stdin.close());
+  final Future<String> stdout = proc.stdout
+      .transform(systemEncoding.decoder)
+      .join();
+  final Future<String> stderr = proc.stderr
+      .transform(systemEncoding.decoder)
+      .join();
+  bool timedOut = false;
+  final int code = await proc.exitCode.timeout(
+    kWindowsEventQueryTimeout,
+    onTimeout: () {
+      timedOut = true;
+      proc.kill();
+      return -1;
+    },
+  );
+  if (timedOut || code != 0) {
+    ErrorLogService.instance.logDiagnostic(
+      kWindowsErrorReportSource,
+      timedOut
+          ? 'wevtutil timed out after ${kWindowsEventQueryTimeout.inSeconds}s'
+          : 'wevtutil exit=$code: ${(await stderr).trim()}',
+    );
+    return null;
+  }
+  return stdout;
+}
+
 // ───────────────────────── macOS ─────────────────────────
 
 /// 把一份 `.ips`（第一行头部 JSON + 正文 JSON）摘成一段：异常类型 / 信号、终止原因、
@@ -1396,6 +1617,8 @@ abstract final class PreviousExitLog {
     MethodChannel? androidChannel,
     MethodChannel? launchChannel,
     String? localAppData,
+    WindowsEventQuery? windowsEventQuery,
+    String? windowsExeName,
     Directory? macReportsDir,
     String? macProcessName,
     Directory? iosMetricKitDir,
@@ -1481,6 +1704,27 @@ abstract final class PreviousExitLog {
           previous: previous,
         );
         if (ended != null) out.add(ended);
+      }
+      // 上次没标 clean 才查事件日志：按 pid 找 Windows 错误报告记下的崩溃 / 卡死。
+      if (previous != null && !previous.clean) {
+        final String exe =
+            windowsExeName ??
+            File(Platform.resolvedExecutable).uri.pathSegments.last;
+        final String? xml = await (windowsEventQuery ?? queryWindowsEventLog)(
+          windowsErrorReportXPath(
+            exeName: exe,
+            sinceMs: previous.startedAt,
+            nowMs: now,
+          ),
+        );
+        if (xml != null) {
+          out.addAll(
+            formatWindowsErrorEvents(
+              parseWindowsErrorEvents(xml),
+              previous: previous,
+            ),
+          );
+        }
       }
     }
 
