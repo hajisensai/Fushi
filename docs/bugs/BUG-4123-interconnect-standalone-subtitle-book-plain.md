@@ -13,4 +13,4 @@
 - **备注**：
   - 修复前已经在 client 上收下的那本「普通书」（正文 EPUB，无音频）不会自动合并：它和之后收下的字幕书是两本，用户可删掉前者。
   - 删除 / 墓碑仍按旧的「bookKey 为空才写 srtbook 墓碑」判据（`audiobooks.part.dart` deleteAudiobook、`SrtBookRepository.delete`）。修复后收端与 host 上的这类书是同一形态，删除行为与本机导入的同类书一致；未改动。
-  - 跨设备真机验收（client 书架上出现一张有声书卡、能打开并跟读、只更新字幕后高亮仍对得上）待补。
+  - 跨设备验收（2026-11-05，Android 模拟器 `Medium_Phone_API_37.0` x86_64 当 client，本分支 + PR #2939 合在一起构建的 fushi_server 当 host，库根里一个只有 `ソロ朗読.srt` + `01.mp3` 的文件夹）：host `/api/library/audiobooks` 按 uid 列出、`/api/library/books` 里正文带 `subtitleBookBody: true`；client 书架只有**一张**「Audiobook · Remote」卡（正文没有另出一张，首页「继续」也没有它）；点卡下载后 client 库里 SrtBooks 同 uid、bookKey 指向生成的正文、无 Audiobooks 行、4 条 cue + 音频都在；打开即显示正文，播放到 12 s 时高亮停在第 4 句（12 s 起）。「只更新字幕后正文重建」只有自动化测试覆盖，没在设备上复测。
