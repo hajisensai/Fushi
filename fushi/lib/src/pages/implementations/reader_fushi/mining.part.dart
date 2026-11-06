@@ -734,12 +734,10 @@ extension _ReaderMining on _ReaderFushiPageState {
         }
       }
     }
+    // 歌词模式：_onCueChanged 里的 _syncLyricsOverlayCue 按 cue 数据源决定歌词层
+    // 怎么跟——整书窗口仍是当前整书 cue 的同一段就只换高亮 / 滑窗口，元素换了才重载；
+    // 无整书 cue 的书按章 cue 列表身份重载。这里不再另行整页重载歌词文档：歌词模式下
+    // 正文跟着音频跨章，旧码每装一章都重载一次（BUG-4130，反馈 NSP86pcPHI）。
     _onCueChanged();
-
-    if (_lyricsMode && _audiobookController != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _loadLyricsPage();
-      });
-    }
   }
 }
