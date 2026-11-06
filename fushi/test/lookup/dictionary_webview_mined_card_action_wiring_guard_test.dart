@@ -70,8 +70,15 @@ void main() {
     ).readAsStringSync();
     expect(
       source,
-      contains('onMinedCardAction(_withSourceSentence(fields))'),
-      reason: '从 ✓ 操作单覆写 / 新增重复卡也要带上源文本那一句',
+      matches(
+        RegExp(
+          r'onMinedCardAction\(\s*_withSourceSentence\(fields\),\s*'
+          r'openChooser: openChooser,',
+        ),
+      ),
+      reason:
+          '从 ✓ 操作单覆写 / 新增重复卡也要带上源文本那一句；右键 / 长按的'
+          '「管理」手势（openChooser）也要透传，否则单击直制策略会吞掉选择单',
     );
     expect(source, contains('advancedMiningOpenerFor('));
   });
