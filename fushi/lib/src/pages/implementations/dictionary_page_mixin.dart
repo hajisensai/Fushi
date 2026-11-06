@@ -324,7 +324,7 @@ mixin DictionaryPageMixin {
   ///
   /// [lookupContext] 是这个表面自己的查词语境（字段预填里 Sentence 的兜底句）；不给时用
   /// 宿主级的 [favoriteLookupContext]。查词页结果区的语境是源文本条那一句，只属于
-  /// 结果区、不属于浮层（BUG-3216 / BUG-4130），所以按表面传，不覆写宿主级 getter。
+  /// 结果区、不属于浮层（BUG-3216 / BUG-4209），所以按表面传，不覆写宿主级 getter。
   @protected
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
     GlobalKey<DictionaryPopupWebViewState> webViewKey, {
@@ -998,7 +998,7 @@ mixin DictionaryPageMixin {
   /// 收藏按来源（book/video）落 DB，并计入各自统计。
   ///
   /// [lookupContext] 是发起收藏的那个表面自己的语境（原句 + 锚点）；不给时用宿主级的
-  /// [favoriteLookupContext]。查词页结果区据此把源文本条那一句随收藏落库（BUG-4130）。
+  /// [favoriteLookupContext]。查词页结果区据此把源文本条那一句随收藏落库（BUG-4209）。
   Future<bool> onFavoriteEntry(
     Map<String, String> fields, {
     FavoriteLookupContext? lookupContext,

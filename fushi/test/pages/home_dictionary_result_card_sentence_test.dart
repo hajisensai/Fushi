@@ -18,7 +18,7 @@ import 'package:material_ui/material_ui.dart';
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4130：查词页结果区点 ✓（这个词以前制过卡）→ 操作单「覆写」，以及 ☆ 收藏，
+/// BUG-4209：查词页结果区点 ✓（这个词以前制过卡）→ 操作单「覆写」，以及 ☆ 收藏，
 /// 都要带上源文本条那一句作例句。真 [HomeDictionaryPage] + 注入的假 Anki 后端 /
 /// 内存 DB：从结果区 [DictionaryPopupWebView] 上真正接的那几个回调发起，断言落到
 /// 后端 / DB 的 sentence。
@@ -180,7 +180,7 @@ void main() {
     expect(
       web.onMinedCardAction,
       isNotNull,
-      reason: '没接时桥回空结果，点 ✓ 静默无反应（BUG-4130 原症状）',
+      reason: '没接时桥回空结果，点 ✓ 静默无反应（BUG-4209 原症状）',
     );
 
     // popup.js 交给 minedCardAction 桥的字段不带 sentence（查词页没有「当前句」）。

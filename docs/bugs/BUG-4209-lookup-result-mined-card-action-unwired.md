@@ -1,4 +1,4 @@
-## BUG-4130 · 查词页结果区点 ✓ / ☆ / ↗ 静默无反应，没句子的旧卡覆写不了
+## BUG-4209 · 查词页结果区点 ✓ / ☆ / ↗ 静默无反应，没句子的旧卡覆写不了
 - **报告**：2026-10-26 / 2026-11-03（应用内反馈 pcBy9h7D3_、-xJWu33WgJ，Windows；后者在 3.3.0-debug.23080 + Lapis 上复报「查词结果区制的卡 Sentence 为空，未解决」。截图：搜索框整句「働き手として専用できるような状態に置く」，結果区「専用」词条已是 ✓ 状态——就是 BUG-3216 原报告里那张修复前制的卡）
 - **真实性**：✅ 真 bug。BUG-3216 只给结果区的「+」（`onMineEntry`）和「覆写最新卡」（`onUpdateEntry`）补了源文本例句；卡**已存在**时点 ✓ 走的是另一条桥：
   - `fushi/lib/src/pages/implementations/popup_settings_injection.dart:1286` 对所有 app 内弹窗注入 `__fushiMinedCardActionNative = true`，popup.js（`assets/popup/popup.js` `hasNativeMinedCardAction`）据此把 ✓ 交给宿主 `minedCardAction` 桥、不画页内面板；

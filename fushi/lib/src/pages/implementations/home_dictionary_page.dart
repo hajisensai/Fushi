@@ -2208,7 +2208,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// BUG-3216 / BUG-4130：结果区的查词语境——源文本条上扫描高亮所在的那一句。结果区
+  /// BUG-3216 / BUG-4209：结果区的查词语境——源文本条上扫描高亮所在的那一句。结果区
   /// 的制卡、✓ 操作单（覆写 / 新增重复卡）、排队覆写、高级制卡字段预填、☆ 收藏全读
   /// 这一份；没有可用的源文本（空 / 与查询串重复而隐藏）时为 null。只属于结果区：浮层
   /// 里的词语境是被点处那一句（[miningFieldsForLayer]），所以不覆写宿主级的
