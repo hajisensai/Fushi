@@ -23,9 +23,6 @@ import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
-import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
-import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
@@ -69,6 +66,7 @@ import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_backfill.dart';
 import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
@@ -293,6 +291,8 @@ class HeadlessHost {
       db: db,
       prefs: prefs,
       config: () => config,
+      // 刮完下载来的作品 → 给仍缺字幕的分集补字幕（与 app 下载管线同一个钩子）。
+      onWorkScraped: subtitleBackfill.onWorkScraped,
     );
     _videoScrape = videoScrape;
 
@@ -310,6 +310,8 @@ class HeadlessHost {
     );
     await downloads.start();
     _downloads = downloads;
+    // 下载那一刻没搜到字幕的分集，过几小时再找（与 app 同：随下载管线起）。
+    if (downloads.configured) subtitleBackfill.startRetryLoop();
 
     // AI 助手存档（远端会话 + 操作记录）按保留期清：服务端常驻，起来清一次、之后定时清。
     final ServerAgentHistoryPruner agentHistoryPruner =
@@ -619,6 +621,7 @@ class HeadlessHost {
   /// 停下载管线（含订阅检查，等在途的一轮落地）再关刮削：正常停机与启动半途失败
   /// 共用。
   Future<void> _stopPipelines() async {
+    await subtitleBackfill.stop();
     _agentHistoryPruner?.stop();
     _agentHistoryPruner = null;
     final ServerDownloadHost? downloads = _downloads;
@@ -691,39 +694,20 @@ class HeadlessHost {
     return peers.map((FushiPairedPeerRow r) => r.token).toSet();
   }
 
+  /// 补字幕（单视频 / 刮削后 / 下载后缺字幕重试）的装配，见 server_subtitle_backfill.dart。
+  late final ServerSubtitleBackfill subtitleBackfill = ServerSubtitleBackfill(
+    db: db,
+    prefs: prefs,
+    config: () => config,
+    registryFactory: _subtitleRegistryFactory,
+  );
+
   /// 给库里一个视频补一条字幕（互联 `POST /api/library/videos/<id>/subtitle/backfill`）。
   /// 视频不存在返回 null（路由 404）；一家字幕来源都没配时回 `unavailable`。
-  ///
-  /// 每次调用按当前偏好 / 环境重建来源（经互联同步来的 key、WebUI 改的字幕语言即时
-  /// 生效），用完即关。没接 AI 重排：服务端的 `ai:` 段没有「字幕重排」指派（app 的
-  /// `aiSubtitleBackfillReorder` 读的是 app 偏好里的 AI 指派）。
   Future<VideoSubtitleBackfillReport?> backfillVideoSubtitle(
     String videoId, {
     String? language,
-  }) async {
-    final VideoSubtitleRegistry registry = _subtitleRegistryFactory();
-    try {
-      return await backfillLibraryVideoSubtitle(
-        database: db,
-        service: VideoSubtitleBackfillService(
-          registry: registry,
-          subtitleAligner: serverSubtitleAligner(prefs),
-          preferredLanguages: serverPreferredSubtitleLanguages(
-            config.subtitleLanguage,
-          ),
-          defaultContentLanguage: serverDefaultContentLanguage(prefs),
-        ),
-        videoId: videoId,
-        // 与 app 同一判据：用户在下载确认里选定的作品身份优先于刮削结论。
-        confirmedIdentities: DownloadConfirmedIdentityResolver(db),
-        language: language,
-        seriesLanguage: (String seriesKey) =>
-            serverSeriesSubtitleLanguage(prefs, seriesKey),
-      );
-    } finally {
-      registry.close();
-    }
-  }
+  }) => subtitleBackfill.backfillVideo(videoId, language: language);
 
   /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
   Future<String?> _resolveVideoPath(String videoId) async {
