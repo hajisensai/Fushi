@@ -2974,6 +2974,7 @@
   "floating_ball_ocr_failed": "Ekran OCR başarısız oldu",
   "floating_ball_ocr_language_pack_missing": "Windows'ta $language için metin tanıyıcı yok. Bu dili (Optik karakter tanıma ile birlikte) Ayarlar → Saat ve dil → Dil ve bölge altından ekleyin",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "Sistem OCR modeli henüz hazır değil",
   "floating_ball_ocr_notification": "Ekran OCR devam ediyor",
   "floating_ball_ocr_pick_hint": "Aramak için metne dokunun",
