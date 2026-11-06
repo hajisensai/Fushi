@@ -33,14 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3750 条。点号进各自文件。
-> 共 3727 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4132](bugs/BUG-4132-manga-rtl-slider-readout-direction.md) | ✅ | ✅ | 漫画右开本底部进度栏当前页 / 总页数与已读高亮方向反了 |
-| [BUG-4127](bugs/BUG-4127-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
-> 共 3729 条。点号进各自文件。
+> 共 3751 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -63,6 +56,7 @@
 | [BUG-4173](bugs/BUG-4173-gal-two-line-only-second-lookup.md) | 🚧 | 🚧 | 外部窗口挖矿两行台词只有第二行能查（金色ラブリッチェ） |
 | [BUG-4172](bugs/BUG-4172-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
 | [BUG-4171](bugs/BUG-4171-video-settings-tab-switch-entrance-replay.md) | ✅ | ✅ | video-settings-tab-switch-entrance-replay |
+| [BUG-4132](bugs/BUG-4132-manga-rtl-slider-readout-direction.md) | ✅ | ✅ | 漫画右开本底部进度栏当前页 / 总页数与已读高亮方向反了 |
 | [BUG-4131](bugs/BUG-4131-video-auto-resume-replays-completed.md) | ✅ | ✅ | 视频播完等下一集倒计时期间，自动续播路径把当前视频从头重播 |
 | [BUG-4130](bugs/BUG-4130-video-jump-back-double-button.md) | ✅ | ✅ | 视频顶栏「返回」跳转按钮在圆胶囊里叠出方块，像两颗按钮 |
 | [BUG-4129](bugs/BUG-4129-side-panel-drag-autoscroll-shrinkwrap-ancestor.md) | ✅ | ✅ | side-panel-drag-autoscroll-shrinkwrap-ancestor |
